@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `61eeec3` Cut over farm reads to Supabase (#27)
 - `474d378` Add farm import conflict reconciliation (#26)
 - `2bcf347` Record controlled farm data import (#25)
 - `df2bfaf` Plan initial farm data import (#24)
@@ -63,16 +64,18 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Supabase canonical farm tables now contain: 217 pigs, 20 pens, 1,190 weight events, 179 location events, 261 medical events, 17 litters, 15 mating events, 3 farm products, and 18 app settings.
 - Derived views are populated: `pig_current_state` 217 rows, `pig_latest_location_events` 113 rows, and `pig_latest_weight_events` 155 rows.
 - The 9 conflicting same-pig/same-date weight groups remain excluded from canonical import for owner/admin review.
-- No app route cutover has happened yet. The app may still read Google Sheets until a later owner-approved cutover phase.
 - GS-MIG-6 is merged as PR #26.
-- GS-MIG-7 is active on `gs-mig-7-supabase-route-cutover`: move safe read-only farm routes to Supabase canonical tables/views one batch at a time.
-- GS-MIG-7A direct canonical reads are in progress for pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
-- GS-MIG-7B read-only formula shadow comparison is in progress. Live comparison showed `PIG_OVERVIEW` core counts match Supabase `pig_current_state` and litter/mating row counts match canonical tables.
-- GS-MIG-7C allocation/meat-planning reads are in progress: pig allocation readiness now prefers Supabase canonical inputs, and meat planning follows that allocation source.
-- GS-MIG-7D sales reads are in progress: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available.
-- GS-MIG-7E litter reads are in progress: litter overview, litter detail, and dashboard litter attention now prefer Supabase canonical reads when available.
-- GS-MIG-7F breeding/mating reads are in progress: breeding options, mating overview, breeding analytics, and breeding animal detail now prefer Supabase canonical reads when available.
-- Formula-heavy newborn-health attention replacement rules, order/sales workflow modules, and mutation/write routes are still not cut over.
+- GS-MIG-7 is merged as PR #27. Safe read-only farm routes now prefer Supabase canonical reads with Google Sheets fallback.
+- GS-MIG-8/9 is active on `gs-mig-8-complete-supabase-cutover`: complete remaining order/sales/farm workflow cutover after PR #27.
+- GS-MIG-8 live order import applied import batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 order intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
+- GS-MIG-8 in-progress app cutover: order list/detail/search read from Supabase; order document reads prefer Supabase; daily order reports read Supabase status logs; order create/update/line/reservation/lifecycle and intake update/reset use guarded Supabase write rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
+- GS-MIG-8 document rail update: document settings now prefer Supabase `app_settings`; generated document metadata inserts and sent-status updates prefer Supabase `order_documents`, with Sheets fallback when unavailable.
+- GS-MIG-8 quote rail update: quote generation now reads order lines from Supabase order detail first, with `ORDER_LINES` fallback when unavailable.
+- GS-MIG-8 sales transaction lifecycle update: slaughter exit confirmation/reconciliation now prefers Supabase `pigs` with additive exit metadata fields, with Sheets fallback when unavailable.
+- GS-MIG-8 breeding mutation update: mating creation, pregnancy status updates, litter-link updates, and mating-related movement logs now prefer Supabase `mating_events` and `pig_location_events`, with Sheets fallback when unavailable.
+- GS-MIG-8 direct farm write update: create pig/product/pen, single weight entries, optional movement, medical treatment, and movement entries now prefer Supabase canonical farm tables, with Sheets fallback when unavailable.
+- GS-MIG-9 litter lifecycle mutation update: litter birth-count correction, stillborn reclassification, purpose review decisions, litter weaning, pig death/removal, litter piglet death, piglet sex/tag updates, and newborn health actions now prefer Supabase canonical update rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
+- Remaining Google Sheets dependencies are now narrower: legacy setup/import/export scripts, Google Drive/document storage integration, and formula-specific farm/litter attention replacement work.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

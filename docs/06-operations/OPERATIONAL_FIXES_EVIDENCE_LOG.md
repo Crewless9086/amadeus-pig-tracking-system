@@ -401,6 +401,88 @@ Next:
 
 - GS-MIG-6 should create the owner/admin review output for the 9 conflicting-weight groups and verify imported Supabase rows before any route reads are switched from Google Sheets.
 
+## GS-MIG-8 Order/Sales Supabase Cutover - 2026-06-29
+
+Mode: Supabase cutover after PR #27. Google Sheets remains fallback only where the new Supabase boundary is unavailable or not yet safe.
+
+Live order import:
+
+- Import batch: `IMPORT-20260629-LIVE-ORDERS-V1`
+- Imported/upserted to Supabase: 26 `orders`, 103 `order_lines`, 38 `order_intakes`, 11 `order_intake_items`, 6 `order_documents`, 62 `order_status_logs`, and 21 `sales_pricing` rows.
+- Google Sheets was read only during import.
+
+App cutover in progress:
+
+- `modules.orders.order_read` now prefers Supabase canonical `orders` and `order_lines`.
+- `modules.documents.document_service` now prefers Supabase `order_documents` for document metadata reads.
+- `modules.documents.document_service` now prefers Supabase `app_settings` for document settings and Supabase `order_documents` for generated document metadata writes and sent-status updates.
+- `modules.reports.report_service` now prefers Supabase `order_status_logs` for daily transition summaries.
+- `modules.orders.order_write`, `order_line_sync`, `order_reservation`, `order_lifecycle`, and `order_status_log` now use guarded Supabase write helpers when available, with Sheets fallback.
+- `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
+- `modules.sales.sales_transaction_lifecycle` now prefers Supabase `pigs` for slaughter exit confirmation/reconciliation, with Sheets fallback.
+- `modules.pig_weights.mating_service` now prefers Supabase `mating_events` and `pig_location_events` for mating creation, pregnancy status updates, litter-link updates, and mating-related movements, with Sheets fallback.
+- `modules.pig_weights.pig_weights_service` direct farm write routes now prefer Supabase canonical farm tables for pig/product/pen creation, single weights, treatments, and movements, with Sheets fallback.
+
+Live read-only smoke:
+
+- `order_read.list_orders()` returned 26 orders.
+- First order detail returned source `supabase_canonical`.
+- Supabase table counts matched the live order import payload.
+- Daily order summary generated successfully from the Supabase-backed read path.
+
+No-unsafe-action confirmation:
+
+- No destructive SQL.
+- No customer sends.
+- No public posts.
+- No payments/deposits.
+- No manual production reservation/lifecycle action was executed by scripts.
+- No Google Sheets writes were run from tests.
+
+Remaining risks:
+
+- Litter lifecycle/piglet correction workflows and formula-specific newborn-health attention replacement still need separate Supabase service work.
+
+Document rail checkpoint:
+
+- Added a guarded Supabase document write/settings adapter.
+- `get_document_settings()` reads `app_settings` first, with `SYSTEM_SETTINGS` fallback.
+- `append_order_document()` inserts/upserts generated quote/invoice metadata into `order_documents` first, with `ORDER_DOCUMENTS` fallback.
+- `mark_document_sent()` updates `order_documents` first, with `ORDER_DOCUMENTS` fallback.
+- Quote generation now reads order lines from Supabase order detail first, with `ORDER_LINES` fallback.
+- Focused and broader order/document tests passed.
+
+Sales transaction lifecycle checkpoint:
+
+- Added additive migration `202606290002_add_pig_exit_fields.sql` for nullable `pigs` exit metadata.
+- Slaughter sale pig-exit confirmation and closed-sale reconciliation now read/update Supabase `pigs` first, including status, on-farm flag, exit date/reason/order id, carcass weight, and notes.
+- Existing Google Sheets `PIG_MASTER` path remains fallback if the Supabase rail or exit-field migration is unavailable.
+- Focused sales lifecycle and sales transaction route/service tests passed with local owner access disabled for protected test routes.
+
+Breeding mutation checkpoint:
+
+- Added a guarded Supabase mating write adapter.
+- `save_new_mating()` inserts into `mating_events` first and logs optional sow/boar movements into `pig_location_events`.
+- `assume_pregnant()`, `mark_not_pregnant()`, and `link_litter_to_mating()` update `mating_events` first.
+- Existing `MATING_LOG` and `LOCATION_HISTORY` paths remain fallback if the Supabase rail is unavailable.
+- Focused mating service, mating route, breeding analytics, farm Supabase read, and frontend route-contract tests passed.
+
+Direct farm write checkpoint:
+
+- Added a guarded Supabase farm write adapter for `pigs`, `pens`, `farm_products`, `pig_weight_events`, `pig_medical_events`, and `pig_location_events`.
+- `save_new_pig()`, `save_new_product()`, `save_new_pen()`, `save_weight_entry()`, `save_weight_entry_with_optional_move()`, `save_treatment_entry()`, and `save_movement_entry()` now prefer Supabase.
+- Healthy Supabase duplicate-weight checks avoid the legacy `WEIGHT_LOG` duplicate scan.
+- Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
+- Focused farm write cutover, duplicate-weight, bulk-weight, litter-service, and frontend route-contract tests passed.
+
+Litter lifecycle write checkpoint:
+
+- Added additive migration `202606290003_add_litter_lifecycle_fields.sql` for nullable litter/wean/earmark fields on canonical farm tables.
+- Added guarded Supabase update helpers for pig and litter field updates plus litter newborn health medical-event inserts.
+- Litter birth-count correction, stillborn reclassification, purpose review decisions, litter weaning, pig death/removal, litter piglet death, piglet sex count updates, piglet tag assignment, and newborn health actions now prefer Supabase writes when available.
+- Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
+- Focused Supabase write cutover and full litter-service tests passed.
+
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
 Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.

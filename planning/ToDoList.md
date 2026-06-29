@@ -2,6 +2,30 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-8 Complete Supabase Cutover
+
+Status: active.
+
+Branch: `gs-mig-8-complete-supabase-cutover`
+
+Result so far:
+
+- Live order/sales import batch `IMPORT-20260629-LIVE-ORDERS-V1` applied to Supabase.
+- Order list/detail/search now prefer Supabase canonical reads.
+- Order document metadata reads/writes, document settings reads, quote line reads, and daily order status summaries now prefer Supabase.
+- Order create/update/line/reservation/lifecycle and order intake update/reset now have guarded Supabase write rails with Sheets fallback.
+- Sales transaction slaughter-exit pig updates now prefer Supabase `pigs` with additive exit metadata fields.
+- Mating creation, pregnancy status changes, litter-link updates, and mating-related movement logs now prefer Supabase.
+- Direct farm writes for pigs, products, pens, single weights, treatments, and movements now prefer Supabase.
+- Litter lifecycle/piglet correction writes now prefer Supabase with Sheets fallback.
+- Additive migration `202606290003_add_litter_lifecycle_fields.sql` supports wean, litter-size, and earmark metadata.
+
+Still to verify before PR:
+
+- Full route/service regression.
+- No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
+- Formula-specific newborn-health attention replacement and legacy setup/import/export scripts remain separate follow-up rails.
+
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 
 Status: active.

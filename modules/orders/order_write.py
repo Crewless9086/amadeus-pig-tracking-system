@@ -13,6 +13,8 @@ from modules.pig_weights.pig_weights_utils import (
     format_date_for_sheet,
 )
 from modules.orders.order_status_log import write_order_status_log
+from modules.orders import order_supabase_write
+from modules.pig_weights.pig_weights_service import get_sales_availability
 
 
 ORDER_MASTER_SHEET = "ORDER_MASTER"
@@ -71,6 +73,9 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
 
 def _get_order_master_row(order_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_master_row(order_id)
+
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_ID", "")) == str(order_id).strip():
@@ -79,6 +84,9 @@ def _get_order_master_row(order_id: str):
 
 
 def _get_order_line_row(order_line_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_line_row(order_line_id)
+
     rows = get_all_records(ORDER_LINES_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_Line_ID", "")) == str(order_line_id).strip():
@@ -87,25 +95,35 @@ def _get_order_line_row(order_line_id: str):
 
 
 def get_available_pigs_for_orders():
+    if order_supabase_write.supabase_order_writes_available():
+        rows = get_sales_availability()
+        return _available_pigs_from_sales_rows(rows)
+
     rows = get_all_records(SALES_AVAILABILITY_SHEET)
+    return _available_pigs_from_sales_rows(rows)
+
+
+def _available_pigs_from_sales_rows(rows):
     pigs = []
 
     for row in rows:
-        if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
+        available = to_clean_string(row.get("Available_For_Sale", row.get("available_for_sale", "")))
+        if available != "Yes":
             continue
 
-        if to_clean_string(row.get("Reserved_Status", "")) == "Reserved":
+        reserved_status = to_clean_string(row.get("Reserved_Status", row.get("reserved_status", "")))
+        if reserved_status == "Reserved":
             continue
 
         pigs.append({
-            "pig_id": to_clean_string(row.get("Pig_ID", "")),
-            "tag_number": to_clean_string(row.get("Tag_Number", "")),
-            "sex": to_clean_string(row.get("Sex", "")),
-            "current_weight_kg": to_float(row.get("Current_Weight_Kg", "")),
-            "weight_band": to_clean_string(row.get("Weight_Band", "")),
-            "sale_category": to_clean_string(row.get("Sale_Category", "")),
-            "suggested_price_category": to_clean_string(row.get("Suggested_Price_Category", "")),
-            "reserved_status": to_clean_string(row.get("Reserved_Status", "")),
+            "pig_id": to_clean_string(row.get("Pig_ID", row.get("pig_id", ""))),
+            "tag_number": to_clean_string(row.get("Tag_Number", row.get("tag_number", ""))),
+            "sex": to_clean_string(row.get("Sex", row.get("sex", ""))),
+            "current_weight_kg": to_float(row.get("Current_Weight_Kg", row.get("current_weight_kg", ""))),
+            "weight_band": to_clean_string(row.get("Weight_Band", row.get("weight_band", ""))),
+            "sale_category": to_clean_string(row.get("Sale_Category", row.get("sale_category", ""))),
+            "suggested_price_category": to_clean_string(row.get("Suggested_Price_Category", row.get("suggested_price_category", ""))),
+            "reserved_status": reserved_status,
         })
 
     return sorted(pigs, key=lambda x: (x["tag_number"] or x["pig_id"]).lower())
@@ -115,36 +133,39 @@ def create_order(cleaned_data: dict):
     order_id = generate_order_id()
     today_str = datetime.now().strftime("%d %b %Y")
 
-    row_values = [
-        order_id,
-        format_date_for_sheet(cleaned_data["order_date"]),
-        cleaned_data["customer_name"],
-        cleaned_data["customer_phone"],
-        cleaned_data["customer_channel"],
-        cleaned_data["customer_language"],
-        cleaned_data["order_source"],
-        cleaned_data["requested_category"],
-        cleaned_data["requested_weight_range"],
-        cleaned_data["requested_sex"],
-        cleaned_data["requested_quantity"] if cleaned_data["requested_quantity"] is not None else "",
-        cleaned_data["quoted_total"] if cleaned_data["quoted_total"] is not None else "",
-        "",
-        "Draft",
-        "Pending",
-        "Collection_Only",
-        cleaned_data.get("collection_location", ""),
-        "",
-        "Pending",
-        0,
-        cleaned_data["notes"],
-        cleaned_data["created_by"],
-        today_str,
-        today_str,
-        cleaned_data.get("payment_method", ""),
-        cleaned_data.get("conversation_id", ""),
-    ]
+    if order_supabase_write.supabase_order_writes_available():
+        order_supabase_write.insert_order(order_id, cleaned_data)
+    else:
+        row_values = [
+            order_id,
+            format_date_for_sheet(cleaned_data["order_date"]),
+            cleaned_data["customer_name"],
+            cleaned_data["customer_phone"],
+            cleaned_data["customer_channel"],
+            cleaned_data["customer_language"],
+            cleaned_data["order_source"],
+            cleaned_data["requested_category"],
+            cleaned_data["requested_weight_range"],
+            cleaned_data["requested_sex"],
+            cleaned_data["requested_quantity"] if cleaned_data["requested_quantity"] is not None else "",
+            cleaned_data["quoted_total"] if cleaned_data["quoted_total"] is not None else "",
+            "",
+            "Draft",
+            "Pending",
+            "Collection_Only",
+            cleaned_data.get("collection_location", ""),
+            "",
+            "Pending",
+            0,
+            cleaned_data["notes"],
+            cleaned_data["created_by"],
+            today_str,
+            today_str,
+            cleaned_data.get("payment_method", ""),
+            cleaned_data.get("conversation_id", ""),
+        ]
 
-    append_row(ORDER_MASTER_SHEET, row_values)
+        append_row(ORDER_MASTER_SHEET, row_values)
 
     status_log_warning = ""
 
@@ -227,11 +248,15 @@ def update_order(order_id: str, cleaned_data: dict):
 
     update_map["Updated_At"] = today_str
 
-    _update_sheet_row_by_id(
-        ORDER_MASTER_SHEET,
-        order_id,
-        update_map,
-    )
+    if order_supabase_write.supabase_order_writes_available():
+        if order_supabase_write.update_order_fields(order_id, update_map) == 0:
+            raise ValueError("Order not found.")
+    else:
+        _update_sheet_row_by_id(
+            ORDER_MASTER_SHEET,
+            order_id,
+            update_map,
+        )
 
     return {
         "success": True,
@@ -254,7 +279,11 @@ def create_order_line(cleaned_data: dict):
     if not pig:
         raise ValueError("Pig is not available for order selection.")
 
-    existing_lines = get_all_records(ORDER_LINES_SHEET)
+    existing_lines = (
+        order_supabase_write.list_order_lines()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(ORDER_LINES_SHEET)
+    )
     for row in existing_lines:
         if to_clean_string(row.get("Pig_ID", "")) != pig["pig_id"]:
             continue
@@ -265,25 +294,30 @@ def create_order_line(cleaned_data: dict):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
-    row_values = [
-        generate_order_line_id(),
-        cleaned_data["order_id"],
-        pig["pig_id"],
-        pig["tag_number"],
-        pig["sale_category"],
-        pig["weight_band"],
-        pig["sex"],
-        pig["current_weight_kg"] if pig["current_weight_kg"] is not None else "",
-        cleaned_data["unit_price"] if cleaned_data["unit_price"] is not None else "",
-        "Draft",
-        "Not_Reserved",
-        cleaned_data["notes"],
-        today_str,
-        today_str,
-        cleaned_data.get("request_item_key", ""),
-    ]
+    order_line_id = generate_order_line_id()
 
-    append_row(ORDER_LINES_SHEET, row_values)
+    if order_supabase_write.supabase_order_writes_available():
+        order_supabase_write.insert_order_line(order_line_id, cleaned_data, pig)
+    else:
+        row_values = [
+            order_line_id,
+            cleaned_data["order_id"],
+            pig["pig_id"],
+            pig["tag_number"],
+            pig["sale_category"],
+            pig["weight_band"],
+            pig["sex"],
+            pig["current_weight_kg"] if pig["current_weight_kg"] is not None else "",
+            cleaned_data["unit_price"] if cleaned_data["unit_price"] is not None else "",
+            "Draft",
+            "Not_Reserved",
+            cleaned_data["notes"],
+            today_str,
+            today_str,
+            cleaned_data.get("request_item_key", ""),
+        ]
+
+        append_row(ORDER_LINES_SHEET, row_values)
 
     return {
         "success": True,
@@ -304,15 +338,20 @@ def update_order_line(order_line_id: str, cleaned_data: dict):
     if line_status in ("Collected", "Cancelled"):
         raise ValueError("This order line can no longer be edited.")
 
-    _update_sheet_row_by_id(
-        ORDER_LINES_SHEET,
-        order_line_id,
-        {
-            "Unit_Price": cleaned_data["unit_price"] if cleaned_data["unit_price"] is not None else "",
-            "Notes": cleaned_data["notes"],
-            "Updated_At": today_str,
-        }
-    )
+    updates = {
+        "Unit_Price": cleaned_data["unit_price"] if cleaned_data["unit_price"] is not None else "",
+        "Notes": cleaned_data["notes"],
+        "Updated_At": today_str,
+    }
+    if order_supabase_write.supabase_order_writes_available():
+        if order_supabase_write.update_order_line_fields(order_line_id, updates) == 0:
+            raise ValueError("Order line not found.")
+    else:
+        _update_sheet_row_by_id(
+            ORDER_LINES_SHEET,
+            order_line_id,
+            updates,
+        )
 
     return {
         "success": True,
@@ -339,15 +378,20 @@ def delete_order_line(order_line_id: str):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
-    _update_sheet_row_by_id(
-        ORDER_LINES_SHEET,
-        order_line_id,
-        {
-            "Line_Status": "Cancelled",
-            "Reserved_Status": "Not_Reserved",
-            "Updated_At": today_str,
-        }
-    )
+    updates = {
+        "Line_Status": "Cancelled",
+        "Reserved_Status": "Not_Reserved",
+        "Updated_At": today_str,
+    }
+    if order_supabase_write.supabase_order_writes_available():
+        if order_supabase_write.update_order_line_fields(order_line_id, updates) == 0:
+            raise ValueError("Order line not found.")
+    else:
+        _update_sheet_row_by_id(
+            ORDER_LINES_SHEET,
+            order_line_id,
+            updates,
+        )
 
     return {
         "success": True,

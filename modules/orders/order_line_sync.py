@@ -11,6 +11,8 @@ from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
     to_float,
 )
+from modules.orders import order_supabase_write
+from modules.pig_weights.pig_weights_service import get_sales_availability
 
 
 ORDER_MASTER_SHEET = "ORDER_MASTER"
@@ -74,6 +76,17 @@ def _header_index(headers):
 
 
 def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
+    if order_supabase_write.supabase_order_writes_available():
+        if sheet_name == ORDER_MASTER_SHEET:
+            changed = order_supabase_write.update_order_fields(row_id, updates)
+        elif sheet_name == ORDER_LINES_SHEET:
+            changed = order_supabase_write.update_order_line_fields(row_id, updates)
+        else:
+            changed = 0
+        if changed == 0:
+            raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
+        return
+
     headers, rows = _sheet_headers_and_rows(sheet_name)
 
     if not headers:
@@ -103,6 +116,9 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
 
 def _get_order_master_row(order_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_master_row(order_id)
+
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_ID", "")) == str(order_id).strip():
@@ -111,6 +127,9 @@ def _get_order_master_row(order_id: str):
 
 
 def _get_order_line_row(order_line_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_line_row(order_line_id)
+
     rows = get_all_records(ORDER_LINES_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_Line_ID", "")) == str(order_line_id).strip():
@@ -208,6 +227,9 @@ def _cancel_order_lines(order_line_ids, order_lines_cache=None):
 
 
 def _build_sales_pricing_lookup():
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.sales_pricing_lookup()
+
     rows = get_all_records(SALES_PRICING_SHEET)
     pricing_lookup = {}
 
@@ -236,6 +258,23 @@ def _lookup_unit_price(pricing_lookup: dict, sale_category: str, weight_band: st
         )
 
     return pricing_lookup[key]
+
+
+def _sales_availability_rows_for_sync():
+    rows = get_sales_availability()
+    normalized = []
+    for row in rows:
+        normalized.append({
+            "Pig_ID": to_clean_string(row.get("Pig_ID", row.get("pig_id", ""))),
+            "Tag_Number": to_clean_string(row.get("Tag_Number", row.get("tag_number", ""))),
+            "Sex": to_clean_string(row.get("Sex", row.get("sex", ""))),
+            "Current_Weight_Kg": row.get("Current_Weight_Kg", row.get("current_weight_kg", "")),
+            "Weight_Band": to_clean_string(row.get("Weight_Band", row.get("weight_band", ""))),
+            "Sale_Category": to_clean_string(row.get("Sale_Category", row.get("sale_category", ""))),
+            "Available_For_Sale": to_clean_string(row.get("Available_For_Sale", row.get("available_for_sale", ""))),
+            "Reserved_Status": to_clean_string(row.get("Reserved_Status", row.get("reserved_status", ""))),
+        })
+    return normalized
 
 
 def _get_matching_available_pigs(sales_rows, blocked_pig_ids, category: str, weight_range: str, sex: str, own_pig_ids: set = None):
@@ -332,25 +371,37 @@ def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dic
     order_line_id = generate_order_line_id()
     wkg = pig["current_weight_kg"] if pig["current_weight_kg"] is not None else ""
 
-    row_values = [
-        order_line_id,
-        order_id,
-        pig["pig_id"],
-        pig["tag_number"],
-        pig["sale_category"],
-        pig["weight_band"],
-        pig["sex"],
-        wkg,
-        unit_price,
-        "Draft",
-        "Not_Reserved",
-        notes,
-        today_str,
-        today_str,
-        request_item_key,
-    ]
+    if order_supabase_write.supabase_order_writes_available():
+        order_supabase_write.insert_order_line(
+            order_line_id,
+            {
+                "order_id": order_id,
+                "unit_price": unit_price,
+                "notes": notes,
+                "request_item_key": request_item_key,
+            },
+            pig,
+        )
+    else:
+        row_values = [
+            order_line_id,
+            order_id,
+            pig["pig_id"],
+            pig["tag_number"],
+            pig["sale_category"],
+            pig["weight_band"],
+            pig["sex"],
+            wkg,
+            unit_price,
+            "Draft",
+            "Not_Reserved",
+            notes,
+            today_str,
+            today_str,
+            request_item_key,
+        ]
 
-    append_row(ORDER_LINES_SHEET, row_values)
+        append_row(ORDER_LINES_SHEET, row_values)
 
     cache_row = {
         "Order_Line_ID": order_line_id,
@@ -408,8 +459,16 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         except (TypeError, ValueError):
             return 0
 
-    sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
-    order_lines_rows = list(get_all_records(ORDER_LINES_SHEET))
+    sales_rows = (
+        _sales_availability_rows_for_sync()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(SALES_AVAILABILITY_SHEET)
+    )
+    order_lines_rows = (
+        list(order_supabase_write.list_order_lines())
+        if order_supabase_write.supabase_order_writes_available()
+        else list(get_all_records(ORDER_LINES_SHEET))
+    )
 
     for item in requested_items:
         request_item_key = to_clean_string(item.get("request_item_key", ""))

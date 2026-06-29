@@ -26,6 +26,7 @@ from modules.pig_weights.pig_weights_utils import (
 )
 from modules.pig_weights.mating_service import link_litter_to_mating
 from modules.pig_weights import farm_supabase_read_service
+from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
@@ -151,6 +152,24 @@ def _try_supabase_read(reader, *args):
         return None
     try:
         return reader(*args)
+    except Exception:
+        return None
+
+
+def _try_supabase_litter_update(litter_id, updates):
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return None
+    try:
+        return farm_supabase_write_service.update_litter_by_id(litter_id, updates)
+    except Exception:
+        return None
+
+
+def _try_supabase_pig_updates(updates):
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return None
+    try:
+        return farm_supabase_write_service.update_pigs_by_id(updates)
     except Exception:
         return None
 
@@ -989,8 +1008,14 @@ def reclassify_litter_dead_piglets_as_stillborn(
         selected_piglets.append(_piglet_correction_summary(row))
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, planned_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(planned_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, planned_updates)
 
     return {
         "success": True,
@@ -1006,8 +1031,8 @@ def reclassify_litter_dead_piglets_as_stillborn(
         "reconciliation": reconciliation,
         "source": {
             "reads_from": ["LITTER_OVERVIEW", "PIG_MASTER"],
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Stillborn correction previewed for {target_count} piglet row(s)."
@@ -1101,12 +1126,18 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
         updated_row[header_map[field_name]] = field_value
 
     row_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        row_updated = update_row_by_first_column_match(
-            PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
-            litter_id,
-            updated_row,
-        )
+        supabase_row_updated = _try_supabase_litter_update(litter_id, planned_updates)
+        if supabase_row_updated is not None:
+            row_updated = supabase_row_updated
+            writes_to_supabase = True
+        else:
+            row_updated = update_row_by_first_column_match(
+                PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
+                litter_id,
+                updated_row,
+            )
 
     return {
         "success": True,
@@ -1124,8 +1155,8 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
         "row_updated": row_updated,
         "source": {
             "reads_from": ["LITTER_OVERVIEW", "LITTERS"],
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} birth-count correction previewed."
@@ -1364,8 +1395,14 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
         }, 409
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
+        supabase_rows_updated = _try_supabase_pig_updates(updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
 
     return {
         "success": True,
@@ -1377,8 +1414,8 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
         "rows_updated": rows_updated,
         "planned_updates": updates,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
             "writes_orders": False,
             "writes_sales": False,
             "writes_slaughter": False,
@@ -1849,11 +1886,16 @@ def mark_litter_weaned(
                 },
             }, 409
 
-    weaned_count = len(active_piglets)
-    litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
     sheet_wean_date = format_date_for_sheet(wean_date)
     today = format_date_for_sheet(datetime.now().date())
     updated_by = to_clean_string(changed_by) or "web_app"
+    weaned_count = len(active_piglets)
+    litter_updates = {
+        "Weaned_Count": weaned_count,
+        "Litter_Size_Weaned": weaned_count,
+        "Wean_Date": sheet_wean_date,
+        "Updated_At": today,
+    }
 
     pig_updates = {
         pig_id: {
@@ -1866,7 +1908,16 @@ def mark_litter_weaned(
     for pig_id, weight_kg in wean_weight_updates.items():
         pig_updates[pig_id]["Wean_Weight_Kg"] = weight_kg
 
-    pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+    writes_to_supabase = False
+    litter_row_updated = _try_supabase_litter_update(litter_id, litter_updates)
+    if litter_row_updated is not None:
+        pig_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if pig_rows_updated is None:
+            pig_rows_updated = 0
+        writes_to_supabase = True
+    else:
+        litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
+        pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -1879,6 +1930,10 @@ def mark_litter_weaned(
         "litter_row_updated": litter_row_updated,
         "pig_rows_updated": pig_rows_updated,
         "changed_by": updated_by,
+        "source": {
+            "writes_to_sheets": not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
+        },
         "message": (
             f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s) "
             f"and {len(wean_weight_updates)} wean weight(s)."
@@ -1966,13 +2021,19 @@ def mark_pig_death_or_removal(
         "Updated_At": today,
     }
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(
-            pig_master_sheet,
-            {
-                pig_id: updates
-            },
-        )
+        supabase_rows_updated = _try_supabase_pig_updates({pig_id: updates})
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(
+                pig_master_sheet,
+                {
+                    pig_id: updates
+                },
+            )
 
     return {
         "success": True,
@@ -1990,6 +2051,10 @@ def mark_pig_death_or_removal(
             "on_farm": current_on_farm,
         },
         "changed_by": changed_by,
+        "source": {
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
+        },
         "message": (
             f"Pig {pig_id} would be marked as {new_status}."
             if dry_run
@@ -2158,8 +2223,14 @@ def mark_litter_piglets_dead(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2175,8 +2246,8 @@ def mark_litter_piglets_dead(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} piglet death action previewed for {len(selected_piglets)} piglet(s)."
@@ -2295,8 +2366,14 @@ def record_litter_piglet_sex_counts(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2313,8 +2390,8 @@ def record_litter_piglet_sex_counts(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} sex-count action previewed for {total_count} piglet(s)."
@@ -2487,8 +2564,14 @@ def assign_litter_piglet_tag_numbers(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2504,8 +2587,8 @@ def assign_litter_piglet_tag_numbers(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} tag assignment previewed for {len(selected_piglets)} piglet(s)."
@@ -2660,11 +2743,22 @@ def record_litter_newborn_health(
 
     pig_rows_updated = 0
     treatment_rows_created = 0
+    writes_to_supabase = False
     if not dry_run:
-        pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
-        for row_values in treatment_rows:
-            append_row(medical_log_sheet, row_values)
-            treatment_rows_created += 1
+        supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
+        if supabase_available:
+            pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
+            if pig_rows_updated is None:
+                pig_rows_updated = 0
+            for row_values in treatment_rows:
+                farm_supabase_write_service.insert_medical_event_from_sheet_row(row_values)
+                treatment_rows_created += 1
+            writes_to_supabase = True
+        else:
+            pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
+            for row_values in treatment_rows:
+                append_row(medical_log_sheet, row_values)
+                treatment_rows_created += 1
 
     return {
         "success": True,
@@ -2680,8 +2774,8 @@ def record_litter_newborn_health(
         "planned_pig_updates": pig_updates,
         "planned_treatment_rows": treatment_rows,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
@@ -4903,8 +4997,9 @@ def save_new_pig(cleaned_data: dict):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
+    pig_id = generate_pig_id()
     row_values = [
-        generate_pig_id(),
+        pig_id,
         cleaned_data["tag_number"],
         cleaned_data["pig_name"],
         cleaned_data["status"],
@@ -4942,19 +5037,41 @@ def save_new_pig(cleaned_data: dict):
         today_str,
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_pig(
+                pig_id,
+                cleaned_data,
+                mother_tag_number=mother_tag_number,
+                father_tag_number=father_tag_number,
+            )
+            return {
+                "success": True,
+                "message": "Pig created successfully.",
+                "pig_id": pig_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Pig created successfully."
+        "message": "Pig created successfully.",
+        "pig_id": pig_id,
     }
 
 
 def save_new_product(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["product_register"]
+    product_id = generate_product_id()
 
     row_values = [
-        generate_product_id(),
+        product_id,
         cleaned_data["product_name"],
         cleaned_data["product_category"],
         cleaned_data["default_dose"] if cleaned_data["default_dose"] is not None else "",
@@ -4966,19 +5083,36 @@ def save_new_product(cleaned_data: dict):
         cleaned_data["product_notes"],
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_product(product_id, cleaned_data)
+            return {
+                "success": True,
+                "message": "Product created successfully.",
+                "product_id": product_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Product created successfully."
+        "message": "Product created successfully.",
+        "product_id": product_id,
     }
 
 
 def save_new_pen(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
+    pen_id = generate_pen_id()
 
     row_values = [
-        generate_pen_id(),
+        pen_id,
         cleaned_data["pen_name"],
         cleaned_data["pen_type"],
         cleaned_data["capacity"] if cleaned_data["capacity"] is not None else "",
@@ -4986,11 +5120,27 @@ def save_new_pen(cleaned_data: dict):
         cleaned_data["pen_notes"],
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_pen(pen_id, cleaned_data)
+            return {
+                "success": True,
+                "message": "Pen created successfully.",
+                "pen_id": pen_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Pen created successfully."
+        "message": "Pen created successfully.",
+        "pen_id": pen_id,
     }
 
 def _create_pig_rows_for_litter(
@@ -5189,28 +5339,55 @@ def save_weight_entry(cleaned_data: dict):
     target_date = cleaned_data["weight_date"]
 
     if not cleaned_data.get("allow_duplicate", False):
-        weight_rows = get_all_records(sheet_name)
-        for row in weight_rows:
-            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-            row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        supabase_duplicate_checked = False
+        if farm_supabase_write_service.farm_supabase_writes_available():
+            try:
+                existing = farm_supabase_write_service.get_weight_event(
+                    cleaned_data["pig_id"],
+                    target_date,
+                )
+                supabase_duplicate_checked = True
+                if existing:
+                    return {
+                        "success": False,
+                        "duplicate_weight": True,
+                        "message": "Already recorded for this date.",
+                        "existing": {
+                            "weight_log_id": to_clean_string(existing.get("weight_event_id", "")),
+                            "pig_id": to_clean_string(existing.get("pig_id", "")),
+                            "weight_date": format_date_for_json(existing.get("weight_date", "")),
+                            "weight_kg": to_float(existing.get("weight_kg", "")),
+                            "weighed_by": to_clean_string(existing.get("weighed_by", "")),
+                            "condition_notes": to_clean_string(existing.get("condition_notes", "")),
+                        },
+                    }
+            except Exception:
+                pass
 
-            if row_pig_id == cleaned_data["pig_id"] and row_date == target_date:
-                return {
-                    "success": False,
-                    "duplicate_weight": True,
-                    "message": "Already recorded for this date.",
-                    "existing": {
-                        "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
-                        "pig_id": row_pig_id,
-                        "weight_date": format_date_for_json(row.get(columns["weight_date"], "")),
-                        "weight_kg": to_float(row.get(columns["weight_kg"], "")),
-                        "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
-                        "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
-                    },
-                }
+        if not supabase_duplicate_checked:
+            weight_rows = get_all_records(sheet_name)
+            for row in weight_rows:
+                row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+                row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
 
+                if row_pig_id == cleaned_data["pig_id"] and row_date == target_date:
+                    return {
+                        "success": False,
+                        "duplicate_weight": True,
+                        "message": "Already recorded for this date.",
+                        "existing": {
+                            "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+                            "pig_id": row_pig_id,
+                            "weight_date": format_date_for_json(row.get(columns["weight_date"], "")),
+                            "weight_kg": to_float(row.get(columns["weight_kg"], "")),
+                            "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+                            "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+                        },
+                    }
+
+    weight_log_id = generate_weight_log_id()
     row_values = [
-        generate_weight_log_id(),
+        weight_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["weight_date"]),
         cleaned_data["weight_kg"],
@@ -5220,6 +5397,29 @@ def save_weight_entry(cleaned_data: dict):
         "",
         format_date_for_sheet(cleaned_data["weight_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_weight_event(weight_log_id, cleaned_data)
+            latest_info = get_latest_weight_for_pig(cleaned_data["pig_id"])
+            return {
+                "success": True,
+                "message": "Weight entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "weight_date": format_date_for_json(cleaned_data["weight_date"]),
+                    "weight_kg": cleaned_data["weight_kg"],
+                    "condition_notes": cleaned_data["condition_notes"],
+                    "weighed_by": cleaned_data["weighed_by"],
+                },
+                "latest": latest_info,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 
@@ -5256,16 +5456,22 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
     movement_result = None
 
     if moved_to_pen_id:
-        overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
-        columns = PIG_WEIGHTS_CONFIG["columns"]
-        overview_rows = get_all_records(overview_sheet)
-
         current_pen_id = ""
-        for row in overview_rows:
-            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-            if row_pig_id == cleaned_data["pig_id"]:
-                current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
-                break
+        if farm_supabase_write_service.farm_supabase_writes_available():
+            try:
+                current_pen_id = farm_supabase_write_service.get_current_pen_id(cleaned_data["pig_id"])
+            except Exception:
+                current_pen_id = ""
+        if not current_pen_id:
+            overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+            columns = PIG_WEIGHTS_CONFIG["columns"]
+            overview_rows = get_all_records(overview_sheet)
+
+            for row in overview_rows:
+                row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+                if row_pig_id == cleaned_data["pig_id"]:
+                    current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+                    break
 
         if moved_to_pen_id != current_pen_id:
             movement_result = save_movement_entry({
@@ -5790,8 +5996,9 @@ def save_treatment_entry(cleaned_data: dict):
             cleaned_data["treatment_date"].toordinal() + withdrawal_days_int
         )
 
+    medical_log_id = generate_medical_log_id()
     row_values = [
-        generate_medical_log_id(),
+        medical_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["treatment_date"]),
         cleaned_data["treatment_type"],
@@ -5810,6 +6017,43 @@ def save_treatment_entry(cleaned_data: dict):
         cleaned_data["medical_notes"],
         format_date_for_sheet(cleaned_data["treatment_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_medical_event(
+                medical_log_id,
+                cleaned_data,
+                product=product,
+                withdrawal_days=withdrawal_days_int,
+                withdrawal_end_date=withdrawal_end_date,
+            )
+            return {
+                "success": True,
+                "message": "Treatment entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "treatment_date": format_date_for_json(cleaned_data["treatment_date"]),
+                    "treatment_type": cleaned_data["treatment_type"],
+                    "product_id": cleaned_data["product_id"],
+                    "product_name": product_name,
+                    "dose": cleaned_data["dose"],
+                    "dose_unit": dose_unit,
+                    "route": cleaned_data["route"],
+                    "reason_for_treatment": cleaned_data["reason_for_treatment"],
+                    "withdrawal_days": withdrawal_days_int,
+                    "withdrawal_end_date": format_date_for_json(withdrawal_end_date),
+                    "given_by": cleaned_data["given_by"],
+                    "follow_up_required": cleaned_data["follow_up_required"],
+                    "follow_up_date": format_date_for_json(cleaned_data["follow_up_date"]),
+                    "medical_notes": cleaned_data["medical_notes"],
+                },
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 
@@ -5838,9 +6082,10 @@ def save_treatment_entry(cleaned_data: dict):
 
 def save_movement_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
+    movement_log_id = generate_move_log_id()
 
     row_values = [
-        generate_move_log_id(),
+        movement_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["move_date"]),
         cleaned_data["from_pen_id"],
@@ -5851,6 +6096,33 @@ def save_movement_entry(cleaned_data: dict):
         cleaned_data["move_notes"],
         format_date_for_sheet(cleaned_data["move_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_location_event(movement_log_id, cleaned_data)
+            from_pen = get_pen_by_id(cleaned_data["from_pen_id"])
+            to_pen = get_pen_by_id(cleaned_data["to_pen_id"])
+            return {
+                "success": True,
+                "message": "Movement entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "move_date": format_date_for_json(cleaned_data["move_date"]),
+                    "from_pen_id": cleaned_data["from_pen_id"],
+                    "from_pen_name": from_pen["pen_name"] if from_pen else cleaned_data["from_pen_id"],
+                    "to_pen_id": cleaned_data["to_pen_id"],
+                    "to_pen_name": to_pen["pen_name"] if to_pen else cleaned_data["to_pen_id"],
+                    "reason_for_move": cleaned_data["reason_for_move"],
+                    "moved_by": cleaned_data["moved_by"],
+                    "move_notes": cleaned_data["move_notes"],
+                },
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 

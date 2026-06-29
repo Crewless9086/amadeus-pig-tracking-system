@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from modules.orders.order_service import list_orders
+from modules.orders import order_supabase_read
 from modules.pig_weights.pig_weights_service import get_litter_attention_summary
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_clean_string
 from services.google_sheets_service import get_all_records
@@ -12,7 +13,7 @@ ORDER_STATUS_LOG_SHEET = "ORDER_STATUS_LOG"
 def get_daily_order_summary(report_date=None):
     target_date = _parse_report_date(report_date)
     orders = list_orders()
-    status_logs = get_all_records(ORDER_STATUS_LOG_SHEET)
+    status_logs = _get_order_status_logs()
     transitions_today = _build_transition_index(status_logs, target_date)
 
     sections = {
@@ -82,6 +83,15 @@ def get_daily_order_summary(report_date=None):
             "orders_needing_attention": "Drafts missing payment/location/active lines, pending approvals without active lines, or approved orders with reservation shortfall.",
         },
     }
+
+
+def _get_order_status_logs():
+    if order_supabase_read.supabase_order_reads_available():
+        try:
+            return order_supabase_read.list_order_status_logs()
+        except Exception:
+            pass
+    return get_all_records(ORDER_STATUS_LOG_SHEET)
 
 
 def get_farm_attention_summary(report_date=None, limit=10):

@@ -7,6 +7,7 @@ from services.google_sheets_service import (
     batch_update_rows_by_id,
 )
 from modules.pig_weights.pig_weights_utils import to_clean_string
+from modules.orders import order_supabase_write
 
 
 ORDER_MASTER_SHEET = "ORDER_MASTER"
@@ -27,6 +28,17 @@ def _header_index(headers):
 
 
 def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
+    if order_supabase_write.supabase_order_writes_available():
+        if sheet_name == ORDER_MASTER_SHEET:
+            changed = order_supabase_write.update_order_fields(row_id, updates)
+        elif sheet_name == ORDER_LINES_SHEET:
+            changed = order_supabase_write.update_order_line_fields(row_id, updates)
+        else:
+            changed = 0
+        if changed == 0:
+            raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
+        return
+
     headers, rows = _sheet_headers_and_rows(sheet_name)
 
     if not headers:
@@ -56,6 +68,9 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
 
 def _get_order_master_row(order_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_master_row(order_id)
+
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_ID", "")) == str(order_id).strip():
@@ -64,7 +79,11 @@ def _get_order_master_row(order_id: str):
 
 
 def _count_reserved_lines(order_id: str):
-    rows = get_all_records(ORDER_LINES_SHEET)
+    rows = (
+        order_supabase_write.list_order_lines()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(ORDER_LINES_SHEET)
+    )
     count = 0
 
     for row in rows:
@@ -91,9 +110,16 @@ def reserve_order_lines(order_id: str):
     if not _get_order_master_row(order_id):
         raise ValueError("Order not found.")
 
-    headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
-    if not headers:
-        raise ValueError("ORDER_LINES is empty.")
+    if order_supabase_write.supabase_order_writes_available():
+        headers = ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]
+        rows = [
+            [row.get(field, "") for field in headers]
+            for row in order_supabase_write.list_order_lines()
+        ]
+    else:
+        headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
+        if not headers:
+            raise ValueError("ORDER_LINES is empty.")
 
     idx = _header_index(headers)
     for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]:
@@ -167,7 +193,10 @@ def reserve_order_lines(order_id: str):
     noop_count = sum(1 for r in line_results if r["action"] == "noop")
     skipped_count = sum(1 for r in line_results if r["action"] == "skipped")
 
-    if updates_map:
+    if updates_map and order_supabase_write.supabase_order_writes_available():
+        for line_id, updates in updates_map.items():
+            order_supabase_write.update_order_line_fields(line_id, updates)
+    elif updates_map:
         batch_update_rows_by_id(ORDER_LINES_SHEET, updates_map)
 
     reserved_pig_count = _count_reserved_lines(order_id)
@@ -219,9 +248,16 @@ def release_order_lines(order_id: str):
     if not _get_order_master_row(order_id):
         raise ValueError("Order not found.")
 
-    headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
-    if not headers:
-        raise ValueError("ORDER_LINES is empty.")
+    if order_supabase_write.supabase_order_writes_available():
+        headers = ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]
+        rows = [
+            [row.get(field, "") for field in headers]
+            for row in order_supabase_write.list_order_lines()
+        ]
+    else:
+        headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
+        if not headers:
+            raise ValueError("ORDER_LINES is empty.")
 
     idx = _header_index(headers)
     for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]:
@@ -282,7 +318,10 @@ def release_order_lines(order_id: str):
             "action": "released",
         })
 
-    if updates_map:
+    if updates_map and order_supabase_write.supabase_order_writes_available():
+        for line_id, updates in updates_map.items():
+            order_supabase_write.update_order_line_fields(line_id, updates)
+    elif updates_map:
         batch_update_rows_by_id(ORDER_LINES_SHEET, updates_map)
 
     reserved_pig_count = _count_reserved_lines(order_id)
