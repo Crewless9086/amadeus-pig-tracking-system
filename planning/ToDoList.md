@@ -24,12 +24,22 @@ Scope:
 
 ## 2026-06-29 GS-MIG-17 Mating Pen Lookup Supabase Cutover
 
-Status: in progress on `gs-mig-17-mating-pen-lookup-supabase`.
+Status: merged as PR #36.
 
 Scope:
 
 - Move mating/breeding pen validation helpers from direct `PEN_REGISTER` reads to Supabase-first pen reads.
 - Keep existing mating write-helper and Google Sheets fallbacks when Supabase reads are unavailable.
+- No migrations, production writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
+## 2026-06-29 GS-MIG-18 Order Status Log Supabase Fallback
+
+Status: in progress on `gs-mig-18-order-status-log-fallback`.
+
+Scope:
+
+- Keep order status-log writes Supabase-first through `order_status_logs`.
+- Add legacy `ORDER_STATUS_LOG` fallback if the Supabase insert fails, matching the wider order cutover fallback pattern.
 - No migrations, production writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
 
 ## 2026-06-29 GS-MIG-14 Litter Create Supabase Transaction

@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `3d2df49` Read mating pen lookup from Supabase (#36)
 - `9a65c58` Use Supabase pen lookup helper (#35)
 - `b9a21c8` Read bulk duplicate weights from Supabase (#34)
 - `b0aa71a` Create litters through Supabase (#33)
@@ -91,7 +92,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-14 is merged as PR #33: new litter creation now prefers a Supabase-first transaction for the litter plus generated piglet records, with Sheets fallback.
 - GS-MIG-15 is merged as PR #34: bulk-weight preflight duplicate checks now prefer Supabase `pig_weight_events` with Sheets fallback.
 - GS-MIG-16 is merged as PR #35: shared pig-weight pen lookup helpers now use the existing Supabase-first pen service, with Sheets fallback.
-- GS-MIG-17 in progress on `gs-mig-17-mating-pen-lookup-supabase`: mating/breeding pen validation helpers are being moved to Supabase-first pen reads, with existing fallbacks.
+- GS-MIG-17 is merged as PR #36: mating/breeding pen validation helpers now prefer Supabase-first pen reads, with existing fallbacks.
+- GS-MIG-18 in progress on `gs-mig-18-order-status-log-fallback`: order status-log writes are being tightened to Supabase-first with Sheets fallback if the Supabase insert fails.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
