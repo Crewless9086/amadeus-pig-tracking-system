@@ -32,6 +32,9 @@ Current state:
 - It creates empty canonical farm tables and views for pig, pen, weight, location, medical, litter, mating, product, and app-setting data.
 - It imports no data, changes no existing production rows, and does not cut over any app route from Google Sheets.
 - Do not run this migration until the owner approves GS-MIG-1 release and the dry-run import/reconciliation report is accepted.
+- `202606290002_add_pig_exit_fields.sql` is the GS-MIG-8 sales transaction lifecycle support migration.
+- It adds nullable exit metadata columns and indexes to `public.pigs` only.
+- It is additive only and does not rewrite existing pig records.
 
 Manual run process for Phase 10.1B:
 

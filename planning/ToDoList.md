@@ -14,12 +14,13 @@ Result so far:
 - Order list/detail/search now prefer Supabase canonical reads.
 - Order document metadata reads/writes, document settings reads, and daily order status summaries now prefer Supabase.
 - Order create/update/line/reservation/lifecycle and order intake update/reset now have guarded Supabase write rails with Sheets fallback.
+- Sales transaction slaughter-exit pig updates now prefer Supabase `pigs` with additive exit metadata fields.
 
 Still to verify before PR:
 
 - Full route/service regression.
 - No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
-- Mating/breeding mutation routes and sales transaction lifecycle pig updates remain separate follow-up rails.
+- Mating/breeding mutation routes remain separate follow-up rails.
 
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 

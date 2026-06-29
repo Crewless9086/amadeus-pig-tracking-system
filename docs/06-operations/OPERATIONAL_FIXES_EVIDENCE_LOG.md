@@ -419,6 +419,7 @@ App cutover in progress:
 - `modules.reports.report_service` now prefers Supabase `order_status_logs` for daily transition summaries.
 - `modules.orders.order_write`, `order_line_sync`, `order_reservation`, `order_lifecycle`, and `order_status_log` now use guarded Supabase write helpers when available, with Sheets fallback.
 - `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
+- `modules.sales.sales_transaction_lifecycle` now prefers Supabase `pigs` for slaughter exit confirmation/reconciliation, with Sheets fallback.
 
 Live read-only smoke:
 
@@ -439,7 +440,6 @@ No-unsafe-action confirmation:
 Remaining risks:
 
 - Mating/breeding mutation routes still need separate durable write rails.
-- Completing an order can mark pigs sold/off-farm in Supabase, but the current canonical `pigs` table does not yet store full legacy exit metadata such as exit date/order/reason.
 
 Document rail checkpoint:
 
@@ -448,6 +448,13 @@ Document rail checkpoint:
 - `append_order_document()` inserts/upserts generated quote/invoice metadata into `order_documents` first, with `ORDER_DOCUMENTS` fallback.
 - `mark_document_sent()` updates `order_documents` first, with `ORDER_DOCUMENTS` fallback.
 - Focused and broader order/document tests passed.
+
+Sales transaction lifecycle checkpoint:
+
+- Added additive migration `202606290002_add_pig_exit_fields.sql` for nullable `pigs` exit metadata.
+- Slaughter sale pig-exit confirmation and closed-sale reconciliation now read/update Supabase `pigs` first, including status, on-farm flag, exit date/reason/order id, carcass weight, and notes.
+- Existing Google Sheets `PIG_MASTER` path remains fallback if the Supabase rail or exit-field migration is unavailable.
+- Focused sales lifecycle and sales transaction route/service tests passed with local owner access disabled for protected test routes.
 
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
