@@ -141,6 +141,14 @@ Still not cut over:
 - formula-specific newborn-health attention replacement rules
 - order/sales workflow read/write modules outside farm canonical data
 
+## Inspected But Not Cut Over
+
+These areas were inspected during GS-MIG-7 and intentionally left on the existing path:
+
+- Dashboard summary reserved/withdrawal counts: `pig_current_state` does not yet expose reservation or withdrawal-clear fields, so a full dashboard summary cutover would either lose counts or need a schema/view extension.
+- Order read routes: Supabase order tables exist, but the current imported order boundary appears to be shadow/partial data rather than the complete live order source. Cutting over `list_orders()` or `get_order_detail()` now could hide live Google Sheets orders.
+- Mutation/write routes: creating/updating pigs, matings, litters, treatments, reservations, lifecycle status, order lines, and sales actions still require separate durable write rails and owner-approved cutover phases.
+
 ## Local Environment Note
 
 Live read-only Supabase smoke reads ran from the local environment after loading `.env`. Unit tests use fakes/mocks to verify Supabase read shapes and fallback behavior.
