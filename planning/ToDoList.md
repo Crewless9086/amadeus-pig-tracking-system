@@ -2,6 +2,30 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-5 Initial Import Plan
+
+Status: active plan; no import executed.
+
+Branch: `gs-mig-5-initial-import-plan`
+
+Owner update:
+
+- Owner cleaned Google Sheets by removing/fixing some missing-`Pig_ID` `WEIGHT_LOG` items.
+
+Fresh read-only verifier result:
+
+- Missing-`Pig_ID` quarantine is now 0.
+- 1,235 original mapped weight events become 1,190 canonical weight events.
+- 185 original mapped movement events become 179 canonical movement events.
+- 35 review items remain.
+- 26 review items are auto-resolved dedupes.
+- 9 review items are pending conflicting-weight owner/admin review.
+
+Plan:
+
+- Initial import can import clean canonical data while excluding the 9 conflicting-weight groups.
+- Do not import data or cut over app routes until owner explicitly approves GS-MIG-5 import execution.
+
 ## 2026-06-29 GS-MIG-4 Additive Schema Apply
 
 Status: complete.
