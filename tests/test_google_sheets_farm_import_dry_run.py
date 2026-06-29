@@ -99,6 +99,63 @@ class GoogleSheetsFarmImportDryRunTests(unittest.TestCase):
         self.assertEqual(pig_summary["excluded_rows"], 1)
         self.assertEqual(pig_summary["reason_counts"]["missing_pig_id"], 1)
 
+        excluded = report["reconciliation"]["excluded_row_samples"]["PIG_MASTER"][0]
+        self.assertEqual(excluded["source_sheet_row"], 3)
+        self.assertEqual(excluded["reason"], "missing_pig_id")
+        self.assertEqual(excluded["sample"]["Tag_Number"], "missing")
+
+    def test_reconciliation_reports_formula_count_matches_and_review_gate(self):
+        report = dry_run.build_farm_import_dry_run(self.sample_rows())
+        reconciliation = report["reconciliation"]
+
+        self.assertEqual(reconciliation["source_sheet_row_counts"]["PIG_MASTER"], 2)
+        self.assertEqual(reconciliation["payload_counts"]["pigs"], 1)
+        self.assertFalse(reconciliation["import_readiness"]["ready_for_import"])
+        self.assertEqual(
+            reconciliation["formula_count_reconciliation"]["PIG_OVERVIEW"]["status"],
+            "count_match",
+        )
+        self.assertEqual(
+            reconciliation["formula_count_reconciliation"]["SALES_STOCK_SUMMARY"]["status"],
+            "compare_only_no_direct_table_yet",
+        )
+
+    def test_reconciliation_flags_duplicates_and_missing_fields(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"].append({
+            "Weight_Log_ID": "WGT-1",
+            "Pig_ID": "PIG-1",
+            "Weight_Date": "2026-06-22",
+            "Weight_Kg": "",
+        })
+        rows["LOCATION_HISTORY"].append({
+            "Move_Log_ID": "MOVE-2",
+            "Pig_ID": "PIG-1",
+            "Move_Date": "2026-06-22",
+            "From_Pen_ID": "PEN-1",
+            "To_Pen_ID": "PEN-2",
+        })
+
+        report = dry_run.build_farm_import_dry_run(rows)
+        reconciliation = report["reconciliation"]
+
+        self.assertEqual(
+            reconciliation["duplicate_issues"]["pig_weight_events"]["weight_event_id"]["WGT-1"],
+            2,
+        )
+        self.assertEqual(
+            reconciliation["duplicate_issues"]["pig_weight_events"]["same_pig_same_weight_date"]["PIG-1|2026-06-22"],
+            2,
+        )
+        self.assertEqual(
+            reconciliation["duplicate_issues"]["pig_location_events"]["same_pig_same_date_same_to_pen"]["PIG-1|2026-06-22|PEN-2"],
+            2,
+        )
+        self.assertEqual(
+            reconciliation["field_quality_issues"]["pig_weight_events"]["missing_weight_kg"],
+            1,
+        )
+
     def test_load_sheet_rows_reads_only_configured_sheets(self):
         calls = []
 

@@ -2,9 +2,37 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-2 Reconciliation
+
+Status: active reconciliation.
+
+Branch: `gs-mig-2-reconciliation`
+
+Scope:
+
+- Strengthen read-only Google Sheets to Supabase reconciliation before any migration apply/import.
+- Report source sheet counts, target payload counts, excluded rows, duplicate candidates, formula count comparisons, and import readiness.
+- Do not apply migrations or write production Supabase/Google Sheets data.
+- Do not cut over app routes yet.
+
+Read-only reconciliation result:
+
+- 217 pigs
+- 1,235 mapped weight events from 1,241 `WEIGHT_LOG` rows
+- 185 location events
+- 261 medical events
+- 20 pens
+- 17 litters
+- 15 mating events
+- 3 products
+- 18 settings
+- 6 `WEIGHT_LOG` rows excluded because `Pig_ID` is missing
+- 34 same-pig/same-date weight duplicate keys need review
+- 1 repeated location movement key needs review: `PIG-2026-9613|2026-06-22|PEN-012`
+
 ## 2026-06-29 GS-MIG-1 Canonical Schema And Dry-Run Import
 
-Status: active build.
+Status: merged as PR #19.
 
 Branch: `gs-mig-1-canonical-schema-dry-run`
 

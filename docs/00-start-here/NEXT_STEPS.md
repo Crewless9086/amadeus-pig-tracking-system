@@ -13,8 +13,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated existing-batch resume, one-button Upload Weights, interrupted `processing` row recovery, import/download, failure/retry, duplicate/already-recorded, and blank/no-change wording tests pass and the fix is deployed.
 - Decision made: Google Sheets/Render synchronous upload is not reliable enough for large weekly batches; use Supabase batch/audit rail before downstream Sheets sync, but hide that complexity from the owner.
 - GS-MIG-0 Google Sheets to Supabase migration deep dive is active as report-only planning on `gs-to-supabase-deep-dive-plan`. Do not implement schema/code/cutover until owner approves a specific migration phase.
-- GS-MIG-1 is active on `gs-mig-1-canonical-schema-dry-run`: additive canonical farm schema proposal plus dry-run Google Sheets import/reconciliation tooling. Do not apply the migration or write production data in this phase.
-- GS-MIG-1 dry-run found 6 `WEIGHT_LOG` rows with missing `Pig_ID`; these need review before any canonical import.
+- GS-MIG-1 is merged as PR #19: additive canonical farm schema proposal plus dry-run Google Sheets import/reconciliation tooling. No migration has been applied and no production data has been written.
+- GS-MIG-2 is active on `gs-mig-2-reconciliation`: strengthen reconciliation before any migration apply/import/cutover.
+- GS-MIG-2 live read-only reconciliation found 6 `WEIGHT_LOG` rows with missing `Pig_ID`, 34 same-pig/same-date weight duplicate keys, and one repeated location movement key. These need classification before any canonical import.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -34,8 +35,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 ## P2 Current Build
 
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
-- GS-MIG-1: build canonical Supabase schema proposal and read-only dry-run import/reconciliation tooling. No app cutover, no migration application, and no production writes.
-- GS-MIG-2 candidate: backfill/reconciliation phase after owner reviews GS-MIG-1 migration file and missing-`Pig_ID` rows.
+- GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
+- GS-MIG-2: create reconciliation report and tests for missing IDs, duplicate candidates, formula count comparisons, and import readiness gate.
+- GS-MIG-3 candidate: only after GS-MIG-2 owner review, apply/additive schema and build controlled backfill verification; do not import/cut over app routes until explicitly approved.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
@@ -70,7 +72,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
-- Full Google Sheets to Supabase migration decisions are blocked until the owner reviews the GS-MIG-0 deep-dive plan and approves a specific phase.
+- Full Google Sheets to Supabase migration import/cutover is blocked until the owner reviews GS-MIG-2 reconciliation findings and approves GS-MIG-3.
+- Data review needed before import: 6 missing-`Pig_ID` `WEIGHT_LOG` rows, 34 same-pig/same-date weight duplicate keys, and one repeated same-pig/same-date/same-to-pen location key.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.
