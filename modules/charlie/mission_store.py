@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 from services.database_service import DATABASE_URL_ENV
@@ -33,6 +34,8 @@ MISSION_EVENT_TYPES = {
     "workflow_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
+MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
+MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
     "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
     "docs/00-start-here/CURRENT_STATE.md",
@@ -939,14 +942,27 @@ def _clean_media_reference(item):
         return {"label": text[:80], "reference": text} if text else {}
     if not isinstance(item, dict):
         return {}
-    reference = _clean_text(item.get("reference") or item.get("url") or item.get("path"), 500)
+    raw_reference = str(item.get("reference") or item.get("url") or item.get("path") or "").strip()
+    media_type = _clean_text(item.get("media_type", "reference"), 40)
+    reference = _clean_media_reference_value(raw_reference, media_type)
     if not reference:
         return {}
     return {
         "label": _clean_text(item.get("label") or reference, 120),
         "reference": reference,
-        "media_type": _clean_text(item.get("media_type", "reference"), 40),
+        "media_type": media_type,
     }
+
+
+def _clean_media_reference_value(reference, media_type):
+    if media_type == "image" and reference.startswith("data:image/"):
+        compact = "".join(reference.split())
+        if len(compact) <= MISSION_MEDIA_DATA_URL_MAX_LEN and MISSION_MEDIA_DATA_URL_PATTERN.match(compact):
+            return compact
+        return ""
+    if reference.startswith("data:"):
+        return ""
+    return _clean_text(reference, 500)
 
 
 def _database_url(database_url):

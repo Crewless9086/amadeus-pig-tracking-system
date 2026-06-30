@@ -125,6 +125,33 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_called_once_with(5)
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_retries_transient_queue_read_failure(self, list_missions, write_heartbeat, sleep):
+        approved_calls = {"count": 0}
+
+        def fake_list_missions(status="approved", limit=10):
+            if status == "approved":
+                approved_calls["count"] += 1
+                if approved_calls["count"] == 1:
+                    return {"success": False, "status": "mission_read_failed"}, 503
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=2,
+            continuous=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "watch_timeout_no_mission_available")
+        self.assertEqual(approved_calls["count"], 2)
+        self.assertGreaterEqual(write_heartbeat.call_count, 2)
+        sleep.assert_called_once_with(5)
+
+    @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_missions")

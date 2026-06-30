@@ -94,6 +94,12 @@
           <textarea id="charlie_new_outcome" rows="3" placeholder="Optional: what should be true when this is done?"></textarea>
           <label for="charlie_new_media">Media / reference links</label>
           <textarea id="charlie_new_media" rows="3" placeholder="Optional: one screenshot path, URL, or note per line"></textarea>
+          <div id="charlie_new_media_drop" class="charlie-media-drop" tabindex="0" role="button" aria-label="Paste, drop, or choose mission screenshots">
+            <strong>Paste or drop screenshots here</strong>
+            <span>Images are attached to this mission's vault for agent reference.</span>
+            <input id="charlie_new_media_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+          </div>
+          <div id="charlie_new_media_previews" class="charlie-media-preview-list" aria-live="polite"></div>
           <div class="charlie-form-row">
             <label for="charlie_new_urgency">
               Urgency

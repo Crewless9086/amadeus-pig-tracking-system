@@ -10,6 +10,7 @@ from modules.charlie.build_relay import (
     _reset_auth_rate_limit_for_tests,
     build_relay_action,
 )
+from modules.charlie.mission_store import _clean_media_reference
 
 
 SECRET = "charlie-webhook-secret-32-chars-min"
@@ -398,6 +399,28 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(mission_arg["desired_outcome"], "Mission is stored with useful context.")
         self.assertEqual(mission_arg["media_references"][0]["label"], "Sketch")
         self.assertEqual(record_mission.call_args.kwargs["source_context"]["source"], "charlie_dashboard")
+
+    def test_mission_media_sanitizer_preserves_bounded_image_data_urls(self):
+        image_reference = "data:image/png;base64," + ("A" * 1024)
+
+        media = _clean_media_reference({
+            "label": "Pasted screenshot",
+            "reference": image_reference,
+            "media_type": "image",
+        })
+
+        self.assertEqual(media["label"], "Pasted screenshot")
+        self.assertEqual(media["media_type"], "image")
+        self.assertEqual(media["reference"], image_reference)
+
+    def test_mission_media_sanitizer_rejects_non_image_data_urls(self):
+        media = _clean_media_reference({
+            "label": "HTML payload",
+            "reference": "data:text/html;base64,PHNjcmlwdD4=",
+            "media_type": "image",
+        })
+
+        self.assertEqual(media, {})
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_vault")
