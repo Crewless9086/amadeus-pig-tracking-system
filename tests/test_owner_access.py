@@ -63,8 +63,8 @@ class OwnerAccessTests(unittest.TestCase):
         with patch.dict(os.environ, owner_env(), clear=False):
             self._configure()
             response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "127.0.0.1"})
+            self.assertTrue(owner_local_dev_allowed())
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(owner_local_dev_allowed())
 
     def test_valid_owner_read_token_login_creates_read_session(self):
         with patch.dict(os.environ, owner_env(), clear=False):

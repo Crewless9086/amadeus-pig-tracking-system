@@ -17,6 +17,7 @@ from modules.reports.report_routes import reports_bp
 from modules.sales.sales_transaction_routes import sales_bp
 from modules.telemetry.telemetry_routes import telemetry_bp
 from modules.oom_sakkie.routes import oom_sakkie_bp
+from modules.charlie.routes import charlie_bp
 from services.database_service import (
     check_irrigation_schema,
     check_database_foundation,
@@ -40,6 +41,7 @@ app.register_blueprint(reports_bp, url_prefix="/api")
 app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
 app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
+app.register_blueprint(charlie_bp, url_prefix="/api")
 
 
 @app.route("/")
