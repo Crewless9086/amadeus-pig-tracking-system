@@ -234,6 +234,7 @@
         <summary>Mission vault details</summary>
         ${vaultDetails(vault, media, contextPack)}
       </details>
+      ${mission.status === "new" ? newMissionEditMarkup(mission, vault) : ""}
       <details>
         <summary>Technical details</summary>
         <pre>${escapeHtml(JSON.stringify(mission, null, 2))}</pre>
@@ -248,6 +249,8 @@
     card.querySelectorAll("[data-agent-step]").forEach((button) => {
       button.addEventListener("click", () => updateWorkflowStep(missionId, button.dataset.agentStep || "planner"));
     });
+    const editForm = card.querySelector("[data-new-mission-edit-form]");
+    if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
     return card;
   }
 
@@ -343,6 +346,23 @@
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!list.length) return `<p class="charlie-muted">${escapeHtml(fallback)}</p>`;
     return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
+  function newMissionEditMarkup(mission, vault) {
+    return `
+      <details class="charlie-new-mission-edit">
+        <summary>Edit new mission</summary>
+        <form data-new-mission-edit-form>
+          <label>Title<input name="title" type="text" maxlength="160" value="${escapeHtml(safeText(mission.title || ""))}"></label>
+          <label>Concept<textarea name="raw_text" rows="4">${escapeHtml(safeText(mission.raw_text || ""))}</textarea></label>
+          <label>Desired outcome<textarea name="desired_outcome" rows="3">${escapeHtml(safeText(vault.desired_outcome || ""))}</textarea></label>
+          <label>Owner comment<textarea name="comment" rows="3" placeholder="Optional note to append before approval"></textarea></label>
+          <div class="charlie-mission-actions">
+            <button type="submit">Save Edits</button>
+          </div>
+        </form>
+      </details>
+    `;
   }
 
   function mediaMarkup(items, fallback) {
@@ -552,6 +572,31 @@
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => ({label: line.slice(0, 80), reference: line, media_type: "reference"}));
+  }
+
+  async function updateNewMission(event, missionId, form) {
+    event.preventDefault();
+    if (!missionId || !form) return;
+    const formData = new FormData(form);
+    setMessage("Saving mission edits...", "info");
+    try {
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          updates: {
+            title: safeText(formData.get("title")).trim(),
+            raw_text: safeText(formData.get("raw_text")).trim(),
+            desired_outcome: safeText(formData.get("desired_outcome")).trim(),
+          },
+          comment: safeText(formData.get("comment")).trim(),
+        }),
+      });
+      setMessage("Mission edits saved.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Mission edits were not saved.", "error");
+    }
   }
 
   function collectMediaReferences() {
