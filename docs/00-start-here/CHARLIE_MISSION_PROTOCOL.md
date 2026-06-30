@@ -235,6 +235,28 @@ The bridge uses `codex exec` with workspace-write sandboxing, stores stdout/stde
 
 This bridge is local-only. Telegram and the web dashboard still do not run shell commands directly.
 
+## Local Release Bridge
+
+After owner final approval, CHARLIE records the mission as `release_approved`.
+
+A local terminal may prepare the release gate packet with:
+
+```bash
+python scripts/charlie_release_bridge.py --mission-id <mission id>
+```
+
+This writes a release packet artifact under `.charlie_runner/executions/` and does not merge, deploy, or mark complete.
+
+For missions where owner final approval is enough and no merge/deploy is required, the local operator may close the mission with:
+
+```bash
+python scripts/charlie_release_bridge.py --mission-id <mission id> --complete-no-release
+```
+
+That command moves the mission through `release_in_progress`, records a no-release closeout packet, and marks it `done`.
+
+Merge/deploy release execution remains a later bridge. The release bridge must not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+
 ## Local Runner Control
 
 Approval records owner permission. It does not start Codex by itself. A local runner must be active for approved missions to move automatically into `planning/CODEX_CHAT.md`.

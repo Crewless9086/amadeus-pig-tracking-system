@@ -1,3 +1,5 @@
+import os
+
 from flask import Blueprint, jsonify, request
 
 from modules.auth.owner_access import require_owner_read_access
@@ -123,6 +125,7 @@ def charlie_build_relay_runner_status_route():
     next_approved = _first_mission(approved)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
+    local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
         next_action = "Codex is expected to finish or debrief the active mission before another approved mission is picked up."
@@ -148,6 +151,12 @@ def charlie_build_relay_runner_status_route():
         "next_release_approved_mission": next_release_approved,
         "next_action": next_action,
         "local_runner": local_status,
+        "local_runner_scope": local_runner_scope,
+        "local_runner_visibility_note": (
+            "Render cannot see the laptop .charlie_runner heartbeat. Check local dashboard or scripts\\charlie_runner_control.py status for true local runner state."
+            if local_runner_scope == "render_cannot_see_laptop_runner"
+            else "This dashboard can read the local .charlie_runner heartbeat."
+        ),
         "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30",
         "local_runner_control_commands": {
             "status": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py status",
@@ -159,6 +168,10 @@ def charlie_build_relay_runner_status_route():
         "can_merge_from_web": False,
         "execution_boundary": "A local Codex/Cursor session or local runner process must execute pickup/build work.",
     }), 200
+
+
+def _running_on_render():
+    return bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["GET"])

@@ -646,6 +646,21 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["next_release_approved_mission"]["mission_id"], "CHARLIE-MISSION-RELEASE")
         self.assertIn("release bridge", data["next_action"])
 
+    @patch.dict(os.environ, {"RENDER": "true"})
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_explains_render_cannot_see_laptop_runner(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["local_runner_scope"], "render_cannot_see_laptop_runner")
+        self.assertIn("Render cannot see", data["local_runner_visibility_note"])
+
     @patch.dict(os.environ, {}, clear=True)
     def test_start_command_returns_help(self):
         action = build_relay_action("/start")

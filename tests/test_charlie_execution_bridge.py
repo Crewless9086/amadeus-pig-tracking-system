@@ -130,6 +130,59 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("review_packet", vault_metadata)
         self.assertIn("modules/charlie/execution_bridge.py", vault_metadata["review_packet"]["changed_files"])
 
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_prepare_release_execution_writes_release_packet(self, get_mission):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        mission["metadata"] = {"review_packet": {"summary": "Owner approved.", "test_evidence": ["tests passed"]}}
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.prepare_release_execution(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+            )
+            packet = Path(result["release_packet_path"]).read_text(encoding="utf-8")
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "release_execution_prepared")
+        self.assertIn("no_release_closeout", packet)
+        self.assertIn("Owner approved.", packet)
+
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_prepare_release_execution_rejects_non_release_approved_mission(self, get_mission):
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+
+        result, status_code = execution_bridge.prepare_release_execution(
+            mission_id="CHARLIE-MISSION-EXEC123",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "mission_not_ready_for_release_execution")
+        self.assertEqual(result["required_status"], "release_approved")
+
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_complete_no_release_marks_release_approved_done(self, get_mission, update_vault, update_status):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.complete_no_release_mission(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "release_no_release_completed")
+        statuses = [call.args[1] for call in update_status.call_args_list]
+        self.assertEqual(statuses, ["release_in_progress", "done"])
+        update_vault.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

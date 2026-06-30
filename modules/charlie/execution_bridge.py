@@ -202,6 +202,103 @@ def run_codex_execution_bridge(
     }, 200
 
 
+def prepare_release_execution(mission_id="", output_dir=None, database_url=None, connect_factory=None):
+    mission, status_code, error = _load_release_mission(
+        mission_id=mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return error, status_code
+
+    output_dir = Path(output_dir or EXECUTION_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    execution_id = _execution_id(mission["mission_id"])
+    packet = _release_packet(mission, execution_id)
+    packet_path = output_dir / f"{execution_id}.release.json"
+    packet_path.write_text(json.dumps(packet, indent=2), encoding="utf-8")
+    return {
+        "success": True,
+        "status": "release_execution_prepared",
+        "mission_id": mission["mission_id"],
+        "title": mission.get("title", ""),
+        "execution_id": execution_id,
+        "release_packet_path": str(packet_path),
+        "will_complete_no_release": False,
+    }, 200
+
+
+def complete_no_release_mission(mission_id="", output_dir=None, database_url=None, connect_factory=None):
+    prepared, status_code = prepare_release_execution(
+        mission_id=mission_id,
+        output_dir=output_dir,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return prepared, status_code
+    mission_id = prepared["mission_id"]
+    release_packet_path = prepared["release_packet_path"]
+
+    started, start_status = update_mission_status(
+        mission_id,
+        "release_in_progress",
+        owner_decision="Local release bridge started no-release closeout.",
+        event_type="status_changed",
+        notes="Local release bridge moved release-approved mission into release_in_progress.",
+        metadata={
+            "script": "scripts/charlie_release_bridge.py",
+            "release_packet_path": release_packet_path,
+            "release_mode": "no_release_closeout",
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if start_status >= 400:
+        return started, start_status
+
+    vault_result, vault_status = update_mission_vault(
+        mission_id,
+        {
+            "release_packet": {
+                "mode": "no_release_closeout",
+                "release_packet_path": release_packet_path,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "result": "No merge/deploy was required; mission closed after owner final approval.",
+            }
+        },
+        notes="Local release bridge recorded no-release closeout packet.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if vault_status >= 400:
+        return vault_result, vault_status
+
+    done, done_status = update_mission_status(
+        mission_id,
+        "done",
+        owner_decision="Mission completed after owner final approval; no release was required.",
+        event_type="status_changed",
+        notes="Local release bridge marked mission done after no-release closeout.",
+        metadata={
+            "script": "scripts/charlie_release_bridge.py",
+            "release_packet_path": release_packet_path,
+            "release_mode": "no_release_closeout",
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if done_status >= 400:
+        return done, done_status
+    return {
+        "success": True,
+        "status": "release_no_release_completed",
+        "mission_id": mission_id,
+        "mission_status": "done",
+        "release_packet_path": release_packet_path,
+    }, 200
+
+
 def build_codex_execution_prompt(mission):
     mission = mission if isinstance(mission, dict) else {}
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
@@ -275,6 +372,31 @@ def _load_execution_mission(mission_id="", status="in_progress", database_url=No
     return missions[0], 200, {}
 
 
+def _load_release_mission(mission_id="", database_url=None, connect_factory=None):
+    mission_id = str(mission_id or "").strip()
+    if mission_id:
+        loaded, status_code = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+        if status_code >= 400:
+            return None, status_code, loaded
+        mission = loaded.get("mission") or {}
+        if mission.get("status") != "release_approved":
+            return None, 409, {
+                "success": False,
+                "status": "mission_not_ready_for_release_execution",
+                "mission_id": mission_id,
+                "mission_status": mission.get("status", ""),
+                "required_status": "release_approved",
+            }
+        return mission, 200, {}
+    loaded, status_code = list_missions(status="release_approved", limit=1, database_url=database_url, connect_factory=connect_factory)
+    if status_code >= 400:
+        return None, status_code, loaded
+    missions = loaded.get("missions") or []
+    if not missions:
+        return None, 404, {"success": False, "status": "no_release_approved_mission_available", "missions": []}
+    return missions[0], 200, {}
+
+
 def _record_execution_stage(mission_id, agent, step_status, findings, database_url=None, connect_factory=None):
     return update_mission_workflow_step(
         mission_id,
@@ -311,6 +433,26 @@ def _changed_files():
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _release_packet(mission, execution_id):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    return {
+        "execution_id": execution_id,
+        "mission_id": mission.get("mission_id", ""),
+        "title": mission.get("title", ""),
+        "status": mission.get("status", ""),
+        "approval_level": mission.get("approval_level", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "mode": "release_gate",
+        "allowed_actions_now": ["no_release_closeout"],
+        "blocked_actions_without_next_bridge": ["merge", "deploy", "production_migration", "customer_send", "public_post", "payment", "reservation", "farm_lifecycle_write"],
+        "review_summary": review_packet.get("summary", ""),
+        "review_changed_files": review_packet.get("changed_files", []),
+        "review_test_evidence": review_packet.get("test_evidence", []),
+        "operator_instruction": "Use --complete-no-release only when final owner approval is enough and no merge/deploy is required.",
+    }
 
 
 def _codex_executable():

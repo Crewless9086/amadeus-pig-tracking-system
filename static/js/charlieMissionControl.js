@@ -110,13 +110,14 @@
       const next = data.next_approved_mission || {};
       const releaseNext = data.next_release_approved_mission || {};
       const local = data.local_runner || {};
+      const runnerIsRemoteBlind = data.local_runner_scope === "render_cannot_see_laptop_runner";
       els.runner.state.textContent = runnerStateLabel(data.status);
       els.runner.message.textContent = data.next_action || "Runner handoff status loaded.";
       els.runner.active.textContent = active.mission_id ? `${shortId(active.mission_id)} | ${active.title || active.status || "active"}` : "None";
       els.runner.next.textContent = next.mission_id ? `${shortId(next.mission_id)} | ${next.title || next.status || "approved"}` : "None";
       if (els.runner.releaseNext) els.runner.releaseNext.textContent = releaseNext.mission_id ? `${shortId(releaseNext.mission_id)} | ${releaseNext.title || releaseNext.status || "release approved"}` : "None";
-      if (els.runner.local) els.runner.local.textContent = local.active ? `Active (PID ${local.pid || "--"})` : "Not active";
-      if (els.runner.seen) els.runner.seen.textContent = local.last_seen ? `${formatDate(local.last_seen)} (${local.age_seconds || 0}s ago)` : "Never";
+      if (els.runner.local) els.runner.local.textContent = runnerIsRemoteBlind ? "Local-only; unavailable on Render" : local.active ? `Active (PID ${local.pid || "--"})` : "Not active";
+      if (els.runner.seen) els.runner.seen.textContent = runnerIsRemoteBlind ? "Check local dashboard or runner_control.py" : local.last_seen ? `${formatDate(local.last_seen)} (${local.age_seconds || 0}s ago)` : "Never";
       if (data.local_runner_command) els.runner.command.textContent = data.local_runner_command;
       if (els.runner.controls && data.local_runner_control_commands) {
         const commands = Object.assign({}, runnerControlCommandFallbacks, data.local_runner_control_commands || {});

@@ -40,6 +40,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Local view", script)
         self.assertIn("Refresh Evidence", script)
         self.assertIn("release_approved", template)
+        self.assertIn("render_cannot_see_laptop_runner", script)
+        self.assertIn("Local-only; unavailable on Render", script)
         self.assertIn("local_runner", script)
         self.assertIn("charlie_runner_control.py", script)
         self.assertIn("cannot run shell commands", template)
