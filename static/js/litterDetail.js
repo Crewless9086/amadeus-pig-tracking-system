@@ -1231,9 +1231,10 @@ async function loadLitterDetail(options = {}) {
     window.currentLitterDetail = litter;
 
     document.getElementById("litter_title").textContent = `Litter - ${litter.litter_id}`;
-    document.getElementById("litter_subtitle").textContent = `${litter.count} piglet(s) linked to this litter`;
+    document.getElementById("litter_subtitle").textContent = `${litter.litter_status || "Unknown"} - ${litter.count} piglet(s) linked to this litter`;
 
     setText("litter_id_value", litter.litter_id);
+    setText("litter_status_value", litter.litter_status || "Unknown");
     setText("litter_count_value", litter.count);
     setText("litter_male_count_value", litter.male_count);
     setText("litter_female_count_value", litter.female_count);
