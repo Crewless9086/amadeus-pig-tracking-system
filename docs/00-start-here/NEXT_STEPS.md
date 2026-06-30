@@ -80,6 +80,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - owner-only `/charlie` page
   - shows queue counts and mission cards from Supabase
   - records approve/pause/reject/block/done decisions through protected APIs
+  - records explicit approval levels from dashboard and Telegram: LEVEL 1 investigation, LEVEL 3 code/test/PR, LEVEL 4 merge/release verification
+  - pickup bridge writes runner mode into `planning/CODEX_CHAT.md` so Codex knows whether to report, build a PR, or verify/merge
+  - Telegram/dashboard do not execute shell commands directly; a running Codex/Cursor session remains the execution boundary
   - does not execute builds, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
 - CHARLIE mission queue release checklist:
   - migration `202606300001_create_charlie_mission_queue.sql` is applied

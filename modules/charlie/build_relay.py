@@ -11,6 +11,7 @@ from modules.charlie.mission_store import (
     get_mission,
     list_missions,
     mission_status_summary,
+    normalize_approval_level,
     record_mission,
     update_mission_status,
 )
@@ -253,7 +254,9 @@ def _help_action():
             "/mission <id> - show one mission record\n"
             "/mission <idea> - prepare a mission intake\n"
             "/select 1 - turn a listed NEXT_STEPS option into a mission intake\n\n"
-            "/approve <id>, /pause <id>, /reject <id> - record owner decision only\n\n"
+            "/approve <id> level3 - approve build/test/PR handoff\n"
+            "/approve <id> level4 - approve merge/release handoff after PR verification\n"
+            "/pause <id>, /reject <id> - record owner decision only\n\n"
             "Safety: this relay cannot run shell commands, commit, merge, deploy, send customers, post publicly, take payments, reserve stock, or write production data."
         ),
         "reply_markup": _main_keyboard(),
@@ -369,16 +372,23 @@ def _mission_detail_action(mission_id, command="mission_detail"):
 
 
 def _mission_decision_action(raw_mission_id, status, command):
-    mission_id = _clean_source_value(raw_mission_id)
+    mission_id, approval_level = _parse_mission_decision_input(raw_mission_id)
     if not mission_id:
         return {
             "command": command,
-            "telegram_text": f"Send /{command} <mission id>.",
+            "telegram_text": f"Send /{command} <mission id> or /{command} <mission id> level3.",
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    if approval_level and approval_level not in {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}:
+        return {
+            "command": command,
+            "telegram_text": "Approval level was not recognized. Use level1, level2, level3, level4, or level5.",
             "reply_markup": _main_keyboard(),
             "writes_repo_file": False,
         }
     decision_text = {
-        "approved": "Owner approved mission planning/build according to the recorded approval level.",
+        "approved": f"Owner approved mission according to {approval_level or 'the recorded approval level'}.",
         "paused": "Owner paused this mission.",
         "rejected": "Owner rejected this mission.",
     }.get(status, f"Owner set mission status to {status}.")
@@ -386,9 +396,10 @@ def _mission_decision_action(raw_mission_id, status, command):
         mission_id,
         status,
         owner_decision=decision_text,
+        approval_level=approval_level,
         event_type="approval_decision",
         notes=decision_text,
-        metadata={"telegram_command": command},
+        metadata={"telegram_command": command, "approval_level": approval_level},
     )
     if not result.get("success"):
         return {
@@ -403,7 +414,8 @@ def _mission_decision_action(raw_mission_id, status, command):
         "telegram_text": (
             f"Mission {status}.\n\n"
             f"Mission: {mission_id}\n"
-            "This records your decision only and does not execute build actions. CHARLIE still cannot run shell commands, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records."
+            f"Approval: {approval_level or 'unchanged'}\n"
+            "This records your decision for the Codex runner handoff and does not execute build actions. Telegram still cannot run shell commands directly, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records."
         )[:MAX_REPLY_CHARS],
         "mission_store": result,
         "reply_markup": _main_keyboard(),
@@ -556,7 +568,7 @@ def _mission_detail_text(mission):
         f"Approval: {mission.get('approval_level')}\n"
         f"Title: {mission.get('title')}\n\n"
         f"Owner decision: {mission.get('owner_decision') or 'none recorded'}\n\n"
-        "Commands: /approve <id>, /pause <id>, /reject <id>. These record decisions only and do not execute build actions."
+        "Commands: /approve <id> level3, /approve <id> level4, /pause <id>, /reject <id>. These record decisions for the Codex runner handoff; Telegram does not execute shell commands directly."
     )[:MAX_REPLY_CHARS]
 
 
@@ -566,11 +578,27 @@ def _mission_decision_keyboard(mission_id):
         return _main_keyboard()
     return {
         "inline_keyboard": [[
-            {"text": "Approve", "callback_data": f"approve:{mission_id}"},
+            {"text": "Approve L3", "callback_data": f"approve:{mission_id} level3"},
+            {"text": "Approve L4", "callback_data": f"approve:{mission_id} level4"},
+        ], [
             {"text": "Pause", "callback_data": f"pause:{mission_id}"},
             {"text": "Reject", "callback_data": f"reject:{mission_id}"},
         ]]
     }
+
+
+def _parse_mission_decision_input(value):
+    parts = str(value or "").strip().split()
+    if not parts:
+        return "", ""
+    mission_id = _clean_source_value(parts[0])
+    approval_level = ""
+    for part in parts[1:]:
+        normalized = normalize_approval_level(part)
+        if normalized:
+            approval_level = normalized
+            break
+    return mission_id, approval_level
 
 
 def _looks_like_mission_id(value):

@@ -68,12 +68,14 @@ def charlie_build_relay_mission_decision_route(mission_id):
     payload = request.get_json(silent=True) or {}
     status = str(payload.get("status", "") or "").strip()
     owner_decision = str(payload.get("owner_decision", "") or "").strip()
+    approval_level = str(payload.get("approval_level", "") or "").strip()
     result, status_code = update_mission_status(
         mission_id,
         status,
         owner_decision=owner_decision or f"Owner set mission status to {status}.",
+        approval_level=approval_level,
         event_type="approval_decision",
         notes=owner_decision or f"Owner set mission status to {status}.",
-        metadata={"source": "owner_api"},
+        metadata={"source": "owner_api", "approval_level": approval_level},
     )
     return jsonify(result), status_code

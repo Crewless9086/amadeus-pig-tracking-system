@@ -38,6 +38,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
+        self.assertEqual(result["runner_mode"], "code_test_pr")
         update_status.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_missions")
@@ -57,8 +58,24 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["status"], "mission_picked_up")
         self.assertIn("Build useful thing from Telegram.", content)
         self.assertIn("CHARLIE_MISSION_PROTOCOL.md", content)
+        self.assertIn("Runner mode: code_test_pr", content)
+        self.assertIn("LEVEL 3: code and tests may be changed", content)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
+
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_pickup_content_includes_level_four_merge_guidance(self, list_missions):
+        mission = dict(MISSION)
+        mission["approval_level"] = "LEVEL 4"
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": [mission]}, 200)
+
+        result, status_code = charlie_mission_pickup.pick_up_next_mission(dry_run=True)
+        content = charlie_mission_pickup._codex_chat_content(mission)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["runner_mode"], "merge_after_verification")
+        self.assertIn("Runner mode: merge_after_verification", content)
+        self.assertIn("LEVEL 4: release/merge authority", content)
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.list_missions")

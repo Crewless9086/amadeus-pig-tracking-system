@@ -168,6 +168,8 @@ SAM safety remains unchanged:
 - Codex pickup bridge is being added through `scripts/charlie_mission_pickup.py` so a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
 - CHARLIE V1 mission cockpit is active in build: owner-only `/charlie` page, mission queue status cards, decision buttons, and local runner watch mode.
 - CHARLIE cockpit and runner remain non-executing: they record/pick up missions only and cannot merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+- CHARLIE runner approval-level handoff is active in build: Telegram and `/charlie` can record LEVEL 1, LEVEL 3, and LEVEL 4 mission authority; the Codex pickup bridge writes runner mode into `planning/CODEX_CHAT.md`.
+- Current rule: Telegram/dashboard do not execute shell commands directly. A running Codex/Cursor session executes within the recorded approval level and hard stops.
 
 ## FRED Status
 

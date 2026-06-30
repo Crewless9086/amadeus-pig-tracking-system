@@ -5,6 +5,7 @@ from modules.charlie.mission_store import (
     get_mission,
     list_missions,
     mission_status_summary,
+    normalize_approval_level,
     record_mission,
     record_mission_event,
     update_mission_status,
@@ -134,6 +135,44 @@ class CharlieMissionStoreTests(unittest.TestCase):
         update_params = connection.cursor_instance.executed[0][1]
         self.assertEqual(update_params["status"], "approved")
         self.assertEqual(update_params["owner_decision"], "Owner approved.")
+
+    def test_update_mission_status_can_update_approval_level(self):
+        connection = FakeConnection([("MISSION-1",)])
+
+        result, status_code = update_mission_status(
+            "MISSION-1",
+            "approved",
+            owner_decision="Owner approved code build.",
+            approval_level="level3",
+            event_type="approval_decision",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["approval_level"], "LEVEL 3")
+        update_sql, update_params = connection.cursor_instance.executed[0]
+        self.assertIn("approval_level = %(approval_level)s", update_sql)
+        self.assertEqual(update_params["approval_level"], "LEVEL 3")
+
+    def test_normalize_approval_level_accepts_short_forms(self):
+        self.assertEqual(normalize_approval_level("level4"), "LEVEL 4")
+        self.assertEqual(normalize_approval_level("4"), "LEVEL 4")
+        self.assertEqual(normalize_approval_level("LEVEL-3"), "LEVEL 3")
+
+    def test_update_mission_status_rejects_unknown_approval_level(self):
+        result, status_code = update_mission_status(
+            "MISSION-1",
+            "approved",
+            approval_level="execute",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([("MISSION-1",)]),
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_approval_level")
 
     def test_update_mission_status_rejects_unknown_status(self):
         result, status_code = update_mission_status("MISSION-1", "execute_shell", database_url="")

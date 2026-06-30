@@ -95,6 +95,8 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "status": "dry_run",
             "mission_id": mission_id,
             "title": mission.get("title"),
+            "approval_level": mission.get("approval_level"),
+            "runner_mode": _runner_mode(mission.get("approval_level")),
             "would_write": "planning/CODEX_CHAT.md",
             "would_mark_status": "in_progress",
         }, 200
@@ -124,6 +126,8 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "status": "mission_picked_up",
         "mission_id": mission_id,
         "title": mission.get("title"),
+        "approval_level": mission.get("approval_level"),
+        "runner_mode": _runner_mode(mission.get("approval_level")),
         "codex_chat_written": True,
         "mission_status": "in_progress",
     }, 200
@@ -136,6 +140,8 @@ def _codex_chat_content(mission):
     mission_type = str(mission.get("mission_type") or "feature build").strip()
     approval_level = str(mission.get("approval_level") or "LEVEL 3").strip()
     mission_id = str(mission.get("mission_id") or "").strip()
+    runner_mode = _runner_mode(approval_level)
+    level_guidance = _approval_level_guidance(approval_level)
     return f"""# CODEX CHAT - ACTIVE MISSION TEMPLATE
 
 This mission was picked up from the CHARLIE Supabase mission queue.
@@ -190,6 +196,15 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 Mission ID: {mission_id}
 Mission title: {title}
 Mission status at pickup: in_progress
+Runner mode: {runner_mode}
+```
+
+---
+
+## APPROVAL LEVEL HANDOFF
+
+```text
+{level_guidance}
 ```
 
 ---
@@ -202,6 +217,31 @@ Mission status at pickup: in_progress
 4. Proceed only within the approved mission level.
 5. Update docs and debrief when done.
 """
+
+
+def _runner_mode(approval_level):
+    level = str(approval_level or "").strip().upper().replace("LEVEL", "").strip()
+    return {
+        "0": "report_only",
+        "1": "read_only_scope",
+        "2": "docs_planning",
+        "3": "code_test_pr",
+        "4": "merge_after_verification",
+        "5": "red_zone_requires_explicit_confirmation",
+    }.get(level, "unknown_requires_review")
+
+
+def _approval_level_guidance(approval_level):
+    mode = _runner_mode(approval_level)
+    guidance = {
+        "report_only": "LEVEL 0: inspect and report only. Do not edit files, commit, push, merge, deploy, migrate, or write production data.",
+        "read_only_scope": "LEVEL 1: read-only investigation and planning. Do not edit files beyond explicit owner-approved scratch/report notes.",
+        "docs_planning": "LEVEL 2: docs/planning edits may be made. Do not edit app code, tests, migrations, templates, static assets, or production data.",
+        "code_test_pr": "LEVEL 3: code and tests may be changed within the mission scope. Create a branch, run tests, commit, push, and open a PR. Do not merge.",
+        "merge_after_verification": "LEVEL 4: release/merge authority after diff and tests are verified. Still do not apply migrations, deploy manually, or perform production writes unless separately approved.",
+        "red_zone_requires_explicit_confirmation": "LEVEL 5: red-zone work still requires exact owner confirmation for destructive actions, migrations, production data writes, secrets, sends, payments, reservations, public posts, and lifecycle writes.",
+    }
+    return guidance.get(mode, "Approval level is unclear. Stop and ask owner before editing or running build actions.")
 
 
 def _write_codex_chat(content):

@@ -70,11 +70,13 @@ Current safe commands:
 - `/mission <idea>` - create mission intake
 - `/mission <mission id>` - show mission detail
 - `/debrief <mission id>` - show mission detail/debrief view
-- `/approve <mission id>` - record owner approval
+- `/approve <mission id> level1` - approve read-only investigation
+- `/approve <mission id> level3` - approve code/test/PR handoff
+- `/approve <mission id> level4` - approve merge/release handoff after verification
 - `/pause <mission id>` - pause a mission
 - `/reject <mission id>` - reject a mission
 
-Approval commands record decisions only. They do not trigger Codex runtime by themselves.
+Approval commands record owner authority for the Codex runner handoff. Telegram never executes shell commands directly. A running Codex/Cursor session or local runner must still pick up the approved mission and obey the recorded level.
 
 ## Codex Pickup Bridge
 
@@ -107,6 +109,15 @@ python scripts/charlie_mission_pickup.py --watch --notify
 
 Watch mode polls for an approved mission and picks up the first one it finds. It still only writes `planning/CODEX_CHAT.md`, marks the mission `in_progress`, and notifies the owner. It does not execute arbitrary build commands.
 
+The pickup bridge writes the mission approval level and runner mode into `planning/CODEX_CHAT.md`:
+
+- `LEVEL 0` -> report only
+- `LEVEL 1` -> read-only scope and evidence
+- `LEVEL 2` -> docs/planning edits
+- `LEVEL 3` -> code/test/PR build, no merge
+- `LEVEL 4` -> merge/release handoff after diff and tests are verified
+- `LEVEL 5` -> red-zone work still requires exact owner confirmation
+
 ## CHARLIE Mission Cockpit
 
 The owner-only cockpit lives at:
@@ -117,7 +128,7 @@ The owner-only cockpit lives at:
 
 The cockpit shows mission queue records, counts by status, and safe decision buttons. Cockpit decisions call the same protected mission APIs used by Telegram command decisions.
 
-The cockpit cannot execute builds, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+The cockpit can approve missions by level. The cockpit cannot execute shell commands directly, deploy manually, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 
 ## Required Codex Startup
 
@@ -145,6 +156,10 @@ The approval levels in `planning/CODEX_CHAT.md` remain authoritative:
 - LEVEL 5 - destructive / production data-changing work
 
 If the owner approves a mission in Telegram, that approval means "Codex may proceed within the recorded approval level and hard stops." It does not override red-zone actions.
+
+LEVEL 3 approval lets Codex create a branch, edit scoped code/docs/tests, run tests, commit, push, and open a PR. It does not allow merging.
+
+LEVEL 4 approval lets Codex verify a named PR/diff/tests and merge when clean. It does not allow migrations, production data writes, manual deploys, destructive cleanup, customer sends, public posts, payments, reservations, or farm lifecycle writes unless those actions are separately and explicitly approved.
 
 ## Hard Stops
 
