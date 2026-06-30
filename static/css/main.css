@@ -7840,6 +7840,45 @@ body.oom-farm-command-body {
     margin-top: 10px;
 }
 
+.charlie-agent-execution {
+    border-top: 1px solid #d8e1dd;
+    padding-top: 10px;
+}
+
+.charlie-agent-timeline {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-agent-stage {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid #d8e1dd;
+    border-radius: 8px;
+    background: #f7faf9;
+}
+
+.charlie-agent-stage > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.charlie-agent-stage > div span {
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #edf3f1;
+    color: #3f504a;
+    font-size: 0.82rem;
+}
+
+.charlie-agent-stage pre {
+    max-height: 160px;
+    margin: 0;
+}
+
 .charlie-new-mission-edit form {
     display: grid;
     gap: 10px;

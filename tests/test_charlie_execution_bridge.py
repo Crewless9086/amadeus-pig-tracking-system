@@ -118,13 +118,18 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "summary": f"{agent} completed",
                 "errors": [],
                 "bugs": [],
+                "files_inspected": ["modules/charlie/execution_bridge.py"],
+                "commands_run": ["rg run_agent_execution_bridge_v2 modules/charlie/execution_bridge.py"],
                 "next_action": "continue",
                 "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
                 "test_plan": ["tests"] if agent == "planner" else None,
                 "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
                 "risk_notes": ["risk checked"] if agent == "architect" else None,
+                "implementation_plan": ["patch runner"] if agent == "architect" else None,
                 "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
+                "build_notes": ["patched"] if agent == "builder" else None,
                 "tests_run": ["unit tests passed"] if agent == "tester" else None,
+                "test_status": "pass" if agent == "tester" else None,
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["owner review ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
@@ -149,8 +154,159 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertIn("agent_execution", vault_metadata)
         self.assertIn("agent_artifacts", vault_metadata["review_packet"])
+        self.assertIn("quality_gates", vault_metadata["review_packet"])
         self.assertEqual(vault_metadata["review_packet"]["review_status"], "ready_for_owner_review")
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_sends_failed_tester_back_to_builder(
+        self,
+        get_mission,
+        update_vault,
+        update_workflow,
+        write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        tester_calls = {"count": 0}
+        builder_calls = {"count": 0}
+
+        def fake_runner(*_args, **kwargs):
+            prompt = kwargs["input"]
+            agent = "reviewer"
+            for candidate in execution_bridge.AGENT_SEQUENCE:
+                if f"{candidate.upper()} agent" in prompt:
+                    agent = candidate
+                    break
+            if agent == "builder":
+                builder_calls["count"] += 1
+            if agent == "tester":
+                tester_calls["count"] += 1
+            payload = {
+                "summary": f"{agent} completed",
+                "errors": [],
+                "bugs": [],
+                "files_inspected": ["modules/charlie/execution_bridge.py"],
+                "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
+                "next_action": "continue",
+                "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
+                "test_plan": ["tests"] if agent == "planner" else None,
+                "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
+                "risk_notes": ["risk checked"] if agent == "architect" else None,
+                "implementation_plan": ["patch runner"] if agent == "architect" else None,
+                "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
+                "build_notes": ["patched"] if agent == "builder" else None,
+                "tests_run": ["unit tests"] if agent == "tester" else None,
+                "test_status": "fail" if agent == "tester" and tester_calls["count"] == 1 else ("pass" if agent == "tester" else None),
+                "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
+                "release_notes": ["ready"] if agent == "reviewer" else None,
+                "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+            }
+            payload = {key: value for key, value in payload.items() if value is not None}
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "agent_execution_completed")
+        self.assertGreaterEqual(builder_calls["count"], 2)
+        self.assertGreaterEqual(tester_calls["count"], 2)
+        vault_metadata = update_vault.call_args.args[1]
+        self.assertTrue(vault_metadata["review_packet"]["backflow_events"])
+        self.assertTrue(any(call.args[0].get("status") == "agent_backflow" for call in write_heartbeat.call_args_list))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_send_back_reruns_from_target_stage_only(
+        self,
+        get_mission,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = dict(MISSION)
+        mission["metadata"] = {
+            "review_packet": {
+                "return_to_stage": "builder",
+                "agent_artifacts": {
+                    "planner": {
+                        "summary": "planner preserved",
+                        "acceptance_criteria": ["acceptance"],
+                        "test_plan": ["tests"],
+                        "files_inspected": ["docs/00-start-here/CURRENT_STATE.md"],
+                        "commands_run": ["rg CHARLIE docs"],
+                    },
+                    "architect": {
+                        "summary": "architect preserved",
+                        "files_to_inspect": ["modules/charlie/execution_bridge.py"],
+                        "risk_notes": ["risk"],
+                        "implementation_plan": ["plan"],
+                        "files_inspected": ["modules/charlie/execution_bridge.py"],
+                        "commands_run": ["rg run_agent_execution_bridge_v2 modules/charlie/execution_bridge.py"],
+                    },
+                },
+            }
+        }
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        called_agents = []
+
+        def fake_runner(*_args, **kwargs):
+            prompt = kwargs["input"]
+            agent = "reviewer"
+            for candidate in execution_bridge.AGENT_SEQUENCE:
+                if f"{candidate.upper()} agent" in prompt:
+                    agent = candidate
+                    break
+            called_agents.append(agent)
+            payload = {
+                "summary": f"{agent} completed",
+                "errors": [],
+                "bugs": [],
+                "files_inspected": ["modules/charlie/execution_bridge.py"],
+                "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
+                "next_action": "continue",
+                "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
+                "build_notes": ["patched"] if agent == "builder" else None,
+                "tests_run": ["unit tests"] if agent == "tester" else None,
+                "test_status": "pass" if agent == "tester" else None,
+                "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
+                "release_notes": ["ready"] if agent == "reviewer" else None,
+                "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+            }
+            payload = {key: value for key, value in payload.items() if value is not None}
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(called_agents, ["builder", "tester", "reviewer"])
+        vault_metadata = update_vault.call_args.args[1]
+        self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
+        self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_rejects_release_approved_mission(self, get_mission):
@@ -353,7 +509,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         statuses = [call.args[1] for call in update_status.call_args_list]
         self.assertEqual(statuses, ["release_in_progress", "blocked"])
 
-    @patch("modules.charlie.execution_bridge._verify_release_url", return_value={"verified": False, "status": "verify_url_not_provided"})
+    @patch("modules.charlie.execution_bridge._wait_for_release_verification", return_value={"verified": False, "status": "verify_url_not_provided", "attempts": 1})
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.get_mission")
@@ -383,6 +539,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         statuses = [call.args[1] for call in update_status.call_args_list]
         self.assertEqual(statuses, ["release_in_progress", "merged"])
         update_vault.assert_called_once()
+        release_packet = update_vault.call_args.args[1]["release_packet"]
+        self.assertIn("deployment_watch", release_packet)
 
 
 if __name__ == "__main__":
