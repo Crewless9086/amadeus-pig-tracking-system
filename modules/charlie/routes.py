@@ -131,7 +131,7 @@ def charlie_build_relay_runner_status_route():
         next_action = "Codex is expected to finish or debrief the active mission before another approved mission is picked up."
     elif next_release_approved:
         runner_status = "release_approved_waiting_for_local_release_bridge"
-        next_action = "Final owner approval is recorded. A local Codex release bridge must perform merge/deploy verification before completion."
+        next_action = "Final owner approval is recorded. The full local runner release bridge can merge a referenced PR, or block safely if release evidence is missing."
     elif next_approved:
         runner_status = "approved_waiting_for_local_runner"
         next_action = (
@@ -157,7 +157,7 @@ def charlie_build_relay_runner_status_route():
             if local_runner_scope == "render_cannot_see_laptop_runner"
             else "This dashboard can read the local .charlie_runner heartbeat."
         ),
-        "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30",
+        "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30",
         "local_runner_control_commands": {
             "status": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py status",
             "start": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py start",

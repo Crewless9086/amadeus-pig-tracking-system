@@ -125,9 +125,49 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_called_once_with(5)
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_missions")
-    def test_continuous_watch_waits_when_mission_is_active(self, list_missions, write_heartbeat, sleep):
+    def test_continuous_watch_executes_active_in_progress_when_enabled(self, list_missions, write_heartbeat, execute_codex, sleep):
+        def fake_list_missions(status="approved", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE",
+                        "title": "Active mission",
+                        "status": "in_progress",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+        execute_codex.return_value = ({
+            "success": True,
+            "status": "codex_execution_completed",
+            "mission_id": "CHARLIE-MISSION-ACTIVE",
+            "mission_status": "pr_ready",
+        }, 200)
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=1,
+            continuous=True,
+            execute_codex=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "codex_execution_completed")
+        self.assertEqual(result["mission_id"], "CHARLIE-MISSION-ACTIVE")
+        execute_codex.assert_called_once()
+        write_heartbeat.assert_called()
+        sleep.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_waits_when_mission_is_active_without_execute_flag(self, list_missions, write_heartbeat, sleep):
         def fake_list_missions(status="approved", limit=10):
             if status == "in_progress":
                 return ({
@@ -183,6 +223,51 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "active_mission_in_progress")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-RELEASE")
+        write_heartbeat.assert_called()
+        sleep.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.process_release_approved_mission")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_processes_release_approved_when_enabled(self, list_missions, write_heartbeat, process_release, sleep):
+        def fake_list_missions(status="approved", limit=10):
+            if status == "release_approved":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-RELEASE",
+                        "title": "Release mission",
+                        "status": "release_approved",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+        process_release.return_value = ({
+            "success": True,
+            "status": "release_pr_merged",
+            "mission_id": "CHARLIE-MISSION-RELEASE",
+            "mission_status": "merged",
+        }, 200)
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=1,
+            continuous=True,
+            watch_release=True,
+            auto_merge_pr=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "release_pr_merged")
+        process_release.assert_called_once_with(
+            "CHARLIE-MISSION-RELEASE",
+            notify=False,
+            auto_close_no_release=False,
+            auto_merge_pr=True,
+        )
         write_heartbeat.assert_called()
         sleep.assert_not_called()
 

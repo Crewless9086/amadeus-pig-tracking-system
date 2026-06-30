@@ -204,7 +204,13 @@ Continuous local watch mode:
 python scripts/charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30
 ```
 
-Continuous mode keeps polling after each check. It will not pick up another approved mission while a mission is already `in_progress` or `pr_ready`.
+Full local automation mode:
+
+```bash
+python scripts/charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30
+```
+
+Full local automation keeps polling after each check. It picks up approved missions, runs the local Codex execution bridge, sends an owner notification when the mission reaches `pr_ready`, then waits for owner review. After owner final approval records `release_approved`, the local release bridge may merge a PR referenced by the review packet. If release evidence is missing, it blocks and notifies the owner instead of pretending to deploy. It will not pick up another approved mission while a mission is already `in_progress`, `pr_ready`, or `release_in_progress`.
 
 The pickup bridge writes the mission approval level and runner mode into `planning/CODEX_CHAT.md`:
 
@@ -247,6 +253,14 @@ python scripts/charlie_release_bridge.py --mission-id <mission id>
 
 This writes a release packet artifact under `.charlie_runner/executions/` and does not merge, deploy, or mark complete.
 
+For missions with a reviewed PR link/number in the owner review packet, the local release bridge can merge after final approval:
+
+```bash
+python scripts/charlie_release_bridge.py --mission-id <mission id> --merge-pr
+```
+
+If `--verify-url` is supplied and returns a successful HTTP response after merge, the mission may be marked `deployed`; otherwise it is marked `merged` and Render's normal main-branch deployment remains responsible for the live rollout.
+
 For missions where owner final approval is enough and no merge/deploy is required, the local operator may close the mission with:
 
 ```bash
@@ -255,7 +269,7 @@ python scripts/charlie_release_bridge.py --mission-id <mission id> --complete-no
 
 That command moves the mission through `release_in_progress`, records a no-release closeout packet, and marks it `done`.
 
-Merge/deploy release execution remains a later bridge. The release bridge must not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+The release bridge must not apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records. PR merge automation requires `release_approved` status and a PR reference in the review packet.
 
 ## Local Runner Control
 

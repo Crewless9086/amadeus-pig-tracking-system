@@ -11,6 +11,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from modules.charlie.mission_store import list_missions, update_mission_status
 from modules.charlie.runner_control import write_runner_heartbeat
+from modules.charlie.execution_bridge import (
+    DEFAULT_TIMEOUT_SECONDS,
+    complete_no_release_mission,
+    prepare_release_execution,
+    run_codex_execution_bridge,
+    run_release_execution,
+)
 from scripts.charlie_notify import _format_message, main as notify_main
 
 
@@ -27,6 +34,11 @@ def main():
     parser.add_argument("--watch", action="store_true", help="Poll for approved missions until one is picked up or Ctrl+C stops the runner.")
     parser.add_argument("--continuous", action="store_true", help="Keep polling after pickup and wait while another mission is active.")
     parser.add_argument("--interval-seconds", type=int, default=60)
+    parser.add_argument("--execute-codex", action="store_true", help="After pickup, run the local Codex execution bridge and stop at owner review.")
+    parser.add_argument("--codex-timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--watch-release", action="store_true", help="Also watch release_approved missions and run the local release bridge.")
+    parser.add_argument("--auto-close-no-release", action="store_true", help="For release_approved missions with no release needed, mark done automatically.")
+    parser.add_argument("--auto-merge-pr", action="store_true", help="For release_approved missions with a PR link, merge the PR locally with gh.")
     args = parser.parse_args()
 
     if args.watch:
@@ -37,6 +49,11 @@ def main():
             notify=args.notify,
             interval_seconds=args.interval_seconds,
             continuous=args.continuous,
+            execute_codex=args.execute_codex,
+            codex_timeout_seconds=args.codex_timeout_seconds,
+            watch_release=args.watch_release,
+            auto_close_no_release=args.auto_close_no_release,
+            auto_merge_pr=args.auto_merge_pr,
         )
     else:
         result, status_code = pick_up_next_mission(
@@ -45,11 +62,35 @@ def main():
             dry_run=args.dry_run,
             notify=args.notify,
         )
+        if (
+            args.execute_codex
+            and result.get("status") == "mission_picked_up"
+            and not args.dry_run
+            and status_code < 400
+        ):
+            result, status_code = execute_codex_for_mission(
+                result.get("mission_id", ""),
+                notify=args.notify,
+                timeout_seconds=args.codex_timeout_seconds,
+            )
     print(result)
     return 0 if status_code < 400 else 1
 
 
-def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, interval_seconds=60, max_checks=None, continuous=False):
+def watch_for_mission(
+    status="approved",
+    limit=10,
+    dry_run=False,
+    notify=False,
+    interval_seconds=60,
+    max_checks=None,
+    continuous=False,
+    execute_codex=False,
+    codex_timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    watch_release=False,
+    auto_close_no_release=False,
+    auto_merge_pr=False,
+):
     interval_seconds = max(5, int(interval_seconds or 60))
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
@@ -58,6 +99,18 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
         if continuous:
             active = _active_mission()
             if active:
+                if execute_codex and active.get("status") == "in_progress" and not dry_run:
+                    result, status_code = execute_codex_for_mission(
+                        active.get("mission_id", ""),
+                        notify=notify,
+                        timeout_seconds=codex_timeout_seconds,
+                    )
+                    result["checks"] = checks
+                    write_runner_heartbeat(result)
+                    if max_checks is not None and checks >= max_checks:
+                        return result, status_code
+                    time.sleep(interval_seconds)
+                    continue
                 result = {
                     "success": True,
                     "status": "active_mission_in_progress",
@@ -71,6 +124,21 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
                     return result, 200
                 time.sleep(interval_seconds)
                 continue
+            if watch_release:
+                release_mission = _release_approved_mission()
+                if release_mission:
+                    result, status_code = process_release_approved_mission(
+                        release_mission.get("mission_id", ""),
+                        notify=notify,
+                        auto_close_no_release=auto_close_no_release,
+                        auto_merge_pr=auto_merge_pr,
+                    )
+                    result["checks"] = checks
+                    write_runner_heartbeat(result)
+                    if max_checks is not None and checks >= max_checks:
+                        return result, status_code
+                    time.sleep(interval_seconds)
+                    continue
         result, status_code = pick_up_next_mission(
             status=status,
             limit=limit,
@@ -80,6 +148,14 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
         result["checks"] = checks
         write_runner_heartbeat(result)
         if result.get("status") == "mission_picked_up" and continuous and status_code < 400:
+            if execute_codex and not dry_run:
+                result, status_code = execute_codex_for_mission(
+                    result.get("mission_id", ""),
+                    notify=notify,
+                    timeout_seconds=codex_timeout_seconds,
+                )
+                result["checks"] = checks
+                write_runner_heartbeat(result)
             if max_checks is not None and checks >= max_checks:
                 return result, status_code
             time.sleep(interval_seconds)
@@ -101,6 +177,52 @@ def _active_mission():
         if status_code < 400 and loaded.get("missions"):
             return loaded["missions"][0]
     return None
+
+
+def _release_approved_mission():
+    loaded, status_code = list_missions(status="release_approved", limit=1)
+    if status_code < 400 and loaded.get("missions"):
+        return loaded["missions"][0]
+    return None
+
+
+def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    result, status_code = run_codex_execution_bridge(
+        mission_id=mission_id,
+        execute_codex=True,
+        timeout_seconds=timeout_seconds,
+    )
+    if notify:
+        if status_code < 400 and result.get("status") == "codex_execution_completed":
+            _send_review_ready_notification(result)
+        else:
+            _send_blocked_notification(
+                "Codex execution blocked",
+                f"Mission {mission_id} did not complete local Codex execution. Status: {result.get('status')}.",
+            )
+    return result, status_code
+
+
+def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False):
+    if auto_close_no_release:
+        result, status_code = complete_no_release_mission(mission_id=mission_id)
+    elif auto_merge_pr:
+        result, status_code = run_release_execution(mission_id=mission_id, merge_pr=True)
+    else:
+        result, status_code = prepare_release_execution(mission_id=mission_id)
+        result["status"] = "release_waiting_for_explicit_mode"
+        result["next_action"] = "Restart runner with --auto-close-no-release or --auto-merge-pr for automatic release handling."
+    if notify:
+        if status_code < 400 and result.get("mission_status") in {"done", "merged", "deployed"}:
+            _send_done_notification(result)
+        elif status_code < 400:
+            _send_release_ready_notification(result)
+        else:
+            _send_blocked_notification(
+                "Release bridge blocked",
+                f"Mission {mission_id} release bridge stopped. Status: {result.get('status')}.",
+            )
+    return result, status_code
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
@@ -387,16 +509,58 @@ def _write_codex_chat(content):
 
 
 def _send_pickup_notification(mission):
+    return _send_notification(
+        "info",
+        "Mission picked up",
+        f"Codex picked up: {mission.get('title')} ({mission.get('mission_id')}).",
+    )
+
+
+def _send_review_ready_notification(result):
+    return _send_notification(
+        "success",
+        "Mission ready for review",
+        (
+            f"Mission {result.get('mission_id')} is at owner review. "
+            "Open the CHARLIE dashboard Review section and inspect the packet before final approval."
+        ),
+    )
+
+
+def _send_release_ready_notification(result):
+    return _send_notification(
+        "warning",
+        "Release approval waiting",
+        (
+            f"Mission {result.get('mission_id')} has final approval, but release mode is not automatic yet. "
+            f"Status: {result.get('status')}."
+        ),
+    )
+
+
+def _send_done_notification(result):
+    return _send_notification(
+        "done",
+        "Mission completed",
+        f"Mission {result.get('mission_id')} reached {result.get('mission_status') or result.get('status')}.",
+    )
+
+
+def _send_blocked_notification(title, message):
+    return _send_notification("blocked", title, message)
+
+
+def _send_notification(level, title, message):
     original_argv = list(sys.argv)
     try:
         sys.argv = [
             "charlie_notify.py",
             "--level",
-            "info",
+            level,
             "--title",
-            "Mission picked up",
+            title,
             "--message",
-            f"Codex picked up: {mission.get('title')} ({mission.get('mission_id')}).",
+            message,
         ]
         return notify_main()
     finally:

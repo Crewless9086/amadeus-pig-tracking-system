@@ -423,7 +423,7 @@ def _mission_title_line(mission):
 
 def _active_next_instruction(status):
     if status == "pr_ready":
-        return "Next: owner review in CHARLIE dashboard. Final approval records release_approved; it does not merge or deploy by itself."
+        return "Next: owner review in CHARLIE dashboard. Final approval records release_approved for the local release watcher."
     if status == "release_in_progress":
         return "Next: local Codex release bridge must finish release verification and mark done."
     return "Next: let Codex finish and debrief this mission before picking up another one."

@@ -83,9 +83,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - records explicit approval levels from dashboard and Telegram: LEVEL 1 investigation, LEVEL 3 code/test/PR, LEVEL 4 merge/release verification
   - pickup bridge writes runner mode into `planning/CODEX_CHAT.md` so Codex knows whether to report, build a PR, or verify/merge
   - runner handoff panel shows active mission, next approved mission waiting for pickup, and the local continuous runner command
-  - continuous watch mode: `scripts/charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30`
+  - continuous full automation mode: `scripts/charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30`
   - Telegram/dashboard do not execute shell commands directly; a running Codex/Cursor session remains the execution boundary
-  - does not execute builds, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
+  - executes only from the local laptop runner, not from Telegram/Render routes; it can run Codex locally and merge reviewed PRs after final approval, but still must not apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
 - CHARLIE mission queue release checklist:
   - migration `202606300001_create_charlie_mission_queue.sql` is applied
   - keep `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED` enabled only after the migration is applied
@@ -116,10 +116,10 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - pickup watcher writes a local `.charlie_runner/` heartbeat; this folder is ignored by git
   - Telegram `/status` should say whether the local runner is active
   - Windows PID liveness checks must remain non-destructive; do not reintroduce `os.kill(pid, 0)` on Windows
-- CHARLIE Stage 8 owner review gate follow-ups:
-  - make runner/Codex populate `review_packet` consistently with changed files, commits, PR/diff, local preview URL/command, Render preview, bugs, errors, risks, and test evidence
-  - smoke-test `scripts/charlie_codex_execution_bridge.py --execute-codex` on a low-risk mission before wiring it into continuous runner startup
-  - later add merge/deploy release execution after `release_approved`; current release bridge only supports explicit no-release closeout
+- CHARLIE Stage 8 full local automation:
+  - local runner can pick up approved missions, run Codex locally, populate `review_packet`, move to owner review, and notify the owner
+  - final approval records `release_approved`; the local release watcher can merge a reviewed PR reference with `--auto-merge-pr`
+  - release automation blocks and notifies if the review packet has no PR reference instead of silently marking deployed
   - keep Telegram/dashboard as decision recorders only; do not let web routes execute shell, merge, deploy, send customers, take payments, reserve stock, or change farm lifecycle records directly
   - use this review gate before CHARLIE coordinates SAM, Oom Sakkie, FRED, Ledger, Beacon, or other income-stream build work
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
