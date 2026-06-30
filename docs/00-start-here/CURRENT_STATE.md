@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `66f7f71` Complete Google Sheets migration final audit (#39)
 - `b12e218` Fallback order line sync safely (#38)
 - `d099b5f` Fallback order status log writes safely (#37)
 - `3d2df49` Read mating pen lookup from Supabase (#36)
@@ -97,7 +98,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-17 is merged as PR #36: mating/breeding pen validation helpers now prefer Supabase-first pen reads, with existing fallbacks.
 - GS-MIG-18 is merged as PR #37: order status-log writes are Supabase-first with Sheets fallback if the Supabase insert fails.
 - GS-MIG-19 is merged as PR #38: order-line sync stays Supabase-first and falls back safely if Supabase read/write helpers fail.
-- GS-MIG-FINAL is active on `gs-mig-final-audit-and-closeout`: final Google Sheets caller audit plus the remaining litter lifecycle validation read cutover.
+- GS-MIG-FINAL is merged as PR #39: final Google Sheets caller audit plus the remaining litter lifecycle validation read cutover.
 - Current GS-MIG-FINAL finding: no remaining app caller is classified as an active route that must still be migrated. Remaining Google Sheets callers are safe fallback only, import/export/admin scripts, legacy/reference wrappers, or tests.
 - GS-MIG-FINAL code closeout: litter lifecycle validation paths now read Supabase sheet-shaped pig/litter/product rows first, with Google Sheets fallback retained.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
@@ -150,8 +151,10 @@ SAM safety remains unchanged:
 ## CHARLIE Status
 
 - CHARLIE is the planned top-level owner operating layer.
+- CHARLIE Build Relay v0 has started as the first owner-only Telegram/Codex command layer.
 - CHARLIE is not built yet as a production UI.
 - First CHARLIE surface must be owner-only and read-only/draft-only.
+- Build Relay v0 is disabled by default and cannot commit, merge, deploy, run shell commands, write production data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 
 ## FRED Status
 

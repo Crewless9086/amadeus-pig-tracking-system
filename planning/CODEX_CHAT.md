@@ -1,14 +1,10 @@
-﻿# CODEX CHAT - ACTIVE MISSION
-Hi Codex, you are my head developer. I snacked you from the billionairs (Elon Musk, Naval Ravikant, Jeff Bezos and top polymaths), you are taking my ideas and reprogramming them into full blown billionar/CEO operarting system. You take something small and deepdive into our system and plan the best method to make this into something big. You see leverage, long term vision and asynmetric outcomes. You make a plan to get the best out of this, taking into consideration everything we have set up this far and how we can make it work togther. 
-
-You're goals is to make us money and make us grow to become these legendary billionairs. You always think how best we can get that way, fast save and with precision. You advise, plan strategically and you keep going till you get almost 100% certantly this is correct and will work. You test, find bugs, fix problems and keep testing till you kow what you are about to debrief me on is the final and the utter best with 98% confidence this will work. You keep trying autonoumsly to get to these results. 
-
-This is the single active mission intake file for Codex/Cursor.               
-Owner can write rough thoughts here. Codex must turn them into a clear mission, plan, safe scope, implementation path, tests, and debrief.
+# CODEX CHAT - ACTIVE MISSION TEMPLATE
 
 This is the single active mission intake file for Codex/Cursor.
 
 Owner can write rough thoughts here. Codex must turn them into a clear mission, plan, safe scope, implementation path, tests, and debrief.
+
+Use this file when you want to start a new mission without writing a perfect prompt.
 
 ---
 
@@ -16,15 +12,11 @@ Owner can write rough thoughts here. Codex must turn them into a clear mission, 
 
 ### Concept / Problem / Idea
 
-The probelm we had was when I added bulk weights and pen movements we got and error or fault which was related to the google sheet time out, we tried to fix this a few times but we keep getting stuck. I got tired of this and wanted to know if we migrated to supabase would this resolve these google sheet hiccups? I rather changed to something working instead of patching up and struggling. 
-
-Owner notes:
-
-a plan was formulated and I had a look , but the idea is that I wanted a full migration and ensure all functions, google sheet formulas and results are all carried over to supabase, meaninf the backend has to make up for all formulas in the current google sheets and so forth. That said it's a big mission but I do think this will resolve all these minor issues? 
+The concept is to create a lightweight CHARLIE Build Relay that connects me, Telegram, Cursor, and Codex so development can continue even when I am away from the laptop. This is the first practical step toward the bigger CHARLIE system, similar in spirit to Jarvis, where CHARLIE becomes my digital command layer and helps manage the build process. I have created a dedicated Telegram bot, @CharlieCoreBot, which should only be used by me and must be protected so no one else can control the build system. The bot API key will be stored securely in the .env file and must never be committed, printed, exposed in frontend code, or added to documentation. The purpose of the bot is to let Codex communicate with me from Cursor while it is working: it can send me progress updates, completion reports, approval requests, hard-stop alerts, and mission summaries. Instead of stopping every few minutes for small approvals, Codex must follow the structure and authority rules written in CODEX_CHAT.md and continue working until the task is complete, tested, pressure-tested, or truly blocked. If I send a new concept through Telegram, Codex should place that concept into the correct section of CODEX_CHAT.md, read the instructions already defined there, and begin the mission using the correct repo workflow. If I ask “what is next,” Codex should read NEXT_STEPS.md, return the next available missions as clear Telegram button options, and allow me to choose one from my phone. Once I select an option, Codex should write that selected mission into CODEX_CHAT.md, follow the mission rules, update the related docs, and continue building without needing me to sit at the laptop. This relay becomes the early version of CHARLIE’s future build-command system: Telegram is my remote control, NEXT_STEPS.md is the mission menu, CODEX_CHAT.md is the active instruction file, and Codex is the builder that keeps going until the mission is complete or a real owner-level decision is required.
 
 ### Desired Outcome
 
-I have a simple sheet where my dad or the farm workers can upload bulk weight and pen movements and it's lodas with one press of a button, no time out, not isseas and all data is logged. 
+The desired outcome is that I can keep building the Amadeus Farm App, Oom Sakkie, SAM, FRED, and eventually CHARLIE from anywhere without being trapped in front of Cursor all day. I should be able to send a mission from Telegram, approve a mission by pressing a button, or ask Codex what the next priority is without opening the laptop. Codex should then read the current state, check NEXT_STEPS.md, load the chosen mission into CODEX_CHAT.md, and continue working under the rules already defined in the repo. Once a mission is active, Codex should not stop for every small implementation choice; it should build, test, pressure-test, fix bugs, update docs, commit, push, and prepare the work for review according to the approved authority level. I should only be interrupted for real red-zone decisions, such as destructive migrations, production data deletion, missing secrets, failed tests that cannot be fixed, confidence dropping below the required threshold, or any action involving customer sends, payments, public posts, reservations, or unsafe production writes. When Codex needs approval, Telegram should send me a short message with clear button choices, so I can approve, reject, pause, or choose the next path from my phone. When Codex completes a task, it should send a clear debrief showing the branch, commits, files changed, tests run, pressure-test results, PR link, deployment status, confidence score, and what I need to live-test. The system must keep CURRENT_STATE.md, NEXT_STEPS.md, and CODEX_CHAT.md updated so the repo remains clean and Codex always knows what has been done, what is active, and what comes next. This allows long autonomous build sessions instead of broken stop-start conversations where progress depends on me approving every minor step. The final outcome is a proper build-control workflow where CHARLIE eventually becomes the command layer that manages missions, approvals, Codex instructions, release tracking, owner notifications, and operational follow-ups while I continue moving and working from anywhere.
 
 ### Urgency
 
@@ -36,7 +28,9 @@ Optional. If blank, Codex must classify.
 - P3 - future planned build
 - P4 - idea/backlog
 
-This is urgent as this is holding me up, and I need to add the bulk new weight in order to continue ahead with meat sales and then setting up fred and getting beacon to do a post. I'm just getting stuck here now. 
+```text
+URGENCY?
+```
 
 ### Mission Type
 
@@ -53,6 +47,21 @@ Optional. If blank, Codex must classify.
 
 ```text
 TYPE?
+```
+
+### Approval Level
+
+Optional. If blank, Codex must choose the safest level and stop before hard stops.
+
+- LEVEL 0 - Report only
+- LEVEL 1 - Read-only investigation / planning
+- LEVEL 2 - Docs / planning edits
+- LEVEL 3 - Code/test build
+- LEVEL 4 - Release / merge / deploy
+- LEVEL 5 - Destructive / production data-changing work
+
+```text
+APPROVAL?
 ```
 
 ---
@@ -80,22 +89,24 @@ Codex must always:
 
 ---
 
-## APPROVAL LEVEL
+## APPROVAL LEVELS
 
-Codex must classify the mission into one approval level.
+Codex must classify each mission into one approval level.
 
-If owner explicitly states an approval level, use it. - I give level 5 approval on this mission
+If owner explicitly states an approval level, use it.
 If unclear, default to LEVEL 1.
 
 ### LEVEL 0 - Report Only
 
 Allowed:
+
 - inspect files
 - inspect git status/log/diff
 - read-only searches
 - produce report
 
 Forbidden:
+
 - file edits
 - commits
 - pushes
@@ -105,6 +116,7 @@ Forbidden:
 ### LEVEL 1 - Read-Only Investigation / Planning
 
 Allowed:
+
 - inspect code/docs
 - run safe read-only commands
 - run existing tests if they do not write production data
@@ -112,6 +124,7 @@ Allowed:
 - produce plan/report
 
 Forbidden:
+
 - file edits unless owner later approves
 - production writes
 - migrations
@@ -120,6 +133,7 @@ Forbidden:
 ### LEVEL 2 - Docs / Planning Edits
 
 Allowed:
+
 - edit docs/planning files
 - update `CURRENT_STATE.md`
 - update `NEXT_STEPS.md`
@@ -127,6 +141,7 @@ Allowed:
 - create report docs
 
 Forbidden:
+
 - code changes
 - migrations
 - production writes
@@ -135,12 +150,14 @@ Forbidden:
 ### LEVEL 3 - Code/Test Build
 
 Allowed:
+
 - create branch/worktree
 - edit scoped code/tests/templates/static files
 - run tests
 - commit and push only if owner explicitly says commit/push is approved
 
 Forbidden:
+
 - merge to main unless explicitly approved
 - production migrations
 - production data writes
@@ -153,12 +170,14 @@ Forbidden:
 ### LEVEL 4 - Release / Merge / Deploy
 
 Allowed only when owner explicitly approves:
+
 - merge PR
 - push to main
 - apply approved migration
 - verify deploy
 
 Must still show:
+
 - diff
 - files changed
 - tests run
@@ -170,6 +189,7 @@ Must still show:
 Requires explicit approval every time.
 
 Includes:
+
 - deleting folders/files
 - `git clean`
 - destructive reset
@@ -223,13 +243,10 @@ Codex rewrites the owner concept into a clean mission.
 
 ### Scope
 
-Allowed files/areas:
-
-Forbidden files/areas:
-
-Source of truth:
-
-Related docs:
+- Allowed files/areas:
+- Forbidden files/areas:
+- Source of truth:
+- Related docs:
 
 ### Plan
 
@@ -315,7 +332,7 @@ Do not silently delete owner notes.
 
 If owner says:
 
-"Following `CODEX_CHAT.md`, continue with `NEXT_STEPS.md`."
+`Following CODEX_CHAT.md, continue with NEXT_STEPS.md.`
 
 Codex should:
 
@@ -336,33 +353,39 @@ Codex fills this in during the mission.
 ### Mission Summary
 
 ```text
-Codex writes summary here.
+Build CHARLIE Build Relay v0: an owner-only Telegram command layer that can report status, list NEXT_STEPS mission options, prepare mission intake, and optionally update CODEX_CHAT.md when explicitly enabled by env.
 ```
 
 ### Plan
 
 ```text
-Codex writes plan here.
+1. Reuse the existing Oom Sakkie Telegram security pattern: disabled by default, owner allowlist, webhook secret, and no unsafe authority.
+2. Add CHARLIE relay policy and Telegram webhook endpoints.
+3. Support /status, /next, /select, /mission, and free-text mission intake.
+4. Keep commit/merge/deploy/shell/production-write/customer/public/payment/reservation/lifecycle authority false.
+5. Gate CODEX_CHAT.md file writes behind CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED.
+6. Document the rollout and next phases in docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md.
+7. Add tests for security, owner allowlist, button options, mission intake, and explicit CODEX_CHAT write gating.
 ```
 
 ### Execution Log
 
 ```text
-Branch: gs-mig-1-canonical-schema-dry-run
-Files changed: canonical schema migration proposal, dry-run importer, dry-run tests, active docs, GS-MIG-1 report
-Tests run: tests.test_google_sheets_farm_import_dry_run, tests.test_pig_weights_bulk_service, py_compile, live read-only dry-run
-Results: dry-run mapped 217 pigs, 1,235 weight events, 185 location events, 261 medical events, 20 pens, 17 litters, 15 mating events, 3 products, 18 settings
-Blockers: 6 WEIGHT_LOG rows missing Pig_ID need review before canonical import; migration not applied
+Branch: charlie-relay-architecture-plan
+Files changed: app.py, modules/charlie/*, tests/test_charlie_build_relay.py, tests/test_owner_access.py, CHARLIE relay plan, active docs, ToDoList reset/log.
+Tests run: tests.test_charlie_build_relay, tests.test_owner_access, tests.test_oom_sakkie_routes, tests.test_frontend_route_contracts, tests.test_workflow_contracts, tests.test_oom_sakkie_service, tests.test_sam_command_state, tests.test_sam_meat_runtime, py_compile.
+Results: focused tests passed. One combined SAM command timed out, then passed when split.
+Blockers: no live Telegram webhook configured yet; requires Render/.env env vars and Telegram webhook setup after PR approval/merge.
 ```
 
 ### Debrief
 
 ```text
-What changed:
-What did not change:
-Risks:
-Owner verification:
-GO/NO-GO:
+What changed: CHARLIE Build Relay v0 now exists as a safe disabled-by-default owner Telegram relay with /status, /next, /select, /mission, and optional CODEX_CHAT write gating.
+What did not change: no customer sends, public posts, payments, reservations, production data writes, migrations, deploys, commits/merges from Telegram, or farm lifecycle writes.
+Risks: Telegram cannot fully drive Codex unless a local Codex/Cursor process or future Supabase mission queue consumes the mission; Render filesystem writes are not durable.
+Owner verification: configure @CharlieCoreBot env vars, set webhook, send /help, /status, /next, and /mission test messages.
+GO/NO-GO: GO for PR review of v0; NO-GO for dangerous Telegram approvals or autonomous deployment authority.
 ```
 
 ---

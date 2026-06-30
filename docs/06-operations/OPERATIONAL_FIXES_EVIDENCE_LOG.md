@@ -1,5 +1,29 @@
 # Operational Fixes Evidence Log
 
+## CHARLIE Build Relay v0 - 2026-06-30
+
+Owner mission: create a lightweight CHARLIE Build Relay connecting Telegram, Cursor, Codex, `CODEX_CHAT.md`, and `NEXT_STEPS.md` so the owner can command and approve build work while away from the laptop.
+
+Evidence:
+
+- Existing Oom Sakkie Telegram code already proves the repo pattern for disabled-by-default Telegram routes, owner allowlists, webhook secrets, and no unsafe authority.
+- CHARLIE Build Relay v0 follows the same safety shape.
+- Telegram is treated as a command/notification surface, not an autonomous repo runtime.
+- `CODEX_CHAT.md` remains the active mission instruction file.
+- `NEXT_STEPS.md` remains the mission menu.
+
+Safety:
+
+- No production data writes.
+- No Google Sheets writes.
+- No customer sends.
+- No public posts.
+- No payment/deposit actions.
+- No reservations.
+- No lifecycle/purpose writes.
+- No migration.
+- No commit/merge/deploy authority from Telegram.
+
 ## P0 Bulk Upload HTML/JSON Failure - 2026-06-28
 
 Mode: emergency JSON-safety and upload-pipeline hardening. No production Google Sheets write, Supabase write, migration, customer send, public post, payment/deposit change, reservation change, stock/lifecycle write, screenshot, external source, asset, `.env`, or `.claude` change was made.
