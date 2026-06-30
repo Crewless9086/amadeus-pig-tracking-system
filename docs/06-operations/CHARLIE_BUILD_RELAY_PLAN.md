@@ -34,7 +34,16 @@ Optional env vars:
 - `CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED`
 - `CHARLIE_BUILD_RELAY_REPO_ROOT`
 
-The webhook secret must be at least 32 characters. Tokens and secrets must stay in `.env` or Render env vars only. They must not be committed, logged, exposed in frontend code, or copied into docs.
+The webhook secret must be at least 32 characters. Telegram only accepts `A-Z`, `a-z`, `0-9`, `_`, and `-` in the webhook `secret_token`, so do not use symbols such as `+`.
+
+Tokens and secrets must stay in `.env` or Render env vars only. They must not be committed, logged, exposed in frontend code, or copied into docs.
+
+Webhook setup helper:
+
+```bash
+python scripts/charlie_build_relay_webhook.py info
+python scripts/charlie_build_relay_webhook.py set --base-url https://amadeus-pig-tracking-system.onrender.com
+```
 
 ## 4. Authority Boundaries
 
