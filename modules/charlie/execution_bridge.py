@@ -2,6 +2,8 @@ import json
 import os
 import shutil
 import subprocess
+from urllib import request as url_request
+from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -299,6 +301,180 @@ def complete_no_release_mission(mission_id="", output_dir=None, database_url=Non
     }, 200
 
 
+def run_release_execution(
+    mission_id="",
+    output_dir=None,
+    merge_pr=False,
+    verify_url="",
+    database_url=None,
+    connect_factory=None,
+    run_subprocess=None,
+):
+    prepared, status_code = prepare_release_execution(
+        mission_id=mission_id,
+        output_dir=output_dir,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return prepared, status_code
+    mission_id = prepared["mission_id"]
+    release_packet_path = prepared["release_packet_path"]
+
+    mission, mission_status, error = _load_release_mission(
+        mission_id=mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if mission_status >= 400:
+        return error, mission_status
+
+    started, start_status = update_mission_status(
+        mission_id,
+        "release_in_progress",
+        owner_decision="Local release bridge started final release execution.",
+        event_type="status_changed",
+        notes="Local release bridge moved release-approved mission into release_in_progress.",
+        metadata={
+            "script": "scripts/charlie_release_bridge.py",
+            "release_packet_path": release_packet_path,
+            "release_mode": "merge_pr" if merge_pr else "prepare_only",
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if start_status >= 400:
+        return started, start_status
+
+    if not merge_pr:
+        return {
+            "success": True,
+            "status": "release_prepared_waiting_for_merge_mode",
+            "mission_id": mission_id,
+            "mission_status": "release_in_progress",
+            "release_packet_path": release_packet_path,
+            "next_action": "Run with merge_pr=True only when the review packet includes a PR link and owner final approval is recorded.",
+        }, 200
+
+    pr_reference = _review_pr_reference(mission)
+    if not pr_reference:
+        blocked, blocked_status = update_mission_status(
+            mission_id,
+            "blocked",
+            owner_decision="Release bridge could not merge because no PR reference was found in the review packet.",
+            event_type="status_changed",
+            notes="Local release bridge requires a PR URL or PR number before automatic merge/deploy.",
+            metadata={
+                "script": "scripts/charlie_release_bridge.py",
+                "release_packet_path": release_packet_path,
+                "release_mode": "merge_pr",
+            },
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if blocked_status >= 400:
+            return blocked, blocked_status
+        return {
+            "success": False,
+            "status": "release_pr_reference_required",
+            "mission_id": mission_id,
+            "mission_status": "blocked",
+            "release_packet_path": release_packet_path,
+        }, 409
+
+    runner = run_subprocess or subprocess.run
+    command = ["gh", "pr", "merge", pr_reference, "--squash", "--delete-branch"]
+    completed = runner(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(REPO_ROOT),
+        timeout=900,
+        check=False,
+    )
+    merge_result = {
+        "pr_reference": pr_reference,
+        "command": " ".join(command),
+        "returncode": completed.returncode,
+        "stdout": _truncate(completed.stdout or "", 2000),
+        "stderr": _truncate(completed.stderr or "", 2000),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if completed.returncode != 0:
+        update_mission_status(
+            mission_id,
+            "blocked",
+            owner_decision="Local release bridge failed to merge the approved PR.",
+            event_type="status_changed",
+            notes="gh pr merge returned a non-zero exit code.",
+            metadata={
+                "script": "scripts/charlie_release_bridge.py",
+                "release_packet_path": release_packet_path,
+                "release_mode": "merge_pr",
+                "returncode": completed.returncode,
+            },
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        return {
+            "success": False,
+            "status": "release_pr_merge_failed",
+            "mission_id": mission_id,
+            "mission_status": "blocked",
+            "release_packet_path": release_packet_path,
+            "merge_result": merge_result,
+        }, 502
+
+    verify_result = _verify_release_url(verify_url)
+    final_status = "deployed" if verify_result.get("verified") else "merged"
+    vault_result, vault_status = update_mission_vault(
+        mission_id,
+        {
+            "release_packet": {
+                "mode": "merge_pr",
+                "release_packet_path": release_packet_path,
+                "merge_result": merge_result,
+                "verify_result": verify_result,
+            }
+        },
+        notes="Local release bridge recorded PR merge result.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if vault_status >= 400:
+        return vault_result, vault_status
+
+    final, final_update_status = update_mission_status(
+        mission_id,
+        final_status,
+        owner_decision=f"Mission release completed by local release bridge; status {final_status}.",
+        event_type="status_changed",
+        notes="Local release bridge completed PR merge release path.",
+        metadata={
+            "script": "scripts/charlie_release_bridge.py",
+            "release_packet_path": release_packet_path,
+            "release_mode": "merge_pr",
+            "final_status": final_status,
+            "verify_url": verify_url,
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if final_update_status >= 400:
+        return final, final_update_status
+    return {
+        "success": True,
+        "status": "release_pr_merged",
+        "mission_id": mission_id,
+        "mission_status": final_status,
+        "release_packet_path": release_packet_path,
+        "merge_result": merge_result,
+        "verify_result": verify_result,
+    }, 200
+
+
 def build_codex_execution_prompt(mission):
     mission = mission if isinstance(mission, dict) else {}
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
@@ -453,6 +629,49 @@ def _release_packet(mission, execution_id):
         "review_test_evidence": review_packet.get("test_evidence", []),
         "operator_instruction": "Use --complete-no-release only when final owner approval is enough and no merge/deploy is required.",
     }
+
+
+def _review_pr_reference(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    links = review_packet.get("links") if isinstance(review_packet.get("links"), dict) else {}
+    candidates = [
+        review_packet.get("pr_number"),
+        review_packet.get("pr_url"),
+        links.get("pr"),
+        links.get("pull_request"),
+        links.get("diff"),
+    ]
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if not value:
+            continue
+        if "/pull/" in value:
+            number = value.rstrip("/").split("/pull/")[-1].split("/")[0].strip()
+            return number or value
+        return value
+    return ""
+
+
+def _verify_release_url(verify_url):
+    verify_url = str(verify_url or "").strip()
+    if not verify_url:
+        return {"verified": False, "status": "verify_url_not_provided"}
+    try:
+        with url_request.urlopen(verify_url, timeout=30) as response:
+            return {
+                "verified": 200 <= int(response.status) < 400,
+                "status": "ok",
+                "url": verify_url,
+                "http_status": int(response.status),
+            }
+    except (OSError, URLError, ValueError) as exc:
+        return {
+            "verified": False,
+            "status": "verify_failed",
+            "url": verify_url,
+            "error_type": exc.__class__.__name__,
+        }
 
 
 def _codex_executable():

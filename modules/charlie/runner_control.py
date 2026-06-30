@@ -18,6 +18,9 @@ RUNNER_COMMAND = [
     "--watch",
     "--continuous",
     "--notify",
+    "--execute-codex",
+    "--watch-release",
+    "--auto-merge-pr",
     "--interval-seconds",
     "30",
 ]
@@ -37,7 +40,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
     if active:
         status = "runner_active"
-        next_action = "Approved missions should be picked up automatically while this runner stays active."
+        next_action = "Approved missions should be picked up, executed locally, and moved to owner review while this runner stays active."
     elif orphan_processes:
         status = "runner_orphaned"
         next_action = "Stop the orphaned local CHARLIE runner, then start it again so runner control owns the heartbeat."

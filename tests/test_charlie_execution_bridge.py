@@ -183,6 +183,58 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(statuses, ["release_in_progress", "done"])
         update_vault.assert_called_once()
 
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_run_release_execution_blocks_without_pr_reference(self, get_mission, update_status):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        mission["metadata"] = {"review_packet": {"summary": "Approved but no PR."}}
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_release_execution(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+                merge_pr=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "release_pr_reference_required")
+        statuses = [call.args[1] for call in update_status.call_args_list]
+        self.assertEqual(statuses, ["release_in_progress", "blocked"])
+
+    @patch("modules.charlie.execution_bridge._verify_release_url", return_value={"verified": False, "status": "verify_url_not_provided"})
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_run_release_execution_merges_referenced_pr(self, get_mission, update_vault, update_status, _verify):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        mission["metadata"] = {"review_packet": {"links": {"pr": "https://github.com/org/repo/pull/56"}}}
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def fake_runner(command, **_kwargs):
+            self.assertEqual(command[:4], ["gh", "pr", "merge", "56"])
+            return SimpleNamespace(returncode=0, stdout="Merged pull request", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_release_execution(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+                merge_pr=True,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "release_pr_merged")
+        self.assertEqual(result["mission_status"], "merged")
+        statuses = [call.args[1] for call in update_status.call_args_list]
+        self.assertEqual(statuses, ["release_in_progress", "merged"])
+        update_vault.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
