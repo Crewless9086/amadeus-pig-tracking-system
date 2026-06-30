@@ -44,6 +44,10 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "changed_files_count": 2,
                 "final_artifact_present": False,
                 "execution_artifact": ".charlie_runner/executions/MISSION.final.md",
+                "agent_runner_version": "charlie_agent_runner_v2",
+                "current_agent": "builder",
+                "current_action": "builder running",
+                "agent_ledger_path": ".charlie_runner/executions/MISSION.agent-ledger.json",
             }, heartbeat)
 
             result = runner_control.runner_status(heartbeat)
@@ -56,6 +60,10 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["changed_files_count"], 2)
         self.assertFalse(result["final_artifact_present"])
         self.assertEqual(result["execution_artifact"], ".charlie_runner/executions/MISSION.final.md")
+        self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
+        self.assertEqual(result["current_agent"], "builder")
+        self.assertEqual(result["current_action"], "builder running")
+        self.assertEqual(result["agent_ledger_path"], ".charlie_runner/executions/MISSION.agent-ledger.json")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_runner_status_reports_stale_heartbeat(self, _pid_alive):
