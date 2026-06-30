@@ -196,6 +196,7 @@ def _current_state_rows(connect_factory=None):
             state.current_pen_name,
             pig.mother_pig_id,
             pig.father_pig_id,
+            pig.exit_reason,
             pig.notes
         from public.pig_current_state state
         join public.pigs pig on pig.pig_id = state.pig_id
@@ -763,30 +764,61 @@ def _litter_rows_with_pigs(connect_factory=None):
 def _litter_reconciliation(litter, pigs):
     born_alive = _float_or_none(litter.get("born_alive"))
     total_born = _float_or_none(litter.get("total_born"))
+    stillborn_count = _float_or_none(litter.get("stillborn_count")) or 0
+    mummified_count = _float_or_none(litter.get("mummified_count")) or 0
     active = len([
         pig for pig in pigs
         if _text(pig.get("status")) == "Active" and pig.get("on_farm") is True
     ])
     exited = len(pigs) - active
     linked = len(pigs)
-    suggested_born_alive = linked
-    mismatch = bool(born_alive is not None and int(born_alive) != linked)
+    non_live_reasons = {"stillborn", "mummified"}
+    non_live_history_count = len([
+        pig for pig in pigs
+        if _text(pig.get("exit_reason")).lower().replace("-", "_").replace(" ", "_") in non_live_reasons
+    ])
+    stillborn_history_count = len([
+        pig for pig in pigs
+        if _text(pig.get("exit_reason")).lower().replace("-", "_").replace(" ", "_") == "stillborn"
+    ])
+    live_linked = linked - non_live_history_count
+    non_live_count = int(stillborn_count) + int(mummified_count)
+    source_counts_total = int(born_alive) + non_live_count if born_alive is not None else None
+    source_counts_consistent = bool(
+        total_born is not None
+        and source_counts_total is not None
+        and int(total_born) == source_counts_total
+    )
+    live_count_mismatch = bool(born_alive is not None and int(born_alive) != live_linked)
+    total_record_mismatch = bool(total_born is not None and int(total_born) != linked)
+    mismatch = live_count_mismatch or total_record_mismatch
+    suggested_born_alive = live_linked
+    if live_count_mismatch:
+        recommended_action = "Review litter live-born records before changing Born Alive."
+    elif total_record_mismatch:
+        recommended_action = "Review missing or extra litter piglet records before changing counts."
+    else:
+        recommended_action = "No birth-count correction needed."
     return {
         "born_alive": born_alive,
         "total_born": total_born,
-        "stillborn_count": _float_or_none(litter.get("stillborn_count")) or 0,
-        "mummified_count": _float_or_none(litter.get("mummified_count")) or 0,
+        "stillborn_count": stillborn_count,
+        "mummified_count": mummified_count,
+        "non_live_count": non_live_count,
         "linked_pig_records": linked,
+        "live_linked_pig_records": live_linked,
         "active_pig_records": active,
         "exited_pig_records": exited,
+        "stillborn_history_count": stillborn_history_count,
+        "non_live_history_count": non_live_history_count,
         "suggested_born_alive": suggested_born_alive,
         "mismatch": mismatch,
         "formula_conflict": False,
-        "source_counts_consistent": not mismatch,
+        "source_counts_consistent": source_counts_consistent,
         "can_reconcile_birth_count": False,
-        "delta": (suggested_born_alive - born_alive) if born_alive is not None else 0,
+        "delta": (suggested_born_alive - born_alive) if live_count_mismatch and born_alive is not None else 0,
         "rule": "Supabase canonical litter count comparison.",
-        "recommended_action": "Review litter counts." if mismatch else "No birth-count correction needed.",
+        "recommended_action": recommended_action,
     }
 
 

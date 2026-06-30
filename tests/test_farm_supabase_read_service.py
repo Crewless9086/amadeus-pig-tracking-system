@@ -471,6 +471,71 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["average_weight_kg"], 5.5)
         self.assertEqual(detail["source"], "supabase_canonical")
 
+    def test_litter_overview_does_not_flag_stillborn_rows_as_born_alive_mismatch(self):
+        litters = [{
+            "litter_id": "LIT-2026-1025",
+            "farrowing_date": date(2026, 6, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 7,
+            "total_born": 9,
+            "stillborn_count": 2,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-2026-1025": [
+                {
+                    "pig_id": f"PIG-LIVE-{index}",
+                    "tag_number": str(100 + index),
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-2026-1025",
+                    "current_weight_kg": 5.0,
+                    "current_pen_id": "PEN-1",
+                }
+                for index in range(7)
+            ] + [
+                {
+                    "pig_id": f"PIG-STILL-{index}",
+                    "tag_number": "",
+                    "status": "Dead",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-2026-1025",
+                    "current_weight_kg": None,
+                    "current_pen_id": "",
+                    "exit_reason": "Stillborn",
+                }
+                for index in range(2)
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+
+        self.assertTrue(overview["success"])
+        self.assertEqual(overview["attention_count"], 0)
+        self.assertEqual(overview["mismatch_count"], 0)
+        litter = overview["litters"][0]
+        self.assertEqual(litter["litter_id"], "LIT-2026-1025")
+        self.assertEqual(litter["linked_pig_records"], 9)
+        self.assertEqual(litter["active_pig_records"], 7)
+        self.assertEqual(litter["exited_pig_records"], 2)
+        reconciliation = litter["reconciliation"]
+        self.assertFalse(reconciliation["mismatch"])
+        self.assertEqual(reconciliation["live_linked_pig_records"], 7)
+        self.assertEqual(reconciliation["stillborn_history_count"], 2)
+        self.assertTrue(reconciliation["source_counts_consistent"])
+        self.assertEqual(reconciliation["recommended_action"], "No birth-count correction needed.")
+
     def test_litter_attention_summary_maps_supabase_count_review(self):
         overview = {
             "success": True,
