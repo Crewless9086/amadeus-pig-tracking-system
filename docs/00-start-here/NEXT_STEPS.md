@@ -74,7 +74,13 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - CHARLIE Codex pickup bridge:
   - `scripts/charlie_mission_pickup.py --dry-run` checks the next approved mission
   - `scripts/charlie_mission_pickup.py --notify` writes the approved mission into `planning/CODEX_CHAT.md`, marks it `in_progress`, and notifies the owner
+  - `scripts/charlie_mission_pickup.py --watch --notify` polls for approved missions and picks up the first available mission
   - this is the safe handoff from Telegram approval to a running Codex/Cursor build session
+- CHARLIE V1 mission cockpit:
+  - owner-only `/charlie` page
+  - shows queue counts and mission cards from Supabase
+  - records approve/pause/reject/block/done decisions through protected APIs
+  - does not execute builds, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
 - CHARLIE mission queue release checklist:
   - migration `202606300001_create_charlie_mission_queue.sql` is applied
   - keep `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED` enabled only after the migration is applied

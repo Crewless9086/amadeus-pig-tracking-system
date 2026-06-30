@@ -60,6 +60,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
 
+    @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_watch_mode_can_timeout_without_pickup(self, list_missions, sleep):
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=2,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "watch_timeout_no_mission_available")
+        self.assertEqual(result["checks"], 2)
+        sleep.assert_called_once_with(5)
+
 
 if __name__ == "__main__":
     unittest.main()

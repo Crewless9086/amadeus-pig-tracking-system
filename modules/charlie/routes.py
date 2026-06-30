@@ -5,7 +5,7 @@ from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
-from modules.charlie.mission_store import get_mission, list_missions, update_mission_status
+from modules.charlie.mission_store import get_mission, list_missions, mission_status_summary, update_mission_status
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -39,6 +39,15 @@ def charlie_build_relay_missions_route():
         status=request.args.get("status", ""),
         limit=request.args.get("limit", 10),
     )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/summary", methods=["GET"])
+def charlie_build_relay_mission_summary_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = mission_status_summary()
     return jsonify(result), status_code
 
 

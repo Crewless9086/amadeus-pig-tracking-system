@@ -240,6 +240,22 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_missions.assert_called_once_with(status="", limit="1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.mission_status_summary")
+    def test_missions_summary_route_returns_counts(self, mission_status_summary, _owner_access):
+        mission_status_summary.return_value = ({
+            "success": True,
+            "status": "ok",
+            "counts": {"approved": 2},
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions/summary")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["counts"]["approved"], 2)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_mission_detail_route_returns_record(self, get_mission, _owner_access):
         get_mission.return_value = ({

@@ -176,6 +176,26 @@ Status: implemented as `scripts/charlie_mission_pickup.py`.
 
 This is the safe handoff between Telegram and Codex. Telegram still does not execute shell commands or start runtime work directly.
 
+Watch mode is available:
+
+```bash
+python scripts/charlie_mission_pickup.py --watch --notify
+```
+
+### CHARLIE-RELAY-6 - Mission Cockpit
+
+Add the first owner-only CHARLIE page:
+
+- route: `/charlie`
+- shows mission queue counts
+- shows mission cards from Supabase
+- records approve, pause, reject, block, and done decisions through protected APIs
+- keeps technical mission details available without making them the primary owner flow
+
+Status: implemented as an owner-only cockpit backed by the existing mission queue APIs.
+
+The cockpit remains non-executing mission governance. It cannot trigger shell commands, commit, merge, deploy, apply migrations, write operational farm data, send customers, publish posts, take payments, reserve stock, or change farm lifecycle records.
+
 ## 7. Tests
 
 Current tests prove:

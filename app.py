@@ -122,6 +122,14 @@ def oom_sakkie_page():
     return render_template("oom-sakkie.html")
 
 
+@app.route("/charlie")
+def charlie_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("charlie.html")
+
+
 @app.route("/assets/<path:filename>")
 def public_assets(filename):
     return send_from_directory(Path(app.static_folder) / "assets", filename)

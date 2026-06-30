@@ -59,6 +59,13 @@ class OwnerAccessTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/owner/login", response.headers.get("Location", ""))
 
+    def test_remote_charlie_page_redirects_without_session_when_enabled(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            response = self.client.get("/charlie", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/owner/login", response.headers.get("Location", ""))
+
     def test_local_loopback_page_allowed_when_local_dev_enabled(self):
         with patch.dict(os.environ, owner_env(), clear=False):
             self._configure()

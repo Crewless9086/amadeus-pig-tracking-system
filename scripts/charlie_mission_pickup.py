@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -22,16 +23,50 @@ def main():
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--notify", action="store_true", help="Send owner Telegram notification after pickup.")
+    parser.add_argument("--watch", action="store_true", help="Poll for approved missions until one is picked up or Ctrl+C stops the runner.")
+    parser.add_argument("--interval-seconds", type=int, default=60)
     args = parser.parse_args()
 
-    result, status_code = pick_up_next_mission(
-        status=args.status,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        notify=args.notify,
-    )
+    if args.watch:
+        result, status_code = watch_for_mission(
+            status=args.status,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            notify=args.notify,
+            interval_seconds=args.interval_seconds,
+        )
+    else:
+        result, status_code = pick_up_next_mission(
+            status=args.status,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            notify=args.notify,
+        )
     print(result)
     return 0 if status_code < 400 else 1
+
+
+def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, interval_seconds=60, max_checks=None):
+    interval_seconds = max(5, int(interval_seconds or 60))
+    checks = 0
+    while True:
+        checks += 1
+        result, status_code = pick_up_next_mission(
+            status=status,
+            limit=limit,
+            dry_run=dry_run,
+            notify=notify,
+        )
+        result["checks"] = checks
+        if result.get("status") != "no_mission_available" or status_code >= 400:
+            return result, status_code
+        if max_checks is not None and checks >= max_checks:
+            return {
+                "success": True,
+                "status": "watch_timeout_no_mission_available",
+                "checks": checks,
+            }, 200
+        time.sleep(interval_seconds)
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
