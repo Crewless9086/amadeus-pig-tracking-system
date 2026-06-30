@@ -30,13 +30,16 @@ NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
 AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
 AGENT_ARTIFACT_REQUIRED_KEYS = {
-    "planner": ["summary", "acceptance_criteria", "test_plan"],
-    "architect": ["summary", "files_to_inspect", "risk_notes"],
-    "builder": ["summary", "changed_files"],
-    "tester": ["summary", "tests_run"],
-    "reviewer": ["summary", "recommended_owner_decision"],
+    "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected"],
+    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected"],
+    "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected"],
+    "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected"],
+    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "commands_run", "files_inspected"],
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
+AGENT_BACKFLOW_LIMIT = 2
+AGENT_RELEASE_VERIFY_ATTEMPTS = 12
+AGENT_RELEASE_VERIFY_INTERVAL_SECONDS = 10
 
 
 def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None, database_url=None, connect_factory=None):
@@ -204,7 +207,11 @@ def run_agent_execution_bridge_v2(
     execution_id = _execution_id(mission["mission_id"])
     started_at = datetime.now(timezone.utc).isoformat()
     ledger = _agent_execution_ledger(mission, execution_id, started_at)
-    artifacts = {}
+    start_agent = _execution_start_agent(mission)
+    artifacts = _existing_agent_artifacts_for_rerun(mission, start_agent)
+    if start_agent != AGENT_SEQUENCE[0]:
+        ledger["rerun_from_stage"] = start_agent
+        ledger["preserved_upstream_artifacts"] = sorted(artifacts.keys())
 
     if not execute_codex:
         packet_path = output_dir / f"{execution_id}.agent-ledger.json"
@@ -229,16 +236,21 @@ def run_agent_execution_bridge_v2(
         "workspace-write",
     ]
 
-    for agent in AGENT_SEQUENCE:
+    agent_queue = _agent_queue_from(start_agent)
+    stage_attempts = {agent: 0 for agent in AGENT_SEQUENCE}
+    backflow_counts = {agent: 0 for agent in AGENT_SEQUENCE}
+    while agent_queue:
+        agent = agent_queue.pop(0)
+        stage_attempts[agent] = int(stage_attempts.get(agent, 0)) + 1
         _record_execution_stage(
             mission["mission_id"],
             agent,
             "active",
-            f"CHARLIE Agent Runner v2 started {agent}.",
+            f"CHARLIE Agent Runner v2 started {agent} attempt {stage_attempts[agent]}.",
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        stage_paths = _agent_stage_paths(output_dir, execution_id, agent)
+        stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
         prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
         stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
         command = [
@@ -248,14 +260,23 @@ def run_agent_execution_bridge_v2(
             "-",
         ]
         stage_started = datetime.now(timezone.utc).isoformat()
-        _append_ledger_stage(ledger, agent, "running", stage_started, stage_paths, current_action=f"{agent} running")
+        _append_ledger_stage(
+            ledger,
+            agent,
+            "running",
+            stage_started,
+            stage_paths,
+            current_action=f"{agent} running attempt {stage_attempts[agent]}",
+            command=command,
+            attempt=stage_attempts[agent],
+        )
         _write_agent_ledger(output_dir, execution_id, ledger)
         write_runner_heartbeat({
             "status": "agent_stage_running",
             "mission_id": mission["mission_id"],
             "agent_runner_version": AGENT_RUNNER_VERSION,
             "current_agent": agent,
-            "current_action": f"{agent} running",
+            "current_action": f"{agent} running attempt {stage_attempts[agent]}",
             "execution_artifact": str(stage_paths["final_path"]),
             "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
         })
@@ -294,6 +315,9 @@ def run_agent_execution_bridge_v2(
             "artifact_path": str(stage_paths["final_path"]),
             "stdout_path": str(stage_paths["stdout_path"]),
             "stderr_path": str(stage_paths["stderr_path"]),
+            "stdout_tail": _tail_text(completed.stdout or _read_text(stage_paths["stdout_path"]), 1200),
+            "stderr_tail": _tail_text(completed.stderr or _read_text(stage_paths["stderr_path"]), 1200),
+            "attempt": stage_attempts[agent],
             "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         validation = _validate_agent_artifact(agent, artifact)
@@ -310,8 +334,56 @@ def run_agent_execution_bridge_v2(
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
+        quality = _agent_quality_gate(agent, artifact)
+        if not quality["passed"]:
+            backflow_target = _agent_backflow_target(agent, artifact, quality)
+            if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
+                backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
+                _append_backflow_event(
+                    ledger,
+                    from_agent=agent,
+                    to_agent=backflow_target,
+                    reason=quality["reason"],
+                    attempt=backflow_counts[backflow_target],
+                )
+                artifacts[agent] = artifact
+                artifacts = _discard_downstream_artifacts(artifacts, backflow_target)
+                agent_queue = _agent_queue_from(backflow_target)
+                _write_agent_ledger(output_dir, execution_id, ledger)
+                write_runner_heartbeat({
+                    "status": "agent_backflow",
+                    "mission_id": mission["mission_id"],
+                    "agent_runner_version": AGENT_RUNNER_VERSION,
+                    "current_agent": backflow_target,
+                    "current_action": f"{agent} sent work back to {backflow_target}: {quality['reason']}",
+                    "execution_artifact": str(stage_paths["final_path"]),
+                    "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+                })
+                continue
+            return _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                stage_paths,
+                completed,
+                stage_started,
+                blocked_reason=quality["reason"],
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+        artifact["quality_gate"] = quality
         artifacts[agent] = artifact
-        _append_ledger_stage(ledger, agent, "complete", stage_started, stage_paths, artifact=artifact)
+        _append_ledger_stage(
+            ledger,
+            agent,
+            "complete",
+            stage_started,
+            stage_paths,
+            artifact=artifact,
+            command=command,
+            attempt=stage_attempts[agent],
+        )
         _write_agent_ledger(output_dir, execution_id, ledger)
         _record_execution_stage(
             mission["mission_id"],
@@ -654,6 +726,8 @@ def run_release_execution(
     output_dir=None,
     merge_pr=False,
     verify_url="",
+    verify_attempts=AGENT_RELEASE_VERIFY_ATTEMPTS,
+    verify_interval_seconds=AGENT_RELEASE_VERIFY_INTERVAL_SECONDS,
     database_url=None,
     connect_factory=None,
     run_subprocess=None,
@@ -775,7 +849,11 @@ def run_release_execution(
             "merge_result": merge_result,
         }, 502
 
-    verify_result = _verify_release_url(verify_url)
+    verify_result = _wait_for_release_verification(
+        verify_url or _default_release_verify_url(),
+        attempts=verify_attempts,
+        interval_seconds=verify_interval_seconds,
+    )
     final_status = "deployed" if verify_result.get("verified") else "merged"
     vault_result, vault_status = update_mission_vault(
         mission_id,
@@ -785,6 +863,12 @@ def run_release_execution(
                 "release_packet_path": release_packet_path,
                 "merge_result": merge_result,
                 "verify_result": verify_result,
+                "deployment_watch": {
+                    "verify_url": verify_result.get("url", ""),
+                    "attempts": verify_result.get("attempts", 0),
+                    "verified": verify_result.get("verified", False),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                },
             }
         },
         notes="Local release bridge recorded PR merge result.",
@@ -945,6 +1029,10 @@ def _agent_required_schema(agent):
         "summary": "short factual summary",
         "errors": [],
         "bugs": [],
+        "files_inspected": [],
+        "commands_run": [],
+        "stdout_tail": "short relevant command output tail or empty",
+        "stderr_tail": "short relevant error output tail or empty",
         "next_action": "next handoff",
     }
     if agent == "planner":
@@ -968,12 +1056,47 @@ def _agent_execution_ledger(mission, execution_id, started_at):
         "title": mission.get("title", ""),
         "started_at": started_at,
         "status": "running",
+        "last_progress_at": started_at,
+        "quality_gates": [],
+        "backflow_events": [],
         "stages": [],
     }
 
 
-def _agent_stage_paths(output_dir, execution_id, agent):
-    stem = f"{execution_id}.{agent}"
+def _execution_start_agent(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    target = str(review_packet.get("return_to_stage") or "").strip().lower()
+    if target in AGENT_SEQUENCE:
+        return target
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    stage = str(vault.get("mission_stage") or "").strip().lower()
+    if stage.startswith("returned_to_"):
+        target = stage.replace("returned_to_", "", 1)
+        if target in AGENT_SEQUENCE:
+            return target
+    return AGENT_SEQUENCE[0]
+
+
+def _existing_agent_artifacts_for_rerun(mission, start_agent):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    existing = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
+    if start_agent not in AGENT_SEQUENCE:
+        return {}
+    start_index = AGENT_SEQUENCE.index(start_agent)
+    return {
+        agent: artifact
+        for agent, artifact in existing.items()
+        if agent in AGENT_SEQUENCE
+        and AGENT_SEQUENCE.index(agent) < start_index
+        and isinstance(artifact, dict)
+    }
+
+
+def _agent_stage_paths(output_dir, execution_id, agent, attempt=1):
+    suffix = f".attempt{attempt}" if int(attempt or 1) > 1 else ""
+    stem = f"{execution_id}.{agent}{suffix}"
     return {
         "prompt_path": output_dir / f"{stem}.prompt.md",
         "stdout_path": output_dir / f"{stem}.stdout.txt",
@@ -982,15 +1105,17 @@ def _agent_stage_paths(output_dir, execution_id, agent):
     }
 
 
-def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None, current_action=""):
+def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None, current_action="", command=None, attempt=1):
     stages = ledger.setdefault("stages", [])
-    existing = next((item for item in stages if item.get("agent") == agent), None)
+    existing = next((item for item in stages if item.get("agent") == agent and int(item.get("attempt") or 1) == int(attempt or 1)), None)
     item = existing or {"agent": agent}
     item.update({
         "status": status,
+        "attempt": int(attempt or 1),
         "started_at": started_at,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "current_action": current_action,
+        "command": _display_command(command),
         "prompt_path": str(paths["prompt_path"]),
         "stdout_path": str(paths["stdout_path"]),
         "stderr_path": str(paths["stderr_path"]),
@@ -998,9 +1123,21 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
     })
     if artifact:
         item["artifact"] = artifact
+        item["files_inspected"] = artifact.get("files_inspected", [])
+        item["commands_run"] = artifact.get("commands_run", [])
+        item["changed_files"] = artifact.get("changed_files", [])
+        item["stdout_tail"] = artifact.get("stdout_tail", "")
+        item["stderr_tail"] = artifact.get("stderr_tail", "")
+        item["quality_gate"] = artifact.get("quality_gate", {})
+        if item["quality_gate"]:
+            gates = ledger.setdefault("quality_gates", [])
+            gates = [gate for gate in gates if not (gate.get("agent") == agent and int(gate.get("attempt") or 1) == int(attempt or 1))]
+            gates.append({"agent": agent, "attempt": int(attempt or 1), **item["quality_gate"]})
+            ledger["quality_gates"] = gates
     if existing is None:
         stages.append(item)
     ledger["status"] = "running" if status == "running" else ledger.get("status", "running")
+    ledger["last_progress_at"] = item["updated_at"]
     return ledger
 
 
@@ -1018,6 +1155,10 @@ def _agent_artifact_from_final(agent, final_message):
         "summary": _truncate(final_message or f"{agent} completed.", 1200),
         "errors": _extract_errors(final_message),
         "bugs": [],
+        "files_inspected": _extract_file_mentions(final_message),
+        "commands_run": _extract_command_mentions(final_message),
+        "stdout_tail": "",
+        "stderr_tail": "",
         "next_action": "Continue to next CHARLIE agent.",
     }
     if agent == "planner":
@@ -1055,6 +1196,70 @@ def _validate_agent_artifact(agent, artifact):
     return {"valid": not missing, "missing_keys": missing}
 
 
+def _agent_quality_gate(agent, artifact):
+    errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
+    bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
+    commands = artifact.get("commands_run") if isinstance(artifact.get("commands_run"), list) else []
+    inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
+    if not commands:
+        return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
+    if not inspected:
+        return {"passed": False, "reason": f"{agent} did not record files_inspected evidence."}
+    if agent == "tester":
+        status = str(artifact.get("test_status") or "").strip().lower()
+        if status != "pass":
+            return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
+        if errors or bugs:
+            return {"passed": False, "reason": "Tester reported errors or bugs."}
+    if agent == "reviewer":
+        decision = str(artifact.get("recommended_owner_decision") or "").strip()
+        if decision != "approve_final_release":
+            return {"passed": False, "reason": f"Reviewer recommended {decision or 'no approval'}."}
+        if errors or bugs:
+            return {"passed": False, "reason": "Reviewer found errors or bugs."}
+    return {
+        "passed": True,
+        "reason": f"{agent} quality gate passed.",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _agent_backflow_target(agent, artifact, quality):
+    if agent == "tester":
+        return "builder"
+    if agent == "reviewer":
+        target = str(artifact.get("send_back_stage") or "").strip().lower()
+        return target if target in AGENT_SEQUENCE else "builder"
+    return ""
+
+
+def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt):
+    event = {
+        "from_agent": from_agent,
+        "to_agent": to_agent,
+        "reason": reason,
+        "attempt": int(attempt or 1),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    ledger.setdefault("backflow_events", []).append(event)
+    ledger["last_progress_at"] = event["recorded_at"]
+    return event
+
+
+def _discard_downstream_artifacts(artifacts, target_agent):
+    target_index = AGENT_SEQUENCE.index(target_agent)
+    return {
+        agent: artifact
+        for agent, artifact in artifacts.items()
+        if agent in AGENT_SEQUENCE and AGENT_SEQUENCE.index(agent) < target_index
+    }
+
+
+def _agent_queue_from(target_agent):
+    target_index = AGENT_SEQUENCE.index(target_agent)
+    return list(AGENT_SEQUENCE[target_index:])
+
+
 def _block_agent_stage(
     mission_id,
     execution_id,
@@ -1076,7 +1281,7 @@ def _block_agent_stage(
         "returncode": getattr(completed, "returncode", None),
         "stdout_excerpt": _truncate(getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]), 1200),
         "stderr_excerpt": _truncate(getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]), 1200),
-    })
+    }, attempt=_stage_attempt_from_path(paths["final_path"]))
     ledger_path = _write_agent_ledger(paths["final_path"].parent, execution_id, ledger)
     update_mission_vault(
         mission_id,
@@ -1091,6 +1296,7 @@ def _block_agent_stage(
                 "test_evidence": ["Agent workflow stopped before final tester/reviewer evidence."],
                 "links": {},
                 "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent},
+                "agent_execution": _agent_execution_summary(ledger),
                 "review_status": "agent_blocked",
             },
         },
@@ -1154,6 +1360,9 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 "started_at": started_at,
                 "completed_at": ledger["completed_at"],
             },
+            "agent_execution": _agent_execution_summary(ledger),
+            "quality_gates": ledger.get("quality_gates", []),
+            "backflow_events": ledger.get("backflow_events", []),
             "agent_artifacts": artifacts,
             "review_status": "ready_for_owner_review",
         },
@@ -1196,6 +1405,58 @@ def _collect_artifact_list(artifacts, key):
         elif value:
             collected.append(value)
     return collected
+
+
+def _display_command(command):
+    if not isinstance(command, list):
+        return str(command or "")
+    return " ".join(str(part) for part in command)
+
+
+def _tail_text(value, max_len=1200):
+    text = str(value or "")
+    if len(text) <= max_len:
+        return text
+    return text[-max_len:]
+
+
+def _read_tail(path, max_len=1200):
+    try:
+        return _tail_text(Path(path).read_text(encoding="utf-8", errors="replace"), max_len)
+    except OSError:
+        return ""
+
+
+def _stage_attempt_from_path(path):
+    match = re.search(r"\.attempt(\d+)\.", str(path or ""))
+    return int(match.group(1)) if match else 1
+
+
+def _agent_execution_summary(ledger):
+    stages = []
+    for stage in ledger.get("stages", []) if isinstance(ledger, dict) else []:
+        stages.append({
+            "agent": stage.get("agent", ""),
+            "status": stage.get("status", ""),
+            "attempt": stage.get("attempt", 1),
+            "current_action": stage.get("current_action", ""),
+            "commands_run": stage.get("commands_run", []),
+            "files_inspected": stage.get("files_inspected", []),
+            "changed_files": stage.get("changed_files", []),
+            "stdout_tail": _truncate(stage.get("stdout_tail", ""), 800),
+            "stderr_tail": _truncate(stage.get("stderr_tail", ""), 800),
+            "quality_gate": stage.get("quality_gate", {}),
+        })
+    return {
+        "version": ledger.get("version", ""),
+        "execution_id": ledger.get("execution_id", ""),
+        "status": ledger.get("status", ""),
+        "last_progress_at": ledger.get("last_progress_at", ""),
+        "blocked_agent": ledger.get("blocked_agent", ""),
+        "blocked_reason": ledger.get("blocked_reason", ""),
+        "backflow_events": ledger.get("backflow_events", []),
+        "stages": stages,
+    }
 
 
 def _load_execution_mission(mission_id="", status="in_progress", database_url=None, connect_factory=None):
@@ -1296,13 +1557,17 @@ def _release_packet(mission, execution_id):
         "status": mission.get("status", ""),
         "approval_level": mission.get("approval_level", ""),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "mode": "release_gate",
+        "mode": "release_agent_gate",
+        "release_agent_version": AGENT_RUNNER_VERSION,
         "allowed_actions_now": ["no_release_closeout"],
-        "blocked_actions_without_next_bridge": ["merge", "deploy", "production_migration", "customer_send", "public_post", "payment", "reservation", "farm_lifecycle_write"],
+        "blocked_actions_without_final_owner_approval": ["merge", "deploy", "production_migration", "customer_send", "public_post", "payment", "reservation", "farm_lifecycle_write"],
         "review_summary": review_packet.get("summary", ""),
         "review_changed_files": review_packet.get("changed_files", []),
         "review_test_evidence": review_packet.get("test_evidence", []),
-        "operator_instruction": "Use --complete-no-release only when final owner approval is enough and no merge/deploy is required.",
+        "agent_execution": review_packet.get("agent_execution", {}),
+        "quality_gates": review_packet.get("quality_gates", []),
+        "backflow_events": review_packet.get("backflow_events", []),
+        "operator_instruction": "Release Agent may merge a referenced PR only after final owner approval, then must verify the configured live URL before marking deployed.",
     }
 
 
@@ -1348,11 +1613,13 @@ def _run_codex_process(
         int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
         NO_FINAL_ARTIFACT_TIMEOUT_SECONDS,
     )
+    stdout_handle = stdout_path.open("w", encoding="utf-8", errors="replace")
+    stderr_handle = stderr_path.open("w", encoding="utf-8", errors="replace")
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=stdout_handle,
+        stderr=stderr_handle,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -1379,6 +1646,8 @@ def _run_codex_process(
                 "elapsed_seconds": int(elapsed),
                 "changed_files_count": len(changed_files),
                 "final_artifact_present": final_exists,
+                "stdout_tail": _read_tail(stdout_path, 1200),
+                "stderr_tail": _read_tail(stderr_path, 1200),
             })
             if final_seen_at and time.monotonic() - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
                 _terminate_process_tree(process.pid)
@@ -1392,11 +1661,19 @@ def _run_codex_process(
                     break
                 raise subprocess.TimeoutExpired(command, timeout_seconds)
             time.sleep(POLL_SECONDS)
-        stdout, stderr = process.communicate(timeout=10)
+        process.wait(timeout=10)
     except subprocess.TimeoutExpired:
         _terminate_process_tree(process.pid)
-        stdout, stderr = process.communicate(timeout=10)
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
         raise
+    finally:
+        stdout_handle.close()
+        stderr_handle.close()
+    stdout = _read_text(stdout_path)
+    stderr = _read_text(stderr_path)
     returncode = process.returncode
     if returncode is None:
         returncode = 0 if final_path.exists() and final_path.stat().st_size > 0 else 124
@@ -1407,8 +1684,6 @@ def _run_codex_process(
     if final_path.exists() and final_path.stat().st_size > 0 and returncode not in (0,):
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
-    stdout_path.write_text(stdout or "", encoding="utf-8")
-    stderr_path.write_text(stderr or "", encoding="utf-8")
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
 
 
@@ -1493,6 +1768,44 @@ def _verify_release_url(verify_url):
         }
 
 
+def _wait_for_release_verification(verify_url, attempts=AGENT_RELEASE_VERIFY_ATTEMPTS, interval_seconds=AGENT_RELEASE_VERIFY_INTERVAL_SECONDS):
+    verify_url = str(verify_url or "").strip()
+    attempts = max(1, int(attempts or 1))
+    interval_seconds = max(0, int(interval_seconds or 0))
+    results = []
+    for attempt in range(1, attempts + 1):
+        result = _verify_release_url(verify_url)
+        result["attempt"] = attempt
+        results.append(result)
+        if result.get("verified"):
+            return {
+                **result,
+                "attempts": attempt,
+                "history": results,
+                "status": "release_verified",
+            }
+        if attempt < attempts and interval_seconds:
+            time.sleep(interval_seconds)
+    final = results[-1] if results else {"verified": False, "status": "verify_url_not_provided", "url": verify_url}
+    return {
+        **final,
+        "verified": False,
+        "attempts": len(results),
+        "history": results,
+        "status": final.get("status", "release_not_verified"),
+    }
+
+
+def _default_release_verify_url():
+    base_url = str(os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
+    if base_url:
+        return f"{base_url}/charlie"
+    hostname = str(os.getenv("RENDER_EXTERNAL_HOSTNAME") or "").strip()
+    if hostname:
+        return f"https://{hostname}/charlie"
+    return ""
+
+
 def _codex_executable():
     if os.name == "nt":
         return shutil.which("codex.cmd") or shutil.which("codex.exe") or shutil.which("codex") or "codex.cmd"
@@ -1503,6 +1816,27 @@ def _extract_test_evidence(final_message):
     lines = [line.strip("- ").strip() for line in str(final_message or "").splitlines()]
     evidence = [line for line in lines if "test" in line.lower() or "check" in line.lower() or "verify" in line.lower()]
     return evidence[:12] or ["Review Codex final response for verification details."]
+
+
+def _extract_file_mentions(final_message):
+    text = str(final_message or "")
+    matches = re.findall(r"[\w./\\-]+\.(?:py|js|css|html|md|json|sql|yml|yaml)", text)
+    cleaned = []
+    for match in matches:
+        value = match.strip("`'\".,)")
+        if value and value not in cleaned:
+            cleaned.append(value)
+    return cleaned[:20] or ["Artifact did not list inspected files."]
+
+
+def _extract_command_mentions(final_message):
+    commands = []
+    for line in str(final_message or "").splitlines():
+        stripped = line.strip().strip("`")
+        lower = stripped.lower()
+        if lower.startswith((".\\venv", "python", "node", "npm", "git ", "gh ", "rg ", "npx ")):
+            commands.append(stripped)
+    return commands[:20] or ["Artifact did not list commands run."]
 
 
 def _execution_id(mission_id):

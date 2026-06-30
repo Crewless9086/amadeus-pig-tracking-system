@@ -69,6 +69,9 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "current_agent": payload.get("current_agent", ""),
         "current_action": payload.get("current_action", ""),
         "agent_ledger_path": payload.get("agent_ledger_path", ""),
+        "stdout_tail": payload.get("stdout_tail", ""),
+        "stderr_tail": payload.get("stderr_tail", ""),
+        "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")),
         "orphan_processes": orphan_processes,
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
@@ -99,6 +102,8 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "current_agent",
         "current_action",
         "agent_ledger_path",
+        "stdout_tail",
+        "stderr_tail",
     ):
         if key in result:
             payload[key] = result.get(key)
@@ -168,6 +173,43 @@ def _read_json(path):
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return {}
+
+
+def _read_agent_ledger_summary(path):
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return {}
+    try:
+        ledger_path = Path(raw_path).resolve()
+        root = REPO_ROOT.resolve()
+        if root not in ledger_path.parents and ledger_path != root:
+            return {"status": "ledger_path_outside_repo"}
+        ledger = _read_json(ledger_path)
+    except (OSError, ValueError):
+        return {"status": "ledger_unavailable"}
+    stages = ledger.get("stages") if isinstance(ledger.get("stages"), list) else []
+    latest = stages[-1] if stages else {}
+    return {
+        "version": ledger.get("version", ""),
+        "execution_id": ledger.get("execution_id", ""),
+        "status": ledger.get("status", ""),
+        "last_progress_at": ledger.get("last_progress_at", ""),
+        "blocked_agent": ledger.get("blocked_agent", ""),
+        "blocked_reason": ledger.get("blocked_reason", ""),
+        "backflow_events": ledger.get("backflow_events", [])[-5:] if isinstance(ledger.get("backflow_events"), list) else [],
+        "latest_stage": {
+            "agent": latest.get("agent", ""),
+            "status": latest.get("status", ""),
+            "attempt": latest.get("attempt", 1),
+            "current_action": latest.get("current_action", ""),
+            "commands_run": latest.get("commands_run", [])[-5:] if isinstance(latest.get("commands_run"), list) else [],
+            "files_inspected": latest.get("files_inspected", [])[-8:] if isinstance(latest.get("files_inspected"), list) else [],
+            "changed_files": latest.get("changed_files", [])[-8:] if isinstance(latest.get("changed_files"), list) else [],
+            "stdout_tail": str(latest.get("stdout_tail", ""))[-800:],
+            "stderr_tail": str(latest.get("stderr_tail", ""))[-800:],
+            "quality_gate": latest.get("quality_gate", {}) if isinstance(latest.get("quality_gate"), dict) else {},
+        },
+    }
 
 
 def _parse_iso(value):

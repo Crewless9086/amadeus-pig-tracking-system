@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -37,6 +38,22 @@ class CharlieRunnerControlTests(unittest.TestCase):
     def test_runner_status_reports_active_with_fresh_heartbeat_and_live_pid(self):
         with tempfile.TemporaryDirectory() as tmp:
             heartbeat = Path(tmp) / "runner.json"
+            ledger = Path(tmp) / "ledger.json"
+            ledger.write_text(json.dumps({
+                "version": "charlie_agent_runner_v2",
+                "execution_id": "EXEC-1",
+                "status": "running",
+                "last_progress_at": "2026-06-30T00:00:00+00:00",
+                "stages": [{
+                    "agent": "builder",
+                    "status": "running",
+                    "attempt": 1,
+                    "current_action": "builder running",
+                    "commands_run": ["node --check static/js/charlieMissionControl.js"],
+                    "files_inspected": ["static/js/charlieMissionControl.js"],
+                    "stdout_tail": "ok",
+                }],
+            }), encoding="utf-8")
             runner_control.write_runner_heartbeat({
                 "status": "codex_running",
                 "mission_id": "MISSION-1",
@@ -47,10 +64,13 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "agent_runner_version": "charlie_agent_runner_v2",
                 "current_agent": "builder",
                 "current_action": "builder running",
-                "agent_ledger_path": ".charlie_runner/executions/MISSION.agent-ledger.json",
+                "agent_ledger_path": str(ledger),
+                "stdout_tail": "running tests",
+                "stderr_tail": "",
             }, heartbeat)
 
-            result = runner_control.runner_status(heartbeat)
+            with patch("modules.charlie.runner_control.REPO_ROOT", Path(tmp)):
+                result = runner_control.runner_status(heartbeat)
 
         self.assertEqual(result["status"], "runner_active")
         self.assertTrue(result["active"])
@@ -63,7 +83,10 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
         self.assertEqual(result["current_agent"], "builder")
         self.assertEqual(result["current_action"], "builder running")
-        self.assertEqual(result["agent_ledger_path"], ".charlie_runner/executions/MISSION.agent-ledger.json")
+        self.assertEqual(result["agent_ledger_path"], str(ledger))
+        self.assertEqual(result["agent_ledger"]["latest_stage"]["agent"], "builder")
+        self.assertEqual(result["agent_ledger"]["latest_stage"]["commands_run"][0], "node --check static/js/charlieMissionControl.js")
+        self.assertEqual(result["stdout_tail"], "running tests")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_runner_status_reports_stale_heartbeat(self, _pid_alive):

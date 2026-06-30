@@ -136,6 +136,9 @@
           `Action: ${local.current_action || local.last_result_status || "--"}`,
           `Ledger: ${local.agent_ledger_path || "--"}`,
           `Artifact: ${local.execution_artifact || "--"}`,
+          `Latest Stage: ${runnerLatestStageLine(local.agent_ledger)}`,
+          `Stdout: ${shortOutput(local.stdout_tail || (local.agent_ledger && local.agent_ledger.latest_stage && local.agent_ledger.latest_stage.stdout_tail))}`,
+          `Stderr: ${shortOutput(local.stderr_tail || (local.agent_ledger && local.agent_ledger.latest_stage && local.agent_ledger.latest_stage.stderr_tail))}`,
         ] : [];
         els.runner.controls.textContent = [
           `Status: ${commands.status}`,
@@ -156,6 +159,18 @@
     if (status === "approved_waiting_for_local_runner") return "Waiting Pickup";
     if (status === "idle_no_approved_mission") return "Idle";
     return safeText(status || "Unknown");
+  }
+
+  function runnerLatestStageLine(ledger) {
+    const latest = ledger && ledger.latest_stage ? ledger.latest_stage : {};
+    if (!latest.agent) return "--";
+    return `${latest.agent} ${latest.status || "running"} attempt ${latest.attempt || 1}`;
+  }
+
+  function shortOutput(value) {
+    const text = safeText(value).trim();
+    if (!text) return "--";
+    return text.length > 180 ? `${text.slice(-180)}` : text;
   }
 
   function render() {
@@ -295,6 +310,7 @@
           ${reviewPacketMarkup(mission, reviewPacket)}
         </div>
       </details>
+      ${agentExecutionMarkup(reviewPacket.agent_execution || (metadata.agent_execution || {}), reviewPacket)}
       <label for="review_comments_${escapeHtml(missionId)}">Owner comments</label>
       <textarea id="review_comments_${escapeHtml(missionId)}" rows="3" data-review-comments placeholder="Comments for final approval or send-back"></textarea>
       <div class="charlie-form-row">
@@ -414,6 +430,9 @@
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
+      <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
+      <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
+      <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
       <strong>Owner review history</strong>${listMarkup(decisions.map((item) => `${item.decision || "decision"}: ${item.comments || "no comments"}`), "No owner review decisions yet.")}
     `;
@@ -490,10 +509,54 @@
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
+      <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
+      <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
+      <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
       <strong>Execution boundary</strong>
       <p>${escapeHtml(safeText(packet.execution_boundary || "Dashboard records review decisions only."))}</p>
     `;
+  }
+
+  function agentExecutionMarkup(execution, packet) {
+    if (!execution || !Array.isArray(execution.stages) || !execution.stages.length) return "";
+    return `
+      <details class="charlie-agent-execution" open>
+        <summary>Agent execution timeline</summary>
+        ${agentExecutionSummaryMarkup(execution)}
+        <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates || execution.quality_gates)}
+        <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      </details>
+    `;
+  }
+
+  function agentExecutionSummaryMarkup(execution) {
+    const stages = Array.isArray(execution.stages) ? execution.stages : [];
+    if (!stages.length) return '<p class="charlie-muted">No agent execution ledger captured yet.</p>';
+    return `<div class="charlie-agent-timeline">${stages.map((stage) => `
+      <article class="charlie-agent-stage">
+        <div><strong>${escapeHtml(safeText(stage.agent || "agent"))}</strong> <span>${escapeHtml(safeText(stage.status || "unknown"))}</span> <span>attempt ${escapeHtml(safeText(stage.attempt || 1))}</span></div>
+        <p>${escapeHtml(safeText(stage.current_action || (stage.quality_gate && stage.quality_gate.reason) || ""))}</p>
+        <dl class="charlie-mission-meta">
+          <div><dt>Commands</dt><dd>${escapeHtml(firstReviewText(stage.commands_run, "--"))}</dd></div>
+          <div><dt>Files</dt><dd>${escapeHtml(firstReviewText(stage.files_inspected || stage.changed_files, "--"))}</dd></div>
+          <div><dt>Gate</dt><dd>${escapeHtml(safeText(stage.quality_gate && stage.quality_gate.reason || "--"))}</dd></div>
+        </dl>
+        ${(stage.stdout_tail || stage.stderr_tail) ? `<pre>${escapeHtml([stage.stdout_tail, stage.stderr_tail].filter(Boolean).join("\n"))}</pre>` : ""}
+      </article>
+    `).join("")}</div>`;
+  }
+
+  function qualityGateMarkup(items) {
+    const gates = Array.isArray(items) ? items : [];
+    if (!gates.length) return '<p class="charlie-muted">No quality gates captured yet.</p>';
+    return `<ul>${gates.map((gate) => `<li>${escapeHtml(safeText(gate.agent || "agent"))}: ${escapeHtml(safeText(gate.reason || gate.status || "checked"))}</li>`).join("")}</ul>`;
+  }
+
+  function backflowMarkup(items) {
+    const events = Array.isArray(items) ? items : [];
+    if (!events.length) return '<p class="charlie-muted">No agent backflow was needed.</p>';
+    return `<ul>${events.map((event) => `<li>${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}</li>`).join("")}</ul>`;
   }
 
   async function createMission(event) {
