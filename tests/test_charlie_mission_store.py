@@ -73,6 +73,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(mission_params["urgency"], "P1")
         self.assertIn("mission_vault", mission_params["metadata_json"])
         self.assertIn("agent_workflow", mission_params["metadata_json"])
+        self.assertIn("mission_context_pack", mission_params["metadata_json"])
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
@@ -220,6 +221,45 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "mission_vault_metadata_required")
+
+    def test_update_mission_workflow_step_records_handoff_context(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "approved", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "", "", {
+                "mission_vault": {"mission_stage": "intake"},
+                "agent_workflow": [
+                    {"agent": "planner", "status": "pending", "purpose": "Scope", "handoff_to": "architect"},
+                    {"agent": "architect", "status": "pending", "purpose": "Design", "handoff_to": "builder"},
+                ],
+                "mission_context_pack": {"version": "charlie_context_pack_v1"},
+            }, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        def factory(_):
+            return connections.pop(0)
+
+        from modules.charlie.mission_store import update_mission_workflow_step
+
+        result, status_code = update_mission_workflow_step(
+            "MISSION-1",
+            "planner",
+            findings="Scoped for SAM money path.",
+            database_url="postgres://unit-test",
+            connect_factory=factory,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        update_sql, update_params = update_connection.cursor_instance.executed[0]
+        self.assertIn("metadata_json", update_sql)
+        self.assertIn('"planner", "status": "complete"', update_params["metadata_json"])
+        self.assertIn('"architect", "status": "active"', update_params["metadata_json"])
+        self.assertIn("Scoped for SAM money path", update_params["metadata_json"])
 
     def test_mission_status_summary_maps_counts(self):
         result, status_code = mission_status_summary(

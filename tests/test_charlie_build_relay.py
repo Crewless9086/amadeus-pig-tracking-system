@@ -297,6 +297,64 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(pause["writes_repo_file"])
         self.assertFalse(reject["writes_repo_file"])
 
+    @patch("modules.charlie.build_relay.update_mission_status")
+    def test_done_command_records_completed_mission(self, update_mission_status):
+        update_mission_status.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "CHARLIE-MISSION-ABC12345",
+            "mission_status": "done",
+        }, 200)
+
+        action = build_relay_action("/done CHARLIE-MISSION-ABC12345")
+
+        self.assertEqual(action["command"], "done")
+        self.assertIn("Mission done", action["telegram_text"])
+        self.assertEqual(update_mission_status.call_args.args[1], "done")
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.update_mission_workflow_step")
+    def test_workflow_command_records_agent_handoff(self, update_workflow):
+        update_workflow.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "CHARLIE-MISSION-ABC12345",
+        }, 200)
+
+        action = build_relay_action("/workflow CHARLIE-MISSION-ABC12345 tester complete")
+
+        self.assertEqual(action["command"], "workflow")
+        self.assertIn("Workflow updated", action["telegram_text"])
+        update_workflow.assert_called_once()
+        self.assertEqual(update_workflow.call_args.kwargs["agent"], "tester")
+        self.assertEqual(update_workflow.call_args.kwargs["step_status"], "complete")
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_review_command_lists_review_ready_missions(self, list_missions):
+        def fake_list_missions(status="", limit=10):
+            if status == "pr_ready":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-REVIEW123",
+                        "status": "pr_ready",
+                        "urgency": "P1",
+                        "title": "Review SAM mission",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/review")
+
+        self.assertEqual(action["command"], "review")
+        self.assertIn("CHARLIE review queue", action["telegram_text"])
+        self.assertIn("Review SAM mission", action["telegram_text"])
+        self.assertIn("inline_keyboard", action["reply_markup"])
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_missions")
     def test_missions_route_returns_queue_records(self, list_missions, _owner_access):
@@ -366,6 +424,27 @@ class CharlieBuildRelayTests(unittest.TestCase):
         update_mission_vault.assert_called_once()
         self.assertEqual(update_mission_vault.call_args.args[0], "MISSION-1")
         self.assertEqual(update_mission_vault.call_args.kwargs["status"], "planned")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.update_mission_workflow_step")
+    def test_dashboard_can_update_workflow_step(self, update_workflow, _owner_access):
+        update_workflow.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/workflow",
+            json={"agent": "tester", "step_status": "complete", "findings": "Tests passed."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        update_workflow.assert_called_once()
+        self.assertEqual(update_workflow.call_args.kwargs["agent"], "tester")
+        self.assertEqual(update_workflow.call_args.kwargs["findings"], "Tests passed.")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.mission_status_summary")

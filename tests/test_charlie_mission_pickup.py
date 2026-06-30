@@ -29,6 +29,13 @@ MISSION = {
     "media_references": [
         {"label": "Sketch", "reference": "planning/inbox/screenshots/useful.png"},
     ],
+    "mission_context_pack": {
+        "version": "charlie_context_pack_v1",
+        "active_truth_docs": ["docs/00-start-here/CURRENT_STATE.md"],
+        "shared_data_rules": ["Supabase is canonical where migration is complete."],
+        "approval_rules": ["LEVEL 3 may open PR but not merge."],
+        "parallel_work": "disabled_until_phase_6_parallel_controls",
+    },
 }
 
 
@@ -79,6 +86,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("Dashboard shows the useful thing.", content)
         self.assertIn("Sketch: planning/inbox/screenshots/useful.png", content)
         self.assertIn("planner: complete", content)
+        self.assertIn("Shared Mission Context Pack", content)
+        self.assertIn("Supabase is canonical", content)
+        self.assertIn("LEVEL 3 may open PR but not merge.", content)
         self.assertIn("LEVEL 3: code and tests may be changed", content)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")

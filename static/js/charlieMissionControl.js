@@ -138,6 +138,7 @@
     const vault = mission.vault || {};
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const media = Array.isArray(mission.media_references) ? mission.media_references : [];
+    const contextPack = mission.mission_context_pack || {};
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -153,6 +154,13 @@
         <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
       </div>
       <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
+      <div class="charlie-workflow-actions" aria-label="Mission workflow actions">
+        <button type="button" data-agent-step="planner">Planner Done</button>
+        <button type="button" data-agent-step="architect">Architect Done</button>
+        <button type="button" data-agent-step="builder">Builder Done</button>
+        <button type="button" data-agent-step="tester">Tester Done</button>
+        <button type="button" data-agent-step="reviewer">Reviewer Done</button>
+      </div>
       <dl class="charlie-mission-meta">
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
@@ -172,7 +180,7 @@
       </div>
       <details>
         <summary>Mission vault details</summary>
-        ${vaultDetails(vault, media)}
+        ${vaultDetails(vault, media, contextPack)}
       </details>
       <details>
         <summary>Technical details</summary>
@@ -185,6 +193,9 @@
     card.querySelectorAll("[data-vault-stage]").forEach((button) => {
       button.addEventListener("click", () => updateVaultStage(mission, button.dataset.vaultStage || "planned"));
     });
+    card.querySelectorAll("[data-agent-step]").forEach((button) => {
+      button.addEventListener("click", () => updateWorkflowStep(missionId, button.dataset.agentStep || "planner"));
+    });
     return card;
   }
 
@@ -194,11 +205,13 @@
     return `<span class="status-pill status-pill-muted">${escapeHtml(name)}: ${escapeHtml(status)}</span>`;
   }
 
-  function vaultDetails(vault, media) {
+  function vaultDetails(vault, media, contextPack) {
     const criteria = listMarkup(vault.acceptance_criteria, "No acceptance criteria captured yet.");
     const tests = listMarkup(vault.test_plan, "No test plan captured yet.");
     const forbidden = listMarkup(vault.forbidden_actions, "Default safety gates apply.");
     const mediaItems = listMarkup((media || []).map((item) => `${item.label || "Reference"}: ${item.reference || ""}`), "No media/reference links captured yet.");
+    const docs = listMarkup(contextPack.active_truth_docs, "Default start-here docs apply.");
+    const sharedRules = listMarkup(contextPack.shared_data_rules, "Shared mission rules are loaded from CHARLIE protocol.");
     return `
       <dl class="charlie-mission-meta charlie-vault-detail">
         <div><dt>Problem</dt><dd>${escapeHtml(safeText(vault.problem_statement || "Not captured yet."))}</dd></div>
@@ -208,6 +221,8 @@
       <strong>Tests</strong>${tests}
       <strong>Forbidden</strong>${forbidden}
       <strong>Media / references</strong>${mediaItems}
+      <strong>Shared context docs</strong>${docs}
+      <strong>Shared data rules</strong>${sharedRules}
     `;
   }
 
@@ -288,6 +303,26 @@
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Mission vault was not updated.", "error");
+    }
+  }
+
+  async function updateWorkflowStep(missionId, agent) {
+    if (!missionId || !agent) return;
+    setMessage(`Marking ${agent} complete...`, "info");
+    try {
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/workflow`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          agent,
+          step_status: "complete",
+          findings: `${agent} step completed from CHARLIE Mission Control.`,
+        }),
+      });
+      setMessage(`${agent} handoff recorded.`, "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Workflow handoff was not recorded.", "error");
     }
   }
 

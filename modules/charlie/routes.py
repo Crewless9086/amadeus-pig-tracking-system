@@ -10,6 +10,7 @@ from modules.charlie.mission_store import (
     list_missions,
     mission_status_summary,
     record_mission,
+    update_mission_workflow_step,
     update_mission_status,
     update_mission_vault,
 )
@@ -192,5 +193,21 @@ def charlie_build_relay_mission_vault_route(mission_id):
         status=str(payload.get("status") or "").strip(),
         owner_decision=str(payload.get("owner_decision") or "").strip(),
         notes=str(payload.get("notes") or "Mission vault updated from CHARLIE Mission Control.").strip(),
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/workflow", methods=["POST"])
+def charlie_build_relay_mission_workflow_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = update_mission_workflow_step(
+        mission_id,
+        agent=str(payload.get("agent") or "").strip(),
+        step_status=str(payload.get("step_status") or "complete").strip(),
+        findings=str(payload.get("findings") or "").strip(),
+        next_agent=str(payload.get("next_agent") or "").strip(),
     )
     return jsonify(result), status_code

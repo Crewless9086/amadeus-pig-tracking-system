@@ -59,6 +59,20 @@ The vault must capture:
 
 The current dashboard supports mission intake with rough concept text, desired outcome, urgency/type, and media/reference links. Binary media upload is a later storage phase; for now, mission media references are paths, URLs, or owner notes stored with the mission.
 
+## Shared Context Pack
+
+Every CHARLIE mission carries the same context pack so Telegram intake, dashboard intake, Codex pickup, and later specialist agents do not drift.
+
+The context pack includes:
+
+- active truth docs: `CHARLIE_MISSION_PROTOCOL.md`, `CURRENT_STATE.md`, `NEXT_STEPS.md`, `WORKFLOW.md`, `DEPLOYMENT_SOP.md`, and `OWNER_INBOX_GUIDE.md`
+- shared data rules: Supabase is canonical where migrated; Google Sheets is legacy/reference/export unless a route is explicitly still fallback
+- approval rules for LEVEL 1 through LEVEL 5
+- agent order: planner, architect, builder, tester, reviewer
+- parallel work status, currently disabled until Phase 6 parallel controls are proven
+
+Codex/Cursor must treat the context pack as the mission brief. If the owner gives a rough idea in Telegram or the dashboard, CHARLIE stores the rough idea and the shared context pack together. Codex then scopes, builds, tests, and debriefs from that combined packet.
+
 ## Agent Workflow
 
 CHARLIE mission work follows five structured roles:
@@ -69,7 +83,7 @@ CHARLIE mission work follows five structured roles:
 - tester - runs focused tests, regression tests, and pressure tests
 - reviewer - checks diff safety, docs, debrief, and release readiness
 
-These roles are currently tracked as mission metadata and followed by Codex/Cursor. They are not yet separate autonomous parallel agents. Parallel workers come later after mission isolation, branch boundaries, and conflict controls are proven.
+These roles are currently tracked as mission metadata and followed by Codex/Cursor. Stage 6 adds owner-visible handoff controls and Telegram workflow updates so each role can record findings for the next role. They are not yet separate autonomous parallel agents. Parallel workers come later after mission isolation, branch boundaries, and conflict controls are proven.
 
 ## Status Model
 
@@ -101,9 +115,12 @@ Current safe commands:
 - `/mission <idea>` - create mission intake
 - `/mission <mission id>` - show mission detail
 - `/debrief <mission id>` - show mission detail/debrief view
+- `/review` - show PR-ready or blocked missions waiting for owner review
 - `/approve <mission id> level1` - approve read-only investigation
 - `/approve <mission id> level3` - approve code/test/PR handoff
 - `/approve <mission id> level4` - approve merge/release handoff after verification
+- `/workflow <mission id> tester complete` - record planner/architect/builder/tester/reviewer handoff state
+- `/done <mission id>` - mark completed/old mission records done
 - `/pause <mission id>` - pause a mission
 - `/reject <mission id>` - reject a mission
 

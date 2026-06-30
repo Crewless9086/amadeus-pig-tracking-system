@@ -175,6 +175,7 @@ def _codex_chat_content(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     media_references = mission.get("media_references") if isinstance(mission.get("media_references"), list) else []
+    context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     return f"""# CODEX CHAT - ACTIVE MISSION TEMPLATE
 
 This mission was picked up from the CHARLIE Supabase mission queue.
@@ -277,6 +278,24 @@ Vault stage: {vault.get("mission_stage", "intake")}
 
 ```text
 {_format_agent_workflow(workflow)}
+```
+
+### Shared Mission Context Pack
+
+```text
+Version: {context_pack.get("version", "charlie_context_pack_v1")}
+
+Active truth docs:
+{_format_list(context_pack.get("active_truth_docs"))}
+
+Shared data rules:
+{_format_list(context_pack.get("shared_data_rules"))}
+
+Approval rules:
+{_format_list(context_pack.get("approval_rules"))}
+
+Parallel work:
+{context_pack.get("parallel_work", "disabled_until_phase_6_parallel_controls")}
 ```
 
 ---

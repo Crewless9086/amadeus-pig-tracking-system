@@ -157,17 +157,14 @@ SAM safety remains unchanged:
 ## CHARLIE Status
 
 - CHARLIE is the planned top-level owner operating layer.
-- CHARLIE Build Relay v0 has started as the first owner-only Telegram/Codex command layer.
-- CHARLIE is not built yet as a production UI.
-- First CHARLIE surface must be owner-only and read-only/draft-only.
+- CHARLIE Build Relay and owner-only `/charlie` Mission Control are live as the first Telegram/dashboard mission layer.
+- First CHARLIE surface remains owner-only and record/handoff focused.
 - Build Relay v0 is disabled by default and cannot commit, merge, deploy, run shell commands, write production data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 - CHARLIE Build Relay live Telegram test passed after Render env setup: `/help`, `/next`, `/mission`, and CODEX_CHAT write-gated intake worked.
-- Active branch: `charlie-relay-mission-queue`.
-- Current CHARLIE build: durable Supabase mission queue plus local owner notification helper.
+- Current CHARLIE foundation: durable Supabase mission queue plus local owner notification helper.
 - CHARLIE mission queue migration is applied: `supabase/migrations/202606300001_create_charlie_mission_queue.sql`.
 - New durable queue endpoints/commands are non-executing: `/missions` and `GET /api/charlie/build-relay/missions` list stored mission intake only.
 - CHARLIE mission protocol is being formalized so Telegram intake and `planning/CODEX_CHAT.md` follow the same rules.
-- Active branch: `charlie-mission-command-console`.
 - Current command-console scope: `/mission <id>`, `/debrief <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` record or display mission state only. They do not execute build actions.
 - Codex pickup bridge is being added through `scripts/charlie_mission_pickup.py` so a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
 - CHARLIE V1 mission cockpit is active in build: owner-only `/charlie` page, mission queue status cards, decision buttons, and local runner watch mode.
@@ -178,6 +175,7 @@ SAM safety remains unchanged:
 - Continuous runner command: `.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30`.
 - CHARLIE Telegram/dashboard alignment is active in build: `/next` should now show the same live mission handoff state as `/charlie` before falling back to static `NEXT_STEPS.md` mission options.
 - CHARLIE Mission Vault V1 is active in build: dashboard intake, Supabase mission metadata vault, media/reference links, and planner/architect/builder/tester/reviewer role tracking.
+- CHARLIE Stage 6 is active in build: shared mission context pack, owner-visible planner/architect/builder/tester/reviewer handoff controls, `/review`, `/workflow`, and `/done` commands.
 - CHARLIE still does not run builds from Telegram/dashboard directly. Codex/Cursor remains the execution boundary until later parallel-agent controls exist.
 
 ## FRED Status
@@ -204,5 +202,5 @@ SAM safety remains unchanged:
 
 ## Last Updated
 
-2026-06-29
+2026-06-30
 

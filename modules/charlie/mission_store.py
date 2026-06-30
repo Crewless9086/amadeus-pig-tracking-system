@@ -28,8 +28,25 @@ MISSION_EVENT_TYPES = {
     "approval_decision",
     "review_note",
     "vault_updated",
+    "workflow_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
+MISSION_CONTEXT_DOCS = [
+    "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
+    "docs/00-start-here/CURRENT_STATE.md",
+    "docs/00-start-here/NEXT_STEPS.md",
+    "docs/00-start-here/WORKFLOW.md",
+    "docs/00-start-here/DEPLOYMENT_SOP.md",
+    "docs/00-start-here/OWNER_INBOX_GUIDE.md",
+]
+AGENT_SEQUENCE = ["planner", "architect", "builder", "tester", "reviewer"]
+AGENT_STAGE_MAP = {
+    "planner": "planned",
+    "architect": "build_ready",
+    "builder": "built",
+    "tester": "tested",
+    "reviewer": "review_ready",
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -387,6 +404,71 @@ def update_mission_vault(
     }, 200
 
 
+def update_mission_workflow_step(
+    mission_id,
+    agent,
+    step_status="complete",
+    findings="",
+    next_agent="",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    agent = _clean_text(agent, 40).lower()
+    step_status = _clean_text(step_status, 40).lower() or "complete"
+    findings = _clean_text(findings, 1200)
+    next_agent = _clean_text(next_agent, 40).lower()
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if agent not in AGENT_SEQUENCE:
+        return {"success": False, "status": "invalid_agent", "allowed_agents": AGENT_SEQUENCE}, 400
+    if step_status not in {"pending", "active", "complete", "blocked"}:
+        return {"success": False, "status": "invalid_agent_status"}, 400
+
+    loaded, load_status = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else _default_agent_workflow()
+    updated_workflow = _update_workflow_items(workflow, agent, step_status, findings, next_agent)
+    vault = dict(metadata.get("mission_vault") or {})
+    if step_status == "complete":
+        vault["mission_stage"] = AGENT_STAGE_MAP.get(agent, vault.get("mission_stage", "intake"))
+    elif step_status == "blocked":
+        vault["mission_stage"] = "blocked"
+    if findings:
+        handoff_notes = vault.get("handoff_notes") if isinstance(vault.get("handoff_notes"), list) else []
+        handoff_notes = list(handoff_notes)
+        handoff_notes.append({"agent": agent, "status": step_status, "findings": findings})
+        vault["handoff_notes"] = handoff_notes[-12:]
+    context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack()
+
+    status = ""
+    if agent == "reviewer" and step_status == "complete":
+        status = "pr_ready"
+    elif step_status == "blocked":
+        status = "blocked"
+
+    return update_mission_vault(
+        mission_id,
+        {
+            "mission_vault": vault,
+            "agent_workflow": updated_workflow,
+            "mission_context_pack": context_pack,
+        },
+        status=status,
+        owner_decision=f"{agent} step marked {step_status}." if status else "",
+        notes=f"Mission workflow updated: {agent} -> {step_status}.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
 def mission_status_summary(database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -496,6 +578,7 @@ def _mission_row(row):
         "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
         "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
         "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
+        "mission_context_pack": metadata.get("mission_context_pack", {}) if isinstance(metadata.get("mission_context_pack"), dict) else {},
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
     }
@@ -505,6 +588,7 @@ def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
     metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
     metadata.setdefault("agent_workflow", _default_agent_workflow())
+    metadata.setdefault("mission_context_pack", _default_context_pack())
     media_references = mission.get("media_references")
     if isinstance(media_references, list):
         metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
@@ -538,12 +622,33 @@ def _default_mission_vault(raw_text, mission):
 
 def _default_agent_workflow():
     return [
-        {"agent": "planner", "status": "pending", "purpose": "Turn owner concept into scoped mission plan."},
-        {"agent": "architect", "status": "pending", "purpose": "Identify files, data sources, risks, and acceptance criteria."},
-        {"agent": "builder", "status": "pending", "purpose": "Implement scoped changes under approval level."},
-        {"agent": "tester", "status": "pending", "purpose": "Run tests and pressure checks."},
-        {"agent": "reviewer", "status": "pending", "purpose": "Review diff, unsafe actions, docs, and release notes."},
+        {"agent": "planner", "status": "pending", "purpose": "Turn owner concept into scoped mission plan.", "handoff_to": "architect", "findings": ""},
+        {"agent": "architect", "status": "pending", "purpose": "Identify files, data sources, risks, and acceptance criteria.", "handoff_to": "builder", "findings": ""},
+        {"agent": "builder", "status": "pending", "purpose": "Implement scoped changes under approval level.", "handoff_to": "tester", "findings": ""},
+        {"agent": "tester", "status": "pending", "purpose": "Run tests and pressure checks.", "handoff_to": "reviewer", "findings": ""},
+        {"agent": "reviewer", "status": "pending", "purpose": "Review diff, unsafe actions, docs, and release notes.", "handoff_to": "owner", "findings": ""},
     ]
+
+
+def _default_context_pack():
+    return {
+        "version": "charlie_context_pack_v1",
+        "active_truth_docs": list(MISSION_CONTEXT_DOCS),
+        "shared_data_rules": [
+            "Supabase is the canonical durable source where migrations have cut over the app.",
+            "Google Sheets is legacy/reference/export unless a route is explicitly still in fallback mode.",
+            "Mission findings must be recorded in the Mission Vault before handoff to the next role.",
+            "Builder agents must use the Mission Vault, active docs, acceptance criteria, tests, and forbidden actions before editing.",
+        ],
+        "approval_rules": [
+            "LEVEL 1 is read-only investigation.",
+            "LEVEL 2 is docs/planning only.",
+            "LEVEL 3 may build, test, commit, push, and open PR; it may not merge.",
+            "LEVEL 4 may merge after verified diff/tests; red-zone actions still require explicit approval.",
+        ],
+        "agent_order": list(AGENT_SEQUENCE),
+        "parallel_work": "disabled_until_phase_6_parallel_controls",
+    }
 
 
 def _default_forbidden_actions():
@@ -553,6 +658,22 @@ def _default_forbidden_actions():
         "No customer sends, public posts, payments, reservations, or lifecycle writes unless explicitly approved.",
         "No .env, secrets, screenshots, external_sources, static/assets, or planning/Prompts.md unless explicitly approved.",
     ]
+
+
+def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
+    known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
+    for default in _default_agent_workflow():
+        known.setdefault(default["agent"], dict(default))
+    if next_agent and next_agent in AGENT_SEQUENCE:
+        known[agent]["handoff_to"] = next_agent
+    known[agent]["status"] = step_status
+    if findings:
+        known[agent]["findings"] = findings
+    if step_status == "complete":
+        handoff_to = known[agent].get("handoff_to")
+        if handoff_to in known and known[handoff_to].get("status") == "pending":
+            known[handoff_to]["status"] = "active"
+    return [known[name] for name in AGENT_SEQUENCE]
 
 
 def _clean_list(value, max_items=12, max_len=300):

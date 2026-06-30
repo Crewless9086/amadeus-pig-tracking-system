@@ -7657,6 +7657,23 @@ body.oom-farm-command-body {
     font-size: 0.84rem;
 }
 
+.charlie-workflow-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.charlie-workflow-actions button {
+    min-height: 36px;
+    padding: 0 10px;
+    cursor: pointer;
+}
+
+.charlie-workflow-actions button:hover {
+    background: #e6f0ed;
+}
+
 .charlie-mission-card code {
     height: fit-content;
     padding: 4px 6px;
