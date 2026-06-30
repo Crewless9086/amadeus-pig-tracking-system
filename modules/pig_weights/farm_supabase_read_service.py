@@ -761,6 +761,50 @@ def _litter_rows_with_pigs(connect_factory=None):
     return litters, pigs_by_litter
 
 
+def _empty_litter_lifecycle_outcomes():
+    return {
+        "total": 0,
+        "active": 0,
+        "sold": 0,
+        "slaughtered": 0,
+        "dead": 0,
+        "removed": 0,
+        "other": 0,
+    }
+
+
+def _litter_lifecycle_outcomes(pigs):
+    outcomes = _empty_litter_lifecycle_outcomes()
+    for pig in pigs or []:
+        outcomes["total"] += 1
+        outcome = _lifecycle_outcome_for_exit(pig)
+        if outcome:
+            outcomes[outcome] += 1
+        elif _text(pig.get("status")).lower() == "active" and pig.get("on_farm") is True:
+            outcomes["active"] += 1
+        else:
+            outcomes["other"] += 1
+    return outcomes
+
+
+def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
+    explicit_status = _text(litter.get("litter_status"))
+    if explicit_status and explicit_status.lower() != "unknown":
+        return explicit_status
+    if int(lifecycle_outcomes.get("total") or 0) <= 0:
+        return "No piglets recorded"
+    if int(lifecycle_outcomes.get("active") or 0) > 0:
+        return "Active"
+    if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
+        return "Weaned"
+    terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
+    if terminal_count >= int(lifecycle_outcomes.get("total") or 0):
+        return "Completed"
+    if int(reconciliation.get("linked_pig_records") or 0) > 0:
+        return "Review"
+    return "Unknown"
+
+
 def _litter_reconciliation(litter, pigs):
     born_alive = _float_or_none(litter.get("born_alive"))
     total_born = _float_or_none(litter.get("total_born"))
@@ -768,7 +812,7 @@ def _litter_reconciliation(litter, pigs):
     mummified_count = _float_or_none(litter.get("mummified_count")) or 0
     active = len([
         pig for pig in pigs
-        if _text(pig.get("status")) == "Active" and pig.get("on_farm") is True
+        if _text(pig.get("status")).lower() == "active" and pig.get("on_farm") is True
     ])
     exited = len(pigs) - active
     linked = len(pigs)
@@ -829,6 +873,7 @@ def list_litter_overview(connect_factory=None):
         litter_id = _text(litter.get("litter_id"))
         pigs = pigs_by_litter.get(litter_id, [])
         reconciliation = _litter_reconciliation(litter, pigs)
+        lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
         weights = [
             _float_or_none(pig.get("current_weight_kg"))
             for pig in pigs
@@ -848,7 +893,7 @@ def list_litter_overview(connect_factory=None):
             "current_pen_id": "",
             "farrowing_date": _date_text(litter.get("farrowing_date")),
             "wean_date": "",
-            "litter_status": _text(litter.get("litter_status")),
+            "litter_status": _derive_litter_status(litter, reconciliation, lifecycle_outcomes),
             "needs_attention": needs_attention,
             "sheet_needs_attention": "",
             "attention_reason": reconciliation["recommended_action"] if needs_attention == "Yes" else "",
@@ -863,6 +908,7 @@ def list_litter_overview(connect_factory=None):
             "male_count": male_count,
             "female_count": female_count,
             "average_current_weight_kg": _average(weights),
+            "lifecycle_outcomes": lifecycle_outcomes,
             "reconciliation": reconciliation,
         })
 
@@ -893,6 +939,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         return None
     pigs = pigs_by_litter.get(_text(litter_id), [])
     reconciliation = _litter_reconciliation(litter, pigs)
+    lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
     piglets = []
     weights = []
     male_count = 0
@@ -904,7 +951,7 @@ def get_litter_detail(litter_id, connect_factory=None):
             male_count += 1
         elif sex == "Female":
             female_count += 1
-        if _text(pig.get("status")) == "Active":
+        if _text(pig.get("status")).lower() == "active" and pig.get("on_farm") is True:
             active_count += 1
         weight = _float_or_none(pig.get("current_weight_kg"))
         if weight is not None:
@@ -928,6 +975,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "mother_tag_number": _text(litter.get("sow_tag_number")),
         "father_pig_id": _text(litter.get("boar_pig_id")),
         "father_tag_number": _text(litter.get("boar_tag_number")),
+        "litter_status": _derive_litter_status(litter, reconciliation, lifecycle_outcomes),
         "count": len(piglets),
         "male_count": male_count,
         "female_count": female_count,
@@ -936,15 +984,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "piglets": piglets,
         "attention": None,
         "reconciliation": reconciliation,
-        "lifecycle_outcomes": {
-            "total": len(piglets),
-            "active": active_count,
-            "sold": 0,
-            "slaughtered": 0,
-            "dead": 0,
-            "removed": 0,
-            "other": max(0, len(piglets) - active_count),
-        },
+        "lifecycle_outcomes": lifecycle_outcomes,
         "wean_status": "",
         "wean_date": "",
         "source": "supabase_canonical",
