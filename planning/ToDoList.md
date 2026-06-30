@@ -35,6 +35,7 @@ Write the next concept/problem/improvement here if it is not already in `plannin
 
 ## Processed / Logged
 
+- 2026-06-30: Live app review notes converted into CHARLIE mission queue records and preserved in `planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md`.
 - 2026-06-30: CHARLIE Codex pickup bridge moved into active build. Goal: a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
 - 2026-06-30: CHARLIE command-console mission protocol moved into active build. Telegram and `planning/CODEX_CHAT.md` will share `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`; approve/pause/reject commands record decisions only.
 - 2026-06-30: CHARLIE mission queue and owner notification helper moved into active build on `charlie-relay-mission-queue`. Supabase mission queue migration was applied; Telegram remains non-executing.
