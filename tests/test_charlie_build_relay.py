@@ -519,6 +519,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 "updates": {
                     "title": "Updated mission",
                     "desired_outcome": "Better intake detail.",
+                    "media_references": [
+                        {"label": "Extra screenshot", "reference": "data:image/png;base64,ZmFrZQ==", "media_type": "image"},
+                    ],
                 },
                 "comment": "Added before approval.",
             },
@@ -530,6 +533,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         update_intake.assert_called_once()
         self.assertEqual(update_intake.call_args.args[0], "MISSION-1")
         self.assertEqual(update_intake.call_args.kwargs["updates"]["title"], "Updated mission")
+        self.assertEqual(update_intake.call_args.kwargs["updates"]["media_references"][0]["label"], "Extra screenshot")
         self.assertEqual(update_intake.call_args.kwargs["comment"], "Added before approval.")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
