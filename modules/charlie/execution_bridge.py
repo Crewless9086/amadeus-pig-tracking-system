@@ -34,7 +34,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected"],
-    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "commands_run", "files_inspected"],
+    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected"],
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 2
@@ -1044,7 +1044,15 @@ def _agent_required_schema(agent):
     elif agent == "tester":
         base.update({"tests_run": [], "test_status": "pass|fail|blocked"})
     else:
-        base.update({"recommended_owner_decision": "approve_final_release|send_back|pause", "release_notes": [], "changed_files": [], "test_evidence": []})
+        base.update({
+            "recommended_owner_decision": "approve_final_release|send_back|pause",
+            "release_notes": [],
+            "changed_files": [],
+            "test_evidence": [],
+            "pr_url": "pull request URL when changed_files contains releaseable changes",
+            "pr_number": "pull request number when changed_files contains releaseable changes",
+            "links": {"pr": "pull request URL", "local_preview": "local preview URL if available"},
+        })
     return base
 
 
@@ -1217,11 +1225,36 @@ def _agent_quality_gate(agent, artifact):
             return {"passed": False, "reason": f"Reviewer recommended {decision or 'no approval'}."}
         if errors or bugs:
             return {"passed": False, "reason": "Reviewer found errors or bugs."}
+        changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+        pr_reference = _artifact_pr_reference(artifact)
+        if _has_release_relevant_changes(changed_files) and not pr_reference:
+            return {"passed": False, "reason": "Reviewer did not record a PR link or PR number for changed code/docs."}
     return {
         "passed": True,
         "reason": f"{agent} quality gate passed.",
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _artifact_pr_reference(artifact):
+    links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
+    for value in (
+        artifact.get("pr_url"),
+        artifact.get("pr_number"),
+        links.get("pr"),
+        links.get("pull_request"),
+        links.get("diff"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _has_release_relevant_changes(changed_files):
+    files = [str(item or "").strip() for item in (changed_files if isinstance(changed_files, list) else [])]
+    ignored = {"No changed files detected by git diff.", ""}
+    return any(path not in ignored for path in files)
 
 
 def _agent_backflow_target(agent, artifact, quality):
@@ -1335,6 +1368,10 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     reviewer = artifacts.get("reviewer", {})
     tester = artifacts.get("tester", {})
     builder = artifacts.get("builder", {})
+    reviewer_links = reviewer.get("links") if isinstance(reviewer.get("links"), dict) else {}
+    local_preview = _extract_local_preview(reviewer.get("summary", ""))
+    review_links = dict(reviewer_links)
+    review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -1349,8 +1386,10 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "bugs": _collect_artifact_list(artifacts, "bugs"),
             "changed_files": reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
             "test_evidence": reviewer.get("test_evidence") or tester.get("tests_run") or ["Tester artifact did not list tests."],
-            "local_preview": _extract_local_preview(reviewer.get("summary", "")),
-            "links": {"local_preview": _extract_local_preview(reviewer.get("summary", "")).get("url", "")},
+            "local_preview": local_preview,
+            "links": review_links,
+            "pr_url": reviewer.get("pr_url") or review_links.get("pr") or review_links.get("pull_request") or "",
+            "pr_number": reviewer.get("pr_number") or "",
             "release_notes": reviewer.get("release_notes") or ["Review Agent Runner v2 artifacts before final approval."],
             "recommended_owner_decision": reviewer.get("recommended_owner_decision", "approve_final_release"),
             "execution_artifacts": {
