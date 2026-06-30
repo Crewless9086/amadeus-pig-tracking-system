@@ -315,6 +315,59 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_missions.assert_called_once_with(status="", limit="1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.record_mission")
+    def test_dashboard_can_create_structured_mission(self, record_mission, _owner_access):
+        record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions",
+            json={
+                "title": "Build mission vault",
+                "raw_text": "Create a mission vault intake flow.",
+                "desired_outcome": "Mission is stored with useful context.",
+                "urgency": "P2",
+                "mission_type": "agent build",
+                "media_references": [{"label": "Sketch", "reference": "planning/inbox/screenshots/sketch.png"}],
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        record_mission.assert_called_once()
+        mission_arg = record_mission.call_args.args[0]
+        self.assertEqual(mission_arg["title"], "Build mission vault")
+        self.assertEqual(mission_arg["desired_outcome"], "Mission is stored with useful context.")
+        self.assertEqual(mission_arg["media_references"][0]["label"], "Sketch")
+        self.assertEqual(record_mission.call_args.kwargs["source_context"]["source"], "charlie_dashboard")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.update_mission_vault")
+    def test_dashboard_can_update_mission_vault(self, update_mission_vault, _owner_access):
+        update_mission_vault.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "mission_status": "planned",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/vault",
+            json={
+                "status": "planned",
+                "mission_vault": {"mission_stage": "planned"},
+                "agent_workflow": [{"agent": "planner", "status": "complete"}],
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        update_mission_vault.assert_called_once()
+        self.assertEqual(update_mission_vault.call_args.args[0], "MISSION-1")
+        self.assertEqual(update_mission_vault.call_args.kwargs["status"], "planned")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.mission_status_summary")
     def test_missions_summary_route_returns_counts(self, mission_status_summary, _owner_access):
         mission_status_summary.return_value = ({

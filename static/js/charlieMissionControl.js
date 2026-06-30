@@ -12,6 +12,13 @@
     refresh: document.getElementById("charlie_refresh"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
+    createForm: document.getElementById("charlie_mission_create_form"),
+    newTitle: document.getElementById("charlie_new_title"),
+    newConcept: document.getElementById("charlie_new_concept"),
+    newOutcome: document.getElementById("charlie_new_outcome"),
+    newMedia: document.getElementById("charlie_new_media"),
+    newUrgency: document.getElementById("charlie_new_urgency"),
+    newType: document.getElementById("charlie_new_type"),
     runner: {
       state: document.getElementById("charlie_runner_state"),
       message: document.getElementById("charlie_runner_message"),
@@ -128,6 +135,9 @@
     card.className = "charlie-mission-card";
     const missionId = safeText(mission.mission_id);
     const title = safeText(mission.title || mission.raw_text || "Untitled mission");
+    const vault = mission.vault || {};
+    const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    const media = Array.isArray(mission.media_references) ? mission.media_references : [];
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -137,6 +147,12 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
+      <div class="charlie-vault-summary">
+        <strong>Mission Vault</strong>
+        <span>Stage: ${escapeHtml(safeText(vault.mission_stage || "intake"))}</span>
+        <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
+      </div>
+      <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
       <dl class="charlie-mission-meta">
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
@@ -144,6 +160,8 @@
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
       <div class="charlie-mission-actions">
+        <button type="button" data-vault-stage="planned">Mark Planned</button>
+        <button type="button" data-vault-stage="review_ready">Review Ready</button>
         <button type="button" data-action="approved" data-level="LEVEL 1">Approve L1</button>
         <button type="button" data-action="approved" data-level="LEVEL 3">Approve L3</button>
         <button type="button" data-action="approved" data-level="LEVEL 4">Approve L4</button>
@@ -153,6 +171,10 @@
         <button type="button" data-action="done">Done</button>
       </div>
       <details>
+        <summary>Mission vault details</summary>
+        ${vaultDetails(vault, media)}
+      </details>
+      <details>
         <summary>Technical details</summary>
         <pre>${escapeHtml(JSON.stringify(mission, null, 2))}</pre>
       </details>
@@ -160,7 +182,39 @@
     card.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", () => recordDecision(missionId, button.dataset.action, button.dataset.level || ""));
     });
+    card.querySelectorAll("[data-vault-stage]").forEach((button) => {
+      button.addEventListener("click", () => updateVaultStage(mission, button.dataset.vaultStage || "planned"));
+    });
     return card;
+  }
+
+  function agentBadge(agent) {
+    const name = safeText(agent.agent || "agent");
+    const status = safeText(agent.status || "pending");
+    return `<span class="status-pill status-pill-muted">${escapeHtml(name)}: ${escapeHtml(status)}</span>`;
+  }
+
+  function vaultDetails(vault, media) {
+    const criteria = listMarkup(vault.acceptance_criteria, "No acceptance criteria captured yet.");
+    const tests = listMarkup(vault.test_plan, "No test plan captured yet.");
+    const forbidden = listMarkup(vault.forbidden_actions, "Default safety gates apply.");
+    const mediaItems = listMarkup((media || []).map((item) => `${item.label || "Reference"}: ${item.reference || ""}`), "No media/reference links captured yet.");
+    return `
+      <dl class="charlie-mission-meta charlie-vault-detail">
+        <div><dt>Problem</dt><dd>${escapeHtml(safeText(vault.problem_statement || "Not captured yet."))}</dd></div>
+        <div><dt>Outcome</dt><dd>${escapeHtml(safeText(vault.desired_outcome || "Codex scopes and completes the mission under the approved level."))}</dd></div>
+      </dl>
+      <strong>Acceptance</strong>${criteria}
+      <strong>Tests</strong>${tests}
+      <strong>Forbidden</strong>${forbidden}
+      <strong>Media / references</strong>${mediaItems}
+    `;
+  }
+
+  function listMarkup(items, fallback) {
+    const list = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!list.length) return `<p class="charlie-muted">${escapeHtml(fallback)}</p>`;
+    return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
 
   async function recordDecision(missionId, status, approvalLevel) {
@@ -184,6 +238,78 @@
     }
   }
 
+  async function createMission(event) {
+    event.preventDefault();
+    const concept = safeText(els.newConcept && els.newConcept.value).trim();
+    if (!concept) {
+      setMessage("Add a concept, issue, or idea before creating a mission.", "error");
+      return;
+    }
+    setMessage("Creating mission...", "info");
+    try {
+      await fetchJson("/api/charlie/build-relay/missions", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          title: safeText(els.newTitle && els.newTitle.value).trim() || concept.slice(0, 90),
+          raw_text: concept,
+          desired_outcome: safeText(els.newOutcome && els.newOutcome.value).trim(),
+          urgency: els.newUrgency ? els.newUrgency.value : "P2",
+          mission_type: els.newType ? els.newType.value : "feature build",
+          approval_level: "LEVEL 3",
+          media_references: parseMediaReferences(els.newMedia && els.newMedia.value),
+        }),
+      });
+      els.createForm.reset();
+      setMessage("Mission created in CHARLIE vault.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Mission was not created.", "error");
+    }
+  }
+
+  async function updateVaultStage(mission, stage) {
+    const missionId = safeText(mission.mission_id);
+    if (!missionId) return;
+    const vault = Object.assign({}, mission.vault || {}, {mission_stage: stage});
+    const workflow = updateWorkflowForStage(mission.agent_workflow || [], stage);
+    setMessage(`Updating mission vault to ${stage}...`, "info");
+    try {
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/vault`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          mission_vault: vault,
+          agent_workflow: workflow,
+          notes: `Mission vault stage changed to ${stage} from CHARLIE Mission Control.`,
+        }),
+      });
+      setMessage(`Mission vault marked ${stage}.`, "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Mission vault was not updated.", "error");
+    }
+  }
+
+  function updateWorkflowForStage(workflow, stage) {
+    const stages = {
+      planned: ["planner", "architect"],
+      review_ready: ["planner", "architect", "builder", "tester", "reviewer"],
+    };
+    const completed = new Set(stages[stage] || []);
+    return (Array.isArray(workflow) ? workflow : []).map((item) => {
+      const agent = safeText(item.agent);
+      return Object.assign({}, item, {status: completed.has(agent) ? "complete" : (item.status || "pending")});
+    });
+  }
+
+  function parseMediaReferences(value) {
+    return safeText(value).split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => ({label: line.slice(0, 80), reference: line, media_type: "reference"}));
+  }
+
   function shortId(value) {
     return value ? value.slice(-8) : "no-id";
   }
@@ -199,5 +325,6 @@
 
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
+  if (els.createForm) els.createForm.addEventListener("submit", createMission);
   loadMissions();
 })();

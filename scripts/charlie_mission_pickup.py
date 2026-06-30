@@ -172,6 +172,9 @@ def _codex_chat_content(mission):
     mission_id = str(mission.get("mission_id") or "").strip()
     runner_mode = _runner_mode(approval_level)
     level_guidance = _approval_level_guidance(approval_level)
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    media_references = mission.get("media_references") if isinstance(mission.get("media_references"), list) else []
     return f"""# CODEX CHAT - ACTIVE MISSION TEMPLATE
 
 This mission was picked up from the CHARLIE Supabase mission queue.
@@ -227,6 +230,53 @@ Mission ID: {mission_id}
 Mission title: {title}
 Mission status at pickup: in_progress
 Runner mode: {runner_mode}
+Vault stage: {vault.get("mission_stage", "intake")}
+```
+
+---
+
+## MISSION VAULT
+
+### Problem Statement
+
+```text
+{vault.get("problem_statement") or raw_text}
+```
+
+### Desired Outcome
+
+```text
+{vault.get("desired_outcome") or "Codex scopes this CHARLIE mission, updates active docs, builds only within the approved level and hard stops, tests thoroughly, and reports a debrief."}
+```
+
+### Acceptance Criteria
+
+```text
+{_format_list(vault.get("acceptance_criteria"))}
+```
+
+### Test Plan
+
+```text
+{_format_list(vault.get("test_plan"))}
+```
+
+### Forbidden Actions
+
+```text
+{_format_list(vault.get("forbidden_actions"))}
+```
+
+### Media / References
+
+```text
+{_format_media(media_references)}
+```
+
+### Agent Workflow
+
+```text
+{_format_agent_workflow(workflow)}
 ```
 
 ---
@@ -247,6 +297,41 @@ Runner mode: {runner_mode}
 4. Proceed only within the approved mission level.
 5. Update docs and debrief when done.
 """
+
+
+def _format_list(items):
+    if not isinstance(items, list) or not items:
+        return "- Not captured yet; Codex must scope this before build."
+    return "\n".join(f"- {str(item).strip()}" for item in items if str(item).strip()) or "- Not captured yet."
+
+
+def _format_media(items):
+    if not isinstance(items, list) or not items:
+        return "- No media references captured."
+    lines = []
+    for item in items:
+        if isinstance(item, dict):
+            label = str(item.get("label") or "Reference").strip()
+            reference = str(item.get("reference") or "").strip()
+            if reference:
+                lines.append(f"- {label}: {reference}")
+        elif str(item).strip():
+            lines.append(f"- {str(item).strip()}")
+    return "\n".join(lines) or "- No media references captured."
+
+
+def _format_agent_workflow(items):
+    if not isinstance(items, list) or not items:
+        return "- planner: pending\n- architect: pending\n- builder: pending\n- tester: pending\n- reviewer: pending"
+    lines = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        agent = str(item.get("agent") or "agent").strip()
+        status = str(item.get("status") or "pending").strip()
+        purpose = str(item.get("purpose") or "").strip()
+        lines.append(f"- {agent}: {status}" + (f" - {purpose}" if purpose else ""))
+    return "\n".join(lines) or "- planner: pending\n- architect: pending\n- builder: pending\n- tester: pending\n- reviewer: pending"
 
 
 def _runner_mode(approval_level):

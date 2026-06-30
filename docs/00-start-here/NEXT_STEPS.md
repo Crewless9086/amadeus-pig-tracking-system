@@ -97,6 +97,12 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - `/next` must show the same live mission handoff state as `/charlie`: active mission, PR-ready mission, approved waiting pickup, and new missions waiting for approval
   - `/next` should list approval commands/buttons for new missions and fall back to `NEXT_STEPS.md` only when the Supabase mission queue is unavailable or empty
   - dashboard and Telegram decisions remain record-only; local Codex/Cursor runner remains the build execution boundary
+- CHARLIE Mission Vault V1:
+  - `/charlie` mission intake should let the owner create missions from a rough concept, desired outcome, urgency/type, and media/reference links
+  - each Supabase mission stores a structured vault packet in metadata: problem, outcome, acceptance criteria, tests, forbidden actions, owner decisions, media references, rollback, and confidence target
+  - mission cards should show the five tracked roles: planner, architect, builder, tester, reviewer
+  - Codex pickup must write the mission vault and agent workflow into `planning/CODEX_CHAT.md`
+  - this is role-structured execution, not parallel autonomous agents yet
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.

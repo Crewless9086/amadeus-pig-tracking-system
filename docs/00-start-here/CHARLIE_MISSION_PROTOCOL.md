@@ -40,6 +40,37 @@ Telegram mission intake is stored in Supabase `charlie_missions`. Mission decisi
 
 `planning/CODEX_CHAT.md` remains the laptop-friendly active mission scratchpad. Supabase is the durable mission queue.
 
+## Mission Vault
+
+Each mission carries a structured vault record in Supabase metadata. The vault is the canonical mission packet that feeds Codex/Cursor and later specialist agents.
+
+The vault must capture:
+
+- problem statement
+- desired outcome
+- mission stage
+- acceptance criteria
+- test plan and pressure-test plan
+- forbidden actions
+- owner decisions needed
+- media/reference links
+- rollback plan
+- confidence target
+
+The current dashboard supports mission intake with rough concept text, desired outcome, urgency/type, and media/reference links. Binary media upload is a later storage phase; for now, mission media references are paths, URLs, or owner notes stored with the mission.
+
+## Agent Workflow
+
+CHARLIE mission work follows five structured roles:
+
+- planner - turns owner concept into a scoped mission plan
+- architect - identifies source of truth, files, risks, and acceptance criteria
+- builder - implements scoped changes under the approval level
+- tester - runs focused tests, regression tests, and pressure tests
+- reviewer - checks diff safety, docs, debrief, and release readiness
+
+These roles are currently tracked as mission metadata and followed by Codex/Cursor. They are not yet separate autonomous parallel agents. Parallel workers come later after mission isolation, branch boundaries, and conflict controls are proven.
+
 ## Status Model
 
 Allowed mission statuses:

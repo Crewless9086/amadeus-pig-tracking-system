@@ -27,6 +27,7 @@ MISSION_EVENT_TYPES = {
     "status_changed",
     "approval_decision",
     "review_note",
+    "vault_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
 
@@ -311,6 +312,81 @@ def record_mission_event(mission_id, event_type, notes="", metadata=None, databa
     return {"success": True, "configured": True, "status": "ok", "mission_id": mission_id}, 201
 
 
+def update_mission_vault(
+    mission_id,
+    vault_metadata,
+    status="",
+    owner_decision="",
+    notes="Mission vault updated.",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if not isinstance(vault_metadata, dict):
+        return {"success": False, "status": "mission_vault_metadata_required"}, 400
+    status = _clean_text(status, 40)
+    if status and status not in MISSION_STATUSES:
+        return {"success": False, "status": "invalid_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    set_lines = [
+        "metadata_json = coalesce(metadata_json, '{}'::jsonb) || %(metadata_json)s::jsonb",
+        "updated_at = now()",
+    ]
+    params = {
+        "mission_id": mission_id,
+        "metadata_json": json.dumps(vault_metadata),
+    }
+    if status:
+        set_lines.insert(0, "status = %(status)s")
+        params["status"] = status
+    if owner_decision:
+        set_lines.insert(0, "owner_decision = %(owner_decision)s")
+        params["owner_decision"] = _clean_text(owner_decision, 1000)
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update public.charlie_missions
+                    set {", ".join(set_lines)}
+                    where mission_id = %(mission_id)s
+                    returning mission_id
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                _insert_event(cursor, mission_id, "vault_updated", notes, {
+                    "status": status,
+                    "owner_decision": _clean_text(owner_decision, 1000),
+                    "vault_keys": sorted(vault_metadata.keys()),
+                })
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_vault_update_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mission_id": mission_id,
+        "mission_status": status,
+        "vault_keys": sorted(vault_metadata.keys()),
+    }, 200
+
+
 def mission_status_summary(database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -347,6 +423,8 @@ def _mission_params(mission, source_context):
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     now = datetime.now(timezone.utc).isoformat()
     mission_id = _clean_text(mission.get("mission_id", ""), 90) or _mission_id(raw_text, source_context, now)
+    metadata = mission.get("metadata", {}) if isinstance(mission.get("metadata"), dict) else {}
+    metadata = _mission_metadata(raw_text, mission, source_context, metadata)
     return {
         "mission_id": mission_id,
         "status": _clean_text(mission.get("status", "new"), 40) or "new",
@@ -362,7 +440,7 @@ def _mission_params(mission, source_context):
         "selected_next_step": _clean_text(mission.get("selected_next_step", ""), 1000),
         "owner_decision": _clean_text(mission.get("owner_decision", ""), 1000),
         "codex_chat_write_status": _clean_text(mission.get("codex_chat_write_status", ""), 80),
-        "metadata_json": json.dumps(mission.get("metadata", {}) if isinstance(mission.get("metadata"), dict) else {}),
+        "metadata_json": json.dumps(metadata),
     }
 
 
@@ -399,6 +477,7 @@ def _insert_event(cursor, mission_id, event_type, notes, metadata):
 
 
 def _mission_row(row):
+    metadata = row[13] if isinstance(row[13], dict) else {}
     return {
         "mission_id": row[0],
         "status": row[1],
@@ -413,9 +492,99 @@ def _mission_row(row):
         "selected_next_step": row[10],
         "owner_decision": row[11],
         "codex_chat_write_status": row[12],
-        "metadata": row[13] if isinstance(row[13], dict) else {},
+        "metadata": metadata,
+        "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
+        "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
+        "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
+    }
+
+
+def _mission_metadata(raw_text, mission, source_context, metadata):
+    metadata = dict(metadata or {})
+    metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
+    metadata.setdefault("agent_workflow", _default_agent_workflow())
+    media_references = mission.get("media_references")
+    if isinstance(media_references, list):
+        metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
+    else:
+        metadata.setdefault("media_references", [])
+    metadata.setdefault("intake", {
+        "source": _clean_text(source_context.get("source", "telegram"), 60) or "telegram",
+        "requires_planner": True,
+        "requires_builder": True,
+        "requires_tester": True,
+        "requires_reviewer": True,
+    })
+    return metadata
+
+
+def _default_mission_vault(raw_text, mission):
+    return {
+        "mission_stage": "intake",
+        "problem_statement": _clean_text(raw_text, 1200),
+        "desired_outcome": _clean_text(mission.get("desired_outcome", ""), 1200),
+        "scope_summary": _clean_text(mission.get("scope_summary", ""), 1200),
+        "acceptance_criteria": _clean_list(mission.get("acceptance_criteria")),
+        "test_plan": _clean_list(mission.get("test_plan")),
+        "pressure_test_plan": _clean_list(mission.get("pressure_test_plan")),
+        "forbidden_actions": _clean_list(mission.get("forbidden_actions")) or _default_forbidden_actions(),
+        "owner_decisions_needed": _clean_list(mission.get("owner_decisions_needed")),
+        "confidence_target": _clean_text(mission.get("confidence_target", "98% before owner release review"), 80),
+        "rollback_plan": _clean_text(mission.get("rollback_plan", "Revert the scoped PR or pause the mission before release."), 800),
+    }
+
+
+def _default_agent_workflow():
+    return [
+        {"agent": "planner", "status": "pending", "purpose": "Turn owner concept into scoped mission plan."},
+        {"agent": "architect", "status": "pending", "purpose": "Identify files, data sources, risks, and acceptance criteria."},
+        {"agent": "builder", "status": "pending", "purpose": "Implement scoped changes under approval level."},
+        {"agent": "tester", "status": "pending", "purpose": "Run tests and pressure checks."},
+        {"agent": "reviewer", "status": "pending", "purpose": "Review diff, unsafe actions, docs, and release notes."},
+    ]
+
+
+def _default_forbidden_actions():
+    return [
+        "No production data writes unless explicitly approved.",
+        "No migrations unless explicitly approved.",
+        "No customer sends, public posts, payments, reservations, or lifecycle writes unless explicitly approved.",
+        "No .env, secrets, screenshots, external_sources, static/assets, or planning/Prompts.md unless explicitly approved.",
+    ]
+
+
+def _clean_list(value, max_items=12, max_len=300):
+    if isinstance(value, str):
+        raw_items = [line.strip("- ").strip() for line in value.splitlines()]
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+    items = []
+    for item in raw_items:
+        clean = _clean_text(item, max_len)
+        if clean:
+            items.append(clean)
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def _clean_media_reference(item):
+    if isinstance(item, str):
+        text = _clean_text(item, 500)
+        return {"label": text[:80], "reference": text} if text else {}
+    if not isinstance(item, dict):
+        return {}
+    reference = _clean_text(item.get("reference") or item.get("url") or item.get("path"), 500)
+    if not reference:
+        return {}
+    return {
+        "label": _clean_text(item.get("label") or reference, 120),
+        "reference": reference,
+        "media_type": _clean_text(item.get("media_type", "reference"), 40),
     }
 
 
