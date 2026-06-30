@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,7 +43,7 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
         "title": mission.get("title", ""),
         "execution_id": execution_id,
         "prompt_path": str(prompt_path),
-        "execute_command": f"codex exec --cd {REPO_ROOT} --sandbox workspace-write --ask-for-approval never -",
+        "execute_command": f"codex exec --cd {REPO_ROOT} --sandbox workspace-write -",
         "will_execute_codex": False,
     }, 200
 
@@ -81,14 +82,12 @@ def run_codex_execution_bridge(
 
     _record_execution_stage(mission_id, "planner", "active", "Local Codex execution bridge started.")
     command = codex_command or [
-        "codex",
+        _codex_executable(),
         "exec",
         "--cd",
         str(REPO_ROOT),
         "--sandbox",
         "workspace-write",
-        "--ask-for-approval",
-        "never",
         "--output-last-message",
         str(final_path),
         "-",
@@ -100,6 +99,8 @@ def run_codex_execution_bridge(
         input=prompt_path.read_text(encoding="utf-8"),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(REPO_ROOT),
         timeout=int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
         check=False,
@@ -310,6 +311,12 @@ def _changed_files():
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _codex_executable():
+    if os.name == "nt":
+        return shutil.which("codex.cmd") or shutil.which("codex.exe") or shutil.which("codex") or "codex.cmd"
+    return shutil.which("codex") or "codex"
 
 
 def _extract_test_evidence(final_message):

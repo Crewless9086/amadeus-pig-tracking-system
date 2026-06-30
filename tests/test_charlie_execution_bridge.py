@@ -28,6 +28,19 @@ MISSION = {
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    @patch("modules.charlie.execution_bridge.shutil.which")
+    @patch("modules.charlie.execution_bridge.os.name", "nt")
+    def test_codex_executable_prefers_windows_cmd_shim(self, which):
+        def fake_which(name):
+            return "C:/Users/charl/AppData/Roaming/npm/codex.cmd" if name == "codex.cmd" else None
+
+        which.side_effect = fake_which
+
+        self.assertEqual(
+            execution_bridge._codex_executable(),
+            "C:/Users/charl/AppData/Roaming/npm/codex.cmd",
+        )
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_writes_prompt_without_running_codex(self, get_mission):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
