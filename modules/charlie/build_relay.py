@@ -126,7 +126,7 @@ def build_relay_action(text, environ=None):
     cleaned = str(text or "").strip()[:MAX_TELEGRAM_TEXT_CHARS]
     lower = cleaned.lower()
     repo_root = _repo_root(source)
-    if lower in {"/help", "help", "charlie", "/charlie"}:
+    if lower in {"/start", "start", "/help", "help", "charlie", "/charlie"}:
         return _help_action()
     if lower in {"/status", "status", "what is happening", "where are we"}:
         return _status_action(repo_root)

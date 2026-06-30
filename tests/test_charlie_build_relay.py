@@ -111,6 +111,14 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["mission"]["approval_level"], "LEVEL 3")
         self.assertIn("Mission intake prepared", action["telegram_text"])
 
+    @patch.dict(os.environ, {}, clear=True)
+    def test_start_command_returns_help(self):
+        action = build_relay_action("/start")
+
+        self.assertEqual(action["command"], "help")
+        self.assertFalse(action["writes_repo_file"])
+        self.assertIn("CHARLIE Build Relay", action["telegram_text"])
+
     def test_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
