@@ -5,6 +5,7 @@ from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
+from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
     list_missions,
@@ -114,12 +115,17 @@ def charlie_build_relay_runner_status_route():
 
     active_mission = _first_mission(in_progress) or _first_mission(pr_ready)
     next_approved = _first_mission(approved)
+    local_status = local_runner_status()
     if active_mission:
         runner_status = "active_mission_in_progress"
         next_action = "Codex is expected to finish or debrief the active mission before another approved mission is picked up."
     elif next_approved:
         runner_status = "approved_waiting_for_local_runner"
-        next_action = "Start or keep the local Codex runner active so it can pick up this approved mission."
+        next_action = (
+            "Approved mission is waiting. The local runner is active and should pick it up shortly."
+            if local_status.get("active")
+            else "Approved mission is waiting. Start the local CHARLIE runner before expecting automatic pickup."
+        )
     else:
         runner_status = "idle_no_approved_mission"
         next_action = "Create or approve a mission from Telegram or CHARLIE Mission Control."
@@ -130,7 +136,13 @@ def charlie_build_relay_runner_status_route():
         "active_mission": active_mission,
         "next_approved_mission": next_approved,
         "next_action": next_action,
+        "local_runner": local_status,
         "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30",
+        "local_runner_control_commands": {
+            "status": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py status",
+            "start": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py start",
+            "stop": ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py stop",
+        },
         "can_run_shell_from_web": False,
         "can_commit_from_web": False,
         "can_merge_from_web": False,

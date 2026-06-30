@@ -18,6 +18,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("charlie_mission_create_form", template)
         self.assertIn("charlie_new_concept", template)
         self.assertIn("charlie_new_media", template)
+        self.assertIn("charlie_runner_local", template)
+        self.assertIn("charlie_runner_seen", template)
+        self.assertIn("charlie_runner_control_commands", template)
         self.assertIn("/api/charlie/build-relay/missions/summary", script)
         self.assertIn("/api/charlie/build-relay/missions", script)
         self.assertIn("/decision", script)
@@ -28,6 +31,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("mission_context_pack", script)
         self.assertIn("Planner Done", script)
         self.assertIn("Reviewer Done", script)
+        self.assertIn("local_runner", script)
+        self.assertIn("charlie_runner_control.py", script)
         self.assertIn("cannot run shell commands", template)
         self.assertIn("send customers", template)
 

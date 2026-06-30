@@ -16,6 +16,7 @@ from modules.charlie.mission_store import (
     update_mission_status,
     update_mission_workflow_step,
 )
+from modules.charlie.runner_control import runner_status as local_runner_status
 
 
 TRUTHY = {"1", "true", "yes", "on"}
@@ -280,10 +281,17 @@ def _status_action(repo_root):
     summary = _first_lines_after(current, "## Active Branches / PRs", max_items=6)
     if not summary:
         summary = _first_lines_after(current, "## Production State", max_items=5)
+    runner = local_runner_status()
     return {
         "command": "status",
-        "telegram_text": ("CHARLIE status\n\n" + ("\n".join(summary) if summary else "CURRENT_STATE.md could not be summarized."))[:MAX_REPLY_CHARS],
+        "telegram_text": (
+            "CHARLIE status\n\n"
+            f"Local runner: {'active' if runner.get('active') else 'not active'}\n"
+            f"Runner last seen: {runner.get('last_seen') or 'never'}\n\n"
+            + ("\n".join(summary) if summary else "CURRENT_STATE.md could not be summarized.")
+        )[:MAX_REPLY_CHARS],
         "reply_markup": _main_keyboard(),
+        "local_runner": runner,
         "writes_repo_file": False,
     }
 
@@ -584,7 +592,8 @@ def _mission_decision_action(raw_mission_id, status, command):
             f"Mission {status}.\n\n"
             f"Mission: {mission_id}\n"
             f"Approval: {approval_level or 'unchanged'}\n"
-            "This records your decision for the Codex runner handoff and does not execute build actions. Telegram still cannot run shell commands directly, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records."
+            f"Local runner: {'active' if local_runner_status().get('active') else 'not active'}\n\n"
+            "This records your decision for the Codex runner handoff and does not execute build actions. If the local runner is not active, start it with scripts/charlie_runner_control.py start. Telegram still cannot run shell commands directly, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records."
         )[:MAX_REPLY_CHARS],
         "mission_store": result,
         "reply_markup": _main_keyboard(),

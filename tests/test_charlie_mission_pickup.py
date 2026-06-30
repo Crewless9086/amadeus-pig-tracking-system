@@ -108,8 +108,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("LEVEL 4: release/merge authority", content)
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_missions")
-    def test_watch_mode_can_timeout_without_pickup(self, list_missions, sleep):
+    def test_watch_mode_can_timeout_without_pickup(self, list_missions, write_heartbeat, sleep):
         list_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
 
         result, status_code = charlie_mission_pickup.watch_for_mission(
@@ -120,11 +121,13 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "watch_timeout_no_mission_available")
         self.assertEqual(result["checks"], 2)
+        self.assertGreaterEqual(write_heartbeat.call_count, 2)
         sleep.assert_called_once_with(5)
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_missions")
-    def test_continuous_watch_waits_when_mission_is_active(self, list_missions, sleep):
+    def test_continuous_watch_waits_when_mission_is_active(self, list_missions, write_heartbeat, sleep):
         def fake_list_missions(status="approved", limit=10):
             if status == "in_progress":
                 return ({
@@ -149,6 +152,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "active_mission_in_progress")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-ACTIVE")
+        write_heartbeat.assert_called()
         sleep.assert_not_called()
 
 

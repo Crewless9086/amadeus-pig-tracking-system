@@ -52,10 +52,13 @@
       <dl class="charlie-mission-meta">
         <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
         <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
+        <div><dt>Local Runner</dt><dd id="charlie_runner_local">--</dd></div>
+        <div><dt>Last Seen</dt><dd id="charlie_runner_seen">--</dd></div>
       </dl>
       <details>
-        <summary>Local runner command</summary>
+        <summary>Local runner commands</summary>
         <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30</pre>
+        <pre id="charlie_runner_control_commands">.\venv\Scripts\python.exe scripts\charlie_runner_control.py status</pre>
       </details>
     </section>
 

@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.mission_store import list_missions, update_mission_status
+from modules.charlie.runner_control import write_runner_heartbeat
 from scripts.charlie_notify import _format_message, main as notify_main
 
 
@@ -51,6 +52,7 @@ def main():
 def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, interval_seconds=60, max_checks=None, continuous=False):
     interval_seconds = max(5, int(interval_seconds or 60))
     checks = 0
+    write_runner_heartbeat({"status": "watch_started"})
     while True:
         checks += 1
         if continuous:
@@ -64,6 +66,7 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
                     "active_status": active.get("status"),
                     "checks": checks,
                 }
+                write_runner_heartbeat(result)
                 if max_checks is not None and checks >= max_checks:
                     return result, 200
                 time.sleep(interval_seconds)
@@ -75,6 +78,7 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
             notify=notify,
         )
         result["checks"] = checks
+        write_runner_heartbeat(result)
         if result.get("status") == "mission_picked_up" and continuous and status_code < 400:
             if max_checks is not None and checks >= max_checks:
                 return result, status_code

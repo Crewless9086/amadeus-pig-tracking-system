@@ -298,7 +298,7 @@ def _lifecycle_outcome_for_exit(row):
     status = to_clean_string(row.get("Status", "")).lower()
     exit_reason = to_clean_string(row.get("Exit_Reason", "")).lower().replace("-", "_").replace(" ", "_")
 
-    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
+    if status in {"dead", "died", "deceased"} or exit_reason in {"died", "dead", "deceased", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
         return "dead"
     if status == "removed" or exit_reason in {"removed", "other"}:
         return "removed"
@@ -404,6 +404,24 @@ def _litter_lifecycle_outcomes(litter_id, pig_master_rows):
         else:
             outcomes["other"] += 1
     return outcomes
+
+
+def _derive_litter_status(row, reconciliation, lifecycle_outcomes):
+    explicit_status = to_clean_string(row.get("Litter_Status", ""))
+    if explicit_status and explicit_status.lower() != "unknown":
+        return explicit_status
+    if int(lifecycle_outcomes.get("total") or 0) <= 0:
+        return "No piglets recorded"
+    if int(lifecycle_outcomes.get("active") or 0) > 0:
+        return "Active"
+    if (to_float(row.get("Weaned_Count", "")) or to_float(row.get("Litter_Size_Weaned", "")) or 0) > 0:
+        return "Weaned"
+    terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
+    if terminal_count >= int(lifecycle_outcomes.get("total") or 0):
+        return "Completed"
+    if int(reconciliation.get("linked_pig_records") or 0) > 0:
+        return "Review"
+    return "Unknown"
 
 
 def get_dashboard_summary():
@@ -861,6 +879,7 @@ def list_litter_overview():
             _litter_birth_reconciliation(row),
             pig_master_rows,
         )
+        lifecycle_outcomes = _litter_lifecycle_outcomes(litter_id, pig_master_rows)
         sheet_needs_attention = to_clean_string(row.get("Needs_Attention", ""))
         effective_needs_attention = sheet_needs_attention
         if reconciliation["formula_conflict"]:
@@ -875,7 +894,7 @@ def list_litter_overview():
             "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
             "farrowing_date": format_date_for_json(row.get("Farrowing_Date", "")),
             "wean_date": format_date_for_json(row.get("Wean_Date", "")),
-            "litter_status": to_clean_string(row.get("Litter_Status", "")),
+            "litter_status": _derive_litter_status(row, reconciliation, lifecycle_outcomes),
             "needs_attention": effective_needs_attention,
             "sheet_needs_attention": sheet_needs_attention,
             "attention_reason": _litter_attention_reason(row, reconciliation) if effective_needs_attention == "Yes" else "",
@@ -887,6 +906,7 @@ def list_litter_overview():
             "tagged_pig_count": int(to_float(row.get("Tagged_Pig_Count", "")) or 0),
             "untagged_pig_count": int(to_float(row.get("Untagged_Pig_Count", "")) or 0),
             "average_current_weight_kg": to_float(row.get("Average_Current_Weight_Kg", "")),
+            "lifecycle_outcomes": lifecycle_outcomes,
             "reconciliation": reconciliation,
         })
 
@@ -4296,6 +4316,7 @@ def get_litter_detail(litter_id: str):
                     "attention": attention,
                     "reconciliation": reconciliation,
                     "lifecycle_outcomes": lifecycle_outcomes,
+                    "litter_status": _derive_litter_status(row, reconciliation, lifecycle_outcomes),
                     **wean_timing,
                 }
         return None
@@ -4360,6 +4381,7 @@ def get_litter_detail(litter_id: str):
         "mother_tag_number": mother_tag_number,
         "father_pig_id": father_pig_id,
         "father_tag_number": father_tag_number,
+        "litter_status": _derive_litter_status(first_row, reconciliation, lifecycle_outcomes),
         "count": len(piglets),
         "male_count": male_count,
         "female_count": female_count,
