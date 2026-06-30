@@ -128,13 +128,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "implementation_plan": ["patch runner"] if agent == "architect" else None,
                 "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
                 "build_notes": ["patched"] if agent == "builder" else None,
+                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
+                "commit_sha": "abc1234" if agent == "builder" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
+                "links": {"pr": "https://github.com/org/repo/pull/61"} if agent in {"builder", "reviewer"} else None,
                 "tests_run": ["unit tests passed"] if agent == "tester" else None,
                 "test_status": "pass" if agent == "tester" else None,
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["owner review ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
-                "links": {"pr": "https://github.com/org/repo/pull/61"} if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -206,12 +208,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "implementation_plan": ["patch runner"] if agent == "architect" else None,
                 "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
                 "build_notes": ["patched"] if agent == "builder" else None,
+                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
+                "commit_sha": "abc1234" if agent == "builder" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
                 "tests_run": ["unit tests"] if agent == "tester" else None,
                 "test_status": "fail" if agent == "tester" and tester_calls["count"] == 1 else ("pass" if agent == "tester" else None),
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -290,12 +294,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "next_action": "continue",
                 "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
                 "build_notes": ["patched"] if agent == "builder" else None,
+                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
+                "commit_sha": "abc1234" if agent == "builder" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
                 "tests_run": ["unit tests"] if agent == "tester" else None,
                 "test_status": "pass" if agent == "tester" else None,
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -332,6 +338,22 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("PR link", result["reason"])
 
+    def test_builder_quality_gate_requires_pr_for_changed_files(self):
+        artifact = {
+            "summary": "build complete",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "commands_run": ["git diff --stat"],
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "build_notes": ["patched"],
+        }
+
+        result = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("Builder changed releaseable files", result["reason"])
+
     def test_reviewer_quality_gate_accepts_pr_for_changed_files(self):
         artifact = {
             "summary": "review complete",
@@ -349,6 +371,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
 
         self.assertTrue(result["passed"])
+
+    def test_reviewer_inherits_builder_pr_reference(self):
+        reviewer = {
+            "summary": "review complete",
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+        }
+        artifacts = {
+            "builder": {
+                "pr_url": "https://github.com/org/repo/pull/61",
+                "links": {"pr": "https://github.com/org/repo/pull/61"},
+            }
+        }
+
+        inherited = execution_bridge._inherit_pr_reference("reviewer", reviewer, artifacts)
+
+        self.assertEqual(inherited["pr_url"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(inherited["links"]["pr"], "https://github.com/org/repo/pull/61")
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_rejects_release_approved_mission(self, get_mission):

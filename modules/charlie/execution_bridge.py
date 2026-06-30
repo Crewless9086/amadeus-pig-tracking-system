@@ -310,6 +310,7 @@ def run_agent_execution_bridge_v2(
             )
 
         artifact = _agent_artifact_from_final(agent, _read_text(stage_paths["final_path"]))
+        artifact = _inherit_pr_reference(agent, artifact, artifacts)
         artifact.update({
             "agent": agent,
             "artifact_path": str(stage_paths["final_path"]),
@@ -1018,7 +1019,11 @@ def _agent_stage_instruction(agent):
     if agent == "architect":
         return "Inspect implementation boundaries, source files, route/data contracts, risks, and the safest build approach."
     if agent == "builder":
-        return "Implement only the scoped change, keep diffs tight, and record changed files."
+        return (
+            "Implement only the scoped change, keep diffs tight, and record changed files. "
+            "When changed_files contains releaseable changes under LEVEL 3 or higher, create or update a branch, commit the scoped diff, push it, open a PR, "
+            "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. Do not merge."
+        )
     if agent == "tester":
         return "Run focused verification, investigate failures, and return pass/fail evidence."
     return "Review diff, requirements, tests, safety gates, release notes, and prepare owner review recommendation."
@@ -1040,7 +1045,15 @@ def _agent_required_schema(agent):
     elif agent == "architect":
         base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
     elif agent == "builder":
-        base.update({"changed_files": [], "build_notes": []})
+        base.update({
+            "changed_files": [],
+            "build_notes": [],
+            "branch_name": "branch containing scoped changed files",
+            "commit_sha": "commit containing scoped changed files",
+            "pr_url": "pull request URL when changed_files contains releaseable changes",
+            "pr_number": "pull request number when changed_files contains releaseable changes",
+            "links": {"pr": "pull request URL"},
+        })
     elif agent == "tester":
         base.update({"tests_run": [], "test_status": "pass|fail|blocked"})
     else:
@@ -1219,6 +1232,11 @@ def _agent_quality_gate(agent, artifact):
             return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
         if errors or bugs:
             return {"passed": False, "reason": "Tester reported errors or bugs."}
+    if agent == "builder":
+        changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+        pr_reference = _artifact_pr_reference(artifact)
+        if _has_release_relevant_changes(changed_files) and not pr_reference:
+            return {"passed": False, "reason": "Builder changed releaseable files but did not record a PR link or PR number."}
     if agent == "reviewer":
         decision = str(artifact.get("recommended_owner_decision") or "").strip()
         if decision != "approve_final_release":
@@ -1249,6 +1267,25 @@ def _artifact_pr_reference(artifact):
         if text:
             return text
     return ""
+
+
+def _inherit_pr_reference(agent, artifact, artifacts):
+    if agent != "reviewer" or _artifact_pr_reference(artifact):
+        return artifact
+    builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
+    pr_reference = _artifact_pr_reference(builder)
+    if not pr_reference:
+        return artifact
+    inherited = dict(artifact)
+    links = inherited.get("links") if isinstance(inherited.get("links"), dict) else {}
+    builder_links = builder.get("links") if isinstance(builder.get("links"), dict) else {}
+    merged_links = {**builder_links, **links}
+    if not merged_links.get("pr"):
+        merged_links["pr"] = pr_reference
+    inherited["links"] = merged_links
+    inherited["pr_url"] = inherited.get("pr_url") or builder.get("pr_url") or merged_links.get("pr", "")
+    inherited["pr_number"] = inherited.get("pr_number") or builder.get("pr_number") or ""
+    return inherited
 
 
 def _has_release_relevant_changes(changed_files):
