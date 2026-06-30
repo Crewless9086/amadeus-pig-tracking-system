@@ -285,6 +285,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             continuous=True,
             watch_release=True,
             auto_merge_pr=True,
+            release_verify_url="https://amadeus-pig-tracking-system.onrender.com/charlie",
         )
 
         self.assertEqual(status_code, 200)
@@ -294,6 +295,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             notify=False,
             auto_close_no_release=False,
             auto_merge_pr=True,
+            release_verify_url="https://amadeus-pig-tracking-system.onrender.com/charlie",
         )
         write_heartbeat.assert_called()
         sleep.assert_not_called()

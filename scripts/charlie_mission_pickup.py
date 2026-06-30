@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--watch-release", action="store_true", help="Also watch release_approved missions and run the local release bridge.")
     parser.add_argument("--auto-close-no-release", action="store_true", help="For release_approved missions with no release needed, mark done automatically.")
     parser.add_argument("--auto-merge-pr", action="store_true", help="For release_approved missions with a PR link, merge the PR locally with gh.")
+    parser.add_argument("--release-verify-url", default="", help="Live URL to verify before marking a merged release deployed.")
     args = parser.parse_args()
 
     if args.watch:
@@ -55,6 +56,7 @@ def main():
             watch_release=args.watch_release,
             auto_close_no_release=args.auto_close_no_release,
             auto_merge_pr=args.auto_merge_pr,
+            release_verify_url=args.release_verify_url,
         )
     else:
         result, status_code = pick_up_next_mission(
@@ -91,6 +93,7 @@ def watch_for_mission(
     watch_release=False,
     auto_close_no_release=False,
     auto_merge_pr=False,
+    release_verify_url="",
 ):
     interval_seconds = max(5, int(interval_seconds or 60))
     checks = 0
@@ -133,6 +136,7 @@ def watch_for_mission(
                         notify=notify,
                         auto_close_no_release=auto_close_no_release,
                         auto_merge_pr=auto_merge_pr,
+                        release_verify_url=release_verify_url,
                     )
                     result["checks"] = checks
                     write_runner_heartbeat(result)
@@ -218,11 +222,11 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
     return result, status_code
 
 
-def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False):
+def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):
     if auto_close_no_release:
         result, status_code = complete_no_release_mission(mission_id=mission_id)
     elif auto_merge_pr:
-        result, status_code = run_release_execution(mission_id=mission_id, merge_pr=True)
+        result, status_code = run_release_execution(mission_id=mission_id, merge_pr=True, verify_url=release_verify_url)
     else:
         result, status_code = prepare_release_execution(mission_id=mission_id)
         result["status"] = "release_waiting_for_explicit_mode"
