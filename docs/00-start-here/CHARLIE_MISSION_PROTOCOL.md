@@ -76,6 +76,29 @@ Current safe commands:
 
 Approval commands record decisions only. They do not trigger Codex runtime by themselves.
 
+## Codex Pickup Bridge
+
+Codex can pick up the next approved CHARLIE mission with:
+
+```bash
+python scripts/charlie_mission_pickup.py
+```
+
+The pickup bridge:
+
+- reads the next approved mission from Supabase
+- writes the mission into `planning/CODEX_CHAT.md`
+- marks the mission `in_progress`
+- optionally sends an owner Telegram notification with `--notify`
+
+Dry-run mode:
+
+```bash
+python scripts/charlie_mission_pickup.py --dry-run
+```
+
+This bridge is the safe handoff from Telegram to Codex. It does not make Telegram run shell commands directly. A running Codex/Cursor session must still execute the pickup and follow the mission protocol.
+
 ## Required Codex Startup
 
 Before acting on any mission, Codex must read:

@@ -736,3 +736,20 @@ Safety:
 
 - Approval commands record mission decisions in Supabase only.
 - Approval commands do not trigger Codex runtime, shell commands, commits, merges, deploys, migrations, production data writes, customer sends, public posts, payments, reservations, or farm lifecycle writes.
+
+## CHARLIE Codex Mission Pickup Bridge - 2026-06-30
+
+Mode: local Codex/Cursor handoff utility. No Telegram shell execution, commits, merges, deploys, migrations, production operational writes, customer sends, public posts, payments, reservations, farm lifecycle writes, Phase 3A.6, FRED, ledger SQL, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Added `scripts/charlie_mission_pickup.py`.
+- The script reads the next approved mission from Supabase, writes it into `planning/CODEX_CHAT.md`, and marks it `in_progress`.
+- Dry-run mode reports the next approved mission without writing files or updating mission status.
+- Optional `--notify` sends an owner-only Telegram notification after pickup.
+
+Safety:
+
+- This is a local bridge for a running Codex/Cursor session.
+- Telegram approvals do not execute builds directly.
+- Codex must still read the mission protocol, current state, next steps, workflow, and deployment SOP before building.

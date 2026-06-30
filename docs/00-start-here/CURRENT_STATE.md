@@ -165,6 +165,7 @@ SAM safety remains unchanged:
 - CHARLIE mission protocol is being formalized so Telegram intake and `planning/CODEX_CHAT.md` follow the same rules.
 - Active branch: `charlie-mission-command-console`.
 - Current command-console scope: `/mission <id>`, `/debrief <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` record or display mission state only. They do not execute build actions.
+- Codex pickup bridge is being added through `scripts/charlie_mission_pickup.py` so a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
 
 ## FRED Status
 
