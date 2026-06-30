@@ -25,6 +25,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
 DEFAULT_TIMEOUT_SECONDS = 3600
 FINAL_ARTIFACT_GRACE_SECONDS = 20
+NO_FINAL_ARTIFACT_TIMEOUT_SECONDS = 1200
+NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
 
 
@@ -119,6 +121,19 @@ def run_codex_execution_bridge(
         final_path.write_text(final_message, encoding="utf-8")
 
     if completed.returncode != 0:
+        if completed.returncode == 124 and not _read_text(final_path):
+            return block_codex_execution_without_final_artifact(
+                mission_id,
+                execution_id=execution_id,
+                prompt_path=prompt_path,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                final_path=final_path,
+                started_at=started_at,
+                returncode=completed.returncode,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
         update_mission_status(
             mission_id,
             "blocked",
@@ -251,6 +266,126 @@ def complete_codex_execution_from_artifact(
         "stderr_path": str(artifact["stderr_path"]),
         "final_message_path": str(artifact["final_path"]),
     }, 200
+
+
+def block_codex_execution_without_final_artifact(
+    mission_id,
+    execution_id="",
+    prompt_path=None,
+    stdout_path=None,
+    stderr_path=None,
+    final_path=None,
+    started_at="",
+    returncode=124,
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    artifact = _resolve_execution_artifact(
+        mission_id=mission_id,
+        execution_id=execution_id,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        final_path=final_path,
+    )
+    changed_files = _changed_files()
+    stderr_text = _read_text(artifact["stderr_path"])
+    stdout_text = _read_text(artifact["stdout_path"])
+    summary = (
+        "Codex execution was stopped by the CHARLIE supervisor because no final artifact was produced. "
+        "Local file changes were detected and are preserved for owner/developer review."
+        if changed_files
+        else "Codex execution was stopped by the CHARLIE supervisor because no final artifact was produced and no local file changes were detected."
+    )
+    review_packet = {
+        "review_packet": {
+            "summary": summary,
+            "findings": [
+                "CHARLIE supervisor detected a no-final-artifact timeout.",
+                f"Changed files detected: {len(changed_files)}.",
+                "This mission is blocked instead of being silently left in progress.",
+            ],
+            "errors": [
+                "Codex did not write a final response artifact before the supervisor timeout.",
+            ],
+            "bugs": [],
+            "changed_files": changed_files or ["No changed files detected by git diff."],
+            "test_evidence": [
+                "Automated mission tests were not completed because Codex did not produce a final artifact.",
+            ],
+            "local_preview": {
+                "url": "",
+                "command": "",
+            },
+            "links": {},
+            "release_notes": [
+                "Do not final-approve until the partial work is reviewed, tested, and a PR is created.",
+            ],
+            "execution_artifacts": {
+                "execution_id": artifact["execution_id"],
+                "prompt_path": str(artifact["prompt_path"]),
+                "stdout_path": str(artifact["stdout_path"]),
+                "stderr_path": str(artifact["stderr_path"]),
+                "final_message_path": str(artifact["final_path"]),
+                "started_at": started_at,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "returncode": returncode,
+                "stdout_excerpt": _truncate(stdout_text, 1200),
+                "stderr_excerpt": _truncate(stderr_text, 1200),
+                "supervisor_status": "codex_no_final_artifact_timeout",
+            },
+        }
+    }
+    vault_result, vault_status = update_mission_vault(
+        mission_id,
+        review_packet,
+        notes="CHARLIE supervisor populated blocked review packet after Codex no-final-artifact timeout.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if vault_status >= 400:
+        return vault_result, vault_status
+    _record_execution_stage(
+        mission_id,
+        "reviewer",
+        "blocked",
+        "CHARLIE supervisor blocked the mission because Codex did not produce a final artifact.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    blocked, blocked_status = update_mission_status(
+        mission_id,
+        "blocked",
+        owner_decision="CHARLIE supervisor blocked local Codex execution: no final artifact was produced.",
+        event_type="status_changed",
+        notes="Codex execution timeout without final artifact; partial work preserved for review.",
+        metadata={
+            "script": "scripts/charlie_codex_execution_bridge.py",
+            "execution_id": artifact["execution_id"],
+            "returncode": returncode,
+            "changed_files": changed_files,
+            "supervisor_status": "codex_no_final_artifact_timeout",
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if blocked_status >= 400:
+        return blocked, blocked_status
+    return {
+        "success": False,
+        "status": "codex_no_final_artifact_timeout",
+        "mission_id": mission_id,
+        "mission_status": "blocked",
+        "changed_files": changed_files,
+        "execution_id": artifact["execution_id"],
+        "prompt_path": str(artifact["prompt_path"]),
+        "stdout_path": str(artifact["stdout_path"]),
+        "stderr_path": str(artifact["stderr_path"]),
+        "final_message_path": str(artifact["final_path"]),
+    }, 504
 
 
 def prepare_release_execution(mission_id="", output_dir=None, database_url=None, connect_factory=None):
@@ -718,6 +853,10 @@ def _run_codex_process(
     final_path = Path(final_path)
     started = time.monotonic()
     final_seen_at = None
+    no_final_timeout = min(
+        int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
+        NO_FINAL_ARTIFACT_TIMEOUT_SECONDS,
+    )
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
@@ -738,12 +877,22 @@ def _run_codex_process(
             final_exists = final_path.exists() and final_path.stat().st_size > 0
             if final_exists and final_seen_at is None:
                 final_seen_at = time.monotonic()
+            changed_files = _changed_files()
+            supervisor_status = "codex_final_artifact_seen" if final_exists else "codex_running"
+            if not final_exists and elapsed >= NO_FINAL_ARTIFACT_WARNING_SECONDS:
+                supervisor_status = "codex_no_final_artifact_warning"
             write_runner_heartbeat({
-                "status": "codex_final_artifact_seen" if final_exists else "codex_running",
+                "status": supervisor_status,
                 "mission_id": mission_id,
                 "execution_artifact": str(final_path),
+                "elapsed_seconds": int(elapsed),
+                "changed_files_count": len(changed_files),
+                "final_artifact_present": final_exists,
             })
             if final_seen_at and time.monotonic() - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
+                _terminate_process_tree(process.pid)
+                break
+            if not final_exists and elapsed >= no_final_timeout:
                 _terminate_process_tree(process.pid)
                 break
             if elapsed >= int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS):
@@ -760,6 +909,10 @@ def _run_codex_process(
     returncode = process.returncode
     if returncode is None:
         returncode = 0 if final_path.exists() and final_path.stat().st_size > 0 else 124
+    if not final_path.exists() or final_path.stat().st_size <= 0:
+        if returncode in (0, None):
+            returncode = 124
+        stderr = (stderr or "") + "\nCHARLIE supervisor stopped Codex because no final artifact was produced before timeout.\n"
     if final_path.exists() and final_path.stat().st_size > 0 and returncode not in (0,):
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"

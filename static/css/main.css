@@ -7840,6 +7840,17 @@ body.oom-farm-command-body {
     margin-top: 10px;
 }
 
+.charlie-new-mission-edit form {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.charlie-new-mission-edit input,
+.charlie-new-mission-edit textarea {
+    width: 100%;
+}
+
 @media (max-width: 900px) {
     .charlie-header,
     .charlie-layout {

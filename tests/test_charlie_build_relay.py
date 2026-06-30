@@ -503,6 +503,40 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_mission.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.update_new_mission_intake")
+    def test_dashboard_can_patch_new_mission_intake(self, update_intake, _owner_access):
+        update_intake.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "mission_status": "new",
+            "changed_fields": ["title", "mission_vault.desired_outcome"],
+        }, 200)
+
+        response = self.client.patch(
+            "/api/charlie/build-relay/missions/MISSION-1",
+            json={
+                "updates": {
+                    "title": "Updated mission",
+                    "desired_outcome": "Better intake detail.",
+                    "media_references": [
+                        {"label": "Extra screenshot", "reference": "data:image/png;base64,ZmFrZQ==", "media_type": "image"},
+                    ],
+                },
+                "comment": "Added before approval.",
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        update_intake.assert_called_once()
+        self.assertEqual(update_intake.call_args.args[0], "MISSION-1")
+        self.assertEqual(update_intake.call_args.kwargs["updates"]["title"], "Updated mission")
+        self.assertEqual(update_intake.call_args.kwargs["updates"]["media_references"][0]["label"], "Extra screenshot")
+        self.assertEqual(update_intake.call_args.kwargs["comment"], "Added before approval.")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission_review_packet")
     def test_mission_review_packet_route_returns_stage_8_packet(self, get_review_packet, _owner_access):
         get_review_packet.return_value = ({

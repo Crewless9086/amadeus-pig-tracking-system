@@ -234,6 +234,7 @@
         <summary>Mission vault details</summary>
         ${vaultDetails(vault, media, contextPack)}
       </details>
+      ${mission.status === "new" ? newMissionEditMarkup(mission, vault) : ""}
       <details>
         <summary>Technical details</summary>
         <pre>${escapeHtml(JSON.stringify(mission, null, 2))}</pre>
@@ -248,6 +249,8 @@
     card.querySelectorAll("[data-agent-step]").forEach((button) => {
       button.addEventListener("click", () => updateWorkflowStep(missionId, button.dataset.agentStep || "planner"));
     });
+    const editForm = card.querySelector("[data-new-mission-edit-form]");
+    if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
     return card;
   }
 
@@ -343,6 +346,28 @@
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!list.length) return `<p class="charlie-muted">${escapeHtml(fallback)}</p>`;
     return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
+  function newMissionEditMarkup(mission, vault) {
+    const mediaText = Array.isArray(mission.media_references)
+      ? mission.media_references.map((item) => safeText(item.reference || item.label)).filter(Boolean).join("\n")
+      : "";
+    return `
+      <details class="charlie-new-mission-edit">
+        <summary>Edit new mission</summary>
+        <form data-new-mission-edit-form>
+          <label>Title<input name="title" type="text" maxlength="160" value="${escapeHtml(safeText(mission.title || ""))}"></label>
+          <label>Concept<textarea name="raw_text" rows="4">${escapeHtml(safeText(mission.raw_text || ""))}</textarea></label>
+          <label>Desired outcome<textarea name="desired_outcome" rows="3">${escapeHtml(safeText(vault.desired_outcome || ""))}</textarea></label>
+          <label>Media / reference links<textarea name="media_references" rows="3" placeholder="Optional: one screenshot path, URL, or note per line">${escapeHtml(mediaText)}</textarea></label>
+          <label>Add screenshots<input name="media_files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple data-new-mission-media-files></label>
+          <label>Owner comment<textarea name="comment" rows="3" placeholder="Optional note to append before approval"></textarea></label>
+          <div class="charlie-mission-actions">
+            <button type="submit">Save Edits</button>
+          </div>
+        </form>
+      </details>
+    `;
   }
 
   function mediaMarkup(items, fallback) {
@@ -552,6 +577,67 @@
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => ({label: line.slice(0, 80), reference: line, media_type: "reference"}));
+  }
+
+  async function updateNewMission(event, missionId, form) {
+    event.preventDefault();
+    if (!missionId || !form) return;
+    const formData = new FormData(form);
+    setMessage("Saving mission edits...", "info");
+    try {
+      const mediaFiles = form.querySelector("[data-new-mission-media-files]");
+      const mediaReferences = [
+        ...parseMediaReferences(formData.get("media_references")),
+        ...(await mediaFilesToReferences(mediaFiles && mediaFiles.files, "dashboard_edit_file")),
+      ];
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          updates: {
+            title: safeText(formData.get("title")).trim(),
+            raw_text: safeText(formData.get("raw_text")).trim(),
+            desired_outcome: safeText(formData.get("desired_outcome")).trim(),
+            media_references: mediaReferences,
+          },
+          comment: safeText(formData.get("comment")).trim(),
+        }),
+      });
+      setMessage("Mission edits saved.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Mission edits were not saved.", "error");
+    }
+  }
+
+  async function mediaFilesToReferences(fileList, source) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return [];
+    const images = files.filter((file) => IMAGE_MEDIA_TYPES.has(file.type));
+    if (images.length !== files.length) {
+      setMessage("Only PNG, JPG, WebP, or GIF screenshots can be attached here.", "error");
+      throw new Error("Only PNG, JPG, WebP, or GIF screenshots can be attached here.");
+    }
+    if (images.length > MAX_MEDIA_ITEMS) {
+      const message = `Mission media is limited to ${MAX_MEDIA_ITEMS} images for this no-migration version.`;
+      setMessage(message, "error");
+      throw new Error(message);
+    }
+    const references = [];
+    for (const file of images) {
+      if (file.size > MAX_MEDIA_BYTES) {
+        const message = `${file.name || "Screenshot"} is too large. Keep each image under 650 KB for mission metadata storage.`;
+        setMessage(message, "error");
+        throw new Error(message);
+      }
+      references.push({
+        label: file.name || `Mission screenshot ${references.length + 1}`,
+        reference: await readFileAsDataUrl(file),
+        media_type: "image",
+        source,
+      });
+    }
+    return references;
   }
 
   function collectMediaReferences() {
