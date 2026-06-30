@@ -1494,6 +1494,44 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("formatTagNumber(pig.tag_number || pig.pig_id)", js)
         self.assertIn("card.href = `/pig/${encodeURIComponent(pig.pig_id)}`", js)
 
+    def test_pig_list_dashboard_has_totals_filters_and_wide_cards(self):
+        template = Path("templates/pig-list.html").read_text(encoding="utf-8")
+        js = Path("static/js/pigList.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+
+        self.assertIn("pigs-dashboard-shell", template)
+        self.assertIn("pigs-dashboard-page", template)
+        self.assertIn("pig-list-summary", template)
+        self.assertIn('id="pig_total_count"', template)
+        self.assertIn('id="pig_weighed_count"', template)
+        self.assertIn('id="pig_no_weight_count"', template)
+        self.assertIn('id="pig_pen_count"', template)
+        self.assertIn('id="pig_visible_count"', template)
+        self.assertIn('id="pig_pen_filter"', template)
+        self.assertIn('id="pig_weight_filter"', template)
+        self.assertIn('id="pig_stage_filter"', template)
+
+        self.assertIn("populateFilters", js)
+        self.assertIn("renderTotals", js)
+        self.assertIn("pigPenFilter.addEventListener", js)
+        self.assertIn("pigWeightFilter.addEventListener", js)
+        self.assertIn("pigStageFilter.addEventListener", js)
+        self.assertIn("current_pen_name", js)
+        self.assertIn("last_weight_date", js)
+        self.assertIn("pig-list-detail-grid", js)
+        self.assertIn("pig-list-hover-detail", js)
+        self.assertIn("matchesSearch && matchesPen && matchesStage && matchesWeight", js)
+
+        self.assertIn(".pigs-dashboard-page", css)
+        self.assertIn("max-width: 1480px", css)
+        self.assertIn(".pig-list-summary", css)
+        self.assertIn(".pig-list-toolbar", css)
+        self.assertIn(".pigs-dashboard-page .pig-list-grid", css)
+        self.assertIn("repeat(auto-fit, minmax(300px, 1fr))", css)
+        self.assertIn(".pig-list-detail-grid", css)
+        self.assertIn(".pig-list-hover-detail", css)
+        self.assertIn(".pigs-dashboard-page .pig-list-card:focus-visible", css)
+
     def test_mating_board_uses_section_aware_sorting(self):
         js = Path("static/js/matings.js").read_text(encoding="utf-8")
 
