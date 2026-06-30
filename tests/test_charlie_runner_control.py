@@ -37,14 +37,25 @@ class CharlieRunnerControlTests(unittest.TestCase):
     def test_runner_status_reports_active_with_fresh_heartbeat_and_live_pid(self):
         with tempfile.TemporaryDirectory() as tmp:
             heartbeat = Path(tmp) / "runner.json"
-            runner_control.write_runner_heartbeat({"status": "watch_started", "mission_id": "MISSION-1"}, heartbeat)
+            runner_control.write_runner_heartbeat({
+                "status": "codex_running",
+                "mission_id": "MISSION-1",
+                "elapsed_seconds": 610,
+                "changed_files_count": 2,
+                "final_artifact_present": False,
+                "execution_artifact": ".charlie_runner/executions/MISSION.final.md",
+            }, heartbeat)
 
             result = runner_control.runner_status(heartbeat)
 
         self.assertEqual(result["status"], "runner_active")
         self.assertTrue(result["active"])
-        self.assertEqual(result["last_result_status"], "watch_started")
+        self.assertEqual(result["last_result_status"], "codex_running")
         self.assertEqual(result["last_mission_id"], "MISSION-1")
+        self.assertEqual(result["elapsed_seconds"], 610)
+        self.assertEqual(result["changed_files_count"], 2)
+        self.assertFalse(result["final_artifact_present"])
+        self.assertEqual(result["execution_artifact"], ".charlie_runner/executions/MISSION.final.md")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_runner_status_reports_stale_heartbeat(self, _pid_alive):
