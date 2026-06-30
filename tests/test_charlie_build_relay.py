@@ -503,8 +503,11 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
     @patch("modules.charlie.routes.list_missions")
-    def test_runner_status_route_reports_approved_waiting_pickup(self, list_missions, _owner_access):
+    def test_runner_status_route_reports_approved_waiting_pickup(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+
         def fake_list_missions(status="", limit=10):
             if status == "approved":
                 return ({
@@ -527,11 +530,17 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["status"], "approved_waiting_for_local_runner")
         self.assertEqual(data["next_approved_mission"]["mission_id"], "CHARLIE-MISSION-WAITING")
+        self.assertEqual(data["local_runner"]["status"], "runner_not_started")
+        self.assertIn("charlie_runner_control.py start", data["local_runner_control_commands"]["start"])
         self.assertFalse(data["can_run_shell_from_web"])
+        local_runner_status.assert_called_once()
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
     @patch("modules.charlie.routes.list_missions")
-    def test_runner_status_route_reports_active_mission(self, list_missions, _owner_access):
+    def test_runner_status_route_reports_active_mission(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": True, "status": "runner_active"}
+
         def fake_list_missions(status="", limit=10):
             if status == "in_progress":
                 return ({
@@ -553,6 +562,8 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data["status"], "active_mission_in_progress")
         self.assertEqual(data["active_mission"]["mission_id"], "CHARLIE-MISSION-ACTIVE")
+        self.assertTrue(data["local_runner"]["active"])
+        local_runner_status.assert_called_once()
 
     @patch.dict(os.environ, {}, clear=True)
     def test_start_command_returns_help(self):

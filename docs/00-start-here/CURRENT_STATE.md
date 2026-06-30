@@ -176,6 +176,9 @@ SAM safety remains unchanged:
 - CHARLIE Telegram/dashboard alignment is active in build: `/next` should now show the same live mission handoff state as `/charlie` before falling back to static `NEXT_STEPS.md` mission options.
 - CHARLIE Mission Vault V1 is active in build: dashboard intake, Supabase mission metadata vault, media/reference links, and planner/architect/builder/tester/reviewer role tracking.
 - CHARLIE Stage 6 is active in build: shared mission context pack, owner-visible planner/architect/builder/tester/reviewer handoff controls, `/review`, `/workflow`, and `/done` commands.
+- CHARLIE Stage 7 is active in build: local runner heartbeat/status, start/status/stop helper script, dashboard runner active/stale/not-started display, and Telegram `/status` runner visibility.
+- CHARLIE Stage 7 safety fix is active in build: Windows runner PID liveness checks use a non-destructive process-handle probe instead of `os.kill(pid, 0)`, and the dashboard runner-status route performs one local runner status check per request.
+- Current truth: approving a mission records permission. Automatic pickup requires the local runner to be active.
 - CHARLIE still does not run builds from Telegram/dashboard directly. Codex/Cursor remains the execution boundary until later parallel-agent controls exist.
 
 ## FRED Status

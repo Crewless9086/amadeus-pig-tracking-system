@@ -109,6 +109,13 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - Telegram supports `/review`, `/workflow <mission id> tester complete`, and `/done <mission id>` for owner-visible queue cleanup and review control
   - Codex pickup must include the shared context pack so every builder starts from the same system rules and mission data
   - still no direct Telegram/dashboard shell execution, merge, deploy, migration, production write, customer send, public post, payment, reservation, or lifecycle write authority
+- CHARLIE Stage 7 local runner control:
+  - approval records permission; it does not start Codex automatically unless the local runner is active
+  - `/charlie` should show local runner active/stale/not-started status, last seen time, and exact helper commands
+  - helper commands: `scripts/charlie_runner_control.py status`, `start`, and `stop`
+  - pickup watcher writes a local `.charlie_runner/` heartbeat; this folder is ignored by git
+  - Telegram `/status` should say whether the local runner is active
+  - Windows PID liveness checks must remain non-destructive; do not reintroduce `os.kill(pid, 0)` on Windows
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.

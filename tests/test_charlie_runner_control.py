@@ -1,0 +1,114 @@
+import tempfile
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
+from modules.charlie import runner_control
+
+
+class CharlieRunnerControlTests(unittest.TestCase):
+    def test_runner_status_reports_not_started_without_heartbeat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = runner_control.runner_status(Path(tmp) / "missing.json")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "runner_not_started")
+        self.assertFalse(result["active"])
+        self.assertFalse(result["can_start_from_web"])
+        self.assertFalse(result["can_stop_from_web"])
+        self.assertEqual(result["orphan_processes"], [])
+
+    @patch("modules.charlie.runner_control._find_runner_processes")
+    def test_runner_status_reports_orphaned_process_without_default_heartbeat(self, find_processes):
+        find_processes.return_value = [{
+            "pid": 1234,
+            "parent_pid": 1000,
+            "command": "python scripts/charlie_mission_pickup.py --watch --continuous",
+        }]
+
+        result = runner_control.runner_status(runner_control.HEARTBEAT_PATH)
+
+        self.assertEqual(result["status"], "runner_orphaned")
+        self.assertFalse(result["active"])
+        self.assertEqual(result["orphan_processes"][0]["pid"], 1234)
+
+    def test_runner_status_reports_active_with_fresh_heartbeat_and_live_pid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            runner_control.write_runner_heartbeat({"status": "watch_started", "mission_id": "MISSION-1"}, heartbeat)
+
+            result = runner_control.runner_status(heartbeat)
+
+        self.assertEqual(result["status"], "runner_active")
+        self.assertTrue(result["active"])
+        self.assertEqual(result["last_result_status"], "watch_started")
+        self.assertEqual(result["last_mission_id"], "MISSION-1")
+
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    def test_runner_status_reports_stale_heartbeat(self, _pid_alive):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            runner_control.write_runner_heartbeat({"status": "watch_started"}, heartbeat)
+            now = datetime.now(timezone.utc) + timedelta(seconds=runner_control.STALE_SECONDS + 10)
+
+            result = runner_control.runner_status(heartbeat, now=now)
+
+        self.assertEqual(result["status"], "runner_stale_or_stopped")
+        self.assertFalse(result["active"])
+        self.assertFalse(result["heartbeat_fresh"])
+
+    @patch("modules.charlie.runner_control.os.kill")
+    @patch("modules.charlie.runner_control._pid_alive_windows", return_value=True)
+    def test_pid_alive_on_windows_does_not_use_os_kill_probe(self, pid_alive_windows, kill):
+        with patch("modules.charlie.runner_control.os.name", "nt"):
+            result = runner_control._pid_alive(1234)
+
+        self.assertTrue(result)
+        pid_alive_windows.assert_called_once_with(1234)
+        kill.assert_not_called()
+
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_start_runner_does_not_start_duplicate_when_active(self, popen, status):
+        status.return_value = {"active": True, "status": "runner_active"}
+
+        result, status_code = runner_control.start_runner()
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "runner_already_active")
+        popen.assert_not_called()
+
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_start_runner_does_not_start_duplicate_when_orphaned(self, popen, status):
+        status.return_value = {
+            "active": False,
+            "status": "runner_orphaned",
+            "orphan_processes": [{"pid": 1234}],
+        }
+
+        result, status_code = runner_control.start_runner()
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "runner_orphaned_existing_process")
+        popen.assert_not_called()
+
+    @patch("modules.charlie.runner_control.os.kill")
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_stop_runner_stops_orphaned_processes(self, status, kill):
+        status.return_value = {
+            "pid": None,
+            "orphan_processes": [{"pid": 1234}, {"pid": 5678}],
+        }
+
+        result, status_code = runner_control.stop_runner()
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "runner_stop_requested")
+        self.assertEqual(result["pids"], [1234, 5678])
+        self.assertEqual(kill.call_count, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

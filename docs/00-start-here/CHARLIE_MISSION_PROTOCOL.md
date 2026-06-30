@@ -174,6 +174,20 @@ The pickup bridge writes the mission approval level and runner mode into `planni
 - `LEVEL 4` -> merge/release handoff after diff and tests are verified
 - `LEVEL 5` -> red-zone work still requires exact owner confirmation
 
+## Local Runner Control
+
+Approval records owner permission. It does not start Codex by itself. A local runner must be active for approved missions to move automatically into `planning/CODEX_CHAT.md`.
+
+Local helper commands:
+
+```bash
+python scripts/charlie_runner_control.py status
+python scripts/charlie_runner_control.py start
+python scripts/charlie_runner_control.py stop
+```
+
+The runner writes a local heartbeat under `.charlie_runner/`. The `/charlie` dashboard reads that heartbeat and shows whether the local runner is active, stale, or not started. The dashboard still cannot start or stop shell processes directly.
+
 ## CHARLIE Mission Cockpit
 
 The owner-only cockpit lives at:
@@ -190,7 +204,8 @@ The cockpit also shows runner handoff status:
 
 - active mission, if one is `in_progress` or `pr_ready`
 - next approved mission waiting for local pickup
-- local runner command
+- local runner active/stale/not-started status and last-seen time
+- local runner start/status/stop commands
 - clear note that web/Telegram cannot execute shell commands directly
 
 Telegram `/next` must mirror this same handoff state before showing static planning fallback items. The owner should be able to see the same mission that `/charlie` is showing, open it with `/mission <id>`, and record approval with `/approve <id> level1`, `level3`, or `level4`.

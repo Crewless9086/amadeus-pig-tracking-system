@@ -4,6 +4,11 @@
     counts: {},
     loading: false,
   };
+  const runnerControlCommandFallbacks = {
+    status: ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py status",
+    start: ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py start",
+    stop: ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py stop",
+  };
 
   const els = {
     statusLine: document.getElementById("charlie_status_line"),
@@ -24,7 +29,10 @@
       message: document.getElementById("charlie_runner_message"),
       active: document.getElementById("charlie_runner_active"),
       next: document.getElementById("charlie_runner_next"),
+      local: document.getElementById("charlie_runner_local"),
+      seen: document.getElementById("charlie_runner_seen"),
       command: document.getElementById("charlie_runner_command"),
+      controls: document.getElementById("charlie_runner_control_commands"),
     },
     counts: {
       new: document.getElementById("charlie_count_new"),
@@ -93,11 +101,22 @@
       const data = await fetchJson("/api/charlie/build-relay/runner/status");
       const active = data.active_mission || {};
       const next = data.next_approved_mission || {};
+      const local = data.local_runner || {};
       els.runner.state.textContent = runnerStateLabel(data.status);
       els.runner.message.textContent = data.next_action || "Runner handoff status loaded.";
       els.runner.active.textContent = active.mission_id ? `${shortId(active.mission_id)} | ${active.title || active.status || "active"}` : "None";
       els.runner.next.textContent = next.mission_id ? `${shortId(next.mission_id)} | ${next.title || next.status || "approved"}` : "None";
+      if (els.runner.local) els.runner.local.textContent = local.active ? `Active (PID ${local.pid || "--"})` : "Not active";
+      if (els.runner.seen) els.runner.seen.textContent = local.last_seen ? `${formatDate(local.last_seen)} (${local.age_seconds || 0}s ago)` : "Never";
       if (data.local_runner_command) els.runner.command.textContent = data.local_runner_command;
+      if (els.runner.controls && data.local_runner_control_commands) {
+        const commands = Object.assign({}, runnerControlCommandFallbacks, data.local_runner_control_commands || {});
+        els.runner.controls.textContent = [
+          `Status: ${commands.status}`,
+          `Start: ${commands.start}`,
+          `Stop: ${commands.stop}`,
+        ].join("\n");
+      }
     } catch (error) {
       els.runner.state.textContent = "Unavailable";
       els.runner.message.textContent = error.message || "Runner handoff status could not be loaded.";
