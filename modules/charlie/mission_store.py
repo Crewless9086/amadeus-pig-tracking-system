@@ -30,6 +30,7 @@ MISSION_EVENT_TYPES = {
     "status_changed",
     "approval_decision",
     "review_note",
+    "mission_updated",
     "vault_updated",
     "workflow_updated",
 }
@@ -420,6 +421,171 @@ def update_mission_vault(
         "mission_id": mission_id,
         "mission_status": status,
         "vault_keys": sorted(vault_metadata.keys()),
+    }, 200
+
+
+def update_new_mission_intake(
+    mission_id,
+    updates,
+    comment="",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    updates = updates if isinstance(updates, dict) else {}
+    comment = _clean_text(comment, 2000)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+
+    loaded, load_status = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    if mission.get("status") != "new":
+        return {
+            "success": False,
+            "status": "mission_edit_not_allowed",
+            "mission_status": mission.get("status", ""),
+            "allowed_status": "new",
+        }, 409
+
+    scalar_fields = {
+        "raw_text": ("raw_text", 3000),
+        "concept": ("raw_text", 3000),
+        "title": ("title", 160),
+        "urgency": ("urgency", 20),
+        "mission_type": ("mission_type", 60),
+        "approval_level": ("approval_level", 40),
+    }
+    update_values = {}
+    changed_fields = []
+    previous_values = {}
+    for payload_key, (column, max_len) in scalar_fields.items():
+        if payload_key not in updates:
+            continue
+        value = _clean_text(updates.get(payload_key), max_len)
+        if column == "approval_level":
+            value = normalize_approval_level(value)
+            if value and value not in APPROVAL_LEVELS:
+                return {"success": False, "status": "invalid_approval_level", "allowed_approval_levels": sorted(APPROVAL_LEVELS)}, 400
+        if value and value != _clean_text(mission.get(column, ""), max_len):
+            update_values[column] = value
+            if column not in changed_fields:
+                changed_fields.append(column)
+                previous_values[column] = _clean_text(mission.get(column, ""), max_len)
+
+    metadata = dict(mission.get("metadata") or {})
+    vault = dict(mission.get("vault") or {})
+    vault_field_specs = {
+        "desired_outcome": ("desired_outcome", 1200, "text"),
+        "scope_summary": ("scope_summary", 1200, "text"),
+        "acceptance_criteria": ("acceptance_criteria", 300, "list"),
+        "test_plan": ("test_plan", 300, "list"),
+        "pressure_test_plan": ("pressure_test_plan", 300, "list"),
+        "forbidden_actions": ("forbidden_actions", 300, "list"),
+        "owner_decisions_needed": ("owner_decisions_needed", 300, "list"),
+        "rollback_plan": ("rollback_plan", 800, "text"),
+        "confidence_target": ("confidence_target", 80, "text"),
+    }
+    for payload_key, (vault_key, max_len, value_type) in vault_field_specs.items():
+        if payload_key not in updates:
+            continue
+        value = _clean_list(updates.get(payload_key), max_len=max_len) if value_type == "list" else _clean_text(updates.get(payload_key), max_len)
+        current = vault.get(vault_key, [] if value_type == "list" else "")
+        if value != current:
+            vault[vault_key] = value
+            changed_fields.append(f"mission_vault.{vault_key}")
+            previous_values[f"mission_vault.{vault_key}"] = current
+
+    if "media_references" in updates and isinstance(updates.get("media_references"), list):
+        media = [_clean_media_reference(item) for item in updates.get("media_references") if _clean_media_reference(item)]
+        if media != mission.get("media_references", []):
+            metadata["media_references"] = media
+            changed_fields.append("media_references")
+            previous_values["media_references"] = mission.get("media_references", [])
+
+    if update_values.get("raw_text"):
+        vault["problem_statement"] = update_values["raw_text"]
+    if comment:
+        comments = vault.get("owner_intake_comments") if isinstance(vault.get("owner_intake_comments"), list) else []
+        comments = list(comments) + [{
+            "comment": comment,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }]
+        vault["owner_intake_comments"] = comments[-20:]
+        changed_fields.append("mission_vault.owner_intake_comments")
+
+    if not changed_fields:
+        return {
+            "success": False,
+            "status": "mission_update_empty",
+            "mission_id": mission_id,
+        }, 400
+
+    edit_history = metadata.get("intake_edit_history") if isinstance(metadata.get("intake_edit_history"), list) else []
+    edit_record = {
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "changed_fields": changed_fields,
+        "comment": comment,
+        "previous_values": previous_values,
+    }
+    metadata["intake_edit_history"] = (list(edit_history) + [edit_record])[-20:]
+    metadata["mission_vault"] = vault
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    set_lines = [f"{column} = %({column})s" for column in sorted(update_values)]
+    set_lines.extend([
+        "metadata_json = %(metadata_json)s::jsonb",
+        "updated_at = now()",
+    ])
+    params = {
+        "mission_id": mission_id,
+        "metadata_json": json.dumps(metadata),
+        **update_values,
+    }
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update public.charlie_missions
+                    set {", ".join(set_lines)}
+                    where mission_id = %(mission_id)s
+                      and status = 'new'
+                    returning mission_id
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "configured": True, "status": "not_found_or_not_new", "mission_id": mission_id}, 404
+                _insert_event(cursor, mission_id, "mission_updated", "New-stage mission intake updated.", {
+                    "changed_fields": changed_fields,
+                    "comment": comment,
+                    "source": "owner_api",
+                })
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_update_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mission_id": mission_id,
+        "mission_status": "new",
+        "changed_fields": changed_fields,
     }, 200
 
 

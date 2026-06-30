@@ -15,6 +15,7 @@ from modules.charlie.mission_store import (
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
+    update_new_mission_intake,
     update_mission_workflow_step,
     update_mission_status,
     update_mission_vault,
@@ -180,6 +181,21 @@ def charlie_build_relay_mission_detail_route(mission_id):
     if denied:
         return denied
     result, status_code = get_mission(mission_id)
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["PATCH"])
+def charlie_build_relay_mission_update_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    updates = payload.get("updates") if isinstance(payload.get("updates"), dict) else payload
+    result, status_code = update_new_mission_intake(
+        mission_id,
+        updates=updates,
+        comment=str(payload.get("comment") or "").strip(),
+    )
     return jsonify(result), status_code
 
 
