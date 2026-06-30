@@ -6,6 +6,8 @@ Owner can write rough thoughts here. Codex must turn them into a clear mission, 
 
 Use this file when you want to start a new mission without writing a perfect prompt.
 
+This file and Telegram mission intake both follow `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`. Supabase `charlie_missions` is the durable mission queue; this file is the laptop-friendly active mission scratchpad.
+
 ---
 
 ## OWNER QUICK INPUT
@@ -77,6 +79,7 @@ Codex must always:
   - `docs/00-start-here/NEXT_STEPS.md`
   - `docs/00-start-here/WORKFLOW.md`
   - `docs/00-start-here/DEPLOYMENT_SOP.md`
+  - `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 - Check branch/status/diff before edits.
 - Work from `main` unless a clean worktree/branch is needed.
 - Use one branch/worktree per mission when code changes are needed.

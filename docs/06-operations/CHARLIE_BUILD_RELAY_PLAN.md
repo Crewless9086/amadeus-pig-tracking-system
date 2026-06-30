@@ -18,10 +18,12 @@ This phase adds a safe v0 relay:
 - disabled by default
 - direct Telegram replies through the configured CHARLIE bot token when enabled
 - `/status`, `/next`, `/missions`, `/mission`, and `/select` command handling
+- mission detail and decision commands: `/mission <id>`, `/debrief <id>`, `/approve <id>`, `/pause <id>`, `/reject <id>`
 - mission intake classification and CODEX_CHAT update preview
 - optional `planning/CODEX_CHAT.md` update only when explicitly enabled by env
 - optional durable Supabase mission records through `charlie_missions` and `charlie_mission_events`
 - local owner notification helper: `scripts/charlie_notify.py`
+- shared mission governance rules in `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`
 
 ## 3. Security Model
 
@@ -87,10 +89,17 @@ Initial commands:
 - `/status` - summarize current active repo state
 - `/next` - show top mission candidates from `NEXT_STEPS.md`
 - `/missions` - show mission-queue status and recent stored missions
+- `/mission <mission id>` - show mission details
+- `/debrief <mission id>` - show mission detail/debrief view
+- `/approve <mission id>` - record owner approval for the mission
+- `/pause <mission id>` - record that the mission is paused
+- `/reject <mission id>` - record that the mission is rejected
 - `/select 1` - turn a listed next-step option into a mission intake
 - `/mission <idea>` - prepare a new mission intake
 
 Unknown free text is treated as a mission idea, not as an instruction to execute dangerous work.
+
+Approval commands record decisions only. They do not trigger shell commands, commits, merges, deploys, migrations, production writes, customer sends, public posts, payments, reservations, or farm lifecycle writes.
 
 ## 6. Recommended Rollout
 
@@ -151,6 +160,8 @@ Add inline approval buttons for safe actions:
 - reject
 
 Dangerous actions still need explicit typed confirmation and the normal repo-side hard stops.
+
+Status: first command-console layer implemented. Telegram can record approve/pause/reject decisions in `charlie_missions` and `charlie_mission_events`, and can show mission detail/debrief text. These actions remain non-executing and only update mission governance state.
 
 ## 7. Tests
 

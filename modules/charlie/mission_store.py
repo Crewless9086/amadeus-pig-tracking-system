@@ -6,7 +6,28 @@ from datetime import datetime, timezone
 from services.database_service import DATABASE_URL_ENV
 
 
-MISSION_EVENT_TYPES = {"created", "selected_next_step", "codex_chat_write", "status_changed", "review_note"}
+MISSION_STATUSES = {
+    "new",
+    "triaged",
+    "planned",
+    "approved",
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "merged",
+    "deployed",
+    "done",
+    "paused",
+    "rejected",
+}
+MISSION_EVENT_TYPES = {
+    "created",
+    "selected_next_step",
+    "codex_chat_write",
+    "status_changed",
+    "approval_decision",
+    "review_note",
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -129,6 +150,109 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
         "configured": True,
         "status": "ok",
         "missions": [_mission_row(row) for row in rows],
+    }, 200
+
+
+def get_mission(mission_id, database_url=None, connect_factory=None):
+    mission_id = _clean_text(mission_id, 90)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select mission_id, status, source, telegram_user_id, telegram_chat_id,
+                           raw_text, title, urgency, mission_type, approval_level,
+                           selected_next_step, owner_decision, codex_chat_write_status,
+                           metadata_json, created_at, updated_at
+                    from public.charlie_missions
+                    where mission_id = %(mission_id)s
+                    limit 1
+                    """,
+                    {"mission_id": mission_id},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    if not rows:
+        return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+    return {"success": True, "configured": True, "status": "ok", "mission": _mission_row(rows[0])}, 200
+
+
+def update_mission_status(
+    mission_id,
+    status,
+    owner_decision="",
+    event_type="status_changed",
+    notes="",
+    metadata=None,
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    status = _clean_text(status, 40)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if status not in MISSION_STATUSES:
+        return {"success": False, "status": "invalid_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
+    if event_type not in MISSION_EVENT_TYPES:
+        return {"success": False, "status": "invalid_event_type", "allowed_event_types": sorted(MISSION_EVENT_TYPES)}, 400
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update public.charlie_missions
+                    set status = %(status)s,
+                        owner_decision = %(owner_decision)s,
+                        updated_at = now()
+                    where mission_id = %(mission_id)s
+                    returning mission_id
+                    """,
+                    {
+                        "mission_id": mission_id,
+                        "status": status,
+                        "owner_decision": _clean_text(owner_decision, 1000),
+                    },
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                _insert_event(cursor, mission_id, event_type, notes or f"Mission status changed to {status}.", {
+                    "status": status,
+                    "owner_decision": _clean_text(owner_decision, 1000),
+                    **(metadata if isinstance(metadata, dict) else {}),
+                })
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_status_update_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mission_id": mission_id,
+        "mission_status": status,
     }, 200
 
 

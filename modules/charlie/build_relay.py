@@ -8,9 +8,11 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from modules.charlie.mission_store import (
+    get_mission,
     list_missions,
     mission_status_summary,
     record_mission,
+    update_mission_status,
 )
 
 
@@ -146,8 +148,25 @@ def build_relay_action(text, environ=None):
         return _next_action(repo_root)
     if lower in {"/missions", "missions", "mission queue"}:
         return _missions_action(source)
+    if lower.startswith("/approve"):
+        return _mission_decision_action(cleaned[len("/approve"):].strip(), "approved", "approve")
+    if lower.startswith("approve:"):
+        return _mission_decision_action(cleaned.split(":", 1)[1].strip(), "approved", "approve")
+    if lower.startswith("/pause"):
+        return _mission_decision_action(cleaned[len("/pause"):].strip(), "paused", "pause")
+    if lower.startswith("pause:"):
+        return _mission_decision_action(cleaned.split(":", 1)[1].strip(), "paused", "pause")
+    if lower.startswith("/reject"):
+        return _mission_decision_action(cleaned[len("/reject"):].strip(), "rejected", "reject")
+    if lower.startswith("reject:"):
+        return _mission_decision_action(cleaned.split(":", 1)[1].strip(), "rejected", "reject")
+    if lower.startswith("/debrief"):
+        return _mission_detail_action(cleaned[len("/debrief"):].strip(), command="debrief")
     if lower.startswith("/mission"):
-        return _mission_action(cleaned[len("/mission"):].strip(), source, repo_root, "mission", {})
+        mission_text = cleaned[len("/mission"):].strip()
+        if _looks_like_mission_id(mission_text):
+            return _mission_detail_action(mission_text, command="mission_detail")
+        return _mission_action(mission_text, source, repo_root, "mission", {})
     if lower.startswith("mission:"):
         return _mission_action(cleaned.split(":", 1)[1].strip(), source, repo_root, "mission", {})
     if lower.startswith("/select"):
@@ -231,8 +250,10 @@ def _help_action():
             "/status - current repo state summary\n"
             "/next - next mission options from NEXT_STEPS\n"
             "/missions - recent durable mission queue records\n"
+            "/mission <id> - show one mission record\n"
             "/mission <idea> - prepare a mission intake\n"
             "/select 1 - turn a listed NEXT_STEPS option into a mission intake\n\n"
+            "/approve <id>, /pause <id>, /reject <id> - record owner decision only\n\n"
             "Safety: this relay cannot run shell commands, commit, merge, deploy, send customers, post publicly, take payments, reserve stock, or write production data."
         ),
         "reply_markup": _main_keyboard(),
@@ -300,7 +321,9 @@ def _missions_action(source):
         lines.append(f"Queue status: {summary.get('status', 'unavailable')}")
     missions = loaded.get("missions") or []
     for index, mission in enumerate(missions, start=1):
-        lines.append(f"{index}. {mission.get('status')} | {mission.get('urgency')} | {mission.get('title')}")
+        mission_id = str(mission.get("mission_id") or "")
+        short_id = mission_id[-8:] if mission_id else "no-id"
+        lines.append(f"{index}. {short_id} | {mission.get('status')} | {mission.get('urgency')} | {mission.get('title')}")
     if not missions:
         lines.append("No stored missions returned.")
     return {
@@ -312,6 +335,78 @@ def _missions_action(source):
             "list_status": loaded.get("status"),
             "configured": summary.get("configured") or loaded.get("configured"),
         },
+        "writes_repo_file": False,
+    }
+
+
+def _mission_detail_action(mission_id, command="mission_detail"):
+    mission_id = _clean_source_value(mission_id)
+    if not mission_id:
+        return {
+            "command": command,
+            "telegram_text": "Send /mission <mission id> or /debrief <mission id>.",
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    result, _ = get_mission(mission_id)
+    if not result.get("success"):
+        return {
+            "command": command,
+            "telegram_text": f"Mission lookup failed: {result.get('status', 'unavailable')}.",
+            "mission_store": result,
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    mission = result.get("mission") or {}
+    return {
+        "command": command,
+        "telegram_text": _mission_detail_text(mission),
+        "mission": mission,
+        "mission_store": result,
+        "reply_markup": _mission_decision_keyboard(mission.get("mission_id", "")),
+        "writes_repo_file": False,
+    }
+
+
+def _mission_decision_action(raw_mission_id, status, command):
+    mission_id = _clean_source_value(raw_mission_id)
+    if not mission_id:
+        return {
+            "command": command,
+            "telegram_text": f"Send /{command} <mission id>.",
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    decision_text = {
+        "approved": "Owner approved mission planning/build according to the recorded approval level.",
+        "paused": "Owner paused this mission.",
+        "rejected": "Owner rejected this mission.",
+    }.get(status, f"Owner set mission status to {status}.")
+    result, _ = update_mission_status(
+        mission_id,
+        status,
+        owner_decision=decision_text,
+        event_type="approval_decision",
+        notes=decision_text,
+        metadata={"telegram_command": command},
+    )
+    if not result.get("success"):
+        return {
+            "command": command,
+            "telegram_text": f"Mission decision was not recorded: {result.get('status', 'unavailable')}.",
+            "mission_store": result,
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    return {
+        "command": command,
+        "telegram_text": (
+            f"Mission {status}.\n\n"
+            f"Mission: {mission_id}\n"
+            "This records your decision only and does not execute build actions. CHARLIE still cannot run shell commands, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records."
+        )[:MAX_REPLY_CHARS],
+        "mission_store": result,
+        "reply_markup": _main_keyboard(),
         "writes_repo_file": False,
     }
 
@@ -449,6 +544,38 @@ def _first_lines_after(text, heading, max_items=5):
 def _compact_title(text):
     title = " ".join(str(text or "").split())
     return title[:90] + ("..." if len(title) > 90 else "")
+
+
+def _mission_detail_text(mission):
+    return (
+        "CHARLIE mission\n\n"
+        f"ID: {mission.get('mission_id')}\n"
+        f"Status: {mission.get('status')}\n"
+        f"Urgency: {mission.get('urgency')}\n"
+        f"Type: {mission.get('mission_type')}\n"
+        f"Approval: {mission.get('approval_level')}\n"
+        f"Title: {mission.get('title')}\n\n"
+        f"Owner decision: {mission.get('owner_decision') or 'none recorded'}\n\n"
+        "Commands: /approve <id>, /pause <id>, /reject <id>. These record decisions only and do not execute build actions."
+    )[:MAX_REPLY_CHARS]
+
+
+def _mission_decision_keyboard(mission_id):
+    mission_id = _clean_source_value(mission_id)
+    if not mission_id:
+        return _main_keyboard()
+    return {
+        "inline_keyboard": [[
+            {"text": "Approve", "callback_data": f"approve:{mission_id}"},
+            {"text": "Pause", "callback_data": f"pause:{mission_id}"},
+            {"text": "Reject", "callback_data": f"reject:{mission_id}"},
+        ]]
+    }
+
+
+def _looks_like_mission_id(value):
+    value = str(value or "").strip().upper()
+    return value.startswith("CHARLIE-MISSION-") or value.startswith("MISSION-")
 
 
 def _clean_source_value(value):

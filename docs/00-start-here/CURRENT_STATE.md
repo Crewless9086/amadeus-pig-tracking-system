@@ -160,8 +160,11 @@ SAM safety remains unchanged:
 - CHARLIE Build Relay live Telegram test passed after Render env setup: `/help`, `/next`, `/mission`, and CODEX_CHAT write-gated intake worked.
 - Active branch: `charlie-relay-mission-queue`.
 - Current CHARLIE build: durable Supabase mission queue plus local owner notification helper.
-- New migration pending review/application: `supabase/migrations/202606300001_create_charlie_mission_queue.sql`.
+- CHARLIE mission queue migration is applied: `supabase/migrations/202606300001_create_charlie_mission_queue.sql`.
 - New durable queue endpoints/commands are non-executing: `/missions` and `GET /api/charlie/build-relay/missions` list stored mission intake only.
+- CHARLIE mission protocol is being formalized so Telegram intake and `planning/CODEX_CHAT.md` follow the same rules.
+- Active branch: `charlie-mission-command-console`.
+- Current command-console scope: `/mission <id>`, `/debrief <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` record or display mission state only. They do not execute build actions.
 
 ## FRED Status
 

@@ -66,10 +66,16 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 - CHARLIE-RELAY-0: safe owner-only Telegram build relay foundation. Scope: policy, webhook secret, owner allowlist, `/status`, `/next`, `/mission`, optional CODEX_CHAT intake write, tests, and plan doc. No dangerous runtime authority.
 - CHARLIE-RELAY-1/3 active: add owner notification helper and durable Supabase mission queue so Telegram mission intake is not dependent on Render filesystem writes.
+- CHARLIE-RELAY-4 active: shared mission protocol and safe command-console decisions. Telegram and `planning/CODEX_CHAT.md` must follow `CHARLIE_MISSION_PROTOCOL.md`.
+- CHARLIE command console scope:
+  - `/mission <id>` and `/debrief <id>` show mission state
+  - `/approve <id>`, `/pause <id>`, and `/reject <id>` record owner decisions only
+  - these commands must not run shell commands, commit, merge, deploy, apply migrations, write operational data, send customers, publish posts, take payments, reserve stock, or change farm lifecycle records
 - CHARLIE mission queue release checklist:
-  - review and apply additive migration `202606300001_create_charlie_mission_queue.sql`
+  - migration `202606300001_create_charlie_mission_queue.sql` is applied
   - keep `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED` enabled only after the migration is applied
   - live test `/mission <idea>` and `/missions`
+  - live test `/mission <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` on a disposable mission
   - dry-run `scripts/charlie_notify.py`, then send a live owner-only notification
   - verify no Telegram command can commit, merge, deploy, run shell commands, write operational data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
