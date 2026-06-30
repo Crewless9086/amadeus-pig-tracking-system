@@ -28,6 +28,15 @@ FINAL_ARTIFACT_GRACE_SECONDS = 20
 NO_FINAL_ARTIFACT_TIMEOUT_SECONDS = 1200
 NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
+AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
+AGENT_ARTIFACT_REQUIRED_KEYS = {
+    "planner": ["summary", "acceptance_criteria", "test_plan"],
+    "architect": ["summary", "files_to_inspect", "risk_notes"],
+    "builder": ["summary", "changed_files"],
+    "tester": ["summary", "tests_run"],
+    "reviewer": ["summary", "recommended_owner_decision"],
+}
+AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 
 
 def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None, database_url=None, connect_factory=None):
@@ -165,6 +174,161 @@ def run_codex_execution_bridge(
         stderr_path=stderr_path,
         final_path=final_path,
         started_at=started_at,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def run_agent_execution_bridge_v2(
+    mission_id="",
+    status="in_progress",
+    execute_codex=False,
+    output_dir=None,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    database_url=None,
+    connect_factory=None,
+    codex_command=None,
+    run_subprocess=None,
+):
+    mission, status_code, error = _load_execution_mission(
+        mission_id=mission_id,
+        status=status,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return error, status_code
+
+    output_dir = Path(output_dir or EXECUTION_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    execution_id = _execution_id(mission["mission_id"])
+    started_at = datetime.now(timezone.utc).isoformat()
+    ledger = _agent_execution_ledger(mission, execution_id, started_at)
+    artifacts = {}
+
+    if not execute_codex:
+        packet_path = output_dir / f"{execution_id}.agent-ledger.json"
+        packet_path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+        return {
+            "success": True,
+            "status": "agent_execution_dry_run",
+            "mission_id": mission["mission_id"],
+            "execution_id": execution_id,
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "ledger_path": str(packet_path),
+            "will_execute_codex": False,
+        }, 200
+
+    runner = run_subprocess or _run_codex_process
+    command_base = codex_command or [
+        _codex_executable(),
+        "exec",
+        "--cd",
+        str(REPO_ROOT),
+        "--sandbox",
+        "workspace-write",
+    ]
+
+    for agent in AGENT_SEQUENCE:
+        _record_execution_stage(
+            mission["mission_id"],
+            agent,
+            "active",
+            f"CHARLIE Agent Runner v2 started {agent}.",
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        stage_paths = _agent_stage_paths(output_dir, execution_id, agent)
+        prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
+        stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
+        command = [
+            *command_base,
+            "--output-last-message",
+            str(stage_paths["final_path"]),
+            "-",
+        ]
+        stage_started = datetime.now(timezone.utc).isoformat()
+        _append_ledger_stage(ledger, agent, "running", stage_started, stage_paths, current_action=f"{agent} running")
+        _write_agent_ledger(output_dir, execution_id, ledger)
+        write_runner_heartbeat({
+            "status": "agent_stage_running",
+            "mission_id": mission["mission_id"],
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "current_agent": agent,
+            "current_action": f"{agent} running",
+            "execution_artifact": str(stage_paths["final_path"]),
+            "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+        })
+        completed = runner(
+            command,
+            input=prompt,
+            cwd=str(REPO_ROOT),
+            timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
+            stdout_path=stage_paths["stdout_path"],
+            stderr_path=stage_paths["stderr_path"],
+            final_path=stage_paths["final_path"],
+            mission_id=mission["mission_id"],
+        )
+        stage_paths["stdout_path"].write_text(completed.stdout or "", encoding="utf-8")
+        stage_paths["stderr_path"].write_text(completed.stderr or "", encoding="utf-8")
+        final_message = _read_text(stage_paths["final_path"]) or (completed.stdout or "").strip()
+        if final_message and not _read_text(stage_paths["final_path"]):
+            stage_paths["final_path"].write_text(final_message, encoding="utf-8")
+
+        if completed.returncode != 0 or not _read_text(stage_paths["final_path"]):
+            return _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                stage_paths,
+                completed,
+                stage_started,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+
+        artifact = _agent_artifact_from_final(agent, _read_text(stage_paths["final_path"]))
+        artifact.update({
+            "agent": agent,
+            "artifact_path": str(stage_paths["final_path"]),
+            "stdout_path": str(stage_paths["stdout_path"]),
+            "stderr_path": str(stage_paths["stderr_path"]),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        validation = _validate_agent_artifact(agent, artifact)
+        if not validation["valid"]:
+            return _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                stage_paths,
+                completed,
+                stage_started,
+                blocked_reason=f"Agent artifact missing required keys: {', '.join(validation['missing_keys'])}.",
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+        artifacts[agent] = artifact
+        _append_ledger_stage(ledger, agent, "complete", stage_started, stage_paths, artifact=artifact)
+        _write_agent_ledger(output_dir, execution_id, ledger)
+        _record_execution_stage(
+            mission["mission_id"],
+            agent,
+            "complete",
+            _truncate(artifact.get("summary") or f"{agent} completed.", 1000),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+
+    return _complete_agent_execution_v2(
+        mission,
+        execution_id,
+        ledger,
+        artifacts,
+        output_dir,
+        started_at,
         database_url=database_url,
         connect_factory=connect_factory,
     )
@@ -675,6 +839,7 @@ Mission type: {mission.get("mission_type", "")}
 
 Follow these documents before changing anything:
 - docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md
+- docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md
 - docs/00-start-here/CURRENT_STATE.md
 - docs/00-start-here/NEXT_STEPS.md
 - docs/00-start-here/WORKFLOW.md
@@ -705,6 +870,332 @@ Required behavior:
 5. Stop at owner review. Do not mark the mission done.
 6. In your final response, include: summary, files changed, tests run, errors/bugs, local preview link or command, and recommended owner review decision.
 """
+
+
+def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
+    mission = mission if isinstance(mission, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    review_packet = (mission.get("metadata") or {}).get("review_packet") if isinstance(mission.get("metadata"), dict) else {}
+    owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
+    return f"""You are the CHARLIE CORE {agent.upper()} agent running inside Agent Runner v2.
+
+Mission ID: {mission.get("mission_id", "")}
+Title: {mission.get("title", "")}
+Approval level: {mission.get("approval_level", "")}
+Mission type: {mission.get("mission_type", "")}
+
+Mission:
+{mission.get("raw_text", "")}
+
+Required CHARLIE docs to follow:
+- docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md
+- docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md
+- docs/00-start-here/CURRENT_STATE.md
+- docs/00-start-here/NEXT_STEPS.md
+- docs/00-start-here/WORKFLOW.md
+- docs/00-start-here/DEPLOYMENT_SOP.md
+
+Desired outcome:
+{vault.get("desired_outcome") or ""}
+
+Owner send-back comments:
+{owner_comments or "None"}
+
+Forbidden actions:
+{_format_list(vault.get("forbidden_actions"))}
+
+Previous agent artifacts:
+{json.dumps(artifacts, indent=2)[:8000]}
+
+You must work like an interactive coding agent:
+- inspect the repo before asserting facts
+- read relevant files
+- run focused commands when useful
+- patch only scoped files
+- recover from errors
+- record what you did and what remains
+
+Stage responsibility:
+{_agent_stage_instruction(agent)}
+
+Required final response format:
+Return concise markdown, and include a JSON object fenced as ```json with these keys:
+{json.dumps(_agent_required_schema(agent), indent=2)}
+
+Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+Stop at the required artifact for this stage.
+"""
+
+
+def _agent_stage_instruction(agent):
+    if agent == "planner":
+        return "Read mission context and define scope, acceptance criteria, test plan, risks, and exact next handoff."
+    if agent == "architect":
+        return "Inspect implementation boundaries, source files, route/data contracts, risks, and the safest build approach."
+    if agent == "builder":
+        return "Implement only the scoped change, keep diffs tight, and record changed files."
+    if agent == "tester":
+        return "Run focused verification, investigate failures, and return pass/fail evidence."
+    return "Review diff, requirements, tests, safety gates, release notes, and prepare owner review recommendation."
+
+
+def _agent_required_schema(agent):
+    base = {
+        "summary": "short factual summary",
+        "errors": [],
+        "bugs": [],
+        "next_action": "next handoff",
+    }
+    if agent == "planner":
+        base.update({"acceptance_criteria": [], "test_plan": [], "scope": "scoped work"})
+    elif agent == "architect":
+        base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
+    elif agent == "builder":
+        base.update({"changed_files": [], "build_notes": []})
+    elif agent == "tester":
+        base.update({"tests_run": [], "test_status": "pass|fail|blocked"})
+    else:
+        base.update({"recommended_owner_decision": "approve_final_release|send_back|pause", "release_notes": [], "changed_files": [], "test_evidence": []})
+    return base
+
+
+def _agent_execution_ledger(mission, execution_id, started_at):
+    return {
+        "version": AGENT_RUNNER_VERSION,
+        "execution_id": execution_id,
+        "mission_id": mission.get("mission_id", ""),
+        "title": mission.get("title", ""),
+        "started_at": started_at,
+        "status": "running",
+        "stages": [],
+    }
+
+
+def _agent_stage_paths(output_dir, execution_id, agent):
+    stem = f"{execution_id}.{agent}"
+    return {
+        "prompt_path": output_dir / f"{stem}.prompt.md",
+        "stdout_path": output_dir / f"{stem}.stdout.txt",
+        "stderr_path": output_dir / f"{stem}.stderr.txt",
+        "final_path": output_dir / f"{stem}.final.md",
+    }
+
+
+def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None, current_action=""):
+    stages = ledger.setdefault("stages", [])
+    existing = next((item for item in stages if item.get("agent") == agent), None)
+    item = existing or {"agent": agent}
+    item.update({
+        "status": status,
+        "started_at": started_at,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "current_action": current_action,
+        "prompt_path": str(paths["prompt_path"]),
+        "stdout_path": str(paths["stdout_path"]),
+        "stderr_path": str(paths["stderr_path"]),
+        "final_path": str(paths["final_path"]),
+    })
+    if artifact:
+        item["artifact"] = artifact
+    if existing is None:
+        stages.append(item)
+    ledger["status"] = "running" if status == "running" else ledger.get("status", "running")
+    return ledger
+
+
+def _write_agent_ledger(output_dir, execution_id, ledger):
+    path = Path(output_dir) / f"{execution_id}.agent-ledger.json"
+    path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+    return path
+
+
+def _agent_artifact_from_final(agent, final_message):
+    parsed = _extract_json_object(final_message)
+    if parsed:
+        return parsed
+    artifact = {
+        "summary": _truncate(final_message or f"{agent} completed.", 1200),
+        "errors": _extract_errors(final_message),
+        "bugs": [],
+        "next_action": "Continue to next CHARLIE agent.",
+    }
+    if agent == "planner":
+        artifact.update({"acceptance_criteria": ["Review final artifact."], "test_plan": ["Run focused verification."], "scope": artifact["summary"]})
+    elif agent == "architect":
+        artifact.update({"files_to_inspect": _changed_files(), "risk_notes": [], "implementation_plan": [artifact["summary"]]})
+    elif agent == "builder":
+        artifact.update({"changed_files": _changed_files(), "build_notes": [artifact["summary"]]})
+    elif agent == "tester":
+        artifact.update({"tests_run": _extract_test_evidence(final_message), "test_status": "pass" if not artifact["errors"] else "blocked"})
+    else:
+        artifact.update({"recommended_owner_decision": "approve_final_release", "release_notes": ["Review PR and test evidence before final approval."], "changed_files": _changed_files(), "test_evidence": _extract_test_evidence(final_message)})
+    return artifact
+
+
+def _extract_json_object(text):
+    text = str(text or "")
+    fenced = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    candidates = [fenced.group(1)] if fenced else []
+    if "{" in text and "}" in text:
+        candidates.append(text[text.find("{"):text.rfind("}") + 1])
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _validate_agent_artifact(agent, artifact):
+    required = AGENT_ARTIFACT_REQUIRED_KEYS.get(agent, ["summary"])
+    missing = [key for key in required if not artifact.get(key)]
+    return {"valid": not missing, "missing_keys": missing}
+
+
+def _block_agent_stage(
+    mission_id,
+    execution_id,
+    ledger,
+    agent,
+    paths,
+    completed,
+    started_at,
+    blocked_reason="Agent did not produce a valid final artifact.",
+    database_url=None,
+    connect_factory=None,
+):
+    ledger["status"] = "blocked"
+    ledger["blocked_agent"] = agent
+    ledger["blocked_reason"] = blocked_reason
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    _append_ledger_stage(ledger, agent, "blocked", started_at, paths, artifact={
+        "summary": blocked_reason,
+        "returncode": getattr(completed, "returncode", None),
+        "stdout_excerpt": _truncate(getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]), 1200),
+        "stderr_excerpt": _truncate(getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]), 1200),
+    })
+    ledger_path = _write_agent_ledger(paths["final_path"].parent, execution_id, ledger)
+    update_mission_vault(
+        mission_id,
+        {
+            "agent_execution": ledger,
+            "review_packet": {
+                "summary": f"CHARLIE Agent Runner v2 blocked at {agent}: {blocked_reason}",
+                "findings": [f"{agent} did not complete a valid stage artifact.", "The mission is blocked visibly instead of silently running."],
+                "errors": [blocked_reason],
+                "bugs": [],
+                "changed_files": _changed_files() or ["No changed files detected by git diff."],
+                "test_evidence": ["Agent workflow stopped before final tester/reviewer evidence."],
+                "links": {},
+                "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent},
+                "review_status": "agent_blocked",
+            },
+        },
+        notes="CHARLIE Agent Runner v2 recorded a blocked stage.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    _record_execution_stage(mission_id, agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    blocked, blocked_status = update_mission_status(
+        mission_id,
+        "blocked",
+        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        event_type="status_changed",
+        notes=blocked_reason,
+        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if blocked_status >= 400:
+        return blocked, blocked_status
+    return {
+        "success": False,
+        "status": "agent_stage_blocked",
+        "mission_id": mission_id,
+        "mission_status": "blocked",
+        "agent": agent,
+        "blocked_reason": blocked_reason,
+        "agent_ledger_path": str(ledger_path),
+    }, 504
+
+
+def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, output_dir, started_at, database_url=None, connect_factory=None):
+    ledger["status"] = "complete"
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    ledger_path = _write_agent_ledger(output_dir, execution_id, ledger)
+    reviewer = artifacts.get("reviewer", {})
+    tester = artifacts.get("tester", {})
+    builder = artifacts.get("builder", {})
+    review_packet = {
+        "review_packet": {
+            "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
+            "findings": [
+                artifacts.get("planner", {}).get("summary", "Planner completed."),
+                artifacts.get("architect", {}).get("summary", "Architect completed."),
+                builder.get("summary", "Builder completed."),
+                tester.get("summary", "Tester completed."),
+                reviewer.get("summary", "Reviewer completed."),
+            ],
+            "errors": _collect_artifact_list(artifacts, "errors"),
+            "bugs": _collect_artifact_list(artifacts, "bugs"),
+            "changed_files": reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
+            "test_evidence": reviewer.get("test_evidence") or tester.get("tests_run") or ["Tester artifact did not list tests."],
+            "local_preview": _extract_local_preview(reviewer.get("summary", "")),
+            "links": {"local_preview": _extract_local_preview(reviewer.get("summary", "")).get("url", "")},
+            "release_notes": reviewer.get("release_notes") or ["Review Agent Runner v2 artifacts before final approval."],
+            "recommended_owner_decision": reviewer.get("recommended_owner_decision", "approve_final_release"),
+            "execution_artifacts": {
+                "execution_id": execution_id,
+                "agent_runner_version": AGENT_RUNNER_VERSION,
+                "agent_ledger_path": str(ledger_path),
+                "started_at": started_at,
+                "completed_at": ledger["completed_at"],
+            },
+            "agent_artifacts": artifacts,
+            "review_status": "ready_for_owner_review",
+        },
+        "agent_execution": ledger,
+    }
+    update_mission_vault(
+        mission["mission_id"],
+        review_packet,
+        notes="CHARLIE Agent Runner v2 populated owner review packet.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    reviewer_result, reviewer_status = update_mission_workflow_step(
+        mission["mission_id"],
+        "reviewer",
+        step_status="complete",
+        findings="CHARLIE Agent Runner v2 completed all stages and prepared owner review packet.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if reviewer_status >= 400:
+        return reviewer_result, reviewer_status
+    return {
+        "success": True,
+        "status": "agent_execution_completed",
+        "mission_id": mission["mission_id"],
+        "mission_status": "pr_ready",
+        "execution_id": execution_id,
+        "agent_runner_version": AGENT_RUNNER_VERSION,
+        "agent_ledger_path": str(ledger_path),
+    }, 200
+
+
+def _collect_artifact_list(artifacts, key):
+    collected = []
+    for artifact in artifacts.values():
+        value = artifact.get(key)
+        if isinstance(value, list):
+            collected.extend(item for item in value if item)
+        elif value:
+            collected.append(value)
+    return collected
 
 
 def _load_execution_mission(mission_id="", status="in_progress", database_url=None, connect_factory=None):
