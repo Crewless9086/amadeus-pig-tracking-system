@@ -33,6 +33,8 @@ Planner must include acceptance criteria and test plan. Architect must include f
 
 CHARLIE checks each artifact before advancing. The Tester gate requires `test_status = pass` and no reported errors/bugs. The Reviewer gate requires `recommended_owner_decision = approve_final_release` and no reported errors/bugs. Missing command/file evidence blocks the mission instead of creating a weak review packet.
 
+Validation missions must include PR evidence before owner review.
+
 ## Backflow
 
 Tester failure sends the workflow back to Builder. Reviewer rejection or findings send the workflow back to Builder unless the Reviewer artifact names a different valid `send_back_stage`. Backflow is bounded by a retry limit so the mission cannot loop forever. Backflow events are recorded in the Agent Runner ledger and the owner review packet.
