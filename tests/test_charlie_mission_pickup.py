@@ -155,6 +155,37 @@ class CharlieMissionPickupTests(unittest.TestCase):
         write_heartbeat.assert_called()
         sleep.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_waits_when_release_is_in_progress(self, list_missions, write_heartbeat, sleep):
+        def fake_list_missions(status="approved", limit=10):
+            if status == "release_in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-RELEASE",
+                        "title": "Release mission",
+                        "status": "release_in_progress",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=1,
+            continuous=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "active_mission_in_progress")
+        self.assertEqual(result["mission_id"], "CHARLIE-MISSION-RELEASE")
+        write_heartbeat.assert_called()
+        sleep.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

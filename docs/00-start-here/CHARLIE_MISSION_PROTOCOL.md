@@ -98,7 +98,7 @@ The intended mission loop is:
 5. CHARLIE shows the mission in a dashboard Review section.
 6. Owner reviews the packet, local preview, findings, bugs, test results, risks, PR/diff, and comments.
 7. Owner either approves final release, sends the mission back with comments, pauses, or rejects it.
-8. Only after final owner approval may the release/merge/deploy path proceed under the normal deployment SOP.
+8. Final owner approval records `release_approved`; only a local Codex release bridge may then proceed through release/merge/deploy checks under the normal deployment SOP.
 9. After verified release or explicit closeout, CHARLIE marks the mission `done`, `merged`, or `deployed` as appropriate.
 
 The Review section must show:
@@ -117,12 +117,12 @@ The Review section must show:
 Owner comments are mission instructions. When the owner sends a mission back from review:
 
 - CHARLIE records the comment in the Mission Vault and mission events.
-- mission status returns to `approved` or `in_progress` depending on whether local runner pickup is needed again.
+- mission status returns to `approved` when local runner/Codex pickup is needed again.
 - workflow stage returns to the correct point, usually planner for scope changes, architect for design/source-of-truth changes, builder for implementation fixes, or tester for verification-only fixes.
 - Codex/Cursor must include the owner comments in the next execution packet.
 - previous findings remain attached so the mission keeps its audit trail.
 
-Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
+Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. Final approval must record `release_approved`, not normal `approved`; LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
 
 No mission should be considered complete merely because code was written. A mission is complete only when the owner accepts the final review result, or when the owner explicitly marks a non-release mission done.
 

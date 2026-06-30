@@ -52,6 +52,7 @@
       <dl class="charlie-mission-meta">
         <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
         <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
+        <div><dt>Release Approved</dt><dd id="charlie_runner_release_next">--</dd></div>
         <div><dt>Local Runner</dt><dd id="charlie_runner_local">--</dd></div>
         <div><dt>Last Seen</dt><dd id="charlie_runner_seen">--</dd></div>
       </dl>
@@ -60,6 +61,17 @@
         <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30</pre>
         <pre id="charlie_runner_control_commands">.\venv\Scripts\python.exe scripts\charlie_runner_control.py status</pre>
       </details>
+    </section>
+
+    <section class="charlie-panel charlie-review-panel" aria-label="Owner review gate">
+      <div class="ops-panel-header">
+        <div>
+          <span class="ops-panel-kicker">Stage 8</span>
+          <h2>Owner Review</h2>
+        </div>
+        <span class="status-pill status-pill-muted" id="charlie_review_loaded_at">Loading</span>
+      </div>
+      <div id="charlie_review_list" class="charlie-review-list" aria-live="polite"></div>
     </section>
 
     <section class="charlie-layout">
@@ -113,6 +125,9 @@
           <option value="approved">Approved</option>
           <option value="in_progress">In Progress</option>
           <option value="blocked">Blocked</option>
+          <option value="pr_ready">Review Ready</option>
+          <option value="release_approved">Release Approved</option>
+          <option value="release_in_progress">Release In Progress</option>
           <option value="paused">Paused</option>
           <option value="rejected">Rejected</option>
           <option value="done">Done</option>

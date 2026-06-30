@@ -1,6 +1,7 @@
 (function () {
   const state = {
     missions: [],
+    reviewMissions: [],
     counts: {},
     loading: false,
   };
@@ -14,6 +15,8 @@
     statusLine: document.getElementById("charlie_status_line"),
     message: document.getElementById("charlie_message"),
     list: document.getElementById("charlie_mission_list"),
+    reviewList: document.getElementById("charlie_review_list"),
+    reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
     refresh: document.getElementById("charlie_refresh"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
@@ -29,6 +32,7 @@
       message: document.getElementById("charlie_runner_message"),
       active: document.getElementById("charlie_runner_active"),
       next: document.getElementById("charlie_runner_next"),
+      releaseNext: document.getElementById("charlie_runner_release_next"),
       local: document.getElementById("charlie_runner_local"),
       seen: document.getElementById("charlie_runner_seen"),
       command: document.getElementById("charlie_runner_command"),
@@ -79,11 +83,14 @@
     const status = els.filter ? els.filter.value : "";
     const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
     try {
-      const [summary, missions] = await Promise.all([
+      const [summary, missions, reviewReady, blocked] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
         fetchJson(`/api/charlie/build-relay/missions${query}`),
+        fetchJson("/api/charlie/build-relay/missions?status=pr_ready&limit=20"),
+        fetchJson("/api/charlie/build-relay/missions?status=blocked&limit=20"),
       ]);
       state.missions = missions.missions || [];
+      state.reviewMissions = uniqueMissions([...(reviewReady.missions || []), ...(blocked.missions || [])]);
       state.counts = summary.counts || {};
       render();
       loadRunnerStatus();
@@ -101,11 +108,13 @@
       const data = await fetchJson("/api/charlie/build-relay/runner/status");
       const active = data.active_mission || {};
       const next = data.next_approved_mission || {};
+      const releaseNext = data.next_release_approved_mission || {};
       const local = data.local_runner || {};
       els.runner.state.textContent = runnerStateLabel(data.status);
       els.runner.message.textContent = data.next_action || "Runner handoff status loaded.";
       els.runner.active.textContent = active.mission_id ? `${shortId(active.mission_id)} | ${active.title || active.status || "active"}` : "None";
       els.runner.next.textContent = next.mission_id ? `${shortId(next.mission_id)} | ${next.title || next.status || "approved"}` : "None";
+      if (els.runner.releaseNext) els.runner.releaseNext.textContent = releaseNext.mission_id ? `${shortId(releaseNext.mission_id)} | ${releaseNext.title || releaseNext.status || "release approved"}` : "None";
       if (els.runner.local) els.runner.local.textContent = local.active ? `Active (PID ${local.pid || "--"})` : "Not active";
       if (els.runner.seen) els.runner.seen.textContent = local.last_seen ? `${formatDate(local.last_seen)} (${local.age_seconds || 0}s ago)` : "Never";
       if (data.local_runner_command) els.runner.command.textContent = data.local_runner_command;
@@ -125,6 +134,7 @@
 
   function runnerStateLabel(status) {
     if (status === "active_mission_in_progress") return "In Progress";
+    if (status === "release_approved_waiting_for_local_release_bridge") return "Release Approved";
     if (status === "approved_waiting_for_local_runner") return "Waiting Pickup";
     if (status === "idle_no_approved_mission") return "Idle";
     return safeText(status || "Unknown");
@@ -141,11 +151,26 @@
     if (!els.list) return;
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
+      renderReview();
       return;
     }
     els.list.innerHTML = "";
     state.missions.forEach((mission) => {
       els.list.appendChild(missionCard(mission));
+    });
+    renderReview();
+  }
+
+  function renderReview() {
+    if (els.reviewLoadedAt) els.reviewLoadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
+    if (!els.reviewList) return;
+    if (!state.reviewMissions.length) {
+      els.reviewList.innerHTML = '<p class="charlie-empty">No missions are waiting at owner review.</p>';
+      return;
+    }
+    els.reviewList.innerHTML = "";
+    state.reviewMissions.forEach((mission) => {
+      els.reviewList.appendChild(reviewCard(mission));
     });
   }
 
@@ -218,6 +243,67 @@
     return card;
   }
 
+  function reviewCard(mission) {
+    const card = document.createElement("article");
+    card.className = "charlie-mission-card charlie-review-card";
+    const missionId = safeText(mission.mission_id);
+    const title = safeText(mission.title || mission.raw_text || "Untitled mission");
+    const metadata = mission.metadata || {};
+    const reviewPacket = metadata.review_packet || {};
+    const localPreview = reviewPacket.local_preview || {};
+    const links = reviewPacket.links || {};
+    const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    card.innerHTML = `
+      <div class="charlie-mission-card-header">
+        <div>
+          <span class="status-pill">${escapeHtml(safeText(mission.status || "review"))}</span>
+          <h3>${escapeHtml(title)}</h3>
+        </div>
+        <code>${escapeHtml(shortId(missionId))}</code>
+      </div>
+      <dl class="charlie-mission-meta">
+        <div><dt>Local view</dt><dd>${reviewLink(localPreview.url || localPreview.path || localPreview.command || links.local_preview)}</dd></div>
+        <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
+        <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
+        <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
+      </dl>
+      <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
+      <details open>
+        <summary>Mission findings and review packet</summary>
+        <div class="charlie-review-packet" data-review-packet>
+          ${reviewPacketMarkup(mission, reviewPacket)}
+        </div>
+      </details>
+      <label for="review_comments_${escapeHtml(missionId)}">Owner comments</label>
+      <textarea id="review_comments_${escapeHtml(missionId)}" rows="3" data-review-comments placeholder="Comments for final approval or send-back"></textarea>
+      <div class="charlie-form-row">
+        <label>
+          Return stage
+          <select data-review-target-stage>
+            <option value="builder">Builder</option>
+            <option value="tester">Tester</option>
+            <option value="reviewer">Reviewer</option>
+            <option value="planner">Planner</option>
+            <option value="architect">Architect</option>
+          </select>
+        </label>
+        <button type="button" data-review-refresh>Refresh Evidence</button>
+      </div>
+      <div class="charlie-mission-actions charlie-review-actions">
+        <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+        <button type="button" data-review-decision="send_back">Send Back</button>
+        <button type="button" data-review-decision="pause">Pause</button>
+        <button type="button" data-review-decision="reject">Reject</button>
+        <button type="button" data-review-decision="mark_done">Mark Done</button>
+      </div>
+    `;
+    card.querySelector("[data-review-refresh]").addEventListener("click", () => loadReviewPacket(missionId, card));
+    card.querySelectorAll("[data-review-decision]").forEach((button) => {
+      button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
+    });
+    return card;
+  }
+
   function agentBadge(agent) {
     const name = safeText(agent.agent || "agent");
     const status = safeText(agent.status || "pending");
@@ -251,6 +337,26 @@
     return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
 
+  function reviewPacketMarkup(mission, packet) {
+    const vault = mission.vault || {};
+    const decisions = mission.metadata && Array.isArray(mission.metadata.owner_review_decisions) ? mission.metadata.owner_review_decisions : [];
+    return `
+      <strong>Summary</strong>
+      <p>${escapeHtml(safeText(packet.summary || vault.desired_outcome || mission.raw_text || "Not captured yet."))}</p>
+      <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
+      <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
+      <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
+      <strong>Owner review history</strong>${listMarkup(decisions.map((item) => `${item.decision || "decision"}: ${item.comments || "no comments"}`), "No owner review decisions yet.")}
+    `;
+  }
+
+  function workflowFindings(workflow) {
+    return (Array.isArray(workflow) ? workflow : [])
+      .map((item) => item && item.findings ? `${item.agent || "agent"}: ${item.findings}` : "")
+      .filter(Boolean);
+  }
+
   async function recordDecision(missionId, status, approvalLevel) {
     if (!missionId || !status) return;
     const levelLabel = approvalLevel ? ` ${approvalLevel}` : "";
@@ -270,6 +376,56 @@
     } catch (error) {
       setMessage(error.message || "Decision was not recorded.", "error");
     }
+  }
+
+  async function loadReviewPacket(missionId, card) {
+    if (!missionId || !card) return;
+    setMessage("Loading review packet...", "info");
+    try {
+      const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/review`);
+      const container = card.querySelector("[data-review-packet]");
+      if (container) container.innerHTML = reviewPacketDetailMarkup(data.review_packet || {});
+      setMessage("Review packet loaded.", "success");
+    } catch (error) {
+      setMessage(error.message || "Review packet could not be loaded.", "error");
+    }
+  }
+
+  async function recordReviewDecision(missionId, decision, card) {
+    if (!missionId || !decision || !card) return;
+    const comments = safeText(card.querySelector("[data-review-comments]") && card.querySelector("[data-review-comments]").value).trim();
+    const targetStage = safeText(card.querySelector("[data-review-target-stage]") && card.querySelector("[data-review-target-stage]").value).trim() || "builder";
+    setMessage(`Recording review decision ${decision}...`, "info");
+    try {
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/review`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          decision,
+          comments,
+          target_stage: targetStage,
+        }),
+      });
+      setMessage("Review decision recorded.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Review decision was not recorded.", "error");
+    }
+  }
+
+  function reviewPacketDetailMarkup(packet) {
+    const mission = packet.mission || {};
+    return `
+      <strong>${escapeHtml(safeText(mission.title || mission.mission_id || "Review packet"))}</strong>
+      <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
+      <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
+      <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
+      <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
+      <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
+      <strong>Execution boundary</strong>
+      <p>${escapeHtml(safeText(packet.execution_boundary || "Dashboard records review decisions only."))}</p>
+    `;
   }
 
   async function createMission(event) {
@@ -362,6 +518,30 @@
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => ({label: line.slice(0, 80), reference: line, media_type: "reference"}));
+  }
+
+  function reviewLink(value) {
+    const text = safeText(value).trim();
+    if (!text) return "Not captured";
+    if (/^https?:\/\//i.test(text)) {
+      return `<a href="${escapeHtml(text)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
+    }
+    return escapeHtml(text);
+  }
+
+  function firstReviewText(items, fallback) {
+    if (Array.isArray(items) && items.length) return safeText(items[0]);
+    return fallback;
+  }
+
+  function uniqueMissions(missions) {
+    const seen = new Set();
+    return missions.filter((mission) => {
+      const id = mission && mission.mission_id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   }
 
   function shortId(value) {

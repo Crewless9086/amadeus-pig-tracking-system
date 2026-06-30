@@ -8,9 +8,11 @@ from modules.charlie.build_relay import (
 from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
+    get_mission_review_packet,
     list_missions,
     mission_status_summary,
     record_mission,
+    record_mission_review_decision,
     update_mission_workflow_step,
     update_mission_status,
     update_mission_vault,
@@ -103,22 +105,30 @@ def charlie_build_relay_runner_status_route():
     approved, approved_status = list_missions(status="approved", limit=1)
     in_progress, in_progress_status = list_missions(status="in_progress", limit=1)
     pr_ready, pr_ready_status = list_missions(status="pr_ready", limit=1)
-    if max(approved_status, in_progress_status, pr_ready_status) >= 400:
+    release_approved, release_approved_status = list_missions(status="release_approved", limit=1)
+    release_in_progress, release_in_progress_status = list_missions(status="release_in_progress", limit=1)
+    if max(approved_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
         return jsonify({
             "success": False,
             "status": "runner_handoff_unavailable",
             "approved_status": approved.get("status"),
             "in_progress_status": in_progress.get("status"),
             "pr_ready_status": pr_ready.get("status"),
+            "release_approved_status": release_approved.get("status"),
+            "release_in_progress_status": release_in_progress.get("status"),
             "can_run_shell_from_web": False,
         }), 503
 
-    active_mission = _first_mission(in_progress) or _first_mission(pr_ready)
+    active_mission = _first_mission(in_progress) or _first_mission(pr_ready) or _first_mission(release_in_progress)
     next_approved = _first_mission(approved)
+    next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
     if active_mission:
         runner_status = "active_mission_in_progress"
         next_action = "Codex is expected to finish or debrief the active mission before another approved mission is picked up."
+    elif next_release_approved:
+        runner_status = "release_approved_waiting_for_local_release_bridge"
+        next_action = "Final owner approval is recorded. A local Codex release bridge must perform merge/deploy verification before completion."
     elif next_approved:
         runner_status = "approved_waiting_for_local_runner"
         next_action = (
@@ -135,6 +145,7 @@ def charlie_build_relay_runner_status_route():
         "status": runner_status,
         "active_mission": active_mission,
         "next_approved_mission": next_approved,
+        "next_release_approved_mission": next_release_approved,
         "next_action": next_action,
         "local_runner": local_status,
         "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30",
@@ -159,9 +170,33 @@ def charlie_build_relay_mission_detail_route(mission_id):
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["GET"])
+def charlie_build_relay_mission_review_packet_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_mission_review_packet(mission_id)
+    return jsonify(result), status_code
+
+
 def _first_mission(result):
     missions = result.get("missions") or []
     return missions[0] if missions else None
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["POST"])
+def charlie_build_relay_mission_review_decision_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_mission_review_decision(
+        mission_id,
+        decision=str(payload.get("decision") or "").strip(),
+        comments=str(payload.get("comments") or "").strip(),
+        target_stage=str(payload.get("target_stage") or "builder").strip(),
+    )
+    return jsonify(result), status_code
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/decision", methods=["POST"])
