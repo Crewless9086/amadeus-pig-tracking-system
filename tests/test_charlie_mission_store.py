@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime, timezone
 
 from modules.charlie.mission_store import (
+    agent_sequence_for_mission,
     build_mission_review_packet,
     get_mission,
     list_missions,
@@ -76,6 +77,13 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("mission_vault", mission_params["metadata_json"])
         self.assertIn("agent_workflow", mission_params["metadata_json"])
         self.assertIn("mission_context_pack", mission_params["metadata_json"])
+
+    def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
+        sequence = agent_sequence_for_mission("agent build")
+
+        self.assertEqual(sequence[:2], ["idea_expander", "product_architect"])
+        self.assertIn("qa_red_team", sequence)
+        self.assertEqual(sequence[-1], "reviewer")
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
@@ -276,6 +284,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
                 "review_packet": {
                     "changed_files": ["modules/sam.py"],
                     "local_preview": {"url": "http://127.0.0.1:5000/sales/meat-leads"},
+                    "qa_evidence": ["QA passed."],
+                    "handoff_reports": {"qa_red_team": {"summary": "QA passed."}},
                 },
             },
         })
@@ -283,6 +293,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertTrue(packet["can_approve_final_release"])
         self.assertIn("tester: Tests passed.", packet["findings"])
         self.assertEqual(packet["changed_files"], ["modules/sam.py"])
+        self.assertEqual(packet["qa_evidence"], ["QA passed."])
+        self.assertIn("qa_red_team", packet["handoff_reports"])
         self.assertEqual(packet["local_preview"]["url"], "http://127.0.0.1:5000/sales/meat-leads")
         self.assertIn("Dashboard review decisions update mission state only", packet["execution_boundary"])
 

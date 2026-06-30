@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -26,6 +27,52 @@ MISSION = {
     "agent_workflow": [{"agent": "planner", "status": "active", "purpose": "Scope execution."}],
     "mission_context_pack": {"version": "charlie_context_pack_v1"},
 }
+
+
+def _agent_from_prompt(prompt):
+    for candidate in execution_bridge.all_agent_names():
+        if f"{candidate.upper()} agent" in prompt:
+            return candidate
+    return "reviewer"
+
+
+def _successful_stage_payload(agent):
+    payload = {
+        "summary": f"{agent} completed",
+        "errors": [],
+        "bugs": [],
+        "files_inspected": ["modules/charlie/execution_bridge.py"],
+        "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "next_action": "continue",
+        "opportunity": "clear owner opportunity" if agent == "idea_expander" else None,
+        "owner_value": "owner value clear" if agent == "idea_expander" else None,
+        "non_goals": ["no broad rebuild"] if agent == "idea_expander" else None,
+        "user_flow": ["owner creates mission", "agents execute", "owner reviews"] if agent == "product_architect" else None,
+        "acceptance_boundaries": ["owner approval remains required"] if agent == "product_architect" else None,
+        "risk_notes": ["risk checked"] if agent in {"product_architect", "architect"} else None,
+        "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
+        "test_plan": ["tests"] if agent == "planner" else None,
+        "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
+        "implementation_plan": ["patch runner"] if agent == "architect" else None,
+        "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
+        "build_notes": ["patched"] if agent == "builder" else None,
+        "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
+        "commit_sha": "abc1234" if agent == "builder" else None,
+        "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
+        "links": {"pr": "https://github.com/org/repo/pull/61"} if agent in {"builder", "reviewer"} else None,
+        "tests_run": ["unit tests passed"] if agent == "tester" else None,
+        "test_status": "pass" if agent == "tester" else None,
+        "qa_findings": ["no high risk found"] if agent == "qa_red_team" else None,
+        "red_team_status": "pass" if agent == "qa_red_team" else None,
+        "risk_rating": "low" if agent == "qa_red_team" else None,
+        "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
+        "release_notes": ["owner review ready"] if agent == "reviewer" else None,
+        "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+        "qa_evidence": ["QA/red-team passed"] if agent == "reviewer" else None,
+    }
+    return {key: value for key, value in payload.items() if value is not None}
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
@@ -109,36 +156,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         def fake_runner(*_args, **kwargs):
             prompt = kwargs["input"]
-            agent = "reviewer"
-            for candidate in execution_bridge.AGENT_SEQUENCE:
-                if f"{candidate.upper()} agent" in prompt:
-                    agent = candidate
-                    break
-            payload = {
-                "summary": f"{agent} completed",
-                "errors": [],
-                "bugs": [],
-                "files_inspected": ["modules/charlie/execution_bridge.py"],
-                "commands_run": ["rg run_agent_execution_bridge_v2 modules/charlie/execution_bridge.py"],
-                "next_action": "continue",
-                "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
-                "test_plan": ["tests"] if agent == "planner" else None,
-                "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
-                "risk_notes": ["risk checked"] if agent == "architect" else None,
-                "implementation_plan": ["patch runner"] if agent == "architect" else None,
-                "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
-                "build_notes": ["patched"] if agent == "builder" else None,
-                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
-                "commit_sha": "abc1234" if agent == "builder" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
-                "links": {"pr": "https://github.com/org/repo/pull/61"} if agent in {"builder", "reviewer"} else None,
-                "tests_run": ["unit tests passed"] if agent == "tester" else None,
-                "test_status": "pass" if agent == "tester" else None,
-                "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
-                "release_notes": ["owner review ready"] if agent == "reviewer" else None,
-                "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-            }
-            payload = {key: value for key, value in payload.items() if value is not None}
+            agent = _agent_from_prompt(prompt)
+            payload = _successful_stage_payload(agent)
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -158,6 +177,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertIn("agent_execution", vault_metadata)
         self.assertIn("agent_artifacts", vault_metadata["review_packet"])
+        self.assertIn("handoff_reports", vault_metadata["review_packet"])
+        self.assertIn("qa_red_team", vault_metadata["review_packet"]["agent_artifacts"])
+        self.assertIn("QA/red-team passed", vault_metadata["review_packet"]["qa_evidence"])
         self.assertIn("quality_gates", vault_metadata["review_packet"])
         self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["pr_url"], "https://github.com/org/repo/pull/61")
@@ -185,39 +207,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         def fake_runner(*_args, **kwargs):
             prompt = kwargs["input"]
-            agent = "reviewer"
-            for candidate in execution_bridge.AGENT_SEQUENCE:
-                if f"{candidate.upper()} agent" in prompt:
-                    agent = candidate
-                    break
+            agent = _agent_from_prompt(prompt)
             if agent == "builder":
                 builder_calls["count"] += 1
             if agent == "tester":
                 tester_calls["count"] += 1
-            payload = {
-                "summary": f"{agent} completed",
-                "errors": [],
-                "bugs": [],
-                "files_inspected": ["modules/charlie/execution_bridge.py"],
-                "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
-                "next_action": "continue",
-                "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
-                "test_plan": ["tests"] if agent == "planner" else None,
-                "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
-                "risk_notes": ["risk checked"] if agent == "architect" else None,
-                "implementation_plan": ["patch runner"] if agent == "architect" else None,
-                "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
-                "build_notes": ["patched"] if agent == "builder" else None,
-                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
-                "commit_sha": "abc1234" if agent == "builder" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
-                "tests_run": ["unit tests"] if agent == "tester" else None,
-                "test_status": "fail" if agent == "tester" and tester_calls["count"] == 1 else ("pass" if agent == "tester" else None),
-                "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
-                "release_notes": ["ready"] if agent == "reviewer" else None,
-                "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-            }
-            payload = {key: value for key, value in payload.items() if value is not None}
+            payload = _successful_stage_payload(agent)
+            if agent == "tester" and tester_calls["count"] == 1:
+                payload["test_status"] = "fail"
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -279,31 +276,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         def fake_runner(*_args, **kwargs):
             prompt = kwargs["input"]
-            agent = "reviewer"
-            for candidate in execution_bridge.AGENT_SEQUENCE:
-                if f"{candidate.upper()} agent" in prompt:
-                    agent = candidate
-                    break
+            agent = _agent_from_prompt(prompt)
             called_agents.append(agent)
-            payload = {
-                "summary": f"{agent} completed",
-                "errors": [],
-                "bugs": [],
-                "files_inspected": ["modules/charlie/execution_bridge.py"],
-                "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
-                "next_action": "continue",
-                "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
-                "build_notes": ["patched"] if agent == "builder" else None,
-                "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
-                "commit_sha": "abc1234" if agent == "builder" else None,
-                "pr_url": "https://github.com/org/repo/pull/61" if agent in {"builder", "reviewer"} else None,
-                "tests_run": ["unit tests"] if agent == "tester" else None,
-                "test_status": "pass" if agent == "tester" else None,
-                "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
-                "release_notes": ["ready"] if agent == "reviewer" else None,
-                "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-            }
-            payload = {key: value for key, value in payload.items() if value is not None}
+            payload = _successful_stage_payload(agent)
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -315,7 +290,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(called_agents, ["builder", "tester", "reviewer"])
+        self.assertEqual(called_agents, ["builder", "tester", "qa_red_team", "reviewer"])
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
         self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
@@ -534,6 +509,18 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "release_execution_prepared")
         self.assertIn("no_release_closeout", packet)
         self.assertIn("Owner approved.", packet)
+        self.assertIn("live_release_verification", packet)
+
+    @patch.dict(os.environ, {"CHARLIE_RELEASE_VERIFY_URL": "https://example.com/charlie"}, clear=True)
+    def test_default_release_verify_url_prefers_explicit_charlie_url(self):
+        self.assertEqual(execution_bridge._default_release_verify_url(), "https://example.com/charlie")
+
+    def test_release_verification_reports_missing_url_as_unconfigured(self):
+        result = execution_bridge._wait_for_release_verification("", attempts=3, interval_seconds=0)
+
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["status"], "verify_url_not_configured")
+        self.assertEqual(result["attempts"], 0)
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_rejects_non_release_approved_mission(self, get_mission):

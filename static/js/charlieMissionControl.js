@@ -2,6 +2,7 @@
   const state = {
     missions: [],
     reviewMissions: [],
+    commandCenter: {},
     counts: {},
     loading: false,
     pendingMedia: [],
@@ -21,6 +22,8 @@
     list: document.getElementById("charlie_mission_list"),
     reviewList: document.getElementById("charlie_review_list"),
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
+    commandCenter: document.getElementById("charlie_command_center"),
+    commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
     refresh: document.getElementById("charlie_refresh"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
@@ -50,6 +53,10 @@
       approved: document.getElementById("charlie_count_approved"),
       in_progress: document.getElementById("charlie_count_in_progress"),
       blocked: document.getElementById("charlie_count_blocked"),
+      pr_ready: document.getElementById("charlie_count_pr_ready"),
+      release: document.getElementById("charlie_count_release"),
+      merged: document.getElementById("charlie_count_merged"),
+      deployed: document.getElementById("charlie_count_deployed"),
     },
   };
 
@@ -90,15 +97,17 @@
     const status = els.filter ? els.filter.value : "";
     const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
     try {
-      const [summary, missions, reviewReady, blocked] = await Promise.all([
+      const [summary, missions, reviewReady, blocked, commandCenter] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
         fetchJson(`/api/charlie/build-relay/missions${query}`),
         fetchJson("/api/charlie/build-relay/missions?status=pr_ready&limit=20"),
         fetchJson("/api/charlie/build-relay/missions?status=blocked&limit=20"),
+        fetchJson("/api/charlie/build-relay/command-center"),
       ]);
       state.missions = missions.missions || [];
       state.reviewMissions = uniqueMissions([...(reviewReady.missions || []), ...(blocked.missions || [])]);
       state.counts = summary.counts || {};
+      state.commandCenter = commandCenter || {};
       render();
       loadRunnerStatus();
     } catch (error) {
@@ -178,9 +187,15 @@
       els.statusLine.textContent = `${state.missions.length} mission records loaded. Decisions here update mission state only.`;
     }
     Object.keys(els.counts).forEach((key) => {
-      if (els.counts[key]) els.counts[key].textContent = state.counts[key] || 0;
+      if (!els.counts[key]) return;
+      if (key === "release") {
+        els.counts[key].textContent = (state.counts.release_approved || 0) + (state.counts.release_in_progress || 0);
+      } else {
+        els.counts[key].textContent = state.counts[key] || 0;
+      }
     });
     if (els.loadedAt) els.loadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
+    renderCommandCenter();
     if (!els.list) return;
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
@@ -192,6 +207,36 @@
       els.list.appendChild(missionCard(mission));
     });
     renderReview();
+  }
+
+  function renderCommandCenter() {
+    if (els.commandCenterLoadedAt) els.commandCenterLoadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
+    if (!els.commandCenter) return;
+    const data = state.commandCenter || {};
+    const release = data.release || {};
+    const review = data.review || {};
+    const vault = data.vault || {};
+    const runner = data.local_runner || {};
+    els.commandCenter.innerHTML = `
+      ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+      ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
+      ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
+      ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
+      ${commandCenterTile("Merged", `${(release.merged_waiting_live_verify || []).length} waiting verify`, "Needs live proof for deployed")}
+      ${commandCenterTile("Deployed", `${(release.deployed || []).length} complete`, "Verified live")}
+      ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
+      ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+    `;
+  }
+
+  function commandCenterTile(label, value, detail) {
+    return `
+      <article class="charlie-command-center-tile">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(value)}</span>
+        <code>${escapeHtml(detail || "")}</code>
+      </article>
+    `;
   }
 
   function renderReview() {
@@ -232,10 +277,13 @@
       </div>
       <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
       <div class="charlie-workflow-actions" aria-label="Mission workflow actions">
+        <button type="button" data-agent-step="idea_expander">Idea Done</button>
+        <button type="button" data-agent-step="product_architect">Product Done</button>
         <button type="button" data-agent-step="planner">Planner Done</button>
         <button type="button" data-agent-step="architect">Architect Done</button>
         <button type="button" data-agent-step="builder">Builder Done</button>
         <button type="button" data-agent-step="tester">Tester Done</button>
+        <button type="button" data-agent-step="qa_red_team">QA Done</button>
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
       <dl class="charlie-mission-meta">
@@ -319,9 +367,12 @@
           <select data-review-target-stage>
             <option value="builder">Builder</option>
             <option value="tester">Tester</option>
+            <option value="qa_red_team">QA / Red Team</option>
             <option value="reviewer">Reviewer</option>
             <option value="planner">Planner</option>
             <option value="architect">Architect</option>
+            <option value="product_architect">Product Architect</option>
+            <option value="idea_expander">Idea Expander</option>
           </select>
         </label>
         <button type="button" data-review-refresh>Refresh Evidence</button>
@@ -432,6 +483,8 @@
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
+      <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
+      <strong>Handoff reports</strong>${handoffReportMarkup(packet.handoff_reports)}
       <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
       <strong>Owner review history</strong>${listMarkup(decisions.map((item) => `${item.decision || "decision"}: ${item.comments || "no comments"}`), "No owner review decisions yet.")}
@@ -511,6 +564,8 @@
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
+      <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
+      <strong>Handoff reports</strong>${handoffReportMarkup(packet.handoff_reports)}
       <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
       <strong>Execution boundary</strong>
@@ -551,6 +606,23 @@
     const gates = Array.isArray(items) ? items : [];
     if (!gates.length) return '<p class="charlie-muted">No quality gates captured yet.</p>';
     return `<ul>${gates.map((gate) => `<li>${escapeHtml(safeText(gate.agent || "agent"))}: ${escapeHtml(safeText(gate.reason || gate.status || "checked"))}</li>`).join("")}</ul>`;
+  }
+
+  function handoffReportMarkup(reports) {
+    const entries = reports && typeof reports === "object" ? Object.entries(reports) : [];
+    if (!entries.length) return '<p class="charlie-muted">No standardized handoff reports captured yet.</p>';
+    return `<div class="charlie-agent-timeline">${entries.map(([agent, report]) => `
+      <article class="charlie-agent-stage">
+        <div><strong>${escapeHtml(agent)}</strong> <span>${escapeHtml(safeText(report.status || "complete"))}</span></div>
+        <p>${escapeHtml(safeText(report.summary || ""))}</p>
+        <dl class="charlie-mission-meta">
+          <div><dt>Commands</dt><dd>${escapeHtml(firstReviewText(report.commands_run, "--"))}</dd></div>
+          <div><dt>Files</dt><dd>${escapeHtml(firstReviewText(report.files_inspected || report.changed_files, "--"))}</dd></div>
+          <div><dt>Next</dt><dd>${escapeHtml(safeText(report.next_action || "--"))}</dd></div>
+          <div><dt>Risks</dt><dd>${escapeHtml(firstReviewText(report.risks, "--"))}</dd></div>
+        </dl>
+      </article>
+    `).join("")}</div>`;
   }
 
   function backflowMarkup(items) {
@@ -635,8 +707,8 @@
 
   function updateWorkflowForStage(workflow, stage) {
     const stages = {
-      planned: ["planner", "architect"],
-      review_ready: ["planner", "architect", "builder", "tester", "reviewer"],
+      planned: ["idea_expander", "product_architect", "planner", "architect"],
+      review_ready: ["idea_expander", "product_architect", "planner", "architect", "builder", "tester", "qa_red_team", "reviewer"],
     };
     const completed = new Set(stages[stage] || []);
     return (Array.isArray(workflow) ? workflow : []).map((item) => {

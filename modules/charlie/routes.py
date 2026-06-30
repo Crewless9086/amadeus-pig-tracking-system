@@ -171,6 +171,72 @@ def charlie_build_relay_runner_status_route():
     }), 200
 
 
+@charlie_bp.route("/charlie/build-relay/command-center", methods=["GET"])
+def charlie_build_relay_command_center_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    summary, summary_status = mission_status_summary()
+    recent, recent_status = list_missions(limit=8)
+    review_ready, review_status = list_missions(status="pr_ready", limit=5)
+    blocked, blocked_status = list_missions(status="blocked", limit=5)
+    release_approved, release_approved_status = list_missions(status="release_approved", limit=5)
+    release_in_progress, release_progress_status = list_missions(status="release_in_progress", limit=5)
+    merged, merged_status = list_missions(status="merged", limit=5)
+    deployed, deployed_status = list_missions(status="deployed", limit=5)
+    statuses = [
+        summary_status,
+        recent_status,
+        review_status,
+        blocked_status,
+        release_approved_status,
+        release_progress_status,
+        merged_status,
+        deployed_status,
+    ]
+    if max(statuses) >= 400:
+        return jsonify({
+            "success": False,
+            "status": "command_center_unavailable",
+            "statuses": statuses,
+        }), 503
+    local_status = local_runner_status()
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "counts": summary.get("counts", {}),
+        "vault": {
+            "version": "charlie_vault_v1",
+            "storage": "metadata_json_active_structured_tables_available",
+            "structured_tables": [
+                "charlie_vault_projects",
+                "charlie_vault_artifacts",
+                "charlie_agent_runs",
+                "charlie_handoff_reports",
+                "charlie_quality_gates",
+                "charlie_owner_decisions",
+                "charlie_deployments",
+                "charlie_audit_log",
+            ],
+        },
+        "release": {
+            "waiting_final_bridge": release_approved.get("missions", []),
+            "in_progress": release_in_progress.get("missions", []),
+            "merged_waiting_live_verify": merged.get("missions", []),
+            "deployed": deployed.get("missions", []),
+            "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
+        },
+        "review": {
+            "ready": review_ready.get("missions", []),
+            "blocked": blocked.get("missions", []),
+        },
+        "recent_missions": recent.get("missions", []),
+        "local_runner": local_status,
+        "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
+        "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
+    }), 200
+
+
 def _running_on_render():
     return bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
 

@@ -12,6 +12,8 @@ from pathlib import Path
 
 from modules.charlie.mission_store import (
     AGENT_SEQUENCE,
+    agent_sequence_for_mission,
+    all_agent_names,
     get_mission,
     list_missions,
     update_mission_status,
@@ -30,10 +32,13 @@ NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
 AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
 AGENT_ARTIFACT_REQUIRED_KEYS = {
+    "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected"],
+    "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected"],
     "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected"],
+    "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected"],
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected"],
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
@@ -207,9 +212,10 @@ def run_agent_execution_bridge_v2(
     execution_id = _execution_id(mission["mission_id"])
     started_at = datetime.now(timezone.utc).isoformat()
     ledger = _agent_execution_ledger(mission, execution_id, started_at)
-    start_agent = _execution_start_agent(mission)
-    artifacts = _existing_agent_artifacts_for_rerun(mission, start_agent)
-    if start_agent != AGENT_SEQUENCE[0]:
+    agent_sequence = _mission_agent_sequence(mission)
+    start_agent = _execution_start_agent(mission, agent_sequence)
+    artifacts = _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence)
+    if start_agent != agent_sequence[0]:
         ledger["rerun_from_stage"] = start_agent
         ledger["preserved_upstream_artifacts"] = sorted(artifacts.keys())
 
@@ -236,9 +242,9 @@ def run_agent_execution_bridge_v2(
         "workspace-write",
     ]
 
-    agent_queue = _agent_queue_from(start_agent)
-    stage_attempts = {agent: 0 for agent in AGENT_SEQUENCE}
-    backflow_counts = {agent: 0 for agent in AGENT_SEQUENCE}
+    agent_queue = _agent_queue_from(start_agent, agent_sequence)
+    stage_attempts = {agent: 0 for agent in agent_sequence}
+    backflow_counts = {agent: 0 for agent in agent_sequence}
     while agent_queue:
         agent = agent_queue.pop(0)
         stage_attempts[agent] = int(stage_attempts.get(agent, 0)) + 1
@@ -348,8 +354,8 @@ def run_agent_execution_bridge_v2(
                     attempt=backflow_counts[backflow_target],
                 )
                 artifacts[agent] = artifact
-                artifacts = _discard_downstream_artifacts(artifacts, backflow_target)
-                agent_queue = _agent_queue_from(backflow_target)
+                artifacts = _discard_downstream_artifacts(artifacts, backflow_target, agent_sequence)
+                agent_queue = _agent_queue_from(backflow_target, agent_sequence)
                 _write_agent_ledger(output_dir, execution_id, ledger)
                 write_runner_heartbeat({
                     "status": "agent_backflow",
@@ -374,6 +380,7 @@ def run_agent_execution_bridge_v2(
                 connect_factory=connect_factory,
             )
         artifact["quality_gate"] = quality
+        artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
         _append_ledger_stage(
             ledger,
@@ -1013,6 +1020,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     review_packet = (mission.get("metadata") or {}).get("review_packet") if isinstance(mission.get("metadata"), dict) else {}
     owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
+    sequence = _mission_agent_sequence(mission)
     return f"""You are the CHARLIE CORE {agent.upper()} agent running inside Agent Runner v2.
 
 Mission ID: {mission.get("mission_id", "")}
@@ -1043,6 +1051,9 @@ Forbidden actions:
 Previous agent artifacts:
 {json.dumps(artifacts, indent=2)[:8000]}
 
+Mission agent order:
+{", ".join(sequence)}
+
 You must work like an interactive coding agent:
 - inspect the repo before asserting facts
 - read relevant files
@@ -1058,12 +1069,22 @@ Required final response format:
 Return concise markdown, and include a JSON object fenced as ```json with these keys:
 {json.dumps(_agent_required_schema(agent), indent=2)}
 
+Every final JSON object is normalized into a CHARLIE handoff report with:
+- mission_id, agent, status, summary
+- files_inspected, commands_run, stdout_tail, stderr_tail
+- changed_files, risks, tests, quality_gate, next_action
+- artifact_path and completed_at
+
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
 
 
 def _agent_stage_instruction(agent):
+    if agent == "idea_expander":
+        return "Clarify the rough idea, expected owner value, target user/workflow, constraints, non-goals, and what must not be assumed."
+    if agent == "product_architect":
+        return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
     if agent == "planner":
         return "Read mission context and define scope, acceptance criteria, test plan, risks, and exact next handoff."
     if agent == "architect":
@@ -1076,6 +1097,8 @@ def _agent_stage_instruction(agent):
         )
     if agent == "tester":
         return "Run focused verification, investigate failures, and return pass/fail evidence."
+    if agent == "qa_red_team":
+        return "Pressure-test the work for regressions, weak evidence, unsafe actions, missing tests, security/privacy risk, and owner-facing failure modes."
     return "Review diff, requirements, tests, safety gates, release notes, and prepare owner review recommendation."
 
 
@@ -1092,6 +1115,10 @@ def _agent_required_schema(agent):
     }
     if agent == "planner":
         base.update({"acceptance_criteria": [], "test_plan": [], "scope": "scoped work"})
+    elif agent == "idea_expander":
+        base.update({"opportunity": "clear owner opportunity", "owner_value": "why this matters", "non_goals": []})
+    elif agent == "product_architect":
+        base.update({"user_flow": [], "acceptance_boundaries": [], "risk_notes": []})
     elif agent == "architect":
         base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
     elif agent == "builder":
@@ -1106,6 +1133,13 @@ def _agent_required_schema(agent):
         })
     elif agent == "tester":
         base.update({"tests_run": [], "test_status": "pass|fail|blocked"})
+    elif agent == "qa_red_team":
+        base.update({
+            "qa_findings": [],
+            "red_team_status": "pass|fail|blocked",
+            "risk_rating": "low|medium|high|critical",
+            "send_back_stage": "builder|tester|reviewer when status is fail",
+        })
     else:
         base.update({
             "recommended_owner_decision": "approve_final_release|send_back|pause",
@@ -1134,33 +1168,43 @@ def _agent_execution_ledger(mission, execution_id, started_at):
     }
 
 
-def _execution_start_agent(mission):
+def _mission_agent_sequence(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
+    agent_order = context_pack.get("agent_order") if isinstance(context_pack.get("agent_order"), list) else []
+    cleaned = [str(agent or "").strip().lower() for agent in agent_order if str(agent or "").strip().lower() in all_agent_names()]
+    return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""))
+
+
+def _execution_start_agent(mission, agent_sequence=None):
+    agent_sequence = agent_sequence or _mission_agent_sequence(mission)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
-    if target in AGENT_SEQUENCE:
+    if target in agent_sequence:
         return target
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     stage = str(vault.get("mission_stage") or "").strip().lower()
     if stage.startswith("returned_to_"):
         target = stage.replace("returned_to_", "", 1)
-        if target in AGENT_SEQUENCE:
+        if target in agent_sequence:
             return target
-    return AGENT_SEQUENCE[0]
+    return agent_sequence[0]
 
 
-def _existing_agent_artifacts_for_rerun(mission, start_agent):
+def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=None):
+    agent_sequence = agent_sequence or _mission_agent_sequence(mission)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     existing = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
-    if start_agent not in AGENT_SEQUENCE:
+    if start_agent not in agent_sequence:
         return {}
-    start_index = AGENT_SEQUENCE.index(start_agent)
+    start_index = agent_sequence.index(start_agent)
     return {
         agent: artifact
         for agent, artifact in existing.items()
-        if agent in AGENT_SEQUENCE
-        and AGENT_SEQUENCE.index(agent) < start_index
+        if agent in agent_sequence
+        and agent_sequence.index(agent) < start_index
         and isinstance(artifact, dict)
     }
 
@@ -1232,7 +1276,11 @@ def _agent_artifact_from_final(agent, final_message):
         "stderr_tail": "",
         "next_action": "Continue to next CHARLIE agent.",
     }
-    if agent == "planner":
+    if agent == "idea_expander":
+        artifact.update({"opportunity": artifact["summary"], "owner_value": artifact["summary"], "non_goals": []})
+    elif agent == "product_architect":
+        artifact.update({"user_flow": [artifact["summary"]], "acceptance_boundaries": [], "risk_notes": []})
+    elif agent == "planner":
         artifact.update({"acceptance_criteria": ["Review final artifact."], "test_plan": ["Run focused verification."], "scope": artifact["summary"]})
     elif agent == "architect":
         artifact.update({"files_to_inspect": _changed_files(), "risk_notes": [], "implementation_plan": [artifact["summary"]]})
@@ -1240,6 +1288,8 @@ def _agent_artifact_from_final(agent, final_message):
         artifact.update({"changed_files": _changed_files(), "build_notes": [artifact["summary"]]})
     elif agent == "tester":
         artifact.update({"tests_run": _extract_test_evidence(final_message), "test_status": "pass" if not artifact["errors"] else "blocked"})
+    elif agent == "qa_red_team":
+        artifact.update({"qa_findings": [artifact["summary"]], "red_team_status": "pass" if not artifact["errors"] else "blocked", "risk_rating": "low" if not artifact["errors"] else "high"})
     else:
         artifact.update({"recommended_owner_decision": "approve_final_release", "release_notes": ["Review PR and test evidence before final approval."], "changed_files": _changed_files(), "test_evidence": _extract_test_evidence(final_message)})
     return artifact
@@ -1282,6 +1332,15 @@ def _agent_quality_gate(agent, artifact):
             return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
         if errors or bugs:
             return {"passed": False, "reason": "Tester reported errors or bugs."}
+    if agent == "qa_red_team":
+        status = str(artifact.get("red_team_status") or "").strip().lower()
+        risk = str(artifact.get("risk_rating") or "").strip().lower()
+        if status != "pass":
+            return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
+        if risk in {"high", "critical"}:
+            return {"passed": False, "reason": f"QA/red-team risk rating is {risk}."}
+        if errors or bugs:
+            return {"passed": False, "reason": "QA/red-team reported errors or bugs."}
     if agent == "builder":
         changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
         pr_reference = _artifact_pr_reference(artifact)
@@ -1297,6 +1356,9 @@ def _agent_quality_gate(agent, artifact):
         pr_reference = _artifact_pr_reference(artifact)
         if _has_release_relevant_changes(changed_files) and not pr_reference:
             return {"passed": False, "reason": "Reviewer did not record a PR link or PR number for changed code/docs."}
+        qa_evidence = artifact.get("qa_evidence") or artifact.get("qa_findings") or artifact.get("test_evidence")
+        if not qa_evidence:
+            return {"passed": False, "reason": "Reviewer did not record QA/red-team evidence."}
     return {
         "passed": True,
         "reason": f"{agent} quality gate passed.",
@@ -1347,9 +1409,12 @@ def _has_release_relevant_changes(changed_files):
 def _agent_backflow_target(agent, artifact, quality):
     if agent == "tester":
         return "builder"
+    if agent == "qa_red_team":
+        target = str(artifact.get("send_back_stage") or "").strip().lower()
+        return target if target in {"builder", "tester", "reviewer"} else "builder"
     if agent == "reviewer":
         target = str(artifact.get("send_back_stage") or "").strip().lower()
-        return target if target in AGENT_SEQUENCE else "builder"
+        return target if target in all_agent_names() else "builder"
     return ""
 
 
@@ -1366,18 +1431,20 @@ def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt):
     return event
 
 
-def _discard_downstream_artifacts(artifacts, target_agent):
-    target_index = AGENT_SEQUENCE.index(target_agent)
+def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):
+    agent_sequence = agent_sequence or list(AGENT_SEQUENCE)
+    target_index = agent_sequence.index(target_agent)
     return {
         agent: artifact
         for agent, artifact in artifacts.items()
-        if agent in AGENT_SEQUENCE and AGENT_SEQUENCE.index(agent) < target_index
+        if agent in agent_sequence and agent_sequence.index(agent) < target_index
     }
 
 
-def _agent_queue_from(target_agent):
-    target_index = AGENT_SEQUENCE.index(target_agent)
-    return list(AGENT_SEQUENCE[target_index:])
+def _agent_queue_from(target_agent, agent_sequence=None):
+    agent_sequence = agent_sequence or list(AGENT_SEQUENCE)
+    target_index = agent_sequence.index(target_agent)
+    return list(agent_sequence[target_index:])
 
 
 def _block_agent_stage(
@@ -1455,6 +1522,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     reviewer = artifacts.get("reviewer", {})
     tester = artifacts.get("tester", {})
     builder = artifacts.get("builder", {})
+    qa = artifacts.get("qa_red_team", {})
     reviewer_links = reviewer.get("links") if isinstance(reviewer.get("links"), dict) else {}
     local_preview = _extract_local_preview(reviewer.get("summary", ""))
     review_links = dict(reviewer_links)
@@ -1462,17 +1530,12 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
-            "findings": [
-                artifacts.get("planner", {}).get("summary", "Planner completed."),
-                artifacts.get("architect", {}).get("summary", "Architect completed."),
-                builder.get("summary", "Builder completed."),
-                tester.get("summary", "Tester completed."),
-                reviewer.get("summary", "Reviewer completed."),
-            ],
+            "findings": _artifact_stage_summaries(artifacts, _mission_agent_sequence(mission)),
             "errors": _collect_artifact_list(artifacts, "errors"),
             "bugs": _collect_artifact_list(artifacts, "bugs"),
             "changed_files": reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
             "test_evidence": reviewer.get("test_evidence") or tester.get("tests_run") or ["Tester artifact did not list tests."],
+            "qa_evidence": reviewer.get("qa_evidence") or qa.get("qa_findings") or [],
             "local_preview": local_preview,
             "links": review_links,
             "pr_url": reviewer.get("pr_url") or review_links.get("pr") or review_links.get("pull_request") or "",
@@ -1490,6 +1553,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "quality_gates": ledger.get("quality_gates", []),
             "backflow_events": ledger.get("backflow_events", []),
             "agent_artifacts": artifacts,
+            "handoff_reports": {
+                agent: artifact.get("handoff_report", {})
+                for agent, artifact in artifacts.items()
+                if isinstance(artifact, dict)
+            },
             "review_status": "ready_for_owner_review",
         },
         "agent_execution": ledger,
@@ -1531,6 +1599,38 @@ def _collect_artifact_list(artifacts, key):
         elif value:
             collected.append(value)
     return collected
+
+
+def _artifact_stage_summaries(artifacts, agent_sequence):
+    summaries = []
+    for agent in agent_sequence:
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        summary = artifact.get("summary")
+        if summary:
+            summaries.append(f"{agent}: {summary}")
+    return summaries or ["CHARLIE Agent Runner v2 completed all configured stages."]
+
+
+def _build_handoff_report(mission, agent, artifact, ledger):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    return {
+        "contract": "charlie_handoff_report_v1",
+        "mission_id": mission.get("mission_id", "") if isinstance(mission, dict) else "",
+        "agent": agent,
+        "status": "complete",
+        "summary": artifact.get("summary", ""),
+        "files_inspected": artifact.get("files_inspected", []),
+        "commands_run": artifact.get("commands_run", []),
+        "stdout_tail": _truncate(artifact.get("stdout_tail", ""), 800),
+        "stderr_tail": _truncate(artifact.get("stderr_tail", ""), 800),
+        "changed_files": artifact.get("changed_files", []),
+        "tests": artifact.get("tests_run") or artifact.get("test_evidence") or [],
+        "risks": artifact.get("risk_notes") or artifact.get("qa_findings") or [],
+        "quality_gate": artifact.get("quality_gate", {}),
+        "next_action": artifact.get("next_action", ""),
+        "completed_at": artifact.get("completed_at", datetime.now(timezone.utc).isoformat()),
+        "ledger_execution_id": ledger.get("execution_id", "") if isinstance(ledger, dict) else "",
+    }
 
 
 def _display_command(command):
@@ -1692,7 +1792,15 @@ def _release_packet(mission, execution_id):
         "review_test_evidence": review_packet.get("test_evidence", []),
         "agent_execution": review_packet.get("agent_execution", {}),
         "quality_gates": review_packet.get("quality_gates", []),
+        "handoff_reports": review_packet.get("handoff_reports", {}),
+        "qa_evidence": review_packet.get("qa_evidence", []),
         "backflow_events": review_packet.get("backflow_events", []),
+        "live_release_verification": {
+            "contract": "charlie_live_release_verification_v1",
+            "default_verify_url": _default_release_verify_url(),
+            "required_for_deployed_status": True,
+            "status_rule": "Merge can mark merged; only a verified live URL can mark deployed.",
+        },
         "operator_instruction": "Release Agent may merge a referenced PR only after final owner approval, then must verify the configured live URL before marking deployed.",
     }
 
@@ -1946,6 +2054,15 @@ def _wait_for_release_verification(verify_url, attempts=AGENT_RELEASE_VERIFY_ATT
     verify_url = str(verify_url or "").strip()
     attempts = max(1, int(attempts or 1))
     interval_seconds = max(0, int(interval_seconds or 0))
+    if not verify_url:
+        return {
+            "verified": False,
+            "status": "verify_url_not_configured",
+            "url": "",
+            "attempts": 0,
+            "history": [],
+            "required_env": "CHARLIE_RELEASE_VERIFY_URL or AMADEUS_BACKEND_URL or RENDER_EXTERNAL_URL/RENDER_EXTERNAL_HOSTNAME",
+        }
     results = []
     for attempt in range(1, attempts + 1):
         result = _verify_release_url(verify_url)
@@ -1971,6 +2088,9 @@ def _wait_for_release_verification(verify_url, attempts=AGENT_RELEASE_VERIFY_ATT
 
 
 def _default_release_verify_url():
+    explicit_url = str(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or "").strip()
+    if explicit_url:
+        return explicit_url
     base_url = str(os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
     if base_url:
         return f"{base_url}/charlie"

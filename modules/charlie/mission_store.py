@@ -46,11 +46,52 @@ MISSION_CONTEXT_DOCS = [
     "docs/00-start-here/OWNER_INBOX_GUIDE.md",
 ]
 AGENT_SEQUENCE = ["planner", "architect", "builder", "tester", "reviewer"]
+CORE_AGENT_SEQUENCE_V2 = ["planner", "architect", "builder", "tester", "qa_red_team", "reviewer"]
+SPECIALIST_AGENT_SEQUENCE = ["idea_expander", "product_architect"]
+AGENT_DEFINITIONS = {
+    "idea_expander": {
+        "purpose": "Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.",
+        "handoff_to": "product_architect",
+        "mission_types": {"agent build", "system improvement", "workflow", "business plan", "income stream", "content engine"},
+    },
+    "product_architect": {
+        "purpose": "Shape product flow, owner value, user behavior, and acceptance boundaries.",
+        "handoff_to": "planner",
+        "mission_types": {"agent build", "system improvement", "workflow", "business plan", "income stream", "content engine"},
+    },
+    "planner": {
+        "purpose": "Turn owner concept into scoped mission plan.",
+        "handoff_to": "architect",
+    },
+    "architect": {
+        "purpose": "Identify files, data sources, risks, and implementation approach.",
+        "handoff_to": "builder",
+    },
+    "builder": {
+        "purpose": "Implement scoped changes under approval level.",
+        "handoff_to": "tester",
+    },
+    "tester": {
+        "purpose": "Run tests and pressure checks.",
+        "handoff_to": "qa_red_team",
+    },
+    "qa_red_team": {
+        "purpose": "Challenge the work for regressions, unsafe actions, weak evidence, and owner-risk before review.",
+        "handoff_to": "reviewer",
+    },
+    "reviewer": {
+        "purpose": "Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.",
+        "handoff_to": "owner",
+    },
+}
 AGENT_STAGE_MAP = {
+    "idea_expander": "idea_expanded",
+    "product_architect": "product_ready",
     "planner": "planned",
     "architect": "build_ready",
     "builder": "built",
     "tester": "tested",
+    "qa_red_team": "qa_reviewed",
     "reviewer": "review_ready",
 }
 REVIEW_DECISIONS = {
@@ -320,6 +361,22 @@ def normalize_approval_level(value):
     if compact in {"0", "1", "2", "3", "4", "5"}:
         return f"LEVEL {compact}"
     return compact
+
+
+def agent_sequence_for_mission(mission_type=""):
+    mission_type = _clean_text(mission_type, 80).lower()
+    sequence = []
+    for agent in SPECIALIST_AGENT_SEQUENCE:
+        definition = AGENT_DEFINITIONS.get(agent, {})
+        types = definition.get("mission_types") or set()
+        if any(token in mission_type for token in types):
+            sequence.append(agent)
+    sequence.extend(CORE_AGENT_SEQUENCE_V2)
+    return sequence
+
+
+def all_agent_names():
+    return list(AGENT_DEFINITIONS.keys())
 
 
 def record_mission_event(mission_id, event_type, notes="", metadata=None, database_url=None, connect_factory=None):
@@ -605,8 +662,8 @@ def update_mission_workflow_step(
     next_agent = _clean_text(next_agent, 40).lower()
     if not mission_id:
         return {"success": False, "status": "mission_id_required"}, 400
-    if agent not in AGENT_SEQUENCE:
-        return {"success": False, "status": "invalid_agent", "allowed_agents": AGENT_SEQUENCE}, 400
+    if agent not in all_agent_names():
+        return {"success": False, "status": "invalid_agent", "allowed_agents": all_agent_names()}, 400
     if step_status not in {"pending", "active", "complete", "blocked"}:
         return {"success": False, "status": "invalid_agent_status"}, 400
 
@@ -619,7 +676,7 @@ def update_mission_workflow_step(
         return loaded, load_status
     mission = loaded.get("mission") or {}
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
-    workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else _default_agent_workflow()
+    workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else _default_agent_workflow(mission.get("mission_type", ""))
     updated_workflow = _update_workflow_items(workflow, agent, step_status, findings, next_agent)
     vault = dict(metadata.get("mission_vault") or {})
     if step_status == "complete":
@@ -631,7 +688,7 @@ def update_mission_workflow_step(
         handoff_notes = list(handoff_notes)
         handoff_notes.append({"agent": agent, "status": step_status, "findings": findings})
         vault["handoff_notes"] = handoff_notes[-12:]
-    context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack()
+    context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack(mission.get("mission_type", ""))
 
     status = ""
     if agent == "reviewer" and step_status == "complete":
@@ -820,6 +877,8 @@ def build_mission_review_packet(mission):
         "agent_execution": packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else metadata.get("agent_execution", {}),
         "agent_artifacts": packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {},
         "quality_gates": packet.get("quality_gates") if isinstance(packet.get("quality_gates"), list) else [],
+        "qa_evidence": _packet_list(packet, "qa_evidence", []),
+        "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else {},
         "backflow_events": packet.get("backflow_events") if isinstance(packet.get("backflow_events"), list) else [],
         "owner_review_decisions": metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else [],
         "agent_workflow": workflow,
@@ -949,8 +1008,8 @@ def _mission_row(row):
 def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
     metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
-    metadata.setdefault("agent_workflow", _default_agent_workflow())
-    metadata.setdefault("mission_context_pack", _default_context_pack())
+    metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", "")))
+    metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", "")))
     media_references = mission.get("media_references")
     if isinstance(media_references, list):
         metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
@@ -982,17 +1041,24 @@ def _default_mission_vault(raw_text, mission):
     }
 
 
-def _default_agent_workflow():
-    return [
-        {"agent": "planner", "status": "pending", "purpose": "Turn owner concept into scoped mission plan.", "handoff_to": "architect", "findings": ""},
-        {"agent": "architect", "status": "pending", "purpose": "Identify files, data sources, risks, and acceptance criteria.", "handoff_to": "builder", "findings": ""},
-        {"agent": "builder", "status": "pending", "purpose": "Implement scoped changes under approval level.", "handoff_to": "tester", "findings": ""},
-        {"agent": "tester", "status": "pending", "purpose": "Run tests and pressure checks.", "handoff_to": "reviewer", "findings": ""},
-        {"agent": "reviewer", "status": "pending", "purpose": "Review diff, unsafe actions, docs, and release notes.", "handoff_to": "owner", "findings": ""},
-    ]
+def _default_agent_workflow(mission_type=""):
+    sequence = agent_sequence_for_mission(mission_type)
+    workflow = []
+    for index, agent in enumerate(sequence):
+        definition = AGENT_DEFINITIONS[agent]
+        next_agent = sequence[index + 1] if index + 1 < len(sequence) else definition.get("handoff_to", "owner")
+        workflow.append({
+            "agent": agent,
+            "status": "pending",
+            "purpose": definition.get("purpose", ""),
+            "handoff_to": next_agent,
+            "findings": "",
+        })
+    return workflow
 
 
-def _default_context_pack():
+def _default_context_pack(mission_type=""):
+    sequence = agent_sequence_for_mission(mission_type)
     return {
         "version": "charlie_context_pack_v1",
         "active_truth_docs": list(MISSION_CONTEXT_DOCS),
@@ -1008,7 +1074,7 @@ def _default_context_pack():
             "LEVEL 3 may build, test, commit, push, and open PR; it may not merge.",
             "LEVEL 4 may merge after verified diff/tests; red-zone actions still require explicit approval.",
         ],
-        "agent_order": list(AGENT_SEQUENCE),
+        "agent_order": sequence,
         "parallel_work": "disabled_until_phase_6_parallel_controls",
     }
 
@@ -1024,9 +1090,10 @@ def _default_forbidden_actions():
 
 def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
     known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
-    for default in _default_agent_workflow():
+    sequence = _workflow_sequence(workflow)
+    for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
-    if next_agent and next_agent in AGENT_SEQUENCE:
+    if next_agent and next_agent in known:
         known[agent]["handoff_to"] = next_agent
     known[agent]["status"] = step_status
     if findings:
@@ -1035,16 +1102,17 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         handoff_to = known[agent].get("handoff_to")
         if handoff_to in known and known[handoff_to].get("status") == "pending":
             known[handoff_to]["status"] = "active"
-    return [known[name] for name in AGENT_SEQUENCE]
+    return [known[name] for name in sequence]
 
 
 def _return_workflow_to_stage(workflow, target_stage, comments):
     known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
-    for default in _default_agent_workflow():
+    sequence = _workflow_sequence(workflow)
+    for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
     target_stage = target_stage if target_stage in known else "builder"
     target_seen = False
-    for agent in AGENT_SEQUENCE:
+    for agent in sequence:
         if agent == target_stage:
             target_seen = True
             known[agent]["status"] = "active"
@@ -1052,7 +1120,27 @@ def _return_workflow_to_stage(workflow, target_stage, comments):
                 known[agent]["findings"] = comments
         elif target_seen:
             known[agent]["status"] = "pending"
-    return [known[name] for name in AGENT_SEQUENCE]
+    return [known[name] for name in sequence]
+
+
+def _workflow_sequence(workflow):
+    sequence = [item.get("agent") for item in workflow if isinstance(item, dict) and item.get("agent") in all_agent_names()]
+    return sequence or list(CORE_AGENT_SEQUENCE_V2)
+
+
+def _workflow_defaults_for_sequence(sequence):
+    defaults = []
+    for index, agent in enumerate(sequence):
+        definition = AGENT_DEFINITIONS.get(agent, {})
+        next_agent = sequence[index + 1] if index + 1 < len(sequence) else definition.get("handoff_to", "owner")
+        defaults.append({
+            "agent": agent,
+            "status": "pending",
+            "purpose": definition.get("purpose", ""),
+            "handoff_to": next_agent,
+            "findings": "",
+        })
+    return defaults
 
 
 def _review_owner_decision_text(decision, comments, target_stage):
