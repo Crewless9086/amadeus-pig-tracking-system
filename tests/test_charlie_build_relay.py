@@ -312,6 +312,58 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_reports_approved_waiting_pickup(self, list_missions, _owner_access):
+        def fake_list_missions(status="", limit=10):
+            if status == "approved":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-WAITING",
+                        "title": "Waiting mission",
+                        "status": "approved",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "approved_waiting_for_local_runner")
+        self.assertEqual(data["next_approved_mission"]["mission_id"], "CHARLIE-MISSION-WAITING")
+        self.assertFalse(data["can_run_shell_from_web"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_reports_active_mission(self, list_missions, _owner_access):
+        def fake_list_missions(status="", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE",
+                        "title": "Active mission",
+                        "status": "in_progress",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "active_mission_in_progress")
+        self.assertEqual(data["active_mission"]["mission_id"], "CHARLIE-MISSION-ACTIVE")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_start_command_returns_help(self):
         action = build_relay_action("/start")

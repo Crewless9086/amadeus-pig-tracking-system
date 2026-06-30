@@ -51,6 +51,50 @@ def charlie_build_relay_mission_summary_route():
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/build-relay/runner/status", methods=["GET"])
+def charlie_build_relay_runner_status_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    approved, approved_status = list_missions(status="approved", limit=1)
+    in_progress, in_progress_status = list_missions(status="in_progress", limit=1)
+    pr_ready, pr_ready_status = list_missions(status="pr_ready", limit=1)
+    if max(approved_status, in_progress_status, pr_ready_status) >= 400:
+        return jsonify({
+            "success": False,
+            "status": "runner_handoff_unavailable",
+            "approved_status": approved.get("status"),
+            "in_progress_status": in_progress.get("status"),
+            "pr_ready_status": pr_ready.get("status"),
+            "can_run_shell_from_web": False,
+        }), 503
+
+    active_mission = _first_mission(in_progress) or _first_mission(pr_ready)
+    next_approved = _first_mission(approved)
+    if active_mission:
+        runner_status = "active_mission_in_progress"
+        next_action = "Codex is expected to finish or debrief the active mission before another approved mission is picked up."
+    elif next_approved:
+        runner_status = "approved_waiting_for_local_runner"
+        next_action = "Start or keep the local Codex runner active so it can pick up this approved mission."
+    else:
+        runner_status = "idle_no_approved_mission"
+        next_action = "Create or approve a mission from Telegram or CHARLIE Mission Control."
+
+    return jsonify({
+        "success": True,
+        "status": runner_status,
+        "active_mission": active_mission,
+        "next_approved_mission": next_approved,
+        "next_action": next_action,
+        "local_runner_command": ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30",
+        "can_run_shell_from_web": False,
+        "can_commit_from_web": False,
+        "can_merge_from_web": False,
+        "execution_boundary": "A local Codex/Cursor session or local runner process must execute pickup/build work.",
+    }), 200
+
+
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["GET"])
 def charlie_build_relay_mission_detail_route(mission_id):
     denied = require_owner_read_access()
@@ -58,6 +102,11 @@ def charlie_build_relay_mission_detail_route(mission_id):
         return denied
     result, status_code = get_mission(mission_id)
     return jsonify(result), status_code
+
+
+def _first_mission(result):
+    missions = result.get("missions") or []
+    return missions[0] if missions else None
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/decision", methods=["POST"])

@@ -92,6 +92,35 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["checks"], 2)
         sleep.assert_called_once_with(5)
 
+    @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_waits_when_mission_is_active(self, list_missions, sleep):
+        def fake_list_missions(status="approved", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE",
+                        "title": "Active mission",
+                        "status": "in_progress",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=1,
+            continuous=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "active_mission_in_progress")
+        self.assertEqual(result["mission_id"], "CHARLIE-MISSION-ACTIVE")
+        sleep.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

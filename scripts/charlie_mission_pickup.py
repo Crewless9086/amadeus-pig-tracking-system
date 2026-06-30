@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--notify", action="store_true", help="Send owner Telegram notification after pickup.")
     parser.add_argument("--watch", action="store_true", help="Poll for approved missions until one is picked up or Ctrl+C stops the runner.")
+    parser.add_argument("--continuous", action="store_true", help="Keep polling after pickup and wait while another mission is active.")
     parser.add_argument("--interval-seconds", type=int, default=60)
     args = parser.parse_args()
 
@@ -34,6 +35,7 @@ def main():
             dry_run=args.dry_run,
             notify=args.notify,
             interval_seconds=args.interval_seconds,
+            continuous=args.continuous,
         )
     else:
         result, status_code = pick_up_next_mission(
@@ -46,11 +48,26 @@ def main():
     return 0 if status_code < 400 else 1
 
 
-def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, interval_seconds=60, max_checks=None):
+def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, interval_seconds=60, max_checks=None, continuous=False):
     interval_seconds = max(5, int(interval_seconds or 60))
     checks = 0
     while True:
         checks += 1
+        if continuous:
+            active = _active_mission()
+            if active:
+                result = {
+                    "success": True,
+                    "status": "active_mission_in_progress",
+                    "mission_id": active.get("mission_id"),
+                    "title": active.get("title"),
+                    "active_status": active.get("status"),
+                    "checks": checks,
+                }
+                if max_checks is not None and checks >= max_checks:
+                    return result, 200
+                time.sleep(interval_seconds)
+                continue
         result, status_code = pick_up_next_mission(
             status=status,
             limit=limit,
@@ -58,6 +75,11 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
             notify=notify,
         )
         result["checks"] = checks
+        if result.get("status") == "mission_picked_up" and continuous and status_code < 400:
+            if max_checks is not None and checks >= max_checks:
+                return result, status_code
+            time.sleep(interval_seconds)
+            continue
         if result.get("status") != "no_mission_available" or status_code >= 400:
             return result, status_code
         if max_checks is not None and checks >= max_checks:
@@ -67,6 +89,14 @@ def watch_for_mission(status="approved", limit=10, dry_run=False, notify=False, 
                 "checks": checks,
             }, 200
         time.sleep(interval_seconds)
+
+
+def _active_mission():
+    for status in ("in_progress", "pr_ready"):
+        loaded, status_code = list_missions(status=status, limit=1)
+        if status_code < 400 and loaded.get("missions"):
+            return loaded["missions"][0]
+    return None
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):

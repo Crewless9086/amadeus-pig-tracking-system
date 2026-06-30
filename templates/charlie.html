@@ -40,6 +40,25 @@
       </article>
     </section>
 
+    <section class="charlie-panel charlie-runner-panel" aria-label="Local runner handoff status">
+      <div class="ops-panel-header">
+        <div>
+          <span class="ops-panel-kicker">Runner</span>
+          <h2>Codex Handoff</h2>
+        </div>
+        <span class="status-pill status-pill-muted" id="charlie_runner_state">Checking</span>
+      </div>
+      <p id="charlie_runner_message" class="charlie-muted">Checking approved mission handoff status...</p>
+      <dl class="charlie-mission-meta">
+        <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
+        <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
+      </dl>
+      <details>
+        <summary>Local runner command</summary>
+        <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30</pre>
+      </details>
+    </section>
+
     <section class="charlie-layout">
       <aside class="charlie-panel">
         <div class="ops-panel-header">
