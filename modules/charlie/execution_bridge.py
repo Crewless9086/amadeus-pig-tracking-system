@@ -826,6 +826,34 @@ def run_release_execution(
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
     if completed.returncode != 0:
+        reconciliation = _reconcile_merged_pr(pr_reference, runner)
+        merge_result["reconciliation"] = reconciliation
+        if reconciliation.get("merged"):
+            merge_result["reconciled_as_merged"] = True
+            return _complete_release_merge(
+                mission_id=mission_id,
+                release_packet_path=release_packet_path,
+                merge_result=merge_result,
+                verify_url=verify_url,
+                verify_attempts=verify_attempts,
+                verify_interval_seconds=verify_interval_seconds,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+        update_mission_vault(
+            mission_id,
+            {
+                "release_packet": {
+                    "mode": "merge_pr",
+                    "release_packet_path": release_packet_path,
+                    "merge_result": merge_result,
+                    "status": "release_pr_merge_failed",
+                }
+            },
+            notes="Local release bridge recorded failed PR merge result.",
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
         update_mission_status(
             mission_id,
             "blocked",
@@ -850,6 +878,28 @@ def run_release_execution(
             "merge_result": merge_result,
         }, 502
 
+    return _complete_release_merge(
+        mission_id=mission_id,
+        release_packet_path=release_packet_path,
+        merge_result=merge_result,
+        verify_url=verify_url,
+        verify_attempts=verify_attempts,
+        verify_interval_seconds=verify_interval_seconds,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def _complete_release_merge(
+    mission_id,
+    release_packet_path,
+    merge_result,
+    verify_url="",
+    verify_attempts=AGENT_RELEASE_VERIFY_ATTEMPTS,
+    verify_interval_seconds=AGENT_RELEASE_VERIFY_INTERVAL_SECONDS,
+    database_url=None,
+    connect_factory=None,
+):
     verify_result = _wait_for_release_verification(
         verify_url or _default_release_verify_url(),
         attempts=verify_attempts,
@@ -1667,6 +1717,54 @@ def _review_pr_reference(mission):
             return number or value
         return value
     return ""
+
+
+def _reconcile_merged_pr(pr_reference, runner):
+    command = ["gh", "pr", "view", str(pr_reference), "--json", "state,mergedAt,mergeCommit,url,number"]
+    try:
+        completed = runner(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=120,
+            check=False,
+        )
+    except Exception as exc:
+        return {
+            "merged": False,
+            "status": "pr_reconciliation_failed",
+            "error_type": exc.__class__.__name__,
+        }
+    result = {
+        "command": " ".join(command),
+        "returncode": completed.returncode,
+        "stdout": _truncate(completed.stdout or "", 2000),
+        "stderr": _truncate(completed.stderr or "", 2000),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "merged": False,
+    }
+    if completed.returncode != 0:
+        result["status"] = "pr_reconciliation_command_failed"
+        return result
+    try:
+        parsed = json.loads(completed.stdout or "{}")
+    except ValueError:
+        result["status"] = "pr_reconciliation_json_invalid"
+        return result
+    state = str(parsed.get("state") or "").upper()
+    result.update({
+        "status": "pr_reconciliation_complete",
+        "state": state,
+        "url": parsed.get("url", ""),
+        "number": parsed.get("number", ""),
+        "merged_at": parsed.get("mergedAt", ""),
+        "merge_commit": parsed.get("mergeCommit", {}),
+        "merged": state == "MERGED" or bool(parsed.get("mergedAt")),
+    })
+    return result
 
 
 def _run_codex_process(
