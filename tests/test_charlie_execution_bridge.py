@@ -160,6 +160,47 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/routes.py"])
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_block_codex_execution_without_final_artifact_creates_blocked_review_packet(
+        self,
+        update_vault,
+        update_workflow,
+        update_status,
+        _changed_files,
+    ):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt_path = Path(tmp) / "EXEC123.prompt.md"
+            stdout_path = Path(tmp) / "EXEC123.stdout.txt"
+            stderr_path = Path(tmp) / "EXEC123.stderr.txt"
+            final_path = Path(tmp) / "EXEC123.final.md"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text("supervisor timeout", encoding="utf-8")
+            result, status_code = execution_bridge.block_codex_execution_without_final_artifact(
+                "CHARLIE-MISSION-EXEC123",
+                execution_id="EXEC123",
+                prompt_path=prompt_path,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                final_path=final_path,
+            )
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "codex_no_final_artifact_timeout")
+        self.assertEqual(result["mission_status"], "blocked")
+        update_vault.assert_called_once()
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertIn("no final artifact", packet["summary"].lower())
+        self.assertIn("modules/charlie/routes.py", packet["changed_files"])
+        update_status.assert_called_once()
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):
         mission = dict(MISSION)
