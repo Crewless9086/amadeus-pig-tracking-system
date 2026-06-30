@@ -15,6 +15,7 @@ from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
     prepare_release_execution,
+    run_agent_execution_bridge_v2,
     run_codex_execution_bridge,
     run_release_execution,
 )
@@ -201,18 +202,18 @@ def _retryable_queue_error(result, status_code):
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
-    result, status_code = run_codex_execution_bridge(
+    result, status_code = run_agent_execution_bridge_v2(
         mission_id=mission_id,
         execute_codex=True,
         timeout_seconds=timeout_seconds,
     )
     if notify:
-        if status_code < 400 and result.get("status") == "codex_execution_completed":
+        if status_code < 400 and result.get("status") in {"codex_execution_completed", "agent_execution_completed"}:
             _send_review_ready_notification(result)
         else:
             _send_blocked_notification(
-                "Codex execution blocked",
-                f"Mission {mission_id} did not complete local Codex execution. Status: {result.get('status')}.",
+                "CHARLIE agent execution blocked",
+                f"Mission {mission_id} did not complete Agent Runner v2 execution. Status: {result.get('status')}.",
             )
     return result, status_code
 

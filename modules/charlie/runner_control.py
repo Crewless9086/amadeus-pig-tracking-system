@@ -65,6 +65,10 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "changed_files_count": payload.get("changed_files_count"),
         "final_artifact_present": payload.get("final_artifact_present"),
         "execution_artifact": payload.get("execution_artifact", ""),
+        "agent_runner_version": payload.get("agent_runner_version", ""),
+        "current_agent": payload.get("current_agent", ""),
+        "current_action": payload.get("current_action", ""),
+        "agent_ledger_path": payload.get("agent_ledger_path", ""),
         "orphan_processes": orphan_processes,
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
@@ -86,7 +90,16 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "last_mission_id": str(result.get("mission_id") or ""),
         "active_status": str(result.get("active_status") or ""),
     }
-    for key in ("elapsed_seconds", "changed_files_count", "final_artifact_present", "execution_artifact"):
+    for key in (
+        "elapsed_seconds",
+        "changed_files_count",
+        "final_artifact_present",
+        "execution_artifact",
+        "agent_runner_version",
+        "current_agent",
+        "current_action",
+        "agent_ledger_path",
+    ):
         if key in result:
             payload[key] = result.get(key)
     heartbeat_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
