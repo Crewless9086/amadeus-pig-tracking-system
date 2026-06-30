@@ -118,6 +118,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - Windows PID liveness checks must remain non-destructive; do not reintroduce `os.kill(pid, 0)` on Windows
 - CHARLIE Stage 8 owner review gate follow-ups:
   - make runner/Codex populate `review_packet` consistently with changed files, commits, PR/diff, local preview URL/command, Render preview, bugs, errors, risks, and test evidence
+  - smoke-test `scripts/charlie_codex_execution_bridge.py --execute-codex` on a low-risk mission before wiring it into continuous runner startup
   - add a release-execution mission step after `release_approved` so the local Codex release bridge can complete merge/deploy under LEVEL 4 and then mark the mission done
   - keep Telegram/dashboard as decision recorders only; do not let web routes execute shell, merge, deploy, send customers, take payments, reserve stock, or change farm lifecycle records directly
   - use this review gate before CHARLIE coordinates SAM, Oom Sakkie, FRED, Ledger, Beacon, or other income-stream build work

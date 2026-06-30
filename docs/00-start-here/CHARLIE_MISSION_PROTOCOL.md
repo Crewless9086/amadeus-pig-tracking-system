@@ -215,6 +215,26 @@ The pickup bridge writes the mission approval level and runner mode into `planni
 - `LEVEL 4` -> merge/release handoff after diff and tests are verified
 - `LEVEL 5` -> red-zone work still requires exact owner confirmation
 
+## Local Codex Execution Bridge
+
+After a mission is `in_progress`, a local terminal may prepare the Codex execution prompt with:
+
+```bash
+python scripts/charlie_codex_execution_bridge.py --mission-id <mission id>
+```
+
+This writes a prompt artifact under `.charlie_runner/executions/` and does not run Codex.
+
+To actually run Codex locally, the command must include the explicit execution flag:
+
+```bash
+python scripts/charlie_codex_execution_bridge.py --mission-id <mission id> --execute-codex
+```
+
+The bridge uses `codex exec` with workspace-write sandboxing, stores stdout/stderr/final-message artifacts under `.charlie_runner/executions/`, records planner/architect/builder/tester/reviewer handoff notes, populates the owner review packet, and stops the mission at `pr_ready`.
+
+This bridge is local-only. Telegram and the web dashboard still do not run shell commands directly.
+
 ## Local Runner Control
 
 Approval records owner permission. It does not start Codex by itself. A local runner must be active for approved missions to move automatically into `planning/CODEX_CHAT.md`.
