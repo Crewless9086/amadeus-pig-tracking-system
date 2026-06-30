@@ -6,6 +6,21 @@ from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_charlie_mission_control_page_contract(self):
+        template = Path("templates/charlie.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControl.js").read_text(encoding="utf-8")
+        app_source = Path("app.py").read_text(encoding="utf-8")
+
+        self.assertIn('@app.route("/charlie")', app_source)
+        self.assertIn("require_owner_page_access()", app_source)
+        self.assertIn("CHARLIE Mission Control", template)
+        self.assertIn("charlieMissionControl.js", template)
+        self.assertIn("/api/charlie/build-relay/missions/summary", script)
+        self.assertIn("/api/charlie/build-relay/missions", script)
+        self.assertIn("/decision", script)
+        self.assertIn("cannot run shell commands", template)
+        self.assertIn("send customers", template)
+
     def test_oom_sakkie_backend_read_only_relay_workflow_is_safe_contract(self):
         workflow_path = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/workflow.json")
         readme = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/README.md").read_text(encoding="utf-8")

@@ -166,6 +166,8 @@ SAM safety remains unchanged:
 - Active branch: `charlie-mission-command-console`.
 - Current command-console scope: `/mission <id>`, `/debrief <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` record or display mission state only. They do not execute build actions.
 - Codex pickup bridge is being added through `scripts/charlie_mission_pickup.py` so a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
+- CHARLIE V1 mission cockpit is active in build: owner-only `/charlie` page, mission queue status cards, decision buttons, and local runner watch mode.
+- CHARLIE cockpit and runner remain non-executing: they record/pick up missions only and cannot merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 
 ## FRED Status
 

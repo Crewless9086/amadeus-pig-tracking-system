@@ -99,6 +99,26 @@ python scripts/charlie_mission_pickup.py --dry-run
 
 This bridge is the safe handoff from Telegram to Codex. It does not make Telegram run shell commands directly. A running Codex/Cursor session must still execute the pickup and follow the mission protocol.
 
+Watch mode:
+
+```bash
+python scripts/charlie_mission_pickup.py --watch --notify
+```
+
+Watch mode polls for an approved mission and picks up the first one it finds. It still only writes `planning/CODEX_CHAT.md`, marks the mission `in_progress`, and notifies the owner. It does not execute arbitrary build commands.
+
+## CHARLIE Mission Cockpit
+
+The owner-only cockpit lives at:
+
+```text
+/charlie
+```
+
+The cockpit shows mission queue records, counts by status, and safe decision buttons. Cockpit decisions call the same protected mission APIs used by Telegram command decisions.
+
+The cockpit cannot execute builds, merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+
 ## Required Codex Startup
 
 Before acting on any mission, Codex must read:

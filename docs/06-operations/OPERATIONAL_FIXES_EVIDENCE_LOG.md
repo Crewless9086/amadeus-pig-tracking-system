@@ -753,3 +753,20 @@ Safety:
 - This is a local bridge for a running Codex/Cursor session.
 - Telegram approvals do not execute builds directly.
 - Codex must still read the mission protocol, current state, next steps, workflow, and deployment SOP before building.
+
+## CHARLIE V1 Mission Cockpit And Runner - 2026-06-30
+
+Mode: owner mission-control build. No customer sends, public posts, payments, reservations, farm lifecycle writes, migrations, shell execution from web/Telegram, automatic merges, automatic deploys, Phase 3A.6, SAM/BEACON/FRED feature build, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Added owner-only `/charlie` page.
+- Added mission queue status cards and mission card list.
+- Added protected summary API for mission status counts.
+- Cockpit decision buttons record approve, pause, reject, block, or done statuses through the same protected mission decision route.
+- Added `--watch` mode to `scripts/charlie_mission_pickup.py`.
+
+Safety:
+
+- The cockpit and runner are mission governance only.
+- They do not execute arbitrary commands and do not bypass CODEX_CHAT approval levels or hard stops.

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CHARLIE Mission Control</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body class="charlie-body">
+  <main class="charlie-shell">
+    <header class="charlie-header">
+      <div>
+        <span class="ops-kicker">Owner Command Layer</span>
+        <h1>CHARLIE Mission Control</h1>
+        <p id="charlie_status_line">Loading mission queue...</p>
+      </div>
+      <nav class="ops-header-actions" aria-label="CHARLIE navigation">
+        <a href="/">Dashboard</a>
+        <a href="/oom-sakkie">Oom Sakkie</a>
+        <a href="/sales/meat-leads">SAM</a>
+      </nav>
+    </header>
+
+    <section class="charlie-command-strip" aria-label="Mission status summary">
+      <article>
+        <span>New</span>
+        <strong id="charlie_count_new">--</strong>
+      </article>
+      <article>
+        <span>Approved</span>
+        <strong id="charlie_count_approved">--</strong>
+      </article>
+      <article>
+        <span>In Progress</span>
+        <strong id="charlie_count_in_progress">--</strong>
+      </article>
+      <article>
+        <span>Blocked</span>
+        <strong id="charlie_count_blocked">--</strong>
+      </article>
+    </section>
+
+    <section class="charlie-layout">
+      <aside class="charlie-panel">
+        <div class="ops-panel-header">
+          <div>
+            <span class="ops-panel-kicker">Controls</span>
+            <h2>Mission Queue</h2>
+          </div>
+          <button type="button" id="charlie_refresh">Refresh</button>
+        </div>
+        <p class="charlie-muted">These controls record mission decisions only. They cannot run shell commands, merge, deploy, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.</p>
+        <label for="charlie_status_filter">Status</label>
+        <select id="charlie_status_filter">
+          <option value="">All</option>
+          <option value="new">New</option>
+          <option value="approved">Approved</option>
+          <option value="in_progress">In Progress</option>
+          <option value="blocked">Blocked</option>
+          <option value="paused">Paused</option>
+          <option value="rejected">Rejected</option>
+          <option value="done">Done</option>
+        </select>
+        <div id="charlie_message" class="message-box hidden"></div>
+      </aside>
+
+      <section class="charlie-panel charlie-missions-panel">
+        <div class="ops-panel-header">
+          <div>
+            <span class="ops-panel-kicker">Queue</span>
+            <h2>Mission Records</h2>
+          </div>
+          <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
+        </div>
+        <div id="charlie_mission_list" class="charlie-mission-list" aria-live="polite"></div>
+      </section>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='js/charlieMissionControl.js') }}"></script>
+</body>
+</html>
