@@ -14,6 +14,7 @@ from modules.charlie.mission_store import (
     normalize_approval_level,
     record_mission,
     update_mission_status,
+    update_mission_workflow_step,
 )
 
 
@@ -149,6 +150,14 @@ def build_relay_action(text, environ=None):
         return _next_action(repo_root)
     if lower in {"/missions", "missions", "mission queue"}:
         return _missions_action(source)
+    if lower in {"/review", "review", "ready for review"}:
+        return _review_action()
+    if lower.startswith("/done"):
+        return _mission_decision_action(cleaned[len("/done"):].strip(), "done", "done")
+    if lower.startswith("done:"):
+        return _mission_decision_action(cleaned.split(":", 1)[1].strip(), "done", "done")
+    if lower.startswith("/workflow"):
+        return _workflow_action(cleaned[len("/workflow"):].strip())
     if lower.startswith("/approve"):
         return _mission_decision_action(cleaned[len("/approve"):].strip(), "approved", "approve")
     if lower.startswith("approve:"):
@@ -254,9 +263,11 @@ def _help_action():
             "/mission <id> - show one mission record\n"
             "/mission <idea> - prepare a mission intake\n"
             "/select 1 - turn a listed NEXT_STEPS option into a mission intake\n\n"
+            "/review - missions ready for owner review\n"
+            "/workflow <id> tester complete - update planner/architect/builder/tester/reviewer handoff\n"
             "/approve <id> level3 - approve build/test/PR handoff\n"
             "/approve <id> level4 - approve merge/release handoff after PR verification\n"
-            "/pause <id>, /reject <id> - record owner decision only\n\n"
+            "/done <id>, /pause <id>, /reject <id> - record owner decision only\n\n"
             "Safety: this relay cannot run shell commands, commit, merge, deploy, send customers, post publicly, take payments, reserve stock, or write production data."
         ),
         "reply_markup": _main_keyboard(),
@@ -442,6 +453,28 @@ def _missions_action(source):
     }
 
 
+def _review_action():
+    ready = []
+    for status in ("pr_ready", "blocked"):
+        result, status_code = list_missions(status=status, limit=5)
+        if status_code < 400:
+            ready.extend(result.get("missions") or [])
+    lines = ["CHARLIE review queue"]
+    keyboard = []
+    if not ready:
+        lines.append("No PR-ready or blocked missions are waiting for owner review.")
+    for index, mission in enumerate(ready[:6], start=1):
+        lines.append(f"{index}. {_mission_title_line(mission)} | {mission.get('status')}")
+        keyboard.append([{"text": f"View {index}", "callback_data": f"/mission {mission.get('mission_id')}"}])
+    lines.append("\nUse /mission <id> for detail or /approve <id> level4 after PR verification.")
+    return {
+        "command": "review",
+        "telegram_text": "\n".join(lines)[:MAX_REPLY_CHARS],
+        "reply_markup": {"inline_keyboard": keyboard[:6]} if keyboard else _main_keyboard(),
+        "writes_repo_file": False,
+    }
+
+
 def _mission_detail_action(mission_id, command="mission_detail"):
     mission_id = _clean_source_value(mission_id)
     if not mission_id:
@@ -471,6 +504,41 @@ def _mission_detail_action(mission_id, command="mission_detail"):
     }
 
 
+def _workflow_action(raw_input):
+    mission_id, agent, step_status = _parse_workflow_input(raw_input)
+    if not mission_id or not agent:
+        return {
+            "command": "workflow",
+            "telegram_text": "Send /workflow <mission id> planner complete. Agents: planner, architect, builder, tester, reviewer.",
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    result, _ = update_mission_workflow_step(
+        mission_id,
+        agent=agent,
+        step_status=step_status or "complete",
+        findings=f"Telegram marked {agent} {step_status or 'complete'}.",
+    )
+    if not result.get("success"):
+        return {
+            "command": "workflow",
+            "telegram_text": f"Workflow update failed: {result.get('status', 'unavailable')}.",
+            "mission_store": result,
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    return {
+        "command": "workflow",
+        "telegram_text": (
+            f"Workflow updated.\n\nMission: {mission_id}\nAgent: {agent}\nStatus: {step_status or 'complete'}\n"
+            "The Mission Vault now carries this handoff for the next Codex/Cursor pickup."
+        )[:MAX_REPLY_CHARS],
+        "mission_store": result,
+        "reply_markup": _main_keyboard(),
+        "writes_repo_file": False,
+    }
+
+
 def _mission_decision_action(raw_mission_id, status, command):
     mission_id, approval_level = _parse_mission_decision_input(raw_mission_id)
     if not mission_id:
@@ -489,6 +557,7 @@ def _mission_decision_action(raw_mission_id, status, command):
         }
     decision_text = {
         "approved": f"Owner approved mission according to {approval_level or 'the recorded approval level'}.",
+        "done": "Owner marked this mission done.",
         "paused": "Owner paused this mission.",
         "rejected": "Owner rejected this mission.",
     }.get(status, f"Owner set mission status to {status}.")
@@ -661,11 +730,13 @@ def _compact_title(text):
 def _mission_detail_text(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     workflow_line = ", ".join(
         f"{item.get('agent')}:{item.get('status', 'pending')}"
         for item in workflow[:5]
         if isinstance(item, dict)
     )
+    docs = context_pack.get("active_truth_docs") if isinstance(context_pack.get("active_truth_docs"), list) else []
     return (
         "CHARLIE mission\n\n"
         f"ID: {mission.get('mission_id')}\n"
@@ -677,8 +748,10 @@ def _mission_detail_text(mission):
         f"Title: {mission.get('title')}\n\n"
         f"Problem: {vault.get('problem_statement') or mission.get('raw_text') or 'not captured'}\n\n"
         f"Agent workflow: {workflow_line or 'planner, architect, builder, tester, reviewer pending'}\n\n"
+        f"Context pack: {context_pack.get('version', 'charlie_context_pack_v1')}\n"
+        f"Active docs: {', '.join(docs[:4]) or 'start-here docs'}\n\n"
         f"Owner decision: {mission.get('owner_decision') or 'none recorded'}\n\n"
-        "Commands: /approve <id> level3, /approve <id> level4, /pause <id>, /reject <id>. These record decisions for the Codex runner handoff; Telegram does not execute shell commands directly."
+        "Commands: /approve <id> level3, /approve <id> level4, /workflow <id> tester complete, /done <id>, /pause <id>, /reject <id>. These record decisions for the Codex runner handoff; Telegram does not execute shell commands directly."
     )[:MAX_REPLY_CHARS]
 
 
@@ -709,6 +782,16 @@ def _parse_mission_decision_input(value):
             approval_level = normalized
             break
     return mission_id, approval_level
+
+
+def _parse_workflow_input(value):
+    parts = str(value or "").strip().split()
+    if len(parts) < 2:
+        return "", "", ""
+    mission_id = _clean_source_value(parts[0])
+    agent = parts[1].lower()
+    step_status = parts[2].lower() if len(parts) >= 3 else "complete"
+    return mission_id, agent, step_status
 
 
 def _looks_like_mission_id(value):

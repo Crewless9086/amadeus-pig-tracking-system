@@ -22,8 +22,12 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/charlie/build-relay/missions", script)
         self.assertIn("/decision", script)
         self.assertIn("/vault", script)
+        self.assertIn("/workflow", script)
         self.assertIn("Mission Vault", script)
         self.assertIn("agent_workflow", script)
+        self.assertIn("mission_context_pack", script)
+        self.assertIn("Planner Done", script)
+        self.assertIn("Reviewer Done", script)
         self.assertIn("cannot run shell commands", template)
         self.assertIn("send customers", template)
 

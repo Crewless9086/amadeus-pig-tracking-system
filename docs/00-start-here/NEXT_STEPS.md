@@ -103,6 +103,12 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - mission cards should show the five tracked roles: planner, architect, builder, tester, reviewer
   - Codex pickup must write the mission vault and agent workflow into `planning/CODEX_CHAT.md`
   - this is role-structured execution, not parallel autonomous agents yet
+- CHARLIE Stage 6 execution control:
+  - every mission stores the same shared context pack: active truth docs, data rules, approval rules, agent order, and parallel-work status
+  - dashboard role buttons record planner, architect, builder, tester, and reviewer handoffs into the Mission Vault
+  - Telegram supports `/review`, `/workflow <mission id> tester complete`, and `/done <mission id>` for owner-visible queue cleanup and review control
+  - Codex pickup must include the shared context pack so every builder starts from the same system rules and mission data
+  - still no direct Telegram/dashboard shell execution, merge, deploy, migration, production write, customer send, public post, payment, reservation, or lifecycle write authority
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.
