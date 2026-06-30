@@ -2017,10 +2017,12 @@ def _resolve_execution_artifact(mission_id, execution_id="", prompt_path=None, s
 def _extract_local_preview(final_message):
     text = str(final_message or "")
     match = re.search(r"https?://127\.0\.0\.1:\d+/\S*", text)
-    url = match.group(0).rstrip(").,") if match else "http://127.0.0.1:5000/charlie"
+    url = match.group(0).rstrip(").,") if match else ""
     return {
         "url": url,
         "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
+        "status": "captured" if url else "not_captured",
+        "message": "No mission-specific local preview URL was captured in the final artifact." if not url else "",
     }
 
 

@@ -346,7 +346,7 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       <dl class="charlie-mission-meta">
-        <div><dt>Local view</dt><dd>${reviewLink(localPreview.url || localPreview.path || localPreview.command || links.local_preview)}</dd></div>
+        <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
@@ -562,6 +562,7 @@
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
+      <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
       <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
@@ -916,6 +917,37 @@
       return `<a href="${escapeHtml(text)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>`;
     }
     return escapeHtml(text);
+  }
+
+  function localPreviewMarkup(localPreview, links) {
+    const preview = localPreview || {};
+    const linkMap = links || {};
+    const url = safeText(preview.url || linkMap.local_preview).trim();
+    if (url) return reviewLink(url);
+    const path = safeText(preview.path).trim();
+    if (path) return escapeHtml(path);
+    const command = safeText(preview.command).trim();
+    if (command) return `<span class="charlie-muted">Preview URL not captured. Command: ${escapeHtml(command)}</span>`;
+    return '<span class="charlie-muted">Not captured</span>';
+  }
+
+  function localPreviewDetailMarkup(localPreview, links) {
+    const preview = localPreview || {};
+    const linkMap = links || {};
+    const url = safeText(preview.url || linkMap.local_preview).trim();
+    const command = safeText(preview.command).trim();
+    const path = safeText(preview.path).trim();
+    const status = safeText(preview.status || (url ? "captured" : "not_captured"));
+    const message = safeText(preview.message || (url ? "Mission-specific local preview URL captured." : "No mission-specific local preview URL was captured."));
+    return `
+      <dl class="charlie-mission-meta">
+        <div><dt>Status</dt><dd>${escapeHtml(status)}</dd></div>
+        <div><dt>Open</dt><dd>${url ? reviewLink(url) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
+        <div><dt>Command</dt><dd>${command ? escapeHtml(command) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
+        <div><dt>Artifact</dt><dd>${path ? escapeHtml(path) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
+      </dl>
+      <p class="charlie-muted">${escapeHtml(message)}</p>
+    `;
   }
 
   function firstReviewText(items, fallback) {
