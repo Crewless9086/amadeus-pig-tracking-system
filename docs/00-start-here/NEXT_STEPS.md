@@ -65,6 +65,13 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 ## P2 Current Build
 
 - CHARLIE-RELAY-0: safe owner-only Telegram build relay foundation. Scope: policy, webhook secret, owner allowlist, `/status`, `/next`, `/mission`, optional CODEX_CHAT intake write, tests, and plan doc. No dangerous runtime authority.
+- CHARLIE-RELAY-1/3 active: add owner notification helper and durable Supabase mission queue so Telegram mission intake is not dependent on Render filesystem writes.
+- CHARLIE mission queue release checklist:
+  - review and apply additive migration `202606300001_create_charlie_mission_queue.sql`
+  - keep `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED` enabled only after the migration is applied
+  - live test `/mission <idea>` and `/missions`
+  - dry-run `scripts/charlie_notify.py`, then send a live owner-only notification
+  - verify no Telegram command can commit, merge, deploy, run shell commands, write operational data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.

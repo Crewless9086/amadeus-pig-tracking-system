@@ -35,6 +35,7 @@ Write the next concept/problem/improvement here if it is not already in `plannin
 
 ## Processed / Logged
 
+- 2026-06-30: CHARLIE mission queue and owner notification helper moved into active build on `charlie-relay-mission-queue`. Supabase mission queue migration is additive and pending review/application; Telegram remains non-executing.
 - 2026-06-30: CHARLIE Build Relay v0 mission accepted from `planning/CODEX_CHAT.md`. Scope is owner-only Telegram command/notification relay with strict safety gates; no dangerous Telegram authority.
 - 2026-06-29: Google Sheets to Supabase migration closeout was logged in `docs/06-operations/GS_MIG_FINAL_AUDIT.md`.
 - 2026-06-29: PR #39 merged as `66f7f71 Complete Google Sheets migration final audit (#39)`.
