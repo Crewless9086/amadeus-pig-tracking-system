@@ -133,6 +133,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["owner review ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
+                "links": {"pr": "https://github.com/org/repo/pull/61"} if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -155,6 +157,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("agent_execution", vault_metadata)
         self.assertIn("agent_artifacts", vault_metadata["review_packet"])
         self.assertIn("quality_gates", vault_metadata["review_packet"])
+        self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(vault_metadata["review_packet"]["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["review_status"], "ready_for_owner_review")
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
 
@@ -207,6 +211,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -290,6 +295,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
                 "release_notes": ["ready"] if agent == "reviewer" else None,
                 "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
+                "pr_url": "https://github.com/org/repo/pull/61" if agent == "reviewer" else None,
             }
             payload = {key: value for key, value in payload.items() if value is not None}
             return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
@@ -307,6 +313,42 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
         self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
+
+    def test_reviewer_quality_gate_requires_pr_for_changed_files(self):
+        artifact = {
+            "summary": "review complete",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "commands_run": ["git diff --stat"],
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": ["ready"],
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "test_evidence": ["unit tests passed"],
+        }
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("PR link", result["reason"])
+
+    def test_reviewer_quality_gate_accepts_pr_for_changed_files(self):
+        artifact = {
+            "summary": "review complete",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "commands_run": ["git diff --stat"],
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": ["ready"],
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "test_evidence": ["unit tests passed"],
+            "links": {"pr": "https://github.com/org/repo/pull/61"},
+        }
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"])
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_rejects_release_approved_mission(self, get_mission):
