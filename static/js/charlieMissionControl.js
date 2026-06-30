@@ -4,7 +4,11 @@
     reviewMissions: [],
     counts: {},
     loading: false,
+    pendingMedia: [],
   };
+  const MAX_MEDIA_ITEMS = 3;
+  const MAX_MEDIA_BYTES = 650 * 1024;
+  const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
   const runnerControlCommandFallbacks = {
     status: ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py status",
     start: ".\\venv\\Scripts\\python.exe scripts\\charlie_runner_control.py start",
@@ -25,6 +29,9 @@
     newConcept: document.getElementById("charlie_new_concept"),
     newOutcome: document.getElementById("charlie_new_outcome"),
     newMedia: document.getElementById("charlie_new_media"),
+    newMediaDrop: document.getElementById("charlie_new_media_drop"),
+    newMediaFile: document.getElementById("charlie_new_media_file"),
+    newMediaPreviews: document.getElementById("charlie_new_media_previews"),
     newUrgency: document.getElementById("charlie_new_urgency"),
     newType: document.getElementById("charlie_new_type"),
     runner: {
@@ -315,7 +322,7 @@
     const criteria = listMarkup(vault.acceptance_criteria, "No acceptance criteria captured yet.");
     const tests = listMarkup(vault.test_plan, "No test plan captured yet.");
     const forbidden = listMarkup(vault.forbidden_actions, "Default safety gates apply.");
-    const mediaItems = listMarkup((media || []).map((item) => `${item.label || "Reference"}: ${item.reference || ""}`), "No media/reference links captured yet.");
+    const mediaItems = mediaMarkup(media, "No media/reference links captured yet.");
     const docs = listMarkup(contextPack.active_truth_docs, "Default start-here docs apply.");
     const sharedRules = listMarkup(contextPack.shared_data_rules, "Shared mission rules are loaded from CHARLIE protocol.");
     return `
@@ -336,6 +343,31 @@
     const list = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!list.length) return `<p class="charlie-muted">${escapeHtml(fallback)}</p>`;
     return `<ul>${list.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
+  function mediaMarkup(items, fallback) {
+    const list = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!list.length) return `<p class="charlie-muted">${escapeHtml(fallback)}</p>`;
+    return `<div class="charlie-media-reference-list">${list.map(mediaReferenceMarkup).join("")}</div>`;
+  }
+
+  function mediaReferenceMarkup(item) {
+    const label = safeText(item.label || "Mission media");
+    const reference = safeText(item.reference || "");
+    if (isImageDataReference(item)) {
+      return `
+        <figure class="charlie-media-reference">
+          <img src="${escapeHtml(reference)}" alt="${escapeHtml(label)}" loading="lazy">
+          <figcaption>${escapeHtml(label)}</figcaption>
+        </figure>
+      `;
+    }
+    return `
+      <div class="charlie-media-reference charlie-media-reference-text">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${reviewLink(reference)}</span>
+      </div>
+    `;
   }
 
   function reviewPacketMarkup(mission, packet) {
@@ -448,10 +480,11 @@
           urgency: els.newUrgency ? els.newUrgency.value : "P2",
           mission_type: els.newType ? els.newType.value : "feature build",
           approval_level: "LEVEL 3",
-          media_references: parseMediaReferences(els.newMedia && els.newMedia.value),
+          media_references: collectMediaReferences(),
         }),
       });
       els.createForm.reset();
+      clearPendingMedia();
       setMessage("Mission created in CHARLIE vault.", "success");
       await loadMissions();
     } catch (error) {
@@ -521,6 +554,130 @@
       .map((line) => ({label: line.slice(0, 80), reference: line, media_type: "reference"}));
   }
 
+  function collectMediaReferences() {
+    return [
+      ...parseMediaReferences(els.newMedia && els.newMedia.value),
+      ...state.pendingMedia.map((item) => ({
+        label: item.label,
+        reference: item.reference,
+        media_type: "image",
+        source: item.source || "dashboard_clipboard",
+      })),
+    ];
+  }
+
+  function setupMediaCapture() {
+    if (!els.newMediaDrop) return;
+    els.newMediaDrop.addEventListener("paste", handleMediaPaste);
+    els.newMediaDrop.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      els.newMediaDrop.classList.add("is-drag-over");
+    });
+    els.newMediaDrop.addEventListener("dragleave", () => els.newMediaDrop.classList.remove("is-drag-over"));
+    els.newMediaDrop.addEventListener("drop", handleMediaDrop);
+    els.newMediaDrop.addEventListener("click", () => {
+      if (els.newMediaFile) els.newMediaFile.click();
+    });
+    els.newMediaDrop.addEventListener("keydown", (event) => {
+      if ((event.key === "Enter" || event.key === " ") && els.newMediaFile) {
+        event.preventDefault();
+        els.newMediaFile.click();
+      }
+    });
+    if (els.newMediaFile) {
+      els.newMediaFile.addEventListener("change", () => addMediaFiles(els.newMediaFile.files, "dashboard_file"));
+    }
+    document.addEventListener("paste", (event) => {
+      if (isInsideMissionForm(event.target)) handleMediaPaste(event);
+    });
+    renderPendingMedia();
+  }
+
+  function handleMediaPaste(event) {
+    if (event.defaultPrevented) return;
+    const files = Array.from((event.clipboardData && event.clipboardData.files) || [])
+      .filter((file) => IMAGE_MEDIA_TYPES.has(file.type));
+    if (!files.length) return;
+    event.preventDefault();
+    addMediaFiles(files, "dashboard_clipboard");
+  }
+
+  function handleMediaDrop(event) {
+    event.preventDefault();
+    els.newMediaDrop.classList.remove("is-drag-over");
+    addMediaFiles(event.dataTransfer && event.dataTransfer.files, "dashboard_drop");
+  }
+
+  async function addMediaFiles(fileList, source) {
+    const files = Array.from(fileList || []).filter((file) => IMAGE_MEDIA_TYPES.has(file.type));
+    if (!files.length) {
+      setMessage("Only PNG, JPG, WebP, or GIF screenshots can be attached here.", "error");
+      return;
+    }
+    for (const file of files) {
+      if (state.pendingMedia.length >= MAX_MEDIA_ITEMS) {
+        setMessage(`Mission media is limited to ${MAX_MEDIA_ITEMS} images for this no-migration version.`, "error");
+        break;
+      }
+      if (file.size > MAX_MEDIA_BYTES) {
+        setMessage(`${file.name || "Screenshot"} is too large. Keep each image under 650 KB for mission metadata storage.`, "error");
+        continue;
+      }
+      const reference = await readFileAsDataUrl(file);
+      state.pendingMedia.push({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        label: file.name || `Pasted screenshot ${state.pendingMedia.length + 1}`,
+        reference,
+        source,
+      });
+    }
+    if (els.newMediaFile) els.newMediaFile.value = "";
+    renderPendingMedia();
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(safeText(reader.result));
+      reader.onerror = () => reject(new Error("Screenshot could not be read."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderPendingMedia() {
+    if (!els.newMediaPreviews) return;
+    if (!state.pendingMedia.length) {
+      els.newMediaPreviews.innerHTML = '<p class="charlie-muted">No screenshots attached yet.</p>';
+      return;
+    }
+    els.newMediaPreviews.innerHTML = state.pendingMedia.map((item) => `
+      <figure class="charlie-media-preview">
+        <img src="${escapeHtml(item.reference)}" alt="${escapeHtml(item.label)}">
+        <figcaption>${escapeHtml(item.label)}</figcaption>
+        <button type="button" data-remove-media="${escapeHtml(item.id)}" aria-label="Remove ${escapeHtml(item.label)}">Remove</button>
+      </figure>
+    `).join("");
+    els.newMediaPreviews.querySelectorAll("[data-remove-media]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.pendingMedia = state.pendingMedia.filter((item) => item.id !== button.dataset.removeMedia);
+        renderPendingMedia();
+      });
+    });
+  }
+
+  function clearPendingMedia() {
+    state.pendingMedia = [];
+    renderPendingMedia();
+  }
+
+  function isInsideMissionForm(target) {
+    return Boolean(els.createForm && target && els.createForm.contains(target));
+  }
+
+  function isImageDataReference(item) {
+    return item && item.media_type === "image" && /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(safeText(item.reference));
+  }
+
   function reviewLink(value) {
     const text = safeText(value).trim();
     if (!text) return "Not captured";
@@ -561,5 +718,6 @@
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
+  setupMediaCapture();
   loadMissions();
 })();

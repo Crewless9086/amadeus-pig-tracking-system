@@ -99,6 +99,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - dashboard and Telegram decisions remain record-only; local Codex/Cursor runner remains the build execution boundary
 - CHARLIE Mission Vault V1:
   - `/charlie` mission intake should let the owner create missions from a rough concept, desired outcome, urgency/type, and media/reference links
+  - `/charlie` mission intake now supports bounded pasted/dropped screenshot images stored in existing mission metadata; a dedicated media table, external storage, retention cleanup, and final-approval deletion automation need a separately approved storage phase
   - each Supabase mission stores a structured vault packet in metadata: problem, outcome, acceptance criteria, tests, forbidden actions, owner decisions, media references, rollback, and confidence target
   - mission cards should show the five tracked roles: planner, architect, builder, tester, reviewer
   - Codex pickup must write the mission vault and agent workflow into `planning/CODEX_CHAT.md`

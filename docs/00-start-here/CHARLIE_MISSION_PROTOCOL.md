@@ -57,7 +57,7 @@ The vault must capture:
 - rollback plan
 - confidence target
 
-The current dashboard supports mission intake with rough concept text, desired outcome, urgency/type, and media/reference links. Binary media upload is a later storage phase; for now, mission media references are paths, URLs, or owner notes stored with the mission.
+The current dashboard supports mission intake with rough concept text, desired outcome, urgency/type, media/reference links, and bounded pasted/dropped screenshot images. Screenshot images are stored as mission metadata references for the current no-migration phase. A dedicated mission media table, external object storage, retention cleanup, and final-approval deletion policy are a later storage phase that needs explicit owner approval.
 
 ## Shared Context Pack
 
