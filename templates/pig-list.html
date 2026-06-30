@@ -7,12 +7,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
+  <div class="page-shell pigs-dashboard-shell">
+    <div class="page-card pigs-dashboard-page">
       <div class="page-header page-header-with-link">
         <div>
           <h1>Amadeus Pig List</h1>
-          <p>Select a pig to view its profile and record weights.</p>
+          <p>Scan the active herd by pen, weight status, and profile detail.</p>
         </div>
         <div class="detail-actions compact-actions">
           <a href="/" class="button-link button-link-secondary">Dashboard</a>
@@ -21,13 +21,51 @@
         </div>
       </div>
 
-      <div class="list-toolbar">
+      <div class="pig-list-summary" aria-label="Pig list totals">
+        <div class="pig-list-summary-card">
+          <span>Total Active</span>
+          <strong id="pig_total_count">0</strong>
+        </div>
+        <div class="pig-list-summary-card">
+          <span>With Weight</span>
+          <strong id="pig_weighed_count">0</strong>
+        </div>
+        <div class="pig-list-summary-card">
+          <span>No Weight</span>
+          <strong id="pig_no_weight_count">0</strong>
+        </div>
+        <div class="pig-list-summary-card">
+          <span>Pens</span>
+          <strong id="pig_pen_count">0</strong>
+        </div>
+        <div class="pig-list-summary-card pig-list-summary-card-accent">
+          <span>Showing</span>
+          <strong id="pig_visible_count">0</strong>
+        </div>
+      </div>
+
+      <div class="list-toolbar pig-list-toolbar">
+        <label class="field-label" for="pig_search">Search</label>
         <input
           type="text"
           id="pig_search"
           class="list-search"
-          placeholder="Search by tag number or pig ID..."
+          placeholder="Tag number, pig ID, pen, stage, or purpose"
         />
+        <label class="field-label" for="pig_pen_filter">Pen</label>
+        <select id="pig_pen_filter" class="list-filter-select">
+          <option value="">All pens</option>
+        </select>
+        <label class="field-label" for="pig_weight_filter">Weight</label>
+        <select id="pig_weight_filter" class="list-filter-select">
+          <option value="">All weight records</option>
+          <option value="weighed">With latest weight</option>
+          <option value="missing">No weight recorded</option>
+        </select>
+        <label class="field-label" for="pig_stage_filter">Stage</label>
+        <select id="pig_stage_filter" class="list-filter-select">
+          <option value="">All stages</option>
+        </select>
       </div>
 
       <div id="pig_list_message" class="message-box hidden"></div>
