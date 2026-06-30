@@ -6,6 +6,10 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `bbab465` Fix Supabase litter status outcomes (#50)
+- `b89d858` Show CHARLIE runner handoff status (#49)
+- `9ddd2f6` Add CHARLIE approval level handoff (#48)
+- `16e851f` Fix Supabase litter stillborn reconciliation (#47)
 - `e2e373d` Harden CHARLIE relay activation (#41)
 - `8979773` Add CHARLIE build relay foundation (#40)
 - `66f7f71` Complete Google Sheets migration final audit (#39)
@@ -172,6 +176,7 @@ SAM safety remains unchanged:
 - Current rule: Telegram/dashboard do not execute shell commands directly. A running Codex/Cursor session executes within the recorded approval level and hard stops.
 - CHARLIE runner visibility is active in build: `/charlie` will show active mission, next approved mission waiting for pickup, and the local continuous runner command.
 - Continuous runner command: `.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30`.
+- CHARLIE Telegram/dashboard alignment is active in build: `/next` should now show the same live mission handoff state as `/charlie` before falling back to static `NEXT_STEPS.md` mission options.
 
 ## FRED Status
 
