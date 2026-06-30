@@ -163,6 +163,19 @@ Dangerous actions still need explicit typed confirmation and the normal repo-sid
 
 Status: first command-console layer implemented. Telegram can record approve/pause/reject decisions in `charlie_missions` and `charlie_mission_events`, and can show mission detail/debrief text. These actions remain non-executing and only update mission governance state.
 
+### CHARLIE-RELAY-5 - Codex Mission Pickup Bridge
+
+Add a local bridge for a running Codex/Cursor session:
+
+- reads the next approved mission from Supabase
+- writes it into `planning/CODEX_CHAT.md`
+- marks it `in_progress`
+- optionally sends an owner Telegram notification
+
+Status: implemented as `scripts/charlie_mission_pickup.py`.
+
+This is the safe handoff between Telegram and Codex. Telegram still does not execute shell commands or start runtime work directly.
+
 ## 7. Tests
 
 Current tests prove:

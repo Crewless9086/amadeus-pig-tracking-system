@@ -71,6 +71,10 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - `/mission <id>` and `/debrief <id>` show mission state
   - `/approve <id>`, `/pause <id>`, and `/reject <id>` record owner decisions only
   - these commands must not run shell commands, commit, merge, deploy, apply migrations, write operational data, send customers, publish posts, take payments, reserve stock, or change farm lifecycle records
+- CHARLIE Codex pickup bridge:
+  - `scripts/charlie_mission_pickup.py --dry-run` checks the next approved mission
+  - `scripts/charlie_mission_pickup.py --notify` writes the approved mission into `planning/CODEX_CHAT.md`, marks it `in_progress`, and notifies the owner
+  - this is the safe handoff from Telegram approval to a running Codex/Cursor build session
 - CHARLIE mission queue release checklist:
   - migration `202606300001_create_charlie_mission_queue.sql` is applied
   - keep `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED` enabled only after the migration is applied
