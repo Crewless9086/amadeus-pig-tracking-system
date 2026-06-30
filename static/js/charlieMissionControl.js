@@ -112,7 +112,9 @@
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
       <div class="charlie-mission-actions">
-        <button type="button" data-action="approved">Approve</button>
+        <button type="button" data-action="approved" data-level="LEVEL 1">Approve L1</button>
+        <button type="button" data-action="approved" data-level="LEVEL 3">Approve L3</button>
+        <button type="button" data-action="approved" data-level="LEVEL 4">Approve L4</button>
         <button type="button" data-action="paused">Pause</button>
         <button type="button" data-action="rejected">Reject</button>
         <button type="button" data-action="blocked">Block</button>
@@ -124,24 +126,26 @@
       </details>
     `;
     card.querySelectorAll("[data-action]").forEach((button) => {
-      button.addEventListener("click", () => recordDecision(missionId, button.dataset.action));
+      button.addEventListener("click", () => recordDecision(missionId, button.dataset.action, button.dataset.level || ""));
     });
     return card;
   }
 
-  async function recordDecision(missionId, status) {
+  async function recordDecision(missionId, status, approvalLevel) {
     if (!missionId || !status) return;
-    setMessage(`Recording ${status}...`, "info");
+    const levelLabel = approvalLevel ? ` ${approvalLevel}` : "";
+    setMessage(`Recording ${status}${levelLabel}...`, "info");
     try {
       await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/decision`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           status,
-          owner_decision: `Owner set mission status to ${status} from CHARLIE Mission Control.`,
+          approval_level: approvalLevel,
+          owner_decision: `Owner set mission status to ${status}${levelLabel} from CHARLIE Mission Control.`,
         }),
       });
-      setMessage(`Mission marked ${status}.`, "success");
+      setMessage(`Mission marked ${status}${levelLabel}.`, "success");
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Decision was not recorded.", "error");

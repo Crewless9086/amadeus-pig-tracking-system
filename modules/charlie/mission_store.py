@@ -28,6 +28,7 @@ MISSION_EVENT_TYPES = {
     "approval_decision",
     "review_note",
 }
+APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -194,6 +195,7 @@ def update_mission_status(
     mission_id,
     status,
     owner_decision="",
+    approval_level="",
     event_type="status_changed",
     notes="",
     metadata=None,
@@ -208,20 +210,29 @@ def update_mission_status(
         return {"success": False, "status": "invalid_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
     if event_type not in MISSION_EVENT_TYPES:
         return {"success": False, "status": "invalid_event_type", "allowed_event_types": sorted(MISSION_EVENT_TYPES)}, 400
+    approval_level = normalize_approval_level(approval_level)
+    if approval_level and approval_level not in APPROVAL_LEVELS:
+        return {"success": False, "status": "invalid_approval_level", "allowed_approval_levels": sorted(APPROVAL_LEVELS)}, 400
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
 
+    set_lines = [
+        "status = %(status)s",
+        "owner_decision = %(owner_decision)s",
+    ]
+    if approval_level:
+        set_lines.append("approval_level = %(approval_level)s")
+    set_lines.append("updated_at = now()")
+    set_sql = ",\n                        ".join(set_lines)
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     update public.charlie_missions
-                    set status = %(status)s,
-                        owner_decision = %(owner_decision)s,
-                        updated_at = now()
+                    set {set_sql}
                     where mission_id = %(mission_id)s
                     returning mission_id
                     """,
@@ -229,6 +240,7 @@ def update_mission_status(
                         "mission_id": mission_id,
                         "status": status,
                         "owner_decision": _clean_text(owner_decision, 1000),
+                        "approval_level": approval_level,
                     },
                 )
                 rows = cursor.fetchall()
@@ -236,6 +248,7 @@ def update_mission_status(
                     return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
                 _insert_event(cursor, mission_id, event_type, notes or f"Mission status changed to {status}.", {
                     "status": status,
+                    "approval_level": approval_level,
                     "owner_decision": _clean_text(owner_decision, 1000),
                     **(metadata if isinstance(metadata, dict) else {}),
                 })
@@ -253,7 +266,22 @@ def update_mission_status(
         "status": "ok",
         "mission_id": mission_id,
         "mission_status": status,
+        "approval_level": approval_level,
     }, 200
+
+
+def normalize_approval_level(value):
+    raw = _clean_text(value, 40).upper().replace("_", " ").replace("-", " ")
+    if not raw:
+        return ""
+    compact = " ".join(raw.split())
+    if compact.startswith("LEVEL "):
+        return compact
+    if compact.startswith("LEVEL") and compact[5:].strip().isdigit():
+        return f"LEVEL {compact[5:].strip()}"
+    if compact in {"0", "1", "2", "3", "4", "5"}:
+        return f"LEVEL {compact}"
+    return compact
 
 
 def record_mission_event(mission_id, event_type, notes="", metadata=None, database_url=None, connect_factory=None):

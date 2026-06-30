@@ -206,6 +206,23 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
     @patch("modules.charlie.build_relay.update_mission_status")
+    def test_approve_command_records_requested_approval_level(self, update_mission_status):
+        update_mission_status.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "CHARLIE-MISSION-ABC12345",
+            "mission_status": "approved",
+            "approval_level": "LEVEL 4",
+        }, 200)
+
+        action = build_relay_action("/approve CHARLIE-MISSION-ABC12345 level4")
+
+        self.assertEqual(action["command"], "approve")
+        self.assertIn("Approval: LEVEL 4", action["telegram_text"])
+        self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 4")
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.update_mission_status")
     def test_pause_and_reject_commands_record_decisions(self, update_mission_status):
         update_mission_status.return_value = ({
             "success": True,
@@ -284,7 +301,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
         response = self.client.post(
             "/api/charlie/build-relay/missions/MISSION-1/decision",
-            json={"status": "approved", "owner_decision": "Owner approved."},
+            json={"status": "approved", "approval_level": "LEVEL 3", "owner_decision": "Owner approved."},
         )
         data = response.get_json()
 
@@ -292,6 +309,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         update_mission_status.assert_called_once()
         self.assertEqual(update_mission_status.call_args.args[1], "approved")
+        self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
     @patch.dict(os.environ, {}, clear=True)
