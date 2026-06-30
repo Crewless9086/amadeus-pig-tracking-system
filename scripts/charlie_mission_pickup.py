@@ -147,6 +147,11 @@ def watch_for_mission(
         )
         result["checks"] = checks
         write_runner_heartbeat(result)
+        if continuous and _retryable_queue_error(result, status_code):
+            if max_checks is not None and checks >= max_checks:
+                return result, status_code
+            time.sleep(interval_seconds)
+            continue
         if result.get("status") == "mission_picked_up" and continuous and status_code < 400:
             if execute_codex and not dry_run:
                 result, status_code = execute_codex_for_mission(
@@ -184,6 +189,15 @@ def _release_approved_mission():
     if status_code < 400 and loaded.get("missions"):
         return loaded["missions"][0]
     return None
+
+
+def _retryable_queue_error(result, status_code):
+    status = str((result or {}).get("status") or "")
+    return int(status_code or 0) >= 500 or status in {
+        "mission_queue_unavailable",
+        "mission_read_failed",
+        "not_configured",
+    }
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
