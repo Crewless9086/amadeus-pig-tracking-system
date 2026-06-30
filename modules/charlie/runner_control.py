@@ -21,6 +21,8 @@ RUNNER_COMMAND = [
     "--execute-codex",
     "--watch-release",
     "--auto-merge-pr",
+    "--release-verify-url",
+    "https://amadeus-pig-tracking-system.onrender.com/charlie",
     "--interval-seconds",
     "30",
 ]
