@@ -7566,6 +7566,8 @@ body.oom-farm-command-body {
 }
 
 .charlie-panel select,
+.charlie-panel input,
+.charlie-panel textarea,
 .charlie-panel button,
 .charlie-mission-actions button {
     min-height: 40px;
@@ -7579,6 +7581,35 @@ body.oom-farm-command-body {
 .charlie-panel select {
     width: 100%;
     padding: 0 10px;
+}
+
+.charlie-panel input,
+.charlie-panel textarea {
+    width: 100%;
+    padding: 10px;
+    font: inherit;
+    font-weight: 400;
+    resize: vertical;
+}
+
+.charlie-intake-form {
+    display: grid;
+    gap: 8px;
+    margin: 14px 0 18px;
+    padding: 12px;
+    border: 1px solid #d8e1dd;
+    border-radius: 8px;
+    background: #f7faf9;
+}
+
+.charlie-intake-form h3 {
+    margin: 0 0 4px;
+}
+
+.charlie-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
 }
 
 .charlie-missions-panel {
@@ -7607,6 +7638,23 @@ body.oom-farm-command-body {
 
 .charlie-mission-card p {
     line-height: 1.45;
+}
+
+.charlie-vault-summary,
+.charlie-agent-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 10px 0;
+}
+
+.charlie-vault-summary span {
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: #edf3f1;
+    color: #3f504a;
+    font-size: 0.84rem;
 }
 
 .charlie-mission-card code {
@@ -7668,6 +7716,15 @@ body.oom-farm-command-body {
     margin-top: 10px;
 }
 
+.charlie-mission-card details ul {
+    margin: 8px 0 12px 18px;
+    padding: 0;
+}
+
+.charlie-mission-card details li {
+    margin: 4px 0;
+}
+
 .charlie-mission-card pre {
     max-height: 260px;
     overflow: auto;
@@ -7696,7 +7753,8 @@ body.oom-farm-command-body {
     }
 
     .charlie-command-strip,
-    .charlie-mission-meta {
+    .charlie-mission-meta,
+    .charlie-form-row {
         grid-template-columns: 1fr;
     }
 }

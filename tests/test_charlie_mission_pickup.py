@@ -14,6 +14,21 @@ MISSION = {
     "urgency": "P2",
     "mission_type": "feature build",
     "approval_level": "LEVEL 3",
+    "vault": {
+        "mission_stage": "planned",
+        "problem_statement": "Owner wants a useful thing.",
+        "desired_outcome": "Useful thing is built and tested.",
+        "acceptance_criteria": ["Dashboard shows the useful thing."],
+        "test_plan": ["Run focused useful thing tests."],
+        "forbidden_actions": ["No production writes."],
+    },
+    "agent_workflow": [
+        {"agent": "planner", "status": "complete", "purpose": "Scope the mission."},
+        {"agent": "builder", "status": "pending", "purpose": "Build the mission."},
+    ],
+    "media_references": [
+        {"label": "Sketch", "reference": "planning/inbox/screenshots/useful.png"},
+    ],
 }
 
 
@@ -59,6 +74,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("Build useful thing from Telegram.", content)
         self.assertIn("CHARLIE_MISSION_PROTOCOL.md", content)
         self.assertIn("Runner mode: code_test_pr", content)
+        self.assertIn("## MISSION VAULT", content)
+        self.assertIn("Owner wants a useful thing.", content)
+        self.assertIn("Dashboard shows the useful thing.", content)
+        self.assertIn("Sketch: planning/inbox/screenshots/useful.png", content)
+        self.assertIn("planner: complete", content)
         self.assertIn("LEVEL 3: code and tests may be changed", content)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")

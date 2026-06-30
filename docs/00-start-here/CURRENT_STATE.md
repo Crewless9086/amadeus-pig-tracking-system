@@ -177,6 +177,8 @@ SAM safety remains unchanged:
 - CHARLIE runner visibility is active in build: `/charlie` will show active mission, next approved mission waiting for pickup, and the local continuous runner command.
 - Continuous runner command: `.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30`.
 - CHARLIE Telegram/dashboard alignment is active in build: `/next` should now show the same live mission handoff state as `/charlie` before falling back to static `NEXT_STEPS.md` mission options.
+- CHARLIE Mission Vault V1 is active in build: dashboard intake, Supabase mission metadata vault, media/reference links, and planner/architect/builder/tester/reviewer role tracking.
+- CHARLIE still does not run builds from Telegram/dashboard directly. Codex/Cursor remains the execution boundary until later parallel-agent controls exist.
 
 ## FRED Status
 

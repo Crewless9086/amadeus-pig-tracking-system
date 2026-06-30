@@ -659,6 +659,13 @@ def _compact_title(text):
 
 
 def _mission_detail_text(mission):
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    workflow_line = ", ".join(
+        f"{item.get('agent')}:{item.get('status', 'pending')}"
+        for item in workflow[:5]
+        if isinstance(item, dict)
+    )
     return (
         "CHARLIE mission\n\n"
         f"ID: {mission.get('mission_id')}\n"
@@ -666,7 +673,10 @@ def _mission_detail_text(mission):
         f"Urgency: {mission.get('urgency')}\n"
         f"Type: {mission.get('mission_type')}\n"
         f"Approval: {mission.get('approval_level')}\n"
+        f"Vault stage: {vault.get('mission_stage', 'intake')}\n"
         f"Title: {mission.get('title')}\n\n"
+        f"Problem: {vault.get('problem_statement') or mission.get('raw_text') or 'not captured'}\n\n"
+        f"Agent workflow: {workflow_line or 'planner, architect, builder, tester, reviewer pending'}\n\n"
         f"Owner decision: {mission.get('owner_decision') or 'none recorded'}\n\n"
         "Commands: /approve <id> level3, /approve <id> level4, /pause <id>, /reject <id>. These record decisions for the Codex runner handoff; Telegram does not execute shell commands directly."
     )[:MAX_REPLY_CHARS]

@@ -9,6 +9,7 @@ from modules.charlie.mission_store import (
     record_mission,
     record_mission_event,
     update_mission_status,
+    update_mission_vault,
 )
 
 
@@ -70,6 +71,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
         self.assertEqual(mission_params["telegram_user_id"], "12345")
         self.assertEqual(mission_params["urgency"], "P1")
+        self.assertIn("mission_vault", mission_params["metadata_json"])
+        self.assertIn("agent_workflow", mission_params["metadata_json"])
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
@@ -89,6 +92,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["missions"][0]["mission_id"], "MISSION-1")
         self.assertEqual(result["missions"][0]["metadata"], {"owner": "masked"})
+        self.assertEqual(result["missions"][0]["vault"], {})
+        self.assertEqual(result["missions"][0]["agent_workflow"], [])
 
     def test_record_mission_event_rejects_unknown_event_type(self):
         result, status_code = record_mission_event("MISSION-1", "execute_shell", database_url="")
@@ -180,6 +185,41 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_mission_status")
+
+    def test_update_mission_vault_merges_metadata_and_records_event(self):
+        connection = FakeConnection([("MISSION-1",)])
+
+        result, status_code = update_mission_vault(
+            "MISSION-1",
+            {
+                "mission_vault": {"mission_stage": "planned"},
+                "agent_workflow": [{"agent": "planner", "status": "complete"}],
+            },
+            status="planned",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission_status"], "planned")
+        self.assertEqual(len(connection.cursor_instance.executed), 2)
+        update_sql, update_params = connection.cursor_instance.executed[0]
+        self.assertIn("metadata_json", update_sql)
+        self.assertIn("status = %(status)s", update_sql)
+        self.assertIn('"mission_stage": "planned"', update_params["metadata_json"])
+
+    def test_update_mission_vault_requires_metadata(self):
+        result, status_code = update_mission_vault(
+            "MISSION-1",
+            [],
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([("MISSION-1",)]),
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "mission_vault_metadata_required")
 
     def test_mission_status_summary_maps_counts(self):
         result, status_code = mission_status_summary(

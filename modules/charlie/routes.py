@@ -5,7 +5,14 @@ from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
-from modules.charlie.mission_store import get_mission, list_missions, mission_status_summary, update_mission_status
+from modules.charlie.mission_store import (
+    get_mission,
+    list_missions,
+    mission_status_summary,
+    record_mission,
+    update_mission_status,
+    update_mission_vault,
+)
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -40,6 +47,41 @@ def charlie_build_relay_missions_route():
         limit=request.args.get("limit", 10),
     )
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions", methods=["POST"])
+def charlie_build_relay_mission_create_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    raw_text = str(payload.get("raw_text") or payload.get("concept") or "").strip()
+    if not raw_text:
+        return jsonify({"success": False, "status": "mission_text_required"}), 400
+    mission = {
+        "raw_text": raw_text,
+        "title": str(payload.get("title") or raw_text).strip(),
+        "urgency": str(payload.get("urgency") or "P2").strip(),
+        "mission_type": str(payload.get("mission_type") or "feature build").strip(),
+        "approval_level": str(payload.get("approval_level") or "LEVEL 3").strip(),
+        "desired_outcome": str(payload.get("desired_outcome") or "").strip(),
+        "scope_summary": str(payload.get("scope_summary") or "").strip(),
+        "acceptance_criteria": payload.get("acceptance_criteria") or [],
+        "test_plan": payload.get("test_plan") or [],
+        "pressure_test_plan": payload.get("pressure_test_plan") or [],
+        "forbidden_actions": payload.get("forbidden_actions") or [],
+        "owner_decisions_needed": payload.get("owner_decisions_needed") or [],
+        "media_references": payload.get("media_references") or [],
+        "metadata": {
+            "created_from": "charlie_dashboard",
+        },
+    }
+    result, status_code = record_mission(mission, source_context={"source": "charlie_dashboard"})
+    response = {
+        "success": result.get("stored") is True,
+        **result,
+    }
+    return jsonify(response), status_code
 
 
 @charlie_bp.route("/charlie/build-relay/missions/summary", methods=["GET"])
@@ -126,5 +168,29 @@ def charlie_build_relay_mission_decision_route(mission_id):
         event_type="approval_decision",
         notes=owner_decision or f"Owner set mission status to {status}.",
         metadata={"source": "owner_api", "approval_level": approval_level},
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/vault", methods=["POST"])
+def charlie_build_relay_mission_vault_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    vault_metadata = {
+        "mission_vault": payload.get("mission_vault") if isinstance(payload.get("mission_vault"), dict) else {},
+        "agent_workflow": payload.get("agent_workflow") if isinstance(payload.get("agent_workflow"), list) else [],
+        "media_references": payload.get("media_references") if isinstance(payload.get("media_references"), list) else [],
+    }
+    vault_metadata = {key: value for key, value in vault_metadata.items() if value}
+    if not vault_metadata:
+        return jsonify({"success": False, "status": "mission_vault_metadata_required"}), 400
+    result, status_code = update_mission_vault(
+        mission_id,
+        vault_metadata,
+        status=str(payload.get("status") or "").strip(),
+        owner_decision=str(payload.get("owner_decision") or "").strip(),
+        notes=str(payload.get("notes") or "Mission vault updated from CHARLIE Mission Control.").strip(),
     )
     return jsonify(result), status_code
