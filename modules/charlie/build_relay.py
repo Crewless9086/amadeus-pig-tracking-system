@@ -249,7 +249,7 @@ def _help_action():
             "CHARLIE Build Relay is online as an owner-only command layer.\n\n"
             "Commands:\n"
             "/status - current repo state summary\n"
-            "/next - next mission options from NEXT_STEPS\n"
+            "/next - current CHARLIE handoff plus missions waiting approval\n"
             "/missions - recent durable mission queue records\n"
             "/mission <id> - show one mission record\n"
             "/mission <idea> - prepare a mission intake\n"
@@ -278,6 +278,10 @@ def _status_action(repo_root):
 
 
 def _next_action(repo_root):
+    queue_action = _mission_queue_next_action()
+    if queue_action:
+        return queue_action
+
     items = _next_step_options(repo_root)
     lines = ["Next mission options:"]
     for index, item in enumerate(items, start=1):
@@ -295,6 +299,102 @@ def _next_action(repo_root):
         "options": items,
         "writes_repo_file": False,
     }
+
+
+def _mission_queue_next_action():
+    active = _first_available_mission(("in_progress", "pr_ready"))
+    approved = _first_available_mission(("approved",))
+    new_missions = _mission_list_for_status("new", limit=3)
+
+    if not active and not approved and new_missions is None:
+        return None
+    if not active and not approved and not new_missions:
+        return None
+
+    lines = ["CHARLIE next"]
+    keyboard = []
+    if active:
+        mission = active["mission"]
+        status = str(mission.get("status") or "").strip()
+        label = "PR ready for owner review" if status == "pr_ready" else "In progress"
+        lines.extend([
+            "",
+            f"{label}: {_mission_title_line(mission)}",
+            f"Status: {status}",
+            f"Approval: {mission.get('approval_level') or 'not set'}",
+            _active_next_instruction(status),
+        ])
+        keyboard.append([{"text": "View active mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+
+    if approved:
+        mission = approved["mission"]
+        lines.extend([
+            "",
+            f"Approved waiting for Codex runner: {_mission_title_line(mission)}",
+            f"Approval: {mission.get('approval_level') or 'not set'}",
+            "If the local runner is active, it will pick this up when no mission is in progress or PR-ready.",
+        ])
+        keyboard.append([{"text": "View approved mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+
+    if new_missions:
+        lines.append("")
+        lines.append("Missions waiting for approval:")
+        for index, mission in enumerate(new_missions, start=1):
+            lines.append(f"{index}. {_mission_title_line(mission)}")
+            if index <= 2:
+                keyboard.append([
+                    {"text": f"View {index}", "callback_data": f"/mission {mission.get('mission_id')}"},
+                    {"text": f"Approve L3 {index}", "callback_data": f"approve:{mission.get('mission_id')} level3"},
+                ])
+        lines.append("Use /approve <id> level1, level3, or level4 to approve a mission.")
+
+    lines.extend([
+        "",
+        "Telegram records owner decisions only. Build execution still happens through the local Codex/Cursor runner boundary.",
+    ])
+    return {
+        "command": "next",
+        "telegram_text": "\n".join(lines)[:MAX_REPLY_CHARS],
+        "reply_markup": {"inline_keyboard": keyboard[:6]} if keyboard else _main_keyboard(),
+        "mission_queue": {
+            "active_status": active.get("status") if active else "",
+            "approved_status": approved.get("status") if approved else "",
+            "new_count": len(new_missions or []),
+        },
+        "writes_repo_file": False,
+    }
+
+
+def _first_available_mission(statuses):
+    for status in statuses:
+        result, status_code = list_missions(status=status, limit=1)
+        if status_code >= 400:
+            return None
+        missions = result.get("missions") or []
+        if missions:
+            return {"status": status, "mission": missions[0]}
+    return None
+
+
+def _mission_list_for_status(status, limit=3):
+    result, status_code = list_missions(status=status, limit=limit)
+    if status_code >= 400:
+        return None
+    return result.get("missions") or []
+
+
+def _mission_title_line(mission):
+    mission_id = str(mission.get("mission_id") or "")
+    short_id = mission_id[-8:] if mission_id else "no-id"
+    title = mission.get("title") or mission.get("raw_text") or "Untitled mission"
+    urgency = mission.get("urgency") or "P2"
+    return f"{short_id} | {urgency} | {title}"
+
+
+def _active_next_instruction(status):
+    if status == "pr_ready":
+        return "Next: review/merge from Cursor or approve the merge handoff when the PR is verified."
+    return "Next: let Codex finish and debrief this mission before picking up another one."
 
 
 def _select_next_action(choice, source, repo_root):

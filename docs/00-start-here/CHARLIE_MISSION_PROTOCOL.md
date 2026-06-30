@@ -65,7 +65,7 @@ Current safe commands:
 
 - `/help` - command list and safety rules
 - `/status` - repo/project state summary
-- `/next` - mission options from `NEXT_STEPS.md`
+- `/next` - current CHARLIE handoff: active/PR-ready mission, approved waiting pickup, new missions waiting approval, then `NEXT_STEPS.md` fallback
 - `/missions` - recent durable mission queue records
 - `/mission <idea>` - create mission intake
 - `/mission <mission id>` - show mission detail
@@ -144,6 +144,8 @@ The cockpit also shows runner handoff status:
 - next approved mission waiting for local pickup
 - local runner command
 - clear note that web/Telegram cannot execute shell commands directly
+
+Telegram `/next` must mirror this same handoff state before showing static planning fallback items. The owner should be able to see the same mission that `/charlie` is showing, open it with `/mission <id>`, and record approval with `/approve <id> level1`, `level3`, or `level4`.
 
 ## Required Codex Startup
 

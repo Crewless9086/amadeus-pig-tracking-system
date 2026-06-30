@@ -93,6 +93,10 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - live test `/mission <id>`, `/approve <id>`, `/pause <id>`, and `/reject <id>` on a disposable mission
   - dry-run `scripts/charlie_notify.py`, then send a live owner-only notification
   - verify no Telegram command can commit, merge, deploy, run shell commands, write operational data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records
+- CHARLIE Telegram/dashboard alignment:
+  - `/next` must show the same live mission handoff state as `/charlie`: active mission, PR-ready mission, approved waiting pickup, and new missions waiting for approval
+  - `/next` should list approval commands/buttons for new missions and fall back to `NEXT_STEPS.md` only when the Supabase mission queue is unavailable or empty
+  - dashboard and Telegram decisions remain record-only; local Codex/Cursor runner remains the build execution boundary
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.

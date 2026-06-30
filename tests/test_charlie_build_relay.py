@@ -162,6 +162,64 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("new=2", action["telegram_text"])
         self.assertIn("Test mission", action["telegram_text"])
 
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_next_command_reports_active_queue_mission(self, list_missions):
+        def fake_list_missions(status="", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE123",
+                        "status": "in_progress",
+                        "urgency": "P1",
+                        "approval_level": "LEVEL 3",
+                        "title": "Build active mission",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/next")
+
+        self.assertEqual(action["command"], "next")
+        self.assertIn("CHARLIE next", action["telegram_text"])
+        self.assertIn("In progress", action["telegram_text"])
+        self.assertIn("Build active mission", action["telegram_text"])
+        self.assertIn("runner boundary", action["telegram_text"])
+        self.assertIn("inline_keyboard", action["reply_markup"])
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_next_command_lists_new_missions_waiting_approval(self, list_missions):
+        def fake_list_missions(status="", limit=10):
+            if status == "new":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-NEW12345",
+                        "status": "new",
+                        "urgency": "P2",
+                        "approval_level": "LEVEL 3",
+                        "title": "Review owner note",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("next")
+
+        self.assertEqual(action["command"], "next")
+        self.assertIn("Missions waiting for approval", action["telegram_text"])
+        self.assertIn("Review owner note", action["telegram_text"])
+        self.assertIn("/approve <id> level1, level3, or level4", action["telegram_text"])
+        buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
+        self.assertTrue(any(button["callback_data"] == "approve:CHARLIE-MISSION-NEW12345 level3" for button in buttons))
+        self.assertFalse(action["writes_repo_file"])
+
     @patch("modules.charlie.build_relay.get_mission")
     def test_mission_id_command_shows_mission_detail(self, get_mission):
         get_mission.return_value = ({
