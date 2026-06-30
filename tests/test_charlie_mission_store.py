@@ -1,0 +1,109 @@
+import unittest
+from datetime import datetime, timezone
+
+from modules.charlie.mission_store import (
+    list_missions,
+    mission_status_summary,
+    record_mission,
+    record_mission_event,
+)
+
+
+class FakeConnection:
+    def __init__(self, rows=None):
+        self.cursor_instance = FakeCursor(rows or [])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def cursor(self):
+        return self.cursor_instance
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params or {}))
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class CharlieMissionStoreTests(unittest.TestCase):
+    def test_record_mission_requires_database_configuration(self):
+        result, status_code = record_mission({"raw_text": "Build CHARLIE mission queue"}, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "not_configured")
+
+    def test_record_mission_writes_mission_and_event_with_fake_connection(self):
+        connection = FakeConnection()
+
+        result, status_code = record_mission(
+            {"raw_text": "Build CHARLIE mission queue", "urgency": "P1"},
+            source_context={"source": "telegram", "telegram_user_id": "12345", "telegram_chat_id": "67890"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["stored"])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(connection.cursor_instance.executed), 2)
+        mission_params = connection.cursor_instance.executed[0][1]
+        self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
+        self.assertEqual(mission_params["telegram_user_id"], "12345")
+        self.assertEqual(mission_params["urgency"], "P1")
+
+    def test_list_missions_maps_rows(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "new", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "", "codex_chat_updated", {"owner": "masked"}, now, now,
+        )
+
+        result, status_code = list_missions(
+            limit=1,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["missions"][0]["mission_id"], "MISSION-1")
+        self.assertEqual(result["missions"][0]["metadata"], {"owner": "masked"})
+
+    def test_record_mission_event_rejects_unknown_event_type(self):
+        result, status_code = record_mission_event("MISSION-1", "execute_shell", database_url="")
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_mission_status_summary_maps_counts(self):
+        result, status_code = mission_status_summary(
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([("new", 2), ("planned", 1)]),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["counts"], {"new": 2, "planned": 1})
+
+
+if __name__ == "__main__":
+    unittest.main()

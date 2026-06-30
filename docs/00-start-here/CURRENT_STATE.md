@@ -6,6 +6,8 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `e2e373d` Harden CHARLIE relay activation (#41)
+- `8979773` Add CHARLIE build relay foundation (#40)
 - `66f7f71` Complete Google Sheets migration final audit (#39)
 - `b12e218` Fallback order line sync safely (#38)
 - `d099b5f` Fallback order status log writes safely (#37)
@@ -155,6 +157,11 @@ SAM safety remains unchanged:
 - CHARLIE is not built yet as a production UI.
 - First CHARLIE surface must be owner-only and read-only/draft-only.
 - Build Relay v0 is disabled by default and cannot commit, merge, deploy, run shell commands, write production data, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+- CHARLIE Build Relay live Telegram test passed after Render env setup: `/help`, `/next`, `/mission`, and CODEX_CHAT write-gated intake worked.
+- Active branch: `charlie-relay-mission-queue`.
+- Current CHARLIE build: durable Supabase mission queue plus local owner notification helper.
+- New migration pending review/application: `supabase/migrations/202606300001_create_charlie_mission_queue.sql`.
+- New durable queue endpoints/commands are non-executing: `/missions` and `GET /api/charlie/build-relay/missions` list stored mission intake only.
 
 ## FRED Status
 

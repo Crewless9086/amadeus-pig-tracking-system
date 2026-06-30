@@ -12,13 +12,16 @@ This phase adds a safe v0 relay:
 
 - `POST /api/charlie/build-relay/telegram/webhook`
 - `GET /api/charlie/build-relay/policy`
+- `GET /api/charlie/build-relay/missions`
 - owner allowlist by Telegram user id
 - Telegram webhook secret verification
 - disabled by default
 - direct Telegram replies through the configured CHARLIE bot token when enabled
-- `/status`, `/next`, `/mission`, and `/select` command handling
+- `/status`, `/next`, `/missions`, `/mission`, and `/select` command handling
 - mission intake classification and CODEX_CHAT update preview
 - optional `planning/CODEX_CHAT.md` update only when explicitly enabled by env
+- optional durable Supabase mission records through `charlie_missions` and `charlie_mission_events`
+- local owner notification helper: `scripts/charlie_notify.py`
 
 ## 3. Security Model
 
@@ -32,6 +35,7 @@ Required env vars:
 Optional env vars:
 
 - `CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED`
+- `CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED`
 - `CHARLIE_BUILD_RELAY_REPO_ROOT`
 
 The webhook secret must be at least 32 characters. Telegram only accepts `A-Z`, `a-z`, `0-9`, `_`, and `-` in the webhook `secret_token`, so do not use symbols such as `+`.
@@ -72,6 +76,8 @@ It can:
 - list next mission candidates from `NEXT_STEPS.md`
 - prepare mission intake from a Telegram message
 - optionally write the mission into `planning/CODEX_CHAT.md` when the explicit write env flag is enabled
+- store mission intake in the Supabase queue after the additive mission-queue migration is applied
+- send owner-only local notification messages through the CHARLIE bot when Codex runs `scripts/charlie_notify.py`
 
 ## 5. Owner Commands
 
@@ -80,6 +86,7 @@ Initial commands:
 - `/help` - explain relay commands and safety
 - `/status` - summarize current active repo state
 - `/next` - show top mission candidates from `NEXT_STEPS.md`
+- `/missions` - show mission-queue status and recent stored missions
 - `/select 1` - turn a listed next-step option into a mission intake
 - `/mission <idea>` - prepare a new mission intake
 
@@ -109,6 +116,8 @@ Add a local script Codex can call after builds:
 - send hard-stop alert
 - send test/deploy summary
 
+Status: implemented in `scripts/charlie_notify.py`. The helper reads local/Render-style env vars, never prints token values, supports `--dry-run`, and only sends to the configured owner allowlist.
+
 ### CHARLIE-RELAY-2 - Owner Mission Intake
 
 Enable Telegram `/mission` to write `CODEX_CHAT.md` in the approved runtime only.
@@ -127,7 +136,9 @@ Add durable mission records:
 - owner decisions
 - debrief link
 
-This requires a separate additive migration approval.
+Status: implemented in code with additive migration `supabase/migrations/202606300001_create_charlie_mission_queue.sql`.
+
+The mission queue remains non-executing infrastructure. It records owner mission intent and mission events, but does not run shell commands, merge PRs, deploy, apply migrations, write operational data, send customers, publish posts, take payments, reserve stock, or change farm lifecycle records.
 
 ### CHARLIE-RELAY-4 - Approval Buttons
 
@@ -150,14 +161,18 @@ Current tests prove:
 - webhook requires the Telegram secret header
 - unlisted Telegram users are rejected
 - `/next` sends button options
+- `/missions` reports queue status and recent mission records
 - `/mission` prepares intake without writing files by default
+- mission storage can be disabled
+- mission storage safely reports not configured when the database URL/migration is unavailable
 - CODEX_CHAT writes happen only when the explicit write flag is enabled
+- mission store helpers are covered with fake database connections and do not write to production during tests
 
 ## 8. Remaining Risks
 
 - Telegram can only drive Codex fully if a running Codex/Cursor process reads the mission file or a future durable mission queue.
-- Render filesystem writes are not durable mission infrastructure.
-- Supabase mission queue is the right next durable step, but it needs explicit migration approval.
+- Render filesystem writes are not durable mission infrastructure; Supabase mission queue is the durable mission intake path once the migration is applied.
+- The mission-queue migration must be applied before production mission storage can return `ok`.
 - Inline approvals must not bypass the repo approval model.
 
 ## 9. GO / NO-GO

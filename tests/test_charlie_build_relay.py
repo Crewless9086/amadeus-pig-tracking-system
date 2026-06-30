@@ -108,8 +108,76 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["command"], "mission")
         self.assertFalse(action["writes_repo_file"])
         self.assertEqual(action["codex_chat_write"]["status"], "repo_file_write_disabled")
+        self.assertEqual(action["mission_store"]["status"], "not_configured")
         self.assertEqual(action["mission"]["approval_level"], "LEVEL 3")
         self.assertIn("Mission intake prepared", action["telegram_text"])
+
+    @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "0"}, clear=True)
+    def test_mission_store_can_be_disabled(self):
+        action = build_relay_action("/mission Build a safe Telegram relay")
+
+        self.assertEqual(action["command"], "mission")
+        self.assertEqual(action["mission_store"]["status"], "mission_store_disabled")
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "1"}, clear=True)
+    @patch("modules.charlie.build_relay.record_mission")
+    def test_mission_action_records_mission_when_store_enabled(self, record_mission):
+        record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)
+
+        action = build_relay_action(
+            "/mission Build a safe Telegram relay",
+            environ={
+                "CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "1",
+                "_charlie_telegram_user_id": "12345",
+                "_charlie_telegram_chat_id": "67890",
+            },
+        )
+
+        self.assertEqual(action["mission_store"]["status"], "ok")
+        self.assertEqual(action["mission_store"]["mission_id"], "MISSION-1")
+        record_mission.assert_called_once()
+        _, kwargs = record_mission.call_args
+        self.assertEqual(kwargs["source_context"]["telegram_user_id"], "12345")
+        self.assertEqual(kwargs["source_context"]["telegram_chat_id"], "67890")
+
+    @patch("modules.charlie.build_relay.mission_status_summary")
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_missions_command_lists_recent_queue_records(self, list_missions, mission_status_summary):
+        mission_status_summary.return_value = ({"success": True, "status": "ok", "counts": {"new": 2}}, 200)
+        list_missions.return_value = ({
+            "success": True,
+            "status": "ok",
+            "missions": [{
+                "status": "new",
+                "urgency": "P1",
+                "title": "Test mission",
+            }],
+        }, 200)
+
+        action = build_relay_action("/missions")
+
+        self.assertEqual(action["command"], "missions")
+        self.assertFalse(action["writes_repo_file"])
+        self.assertIn("new=2", action["telegram_text"])
+        self.assertIn("Test mission", action["telegram_text"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_missions")
+    def test_missions_route_returns_queue_records(self, list_missions, _owner_access):
+        list_missions.return_value = ({
+            "success": True,
+            "status": "ok",
+            "missions": [{"mission_id": "MISSION-1", "title": "Test mission"}],
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions?limit=1")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["missions"][0]["mission_id"], "MISSION-1")
+        list_missions.assert_called_once_with(status="", limit="1")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_start_command_returns_help(self):

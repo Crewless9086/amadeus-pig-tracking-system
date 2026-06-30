@@ -693,3 +693,25 @@ Code closeout:
 Tests:
 
 - Focused litter service and farm Supabase read service tests passed before the broad regression pass.
+
+## CHARLIE Relay Mission Queue And Notifications - 2026-06-30
+
+Mode: owner-command infrastructure build. No customer sends, public posts, payments, reservations, farm lifecycle writes, production data writes during tests, Phase 3A.6, CHARLIE production UI, FRED, ledger SQL, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Live relay evidence:
+
+- Render env setup and Telegram `/start` were completed by the owner.
+- Webhook setup and live Telegram checks passed for `/help`, `/next`, and `/mission`.
+- CODEX_CHAT write-gated intake worked in Render when `CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED=1`, but Render filesystem writes are not durable mission infrastructure.
+
+Scope:
+
+- Added additive Supabase mission queue migration for `charlie_missions` and `charlie_mission_events`.
+- Added mission-store helpers that return `not_configured` when the database/migration is unavailable and use fake database connections in tests.
+- Added `/missions` command and protected mission-list API route.
+- Added `scripts/charlie_notify.py` for owner-only local notification messages with `--dry-run`.
+
+Safety:
+
+- Telegram remains non-executing. It cannot run shell commands, commit, push, merge, deploy, apply migrations, write operational data, send customers, publish posts, take payments, reserve stock, or change lifecycle records.
+- The queue records mission intent only. Codex must still read the active docs and obey hard stops before building.

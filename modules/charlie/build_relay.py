@@ -7,6 +7,12 @@ from pathlib import Path
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+from modules.charlie.mission_store import (
+    list_missions,
+    mission_status_summary,
+    record_mission,
+)
+
 
 TRUTHY = {"1", "true", "yes", "on"}
 ENABLED_ENV = "CHARLIE_BUILD_RELAY_ENABLED"
@@ -14,6 +20,7 @@ BOT_TOKEN_ENV = "CHARLIE_BUILD_RELAY_BOT_TOKEN"
 WEBHOOK_SECRET_ENV = "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET"
 ALLOWED_USER_IDS_ENV = "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS"
 CODEX_CHAT_WRITE_ENABLED_ENV = "CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED"
+MISSION_STORE_ENABLED_ENV = "CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED"
 REPO_ROOT_ENV = "CHARLIE_BUILD_RELAY_REPO_ROOT"
 MIN_SECRET_CHARS = 32
 MAX_TELEGRAM_TEXT_CHARS = 3000
@@ -33,6 +40,7 @@ def build_relay_policy(environ=None):
     allowed_ids = _allowed_user_ids(source)
     auth_locked = _auth_locked()
     repo_write_enabled = _truthy(source.get(CODEX_CHAT_WRITE_ENABLED_ENV))
+    mission_store_enabled = _truthy(source.get(MISSION_STORE_ENABLED_ENV, "1"))
     ready = (
         explicitly_enabled
         and bool(bot_token)
@@ -55,6 +63,7 @@ def build_relay_policy(environ=None):
         "allowed_user_ids_count": len(allowed_ids),
         "repo_file_write_enabled": repo_write_enabled,
         "repo_file_write_scope": ["planning/CODEX_CHAT.md"] if repo_write_enabled else [],
+        "mission_store_enabled": mission_store_enabled,
         "auth_rate_limit": {
             "enabled": True,
             "failure_limit": AUTH_FAILURE_LIMIT,
@@ -103,7 +112,10 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
         body["telegram_user_id"] = parsed["telegram_user_id"]
         return body, status_code
 
-    action = build_relay_action(parsed["text"], environ=source)
+    action_source = dict(source)
+    action_source["_charlie_telegram_user_id"] = parsed["telegram_user_id"]
+    action_source["_charlie_telegram_chat_id"] = parsed["telegram_chat_id"]
+    action = build_relay_action(parsed["text"], environ=action_source)
     send_result, send_status = send_charlie_telegram_message(
         chat_id=parsed["telegram_chat_id"],
         text=action["telegram_text"],
@@ -132,15 +144,17 @@ def build_relay_action(text, environ=None):
         return _status_action(repo_root)
     if lower in {"/next", "next", "what next", "what is next", "next steps"}:
         return _next_action(repo_root)
+    if lower in {"/missions", "missions", "mission queue"}:
+        return _missions_action(source)
     if lower.startswith("/mission"):
-        return _mission_action(cleaned[len("/mission"):].strip(), source, repo_root, "mission")
+        return _mission_action(cleaned[len("/mission"):].strip(), source, repo_root, "mission", {})
     if lower.startswith("mission:"):
-        return _mission_action(cleaned.split(":", 1)[1].strip(), source, repo_root, "mission")
+        return _mission_action(cleaned.split(":", 1)[1].strip(), source, repo_root, "mission", {})
     if lower.startswith("/select"):
         return _select_next_action(cleaned[len("/select"):].strip(), source, repo_root)
     if lower.startswith("select:"):
         return _select_next_action(cleaned.split(":", 1)[1].strip(), source, repo_root)
-    return _mission_action(cleaned, source, repo_root, "free_text_mission")
+    return _mission_action(cleaned, source, repo_root, "free_text_mission", {})
 
 
 def parse_telegram_payload(payload):
@@ -216,6 +230,7 @@ def _help_action():
             "Commands:\n"
             "/status - current repo state summary\n"
             "/next - next mission options from NEXT_STEPS\n"
+            "/missions - recent durable mission queue records\n"
             "/mission <idea> - prepare a mission intake\n"
             "/select 1 - turn a listed NEXT_STEPS option into a mission intake\n\n"
             "Safety: this relay cannot run shell commands, commit, merge, deploy, send customers, post publicly, take payments, reserve stock, or write production data."
@@ -271,10 +286,37 @@ def _select_next_action(choice, source, repo_root):
             "reply_markup": _main_keyboard(),
             "writes_repo_file": False,
         }
-    return _mission_action(items[index], source, repo_root, "select_next")
+    return _mission_action(items[index], source, repo_root, "select_next", {"selected_next_step": items[index]})
 
 
-def _mission_action(mission_text, source, repo_root, command):
+def _missions_action(source):
+    summary, _ = mission_status_summary()
+    loaded, _ = list_missions(limit=5)
+    lines = ["CHARLIE mission queue"]
+    if summary.get("success"):
+        counts = summary.get("counts") or {}
+        lines.append("Counts: " + (", ".join(f"{key}={value}" for key, value in counts.items()) or "none"))
+    else:
+        lines.append(f"Queue status: {summary.get('status', 'unavailable')}")
+    missions = loaded.get("missions") or []
+    for index, mission in enumerate(missions, start=1):
+        lines.append(f"{index}. {mission.get('status')} | {mission.get('urgency')} | {mission.get('title')}")
+    if not missions:
+        lines.append("No stored missions returned.")
+    return {
+        "command": "missions",
+        "telegram_text": "\n".join(lines)[:MAX_REPLY_CHARS],
+        "reply_markup": _main_keyboard(),
+        "mission_store": {
+            "summary_status": summary.get("status"),
+            "list_status": loaded.get("status"),
+            "configured": summary.get("configured") or loaded.get("configured"),
+        },
+        "writes_repo_file": False,
+    }
+
+
+def _mission_action(mission_text, source, repo_root, command, extra):
     mission_text = str(mission_text or "").strip()
     if not mission_text:
         return {
@@ -287,6 +329,15 @@ def _mission_action(mission_text, source, repo_root, command):
     write_result = {"performed": False, "status": "repo_file_write_disabled"}
     if _truthy(source.get(CODEX_CHAT_WRITE_ENABLED_ENV)):
         write_result = _write_mission_to_codex_chat(repo_root, mission_text)
+    mission["selected_next_step"] = extra.get("selected_next_step", "") if isinstance(extra, dict) else ""
+    mission["codex_chat_write_status"] = write_result["status"]
+    store_result = {"stored": False, "status": "mission_store_disabled"}
+    if _truthy(source.get(MISSION_STORE_ENABLED_ENV, "1")):
+        store_result, _ = record_mission(mission, source_context={
+            "source": "telegram",
+            "telegram_user_id": _clean_source_value(source.get("_charlie_telegram_user_id", "")),
+            "telegram_chat_id": _clean_source_value(source.get("_charlie_telegram_chat_id", "")),
+        })
     return {
         "command": command,
         "telegram_text": (
@@ -295,12 +346,14 @@ def _mission_action(mission_text, source, repo_root, command):
             f"Urgency: {mission['urgency']}\n"
             f"Type: {mission['mission_type']}\n"
             f"Approval level: {mission['approval_level']}\n"
+            f"Mission store: {store_result['status']}\n"
             f"Write status: {write_result['status']}\n\n"
             "Codex must still read CODEX_CHAT, CURRENT_STATE, and NEXT_STEPS before building. Hard stops remain active."
         )[:MAX_REPLY_CHARS],
         "reply_markup": _main_keyboard(),
         "mission": mission,
         "codex_chat_write": write_result,
+        "mission_store": store_result,
         "writes_repo_file": write_result["performed"],
     }
 
@@ -396,6 +449,10 @@ def _first_lines_after(text, heading, max_items=5):
 def _compact_title(text):
     title = " ".join(str(text or "").split())
     return title[:90] + ("..." if len(title) > 90 else "")
+
+
+def _clean_source_value(value):
+    return str(value or "").strip()[:120]
 
 
 def _main_keyboard():
