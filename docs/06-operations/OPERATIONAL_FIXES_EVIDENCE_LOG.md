@@ -715,3 +715,24 @@ Safety:
 
 - Telegram remains non-executing. It cannot run shell commands, commit, push, merge, deploy, apply migrations, write operational data, send customers, publish posts, take payments, reserve stock, or change lifecycle records.
 - The queue records mission intent only. Codex must still read the active docs and obey hard stops before building.
+
+## CHARLIE Mission Protocol And Command Console - 2026-06-30
+
+Mode: owner command-console governance build. No shell execution from Telegram, commits, merges, deploys, production data writes, customer sends, public posts, payments, reservations, farm lifecycle writes, Phase 3A.6, CHARLIE production UI, FRED, ledger SQL, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Added shared mission protocol at `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`.
+- Updated `planning/CODEX_CHAT.md` and `WORKFLOW.md` so laptop/Cursor intake and Telegram intake follow the same mission contract.
+- Added safe command-console actions for mission detail and owner decisions:
+  - `/mission <mission id>`
+  - `/debrief <mission id>`
+  - `/approve <mission id>`
+  - `/pause <mission id>`
+  - `/reject <mission id>`
+- Added protected API routes for mission detail and decision recording.
+
+Safety:
+
+- Approval commands record mission decisions in Supabase only.
+- Approval commands do not trigger Codex runtime, shell commands, commits, merges, deploys, migrations, production data writes, customer sends, public posts, payments, reservations, or farm lifecycle writes.

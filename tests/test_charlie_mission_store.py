@@ -2,10 +2,12 @@ import unittest
 from datetime import datetime, timezone
 
 from modules.charlie.mission_store import (
+    get_mission,
     list_missions,
     mission_status_summary,
     record_mission,
     record_mission_event,
+    update_mission_status,
 )
 
 
@@ -93,6 +95,52 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_get_mission_returns_single_record(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "approved", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "Owner approved.", "codex_chat_updated", {}, now, now,
+        )
+
+        result, status_code = get_mission(
+            "MISSION-1",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission"]["status"], "approved")
+        self.assertEqual(result["mission"]["owner_decision"], "Owner approved.")
+
+    def test_update_mission_status_records_event(self):
+        connection = FakeConnection([("MISSION-1",)])
+
+        result, status_code = update_mission_status(
+            "MISSION-1",
+            "approved",
+            owner_decision="Owner approved.",
+            event_type="approval_decision",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission_status"], "approved")
+        self.assertEqual(len(connection.cursor_instance.executed), 2)
+        update_params = connection.cursor_instance.executed[0][1]
+        self.assertEqual(update_params["status"], "approved")
+        self.assertEqual(update_params["owner_decision"], "Owner approved.")
+
+    def test_update_mission_status_rejects_unknown_status(self):
+        result, status_code = update_mission_status("MISSION-1", "execute_shell", database_url="")
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_mission_status")
 
     def test_mission_status_summary_maps_counts(self):
         result, status_code = mission_status_summary(

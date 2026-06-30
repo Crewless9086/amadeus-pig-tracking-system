@@ -5,7 +5,7 @@ from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
-from modules.charlie.mission_store import list_missions
+from modules.charlie.mission_store import get_mission, list_missions, update_mission_status
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -38,5 +38,33 @@ def charlie_build_relay_missions_route():
     result, status_code = list_missions(
         status=request.args.get("status", ""),
         limit=request.args.get("limit", 10),
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["GET"])
+def charlie_build_relay_mission_detail_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_mission(mission_id)
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/decision", methods=["POST"])
+def charlie_build_relay_mission_decision_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    status = str(payload.get("status", "") or "").strip()
+    owner_decision = str(payload.get("owner_decision", "") or "").strip()
+    result, status_code = update_mission_status(
+        mission_id,
+        status,
+        owner_decision=owner_decision or f"Owner set mission status to {status}.",
+        event_type="approval_decision",
+        notes=owner_decision or f"Owner set mission status to {status}.",
+        metadata={"source": "owner_api"},
     )
     return jsonify(result), status_code

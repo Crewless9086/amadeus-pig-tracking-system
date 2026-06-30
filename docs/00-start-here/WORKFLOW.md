@@ -12,6 +12,10 @@ Later, use the inbox structure described in `OWNER_INBOX_GUIDE.md`.
 
 If a note is important, copy or summarize it into `NEXT_STEPS.md` and keep enough context in `CURRENT_STATE.md` for the next session to understand the live risk.
 
+Owner mission intake can also come from `planning/CODEX_CHAT.md` or Telegram through CHARLIE Build Relay. Both paths must follow `CHARLIE_MISSION_PROTOCOL.md` and normalize into the same mission contract before build work starts.
+
+Supabase `charlie_missions` is the durable mission queue. `planning/CODEX_CHAT.md` remains the laptop-friendly active mission scratchpad.
+
 ## Triage
 
 Cursor/Codex triages owner notes into:
@@ -19,6 +23,7 @@ Cursor/Codex triages owner notes into:
 - `docs/00-start-here/NEXT_STEPS.md` for priority and phase planning
 - `docs/00-start-here/CURRENT_STATE.md` for live-state updates
 - a module doc only when the note is a durable module decision
+- `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md` only when mission governance rules change
 
 After each accepted phase or deploy, update `CURRENT_STATE.md` before moving on.
 
