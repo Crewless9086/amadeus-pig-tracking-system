@@ -116,6 +116,11 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
   - pickup watcher writes a local `.charlie_runner/` heartbeat; this folder is ignored by git
   - Telegram `/status` should say whether the local runner is active
   - Windows PID liveness checks must remain non-destructive; do not reintroduce `os.kill(pid, 0)` on Windows
+- CHARLIE Stage 8 owner review gate follow-ups:
+  - make runner/Codex populate `review_packet` consistently with changed files, commits, PR/diff, local preview URL/command, Render preview, bugs, errors, risks, and test evidence
+  - add a release-execution mission step after `release_approved` so the local Codex release bridge can complete merge/deploy under LEVEL 4 and then mark the mission done
+  - keep Telegram/dashboard as decision recorders only; do not let web routes execute shell, merge, deploy, send customers, take payments, reserve stock, or change farm lifecycle records directly
+  - use this review gate before CHARLIE coordinates SAM, Oom Sakkie, FRED, Ledger, Beacon, or other income-stream build work
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - GS-MIG-1: merged as PR #19. No app cutover, no migration application, and no production writes.
 - GS-MIG-2: merged as PR #20.

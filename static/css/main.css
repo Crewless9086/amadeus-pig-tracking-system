@@ -7616,9 +7616,18 @@ body.oom-farm-command-body {
     min-height: 520px;
 }
 
-.charlie-mission-list {
+.charlie-review-panel {
+    margin-bottom: 16px;
+}
+
+.charlie-mission-list,
+.charlie-review-list {
     display: grid;
     gap: 12px;
+}
+
+.charlie-review-list {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
 .charlie-mission-card {
@@ -7749,6 +7758,15 @@ body.oom-farm-command-body {
     border-radius: 6px;
     background: #101816;
     color: #dce7e3;
+}
+
+.charlie-review-card textarea {
+    min-height: 88px;
+}
+
+.charlie-review-packet strong {
+    display: block;
+    margin-top: 10px;
 }
 
 @media (max-width: 900px) {

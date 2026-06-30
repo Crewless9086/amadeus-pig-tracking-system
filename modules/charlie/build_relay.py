@@ -321,13 +321,14 @@ def _next_action(repo_root):
 
 
 def _mission_queue_next_action():
-    active = _first_available_mission(("in_progress", "pr_ready"))
+    active = _first_available_mission(("in_progress", "pr_ready", "release_in_progress"))
     approved = _first_available_mission(("approved",))
+    release_approved = _first_available_mission(("release_approved",))
     new_missions = _mission_list_for_status("new", limit=3)
 
-    if not active and not approved and new_missions is None:
+    if not active and not approved and not release_approved and new_missions is None:
         return None
-    if not active and not approved and not new_missions:
+    if not active and not approved and not release_approved and not new_missions:
         return None
 
     lines = ["CHARLIE next"]
@@ -335,7 +336,7 @@ def _mission_queue_next_action():
     if active:
         mission = active["mission"]
         status = str(mission.get("status") or "").strip()
-        label = "PR ready for owner review" if status == "pr_ready" else "In progress"
+        label = "PR ready for owner review" if status == "pr_ready" else "Release in progress" if status == "release_in_progress" else "In progress"
         lines.extend([
             "",
             f"{label}: {_mission_title_line(mission)}",
@@ -354,6 +355,16 @@ def _mission_queue_next_action():
             "If the local runner is active, it will pick this up when no mission is in progress or PR-ready.",
         ])
         keyboard.append([{"text": "View approved mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+
+    if release_approved:
+        mission = release_approved["mission"]
+        lines.extend([
+            "",
+            f"Final release approved: {_mission_title_line(mission)}",
+            f"Approval: {mission.get('approval_level') or 'LEVEL 4'}",
+            "Next: local Codex release bridge must verify, merge/deploy if applicable, and mark done.",
+        ])
+        keyboard.append([{"text": "View release approval", "callback_data": f"/mission {mission.get('mission_id')}"}])
 
     if new_missions:
         lines.append("")
@@ -412,7 +423,9 @@ def _mission_title_line(mission):
 
 def _active_next_instruction(status):
     if status == "pr_ready":
-        return "Next: review/merge from Cursor or approve the merge handoff when the PR is verified."
+        return "Next: owner review in CHARLIE dashboard. Final approval records release_approved; it does not merge or deploy by itself."
+    if status == "release_in_progress":
+        return "Next: local Codex release bridge must finish release verification and mark done."
     return "Next: let Codex finish and debrief this mission before picking up another one."
 
 
