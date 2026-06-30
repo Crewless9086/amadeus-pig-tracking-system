@@ -98,7 +98,7 @@ The intended mission loop is:
 5. CHARLIE shows the mission in a dashboard Review section.
 6. Owner reviews the packet, local preview, findings, bugs, test results, risks, PR/diff, and comments.
 7. Owner either approves final release, sends the mission back with comments, pauses, or rejects it.
-8. Only after final owner approval may the release/merge/deploy path proceed under the normal deployment SOP.
+8. Final owner approval records `release_approved`; only a local Codex release bridge may then proceed through release/merge/deploy checks under the normal deployment SOP.
 9. After verified release or explicit closeout, CHARLIE marks the mission `done`, `merged`, or `deployed` as appropriate.
 
 The Review section must show:
@@ -117,12 +117,12 @@ The Review section must show:
 Owner comments are mission instructions. When the owner sends a mission back from review:
 
 - CHARLIE records the comment in the Mission Vault and mission events.
-- mission status returns to `approved` or `in_progress` depending on whether local runner pickup is needed again.
+- mission status returns to `approved` when local runner/Codex pickup is needed again.
 - workflow stage returns to the correct point, usually planner for scope changes, architect for design/source-of-truth changes, builder for implementation fixes, or tester for verification-only fixes.
 - Codex/Cursor must include the owner comments in the next execution packet.
 - previous findings remain attached so the mission keeps its audit trail.
 
-Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
+Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. Final approval must record `release_approved`, not normal `approved`; LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
 
 No mission should be considered complete merely because code was written. A mission is complete only when the owner accepts the final review result, or when the owner explicitly marks a non-release mission done.
 
@@ -214,6 +214,48 @@ The pickup bridge writes the mission approval level and runner mode into `planni
 - `LEVEL 3` -> code/test/PR build, no merge
 - `LEVEL 4` -> merge/release handoff after diff and tests are verified
 - `LEVEL 5` -> red-zone work still requires exact owner confirmation
+
+## Local Codex Execution Bridge
+
+After a mission is `in_progress`, a local terminal may prepare the Codex execution prompt with:
+
+```bash
+python scripts/charlie_codex_execution_bridge.py --mission-id <mission id>
+```
+
+This writes a prompt artifact under `.charlie_runner/executions/` and does not run Codex.
+
+To actually run Codex locally, the command must include the explicit execution flag:
+
+```bash
+python scripts/charlie_codex_execution_bridge.py --mission-id <mission id> --execute-codex
+```
+
+The bridge uses `codex exec` with workspace-write sandboxing, stores stdout/stderr/final-message artifacts under `.charlie_runner/executions/`, records planner/architect/builder/tester/reviewer handoff notes, populates the owner review packet, and stops the mission at `pr_ready`.
+
+This bridge is local-only. Telegram and the web dashboard still do not run shell commands directly.
+
+## Local Release Bridge
+
+After owner final approval, CHARLIE records the mission as `release_approved`.
+
+A local terminal may prepare the release gate packet with:
+
+```bash
+python scripts/charlie_release_bridge.py --mission-id <mission id>
+```
+
+This writes a release packet artifact under `.charlie_runner/executions/` and does not merge, deploy, or mark complete.
+
+For missions where owner final approval is enough and no merge/deploy is required, the local operator may close the mission with:
+
+```bash
+python scripts/charlie_release_bridge.py --mission-id <mission id> --complete-no-release
+```
+
+That command moves the mission through `release_in_progress`, records a no-release closeout packet, and marks it `done`.
+
+Merge/deploy release execution remains a later bridge. The release bridge must not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 
 ## Local Runner Control
 

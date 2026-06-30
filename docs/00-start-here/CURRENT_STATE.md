@@ -179,7 +179,11 @@ SAM safety remains unchanged:
 - CHARLIE Stage 6 is active in build: shared mission context pack, owner-visible planner/architect/builder/tester/reviewer handoff controls, `/review`, `/workflow`, and `/done` commands.
 - CHARLIE Stage 7 is active in build: local runner heartbeat/status, start/status/stop helper script, dashboard runner active/stale/not-started display, and Telegram `/status` runner visibility.
 - CHARLIE Stage 7 safety fix is active in build: Windows runner PID liveness checks use a non-destructive process-handle probe instead of `os.kill(pid, 0)`, and the dashboard runner-status route performs one local runner status check per request.
-- CHARLIE Stage 8 target is agreed but not implemented: local execution should stop at an owner Review section with findings, bugs, tests, local preview, owner comments, send-back loop, and final approval before merge/release/done.
+- CHARLIE Stage 8 owner review gate is active in build: local execution stops at `pr_ready`, `/charlie` has an Owner Review section with findings/errors/bugs/test evidence/local preview fields, and owner decisions can final-approve, send back with comments, pause, reject, or mark done.
+- Stage 8 final approval records LEVEL 4 release permission as `release_approved`; it must not return to normal `approved` build pickup. Send-back records comments in the Mission Vault and returns the mission to `approved` for another local runner/Codex pass.
+- CHARLIE local Codex execution bridge is being added in build: `scripts/charlie_codex_execution_bridge.py` prepares a mission-specific `codex exec` prompt by default, and only runs Codex when the local operator passes `--execute-codex`.
+- CHARLIE local release bridge is being added in build: `scripts/charlie_release_bridge.py` prepares `release_approved` packets by default and can explicitly close no-release missions with `--complete-no-release`.
+- Render cannot see the laptop `.charlie_runner` heartbeat. The live `/charlie` dashboard must label local runner state as unavailable on Render instead of implying the laptop runner is stopped.
 - Current truth: approving a mission records permission. Automatic pickup requires the local runner to be active.
 - CHARLIE still does not run builds from Telegram/dashboard directly. Codex/Cursor remains the execution boundary until later parallel-agent controls exist.
 

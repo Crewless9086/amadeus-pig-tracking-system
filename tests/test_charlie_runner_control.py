@@ -27,7 +27,8 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "command": "python scripts/charlie_mission_pickup.py --watch --continuous",
         }]
 
-        result = runner_control.runner_status(runner_control.HEARTBEAT_PATH)
+        with tempfile.TemporaryDirectory() as tmp:
+            result = runner_control.runner_status(Path(tmp) / "missing.json", include_orphans=True)
 
         self.assertEqual(result["status"], "runner_orphaned")
         self.assertFalse(result["active"])

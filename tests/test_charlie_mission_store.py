@@ -2,10 +2,12 @@ import unittest
 from datetime import datetime, timezone
 
 from modules.charlie.mission_store import (
+    build_mission_review_packet,
     get_mission,
     list_missions,
     mission_status_summary,
     normalize_approval_level,
+    record_mission_review_decision,
     record_mission,
     record_mission_event,
     update_mission_status,
@@ -260,6 +262,89 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn('"planner", "status": "complete"', update_params["metadata_json"])
         self.assertIn('"architect", "status": "active"', update_params["metadata_json"])
         self.assertIn("Scoped for SAM money path", update_params["metadata_json"])
+
+    def test_build_mission_review_packet_collects_stage_8_evidence(self):
+        packet = build_mission_review_packet({
+            "mission_id": "MISSION-1",
+            "status": "pr_ready",
+            "title": "Review SAM workflow",
+            "raw_text": "Fix SAM handoff.",
+            "approval_level": "LEVEL 3",
+            "vault": {"desired_outcome": "SAM handoff works.", "test_plan": ["python -m unittest tests.test_sam"]},
+            "agent_workflow": [{"agent": "tester", "status": "complete", "findings": "Tests passed."}],
+            "metadata": {
+                "review_packet": {
+                    "changed_files": ["modules/sam.py"],
+                    "local_preview": {"url": "http://127.0.0.1:5000/sales/meat-leads"},
+                },
+            },
+        })
+
+        self.assertTrue(packet["can_approve_final_release"])
+        self.assertIn("tester: Tests passed.", packet["findings"])
+        self.assertEqual(packet["changed_files"], ["modules/sam.py"])
+        self.assertEqual(packet["local_preview"]["url"], "http://127.0.0.1:5000/sales/meat-leads")
+        self.assertIn("Dashboard review decisions update mission state only", packet["execution_boundary"])
+
+    def test_record_mission_review_decision_final_approval_sets_release_approved_level_4(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890",
+            "Build review gate", "Build review gate", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"review_packet": {"summary": "Ready"}}, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        result, status_code = record_mission_review_decision(
+            "MISSION-1",
+            "approve_final_release",
+            comments="Looks good.",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connections.pop(0),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission_status"], "release_approved")
+        self.assertEqual(result["approval_level"], "LEVEL 4")
+        update_sql, update_params = update_connection.cursor_instance.executed[0]
+        self.assertIn("metadata_json", update_sql)
+        self.assertEqual(update_params["status"], "release_approved")
+        self.assertEqual(update_params["approval_level"], "LEVEL 4")
+        self.assertIn("approve_final_release", update_params["metadata_json"])
+
+    def test_record_mission_review_decision_send_back_keeps_comments_for_next_runner_pickup(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890",
+            "Build review gate", "Build review gate", "P1", "feature build", "LEVEL 3",
+            "", "", "", {
+                "agent_workflow": [{"agent": "builder", "status": "complete"}],
+                "mission_vault": {"mission_stage": "review_ready"},
+            }, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        result, status_code = record_mission_review_decision(
+            "MISSION-1",
+            "send_back",
+            comments="Fix the error panel.",
+            target_stage="builder",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connections.pop(0),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission_status"], "approved")
+        update_params = update_connection.cursor_instance.executed[0][1]
+        self.assertEqual(update_params["status"], "approved")
+        self.assertIn("Fix the error panel.", update_params["metadata_json"])
+        self.assertIn('"mission_stage": "returned_to_builder"', update_params["metadata_json"])
 
     def test_mission_status_summary_maps_counts(self):
         result, status_code = mission_status_summary(

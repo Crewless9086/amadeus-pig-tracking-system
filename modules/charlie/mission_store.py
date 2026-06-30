@@ -14,6 +14,8 @@ MISSION_STATUSES = {
     "in_progress",
     "blocked",
     "pr_ready",
+    "release_approved",
+    "release_in_progress",
     "merged",
     "deployed",
     "done",
@@ -46,6 +48,20 @@ AGENT_STAGE_MAP = {
     "builder": "built",
     "tester": "tested",
     "reviewer": "review_ready",
+}
+REVIEW_DECISIONS = {
+    "approve_final_release",
+    "send_back",
+    "pause",
+    "reject",
+    "mark_done",
+}
+REVIEW_DECISION_STATUS = {
+    "approve_final_release": "release_approved",
+    "send_back": "approved",
+    "pause": "paused",
+    "reject": "rejected",
+    "mark_done": "done",
 }
 
 
@@ -469,6 +485,179 @@ def update_mission_workflow_step(
     )
 
 
+def get_mission_review_packet(mission_id, database_url=None, connect_factory=None):
+    loaded, status_code = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return loaded, status_code
+    mission = loaded.get("mission") or {}
+    return {
+        "success": True,
+        "configured": loaded.get("configured", True),
+        "status": "ok",
+        "mission_id": mission.get("mission_id"),
+        "review_packet": build_mission_review_packet(mission),
+    }, 200
+
+
+def record_mission_review_decision(
+    mission_id,
+    decision,
+    comments="",
+    target_stage="",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    decision = _clean_text(decision, 40)
+    comments = _clean_text(comments, 2000)
+    target_stage = _clean_text(target_stage, 80) or "builder"
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if decision not in REVIEW_DECISIONS:
+        return {"success": False, "status": "invalid_review_decision", "allowed_decisions": sorted(REVIEW_DECISIONS)}, 400
+
+    loaded, load_status = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    metadata = dict(mission.get("metadata") or {})
+    decisions = metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else []
+    decision_record = {
+        "decision": decision,
+        "comments": comments,
+        "target_stage": target_stage if decision == "send_back" else "",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    decisions = list(decisions) + [decision_record]
+    review_packet = dict(metadata.get("review_packet") or {})
+    review_packet.update({
+        "last_owner_review_decision": decision_record,
+        "review_status": "final_approved" if decision == "approve_final_release" else decision,
+    })
+    if decision == "send_back":
+        review_packet["return_to_stage"] = target_stage
+        review_packet["owner_comments_pending"] = comments
+
+    target_status = REVIEW_DECISION_STATUS[decision]
+    approval_level = "LEVEL 4" if decision == "approve_final_release" else mission.get("approval_level", "")
+    owner_decision = _review_owner_decision_text(decision, comments, target_stage)
+    metadata_update = {
+        "review_packet": review_packet,
+        "owner_review_decisions": decisions[-20:],
+    }
+    if decision == "send_back":
+        workflow = _return_workflow_to_stage(mission.get("agent_workflow") or [], target_stage, comments)
+        vault = dict(mission.get("vault") or {})
+        vault["mission_stage"] = f"returned_to_{target_stage}"
+        if comments:
+            review_comments = vault.get("owner_review_comments") if isinstance(vault.get("owner_review_comments"), list) else []
+            review_comments = list(review_comments) + [{"stage": target_stage, "comments": comments}]
+            vault["owner_review_comments"] = review_comments[-12:]
+        metadata_update["agent_workflow"] = workflow
+        metadata_update["mission_vault"] = vault
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                set_lines = [
+                    "status = %(status)s",
+                    "owner_decision = %(owner_decision)s",
+                    "metadata_json = coalesce(metadata_json, '{}'::jsonb) || %(metadata_json)s::jsonb",
+                    "updated_at = now()",
+                ]
+                params = {
+                    "mission_id": mission_id,
+                    "status": target_status,
+                    "owner_decision": owner_decision,
+                    "metadata_json": json.dumps(metadata_update),
+                }
+                if approval_level:
+                    set_lines.insert(1, "approval_level = %(approval_level)s")
+                    params["approval_level"] = normalize_approval_level(approval_level)
+                cursor.execute(
+                    f"""
+                    update public.charlie_missions
+                    set {", ".join(set_lines)}
+                    where mission_id = %(mission_id)s
+                    returning mission_id
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                _insert_event(cursor, mission_id, "review_note", owner_decision, {
+                    "decision": decision,
+                    "comments": comments,
+                    "target_stage": target_stage if decision == "send_back" else "",
+                    "mission_status": target_status,
+                })
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_review_update_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mission_id": mission_id,
+        "mission_status": target_status,
+        "review_decision": decision,
+        "approval_level": normalize_approval_level(approval_level),
+    }, 200
+
+
+def build_mission_review_packet(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    return {
+        "mission": {
+            "mission_id": mission.get("mission_id", ""),
+            "title": mission.get("title", ""),
+            "status": mission.get("status", ""),
+            "urgency": mission.get("urgency", ""),
+            "mission_type": mission.get("mission_type", ""),
+            "approval_level": mission.get("approval_level", ""),
+            "updated_at": mission.get("updated_at", ""),
+        },
+        "summary": _clean_text(packet.get("summary") or vault.get("desired_outcome") or mission.get("raw_text", ""), 1600),
+        "findings": _packet_list(packet, "findings", _workflow_findings(workflow)),
+        "errors": _packet_list(packet, "errors", []),
+        "bugs": _packet_list(packet, "bugs", []),
+        "changed_files": _packet_list(packet, "changed_files", []),
+        "test_evidence": _packet_list(packet, "test_evidence", vault.get("test_plan") if isinstance(vault.get("test_plan"), list) else []),
+        "local_preview": packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {},
+        "links": packet.get("links") if isinstance(packet.get("links"), dict) else {},
+        "release_notes": _packet_list(packet, "release_notes", []),
+        "owner_review_decisions": metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else [],
+        "agent_workflow": workflow,
+        "mission_vault": vault,
+        "can_approve_final_release": mission.get("status") == "pr_ready",
+        "can_send_back": mission.get("status") in {"pr_ready", "blocked"},
+        "allowed_decisions": sorted(REVIEW_DECISIONS),
+        "execution_boundary": "Dashboard review decisions update mission state only; local Codex/release bridge must execute build, merge, and deploy steps.",
+    }
+
+
 def mission_status_summary(database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -674,6 +863,57 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         if handoff_to in known and known[handoff_to].get("status") == "pending":
             known[handoff_to]["status"] = "active"
     return [known[name] for name in AGENT_SEQUENCE]
+
+
+def _return_workflow_to_stage(workflow, target_stage, comments):
+    known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
+    for default in _default_agent_workflow():
+        known.setdefault(default["agent"], dict(default))
+    target_stage = target_stage if target_stage in known else "builder"
+    target_seen = False
+    for agent in AGENT_SEQUENCE:
+        if agent == target_stage:
+            target_seen = True
+            known[agent]["status"] = "active"
+            if comments:
+                known[agent]["findings"] = comments
+        elif target_seen:
+            known[agent]["status"] = "pending"
+    return [known[name] for name in AGENT_SEQUENCE]
+
+
+def _review_owner_decision_text(decision, comments, target_stage):
+    labels = {
+        "approve_final_release": "Owner approved final release from CHARLIE review.",
+        "send_back": f"Owner sent mission back to {target_stage} from CHARLIE review.",
+        "pause": "Owner paused mission from CHARLIE review.",
+        "reject": "Owner rejected mission from CHARLIE review.",
+        "mark_done": "Owner marked mission done from CHARLIE review.",
+    }
+    text = labels.get(decision, "Owner recorded CHARLIE review decision.")
+    return f"{text} Comments: {comments}" if comments else text
+
+
+def _workflow_findings(workflow):
+    findings = []
+    for item in workflow:
+        if not isinstance(item, dict):
+            continue
+        finding = _clean_text(item.get("findings", ""), 600)
+        if finding:
+            findings.append(f"{item.get('agent', 'agent')}: {finding}")
+    return findings
+
+
+def _packet_list(packet, key, fallback):
+    value = packet.get(key) if isinstance(packet, dict) else []
+    if isinstance(value, list):
+        return [_clean_text(item, 600) for item in value if _clean_text(item, 600)]
+    if isinstance(value, str):
+        return _clean_list(value, max_items=20, max_len=600)
+    if isinstance(fallback, list):
+        return [_clean_text(item, 600) for item in fallback if _clean_text(item, 600)]
+    return []
 
 
 def _clean_list(value, max_items=12, max_len=300):

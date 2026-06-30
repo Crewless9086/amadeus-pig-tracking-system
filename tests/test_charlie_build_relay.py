@@ -480,6 +480,56 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_mission.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.get_mission_review_packet")
+    def test_mission_review_packet_route_returns_stage_8_packet(self, get_review_packet, _owner_access):
+        get_review_packet.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "review_packet": {
+                "summary": "Ready for owner review.",
+                "can_approve_final_release": True,
+                "execution_boundary": "Dashboard review decisions update mission state only.",
+            },
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions/MISSION-1/review")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["review_packet"]["can_approve_final_release"])
+        self.assertIn("Dashboard review decisions", data["review_packet"]["execution_boundary"])
+        get_review_packet.assert_called_once_with("MISSION-1")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.record_mission_review_decision")
+    def test_mission_review_decision_route_records_owner_gate_decision(self, record_review_decision, _owner_access):
+        record_review_decision.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "mission_status": "approved",
+            "review_decision": "send_back",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/review",
+            json={"decision": "send_back", "comments": "Fix test evidence.", "target_stage": "tester"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["review_decision"], "send_back")
+        record_review_decision.assert_called_once_with(
+            "MISSION-1",
+            decision="send_back",
+            comments="Fix test evidence.",
+            target_stage="tester",
+        )
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_status")
     def test_mission_decision_route_records_owner_decision(self, update_mission_status, _owner_access):
         update_mission_status.return_value = ({
@@ -564,6 +614,52 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["active_mission"]["mission_id"], "CHARLIE-MISSION-ACTIVE")
         self.assertTrue(data["local_runner"]["active"])
         local_runner_status.assert_called_once()
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_reports_release_approved_separately(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": True, "status": "runner_active"}
+
+        def fake_list_missions(status="", limit=10):
+            if status == "release_approved":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-RELEASE",
+                        "title": "Release mission",
+                        "status": "release_approved",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "release_approved_waiting_for_local_release_bridge")
+        self.assertIsNone(data["next_approved_mission"])
+        self.assertEqual(data["next_release_approved_mission"]["mission_id"], "CHARLIE-MISSION-RELEASE")
+        self.assertIn("release bridge", data["next_action"])
+
+    @patch.dict(os.environ, {"RENDER": "true"})
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_explains_render_cannot_see_laptop_runner(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["local_runner_scope"], "render_cannot_see_laptop_runner")
+        self.assertIn("Render cannot see", data["local_runner_visibility_note"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_start_command_returns_help(self):
