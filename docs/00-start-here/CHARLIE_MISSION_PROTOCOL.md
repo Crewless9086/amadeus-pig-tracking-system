@@ -85,6 +85,47 @@ CHARLIE mission work follows five structured roles:
 
 These roles are currently tracked as mission metadata and followed by Codex/Cursor. Stage 6 adds owner-visible handoff controls and Telegram workflow updates so each role can record findings for the next role. They are not yet separate autonomous parallel agents. Parallel workers come later after mission isolation, branch boundaries, and conflict controls are proven.
 
+## Owner Review Gate
+
+CHARLIE's target workflow must stop at owner review before anything is pushed live.
+
+The intended mission loop is:
+
+1. Owner creates or approves a mission from Telegram or `/charlie`.
+2. Local runner picks up the approved mission and writes the execution packet into `planning/CODEX_CHAT.md`.
+3. Codex/Cursor executes the structured stages: planner, architect, builder, tester, reviewer.
+4. Reviewer prepares the owner review packet and marks the mission `pr_ready`.
+5. CHARLIE shows the mission in a dashboard Review section.
+6. Owner reviews the packet, local preview, findings, bugs, test results, risks, PR/diff, and comments.
+7. Owner either approves final release, sends the mission back with comments, pauses, or rejects it.
+8. Only after final owner approval may the release/merge/deploy path proceed under the normal deployment SOP.
+9. After verified release or explicit closeout, CHARLIE marks the mission `done`, `merged`, or `deployed` as appropriate.
+
+The Review section must show:
+
+- mission title, id, urgency, approval level, and current stage
+- problem statement, desired outcome, acceptance criteria, and forbidden actions
+- planner, architect, builder, tester, and reviewer findings
+- files changed, commits, branch, PR link, and diff summary
+- test commands, pass/fail results, pressure-test notes, and known bugs
+- local preview command or local URL when available
+- Render/live preview link when available
+- migration/data-write/safety proof
+- owner comments and decision history
+- clear actions: approve final release, send back with comments, pause, reject, or mark done when no release is needed
+
+Owner comments are mission instructions. When the owner sends a mission back from review:
+
+- CHARLIE records the comment in the Mission Vault and mission events.
+- mission status returns to `approved` or `in_progress` depending on whether local runner pickup is needed again.
+- workflow stage returns to the correct point, usually planner for scope changes, architect for design/source-of-truth changes, builder for implementation fixes, or tester for verification-only fixes.
+- Codex/Cursor must include the owner comments in the next execution packet.
+- previous findings remain attached so the mission keeps its audit trail.
+
+Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
+
+No mission should be considered complete merely because code was written. A mission is complete only when the owner accepts the final review result, or when the owner explicitly marks a non-release mission done.
+
 ## Status Model
 
 Allowed mission statuses:
