@@ -12,6 +12,13 @@
     refresh: document.getElementById("charlie_refresh"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
+    runner: {
+      state: document.getElementById("charlie_runner_state"),
+      message: document.getElementById("charlie_runner_message"),
+      active: document.getElementById("charlie_runner_active"),
+      next: document.getElementById("charlie_runner_next"),
+      command: document.getElementById("charlie_runner_command"),
+    },
     counts: {
       new: document.getElementById("charlie_count_new"),
       approved: document.getElementById("charlie_count_approved"),
@@ -64,12 +71,37 @@
       state.missions = missions.missions || [];
       state.counts = summary.counts || {};
       render();
+      loadRunnerStatus();
     } catch (error) {
       setMessage(error.message || "Could not load CHARLIE missions.", "error");
       if (els.statusLine) els.statusLine.textContent = "Mission queue unavailable.";
     } finally {
       state.loading = false;
     }
+  }
+
+  async function loadRunnerStatus() {
+    if (!els.runner.state) return;
+    try {
+      const data = await fetchJson("/api/charlie/build-relay/runner/status");
+      const active = data.active_mission || {};
+      const next = data.next_approved_mission || {};
+      els.runner.state.textContent = runnerStateLabel(data.status);
+      els.runner.message.textContent = data.next_action || "Runner handoff status loaded.";
+      els.runner.active.textContent = active.mission_id ? `${shortId(active.mission_id)} | ${active.title || active.status || "active"}` : "None";
+      els.runner.next.textContent = next.mission_id ? `${shortId(next.mission_id)} | ${next.title || next.status || "approved"}` : "None";
+      if (data.local_runner_command) els.runner.command.textContent = data.local_runner_command;
+    } catch (error) {
+      els.runner.state.textContent = "Unavailable";
+      els.runner.message.textContent = error.message || "Runner handoff status could not be loaded.";
+    }
+  }
+
+  function runnerStateLabel(status) {
+    if (status === "active_mission_in_progress") return "In Progress";
+    if (status === "approved_waiting_for_local_runner") return "Waiting Pickup";
+    if (status === "idle_no_approved_mission") return "Idle";
+    return safeText(status || "Unknown");
   }
 
   function render() {

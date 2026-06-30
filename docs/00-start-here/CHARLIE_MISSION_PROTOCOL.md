@@ -109,6 +109,14 @@ python scripts/charlie_mission_pickup.py --watch --notify
 
 Watch mode polls for an approved mission and picks up the first one it finds. It still only writes `planning/CODEX_CHAT.md`, marks the mission `in_progress`, and notifies the owner. It does not execute arbitrary build commands.
 
+Continuous local watch mode:
+
+```bash
+python scripts/charlie_mission_pickup.py --watch --continuous --notify --interval-seconds 30
+```
+
+Continuous mode keeps polling after each check. It will not pick up another approved mission while a mission is already `in_progress` or `pr_ready`.
+
 The pickup bridge writes the mission approval level and runner mode into `planning/CODEX_CHAT.md`:
 
 - `LEVEL 0` -> report only
@@ -129,6 +137,13 @@ The owner-only cockpit lives at:
 The cockpit shows mission queue records, counts by status, and safe decision buttons. Cockpit decisions call the same protected mission APIs used by Telegram command decisions.
 
 The cockpit can approve missions by level. The cockpit cannot execute shell commands directly, deploy manually, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
+
+The cockpit also shows runner handoff status:
+
+- active mission, if one is `in_progress` or `pr_ready`
+- next approved mission waiting for local pickup
+- local runner command
+- clear note that web/Telegram cannot execute shell commands directly
 
 ## Required Codex Startup
 
