@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
+    complete_codex_execution_from_artifact,
     prepare_codex_execution,
     run_codex_execution_bridge,
 )
@@ -22,10 +23,17 @@ def main():
     parser.add_argument("--mission-id", default="", help="Specific CHARLIE mission id. Defaults to the newest in_progress mission.")
     parser.add_argument("--status", default="in_progress", help="Mission status to pick when --mission-id is omitted.")
     parser.add_argument("--execute-codex", action="store_true", help="Actually run codex exec locally. Without this, only prepares the prompt.")
+    parser.add_argument("--recover-final-artifact", action="store_true", help="Move an in-progress mission to owner review from an existing final artifact.")
+    parser.add_argument("--final-path", default="", help="Optional explicit .final.md artifact path for recovery.")
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     args = parser.parse_args()
 
-    if args.execute_codex:
+    if args.recover_final_artifact:
+        result, status_code = complete_codex_execution_from_artifact(
+            mission_id=args.mission_id,
+            final_path=args.final_path or None,
+        )
+    elif args.execute_codex:
         result, status_code = run_codex_execution_bridge(
             mission_id=args.mission_id,
             status=args.status,

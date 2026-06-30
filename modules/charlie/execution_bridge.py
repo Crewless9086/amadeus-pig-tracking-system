@@ -1,7 +1,10 @@
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
+import time
 from urllib import request as url_request
 from urllib.error import URLError
 from datetime import datetime, timezone
@@ -15,11 +18,14 @@ from modules.charlie.mission_store import (
     update_mission_vault,
     update_mission_workflow_step,
 )
+from modules.charlie.runner_control import write_runner_heartbeat
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
 DEFAULT_TIMEOUT_SECONDS = 3600
+FINAL_ARTIFACT_GRACE_SECONDS = 20
+POLL_SECONDS = 5
 
 
 def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None, database_url=None, connect_factory=None):
@@ -94,22 +100,23 @@ def run_codex_execution_bridge(
         str(final_path),
         "-",
     ]
-    runner = run_subprocess or subprocess.run
     started_at = datetime.now(timezone.utc).isoformat()
+    runner = run_subprocess or _run_codex_process
     completed = runner(
         command,
         input=prompt_path.read_text(encoding="utf-8"),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         cwd=str(REPO_ROOT),
-        timeout=int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
-        check=False,
+        timeout_seconds=int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        final_path=final_path,
+        mission_id=mission_id,
     )
     stdout_path.write_text(completed.stdout or "", encoding="utf-8")
     stderr_path.write_text(completed.stderr or "", encoding="utf-8")
     final_message = _read_text(final_path) or (completed.stdout or "").strip()
+    if final_message and not _read_text(final_path):
+        final_path.write_text(final_message, encoding="utf-8")
 
     if completed.returncode != 0:
         update_mission_status(
@@ -135,6 +142,50 @@ def run_codex_execution_bridge(
             "stderr_path": str(stderr_path),
         }, 502
 
+    return complete_codex_execution_from_artifact(
+        mission_id,
+        execution_id=execution_id,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        final_path=final_path,
+        started_at=started_at,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def complete_codex_execution_from_artifact(
+    mission_id,
+    execution_id="",
+    prompt_path=None,
+    stdout_path=None,
+    stderr_path=None,
+    final_path=None,
+    started_at="",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    artifact = _resolve_execution_artifact(
+        mission_id=mission_id,
+        execution_id=execution_id,
+        prompt_path=prompt_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        final_path=final_path,
+    )
+    final_message = _read_text(artifact["final_path"])
+    if not final_message:
+        return {
+            "success": False,
+            "status": "final_execution_artifact_required",
+            "mission_id": mission_id,
+            "final_message_path": str(artifact["final_path"]),
+        }, 409
+
     for agent in AGENT_SEQUENCE:
         _record_execution_stage(
             mission_id,
@@ -146,6 +197,7 @@ def run_codex_execution_bridge(
         )
 
     changed_files = _changed_files()
+    local_preview = _extract_local_preview(final_message)
     review_packet = {
         "review_packet": {
             "summary": _truncate(final_message or "Codex execution completed.", 1600),
@@ -153,22 +205,19 @@ def run_codex_execution_bridge(
                 "Local Codex execution bridge completed successfully.",
                 "Codex final response is stored in the execution artifact.",
             ],
-            "errors": [],
+            "errors": _extract_errors(final_message),
             "bugs": [],
             "changed_files": changed_files or ["No changed files detected by git diff."],
             "test_evidence": _extract_test_evidence(final_message),
-            "local_preview": {
-                "url": "http://127.0.0.1:5000/charlie",
-                "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
-            },
-            "links": {"local_preview": "http://127.0.0.1:5000/charlie"},
+            "local_preview": local_preview,
+            "links": {"local_preview": local_preview.get("url", "")},
             "release_notes": ["Review Codex execution artifact before final approval."],
             "execution_artifacts": {
-                "execution_id": execution_id,
-                "prompt_path": str(prompt_path),
-                "stdout_path": str(stdout_path),
-                "stderr_path": str(stderr_path),
-                "final_message_path": str(final_path),
+                "execution_id": artifact["execution_id"],
+                "prompt_path": str(artifact["prompt_path"]),
+                "stdout_path": str(artifact["stdout_path"]),
+                "stderr_path": str(artifact["stderr_path"]),
+                "final_message_path": str(artifact["final_path"]),
                 "started_at": started_at,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             },
@@ -196,11 +245,11 @@ def run_codex_execution_bridge(
         "status": "codex_execution_completed",
         "mission_id": mission_id,
         "mission_status": "pr_ready",
-        "execution_id": execution_id,
-        "prompt_path": str(prompt_path),
-        "stdout_path": str(stdout_path),
-        "stderr_path": str(stderr_path),
-        "final_message_path": str(final_path),
+        "execution_id": artifact["execution_id"],
+        "prompt_path": str(artifact["prompt_path"]),
+        "stdout_path": str(artifact["stdout_path"]),
+        "stderr_path": str(artifact["stderr_path"]),
+        "final_message_path": str(artifact["final_path"]),
     }, 200
 
 
@@ -651,6 +700,132 @@ def _review_pr_reference(mission):
             return number or value
         return value
     return ""
+
+
+def _run_codex_process(
+    command,
+    input="",
+    cwd=None,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    stdout_path=None,
+    stderr_path=None,
+    final_path=None,
+    mission_id="",
+    **_kwargs,
+):
+    stdout_path = Path(stdout_path)
+    stderr_path = Path(stderr_path)
+    final_path = Path(final_path)
+    started = time.monotonic()
+    final_seen_at = None
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=cwd,
+    )
+    try:
+        if process.stdin:
+            process.stdin.write(input or "")
+            process.stdin.close()
+            process.stdin = None
+        while process.poll() is None:
+            elapsed = time.monotonic() - started
+            final_exists = final_path.exists() and final_path.stat().st_size > 0
+            if final_exists and final_seen_at is None:
+                final_seen_at = time.monotonic()
+            write_runner_heartbeat({
+                "status": "codex_final_artifact_seen" if final_exists else "codex_running",
+                "mission_id": mission_id,
+                "execution_artifact": str(final_path),
+            })
+            if final_seen_at and time.monotonic() - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
+                _terminate_process_tree(process.pid)
+                break
+            if elapsed >= int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS):
+                if final_exists:
+                    _terminate_process_tree(process.pid)
+                    break
+                raise subprocess.TimeoutExpired(command, timeout_seconds)
+            time.sleep(POLL_SECONDS)
+        stdout, stderr = process.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        _terminate_process_tree(process.pid)
+        stdout, stderr = process.communicate(timeout=10)
+        raise
+    returncode = process.returncode
+    if returncode is None:
+        returncode = 0 if final_path.exists() and final_path.stat().st_size > 0 else 124
+    if final_path.exists() and final_path.stat().st_size > 0 and returncode not in (0,):
+        returncode = 0
+        stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
+    stdout_path.write_text(stdout or "", encoding="utf-8")
+    stderr_path.write_text(stderr or "", encoding="utf-8")
+    return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
+
+
+def _terminate_process_tree(pid):
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return
+    if pid <= 0:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        return
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except OSError:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+
+
+def _resolve_execution_artifact(mission_id, execution_id="", prompt_path=None, stdout_path=None, stderr_path=None, final_path=None):
+    mission_suffix = str(mission_id or "")[-8:]
+    final_path = Path(final_path) if final_path else None
+    if final_path is None:
+        candidates = sorted(
+            EXECUTION_DIR.glob(f"{mission_suffix}-*.final.md"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        final_path = candidates[0] if candidates else EXECUTION_DIR / f"{mission_suffix}.final.md"
+    stem = final_path.name[:-len(".final.md")] if final_path.name.endswith(".final.md") else final_path.stem
+    return {
+        "execution_id": execution_id or stem,
+        "prompt_path": Path(prompt_path) if prompt_path else final_path.with_name(f"{stem}.prompt.md"),
+        "stdout_path": Path(stdout_path) if stdout_path else final_path.with_name(f"{stem}.stdout.txt"),
+        "stderr_path": Path(stderr_path) if stderr_path else final_path.with_name(f"{stem}.stderr.txt"),
+        "final_path": final_path,
+    }
+
+
+def _extract_local_preview(final_message):
+    text = str(final_message or "")
+    match = re.search(r"https?://127\.0\.0\.1:\d+/\S*", text)
+    url = match.group(0).rstrip(").,") if match else "http://127.0.0.1:5000/charlie"
+    return {
+        "url": url,
+        "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
+    }
+
+
+def _extract_errors(final_message):
+    lines = [line.strip("- ").strip() for line in str(final_message or "").splitlines()]
+    return [line for line in lines if "error" in line.lower() or "could not" in line.lower()][:12]
 
 
 def _verify_release_url(verify_url):

@@ -130,6 +130,36 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("review_packet", vault_metadata)
         self.assertIn("modules/charlie/execution_bridge.py", vault_metadata["review_packet"]["changed_files"])
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_complete_codex_execution_from_existing_final_artifact(
+        self,
+        update_vault,
+        update_workflow,
+        _changed_files,
+    ):
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            final_path = Path(tmp) / "EXEC123-20260630T000000Z-1.final.md"
+            final_path.write_text(
+                "Summary complete\nOpen: http://127.0.0.1:5002/charlie\nTests run: checks passed",
+                encoding="utf-8",
+            )
+            result, status_code = execution_bridge.complete_codex_execution_from_artifact(
+                "CHARLIE-MISSION-EXEC123",
+                final_path=final_path,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "codex_execution_completed")
+        self.assertEqual(result["mission_status"], "pr_ready")
+        self.assertGreaterEqual(update_workflow.call_count, 6)
+        vault_metadata = update_vault.call_args.args[1]
+        self.assertEqual(vault_metadata["review_packet"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):
         mission = dict(MISSION)
