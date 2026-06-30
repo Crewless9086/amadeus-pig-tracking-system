@@ -107,6 +107,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-FINAL is merged as PR #39: final Google Sheets caller audit plus the remaining litter lifecycle validation read cutover.
 - Current GS-MIG-FINAL finding: no remaining app caller is classified as an active route that must still be migrated. Remaining Google Sheets callers are safe fallback only, import/export/admin scripts, legacy/reference wrappers, or tests.
 - GS-MIG-FINAL code closeout: litter lifecycle validation paths now read Supabase sheet-shaped pig/litter/product rows first, with Google Sheets fallback retained.
+- Litter operations fallback fix is active in build: `/litters` derives useful statuses from lifecycle counts when sheet `Litter_Status` is blank/Unknown, and litter detail lifecycle outcomes classify `Died` as dead instead of other.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

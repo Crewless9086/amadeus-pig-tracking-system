@@ -20,7 +20,6 @@ Write new live-test findings here.
 ```text
 
 ```
-
 ---
 
 ## New Mission Notes
@@ -35,6 +34,7 @@ Write the next concept/problem/improvement here if it is not already in `plannin
 
 ## Processed / Logged
 
+- 2026-06-30: Litter status/live-test note processed. `/litters` now derives useful sheet-fallback litter statuses instead of showing blank/Unknown where possible, and `/litter/<id>` lifecycle outcome counts classify `Died` as dead instead of other/active. Evidence: `tests.test_pig_weights_litter_service`, `tests.test_farm_supabase_read_service`, `tests.test_pig_weights_dashboard_service`, `tests.test_frontend_route_contracts`, `node --check static/js/litters.js`, and `node --check static/js/litterDetail.js`.
 - 2026-06-30: Live app review notes converted into CHARLIE mission queue records and preserved in `planning/inbox/processed/2026-06/ToDoList_2026-06-30_live_app_review_notes.md`.
 - 2026-06-30: CHARLIE Codex pickup bridge moved into active build. Goal: a running Codex/Cursor session can pull the next approved Telegram mission into `planning/CODEX_CHAT.md` and mark it `in_progress`.
 - 2026-06-30: CHARLIE command-console mission protocol moved into active build. Telegram and `planning/CODEX_CHAT.md` will share `docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md`; approve/pause/reject commands record decisions only.
