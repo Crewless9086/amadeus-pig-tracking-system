@@ -29,6 +29,9 @@ from modules.charlie.core_workflow import (
     build_core_plan,
     evaluate_core_readiness,
 )
+from modules.charlie.vault_store import vault_tables_health
+from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
+from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -141,6 +144,7 @@ def charlie_build_relay_runner_status_route():
     next_approved = _first_mission(approved)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
+    vault_health, _vault_health_status = vault_tables_health()
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -236,11 +240,14 @@ def charlie_build_relay_command_center_route():
             "overall_target": "90%+ workflow readiness before deep income-stream missions",
             "templates": sorted(WORKFLOW_TEMPLATES.keys()),
             "recent_readiness": readiness_items,
+            "model_registry": model_registry_packet(),
+            "tool_permissions": tool_permission_registry(),
         },
         "counts": summary.get("counts", {}),
         "vault": {
             "version": "charlie_vault_v1",
             "storage": "metadata_json_active_structured_tables_available",
+            "health": vault_health,
             "structured_tables": [
                 "charlie_vault_projects",
                 "charlie_vault_artifacts",
@@ -272,6 +279,55 @@ def charlie_build_relay_command_center_route():
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
+    }), 200
+
+
+@charlie_bp.route("/charlie/core/vault-health", methods=["GET"])
+def charlie_core_vault_health_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = vault_tables_health()
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/model-registry", methods=["GET"])
+def charlie_core_model_registry_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    task_type = request.args.get("task_type", "")
+    risk_level = request.args.get("risk_level", "medium")
+    use_case = request.args.get("use_case", "")
+    model = choose_model(task_type=task_type, risk_level=risk_level, required_use_case=use_case)
+    cost = estimate_model_cost(
+        model.get("registry_key", "default_reasoning"),
+        input_tokens=request.args.get("input_tokens", 0),
+        output_tokens=request.args.get("output_tokens", 0),
+    )
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "registry": model_registry_packet(),
+        "selected_model": model,
+        "cost_estimate": cost,
+    }), 200
+
+
+@charlie_bp.route("/charlie/core/tool-permissions", methods=["GET"])
+def charlie_core_tool_permissions_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    agent = request.args.get("agent", "")
+    tool_class = request.args.get("tool_class", "")
+    owner_approved = str(request.args.get("owner_approved", "")).strip().lower() in {"1", "true", "yes", "on"}
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "registry": tool_permission_registry(),
+        "agent_permissions": permission_packet(agent) if agent else {},
+        "permission_check": check_tool_permission(agent, tool_class, owner_approved=owner_approved) if agent and tool_class else {},
     }), 200
 
 

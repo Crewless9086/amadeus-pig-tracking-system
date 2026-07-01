@@ -17,6 +17,7 @@ from modules.charlie.core_workflow import (
     agent_instruction_pack,
     evaluate_core_readiness,
 )
+from modules.charlie import vault_store
 
 
 MISSION_STATUSES = {
@@ -645,6 +646,12 @@ def update_mission_vault(
             "error_type": exc.__class__.__name__,
         }, 503
 
+    normalized_writes = _write_normalized_vault_records(
+        mission_id,
+        vault_metadata,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
     return {
         "success": True,
         "configured": True,
@@ -652,6 +659,7 @@ def update_mission_vault(
         "mission_id": mission_id,
         "mission_status": status,
         "vault_keys": sorted(vault_metadata.keys()),
+        "normalized_vault_writes": normalized_writes,
     }, 200
 
 
@@ -1052,6 +1060,15 @@ def record_mission_review_decision(
             "error_type": exc.__class__.__name__,
         }, 503
 
+    normalized_decision, _ = vault_store.write_owner_decision(
+        mission_id,
+        decision,
+        approval_level=normalize_approval_level(approval_level),
+        comments=comments,
+        metadata={"target_stage": target_stage if decision == "send_back" else ""},
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
     return {
         "success": True,
         "configured": True,
@@ -1060,6 +1077,7 @@ def record_mission_review_decision(
         "mission_status": target_status,
         "review_decision": decision,
         "approval_level": normalize_approval_level(approval_level),
+        "normalized_owner_decision": normalized_decision,
     }, 200
 
 
@@ -1152,6 +1170,111 @@ def mission_status_summary(database_url=None, connect_factory=None):
         "status": "ok",
         "counts": {str(row[0]): int(row[1] or 0) for row in rows},
     }, 200
+
+
+def _write_normalized_vault_records(mission_id, vault_metadata, database_url=None, connect_factory=None):
+    vault_metadata = vault_metadata if isinstance(vault_metadata, dict) else {}
+    writes = []
+    mission_vault = vault_metadata.get("mission_vault") if isinstance(vault_metadata.get("mission_vault"), dict) else {}
+    review_packet = vault_metadata.get("review_packet") if isinstance(vault_metadata.get("review_packet"), dict) else {}
+    charlie_core = vault_metadata.get("charlie_core") if isinstance(vault_metadata.get("charlie_core"), dict) else {}
+    project_truth = mission_vault.get("project_truth") if isinstance(mission_vault.get("project_truth"), dict) else charlie_core.get("project_truth", {})
+
+    if isinstance(project_truth, dict) and project_truth:
+        result, _ = vault_store.write_project({
+            "project_id": project_truth.get("project_key", "charlie_core"),
+            "project_key": project_truth.get("project_key", "charlie_core"),
+            "name": project_truth.get("project_key", "CHARLIE CORE"),
+            "purpose": project_truth.get("purpose", ""),
+            "workflow_template": project_truth.get("workflow_template", "software_build"),
+            "metadata": project_truth,
+        }, database_url=database_url, connect_factory=connect_factory)
+        writes.append({"target": "project", "status": result.get("status"), "success": result.get("success")})
+
+    handoff_reports = mission_vault.get("handoff_reports") if isinstance(mission_vault.get("handoff_reports"), list) else []
+    for report in handoff_reports[-20:]:
+        if isinstance(report, dict):
+            result, _ = vault_store.write_handoff_report(report, database_url=database_url, connect_factory=connect_factory)
+            writes.append({"target": "handoff", "status": result.get("status"), "success": result.get("success")})
+
+    agent_execution = vault_metadata.get("agent_execution") if isinstance(vault_metadata.get("agent_execution"), dict) else {}
+    execution_id = agent_execution.get("execution_id", "")
+    for stage_run in agent_execution.get("stages", []) if isinstance(agent_execution.get("stages"), list) else []:
+        if isinstance(stage_run, dict):
+            run_payload = dict(stage_run)
+            if execution_id:
+                run_payload["execution_id"] = execution_id
+            result, _ = vault_store.write_agent_run(
+                mission_id,
+                stage_run.get("agent", ""),
+                run_payload,
+                stage=stage_run.get("stage") or stage_run.get("agent", ""),
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            writes.append({"target": "agent_run", "agent": stage_run.get("agent", ""), "status": result.get("status"), "success": result.get("success")})
+
+    artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
+    for agent, artifact in artifacts.items():
+        if not isinstance(artifact, dict):
+            continue
+        result, _ = vault_store.write_artifact(
+            mission_id,
+            artifact.get("artifact_type") or f"{agent}_artifact",
+            artifact,
+            title=artifact.get("title") or f"{agent} artifact",
+            summary=artifact.get("summary", ""),
+            project_id=project_truth.get("project_key", "") if isinstance(project_truth, dict) else "",
+            agent=agent,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        writes.append({"target": "artifact", "agent": agent, "status": result.get("status"), "success": result.get("success")})
+        handoff = artifact.get("handoff_report") if isinstance(artifact.get("handoff_report"), dict) else {}
+        canonical = handoff.get("canonical") if isinstance(handoff.get("canonical"), dict) else handoff
+        if canonical:
+            result, _ = vault_store.write_handoff_report(canonical, database_url=database_url, connect_factory=connect_factory)
+            writes.append({"target": "handoff", "agent": agent, "status": result.get("status"), "success": result.get("success")})
+
+    for gate in review_packet.get("quality_gates", []) if isinstance(review_packet.get("quality_gates"), list) else []:
+        if isinstance(gate, dict):
+            result, _ = vault_store.write_quality_gate(
+                mission_id,
+                gate.get("agent") or gate.get("gate_name") or "quality_gate",
+                "passed" if gate.get("passed") else "failed",
+                reason=gate.get("reason", ""),
+                evidence=gate,
+                stage=gate.get("agent", ""),
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            writes.append({"target": "quality_gate", "status": result.get("status"), "success": result.get("success")})
+
+    deployment = vault_metadata.get("deployment_record") if isinstance(vault_metadata.get("deployment_record"), dict) else {}
+    if deployment:
+        result, _ = vault_store.write_deployment_record(deployment, database_url=database_url, connect_factory=connect_factory)
+        writes.append({"target": "deployment", "status": result.get("status"), "success": result.get("success")})
+
+    intelligence = vault_metadata.get("intelligence_loop") if isinstance(vault_metadata.get("intelligence_loop"), dict) else {}
+    for lesson in intelligence.get("lesson_records", []) if isinstance(intelligence.get("lesson_records"), list) else []:
+        if isinstance(lesson, dict):
+            result, _ = vault_store.write_lesson(lesson, database_url=database_url, connect_factory=connect_factory)
+            writes.append({"target": "lesson", "status": result.get("status"), "success": result.get("success")})
+
+    income = vault_metadata.get("income_stream_readiness") if isinstance(vault_metadata.get("income_stream_readiness"), dict) else {}
+    if income:
+        result, _ = vault_store.write_income_stream_review(
+            mission_id,
+            income,
+            business_model=mission_vault.get("business_model") if isinstance(mission_vault.get("business_model"), dict) else {},
+            risk_register=mission_vault.get("risk_register") if isinstance(mission_vault.get("risk_register"), list) else [],
+            owner_gate_status="ready" if income.get("ready") else "pending",
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        writes.append({"target": "income_stream_review", "status": result.get("status"), "success": result.get("success")})
+
+    return writes
 
 
 def _mission_params(mission, source_context):

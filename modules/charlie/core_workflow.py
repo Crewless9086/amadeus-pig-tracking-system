@@ -367,6 +367,9 @@ def build_project_truth(mission):
 
 
 def build_core_plan(mission):
+    from modules.charlie.model_registry import model_registry_packet
+    from modules.charlie.tool_permissions import tool_permission_registry
+
     project_truth = build_project_truth(mission)
     template_id = project_truth["workflow_template"]
     return {
@@ -376,6 +379,8 @@ def build_core_plan(mission):
         "workflow_template": workflow_template(template_id),
         "agent_workflow": build_workflow(template_id),
         "review_board": build_review_board_packet({}),
+        "model_registry": model_registry_packet(),
+        "tool_permissions": tool_permission_registry(),
         "intelligence_loop": {
             "version": INTELLIGENCE_LOOP_VERSION,
             "lesson_records": [],
@@ -612,6 +617,8 @@ def attach_core_plan_to_metadata(mission, metadata=None):
             "shows_artifacts": True,
             "shows_review_quality": True,
         },
+        "model_registry": plan["model_registry"],
+        "tool_permissions": plan["tool_permissions"],
     })
     metadata.setdefault("intelligence_loop", plan["intelligence_loop"])
     if plan["project_truth"]["workflow_template"] == "income_stream":

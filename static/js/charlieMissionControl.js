@@ -230,9 +230,22 @@
     const review = data.review || {};
     const queue = data.queue || {};
     const vault = data.vault || {};
+    const core = data.charlie_core || {};
+    const recentReadiness = Array.isArray(core.recent_readiness) ? core.recent_readiness : [];
+    const readinessAverage = recentReadiness.length
+      ? Math.round(recentReadiness.reduce((total, item) => total + Number((item.core_readiness || {}).overall_percent || 0), 0) / recentReadiness.length)
+      : 0;
+    const vaultHealth = vault.health || {};
+    const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
+    const modelRegistry = core.model_registry || {};
+    const toolPermissions = core.tool_permissions || {};
     const runner = data.local_runner || {};
     els.commandCenter.innerHTML = `
+      ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
       ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+      ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
+      ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
+      ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
       ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
       ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
       ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
@@ -241,6 +254,11 @@
       ${commandCenterTile("Deployed", `${(release.deployed || []).length} complete`, "Verified live")}
       ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
       ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
+        shortId(item.mission_id || ""),
+        `${Number((item.core_readiness || {}).overall_percent || 0)}% ready`,
+        item.title || item.status || "recent mission"
+      )).join("")}
     `;
   }
 
