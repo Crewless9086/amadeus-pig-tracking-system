@@ -1169,6 +1169,45 @@ The name of the game is **coordinated intelligence under disciplined control**.
 
 Build CHARLIE CORE as the commander, CHARLIE VAULT as the brain, agents as specialist workers, and the owner as final authority. That is how the smallest idea becomes a serious system.
 
+---
+
+## BUILD UPDATE - 2026-07-01 - CHARLIE CORE 100% COMPLETION PASS
+
+Status: The approved follow-up build after PR #74 has been completed as the next controlled layer on top of CHARLIE CORE v3.
+
+Completed:
+
+- Applied live Supabase migration `202607010002_create_charlie_core_v3_tables.sql`.
+- Added normalized CHARLIE Vault write-through services for projects, artifacts, handoff reports, quality gates, owner decisions, deployment records, audit events, lessons, and income-stream reviews.
+- Wired mission vault updates and owner review decisions to best-effort normalized Vault table writes while keeping the existing `mission_metadata_json` source of truth active.
+- Added Vault health reporting so the command center can show whether normalized tables are reachable.
+- Expanded the command center dashboard beyond readiness data to show Core Readiness, Vault status, normalized Vault table health, model registry status, tool permissions, and recent mission readiness.
+- Added mission intake options for system improvement, business plan, content engine, automation workflow, and income stream missions.
+- Added a model registry/router contract with task-to-model selection and cost-estimation placeholders. Real provider pricing remains manual until live model billing configuration is approved.
+- Added MCP/tool permission layer contracts with agent allowlists, red-zone tools, owner approval checks, and audit payload generation.
+- Added route APIs for `/api/charlie/core/vault-health`, `/api/charlie/core/model-registry`, and `/api/charlie/core/tool-permissions`.
+- Added focused tests for Vault services, model routing, tool permissions, route contracts, and frontend command-center contract coverage.
+
+Verification:
+
+- `python -m unittest tests.test_charlie_vault_store tests.test_charlie_model_and_permissions tests.test_charlie_core_workflow tests.test_charlie_build_relay tests.test_charlie_execution_bridge tests.test_charlie_mission_store tests.test_charlie_runner_control tests.test_charlie_mission_pickup tests.test_charlie_notify tests.test_frontend_route_contracts` passed.
+- `node --check static/js/charlieMissionControl.js` passed.
+
+Current completion view:
+
+| Area | Status |
+| --- | --- |
+| CHARLIE CORE workflow governor | Complete for v3/v4 operating spine |
+| CHARLIE Vault schema | Complete and migration applied |
+| Normalized Vault write-through | Complete for current Vault tables |
+| Dashboard command center | Complete for current readiness, Vault, model, permission, and recent mission truth |
+| Specialist agent stage contracts | Complete for current mission types |
+| Review board contracts | Complete for product, business, security, evidence, and final owner review flow |
+| Model registry/router | Contract complete; live pricing/model tuning remains a future operational setting |
+| MCP/tool permissions | Contract complete; live external MCP enforcement remains approval-gated |
+
+Operational note: CHARLIE CORE is now ready for deeper income-stream missions under owner approval gates. The remaining work is not missing core workflow structure; it is future hardening as real missions reveal better prompts, policies, pricing choices, tool integrations, and reusable workflow templates.
+
 [1]: https://developers.openai.com/api/docs/guides/agents "Agents SDK | OpenAI API"
 [2]: https://developers.openai.com/api/docs/models "Models | OpenAI API"
 [3]: https://owasp.org/www-project-top-10-for-large-language-model-applications/ "OWASP Top 10 for Large Language Model Applications | OWASP Foundation"

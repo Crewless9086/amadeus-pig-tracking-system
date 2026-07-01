@@ -353,6 +353,28 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("status = %(status)s", update_sql)
         self.assertIn('"mission_stage": "planned"', update_params["metadata_json"])
 
+    def test_update_mission_vault_writes_agent_execution_to_normalized_vault(self):
+        connection = FakeConnection([("MISSION-1",)])
+
+        result, status_code = update_mission_vault(
+            "MISSION-1",
+            {
+                "agent_execution": {
+                    "execution_id": "EXEC-1",
+                    "stages": [{"agent": "builder", "status": "complete", "attempt": 1}],
+                },
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        normalized = result["normalized_vault_writes"]
+        self.assertEqual(normalized[0]["target"], "agent_run")
+        self.assertTrue(normalized[0]["success"])
+        self.assertTrue(any("charlie_agent_runs" in sql for sql, _params in connection.cursor_instance.executed))
+
     def test_update_mission_vault_requires_metadata(self):
         result, status_code = update_mission_vault(
             "MISSION-1",

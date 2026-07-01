@@ -699,6 +699,38 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("stages", data["core_readiness"])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.vault_tables_health")
+    def test_core_vault_health_route_returns_table_status(self, vault_tables_health, _owner_access):
+        vault_tables_health.return_value = ({"success": True, "status": "ok", "tables": {"charlie_vault_projects": True}}, 200)
+
+        response = self.client.get("/api/charlie/core/vault-health")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["tables"]["charlie_vault_projects"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    def test_core_model_registry_route_returns_selection_and_cost(self, _owner_access):
+        response = self.client.get("/api/charlie/core/model-registry?task_type=review&risk_level=high&use_case=security_review&input_tokens=1000&output_tokens=200")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["selected_model"]["registry_key"], "security_review")
+        self.assertEqual(data["cost_estimate"]["currency"], "USD")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    def test_core_tool_permissions_route_returns_permission_check(self, _owner_access):
+        response = self.client.get("/api/charlie/core/tool-permissions?agent=builder&tool_class=repo_write&owner_approved=true")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["permission_check"]["permitted"])
+        self.assertIn("builder", data["registry"]["agent_tool_allowlist"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_mission_review_decision")
     def test_mission_review_decision_route_records_owner_gate_decision(self, record_review_decision, _owner_access):
         record_review_decision.return_value = ({
