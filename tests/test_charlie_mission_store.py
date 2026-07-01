@@ -70,14 +70,45 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 201)
         self.assertTrue(result["stored"])
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(len(connection.cursor_instance.executed), 2)
-        mission_params = connection.cursor_instance.executed[0][1]
+        self.assertEqual(len(connection.cursor_instance.executed), 3)
+        mission_params = connection.cursor_instance.executed[1][1]
         self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
         self.assertEqual(mission_params["telegram_user_id"], "12345")
         self.assertEqual(mission_params["urgency"], "P1")
         self.assertIn("mission_vault", mission_params["metadata_json"])
         self.assertIn("agent_workflow", mission_params["metadata_json"])
         self.assertIn("mission_context_pack", mission_params["metadata_json"])
+        self.assertIn("intake_quality", mission_params["metadata_json"])
+
+    def test_record_mission_rejects_placeholder_relay_noise(self):
+        result, status_code = record_mission(
+            {"title": "Build CHARLIE Relay", "raw_text": "Build CHARLIE Relay"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection(),
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "mission_intake_too_vague")
+        self.assertEqual(result["reason"], "placeholder_charlie_relay_title_without_specific_goal")
+
+    def test_record_mission_suppresses_duplicate_open_mission(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        duplicate_row = (
+            "MISSION-1", "new", "Build clearer queue", "Build clearer queue",
+        )
+        connection = FakeConnection([duplicate_row])
+
+        result, status_code = record_mission(
+            {"title": "Build clearer queue", "raw_text": "Build clearer queue"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "duplicate_open_mission")
+        self.assertEqual(result["mission_id"], "MISSION-1")
 
     def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
         sequence = agent_sequence_for_mission("agent build")
@@ -107,6 +138,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["missions"][0]["vault"], {})
         self.assertEqual(result["missions"][0]["agent_workflow"], [])
         self.assertEqual(result["missions"][0]["queue_priority"], 100)
+        self.assertEqual(result["missions"][0]["queue_class"], "owner_work")
 
     def test_list_missions_orders_status_queue_by_priority(self):
         connection = FakeConnection([])

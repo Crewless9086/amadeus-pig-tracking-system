@@ -112,6 +112,22 @@ REVIEW_DECISION_STATUS = {
 QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
 QUEUE_PRIORITY_DEFAULT = 100
 QUEUE_PRIORITY_MAX = 999
+OPEN_DUPLICATE_STATUSES = {
+    "new",
+    "triaged",
+    "planned",
+    "approved",
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "release_approved",
+    "release_in_progress",
+}
+PLACEHOLDER_MISSION_TITLES = {
+    "build charlie relay",
+    "charlie relay",
+    "<idea>",
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -120,6 +136,13 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     if not raw_text:
         return {"stored": False, "status": "mission_text_required"}, 400
+    intake_quality = _mission_intake_quality(mission, raw_text)
+    if intake_quality["blocked"]:
+        return {
+            "stored": False,
+            "status": "mission_intake_too_vague",
+            "reason": intake_quality["reason"],
+        }, 400
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -129,6 +152,20 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
+                duplicate = _find_open_duplicate_mission(cursor, params)
+                if duplicate:
+                    _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                        "source": params["source"],
+                        "duplicate_title": params["title"],
+                    })
+                    return {
+                        "stored": False,
+                        "configured": True,
+                        "status": "duplicate_open_mission",
+                        "mission_id": duplicate["mission_id"],
+                        "existing_status": duplicate["status"],
+                        "title": duplicate["title"],
+                    }, 200
                 cursor.execute(
                     """
                     insert into public.charlie_missions (
@@ -1037,6 +1074,7 @@ def _mission_params(mission, source_context):
     mission_id = _clean_text(mission.get("mission_id", ""), 90) or _mission_id(raw_text, source_context, now)
     metadata = mission.get("metadata", {}) if isinstance(mission.get("metadata"), dict) else {}
     metadata = _mission_metadata(raw_text, mission, source_context, metadata)
+    metadata.setdefault("intake_quality", _mission_intake_quality(mission, raw_text))
     return {
         "mission_id": mission_id,
         "status": _clean_text(mission.get("status", "new"), 40) or "new",
@@ -1092,14 +1130,16 @@ def _mission_row(row):
     metadata = row[13] if isinstance(row[13], dict) else {}
     queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
+    raw_text = row[5]
+    title = row[6]
     return {
         "mission_id": row[0],
         "status": row[1],
         "source": row[2],
         "telegram_user_id": row[3],
         "telegram_chat_id": row[4],
-        "raw_text": row[5],
-        "title": row[6],
+        "raw_text": raw_text,
+        "title": title,
         "urgency": row[7],
         "mission_type": row[8],
         "approval_level": row[9],
@@ -1112,6 +1152,7 @@ def _mission_row(row):
             "updated_at": _clean_text(queue.get("updated_at", ""), 80) if queue else "",
         },
         "queue_priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
+        "queue_class": _mission_queue_class(title, raw_text, metadata),
         "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
         "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
         "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
@@ -1119,6 +1160,69 @@ def _mission_row(row):
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
     }
+
+
+def _find_open_duplicate_mission(cursor, params):
+    cursor.execute(
+        """
+        select mission_id, status, title, raw_text
+        from public.charlie_missions
+        where status = any(%(statuses)s)
+        order by updated_at desc
+        limit 250
+        """,
+        {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+    )
+    new_title = _normalize_mission_text(params.get("title", ""))
+    new_raw = _normalize_mission_text(params.get("raw_text", ""))
+    for row in cursor.fetchall():
+        existing_title = _normalize_mission_text(row[2])
+        existing_raw = _normalize_mission_text(row[3])
+        if new_raw and existing_raw == new_raw:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+        if new_title and existing_title == new_title and len(new_title) >= 18:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+    return None
+
+
+def _mission_intake_quality(mission, raw_text):
+    title = _normalize_mission_text(mission.get("title") or raw_text)
+    raw = _normalize_mission_text(raw_text)
+    if title in PLACEHOLDER_MISSION_TITLES and raw in PLACEHOLDER_MISSION_TITLES:
+        return {
+            "blocked": True,
+            "reason": "placeholder_charlie_relay_title_without_specific_goal",
+            "queue_class": "system_noise",
+        }
+    if len(raw) < 12:
+        return {
+            "blocked": True,
+            "reason": "mission_text_too_short",
+            "queue_class": "low_signal",
+        }
+    return {
+        "blocked": False,
+        "reason": "",
+        "queue_class": _mission_queue_class(mission.get("title") or raw_text, raw_text, mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}),
+    }
+
+
+def _mission_queue_class(title, raw_text, metadata=None):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    intake_quality = metadata.get("intake_quality") if isinstance(metadata.get("intake_quality"), dict) else {}
+    if intake_quality.get("queue_class"):
+        return str(intake_quality.get("queue_class"))
+    normalized_title = _normalize_mission_text(title)
+    normalized_raw = _normalize_mission_text(raw_text)
+    if normalized_title in PLACEHOLDER_MISSION_TITLES and normalized_raw in PLACEHOLDER_MISSION_TITLES:
+        return "system_noise"
+    if "smoke test" in normalized_title or "validation mission" in normalized_title:
+        return "system_test"
+    return "owner_work"
+
+
+def _normalize_mission_text(value):
+    return " ".join(str(value or "").strip().lower().split())
 
 
 def _mission_metadata(raw_text, mission, source_context, metadata):

@@ -773,7 +773,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("CHARLIE Build Relay", action["telegram_text"])
 
-    def test_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+    def test_placeholder_mission_action_does_not_update_codex_chat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             planning = root / "planning"
@@ -792,9 +792,33 @@ class CharlieBuildRelayTests(unittest.TestCase):
             action = build_relay_action("/mission Build CHARLIE Relay", environ=env)
             updated = codex_chat.read_text(encoding="utf-8")
 
+            self.assertFalse(action["writes_repo_file"])
+            self.assertEqual(action["mission_store"]["status"], "mission_intake_too_vague")
+            self.assertIn("old", updated)
+            self.assertNotIn("Build CHARLIE Relay", updated)
+
+    def test_specific_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            planning = root / "planning"
+            planning.mkdir()
+            codex_chat = planning / "CODEX_CHAT.md"
+            codex_chat.write_text(
+                "# CODEX CHAT\n\n"
+                "### Concept / Problem / Idea\n\n```text\nold\n```\n\n"
+                "### Desired Outcome\n\n```text\nold outcome\n```\n",
+                encoding="utf-8",
+            )
+            env = {
+                "CHARLIE_BUILD_RELAY_REPO_ROOT": str(root),
+                "CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED": "1",
+            }
+            action = build_relay_action("/mission Improve CHARLIE queue filters for real owner missions", environ=env)
+            updated = codex_chat.read_text(encoding="utf-8")
+
             self.assertTrue(action["writes_repo_file"])
             self.assertEqual(action["codex_chat_write"]["status"], "codex_chat_updated")
-            self.assertIn("Build CHARLIE Relay", updated)
+            self.assertIn("Improve CHARLIE queue filters", updated)
             self.assertIn("Codex scopes this Telegram mission", updated)
 
 

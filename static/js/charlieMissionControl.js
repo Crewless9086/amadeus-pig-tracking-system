@@ -203,9 +203,22 @@
       return;
     }
     els.list.innerHTML = "";
-    state.missions.forEach((mission) => {
+    const ownerMissions = state.missions.filter((mission) => queueClass(mission) === "owner_work");
+    const systemMissions = state.missions.filter((mission) => queueClass(mission) !== "owner_work");
+    const visibleMissions = ownerMissions.length ? ownerMissions : state.missions;
+    visibleMissions.forEach((mission) => {
       els.list.appendChild(missionCard(mission));
     });
+    if (systemMissions.length && ownerMissions.length) {
+      const details = document.createElement("details");
+      details.className = "charlie-system-missions";
+      details.innerHTML = `<summary>${systemMissions.length} system/test or low-signal mission(s)</summary>`;
+      const wrap = document.createElement("div");
+      wrap.className = "charlie-system-mission-list";
+      systemMissions.forEach((mission) => wrap.appendChild(missionCard(mission)));
+      details.appendChild(wrap);
+      els.list.appendChild(details);
+    }
     renderReview();
   }
 
@@ -264,6 +277,7 @@
     const media = Array.isArray(mission.media_references) ? mission.media_references : [];
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
+    const missionQueueClass = queueClass(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -271,6 +285,9 @@
           <h3>${escapeHtml(title)}</h3>
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
+      </div>
+      <div class="charlie-card-tags">
+        <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
       <div class="charlie-vault-summary">
@@ -334,6 +351,17 @@
     const editForm = card.querySelector("[data-new-mission-edit-form]");
     if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
     return card;
+  }
+
+  function queueClass(mission) {
+    return safeText((mission && mission.queue_class) || "owner_work") || "owner_work";
+  }
+
+  function queueClassLabel(value) {
+    if (value === "system_noise") return "System noise";
+    if (value === "system_test") return "System test";
+    if (value === "low_signal") return "Low signal";
+    return "Owner work";
   }
 
   function reviewCard(mission) {

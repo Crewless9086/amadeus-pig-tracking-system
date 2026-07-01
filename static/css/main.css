@@ -7961,6 +7961,41 @@ body.oom-farm-command-body {
     line-height: 1.45;
 }
 
+.charlie-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px;
+}
+
+.charlie-card-tags span {
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: #edf3f1;
+    color: #3f504a;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.charlie-system-missions {
+    padding: 10px 12px;
+    border: 1px dashed #c9d6d1;
+    border-radius: 6px;
+    background: #f7faf9;
+}
+
+.charlie-system-missions summary {
+    cursor: pointer;
+    color: #40514b;
+    font-weight: 700;
+}
+
+.charlie-system-mission-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
 .charlie-vault-summary,
 .charlie-agent-strip {
     display: flex;
