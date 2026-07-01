@@ -3,6 +3,7 @@ import unittest
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -500,6 +501,42 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         with patch("modules.charlie.execution_bridge.os.name", "nt"):
             self.assertEqual(execution_bridge._npx_executable(), "C:/node/npx.cmd")
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["planning/CODEX_CHAT.md"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    def test_run_codex_process_writes_final_heartbeat_after_artifact_stop(self, write_heartbeat, _changed_files):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            final_path = tmp_path / "final.md"
+            command = [
+                sys.executable,
+                "-c",
+                "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('done', encoding='utf-8'); time.sleep(5)",
+                str(final_path),
+            ]
+
+            with patch("modules.charlie.execution_bridge.FINAL_ARTIFACT_GRACE_SECONDS", 0), patch(
+                "modules.charlie.execution_bridge.POLL_SECONDS",
+                0.05,
+            ):
+                completed = execution_bridge._run_codex_process(
+                    command,
+                    cwd=tmp,
+                    timeout_seconds=3,
+                    stdout_path=tmp_path / "stdout.txt",
+                    stderr_path=tmp_path / "stderr.txt",
+                    final_path=final_path,
+                    mission_id="CHARLIE-MISSION-EXEC123",
+                )
+                final_exists = final_path.exists()
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertTrue(final_exists)
+        self.assertTrue(any(
+            call.args[0].get("status") == "codex_final_artifact_seen"
+            and call.args[0].get("final_artifact_present") is True
+            for call in write_heartbeat.call_args_list
+        ))
 
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):

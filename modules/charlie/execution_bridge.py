@@ -2780,13 +2780,24 @@ def _run_codex_process(
     stdout = _read_text(stdout_path)
     stderr = _read_text(stderr_path)
     returncode = process.returncode
+    final_exists = final_path.exists() and final_path.stat().st_size > 0
     if returncode is None:
-        returncode = 0 if final_path.exists() and final_path.stat().st_size > 0 else 124
-    if not final_path.exists() or final_path.stat().st_size <= 0:
+        returncode = 0 if final_exists else 124
+    write_runner_heartbeat({
+        "status": "codex_final_artifact_seen" if final_exists else "codex_no_final_artifact_timeout",
+        "mission_id": mission_id,
+        "execution_artifact": str(final_path),
+        "elapsed_seconds": int(time.monotonic() - started),
+        "changed_files_count": len(_changed_files()),
+        "final_artifact_present": final_exists,
+        "stdout_tail": _tail_text(stdout, 1200),
+        "stderr_tail": _tail_text(stderr, 1200),
+    })
+    if not final_exists:
         if returncode in (0, None):
             returncode = 124
         stderr = (stderr or "") + "\nCHARLIE supervisor stopped Codex because no final artifact was produced before timeout.\n"
-    if final_path.exists() and final_path.stat().st_size > 0 and returncode not in (0,):
+    if final_exists and returncode not in (0,):
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
