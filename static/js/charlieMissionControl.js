@@ -215,10 +215,12 @@
     const data = state.commandCenter || {};
     const release = data.release || {};
     const review = data.review || {};
+    const queue = data.queue || {};
     const vault = data.vault || {};
     const runner = data.local_runner || {};
     els.commandCenter.innerHTML = `
       ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+      ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
       ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
       ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
       ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
@@ -261,6 +263,7 @@
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const media = Array.isArray(mission.media_references) ? mission.media_references : [];
     const contextPack = mission.mission_context_pack || {};
+    const queuePriority = queuePriorityValue(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -287,12 +290,15 @@
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
       <dl class="charlie-mission-meta">
+        <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
         <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
       <div class="charlie-mission-actions">
+        <button type="button" data-queue-priority="${Math.max(1, queuePriority - 10)}">Earlier</button>
+        <button type="button" data-queue-priority="${Math.min(999, queuePriority + 10)}">Later</button>
         <button type="button" data-vault-stage="planned">Mark Planned</button>
         <button type="button" data-vault-stage="review_ready">Review Ready</button>
         <button type="button" data-action="approved" data-level="LEVEL 1">Approve L1</button>
@@ -321,6 +327,9 @@
     });
     card.querySelectorAll("[data-agent-step]").forEach((button) => {
       button.addEventListener("click", () => updateWorkflowStep(missionId, button.dataset.agentStep || "planner"));
+    });
+    card.querySelectorAll("[data-queue-priority]").forEach((button) => {
+      button.addEventListener("click", () => updateQueuePriority(missionId, button.dataset.queuePriority || queuePriority));
     });
     const editForm = card.querySelector("[data-new-mission-edit-form]");
     if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
@@ -515,6 +524,30 @@
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Decision was not recorded.", "error");
+    }
+  }
+
+  async function updateQueuePriority(missionId, priority) {
+    if (!missionId) return;
+    const parsed = Number.parseInt(priority, 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 999) {
+      setMessage("Queue priority must be between 1 and 999.", "error");
+      return;
+    }
+    setMessage(`Updating queue priority to ${parsed}...`, "info");
+    try {
+      await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/queue`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          priority: parsed,
+          notes: `Owner set mission queue priority to ${parsed} from CHARLIE Mission Control.`,
+        }),
+      });
+      setMessage("Queue priority updated.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Queue priority was not updated.", "error");
     }
   }
 
@@ -963,6 +996,14 @@
       seen.add(id);
       return true;
     });
+  }
+
+  function queuePriorityValue(mission) {
+    const direct = Number.parseInt(mission && mission.queue_priority, 10);
+    if (Number.isFinite(direct) && direct >= 1 && direct <= 999) return direct;
+    const nested = Number.parseInt(mission && mission.queue && mission.queue.priority, 10);
+    if (Number.isFinite(nested) && nested >= 1 && nested <= 999) return nested;
+    return 100;
   }
 
   function shortId(value) {

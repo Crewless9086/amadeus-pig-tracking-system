@@ -610,6 +610,31 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.update_mission_queue_priority")
+    def test_mission_queue_route_updates_priority(self, update_queue_priority, _owner_access):
+        update_queue_priority.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "queue_priority": 15,
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/queue",
+            json={"priority": 15, "notes": "Move this up."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["queue_priority"], 15)
+        update_queue_priority.assert_called_once_with(
+            "MISSION-1",
+            priority=15,
+            notes="Move this up.",
+        )
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.local_runner_status")
     @patch("modules.charlie.routes.list_missions")
     def test_runner_status_route_reports_approved_waiting_pickup(self, list_missions, local_runner_status, _owner_access):
@@ -637,6 +662,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["status"], "approved_waiting_for_local_runner")
         self.assertEqual(data["next_approved_mission"]["mission_id"], "CHARLIE-MISSION-WAITING")
+        self.assertEqual(data["approved_queue"][0]["mission_id"], "CHARLIE-MISSION-WAITING")
         self.assertEqual(data["local_runner"]["status"], "runner_not_started")
         self.assertIn("charlie_runner_control.py start", data["local_runner_control_commands"]["start"])
         self.assertFalse(data["can_run_shell_from_web"])

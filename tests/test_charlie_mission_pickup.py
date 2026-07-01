@@ -254,6 +254,31 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_can_pick_next_approved_when_previous_is_pr_ready(self, list_missions, write_heartbeat, sleep):
+        def fake_list_missions(status="approved", limit=10):
+            if status == "approved":
+                return ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            interval_seconds=5,
+            max_checks=1,
+            continuous=True,
+            dry_run=True,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
+        self.assertEqual(result["runner_mode"], "code_test_pr")
+        write_heartbeat.assert_called()
+        sleep.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.process_release_approved_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_missions")

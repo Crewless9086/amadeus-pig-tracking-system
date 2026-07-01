@@ -182,7 +182,7 @@ def watch_for_mission(
 
 
 def _active_mission():
-    for status in ("in_progress", "pr_ready", "release_in_progress"):
+    for status in ("in_progress", "release_in_progress"):
         loaded, status_code = list_missions(status=status, limit=1)
         if status_code < 400 and loaded.get("missions"):
             return loaded["missions"][0]

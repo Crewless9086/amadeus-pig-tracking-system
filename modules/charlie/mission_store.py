@@ -33,6 +33,7 @@ MISSION_EVENT_TYPES = {
     "mission_updated",
     "vault_updated",
     "workflow_updated",
+    "queue_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
@@ -108,6 +109,9 @@ REVIEW_DECISION_STATUS = {
     "reject": "rejected",
     "mark_done": "done",
 }
+QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
+QUEUE_PRIORITY_DEFAULT = 100
+QUEUE_PRIORITY_MAX = 999
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -199,6 +203,7 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
     clean_status = _clean_text(status, 40)
     params = {"status": clean_status, "limit": parsed_limit}
     where_clause = "where status = %(status)s" if clean_status else ""
+    order_clause = _mission_order_clause(clean_status)
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -210,7 +215,7 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
                            metadata_json, created_at, updated_at
                     from public.charlie_missions
                     {where_clause}
-                    order by created_at desc
+                    {order_clause}
                     limit %(limit)s
                     """,
                     params,
@@ -230,6 +235,92 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
         "configured": True,
         "status": "ok",
         "missions": [_mission_row(row) for row in rows],
+    }, 200
+
+
+def update_mission_queue_priority(
+    mission_id,
+    priority,
+    notes="Mission queue priority updated.",
+    database_url=None,
+    connect_factory=None,
+):
+    mission_id = _clean_text(mission_id, 90)
+    clean_priority = _clean_queue_priority(priority)
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if clean_priority is None:
+        return {
+            "success": False,
+            "status": "invalid_queue_priority",
+            "allowed_range": [1, QUEUE_PRIORITY_MAX],
+        }, 400
+
+    loaded, load_status = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    if mission.get("status") in {"done", "merged", "deployed", "rejected"}:
+        return {
+            "success": False,
+            "status": "mission_queue_priority_not_allowed",
+            "mission_status": mission.get("status", ""),
+        }, 409
+
+    metadata = dict(mission.get("metadata") or {})
+    queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
+    queue = dict(queue)
+    queue.update({
+        "priority": clean_priority,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    metadata_update = {"queue": queue}
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    update public.charlie_missions
+                    set metadata_json = coalesce(metadata_json, '{}'::jsonb) || %(metadata_json)s::jsonb,
+                        updated_at = now()
+                    where mission_id = %(mission_id)s
+                    returning mission_id
+                    """,
+                    {
+                        "mission_id": mission_id,
+                        "metadata_json": json.dumps(metadata_update),
+                    },
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                _insert_event(cursor, mission_id, "queue_updated", notes, {
+                    "priority": clean_priority,
+                    "source": "owner_api",
+                })
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_queue_priority_update_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mission_id": mission_id,
+        "queue_priority": clean_priority,
     }, 200
 
 
@@ -981,6 +1072,8 @@ def _insert_event(cursor, mission_id, event_type, notes, metadata):
 
 def _mission_row(row):
     metadata = row[13] if isinstance(row[13], dict) else {}
+    queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
+    queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
     return {
         "mission_id": row[0],
         "status": row[1],
@@ -996,6 +1089,11 @@ def _mission_row(row):
         "owner_decision": row[11],
         "codex_chat_write_status": row[12],
         "metadata": metadata,
+        "queue": {
+            "priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
+            "updated_at": _clean_text(queue.get("updated_at", ""), 80) if queue else "",
+        },
+        "queue_priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
         "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
         "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
         "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
@@ -1077,6 +1175,39 @@ def _default_context_pack(mission_type=""):
         "agent_order": sequence,
         "parallel_work": "disabled_until_phase_6_parallel_controls",
     }
+
+
+def _mission_order_clause(status):
+    if status in QUEUE_ORDERED_STATUSES:
+        return """
+                    order by
+                        case
+                            when (metadata_json->'queue'->>'priority') ~ '^[0-9]+$'
+                            then (metadata_json->'queue'->>'priority')::int
+                            else %(default_priority)s
+                        end asc,
+                        case urgency
+                            when 'P0' then 0
+                            when 'P1' then 1
+                            when 'P2' then 2
+                            when 'P3' then 3
+                            when 'P4' then 4
+                            else 5
+                        end asc,
+                        created_at asc,
+                        mission_id asc
+                    """.replace("%(default_priority)s", str(QUEUE_PRIORITY_DEFAULT))
+    return "order by created_at desc"
+
+
+def _clean_queue_priority(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 1 or parsed > QUEUE_PRIORITY_MAX:
+        return None
+    return parsed
 
 
 def _default_forbidden_actions():

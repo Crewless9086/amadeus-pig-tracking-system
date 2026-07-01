@@ -16,6 +16,7 @@ from modules.charlie.mission_store import (
     record_mission,
     record_mission_review_decision,
     update_new_mission_intake,
+    update_mission_queue_priority,
     update_mission_workflow_step,
     update_mission_status,
     update_mission_vault,
@@ -106,15 +107,17 @@ def charlie_build_relay_runner_status_route():
     if denied:
         return denied
     approved, approved_status = list_missions(status="approved", limit=1)
+    approved_queue, approved_queue_status = list_missions(status="approved", limit=5)
     in_progress, in_progress_status = list_missions(status="in_progress", limit=1)
     pr_ready, pr_ready_status = list_missions(status="pr_ready", limit=1)
     release_approved, release_approved_status = list_missions(status="release_approved", limit=1)
     release_in_progress, release_in_progress_status = list_missions(status="release_in_progress", limit=1)
-    if max(approved_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
+    if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
         return jsonify({
             "success": False,
             "status": "runner_handoff_unavailable",
             "approved_status": approved.get("status"),
+            "approved_queue_status": approved_queue.get("status"),
             "in_progress_status": in_progress.get("status"),
             "pr_ready_status": pr_ready.get("status"),
             "release_approved_status": release_approved.get("status"),
@@ -122,7 +125,8 @@ def charlie_build_relay_runner_status_route():
             "can_run_shell_from_web": False,
         }), 503
 
-    active_mission = _first_mission(in_progress) or _first_mission(pr_ready) or _first_mission(release_in_progress)
+    active_mission = _first_mission(in_progress) or _first_mission(release_in_progress)
+    review_backlog = pr_ready.get("missions", [])
     next_approved = _first_mission(approved)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
@@ -148,7 +152,9 @@ def charlie_build_relay_runner_status_route():
         "success": True,
         "status": runner_status,
         "active_mission": active_mission,
+        "review_backlog": review_backlog,
         "next_approved_mission": next_approved,
+        "approved_queue": approved_queue.get("missions", []),
         "next_release_approved_mission": next_release_approved,
         "next_action": next_action,
         "local_runner": local_status,
@@ -167,7 +173,7 @@ def charlie_build_relay_runner_status_route():
         "can_run_shell_from_web": False,
         "can_commit_from_web": False,
         "can_merge_from_web": False,
-        "execution_boundary": "A local Codex/Cursor session or local runner process must execute pickup/build work.",
+        "execution_boundary": "A local Codex/Cursor session or local runner process must execute pickup/build work. Missions at pr_ready remain in owner review and do not block the next approved build pickup.",
     }), 200
 
 
@@ -178,6 +184,7 @@ def charlie_build_relay_command_center_route():
         return denied
     summary, summary_status = mission_status_summary()
     recent, recent_status = list_missions(limit=8)
+    approved_queue, approved_status = list_missions(status="approved", limit=20)
     review_ready, review_status = list_missions(status="pr_ready", limit=5)
     blocked, blocked_status = list_missions(status="blocked", limit=5)
     release_approved, release_approved_status = list_missions(status="release_approved", limit=5)
@@ -187,6 +194,7 @@ def charlie_build_relay_command_center_route():
     statuses = [
         summary_status,
         recent_status,
+        approved_status,
         review_status,
         blocked_status,
         release_approved_status,
@@ -225,6 +233,11 @@ def charlie_build_relay_command_center_route():
             "merged_waiting_live_verify": merged.get("missions", []),
             "deployed": deployed.get("missions", []),
             "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
+        },
+        "queue": {
+            "approved": approved_queue.get("missions", []),
+            "ordering": "queue.priority asc, urgency asc, created_at asc",
+            "execution_boundary": "Local runner picks only one approved mission at a time and waits while a mission is active or in release.",
         },
         "review": {
             "ready": review_ready.get("missions", []),
@@ -311,6 +324,20 @@ def charlie_build_relay_mission_decision_route(mission_id):
         event_type="approval_decision",
         notes=owner_decision or f"Owner set mission status to {status}.",
         metadata={"source": "owner_api", "approval_level": approval_level},
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/queue", methods=["POST"])
+def charlie_build_relay_mission_queue_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = update_mission_queue_priority(
+        mission_id,
+        priority=payload.get("priority"),
+        notes=str(payload.get("notes") or "Mission queue priority updated from CHARLIE Mission Control.").strip(),
     )
     return jsonify(result), status_code
 

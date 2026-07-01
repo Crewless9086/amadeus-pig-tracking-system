@@ -321,14 +321,15 @@ def _next_action(repo_root):
 
 
 def _mission_queue_next_action():
-    active = _first_available_mission(("in_progress", "pr_ready", "release_in_progress"))
+    active = _first_available_mission(("in_progress", "release_in_progress"))
+    review_ready = _first_available_mission(("pr_ready", "blocked"))
     approved = _first_available_mission(("approved",))
     release_approved = _first_available_mission(("release_approved",))
     new_missions = _mission_list_for_status("new", limit=3)
 
-    if not active and not approved and not release_approved and new_missions is None:
+    if not active and not review_ready and not approved and not release_approved and new_missions is None:
         return None
-    if not active and not approved and not release_approved and not new_missions:
+    if not active and not review_ready and not approved and not release_approved and not new_missions:
         return None
 
     lines = ["CHARLIE next"]
@@ -346,13 +347,23 @@ def _mission_queue_next_action():
         ])
         keyboard.append([{"text": "View active mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
 
+    if review_ready:
+        mission = review_ready["mission"]
+        lines.extend([
+            "",
+            f"Waiting owner review: {_mission_title_line(mission)}",
+            f"Status: {mission.get('status')}",
+            "This review backlog does not block the local runner from picking the next approved mission.",
+        ])
+        keyboard.append([{"text": "View review mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+
     if approved:
         mission = approved["mission"]
         lines.extend([
             "",
             f"Approved waiting for Codex runner: {_mission_title_line(mission)}",
             f"Approval: {mission.get('approval_level') or 'not set'}",
-            "If the local runner is active, it will pick this up when no mission is in progress or PR-ready.",
+            "If the local runner is active, it will pick this up when no mission is in progress or release-in-progress.",
         ])
         keyboard.append([{"text": "View approved mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
 

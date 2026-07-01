@@ -11,6 +11,7 @@ from modules.charlie.mission_store import (
     record_mission_review_decision,
     record_mission,
     record_mission_event,
+    update_mission_queue_priority,
     update_mission_status,
     update_mission_vault,
 )
@@ -105,6 +106,37 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["missions"][0]["metadata"], {"owner": "masked"})
         self.assertEqual(result["missions"][0]["vault"], {})
         self.assertEqual(result["missions"][0]["agent_workflow"], [])
+        self.assertEqual(result["missions"][0]["queue_priority"], 100)
+
+    def test_list_missions_orders_status_queue_by_priority(self):
+        connection = FakeConnection([])
+
+        result, status_code = list_missions(
+            status="approved",
+            limit=10,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("metadata_json->'queue'->>'priority'", sql)
+        self.assertIn("created_at asc", sql)
+        self.assertIn("mission_id asc", sql)
+        self.assertEqual(result["missions"], [])
+
+    def test_list_missions_keeps_recent_order_without_status_filter(self):
+        connection = FakeConnection([])
+
+        list_missions(
+            limit=10,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        sql = connection.cursor_instance.executed[0][0]
+        self.assertIn("order by created_at desc", sql)
+        self.assertNotIn("metadata_json->'queue'->>'priority'", sql)
 
     def test_record_mission_event_rejects_unknown_event_type(self):
         result, status_code = record_mission_event("MISSION-1", "execute_shell", database_url="")
@@ -196,6 +228,44 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_mission_status")
+
+    def test_update_mission_queue_priority_records_metadata_and_event(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "approved", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"queue": {"priority": 50}}, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        result, status_code = update_mission_queue_priority(
+            "MISSION-1",
+            10,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connections.pop(0),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["queue_priority"], 10)
+        self.assertEqual(len(update_connection.cursor_instance.executed), 2)
+        update_sql, update_params = update_connection.cursor_instance.executed[0]
+        self.assertIn("metadata_json", update_sql)
+        self.assertIn('"priority": 10', update_params["metadata_json"])
+
+    def test_update_mission_queue_priority_rejects_invalid_priority(self):
+        result, status_code = update_mission_queue_priority(
+            "MISSION-1",
+            0,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([("MISSION-1",)]),
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_queue_priority")
 
     def test_update_mission_vault_merges_metadata_and_records_event(self):
         connection = FakeConnection([("MISSION-1",)])
