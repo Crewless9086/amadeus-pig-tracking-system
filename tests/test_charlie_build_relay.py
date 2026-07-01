@@ -662,6 +662,43 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_review_packet.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    def test_core_templates_route_returns_vault_and_workflow_templates(self, _owner_access):
+        response = self.client.get("/api/charlie/core/templates")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["version"], "charlie_core_v3")
+        self.assertEqual(data["vault_schema"]["version"], "charlie_vault_v1")
+        self.assertIn("income_stream", data["workflow_templates"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.get_mission")
+    def test_core_readiness_route_returns_stage_percentages(self, get_mission, _owner_access):
+        get_mission.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "MISSION-1",
+                "title": "Build CHARLIE CORE",
+                "raw_text": "Build CHARLIE CORE workflow.",
+                "mission_type": "system improvement",
+                "metadata": {},
+                "vault": {},
+                "agent_workflow": [],
+            },
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions/MISSION-1/core-readiness")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mission_id"], "MISSION-1")
+        self.assertEqual(data["core_plan"]["version"], "charlie_core_v3")
+        self.assertIn("stages", data["core_readiness"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_mission_review_decision")
     def test_mission_review_decision_route_records_owner_gate_decision(self, record_review_decision, _owner_access):
         record_review_decision.return_value = ({

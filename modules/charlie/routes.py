@@ -22,6 +22,13 @@ from modules.charlie.mission_store import (
     update_mission_status,
     update_mission_vault,
 )
+from modules.charlie.core_workflow import (
+    CHARLIE_CORE_VERSION,
+    VAULT_SCHEMA,
+    WORKFLOW_TEMPLATES,
+    build_core_plan,
+    evaluate_core_readiness,
+)
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -213,9 +220,23 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     local_status = local_runner_status()
+    readiness_items = []
+    for mission in recent.get("missions", []):
+        readiness_items.append({
+            "mission_id": mission.get("mission_id", ""),
+            "title": mission.get("title", ""),
+            "status": mission.get("status", ""),
+            "core_readiness": evaluate_core_readiness(mission),
+        })
     return jsonify({
         "success": True,
         "status": "ok",
+        "charlie_core": {
+            "version": CHARLIE_CORE_VERSION,
+            "overall_target": "90%+ workflow readiness before deep income-stream missions",
+            "templates": sorted(WORKFLOW_TEMPLATES.keys()),
+            "recent_readiness": readiness_items,
+        },
         "counts": summary.get("counts", {}),
         "vault": {
             "version": "charlie_vault_v1",
@@ -251,6 +272,38 @@ def charlie_build_relay_command_center_route():
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
+    }), 200
+
+
+@charlie_bp.route("/charlie/core/templates", methods=["GET"])
+def charlie_core_templates_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "version": CHARLIE_CORE_VERSION,
+        "vault_schema": VAULT_SCHEMA,
+        "workflow_templates": WORKFLOW_TEMPLATES,
+    }), 200
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/core-readiness", methods=["GET"])
+def charlie_core_mission_readiness_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_mission(mission_id)
+    if status_code >= 400:
+        return jsonify(result), status_code
+    mission = result.get("mission") or {}
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "mission_id": mission.get("mission_id", mission_id),
+        "core_plan": build_core_plan(mission),
+        "core_readiness": evaluate_core_readiness(mission),
     }), 200
 
 

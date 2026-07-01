@@ -5,6 +5,18 @@ import re
 from datetime import datetime, timezone
 
 from services.database_service import DATABASE_URL_ENV
+from modules.charlie.core_workflow import (
+    HANDOFF_VERSION,
+    SPECIALIST_AGENTS,
+    WORKFLOW_TEMPLATES,
+    attach_core_plan_to_metadata,
+    build_core_plan,
+    build_handoff_report,
+    build_income_stream_readiness,
+    build_review_board_packet,
+    agent_instruction_pack,
+    evaluate_core_readiness,
+)
 
 
 MISSION_STATUSES = {
@@ -85,15 +97,29 @@ AGENT_DEFINITIONS = {
         "handoff_to": "owner",
     },
 }
+for _agent_name, _agent_definition in SPECIALIST_AGENTS.items():
+    AGENT_DEFINITIONS.setdefault(_agent_name, {
+        "purpose": _agent_definition.get("purpose", ""),
+        "handoff_to": "owner",
+    })
 AGENT_STAGE_MAP = {
     "idea_expander": "idea_expanded",
+    "concept_strategist": "concept_defined",
     "product_architect": "product_ready",
+    "technical_architect": "architecture_ready",
+    "business_model_agent": "business_model_ready",
+    "risk_agent": "risk_reviewed",
     "planner": "planned",
     "architect": "build_ready",
     "builder": "built",
     "tester": "tested",
     "qa_red_team": "qa_reviewed",
+    "security_reviewer": "security_reviewed",
+    "evidence_reviewer": "evidence_reviewed",
+    "product_reviewer": "product_reviewed",
+    "business_reviewer": "business_reviewed",
     "reviewer": "review_ready",
+    "publisher": "release_ready",
 }
 REVIEW_DECISIONS = {
     "approve_final_release",
@@ -511,15 +537,16 @@ def normalize_approval_level(value):
 
 
 def agent_sequence_for_mission(mission_type=""):
-    mission_type = _clean_text(mission_type, 80).lower()
-    sequence = []
-    for agent in SPECIALIST_AGENT_SEQUENCE:
-        definition = AGENT_DEFINITIONS.get(agent, {})
-        types = definition.get("mission_types") or set()
-        if any(token in mission_type for token in types):
-            sequence.append(agent)
-    sequence.extend(CORE_AGENT_SEQUENCE_V2)
-    return sequence
+    plan = build_core_plan({"mission_type": mission_type, "raw_text": mission_type})
+    sequence = plan.get("workflow_template", {}).get("agent_order") or []
+    review_board_only = {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "publisher"}
+    runner_sequence = []
+    for agent in sequence:
+        if agent in review_board_only:
+            continue
+        if agent in AGENT_DEFINITIONS and agent not in runner_sequence:
+            runner_sequence.append(agent)
+    return runner_sequence or list(CORE_AGENT_SEQUENCE_V2)
 
 
 def all_agent_names():
@@ -835,6 +862,22 @@ def update_mission_workflow_step(
         handoff_notes = list(handoff_notes)
         handoff_notes.append({"agent": agent, "status": step_status, "findings": findings})
         vault["handoff_notes"] = handoff_notes[-12:]
+        handoff_reports = vault.get("handoff_reports") if isinstance(vault.get("handoff_reports"), list) else []
+        handoff_reports = list(handoff_reports)
+        handoff_reports.append(build_handoff_report(
+            mission,
+            agent,
+            {
+                "summary": findings,
+                "status": "pass" if step_status == "complete" else step_status,
+                "actions_taken": [f"Workflow step marked {step_status}."],
+                "inputs_used": ["mission_vault", "agent_workflow"],
+                "vault_sources_used": ["mission_vault"],
+                "recommended_next_agent": next_agent,
+            },
+            stage=AGENT_STAGE_MAP.get(agent, agent),
+        ))
+        vault["handoff_reports"] = handoff_reports[-20:]
     context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack(mission.get("mission_type", ""))
 
     status = ""
@@ -849,6 +892,18 @@ def update_mission_workflow_step(
             "mission_vault": vault,
             "agent_workflow": updated_workflow,
             "mission_context_pack": context_pack,
+            "charlie_core": {
+                **(metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}),
+                "readiness": evaluate_core_readiness({
+                    "metadata": {
+                        **metadata,
+                        "mission_vault": vault,
+                        "agent_workflow": updated_workflow,
+                    },
+                    "agent_workflow": updated_workflow,
+                    "vault": vault,
+                }),
+            },
         },
         status=status,
         owner_decision=f"{agent} step marked {step_status}." if status else "",
@@ -1014,6 +1069,12 @@ def build_mission_review_packet(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    review_board = packet.get("review_board") if isinstance(packet.get("review_board"), dict) else core.get("review_board")
+    if not isinstance(review_board, dict):
+        review_board = build_review_board_packet(mission, packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {})
+    income_stream_readiness = metadata.get("income_stream_readiness") if isinstance(metadata.get("income_stream_readiness"), dict) else build_income_stream_readiness(mission)
+    core_readiness = evaluate_core_readiness(mission)
     return {
         "mission": {
             "mission_id": mission.get("mission_id", ""),
@@ -1038,8 +1099,14 @@ def build_mission_review_packet(mission):
         "agent_artifacts": packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {},
         "quality_gates": packet.get("quality_gates") if isinstance(packet.get("quality_gates"), list) else [],
         "qa_evidence": _packet_list(packet, "qa_evidence", []),
-        "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else {},
+        "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else vault.get("handoff_reports", []),
         "backflow_events": packet.get("backflow_events") if isinstance(packet.get("backflow_events"), list) else [],
+        "charlie_core": core,
+        "core_readiness": core_readiness,
+        "review_board": review_board,
+        "income_stream_readiness": income_stream_readiness,
+        "vault_schema": core.get("vault_schema", {}),
+        "workflow_template": core.get("workflow_template", {}),
         "blocked_agent": packet.get("blocked_agent", ""),
         "blocked_reason": packet.get("blocked_reason", ""),
         "blocked_summary": packet.get("blocked_summary") if isinstance(packet.get("blocked_summary"), dict) else {},
@@ -1261,6 +1328,15 @@ def _mission_metadata(raw_text, mission, source_context, metadata):
         "requires_tester": True,
         "requires_reviewer": True,
     })
+    metadata = attach_core_plan_to_metadata(
+        {
+            **mission,
+            "raw_text": raw_text,
+            "mission_type": mission.get("mission_type", "feature build"),
+            "title": mission.get("title", raw_text),
+        },
+        metadata,
+    )
     return metadata
 
 
@@ -1291,8 +1367,12 @@ def _default_agent_workflow(mission_type=""):
             "status": "pending",
             "purpose": definition.get("purpose", ""),
             "handoff_to": next_agent,
+            "required_output": HANDOFF_VERSION,
+            "instruction_pack": agent_instruction_pack(agent),
             "findings": "",
         })
+    if workflow:
+        workflow[0]["status"] = "active"
     return workflow
 
 
@@ -1443,6 +1523,8 @@ def _workflow_defaults_for_sequence(sequence):
             "status": "pending",
             "purpose": definition.get("purpose", ""),
             "handoff_to": next_agent,
+            "required_output": HANDOFF_VERSION,
+            "instruction_pack": agent_instruction_pack(agent),
             "findings": "",
         })
     return defaults

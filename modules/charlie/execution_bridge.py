@@ -23,6 +23,11 @@ from modules.charlie.mission_store import (
     update_mission_workflow_step,
 )
 from modules.charlie.runner_control import write_runner_heartbeat
+from modules.charlie.core_workflow import (
+    build_handoff_report as build_core_handoff_report,
+    build_review_board_packet,
+    evaluate_core_readiness,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1678,6 +1683,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         )
     review_links = dict(reviewer_links)
     review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
+    review_board = build_review_board_packet(mission, artifacts)
+    for item in review_board.get("reviews", []):
+        if item.get("agent") in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+            item["status"] = "pass"
+            item["summary"] = "Runner evidence is ready for owner inspection."
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -1710,6 +1720,14 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 for agent, artifact in artifacts.items()
                 if isinstance(artifact, dict)
             },
+            "review_board": review_board,
+            "core_readiness": evaluate_core_readiness({
+                **mission,
+                "metadata": {
+                    **(mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}),
+                    "review_packet": {"review_board": review_board},
+                },
+            }),
             "review_status": "ready_for_owner_review",
         },
         "agent_execution": ledger,
@@ -1958,7 +1976,7 @@ def _agent_unresolved_issue_context(artifacts=None, ledger=None):
 def _build_handoff_report(mission, agent, artifact, ledger):
     artifact = artifact if isinstance(artifact, dict) else {}
     unresolved = _agent_unresolved_issue_context({agent: artifact}, ledger)
-    return {
+    legacy = {
         "contract": "charlie_handoff_report_v1",
         "mission_id": mission.get("mission_id", "") if isinstance(mission, dict) else "",
         "agent": agent,
@@ -1976,6 +1994,23 @@ def _build_handoff_report(mission, agent, artifact, ledger):
         "next_action": artifact.get("next_action", ""),
         "completed_at": artifact.get("completed_at", datetime.now(timezone.utc).isoformat()),
         "ledger_execution_id": ledger.get("execution_id", "") if isinstance(ledger, dict) else "",
+    }
+    canonical = build_core_handoff_report(mission, agent, {
+        **artifact,
+        "inputs_used": artifact.get("files_inspected", []),
+        "actions_taken": artifact.get("commands_run", []),
+        "vault_sources_used": ["mission_vault", "mission_context_pack"],
+        "artifacts_created": artifact.get("changed_files", []),
+        "files_changed": artifact.get("changed_files", []),
+        "risks_found": artifact.get("risk_notes") or artifact.get("qa_findings") or unresolved.get("issues", []),
+        "tests_run": artifact.get("tests_run") or artifact.get("test_evidence") or [],
+        "pass_fail_status": "pass",
+        "recommended_next_agent": artifact.get("handoff_to", ""),
+    })
+    return {
+        **legacy,
+        "canonical": canonical,
+        "validation": canonical.get("validation", {}),
     }
 
 

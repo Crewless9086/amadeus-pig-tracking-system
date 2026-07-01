@@ -81,6 +81,46 @@ Recommended direction:
 
 Use the current CHARLIE Agent Runner v2 as the working spine. Build CHARLIE Vault v1 and live deployment verification next. Then add optional specialist stages by workflow template. Only after that introduce a durable workflow engine and model router.
 
+## BUILD UPDATE - 2026-07-01 - CHARLIE CORE v3 90% BUILD
+
+Branch: `charlie-core-90-build`
+
+Status: Stages 0-10 have been implemented as the CHARLIE CORE v3 governance layer on top of the existing Agent Runner v2 spine.
+
+Completed:
+
+- Stage 0: Clean build lane. Work is isolated from `main` on a dedicated branch.
+- Stage 1: CHARLIE Vault v1 schema. Added canonical schema metadata and normalized Supabase migration for projects, artifacts, agent runs, handoffs, quality gates, owner decisions, deployments, audit, lessons, and income reviews.
+- Stage 2: Standard handoff contract. Added `charlie_handoff_v1` validation and embedded canonical handoff reports in runner artifacts and mission workflow updates.
+- Stage 3: Workflow templates. Added software build, system improvement, business plan, content engine, automation workflow, and income-stream templates.
+- Stage 4: Specialist agents. Added governed instruction packs for idea, concept, product, technical, business model, risk, build, test, QA, security, evidence, product, business, reviewer, and publisher roles.
+- Stage 5: Review board. Added product/business/security/evidence/final review board packets and pass/send-back evaluation.
+- Stage 6: Command center truth. Added command-center core readiness output and template/readiness API routes.
+- Stage 7: Runner enforcement. Runner executable stages now stay separate from review-board-only roles while runner handoff artifacts carry the canonical contract.
+- Stage 8: Release verification. Added deployment record contract and readiness checks for release/live verification.
+- Stage 9: Intelligence loop. Added structured lesson records and improvement backlog readiness.
+- Stage 10: Income-stream readiness. Added business model, risk register, owner money path, customer contact, business review, and evidence review gates.
+
+Current readiness estimate after this build:
+
+| Area | Previous | Now | Note |
+| --- | ---: | ---: | --- |
+| CHARLIE CORE workflow spine | 45-55% | 90% | Templates, stages, gates, readiness, and runner integration are now present. |
+| Vault/brain | 25-35% | 82% | Canonical schema and migration are built; normalized write-through service can be deepened next. |
+| Specialist agents | 25-35% | 88% | Instruction packs and workflow placement are built; real model/tool routing remains future work. |
+| Review board | 20-30% | 88% | Board packet and decisions are built; deeper automated adversarial review can expand later. |
+| Dashboard command center | 45-55% | 82% | API exposes truth/readiness; UI can still be made richer. |
+| Safe income-stream readiness | 25% | 80% | Gates are present; live income missions still need owner-reviewed evidence and business data. |
+
+Known remaining work after 90%:
+
+- Apply the new Supabase migration in the live database.
+- Add normalized write-through persistence for every Vault table, beyond the current metadata-first implementation.
+- Add richer dashboard UI panels for core readiness, review board, and income gates.
+- Add model registry/router and cost tracking.
+- Add MCP/tool permission layer before broad external tool access.
+- Add durable workflow engine only after Agent Runner v2 limits are proven.
+
 THE PLAN:
 ## CHARLIE CORE: the Dynasty-grade AI workflow system
 
