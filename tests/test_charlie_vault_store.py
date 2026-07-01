@@ -105,6 +105,54 @@ class CharlieVaultStoreTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(result["success"])
 
+    def test_list_artifacts_filters_by_type(self):
+        connection = FakeConnection(rows=[
+            (
+                "ARTIFACT-1",
+                "MISSION-1",
+                "charlie_core",
+                "charlie_improvement_proposal",
+                "Improve tests",
+                "Tighten tests",
+                {"label": "charlie_self_improvement"},
+                [],
+                "high",
+                "charlie_improvement_analyst",
+                "2026-07-01T10:00:00+00:00",
+            )
+        ])
+
+        result, status = vault_store.list_artifacts(
+            artifact_type="charlie_improvement_proposal",
+            database_url="postgresql://example",
+            connect_factory=lambda _url: connection,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        sql, params = connection.cursor_obj.calls[0]
+        self.assertIn("charlie_vault_artifacts", sql)
+        self.assertIn("artifact_type = %(artifact_type)s", sql)
+        self.assertEqual(params["artifact_type"], "charlie_improvement_proposal")
+        self.assertEqual(result["artifacts"][0]["content"]["label"], "charlie_self_improvement")
+
+    def test_update_artifact_content_updates_json_only(self):
+        connection = FakeConnection(rows=[("ARTIFACT-1",)])
+
+        result, status = vault_store.update_artifact_content(
+            "ARTIFACT-1",
+            {"status": "approved", "label": "charlie_self_improvement"},
+            database_url="postgresql://example",
+            connect_factory=lambda _url: connection,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        sql, params = connection.cursor_obj.calls[0]
+        self.assertIn("update public.charlie_vault_artifacts", sql)
+        self.assertEqual(params["artifact_id"], "ARTIFACT-1")
+        self.assertIn("charlie_self_improvement", params["content_json"])
+
 
 if __name__ == "__main__":
     unittest.main()

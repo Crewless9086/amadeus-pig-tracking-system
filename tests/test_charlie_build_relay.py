@@ -573,9 +573,11 @@ class CharlieBuildRelayTests(unittest.TestCase):
     @patch("modules.charlie.routes.local_runner_status")
     @patch("modules.charlie.routes.list_owner_work_missions")
     @patch("modules.charlie.routes.mission_status_summary")
+    @patch("modules.charlie.routes.list_improvement_proposals")
     @patch("modules.charlie.routes.list_missions")
-    def test_command_center_uses_status_specific_owner_work_buckets(self, list_missions, mission_status_summary, list_owner_work_missions, local_runner_status, vault_tables_health, _owner_access):
+    def test_command_center_uses_status_specific_owner_work_buckets(self, list_missions, list_improvement_proposals, mission_status_summary, list_owner_work_missions, local_runner_status, vault_tables_health, _owner_access):
         mission_status_summary.return_value = ({"success": True, "status": "ok", "counts": {"approved": 1}}, 200)
+        list_improvement_proposals.return_value = ({"success": True, "status": "ok", "proposals": []}, 200)
         list_missions.return_value = ({
             "success": True,
             "status": "ok",
@@ -939,6 +941,75 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.args[1], "approved")
         self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_improvement_proposals")
+    def test_improvements_route_lists_owner_reviewable_proposals(self, list_improvement_proposals, _owner_access):
+        list_improvement_proposals.return_value = ({
+            "success": True,
+            "status": "ok",
+            "proposals": [{
+                "proposal_id": "PROPOSAL-1",
+                "label": "charlie_self_improvement",
+                "status": "pending",
+                "problem_detected": "Repeated test weakness.",
+            }],
+            "execution_boundary": "Improvement proposals are advisory records only.",
+        }, 200)
+
+        response = self.client.get("/api/charlie/core/improvements?status=pending")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["proposals"][0]["label"], "charlie_self_improvement")
+        list_improvement_proposals.assert_called_once_with(status="pending", limit=20)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.generate_and_store_proposals")
+    def test_improvements_analyze_route_generates_advisory_proposals(self, generate_and_store, _owner_access):
+        generate_and_store.return_value = ({
+            "success": True,
+            "status": "ok",
+            "proposal_count": 1,
+            "execution_boundary": "Improvement proposals are advisory records only.",
+        }, 200)
+
+        response = self.client.post("/api/charlie/core/improvements/analyze", json={"limit": 30})
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["proposal_count"], 1)
+        generate_and_store.assert_called_once_with(limit=30)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.record_proposal_decision")
+    def test_improvement_decision_route_records_only_allowed_decision_contract(self, record_decision, _owner_access):
+        record_decision.return_value = ({
+            "success": True,
+            "status": "ok",
+            "proposal_id": "PROPOSAL-1",
+            "proposal_status": "sent_to_mission",
+            "decision": "send_to_mission",
+            "execution_boundary": "Improvement proposals are advisory records only.",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/core/improvements/PROPOSAL-1/decision",
+            json={"decision": "send_to_mission", "comments": "Turn this into scoped work."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["decision"], "send_to_mission")
+        self.assertIn("advisory", data["execution_boundary"])
+        record_decision.assert_called_once_with(
+            "PROPOSAL-1",
+            decision="send_to_mission",
+            comments="Turn this into scoped work.",
+        )
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_queue_priority")
