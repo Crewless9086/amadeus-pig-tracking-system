@@ -7711,6 +7711,7 @@ body.oom-farm-command-body {
     width: min(1440px, calc(100% - 32px));
     margin: 0 auto;
     padding: 24px 0 40px;
+    overflow-x: clip;
 }
 
 .charlie-header {
@@ -7761,7 +7762,7 @@ body.oom-farm-command-body {
 
 .charlie-control-room {
     display: grid;
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1.45fr) minmax(280px, 380px);
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1.45fr) minmax(250px, 340px);
     gap: 16px;
     align-items: start;
 }
@@ -7772,6 +7773,15 @@ body.oom-farm-command-body {
     top: 14px;
 }
 
+.charlie-control-room > *,
+.charlie-command-strip > *,
+.charlie-menu-rail,
+.charlie-side-rail,
+.charlie-mission-stage,
+.charlie-panel {
+    min-width: 0;
+}
+
 .charlie-side-rail,
 .charlie-mission-stage {
     display: grid;
@@ -7780,6 +7790,13 @@ body.oom-farm-command-body {
 
 .charlie-panel {
     padding: 16px;
+}
+
+.charlie-panel pre {
+    max-width: 100%;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .charlie-panel label {
