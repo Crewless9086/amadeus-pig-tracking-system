@@ -7,12 +7,14 @@ from datetime import datetime, timezone
 
 from services.database_service import DATABASE_URL_ENV
 from modules.pig_weights import pig_weights_service
+from modules.pig_weights import farm_supabase_write_service
 from modules.pig_weights.pig_weights_service import (
     parse_sheet_date,
     save_movement_entry,
     save_weight_entry_with_optional_move,
     to_clean_string,
 )
+from modules.pig_weights.pig_weights_utils import generate_move_log_id, generate_weight_log_id
 
 DEFAULT_CHUNK_SIZE = 3
 BATCH_STATUSES = {"staged", "processing", "partial", "complete", "failed", "cancelled"}
@@ -368,11 +370,6 @@ def process_bulk_weight_batch(batch_id: str, chunk_size: int = DEFAULT_CHUNK_SIZ
 
     for row in chunk:
         _process_one_row(row)
-        progress_counts = _counts_from_records(rows)
-        batch["status"] = "processing" if progress_counts["remaining_count"] else _batch_status_from_counts(progress_counts)
-        batch["error_summary"] = "" if progress_counts["failed_count"] == 0 else f"{progress_counts['failed_count']} row(s) need retry or review."
-        batch["payload_summary_json"] = {**(batch.get("payload_summary_json") or {}), "last_processed_at": _now_iso(), "last_chunk_size": len(chunk)}
-        _save_store(batch, rows)
     counts = _counts_from_records(rows)
     batch["status"] = "processing" if counts["staged_count"] else _batch_status_from_counts(counts)
     batch["error_summary"] = "" if counts["failed_count"] == 0 else f"{counts['failed_count']} row(s) need retry or review."
@@ -391,6 +388,14 @@ def _process_one_row(row):
     action_type = result_json.get("action_type", "weight")
     preflight = result_json.get("preflight") or {}
     try:
+        fast_result = _process_one_row_supabase(row, action_type, preflight)
+        if fast_result is not None:
+            row["status"] = "success"
+            row["status_reason"] = fast_result["status_reason"]
+            row["result_json"] = {**result_json, "process_result": fast_result}
+            row["processed_at"] = _now_iso()
+            row["updated_at"] = _now_iso()
+            return
         if action_type in {"movement_only", "duplicate_weight_movement"}:
             result = save_movement_entry({
                 "pig_id": row.get("pig_id", ""),
@@ -427,6 +432,103 @@ def _process_one_row(row):
         row["result_json"] = {**result_json, "process_error": {"message": str(exc), "type": exc.__class__.__name__}}
     row["processed_at"] = _now_iso()
     row["updated_at"] = _now_iso()
+
+
+def _process_one_row_supabase(row, action_type, preflight):
+    if _store_mode() == "memory" or not farm_supabase_write_service.farm_supabase_writes_available():
+        return None
+
+    weight_date = parse_sheet_date(preflight.get("weight_date", "") or row.get("original_row_json", {}).get("weight_date", ""))
+    pig_id = row.get("pig_id", "")
+    to_pen_id = row.get("to_pen_id", "")
+    from_pen_id = row.get("from_pen_id", "")
+    wrote_weight = False
+    wrote_movement = False
+    existing_weight = False
+    existing_movement = False
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            if action_type not in {"movement_only", "duplicate_weight_movement"}:
+                cursor.execute(
+                    """
+                    select 1 from public.pig_weight_events
+                    where pig_id = %s and weight_date = %s
+                    limit 1
+                    """,
+                    (pig_id, weight_date),
+                )
+                existing_weight = cursor.fetchone() is not None
+                if not existing_weight:
+                    cursor.execute(
+                        """
+                        insert into public.pig_weight_events (
+                            weight_event_id, pig_id, weight_date, weight_kg, weighed_by,
+                            condition_notes, source, bulk_batch_id, bulk_row_id, created_at
+                        ) values (
+                            %(weight_event_id)s, %(pig_id)s, %(weight_date)s, %(weight_kg)s, %(weighed_by)s,
+                            %(condition_notes)s, 'app_bulk_weight', %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
+                        )
+                        """,
+                        {
+                            "weight_event_id": generate_weight_log_id(),
+                            "pig_id": pig_id,
+                            "weight_date": weight_date,
+                            "weight_kg": row.get("weight_kg"),
+                            "weighed_by": preflight.get("weighed_by", "WebApp"),
+                            "condition_notes": preflight.get("condition_notes", ""),
+                            "bulk_batch_id": row.get("batch_id"),
+                            "bulk_row_id": row.get("row_id"),
+                        },
+                    )
+                    wrote_weight = True
+
+            if to_pen_id and to_pen_id != from_pen_id:
+                cursor.execute(
+                    """
+                    select 1 from public.pig_location_events
+                    where pig_id = %s and move_date = %s
+                        and coalesce(from_pen_id, '') = coalesce(%s, '')
+                        and coalesce(to_pen_id, '') = coalesce(%s, '')
+                    limit 1
+                    """,
+                    (pig_id, weight_date, from_pen_id, to_pen_id),
+                )
+                existing_movement = cursor.fetchone() is not None
+                if not existing_movement:
+                    cursor.execute(
+                        """
+                        insert into public.pig_location_events (
+                            location_event_id, pig_id, move_date, from_pen_id, to_pen_id,
+                            reason_for_move, moved_by, move_notes, source, bulk_batch_id, bulk_row_id, created_at
+                        ) values (
+                            %(location_event_id)s, %(pig_id)s, %(move_date)s, %(from_pen_id)s, %(to_pen_id)s,
+                            %(reason_for_move)s, 'WebApp', %(move_notes)s, 'app_bulk_weight',
+                            %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
+                        )
+                        """,
+                        {
+                            "location_event_id": generate_move_log_id(),
+                            "pig_id": pig_id,
+                            "move_date": weight_date,
+                            "from_pen_id": from_pen_id or None,
+                            "to_pen_id": to_pen_id or None,
+                            "reason_for_move": "Moved during durable bulk capture" if action_type == "movement_only" else "Moved during durable duplicate weight review" if action_type == "duplicate_weight_movement" else "Moved during weight capture",
+                            "move_notes": preflight.get("condition_notes", ""),
+                            "bulk_batch_id": row.get("batch_id"),
+                            "bulk_row_id": row.get("row_id"),
+                        },
+                    )
+                    wrote_movement = True
+
+    return {
+        "success": True,
+        "writes_to_supabase": True,
+        "writes_to_google_sheets": False,
+        "weight_logged": wrote_weight or existing_weight,
+        "movement_logged": wrote_movement or existing_movement,
+        "status_reason": ("Weight saved." if wrote_weight or existing_weight else "Movement saved.") + (" Movement saved." if (wrote_weight or existing_weight) and (wrote_movement or existing_movement) else ""),
+    }
 
 
 def _batch_response(batch, rows, ok=True, next_action="review"):

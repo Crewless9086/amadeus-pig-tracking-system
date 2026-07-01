@@ -689,6 +689,77 @@ class DurableBulkWeightBatchServiceTests(unittest.TestCase):
         self.assertEqual(result["counts"]["remaining_count"], 3)
         self.assertTrue(all(row["status"] != "processing" for row in result["rows"][:2]))
 
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": ""})
+    def test_durable_process_uses_fast_supabase_writer_outside_memory_mode(self):
+        row = {
+            "row_id": "ROW-1",
+            "row_index": 0,
+            "pig_id": "PIG-1",
+            "weight_kg": "12.5",
+            "from_pen_id": "PEN-1",
+            "to_pen_id": "PEN-2",
+            "status": "processing",
+            "status_reason": "",
+            "result_json": {
+                "action_type": "weight",
+                "preflight": {
+                    "weight_date": "2026-06-22",
+                    "weighed_by": "WebApp",
+                    "condition_notes": "Good",
+                },
+            },
+            "original_row_json": {},
+        }
+
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+                self._selects = 0
+
+            def execute(self, sql, params=None):
+                self.statements.append((sql, params))
+                if "select 1 from public." in sql:
+                    self._selects += 1
+
+            def fetchone(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_obj = Cursor()
+
+            def cursor(self):
+                return self.cursor_obj
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        connection = Connection()
+
+        with patch.object(bulk_weight_batch_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(bulk_weight_batch_service, "_connect", return_value=connection), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move") as legacy_weight, \
+             patch.object(bulk_weight_batch_service, "save_movement_entry") as legacy_move:
+            bulk_weight_batch_service._process_one_row(row)
+
+        self.assertEqual(row["status"], "success")
+        self.assertEqual(row["status_reason"], "Weight saved. Movement saved.")
+        inserts = [statement for statement, _params in connection.cursor_obj.statements if "insert into public." in statement]
+        self.assertEqual(len(inserts), 2)
+        self.assertTrue(any("public.pig_weight_events" in statement for statement in inserts))
+        self.assertTrue(any("public.pig_location_events" in statement for statement in inserts))
+        legacy_weight.assert_not_called()
+        legacy_move.assert_not_called()
+
     @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
     def test_durable_stage_route_returns_json_on_store_exception(self):
         from app import app
