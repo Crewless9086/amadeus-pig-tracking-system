@@ -44,6 +44,9 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected"],
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected"],
 }
+AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
+    "qa_red_team": {"qa_findings"},
+}
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 3
 AGENT_RELEASE_VERIFY_ATTEMPTS = 12
@@ -1344,7 +1347,17 @@ def _extract_json_object(text):
 
 def _validate_agent_artifact(agent, artifact):
     required = AGENT_ARTIFACT_REQUIRED_KEYS.get(agent, ["summary"])
-    missing = [key for key in required if not artifact.get(key)]
+    allow_empty = AGENT_ARTIFACT_ALLOW_EMPTY_KEYS.get(agent, set())
+    missing = []
+    for key in required:
+        if key not in artifact or artifact.get(key) is None:
+            missing.append(key)
+            continue
+        if key in allow_empty:
+            continue
+        value = artifact.get(key)
+        if value == "" or value == [] or value == {}:
+            missing.append(key)
     return {"valid": not missing, "missing_keys": missing}
 
 

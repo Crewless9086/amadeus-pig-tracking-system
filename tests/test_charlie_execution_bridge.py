@@ -742,6 +742,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("Dashboard route performs destructive cleanup.", prompt)
         self.assertIn("modules/charlie/routes.py", prompt)
 
+    def test_validate_qa_artifact_allows_empty_findings_when_qa_passes(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["qa_findings"] = []
+
+        result = execution_bridge._validate_agent_artifact("qa_red_team", artifact)
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["missing_keys"], [])
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):
         mission = dict(MISSION)
