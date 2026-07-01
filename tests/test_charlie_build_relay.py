@@ -460,6 +460,22 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_missions.assert_called_once_with(status="", limit="1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_missions")
+    def test_missions_route_passes_owner_queue_filter(self, list_missions, _owner_access):
+        list_missions.return_value = ({
+            "success": True,
+            "status": "ok",
+            "missions": [{"mission_id": "MISSION-1", "status": "approved"}],
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions?status=owner_queue&limit=30")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        list_missions.assert_called_once_with(status="owner_queue", limit="30")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_mission")
     def test_dashboard_can_create_structured_mission(self, record_mission, _owner_access):
         record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)

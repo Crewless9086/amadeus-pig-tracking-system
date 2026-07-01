@@ -157,6 +157,37 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("mission_id asc", sql)
         self.assertEqual(result["missions"], [])
 
+    def test_list_missions_owner_queue_filters_active_owner_work_statuses(self):
+        connection = FakeConnection([])
+
+        result, status_code = list_missions(
+            status="owner_queue",
+            limit=30,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        sql, params = connection.cursor_instance.executed[0]
+        self.assertIn("status = any(%(owner_queue_statuses)s)", sql)
+        self.assertIn("metadata_json->'intake_quality'->>'queue_class'", sql)
+        self.assertIn("owner_work", sql)
+        self.assertIn("when 'in_progress' then 0", sql)
+        self.assertIn("metadata_json->'queue'->>'priority'", sql)
+        self.assertIn("created_at asc", sql)
+        self.assertEqual(params["owner_queue_statuses"], [
+            "in_progress",
+            "blocked",
+            "pr_ready",
+            "release_approved",
+            "release_in_progress",
+            "approved",
+            "new",
+        ])
+        self.assertNotIn("done", params["owner_queue_statuses"])
+        self.assertNotIn("rejected", params["owner_queue_statuses"])
+        self.assertEqual(result["missions"], [])
+
     def test_list_missions_keeps_recent_order_without_status_filter(self):
         connection = FakeConnection([])
 
