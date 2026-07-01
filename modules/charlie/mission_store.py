@@ -112,6 +112,22 @@ REVIEW_DECISION_STATUS = {
 QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
 QUEUE_PRIORITY_DEFAULT = 100
 QUEUE_PRIORITY_MAX = 999
+OPEN_DUPLICATE_STATUSES = {
+    "new",
+    "triaged",
+    "planned",
+    "approved",
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "release_approved",
+    "release_in_progress",
+}
+PLACEHOLDER_MISSION_TITLES = {
+    "build charlie relay",
+    "charlie relay",
+    "<idea>",
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -120,6 +136,13 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     if not raw_text:
         return {"stored": False, "status": "mission_text_required"}, 400
+    intake_quality = _mission_intake_quality(mission, raw_text)
+    if intake_quality["blocked"]:
+        return {
+            "stored": False,
+            "status": "mission_intake_too_vague",
+            "reason": intake_quality["reason"],
+        }, 400
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -129,6 +152,20 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
+                duplicate = _find_open_duplicate_mission(cursor, params)
+                if duplicate:
+                    _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                        "source": params["source"],
+                        "duplicate_title": params["title"],
+                    })
+                    return {
+                        "stored": False,
+                        "configured": True,
+                        "status": "duplicate_open_mission",
+                        "mission_id": duplicate["mission_id"],
+                        "existing_status": duplicate["status"],
+                        "title": duplicate["title"],
+                    }, 200
                 cursor.execute(
                     """
                     insert into public.charlie_missions (
@@ -859,6 +896,18 @@ def record_mission_review_decision(
         "last_owner_review_decision": decision_record,
         "review_status": "final_approved" if decision == "approve_final_release" else decision,
     })
+    if decision in {"approve_final_release", "mark_done"}:
+        visual_review = review_packet.get("visual_review") if isinstance(review_packet.get("visual_review"), dict) else {}
+        cleanup = visual_review.get("cleanup") if isinstance(visual_review.get("cleanup"), dict) else {}
+        if visual_review:
+            cleanup.update({
+                "required": bool(cleanup.get("required", visual_review.get("ui_related", False))),
+                "status": "cleanup_requested",
+                "requested_at": decision_record["recorded_at"],
+                "requested_by_decision": decision,
+            })
+            visual_review["cleanup"] = cleanup
+            review_packet["visual_review"] = visual_review
     if decision == "send_back":
         review_packet["return_to_stage"] = target_stage
         review_packet["owner_comments_pending"] = comments
@@ -963,6 +1012,7 @@ def build_mission_review_packet(mission):
         "changed_files": _packet_list(packet, "changed_files", []),
         "test_evidence": _packet_list(packet, "test_evidence", vault.get("test_plan") if isinstance(vault.get("test_plan"), list) else []),
         "local_preview": packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {},
+        "visual_review": packet.get("visual_review") if isinstance(packet.get("visual_review"), dict) else _default_visual_review(packet),
         "links": packet.get("links") if isinstance(packet.get("links"), dict) else {},
         "release_notes": _packet_list(packet, "release_notes", []),
         "agent_execution": packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else metadata.get("agent_execution", {}),
@@ -971,6 +1021,11 @@ def build_mission_review_packet(mission):
         "qa_evidence": _packet_list(packet, "qa_evidence", []),
         "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else {},
         "backflow_events": packet.get("backflow_events") if isinstance(packet.get("backflow_events"), list) else [],
+        "blocked_agent": packet.get("blocked_agent", ""),
+        "blocked_reason": packet.get("blocked_reason", ""),
+        "blocked_summary": packet.get("blocked_summary") if isinstance(packet.get("blocked_summary"), dict) else {},
+        "unresolved_blockers": packet.get("unresolved_blockers") if isinstance(packet.get("unresolved_blockers"), list) else [],
+        "recommended_next_action": packet.get("recommended_next_action", ""),
         "owner_review_decisions": metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else [],
         "agent_workflow": workflow,
         "mission_vault": vault,
@@ -1019,6 +1074,7 @@ def _mission_params(mission, source_context):
     mission_id = _clean_text(mission.get("mission_id", ""), 90) or _mission_id(raw_text, source_context, now)
     metadata = mission.get("metadata", {}) if isinstance(mission.get("metadata"), dict) else {}
     metadata = _mission_metadata(raw_text, mission, source_context, metadata)
+    metadata.setdefault("intake_quality", _mission_intake_quality(mission, raw_text))
     return {
         "mission_id": mission_id,
         "status": _clean_text(mission.get("status", "new"), 40) or "new",
@@ -1074,14 +1130,16 @@ def _mission_row(row):
     metadata = row[13] if isinstance(row[13], dict) else {}
     queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
+    raw_text = row[5]
+    title = row[6]
     return {
         "mission_id": row[0],
         "status": row[1],
         "source": row[2],
         "telegram_user_id": row[3],
         "telegram_chat_id": row[4],
-        "raw_text": row[5],
-        "title": row[6],
+        "raw_text": raw_text,
+        "title": title,
         "urgency": row[7],
         "mission_type": row[8],
         "approval_level": row[9],
@@ -1094,6 +1152,7 @@ def _mission_row(row):
             "updated_at": _clean_text(queue.get("updated_at", ""), 80) if queue else "",
         },
         "queue_priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
+        "queue_class": _mission_queue_class(title, raw_text, metadata),
         "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
         "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
         "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
@@ -1101,6 +1160,69 @@ def _mission_row(row):
         "created_at": _iso(row[14]),
         "updated_at": _iso(row[15]),
     }
+
+
+def _find_open_duplicate_mission(cursor, params):
+    cursor.execute(
+        """
+        select mission_id, status, title, raw_text
+        from public.charlie_missions
+        where status = any(%(statuses)s)
+        order by updated_at desc
+        limit 250
+        """,
+        {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+    )
+    new_title = _normalize_mission_text(params.get("title", ""))
+    new_raw = _normalize_mission_text(params.get("raw_text", ""))
+    for row in cursor.fetchall():
+        existing_title = _normalize_mission_text(row[2])
+        existing_raw = _normalize_mission_text(row[3])
+        if new_raw and existing_raw == new_raw:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+        if new_title and existing_title == new_title and len(new_title) >= 18:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+    return None
+
+
+def _mission_intake_quality(mission, raw_text):
+    title = _normalize_mission_text(mission.get("title") or raw_text)
+    raw = _normalize_mission_text(raw_text)
+    if title in PLACEHOLDER_MISSION_TITLES and raw in PLACEHOLDER_MISSION_TITLES:
+        return {
+            "blocked": True,
+            "reason": "placeholder_charlie_relay_title_without_specific_goal",
+            "queue_class": "system_noise",
+        }
+    if len(raw) < 12:
+        return {
+            "blocked": True,
+            "reason": "mission_text_too_short",
+            "queue_class": "low_signal",
+        }
+    return {
+        "blocked": False,
+        "reason": "",
+        "queue_class": _mission_queue_class(mission.get("title") or raw_text, raw_text, mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}),
+    }
+
+
+def _mission_queue_class(title, raw_text, metadata=None):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    intake_quality = metadata.get("intake_quality") if isinstance(metadata.get("intake_quality"), dict) else {}
+    if intake_quality.get("queue_class"):
+        return str(intake_quality.get("queue_class"))
+    normalized_title = _normalize_mission_text(title)
+    normalized_raw = _normalize_mission_text(raw_text)
+    if normalized_title in PLACEHOLDER_MISSION_TITLES and normalized_raw in PLACEHOLDER_MISSION_TITLES:
+        return "system_noise"
+    if "smoke test" in normalized_title or "validation mission" in normalized_title:
+        return "system_test"
+    return "owner_work"
+
+
+def _normalize_mission_text(value):
+    return " ".join(str(value or "").strip().lower().split())
 
 
 def _mission_metadata(raw_text, mission, source_context, metadata):
@@ -1295,6 +1417,21 @@ def _workflow_findings(workflow):
         if finding:
             findings.append(f"{item.get('agent', 'agent')}: {finding}")
     return findings
+
+
+def _default_visual_review(packet):
+    packet = packet if isinstance(packet, dict) else {}
+    local_preview = packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {}
+    return {
+        "contract": "charlie_visual_review_v1",
+        "ui_related": False,
+        "status": "not_available",
+        "summary": "No visual review packet was captured for this mission.",
+        "local_preview": local_preview,
+        "media": [],
+        "stage_evidence": [],
+        "cleanup": {"required": False, "status": "not_required"},
+    }
 
 
 def _packet_list(packet, key, fallback):

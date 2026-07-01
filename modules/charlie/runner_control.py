@@ -39,6 +39,11 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
     process_alive = _pid_alive(payload.get("pid"))
     heartbeat_fresh = age_seconds is not None and age_seconds <= STALE_SECONDS
     active = process_alive and heartbeat_fresh
+    final_artifact_present = bool(payload.get("final_artifact_present"))
+    if not final_artifact_present and _execution_artifact_exists(payload.get("execution_artifact", "")):
+        final_artifact_present = True
+        if payload.get("last_result_status") == "codex_running":
+            payload["last_result_status"] = "codex_final_artifact_seen"
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
     if active:
         status = "runner_active"
@@ -65,7 +70,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "last_mission_id": payload.get("last_mission_id", ""),
         "elapsed_seconds": payload.get("elapsed_seconds"),
         "changed_files_count": payload.get("changed_files_count"),
-        "final_artifact_present": payload.get("final_artifact_present"),
+        "final_artifact_present": final_artifact_present,
         "execution_artifact": payload.get("execution_artifact", ""),
         "agent_runner_version": payload.get("agent_runner_version", ""),
         "current_agent": payload.get("current_agent", ""),
@@ -175,6 +180,19 @@ def _read_json(path):
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return {}
+
+
+def _execution_artifact_exists(path):
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return False
+    artifact_path = Path(raw_path)
+    if not artifact_path.is_absolute():
+        artifact_path = REPO_ROOT / artifact_path
+    try:
+        return artifact_path.exists() and artifact_path.stat().st_size > 0
+    except OSError:
+        return False
 
 
 def _read_agent_ledger_summary(path):

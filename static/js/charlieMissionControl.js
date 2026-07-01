@@ -203,9 +203,22 @@
       return;
     }
     els.list.innerHTML = "";
-    state.missions.forEach((mission) => {
+    const ownerMissions = state.missions.filter((mission) => queueClass(mission) === "owner_work");
+    const systemMissions = state.missions.filter((mission) => queueClass(mission) !== "owner_work");
+    const visibleMissions = ownerMissions.length ? ownerMissions : state.missions;
+    visibleMissions.forEach((mission) => {
       els.list.appendChild(missionCard(mission));
     });
+    if (systemMissions.length && ownerMissions.length) {
+      const details = document.createElement("details");
+      details.className = "charlie-system-missions";
+      details.innerHTML = `<summary>${systemMissions.length} system/test or low-signal mission(s)</summary>`;
+      const wrap = document.createElement("div");
+      wrap.className = "charlie-system-mission-list";
+      systemMissions.forEach((mission) => wrap.appendChild(missionCard(mission)));
+      details.appendChild(wrap);
+      els.list.appendChild(details);
+    }
     renderReview();
   }
 
@@ -264,6 +277,7 @@
     const media = Array.isArray(mission.media_references) ? mission.media_references : [];
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
+    const missionQueueClass = queueClass(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -271,6 +285,9 @@
           <h3>${escapeHtml(title)}</h3>
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
+      </div>
+      <div class="charlie-card-tags">
+        <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
       <div class="charlie-vault-summary">
@@ -336,6 +353,17 @@
     return card;
   }
 
+  function queueClass(mission) {
+    return safeText((mission && mission.queue_class) || "owner_work") || "owner_work";
+  }
+
+  function queueClassLabel(value) {
+    if (value === "system_noise") return "System noise";
+    if (value === "system_test") return "System test";
+    if (value === "low_signal") return "Low signal";
+    return "Owner work";
+  }
+
   function reviewCard(mission) {
     const card = document.createElement("article");
     card.className = "charlie-mission-card charlie-review-card";
@@ -362,6 +390,7 @@
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
+      ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
       <details open>
         <summary>Mission findings and review packet</summary>
@@ -397,6 +426,9 @@
       </div>
     `;
     card.querySelector("[data-review-refresh]").addEventListener("click", () => loadReviewPacket(missionId, card));
+    card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+      button.addEventListener("click", () => openVisualReviewOverlay(button));
+    });
     card.querySelectorAll("[data-review-decision]").forEach((button) => {
       button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
     });
@@ -492,6 +524,7 @@
       <p>${escapeHtml(safeText(packet.summary || vault.desired_outcome || mission.raw_text || "Not captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
@@ -561,6 +594,9 @@
       const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/review`);
       const container = card.querySelector("[data-review-packet]");
       if (container) container.innerHTML = reviewPacketDetailMarkup(data.review_packet || {});
+      card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+        button.addEventListener("click", () => openVisualReviewOverlay(button));
+      });
       setMessage("Review packet loaded.", "success");
     } catch (error) {
       setMessage(error.message || "Review packet could not be loaded.", "error");
@@ -597,9 +633,11 @@
       <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
+      <strong>Visual Review</strong>${visualReviewMarkup(packet.visual_review || {}, packet.local_preview || {}, packet.links || {})}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
       <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
@@ -618,7 +656,8 @@
         <summary>Agent execution timeline</summary>
         ${agentExecutionSummaryMarkup(execution)}
         <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates || execution.quality_gates)}
-        <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || execution.unresolved_blockers)}
       </details>
     `;
   }
@@ -666,7 +705,30 @@
   function backflowMarkup(items) {
     const events = Array.isArray(items) ? items : [];
     if (!events.length) return '<p class="charlie-muted">No agent backflow was needed.</p>';
-    return `<ul>${events.map((event) => `<li>${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}</li>`).join("")}</ul>`;
+    return `<ul>${events.map((event) => {
+      const blockers = Array.isArray(event.unresolved_blockers) ? event.unresolved_blockers : [];
+      return `<li>
+        ${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}
+        ${blockers.length ? unresolvedBlockersMarkup(blockers) : ""}
+      </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function unresolvedBlockersMarkup(items) {
+    const blockers = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!blockers.length) return '<p class="charlie-muted">No unresolved blockers captured.</p>';
+    return `<div class="charlie-unresolved-blockers">${blockers.slice(0, 6).map((item) => {
+      if (typeof item === "string") return `<article><strong>Blocker</strong><span>${escapeHtml(item)}</span></article>`;
+      const severity = safeText(item.severity || "medium").toUpperCase();
+      const location = [item.file, item.line].filter(Boolean).join(":");
+      return `
+        <article>
+          <strong>${escapeHtml(severity)}</strong>
+          <span>${escapeHtml(safeText(item.finding || item.message || item.summary || "Unresolved issue"))}</span>
+          ${location ? `<small>${escapeHtml(location)}</small>` : ""}
+        </article>
+      `;
+    }).join("")}</div>`;
   }
 
   async function createMission(event) {
@@ -1002,19 +1064,98 @@
     });
   }
 
+  function visualReviewMarkup(visualReview, localPreview, links) {
+    const review = visualReview && typeof visualReview === "object" ? visualReview : {};
+    const media = Array.isArray(review.media) ? review.media.filter(Boolean) : [];
+    const preview = review.local_preview && typeof review.local_preview === "object" ? review.local_preview : localPreview;
+    const status = safeText(review.status || "not_available");
+    const summary = safeText(review.summary || "No visual review packet was captured for this mission.");
+    const stageEvidence = Array.isArray(review.stage_evidence) ? review.stage_evidence.filter(Boolean) : [];
+    return `
+      <section class="charlie-visual-review" aria-label="Visual Review">
+        <div class="charlie-visual-review-header">
+          <div>
+            <strong>Visual Review</strong>
+            <span>${escapeHtml(status.replace(/_/g, " "))}</span>
+          </div>
+          ${localPreviewMarkup(preview || {}, links || {})}
+        </div>
+        ${media.length ? `<div class="charlie-visual-review-media">${media.map(visualReviewMediaMarkup).join("")}</div>` : `<p class="charlie-muted">${escapeHtml(summary)}</p>`}
+        ${stageEvidence.length ? `<div class="charlie-visual-stage-evidence">${stageEvidence.slice(0, 4).map((item) => `<span>${escapeHtml(safeText(item.agent || "agent"))}: ${escapeHtml(safeText(item.summary || ""))}</span>`).join("")}</div>` : ""}
+      </section>
+    `;
+  }
+
+  function visualReviewMediaMarkup(item) {
+    const label = safeText(item.label || item.filename || "Review media");
+    const reference = safeText(item.reference || item.url || "");
+    const mediaType = safeText(item.media_type || "image");
+    if (!reference) return "";
+    const thumbnail = mediaType === "video"
+      ? `<video src="${escapeHtml(reference)}" muted playsinline preload="metadata"></video>`
+      : `<img src="${escapeHtml(reference)}" alt="${escapeHtml(label)}" loading="lazy">`;
+    return `
+      <button type="button" class="charlie-visual-thumbnail" data-visual-review-open data-media-src="${escapeHtml(reference)}" data-media-label="${escapeHtml(label)}" data-media-type="${escapeHtml(mediaType)}">
+        ${thumbnail}
+        <span>${escapeHtml(label)}</span>
+      </button>
+    `;
+  }
+
   function blockedReviewBanner(packet) {
     const execution = packet.agent_execution || {};
+    const summary = packet.blocked_summary || {};
     const blockedAgent = packet.blocked_agent || execution.blocked_agent || "agent";
     const blockedReason = packet.blocked_reason || execution.blocked_reason || firstReviewText(packet.errors, "Blocked before owner review.");
     const backflowEvents = Array.isArray(packet.backflow_events) ? packet.backflow_events : (Array.isArray(execution.backflow_events) ? execution.backflow_events : []);
-    const attempts = backflowEvents.length ? `${backflowEvents.length} send-back attempt${backflowEvents.length === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const attemptsValue = summary.send_back_attempts !== undefined ? Number(summary.send_back_attempts) : backflowEvents.length;
+    const attempts = attemptsValue ? `${attemptsValue} send-back attempt${attemptsValue === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const lastStage = safeText(summary.last_successful_stage || "");
+    const recommended = safeText(packet.recommended_next_action || summary.recommended_action || "Use Send Back after reviewing the blockers below.");
+    const blockers = packet.unresolved_blockers || summary.unresolved_blockers || execution.unresolved_blockers || [];
     return `
       <div class="charlie-blocked-banner" role="status">
         <strong>Blocked at ${escapeHtml(blockedAgent)}</strong>
         <span>${escapeHtml(blockedReason)}</span>
-        <small>${escapeHtml(attempts)}. Use Send Back after reviewing the evidence below.</small>
+        <small>${escapeHtml(attempts)}${lastStage ? ` | Last passed: ${escapeHtml(lastStage)}` : ""}</small>
+        ${unresolvedBlockersMarkup(blockers)}
+        <small>${escapeHtml(recommended)}</small>
       </div>
     `;
+  }
+
+  function openVisualReviewOverlay(button) {
+    if (!button) return;
+    closeVisualReviewOverlay();
+    const src = safeText(button.dataset.mediaSrc).trim();
+    if (!src) return;
+    const label = safeText(button.dataset.mediaLabel || "Visual review media");
+    const mediaType = safeText(button.dataset.mediaType || "image");
+    const overlay = document.createElement("div");
+    overlay.className = "charlie-visual-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", label);
+    const media = mediaType === "video"
+      ? `<video src="${escapeHtml(src)}" controls autoplay></video>`
+      : `<img src="${escapeHtml(src)}" alt="${escapeHtml(label)}">`;
+    overlay.innerHTML = `
+      <div class="charlie-visual-overlay-panel">
+        <button type="button" class="charlie-visual-overlay-close" aria-label="Close visual review">Close</button>
+        ${media}
+        <strong>${escapeHtml(label)}</strong>
+      </div>
+    `;
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeVisualReviewOverlay();
+    });
+    overlay.querySelector(".charlie-visual-overlay-close").addEventListener("click", closeVisualReviewOverlay);
+    document.body.appendChild(overlay);
+    overlay.querySelector(".charlie-visual-overlay-close").focus();
+  }
+
+  function closeVisualReviewOverlay() {
+    document.querySelectorAll(".charlie-visual-overlay").forEach((overlay) => overlay.remove());
   }
 
   function queuePriorityValue(mission) {
@@ -1041,6 +1182,9 @@
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeVisualReviewOverlay();
+  });
   setupMediaCapture();
   loadMissions();
 })();

@@ -101,6 +101,26 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertFalse(result["active"])
         self.assertFalse(result["heartbeat_fresh"])
 
+    @patch("modules.charlie.runner_control._pid_alive", return_value=False)
+    def test_runner_status_recovers_existing_final_artifact_from_stale_heartbeat(self, _pid_alive):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            heartbeat = tmp_path / "runner.json"
+            final_path = tmp_path / "mission.final.md"
+            final_path.write_text("Reviewer pass", encoding="utf-8")
+            runner_control.write_runner_heartbeat({
+                "status": "codex_running",
+                "mission_id": "MISSION-1",
+                "final_artifact_present": False,
+                "execution_artifact": str(final_path),
+            }, heartbeat)
+
+            result = runner_control.runner_status(heartbeat)
+
+        self.assertEqual(result["status"], "runner_stale_or_stopped")
+        self.assertEqual(result["last_result_status"], "codex_final_artifact_seen")
+        self.assertTrue(result["final_artifact_present"])
+
     @patch("modules.charlie.runner_control.os.kill")
     @patch("modules.charlie.runner_control._pid_alive_windows", return_value=True)
     def test_pid_alive_on_windows_does_not_use_os_kill_probe(self, pid_alive_windows, kill):

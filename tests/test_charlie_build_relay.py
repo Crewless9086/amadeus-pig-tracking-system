@@ -587,6 +587,27 @@ class CharlieBuildRelayTests(unittest.TestCase):
         )
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.record_mission_review_decision")
+    def test_mission_review_decision_route_records_done_without_local_cleanup(self, record_review_decision, _owner_access):
+        record_review_decision.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "mission_status": "done",
+            "review_decision": "mark_done",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/review",
+            json={"decision": "mark_done", "comments": "No release needed."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertNotIn("visual_review_cleanup", data)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_status")
     def test_mission_decision_route_records_owner_decision(self, update_mission_status, _owner_access):
         update_mission_status.return_value = ({
@@ -752,7 +773,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("CHARLIE Build Relay", action["telegram_text"])
 
-    def test_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+    def test_placeholder_mission_action_does_not_update_codex_chat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             planning = root / "planning"
@@ -771,9 +792,33 @@ class CharlieBuildRelayTests(unittest.TestCase):
             action = build_relay_action("/mission Build CHARLIE Relay", environ=env)
             updated = codex_chat.read_text(encoding="utf-8")
 
+            self.assertFalse(action["writes_repo_file"])
+            self.assertEqual(action["mission_store"]["status"], "mission_intake_too_vague")
+            self.assertIn("old", updated)
+            self.assertNotIn("Build CHARLIE Relay", updated)
+
+    def test_specific_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            planning = root / "planning"
+            planning.mkdir()
+            codex_chat = planning / "CODEX_CHAT.md"
+            codex_chat.write_text(
+                "# CODEX CHAT\n\n"
+                "### Concept / Problem / Idea\n\n```text\nold\n```\n\n"
+                "### Desired Outcome\n\n```text\nold outcome\n```\n",
+                encoding="utf-8",
+            )
+            env = {
+                "CHARLIE_BUILD_RELAY_REPO_ROOT": str(root),
+                "CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED": "1",
+            }
+            action = build_relay_action("/mission Improve CHARLIE queue filters for real owner missions", environ=env)
+            updated = codex_chat.read_text(encoding="utf-8")
+
             self.assertTrue(action["writes_repo_file"])
             self.assertEqual(action["codex_chat_write"]["status"], "codex_chat_updated")
-            self.assertIn("Build CHARLIE Relay", updated)
+            self.assertIn("Improve CHARLIE queue filters", updated)
             self.assertIn("Codex scopes this Telegram mission", updated)
 
 

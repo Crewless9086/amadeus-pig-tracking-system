@@ -325,7 +325,7 @@ def _mission_queue_next_action():
     review_ready = _first_available_mission(("pr_ready", "blocked"))
     approved = _first_available_mission(("approved",))
     release_approved = _first_available_mission(("release_approved",))
-    new_missions = _mission_list_for_status("new", limit=3)
+    new_missions = _mission_list_for_status("new", limit=3, owner_work_only=True)
 
     if not active and not review_ready and not approved and not release_approved and new_missions is None:
         return None
@@ -417,11 +417,14 @@ def _first_available_mission(statuses):
     return None
 
 
-def _mission_list_for_status(status, limit=3):
-    result, status_code = list_missions(status=status, limit=limit)
+def _mission_list_for_status(status, limit=3, owner_work_only=False):
+    result, status_code = list_missions(status=status, limit=max(limit * 5, limit))
     if status_code >= 400:
         return None
-    return result.get("missions") or []
+    missions = result.get("missions") or []
+    if owner_work_only:
+        missions = [mission for mission in missions if mission.get("queue_class", "owner_work") == "owner_work"]
+    return missions[:limit]
 
 
 def _mission_title_line(mission):
@@ -458,14 +461,18 @@ def _select_next_action(choice, source, repo_root):
 
 def _missions_action(source):
     summary, _ = mission_status_summary()
-    loaded, _ = list_missions(limit=5)
+    loaded, _ = list_missions(limit=20)
     lines = ["CHARLIE mission queue"]
     if summary.get("success"):
         counts = summary.get("counts") or {}
         lines.append("Counts: " + (", ".join(f"{key}={value}" for key, value in counts.items()) or "none"))
     else:
         lines.append(f"Queue status: {summary.get('status', 'unavailable')}")
-    missions = loaded.get("missions") or []
+    missions = [
+        mission
+        for mission in (loaded.get("missions") or [])
+        if mission.get("queue_class", "owner_work") == "owner_work"
+    ][:5]
     for index, mission in enumerate(missions, start=1):
         mission_id = str(mission.get("mission_id") or "")
         short_id = mission_id[-8:] if mission_id else "no-id"
@@ -634,6 +641,21 @@ def _mission_action(mission_text, source, repo_root, command, extra):
             "reply_markup": _main_keyboard(),
             "writes_repo_file": False,
         }
+    if _placeholder_mission_text(mission_text):
+        return {
+            "command": command,
+            "telegram_text": (
+                "Mission intake was not stored because it is too vague.\n\n"
+                "Send /mission with a specific problem, target screen/workflow, and expected outcome."
+            ),
+            "reply_markup": _main_keyboard(),
+            "mission_store": {
+                "stored": False,
+                "status": "mission_intake_too_vague",
+                "reason": "placeholder_charlie_relay_title_without_specific_goal",
+            },
+            "writes_repo_file": False,
+        }
     mission = _mission_summary(mission_text)
     write_result = {"performed": False, "status": "repo_file_write_disabled"}
     if _truthy(source.get(CODEX_CHAT_WRITE_ENABLED_ENV)):
@@ -758,6 +780,11 @@ def _first_lines_after(text, heading, max_items=5):
 def _compact_title(text):
     title = " ".join(str(text or "").split())
     return title[:90] + ("..." if len(title) > 90 else "")
+
+
+def _placeholder_mission_text(text):
+    normalized = " ".join(str(text or "").strip().lower().split())
+    return normalized in {"build charlie relay", "charlie relay", "<idea>"}
 
 
 def _mission_detail_text(mission):
