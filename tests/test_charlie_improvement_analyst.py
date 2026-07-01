@@ -5,6 +5,7 @@ from modules.charlie.improvement_analyst import (
     PROPOSAL_LABEL,
     analyze_improvement_opportunities,
     generate_and_store_proposals,
+    record_proposal_decision,
 )
 
 
@@ -114,6 +115,109 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                 self.assertEqual(written_proposal["created_at"], "2026-07-01T10:00:00+00:00")
                 for field, value in extra_fields.items():
                     self.assertEqual(written_proposal[field], value)
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
+    @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
+    @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
+    def test_record_proposal_decision_approves_without_applying_change(self, get_artifact, update_artifact_content, write_owner_decision):
+        get_artifact.return_value = (_artifact_payload(status="pending"), 200)
+        update_artifact_content.return_value = ({"success": True, "status": "artifact_updated"}, 200)
+        write_owner_decision.return_value = ({"success": True, "status": "owner_decision_written"}, 200)
+
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "approve", comments="Agree.")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["proposal_status"], "approved")
+        self.assertEqual(result["decision"], "approve")
+        saved_proposal = update_artifact_content.call_args.args[1]
+        self.assertFalse(saved_proposal["last_owner_decision"]["applies_automatically"])
+        self.assertEqual(saved_proposal["decision_history"][-1]["comments"], "Agree.")
+        write_owner_decision.assert_called_once()
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
+    @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
+    @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
+    def test_record_proposal_decision_rejects_without_mission_creation(self, get_artifact, update_artifact_content, write_owner_decision):
+        get_artifact.return_value = (_artifact_payload(status="pending"), 200)
+        update_artifact_content.return_value = ({"success": True, "status": "artifact_updated"}, 200)
+        write_owner_decision.return_value = ({"success": True, "status": "owner_decision_written"}, 200)
+
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "reject")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["proposal_status"], "rejected")
+        self.assertEqual(result["created_mission"], {})
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
+    @patch("modules.charlie.improvement_analyst.mission_store.record_mission")
+    @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
+    @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
+    def test_record_proposal_decision_send_to_mission_creates_normal_mission(self, get_artifact, update_artifact_content, record_mission, write_owner_decision):
+        get_artifact.return_value = (_artifact_payload(status="pending"), 200)
+        update_artifact_content.return_value = ({"success": True, "status": "artifact_updated"}, 200)
+        record_mission.return_value = ({"stored": True, "status": "mission_recorded", "mission_id": "MISSION-IMPROVE-1"}, 200)
+        write_owner_decision.return_value = ({"success": True, "status": "owner_decision_written"}, 200)
+
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "send_to_mission", comments="Build this.")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["proposal_status"], "sent_to_mission")
+        self.assertEqual(result["created_mission"]["mission_id"], "MISSION-IMPROVE-1")
+        mission_payload = record_mission.call_args.args[0]
+        self.assertEqual(mission_payload["metadata"]["proposal_label"], PROPOSAL_LABEL)
+        self.assertEqual(mission_payload["approval_level"], "LEVEL 3")
+        self.assertIn("Do not self-edit", mission_payload["forbidden_actions"][0])
+        saved_proposal = update_artifact_content.call_args.args[1]
+        self.assertEqual(saved_proposal["sent_to_mission_id"], "MISSION-IMPROVE-1")
+
+    def test_record_proposal_decision_rejects_invalid_decision_before_storage(self):
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "merge")
+
+        self.assertEqual(status, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_improvement_decision")
+
+    @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
+    def test_record_proposal_decision_rejects_invalid_label(self, get_artifact):
+        get_artifact.return_value = (_artifact_payload(label="not_self_improvement"), 200)
+
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "approve")
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_improvement_label")
+
+    @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
+    def test_record_proposal_decision_returns_not_configured_vault_status(self, get_artifact):
+        get_artifact.return_value = ({"success": False, "configured": False, "status": "not_configured"}, 503)
+
+        result, status = record_proposal_decision("ARTIFACT-TESTS", "approve")
+
+        self.assertEqual(status, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+
+def _artifact_payload(status="pending", label=PROPOSAL_LABEL):
+    return {
+        "success": True,
+        "artifact": {
+            "artifact_id": "ARTIFACT-TESTS",
+            "content": {
+                "proposal_id": "CHARLIE-IMPROVEMENT-TESTS",
+                "label": label,
+                "status": status,
+                "problem_detected": "Repeated test weakness across CHARLIE missions.",
+                "recommendation": "Tighten test gates.",
+                "target_area": "tests",
+                "decision_history": [],
+                "applies_automatically": False,
+            },
+            "created_by_agent": "charlie_improvement_analyst",
+            "created_at": "2026-07-01T10:00:00+00:00",
+        },
+    }
 
 
 if __name__ == "__main__":
