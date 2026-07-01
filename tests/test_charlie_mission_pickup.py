@@ -258,6 +258,16 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.list_missions")
     def test_continuous_watch_can_pick_next_approved_when_previous_is_pr_ready(self, list_missions, write_heartbeat, sleep):
         def fake_list_missions(status="approved", limit=10):
+            if status == "pr_ready":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-REVIEW",
+                        "title": "Previous mission in review",
+                        "status": "pr_ready",
+                    }],
+                }, 200)
             if status == "approved":
                 return ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
@@ -275,6 +285,8 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
         self.assertEqual(result["runner_mode"], "code_test_pr")
+        queried_statuses = [call.kwargs.get("status", "approved") for call in list_missions.call_args_list]
+        self.assertNotIn("pr_ready", queried_statuses)
         write_heartbeat.assert_called()
         sleep.assert_not_called()
 

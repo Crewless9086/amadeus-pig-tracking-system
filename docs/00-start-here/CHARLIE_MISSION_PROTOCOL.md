@@ -210,7 +210,7 @@ Full local automation mode:
 python scripts/charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30
 ```
 
-Full local automation keeps polling after each check. It picks up approved missions, runs the local Codex execution bridge, sends an owner notification when the mission reaches `pr_ready`, then waits for owner review. After owner final approval records `release_approved`, the local release bridge may merge a PR referenced by the review packet. If release evidence is missing, it blocks and notifies the owner instead of pretending to deploy. It will not pick up another approved mission while a mission is already `in_progress`, `pr_ready`, or `release_in_progress`.
+Full local automation keeps polling after each check. It picks up approved missions, runs the local Codex execution bridge, sends an owner notification when the mission reaches `pr_ready`, then leaves that mission in the owner review backlog. Once a mission is at `pr_ready`, the local runner may pick up the next approved mission in priority order so the owner can build a review queue of 10 or 20 missions and inspect them one at a time. After owner final approval records `release_approved`, the local release bridge may merge a PR referenced by the review packet. If release evidence is missing, it blocks and notifies the owner instead of pretending to deploy. It will not pick up another approved mission while a mission is actively `in_progress` or `release_in_progress`.
 
 The pickup bridge writes the mission approval level and runner mode into `planning/CODEX_CHAT.md`:
 
