@@ -1647,6 +1647,34 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         artifacts=artifacts,
         final_message=reviewer.get("summary", ""),
     )
+    if _visual_review_blocks_owner_review(visual_review):
+        blocked_reason = visual_review.get("summary") or "UI mission visual review media was not captured."
+        block_artifact = {
+            **reviewer,
+            "summary": blocked_reason,
+            "bugs": [
+                *[item for item in (reviewer.get("bugs") or []) if item],
+                "UI mission reached review without captured Visual Review media.",
+            ],
+            "errors": [blocked_reason],
+            "changed_files": changed_files,
+            "quality_gate": {"passed": False, "reason": blocked_reason},
+            "visual_review": visual_review,
+            "next_action": "Send back to reviewer/builder after making local preview capture produce clickable Visual Review media.",
+        }
+        return _block_completed_agent_review(
+            mission=mission,
+            execution_id=execution_id,
+            ledger=ledger,
+            agent="reviewer",
+            artifact=block_artifact,
+            artifacts={**artifacts, "reviewer": block_artifact},
+            ledger_path=ledger_path,
+            output_dir=output_dir,
+            blocked_reason=blocked_reason,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     review_links = dict(reviewer_links)
     review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
     review_packet = {
@@ -1711,6 +1739,98 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _visual_review_blocks_owner_review(visual_review):
+    visual_review = visual_review if isinstance(visual_review, dict) else {}
+    return bool(visual_review.get("ui_related")) and visual_review.get("status") != "captured"
+
+
+def _block_completed_agent_review(
+    mission,
+    execution_id,
+    ledger,
+    agent,
+    artifact,
+    artifacts,
+    ledger_path,
+    output_dir,
+    blocked_reason,
+    database_url=None,
+    connect_factory=None,
+):
+    ledger["status"] = "blocked"
+    ledger["blocked_agent"] = agent
+    ledger["blocked_reason"] = blocked_reason
+    ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
+    unresolved = _artifact_issue_items(agent, artifact)
+    if unresolved:
+        ledger["unresolved_blockers"] = unresolved
+    ledger_path = _write_agent_ledger(output_dir, execution_id, ledger)
+    review_packet = {
+        "summary": f"CHARLIE Agent Runner v2 blocked at {agent}: {blocked_reason}",
+        "blocked_summary": _blocked_review_summary(agent, blocked_reason, ledger, artifact),
+        "findings": [
+            f"{agent} blocked the mission: {blocked_reason}",
+            *_issue_lines(unresolved),
+        ],
+        "errors": [blocked_reason],
+        "bugs": artifact.get("bugs", []),
+        "changed_files": artifact.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
+        "test_evidence": artifact.get("test_evidence", []),
+        "qa_evidence": _collect_artifact_list(artifacts, "qa_findings"),
+        "local_preview": artifact.get("visual_review", {}).get("local_preview", {}),
+        "visual_review": artifact.get("visual_review", {}),
+        "links": artifact.get("links", {}) if isinstance(artifact.get("links"), dict) else {},
+        "execution_artifacts": {
+            "execution_id": execution_id,
+            "agent_ledger_path": str(ledger_path),
+            "blocked_agent": agent,
+        },
+        "agent_execution": _agent_execution_summary(ledger),
+        "agent_artifacts": artifacts,
+        "unresolved_blockers": unresolved,
+        "handoff_reports": {
+            stage_agent: stage_artifact.get("handoff_report", {})
+            for stage_agent, stage_artifact in artifacts.items()
+            if isinstance(stage_artifact, dict)
+        },
+        "quality_gates": ledger.get("quality_gates", []),
+        "backflow_events": ledger.get("backflow_events", []),
+        "blocked_agent": agent,
+        "blocked_reason": blocked_reason,
+        "recommended_next_action": artifact.get("next_action", "Send back and require captured Visual Review media before owner approval."),
+        "review_status": "agent_blocked",
+    }
+    update_mission_vault(
+        mission["mission_id"],
+        {"agent_execution": ledger, "review_packet": review_packet},
+        notes="CHARLIE Agent Runner v2 blocked owner review because visual evidence was missing.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    _record_execution_stage(mission["mission_id"], agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    blocked, blocked_status = update_mission_status(
+        mission["mission_id"],
+        "blocked",
+        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        event_type="status_changed",
+        notes=blocked_reason,
+        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if blocked_status >= 400:
+        return blocked, blocked_status
+    return {
+        "success": False,
+        "status": "agent_stage_blocked",
+        "mission_id": mission["mission_id"],
+        "mission_status": "blocked",
+        "agent": agent,
+        "blocked_reason": blocked_reason,
+        "agent_ledger_path": str(ledger_path),
+    }, 504
 
 
 def _collect_artifact_list(artifacts, key):
@@ -1997,7 +2117,63 @@ def _local_preview_from_reviewer(reviewer):
         local_preview["url"] = url
         local_preview["status"] = "captured"
         local_preview["message"] = ""
+    if not local_preview.get("url"):
+        inferred = _infer_local_preview_url(local_preview.get("command", ""))
+        if inferred.get("url"):
+            local_preview.update(inferred)
     return local_preview
+
+
+def _infer_local_preview_url(command_text=""):
+    candidates = []
+    text = str(command_text or "")
+    port_matches = re.findall(r"--port\s+(\d+)|:(\d+)", text)
+    for explicit, colon in port_matches:
+        port = explicit or colon
+        if port:
+            candidates.append(f"http://127.0.0.1:{port}/charlie")
+    candidates.extend([
+        os.getenv("CHARLIE_LOCAL_PREVIEW_URL", "").strip(),
+        "http://127.0.0.1:5002/charlie",
+        "http://127.0.0.1:5000/charlie",
+    ])
+    seen = set()
+    for url in candidates:
+        url = str(url or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        probe = _probe_local_preview_url(url)
+        if probe.get("ok"):
+            return {
+                "url": url,
+                "status": "captured",
+                "message": f"Inferred reachable local preview URL from runner probe ({probe.get('http_status')}).",
+                "source": "local_runner_probe",
+            }
+    return {"url": "", "status": "not_captured", "message": "No reachable local CHARLIE preview URL was detected by the runner."}
+
+
+def _probe_local_preview_url(url):
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"ok": False, "status": "not_local"}
+    try:
+        opener = url_request.build_opener(url_request.HTTPRedirectHandler)
+        req = url_request.Request(url, headers={"User-Agent": "CHARLIE-local-preview-probe"})
+        with opener.open(req, timeout=5) as response:
+            status = int(response.status)
+            final_url = response.geturl()
+            body = response.read(4096).decode("utf-8", errors="replace")
+    except (OSError, URLError, ValueError) as exc:
+        return {"ok": False, "status": "probe_failed", "error_type": exc.__class__.__name__}
+    if status != 200:
+        return {"ok": False, "status": "bad_status", "http_status": status, "final_url": final_url}
+    if "/owner/login" in str(final_url):
+        return {"ok": False, "status": "login_redirect", "http_status": status, "final_url": final_url}
+    if "CHARLIE Mission Control" not in body:
+        return {"ok": False, "status": "unexpected_body", "http_status": status, "final_url": final_url}
+    return {"ok": True, "status": "ok", "http_status": status, "final_url": final_url}
 
 
 def _build_visual_review_packet(
@@ -2110,7 +2286,7 @@ def _capture_visual_review_media(mission_id, local_preview, run_subprocess=None)
 
 def _is_ui_related_mission(mission_type="", changed_files=None, final_message=""):
     mission_type = str(mission_type or "").lower()
-    if any(term in mission_type for term in ("ui", "frontend", "dashboard", "visual", "page", "browser")):
+    if re.search(r"\b(ui|frontend|dashboard|visual|page|browser)\b", mission_type):
         return True
     paths = [str(path or "").replace("\\", "/").lower() for path in (changed_files or [])]
     ui_prefixes = ("templates/", "static/js/", "static/css/")
@@ -2185,7 +2361,15 @@ def cleanup_visual_review_media(mission_id):
         return {"cleaned": False, "status": "review_media_path_outside_runner_root"}
     if not media_dir.exists():
         return {"cleaned": True, "status": "review_media_not_present", "local_path": str(media_dir)}
-    shutil.rmtree(media_dir)
+    try:
+        shutil.rmtree(media_dir)
+    except OSError as exc:
+        return {
+            "cleaned": False,
+            "status": "review_media_cleanup_failed",
+            "local_path": str(media_dir),
+            "error_type": exc.__class__.__name__,
+        }
     return {
         "cleaned": True,
         "status": "review_media_cleaned",

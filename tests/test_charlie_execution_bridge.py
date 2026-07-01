@@ -401,6 +401,38 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packet["media"], [])
         self.assertIn("screenshot capture is blocked", packet["summary"])
 
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url")
+    def test_local_preview_infers_reachable_runner_url(self, probe):
+        probe.side_effect = [
+            {"ok": False, "status": "login_redirect"},
+            {"ok": True, "status": "ok", "http_status": 200},
+        ]
+
+        preview = execution_bridge._local_preview_from_reviewer({
+            "summary": "Preview command only.",
+            "links": {},
+        })
+
+        self.assertEqual(preview["url"], "http://127.0.0.1:5002/charlie")
+        self.assertEqual(preview["source"], "local_runner_probe")
+
+    def test_visual_review_blocks_owner_review_for_ui_without_media(self):
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "not_captured_blocked",
+        }))
+        self.assertFalse(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+        }))
+
+    def test_agent_build_mission_type_is_not_ui_by_substring(self):
+        self.assertFalse(execution_bridge._is_ui_related_mission(
+            mission_type="agent build",
+            changed_files=["modules/charlie/execution_bridge.py"],
+            final_message="backend runner update",
+        ))
+
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
