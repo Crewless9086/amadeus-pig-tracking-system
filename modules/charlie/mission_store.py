@@ -110,6 +110,16 @@ REVIEW_DECISION_STATUS = {
     "mark_done": "done",
 }
 QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
+OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
+OWNER_QUEUE_STATUSES = (
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "release_approved",
+    "release_in_progress",
+    "approved",
+    "new",
+)
 QUEUE_PRIORITY_DEFAULT = 100
 QUEUE_PRIORITY_MAX = 999
 OPEN_DUPLICATE_STATUSES = {
@@ -238,8 +248,17 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
 
     parsed_limit = _bounded_limit(limit)
     clean_status = _clean_text(status, 40)
+    queue_filter = _mission_queue_filter(clean_status)
     params = {"status": clean_status, "limit": parsed_limit}
-    where_clause = "where status = %(status)s" if clean_status else ""
+    where_clause = ""
+    if queue_filter == "owner_queue":
+        params["owner_queue_statuses"] = list(OWNER_QUEUE_STATUSES)
+        where_clause = """
+                    where status = any(%(owner_queue_statuses)s)
+                      and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                    """
+    elif clean_status:
+        where_clause = "where status = %(status)s"
     order_clause = _mission_order_clause(clean_status)
     try:
         with _connect(database_url, connect_factory) as connection:
@@ -1300,6 +1319,35 @@ def _default_context_pack(mission_type=""):
 
 
 def _mission_order_clause(status):
+    if _mission_queue_filter(status) == "owner_queue":
+        return """
+                    order by
+                        case status
+                            when 'in_progress' then 0
+                            when 'release_in_progress' then 1
+                            when 'pr_ready' then 2
+                            when 'blocked' then 3
+                            when 'release_approved' then 4
+                            when 'approved' then 5
+                            when 'new' then 6
+                            else 7
+                        end asc,
+                        case
+                            when (metadata_json->'queue'->>'priority') ~ '^[0-9]+$'
+                            then (metadata_json->'queue'->>'priority')::int
+                            else %(default_priority)s
+                        end asc,
+                        case urgency
+                            when 'P0' then 0
+                            when 'P1' then 1
+                            when 'P2' then 2
+                            when 'P3' then 3
+                            when 'P4' then 4
+                            else 5
+                        end asc,
+                        created_at asc,
+                        mission_id asc
+                    """.replace("%(default_priority)s", str(QUEUE_PRIORITY_DEFAULT))
     if status in QUEUE_ORDERED_STATUSES:
         return """
                     order by
@@ -1320,6 +1368,10 @@ def _mission_order_clause(status):
                         mission_id asc
                     """.replace("%(default_priority)s", str(QUEUE_PRIORITY_DEFAULT))
     return "order by created_at desc"
+
+
+def _mission_queue_filter(status):
+    return "owner_queue" if _clean_text(status, 40).lower() in OWNER_QUEUE_FILTERS else ""
 
 
 def _clean_queue_priority(value):
