@@ -90,6 +90,18 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
             connect_factory=connect_factory,
         )
         writes.append({"proposal_id": proposal["proposal_id"], "status": result.get("status"), "success": result.get("success"), "status_code": write_status})
+    failed_writes = [write for write in writes if not write.get("success") or int(write.get("status_code") or 500) >= 400]
+    if failed_writes:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "proposal_write_failed",
+            "proposal_count": len(proposals),
+            "failed_write_count": len(failed_writes),
+            "proposals": proposals,
+            "writes": writes,
+            "execution_boundary": _execution_boundary(),
+        }, max(int(write.get("status_code") or 500) for write in failed_writes)
     return {
         "success": True,
         "configured": True,

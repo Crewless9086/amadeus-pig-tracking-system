@@ -86,6 +86,38 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
     @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
     @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
+    def test_generate_reports_failed_durable_proposal_writes(self, list_missions, list_artifacts, write_artifact):
+        list_missions.return_value = ({
+            "success": True,
+            "missions": [
+                {
+                    "mission_id": "MISSION-2",
+                    "status": "pr_ready",
+                    "title": "Regression evidence",
+                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                },
+                {
+                    "mission_id": "MISSION-1",
+                    "status": "blocked",
+                    "title": "Tests failed",
+                    "metadata": {"review_packet": {"errors": ["Tests failed before owner review."]}},
+                },
+            ],
+        }, 200)
+        list_artifacts.return_value = ({"success": True, "artifacts": []}, 200)
+        write_artifact.return_value = ({"success": False, "status": "artifact_write_failed"}, 500)
+
+        result, status = generate_and_store_proposals(database_url="postgresql://example")
+
+        self.assertEqual(status, 500)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "proposal_write_failed")
+        self.assertEqual(result["failed_write_count"], 1)
+        self.assertEqual(result["writes"][0]["status"], "artifact_write_failed")
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
     def test_generate_preserves_owner_reviewed_proposal_decision_on_rerun(self, list_missions, list_artifacts, write_artifact):
         list_missions.return_value = ({
             "success": True,
