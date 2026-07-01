@@ -78,6 +78,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(write_artifact.called)
         self.assertEqual(write_artifact.call_args.args[0], "MISSION-1")
+        self.assertEqual(write_artifact.call_args.kwargs["project_id"], "")
         written_proposal = write_artifact.call_args.args[2]
         self.assertEqual(written_proposal["record_mission_id"], "MISSION-1")
         self.assertIn("MISSION-2", written_proposal["source_mission_ids"])

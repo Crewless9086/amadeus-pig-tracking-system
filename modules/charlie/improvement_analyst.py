@@ -84,7 +84,7 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
             proposal,
             title=proposal["problem_detected"],
             summary=proposal["recommendation"],
-            project_id="charlie_core",
+            project_id="",
             agent="charlie_improvement_analyst",
             database_url=database_url,
             connect_factory=connect_factory,
