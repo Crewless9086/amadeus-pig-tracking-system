@@ -177,10 +177,10 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("created_at asc", sql)
         self.assertEqual(params["owner_queue_statuses"], [
             "in_progress",
-            "blocked",
-            "pr_ready",
-            "release_approved",
             "release_in_progress",
+            "pr_ready",
+            "blocked",
+            "release_approved",
             "approved",
             "new",
         ])

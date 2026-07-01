@@ -235,6 +235,78 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(action["writes_repo_file"])
 
     @patch("modules.charlie.build_relay.list_missions")
+    def test_next_command_skips_system_test_active_missions(self, list_missions):
+        def fake_list_missions(status="", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [
+                        {
+                            "mission_id": "CHARLIE-MISSION-SYSTEM",
+                            "status": "in_progress",
+                            "urgency": "P2",
+                            "approval_level": "LEVEL 3",
+                            "title": "Validation mission smoke test",
+                            "queue_class": "system_test",
+                        },
+                        {
+                            "mission_id": "CHARLIE-MISSION-OWNER",
+                            "status": "in_progress",
+                            "urgency": "P1",
+                            "approval_level": "LEVEL 3",
+                            "title": "Real owner mission",
+                            "queue_class": "owner_work",
+                        },
+                    ],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/next")
+
+        self.assertEqual(action["command"], "next")
+        self.assertIn("Real owner mission", action["telegram_text"])
+        self.assertNotIn("Validation mission smoke test", action["telegram_text"])
+        list_missions.assert_any_call(status="in_progress", limit=5)
+
+    @patch("modules.charlie.build_relay.local_runner_status")
+    @patch("modules.charlie.build_relay.mission_status_summary")
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_status_command_ignores_system_only_queue_missions(self, list_missions, mission_status_summary, local_runner_status):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+        mission_status_summary.return_value = ({
+            "success": True,
+            "status": "ok",
+            "counts": {"in_progress": 1, "new": 1},
+        }, 200)
+
+        def fake_list_missions(status="", limit=10):
+            if status in {"in_progress", "new"}:
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-SYSTEM",
+                        "status": status,
+                        "urgency": "P2",
+                        "approval_level": "LEVEL 3",
+                        "title": "Validation mission smoke test",
+                        "queue_class": "system_test",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/status")
+
+        self.assertEqual(action["command"], "status")
+        self.assertIn("No active, review-ready, approved, release-approved, or new missions are visible", action["telegram_text"])
+        self.assertNotIn("Validation mission smoke test", action["telegram_text"])
+
+    @patch("modules.charlie.build_relay.list_missions")
     def test_next_command_lists_new_missions_waiting_approval(self, list_missions):
         def fake_list_missions(status="", limit=10):
             if status == "new":
@@ -859,6 +931,37 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("charlie_runner_control.py start", data["local_runner_control_commands"]["start"])
         self.assertFalse(data["can_run_shell_from_web"])
         local_runner_status.assert_called_once()
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status")
+    @patch("modules.charlie.routes.list_missions")
+    def test_runner_status_route_skips_system_test_waiting_pickup(self, list_missions, local_runner_status, _owner_access):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+
+        def fake_list_missions(status="", limit=10):
+            if status == "approved":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-SYSTEM",
+                        "title": "Validation mission smoke test",
+                        "status": "approved",
+                        "queue_class": "system_test",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_missions.side_effect = fake_list_missions
+
+        response = self.client.get("/api/charlie/build-relay/runner/status")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "idle_no_approved_mission")
+        self.assertIsNone(data["next_approved_mission"])
+        self.assertEqual(data["approved_queue"], [])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.local_runner_status")

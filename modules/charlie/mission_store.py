@@ -140,10 +140,10 @@ QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
 OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
 OWNER_QUEUE_STATUSES = (
     "in_progress",
-    "blocked",
-    "pr_ready",
-    "release_approved",
     "release_in_progress",
+    "pr_ready",
+    "blocked",
+    "release_approved",
     "approved",
     "new",
 )

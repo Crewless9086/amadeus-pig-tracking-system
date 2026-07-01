@@ -288,7 +288,7 @@ def _status_action(repo_root):
     review_ready = _first_available_mission(("pr_ready", "blocked"))
     approved = _first_available_mission(("approved",))
     release_approved = _first_available_mission(("release_approved",))
-    new_missions = _mission_list_for_status("new", limit=3)
+    new_missions = _mission_list_for_status("new", limit=3, owner_work_only=True)
     keyboard = []
     lines = [
         "CHARLIE Mission Control",
@@ -492,10 +492,9 @@ def _mission_queue_next_action():
 
 def _first_available_mission(statuses):
     for status in statuses:
-        result, status_code = list_missions(status=status, limit=1)
-        if status_code >= 400:
+        missions = _mission_list_for_status(status, limit=1, owner_work_only=True)
+        if missions is None:
             return None
-        missions = result.get("missions") or []
         if missions:
             return {"status": status, "mission": missions[0]}
     return None

@@ -120,12 +120,12 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    approved, approved_status = list_missions(status="approved", limit=1)
-    approved_queue, approved_queue_status = list_missions(status="approved", limit=5)
-    in_progress, in_progress_status = list_missions(status="in_progress", limit=1)
-    pr_ready, pr_ready_status = list_missions(status="pr_ready", limit=1)
-    release_approved, release_approved_status = list_missions(status="release_approved", limit=1)
-    release_in_progress, release_in_progress_status = list_missions(status="release_in_progress", limit=1)
+    approved, approved_status = _owner_work_missions_for_status("approved", limit=1)
+    approved_queue, approved_queue_status = _owner_work_missions_for_status("approved", limit=5)
+    in_progress, in_progress_status = _owner_work_missions_for_status("in_progress", limit=1)
+    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=1)
+    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=1)
+    release_in_progress, release_in_progress_status = _owner_work_missions_for_status("release_in_progress", limit=1)
     if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
         return jsonify({
             "success": False,
@@ -198,12 +198,12 @@ def charlie_build_relay_command_center_route():
     if denied:
         return denied
     summary, summary_status = mission_status_summary()
-    recent, recent_status = list_missions(limit=8)
-    approved_queue, approved_status = list_missions(status="approved", limit=20)
-    review_ready, review_status = list_missions(status="pr_ready", limit=5)
-    blocked, blocked_status = list_missions(status="blocked", limit=5)
-    release_approved, release_approved_status = list_missions(status="release_approved", limit=5)
-    release_in_progress, release_progress_status = list_missions(status="release_in_progress", limit=5)
+    recent, recent_status = list_missions(status="owner_queue", limit=8)
+    approved_queue, approved_status = _owner_work_missions_for_status("approved", limit=20)
+    review_ready, review_status = _owner_work_missions_for_status("pr_ready", limit=5)
+    blocked, blocked_status = _owner_work_missions_for_status("blocked", limit=5)
+    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=5)
+    release_in_progress, release_progress_status = _owner_work_missions_for_status("release_in_progress", limit=5)
     merged, merged_status = list_missions(status="merged", limit=5)
     deployed, deployed_status = list_missions(status="deployed", limit=5)
     statuses = [
@@ -421,6 +421,19 @@ def charlie_build_relay_review_media_route(mission_id, filename):
     if not media_path.exists() or not media_path.is_file():
         return jsonify({"success": False, "status": "review_media_not_found"}), 404
     return send_from_directory(resolved_dir, safe_filename)
+
+
+def _owner_work_missions_for_status(status, limit=1):
+    parsed_limit = max(int(limit or 1), 1)
+    result, status_code = list_missions(status=status, limit=max(parsed_limit * 5, parsed_limit))
+    if status_code >= 400:
+        return result, status_code
+    owner_missions = [
+        mission
+        for mission in (result.get("missions") or [])
+        if mission.get("queue_class", "owner_work") == "owner_work"
+    ][:parsed_limit]
+    return {**result, "missions": owner_missions}, status_code
 
 
 def _first_mission(result):
