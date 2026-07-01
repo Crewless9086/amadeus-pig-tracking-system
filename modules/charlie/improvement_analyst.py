@@ -5,7 +5,6 @@ from modules.charlie import mission_store, vault_store
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
 PROPOSAL_LABEL = "charlie_self_improvement"
-IMPROVEMENT_MISSION_ID = "CHARLIE-CORE-IMPROVEMENTS"
 ALLOWED_PROPOSAL_DECISIONS = {"approve", "reject", "send_to_mission"}
 
 TARGET_AREAS = {
@@ -78,8 +77,9 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
     writes = []
     for proposal in proposals:
         proposal = _merge_existing_proposal_decision(proposal, existing_by_id.get(proposal["proposal_id"]))
+        proposal["record_mission_id"] = _proposal_record_mission_id(proposal)
         result, write_status = vault_store.write_artifact(
-            IMPROVEMENT_MISSION_ID,
+            proposal["record_mission_id"],
             PROPOSAL_ARTIFACT_TYPE,
             proposal,
             title=proposal["problem_detected"],
@@ -218,8 +218,9 @@ def record_proposal_decision(proposal_id, decision, comments="", database_url=No
     )
     if save_status >= 400:
         return saved, save_status
+    decision_mission_id = _proposal_record_mission_id(proposal)
     vault_store.write_owner_decision(
-        IMPROVEMENT_MISSION_ID,
+        decision_mission_id,
         f"improvement_proposal_{decision}",
         comments=comments,
         metadata={"proposal_id": proposal_id, "label": PROPOSAL_LABEL, "applies_automatically": False},
@@ -289,6 +290,7 @@ def _proposal(area, bucket, score):
         "confidence": "medium" if len(bucket["source_mission_ids"]) < 4 else "high",
         "status": "pending",
         "source_mission_ids": sorted(bucket["source_mission_ids"]),
+        "record_mission_id": sorted(bucket["source_mission_ids"])[0],
         "created_by_agent": "charlie_improvement_analyst",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "applies_automatically": False,
@@ -362,8 +364,19 @@ def _proposal_from_artifact(artifact):
     proposal.setdefault("label", PROPOSAL_LABEL)
     proposal.setdefault("created_by_agent", artifact.get("created_by_agent", ""))
     proposal.setdefault("created_at", artifact.get("created_at", ""))
+    proposal.setdefault("record_mission_id", artifact.get("mission_id", ""))
     proposal["artifact_id"] = artifact.get("artifact_id", proposal.get("artifact_id", ""))
+    proposal["mission_id"] = artifact.get("mission_id", proposal.get("mission_id", ""))
     return proposal
+
+
+def _proposal_record_mission_id(proposal):
+    mission_id = _clean(proposal.get("record_mission_id") or proposal.get("mission_id"), 120)
+    if mission_id:
+        return mission_id
+    source_ids = proposal.get("source_mission_ids") if isinstance(proposal.get("source_mission_ids"), list) else []
+    cleaned = sorted(_clean(source_id, 120) for source_id in source_ids if _clean(source_id, 120))
+    return cleaned[0] if cleaned else ""
 
 
 def _execution_boundary():

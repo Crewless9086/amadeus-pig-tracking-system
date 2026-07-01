@@ -51,6 +51,40 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
     @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
     @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
+    def test_generate_stores_proposal_artifacts_under_real_source_mission(self, list_missions, list_artifacts, write_artifact):
+        list_missions.return_value = ({
+            "success": True,
+            "missions": [
+                {
+                    "mission_id": "MISSION-2",
+                    "status": "pr_ready",
+                    "title": "Regression evidence",
+                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                },
+                {
+                    "mission_id": "MISSION-1",
+                    "status": "blocked",
+                    "title": "Tests failed",
+                    "metadata": {"review_packet": {"errors": ["Tests failed before owner review."]}},
+                },
+            ],
+        }, 200)
+        list_artifacts.return_value = ({"success": True, "artifacts": []}, 200)
+        write_artifact.return_value = ({"success": True, "status": "artifact_written"}, 200)
+
+        result, status = generate_and_store_proposals(database_url="postgresql://example")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(write_artifact.called)
+        self.assertEqual(write_artifact.call_args.args[0], "MISSION-1")
+        written_proposal = write_artifact.call_args.args[2]
+        self.assertEqual(written_proposal["record_mission_id"], "MISSION-1")
+        self.assertIn("MISSION-2", written_proposal["source_mission_ids"])
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
     def test_generate_preserves_owner_reviewed_proposal_decision_on_rerun(self, list_missions, list_artifacts, write_artifact):
         list_missions.return_value = ({
             "success": True,
@@ -134,6 +168,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertFalse(saved_proposal["last_owner_decision"]["applies_automatically"])
         self.assertEqual(saved_proposal["decision_history"][-1]["comments"], "Agree.")
         write_owner_decision.assert_called_once()
+        self.assertEqual(write_owner_decision.call_args.args[0], "MISSION-1")
 
     @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
     @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
@@ -204,6 +239,7 @@ def _artifact_payload(status="pending", label=PROPOSAL_LABEL):
         "success": True,
         "artifact": {
             "artifact_id": "ARTIFACT-TESTS",
+            "mission_id": "MISSION-1",
             "content": {
                 "proposal_id": "CHARLIE-IMPROVEMENT-TESTS",
                 "label": label,
