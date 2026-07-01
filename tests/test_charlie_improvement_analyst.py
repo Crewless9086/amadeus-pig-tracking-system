@@ -68,34 +68,52 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                 },
             ],
         }, 200)
-        list_artifacts.return_value = ({
-            "success": True,
-            "artifacts": [{
-                "artifact_id": "ARTIFACT-TESTS",
-                "content": {
-                    "proposal_id": "CHARLIE-IMPROVEMENT-TESTS",
-                    "label": PROPOSAL_LABEL,
-                    "status": "approved",
-                    "decision_history": [{"decision": "approve", "comments": "Good fix."}],
-                    "last_owner_decision": {"decision": "approve", "comments": "Good fix."},
-                    "created_at": "2026-07-01T10:00:00+00:00",
-                },
-                "created_by_agent": "charlie_improvement_analyst",
-                "created_at": "2026-07-01T10:00:00+00:00",
-            }],
-        }, 200)
         write_artifact.return_value = ({"success": True, "status": "artifact_written"}, 200)
 
-        result, status = generate_and_store_proposals(database_url="postgresql://example")
+        cases = [
+            ("approved", {"decision": "approve", "comments": "Good fix."}, {}),
+            ("rejected", {"decision": "reject", "comments": "Not worth it."}, {}),
+            (
+                "sent_to_mission",
+                {"decision": "send_to_mission", "comments": "Make it a mission."},
+                {"mission_creation_status": "mission_recorded", "sent_to_mission_id": "CHARLIE-MISSION-IMPROVE-1"},
+            ),
+        ]
 
-        self.assertEqual(status, 200)
-        self.assertTrue(result["success"])
-        written_proposal = write_artifact.call_args.args[2]
-        self.assertEqual(written_proposal["proposal_id"], "CHARLIE-IMPROVEMENT-TESTS")
-        self.assertEqual(written_proposal["status"], "approved")
-        self.assertEqual(written_proposal["decision_history"][0]["decision"], "approve")
-        self.assertEqual(written_proposal["last_owner_decision"]["decision"], "approve")
-        self.assertEqual(written_proposal["created_at"], "2026-07-01T10:00:00+00:00")
+        for proposal_status, decision_record, extra_fields in cases:
+            with self.subTest(proposal_status=proposal_status):
+                existing_content = {
+                    "proposal_id": "CHARLIE-IMPROVEMENT-TESTS",
+                    "label": PROPOSAL_LABEL,
+                    "status": proposal_status,
+                    "decision_history": [decision_record],
+                    "last_owner_decision": decision_record,
+                    "created_at": "2026-07-01T10:00:00+00:00",
+                    **extra_fields,
+                }
+                list_artifacts.return_value = ({
+                    "success": True,
+                    "artifacts": [{
+                        "artifact_id": "ARTIFACT-TESTS",
+                        "content": existing_content,
+                        "created_by_agent": "charlie_improvement_analyst",
+                        "created_at": "2026-07-01T10:00:00+00:00",
+                    }],
+                }, 200)
+                write_artifact.reset_mock()
+
+                result, status = generate_and_store_proposals(database_url="postgresql://example")
+
+                self.assertEqual(status, 200)
+                self.assertTrue(result["success"])
+                written_proposal = write_artifact.call_args.args[2]
+                self.assertEqual(written_proposal["proposal_id"], "CHARLIE-IMPROVEMENT-TESTS")
+                self.assertEqual(written_proposal["status"], proposal_status)
+                self.assertEqual(written_proposal["decision_history"][0]["decision"], decision_record["decision"])
+                self.assertEqual(written_proposal["last_owner_decision"]["decision"], decision_record["decision"])
+                self.assertEqual(written_proposal["created_at"], "2026-07-01T10:00:00+00:00")
+                for field, value in extra_fields.items():
+                    self.assertEqual(written_proposal[field], value)
 
 
 if __name__ == "__main__":
