@@ -3,11 +3,25 @@
     missions: [],
     reviewMissions: [],
     commandCenter: {},
+    runnerStatus: {},
     counts: {},
     loading: false,
     pendingMedia: [],
     activeFilter: "owner_queue",
   };
+  const AUTO_REFRESH_MS = 8000;
+  const AGENT_ORDER = ["idea_expander", "product_architect", "planner", "architect", "builder", "tester", "qa_red_team", "reviewer"];
+  const AGENT_LABELS = {
+    idea_expander: "Idea",
+    product_architect: "Product",
+    planner: "Planner",
+    architect: "Architect",
+    builder: "Builder",
+    tester: "Tester",
+    qa_red_team: "QA",
+    reviewer: "Reviewer",
+  };
+  const WORKFLOW_VISUAL_STATES = ["is-complete", "is-active", "is-blocked", "is-send-back", "is-review-ready", "is-pending"];
   const MAX_MEDIA_ITEMS = 3;
   const MAX_MEDIA_BYTES = 650 * 1024;
   const IMAGE_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -25,6 +39,13 @@
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
     commandCenter: document.getElementById("charlie_command_center"),
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
+    liveNotice: document.getElementById("charlie_live_notice"),
+    workflowMap: document.getElementById("charlie_workflow_map"),
+    activeSummary: document.getElementById("charlie_active_summary"),
+    reviewModal: document.getElementById("charlie_review_modal"),
+    reviewModalTitle: document.getElementById("charlie_review_modal_title"),
+    reviewModalBody: document.getElementById("charlie_review_modal_body"),
+    reviewModalClose: document.getElementById("charlie_review_modal_close"),
     refresh: document.getElementById("charlie_refresh"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
@@ -99,19 +120,16 @@
     state.activeFilter = status || "";
     const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
     try {
-      const [summary, missions, reviewReady, blocked, commandCenter] = await Promise.all([
+      const [summary, missions] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
         fetchJson(`/api/charlie/build-relay/missions${query}`),
-        fetchJson("/api/charlie/build-relay/missions?status=pr_ready&limit=20"),
-        fetchJson("/api/charlie/build-relay/missions?status=blocked&limit=20"),
-        fetchJson("/api/charlie/build-relay/command-center"),
       ]);
       state.missions = missions.missions || [];
-      state.reviewMissions = uniqueMissions([...(reviewReady.missions || []), ...(blocked.missions || [])]);
       state.counts = summary.counts || {};
-      state.commandCenter = commandCenter || {};
+      state.reviewMissions = state.missions.filter((mission) => ["pr_ready", "blocked"].includes(mission.status));
       render();
       loadRunnerStatus();
+      loadCommandCenter();
     } catch (error) {
       setMessage(error.message || "Could not load CHARLIE missions.", "error");
       if (els.statusLine) els.statusLine.textContent = "Mission queue unavailable.";
@@ -124,6 +142,7 @@
     if (!els.runner.state) return;
     try {
       const data = await fetchJson("/api/charlie/build-relay/runner/status");
+      state.runnerStatus = data || {};
       const active = data.active_mission || {};
       const next = data.next_approved_mission || {};
       const releaseNext = data.next_release_approved_mission || {};
@@ -158,9 +177,30 @@
           ...executionLines,
         ].join("\n");
       }
+      renderAliveDashboard();
     } catch (error) {
       els.runner.state.textContent = "Unavailable";
       els.runner.message.textContent = error.message || "Runner handoff status could not be loaded.";
+      state.runnerStatus = {status: "unavailable", next_action: els.runner.message.textContent};
+      renderAliveDashboard();
+    }
+  }
+
+  async function loadCommandCenter() {
+    try {
+      const commandCenter = await fetchJson("/api/charlie/build-relay/command-center");
+      state.commandCenter = commandCenter || {};
+      state.reviewMissions = uniqueMissions([
+        ...(((commandCenter.review || {}).ready) || []),
+        ...(((commandCenter.review || {}).blocked) || []),
+      ]);
+      renderCommandCenter(state.commandCenter);
+      renderReview();
+      renderAliveDashboard();
+    } catch (error) {
+      if (els.commandCenter) {
+        els.commandCenter.innerHTML = `<p class="charlie-muted">${escapeHtml(error.message || "Command center unavailable.")}</p>`;
+      }
     }
   }
 
@@ -198,6 +238,7 @@
     });
     if (els.loadedAt) els.loadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
     renderCommandCenter();
+    renderAliveDashboard();
     if (!els.list) return;
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
@@ -257,8 +298,8 @@
       ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
       ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
       ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
-      ${commandCenterTile("Merged", `${(release.merged_waiting_live_verify || []).length} waiting verify`, "Needs live proof for deployed")}
-      ${commandCenterTile("Deployed", `${(release.deployed || []).length} complete`, "Verified live")}
+      ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
+      ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
       ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
       ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
       ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
@@ -290,6 +331,169 @@
     state.reviewMissions.forEach((mission) => {
       els.reviewList.appendChild(reviewCard(mission));
     });
+  }
+
+  function renderAliveDashboard() {
+    renderWorkflowMap();
+    renderActiveSummary();
+  }
+
+  function renderWorkflowMap() {
+    if (!els.workflowMap) return;
+    const activeMission = currentMissionForFlow();
+    const workflow = workflowForMission(activeMission);
+    const runner = state.runnerStatus || {};
+    const local = runner.local_runner || {};
+    const activeAgent = normalizeAgent(local.current_agent || latestLedgerAgent(local.agent_ledger) || workflowActiveAgent(workflow));
+    const blockedPacket = reviewPacketForMission(activeMission);
+    const blocked = activeMission && (activeMission.status === "blocked" || blockedPacket.review_status === "agent_blocked");
+    const reviewReady = activeMission && activeMission.status === "pr_ready";
+    const backflowEvents = backflowEventsForMission(activeMission);
+    if (els.liveNotice) {
+      const remoteBlind = runner.local_runner_scope === "render_cannot_see_laptop_runner";
+      els.liveNotice.classList.toggle("is-warning", remoteBlind || Boolean(blocked));
+      els.liveNotice.textContent = remoteBlind
+        ? "Render cannot see this laptop's .charlie_runner heartbeat. Live local runner data is available only on the local dashboard."
+        : runner.next_action || "Local runner heartbeat and mission ledger are feeding this live workflow.";
+    }
+    els.workflowMap.innerHTML = `
+      <div class="charlie-flow-title">
+        <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
+        <span>${escapeHtml(activeMission ? activeMission.status || "unknown" : "waiting")}</span>
+      </div>
+      ${blocked ? blockedReviewBanner(blockedPacket) : ""}
+      <div class="charlie-flow-track" data-active-agent="${escapeHtml(activeAgent || "")}">
+        ${AGENT_ORDER.map((agent, index) => workflowNodeMarkup(agent, workflow, {
+          activeAgent,
+          blocked,
+          reviewReady,
+          isLast: index === AGENT_ORDER.length - 1,
+        })).join("")}
+      </div>
+      ${backflowEvents.length ? `<div class="charlie-flow-backflows">${backflowEvents.slice(0, 4).map(backflowLoopMarkup).join("")}</div>` : ""}
+    `;
+  }
+
+  function renderActiveSummary() {
+    if (!els.activeSummary) return;
+    const runner = state.runnerStatus || {};
+    const local = runner.local_runner || {};
+    const activeMission = currentMissionForFlow();
+    const reviewPacket = reviewPacketForMission(activeMission);
+    const latest = (local.agent_ledger && local.agent_ledger.latest_stage) || {};
+    const summary = latest.summary || reviewPacket.summary || (activeMission && (activeMission.raw_text || activeMission.title)) || runner.next_action || "No active local runner work is visible yet.";
+    const blocked = activeMission && (activeMission.status === "blocked" || reviewPacket.review_status === "agent_blocked");
+    els.activeSummary.innerHTML = `
+      ${blocked ? blockedReviewBanner(reviewPacket) : ""}
+      <dl class="charlie-mission-meta">
+        <div><dt>Agent</dt><dd>${escapeHtml(local.current_agent || latest.agent || workflowActiveAgent(workflowForMission(activeMission)) || "--")}</dd></div>
+        <div><dt>Action</dt><dd>${escapeHtml(local.current_action || latest.current_action || local.last_result_status || "--")}</dd></div>
+        <div><dt>Ledger</dt><dd>${escapeHtml(local.agent_ledger_path || "--")}</dd></div>
+        <div><dt>Artifact</dt><dd>${escapeHtml(local.execution_artifact || "--")}</dd></div>
+      </dl>
+      <p>${escapeHtml(safeText(summary)).slice(0, 360)}</p>
+      <details>
+        <summary>Runner details</summary>
+        <pre>${escapeHtml([
+          `Agent: ${local.current_agent || latest.agent || "--"}`,
+          `Action: ${local.current_action || latest.current_action || "--"}`,
+          `Latest Stage: ${runnerLatestStageLine(local.agent_ledger)}`,
+          `Stdout: ${shortOutput(local.stdout_tail || latest.stdout_tail)}`,
+          `Stderr: ${shortOutput(local.stderr_tail || latest.stderr_tail)}`,
+        ].join("\n"))}</pre>
+      </details>
+    `;
+  }
+
+  function currentMissionForFlow() {
+    const runner = state.runnerStatus || {};
+    return runner.active_mission
+      || firstMissionFromList((state.commandCenter.queue || {}).approved)
+      || firstMissionFromList(state.reviewMissions)
+      || firstMissionFromList(state.missions)
+      || null;
+  }
+
+  function firstMissionFromList(items) {
+    return Array.isArray(items) && items.length ? items[0] : null;
+  }
+
+  function workflowForMission(mission) {
+    const workflow = mission && Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    if (workflow.length) return workflow;
+    return AGENT_ORDER.map((agent) => ({agent, status: "pending"}));
+  }
+
+  function workflowNodeMarkup(agent, workflow, context) {
+    const item = workflow.find((entry) => normalizeAgent(entry.agent) === agent) || {agent, status: "pending"};
+    const status = workflowNodeStatus(agent, item, context);
+    const label = AGENT_LABELS[agent] || agent;
+    return `
+      <article class="charlie-flow-node is-${escapeHtml(status)}" data-agent="${escapeHtml(agent)}">
+        <span class="charlie-flow-pulse"></span>
+        <strong>${escapeHtml(label)}</strong>
+        <small>${escapeHtml(status.replace(/-/g, " "))}</small>
+        <em>${escapeHtml(shortAgentSummary(item))}</em>
+        ${context.isLast ? "" : '<span class="charlie-flow-link" aria-hidden="true"></span>'}
+      </article>
+    `;
+  }
+
+  function workflowNodeStatus(agent, item, context) {
+    const rawStatus = safeText(item.status || "pending").toLowerCase().replace(/_/g, "-");
+    if (context.blocked && normalizeAgent((reviewPacketForMission(currentMissionForFlow()) || {}).blocked_agent) === agent) return "blocked";
+    if (context.activeAgent === agent) return "active";
+    if (context.reviewReady && agent === "reviewer") return "review-ready";
+    if (rawStatus.includes("send") || rawStatus.includes("back")) return "send-back";
+    if (["complete", "completed", "done", "pass", "passed"].includes(rawStatus)) return "complete";
+    if (["blocked", "failed", "error"].includes(rawStatus)) return "blocked";
+    return "pending";
+  }
+
+  function shortAgentSummary(item) {
+    return safeText(item.summary || item.findings || item.current_action || item.next_action || "").slice(0, 96);
+  }
+
+  function normalizeAgent(value) {
+    const text = safeText(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    if (text === "qa" || text === "red_team" || text === "qa_redteam") return "qa_red_team";
+    if (text === "product") return "product_architect";
+    if (text === "idea") return "idea_expander";
+    return text;
+  }
+
+  function latestLedgerAgent(ledger) {
+    const latest = ledger && ledger.latest_stage ? ledger.latest_stage : {};
+    return latest.agent || "";
+  }
+
+  function workflowActiveAgent(workflow) {
+    const active = (Array.isArray(workflow) ? workflow : []).find((item) => {
+      const status = safeText(item.status).toLowerCase();
+      return ["active", "running", "in_progress", "working"].includes(status);
+    });
+    return active ? normalizeAgent(active.agent) : "";
+  }
+
+  function reviewPacketForMission(mission) {
+    return ((mission || {}).metadata || {}).review_packet || {};
+  }
+
+  function backflowEventsForMission(mission) {
+    const packet = reviewPacketForMission(mission);
+    const execution = packet.agent_execution || {};
+    return Array.isArray(packet.backflow_events) ? packet.backflow_events : (Array.isArray(execution.backflow_events) ? execution.backflow_events : []);
+  }
+
+  function backflowLoopMarkup(event) {
+    return `
+      <article class="charlie-return-loop">
+        <strong>${escapeHtml(safeText(event.from_agent || "agent"))} return</strong>
+        <span aria-hidden="true">↩</span>
+        <em>${escapeHtml(safeText(event.to_agent || "builder"))}</em>
+        <small>${escapeHtml(safeText(event.reason || "Send-back recorded"))}</small>
+      </article>
+    `;
   }
 
   function missionCard(mission) {
@@ -415,55 +619,107 @@
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
-      ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
-      <details open>
-        <summary>Mission findings and review packet</summary>
-        <div class="charlie-review-packet" data-review-packet>
-          ${reviewPacketMarkup(mission, reviewPacket)}
-        </div>
+      <p>${escapeHtml(safeText(reviewPacket.summary || mission.raw_text || title)).slice(0, 220)}</p>
+      <details>
+        <summary>Short evidence</summary>
+        ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
+        <div class="charlie-review-packet">${reviewPacketMarkup(mission, reviewPacket)}</div>
       </details>
-      ${agentExecutionMarkup(reviewPacket.agent_execution || (metadata.agent_execution || {}), reviewPacket)}
-      <label for="review_comments_${escapeHtml(missionId)}">Owner comments</label>
-      <textarea id="review_comments_${escapeHtml(missionId)}" rows="3" data-review-comments placeholder="Comments for final approval or send-back"></textarea>
-      <div class="charlie-form-row">
-        <label>
-          Return stage
-          <select data-review-target-stage>
-            <option value="builder">Builder</option>
-            <option value="tester">Tester</option>
-            <option value="qa_red_team">QA / Red Team</option>
-            <option value="reviewer">Reviewer</option>
-            <option value="planner">Planner</option>
-            <option value="architect">Architect</option>
-            <option value="product_architect">Product Architect</option>
-            <option value="idea_expander">Idea Expander</option>
-          </select>
-        </label>
-        <button type="button" data-review-refresh>Refresh Evidence</button>
-      </div>
       <div class="charlie-mission-actions charlie-review-actions">
-        <button type="button" data-review-decision="approve_final_release">Approve Final</button>
-        <button type="button" data-review-decision="send_back">Send Back</button>
-        <button type="button" data-review-decision="pause">Pause</button>
-        <button type="button" data-review-decision="reject">Reject</button>
-        <button type="button" data-review-decision="mark_done">Mark Done</button>
+        <button type="button" data-open-owner-review>Open Review</button>
       </div>
     `;
-    card.querySelector("[data-review-refresh]").addEventListener("click", () => loadReviewPacket(missionId, card));
     card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
       button.addEventListener("click", () => openVisualReviewOverlay(button));
     });
-    card.querySelectorAll("[data-review-decision]").forEach((button) => {
-      button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
-    });
+    card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
   }
 
   function agentBadge(agent) {
     const name = safeText(agent.agent || "agent");
     const status = safeText(agent.status || "pending");
-    return `<span class="status-pill status-pill-muted">${escapeHtml(name)}: ${escapeHtml(status)}</span>`;
+    return `<span class="status-pill status-pill-muted charlie-agent-badge is-${escapeHtml(status.toLowerCase().replace(/_/g, "-"))}">${escapeHtml(name)}: ${escapeHtml(status)}</span>`;
+  }
+
+  function openOwnerReviewModal(mission) {
+    if (!els.reviewModal || !els.reviewModalBody) return;
+    const missionId = safeText(mission.mission_id);
+    const title = safeText(mission.title || mission.raw_text || "Owner Review");
+    const reviewPacket = reviewPacketForMission(mission);
+    if (els.reviewModalTitle) els.reviewModalTitle.textContent = title;
+    els.reviewModalBody.innerHTML = focusedReviewMarkup(mission, reviewPacket);
+    els.reviewModal.classList.remove("hidden");
+    document.body.classList.add("charlie-modal-open");
+    els.reviewModalBody.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+      button.addEventListener("click", () => openVisualReviewOverlay(button));
+    });
+    const refreshButton = els.reviewModalBody.querySelector("[data-review-refresh]");
+    if (refreshButton) refreshButton.addEventListener("click", () => loadReviewPacket(missionId, els.reviewModalBody));
+    els.reviewModalBody.querySelectorAll("[data-review-decision]").forEach((button) => {
+      button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, els.reviewModalBody));
+    });
+    if (els.reviewModalClose) els.reviewModalClose.focus();
+  }
+
+  function closeOwnerReviewModal() {
+    if (!els.reviewModal) return;
+    els.reviewModal.classList.add("hidden");
+    document.body.classList.remove("charlie-modal-open");
+    if (els.reviewModalBody) els.reviewModalBody.innerHTML = "";
+  }
+
+  function focusedReviewMarkup(mission, reviewPacket) {
+    const metadata = mission.metadata || {};
+    const localPreview = reviewPacket.local_preview || {};
+    const links = reviewPacket.links || {};
+    return `
+      ${mission.status === "blocked" || reviewPacket.review_status === "agent_blocked" ? blockedReviewBanner(reviewPacket) : ""}
+      <div class="charlie-review-focus-grid">
+        <section>
+          <strong>Summary</strong>
+          <p>${escapeHtml(safeText(reviewPacket.summary || mission.raw_text || "No summary captured yet."))}</p>
+          ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
+          <details open>
+            <summary>Review packet details</summary>
+            <div class="charlie-review-packet" data-review-packet>${reviewPacketMarkup(mission, reviewPacket)}</div>
+          </details>
+          ${agentExecutionMarkup(reviewPacket.agent_execution || (metadata.agent_execution || {}), reviewPacket)}
+        </section>
+        <aside>
+          <dl class="charlie-mission-meta">
+            <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
+            <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
+            <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
+            <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
+          </dl>
+          <label for="review_comments_${escapeHtml(mission.mission_id)}">Owner comments</label>
+          <textarea id="review_comments_${escapeHtml(mission.mission_id)}" rows="5" data-review-comments placeholder="Comments for final approval or send-back"></textarea>
+          <label>
+            Return stage
+            <select data-review-target-stage>
+              <option value="builder">Builder</option>
+              <option value="tester">Tester</option>
+              <option value="qa_red_team">QA / Red Team</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="planner">Planner</option>
+              <option value="architect">Architect</option>
+              <option value="product_architect">Product Architect</option>
+              <option value="idea_expander">Idea Expander</option>
+            </select>
+          </label>
+          <button type="button" data-review-refresh>Refresh Evidence</button>
+          <div class="charlie-mission-actions charlie-review-actions">
+            <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+            <button type="button" data-review-decision="send_back">Send Back</button>
+            <button type="button" data-review-decision="pause">Pause</button>
+            <button type="button" data-review-decision="reject">Reject</button>
+            <button type="button" data-review-decision="mark_done">Mark Done</button>
+          </div>
+        </aside>
+      </div>
+    `;
   }
 
   function vaultDetails(vault, media, contextPack) {
@@ -730,13 +986,16 @@
   function backflowMarkup(items) {
     const events = Array.isArray(items) ? items : [];
     if (!events.length) return '<p class="charlie-muted">No agent backflow was needed.</p>';
-    return `<ul>${events.map((event) => {
+    return `<div class="charlie-backflow-list">${events.map((event) => {
       const blockers = Array.isArray(event.unresolved_blockers) ? event.unresolved_blockers : [];
-      return `<li>
-        ${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}
+      return `<article class="charlie-return-loop">
+        <strong>${escapeHtml(safeText(event.from_agent || "agent"))}</strong>
+        <span aria-hidden="true">↩</span>
+        <em>${escapeHtml(safeText(event.to_agent || "agent"))}</em>
+        <small>${escapeHtml(safeText(event.reason || "Send-back recorded"))}</small>
         ${blockers.length ? unresolvedBlockersMarkup(blockers) : ""}
-      </li>`;
-    }).join("")}</ul>`;
+      </article>`;
+    }).join("")}</div>`;
   }
 
   function unresolvedBlockersMarkup(items) {
@@ -1207,9 +1466,19 @@
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
+  if (els.reviewModalClose) els.reviewModalClose.addEventListener("click", closeOwnerReviewModal);
+  if (els.reviewModal) {
+    els.reviewModal.addEventListener("click", (event) => {
+      if (event.target === els.reviewModal) closeOwnerReviewModal();
+    });
+  }
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeVisualReviewOverlay();
+    if (event.key === "Escape") {
+      closeVisualReviewOverlay();
+      closeOwnerReviewModal();
+    }
   });
   setupMediaCapture();
   loadMissions();
+  window.setInterval(loadMissions, AUTO_REFRESH_MS);
 })();

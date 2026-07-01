@@ -56,55 +56,8 @@
       </article>
     </section>
 
-    <section class="charlie-panel charlie-command-center-panel" aria-label="CHARLIE CORE command center">
-      <div class="ops-panel-header">
-        <div>
-          <span class="ops-panel-kicker">CHARLIE CORE</span>
-          <h2>Command Center</h2>
-        </div>
-        <span class="status-pill status-pill-muted" id="charlie_command_center_loaded_at">Loading</span>
-      </div>
-      <div id="charlie_command_center" class="charlie-command-center-grid" aria-live="polite">
-        <p class="charlie-muted">Loading command center...</p>
-      </div>
-    </section>
-
-    <section class="charlie-panel charlie-runner-panel" aria-label="Local runner handoff status">
-      <div class="ops-panel-header">
-        <div>
-          <span class="ops-panel-kicker">Runner</span>
-          <h2>Codex Handoff</h2>
-        </div>
-        <span class="status-pill status-pill-muted" id="charlie_runner_state">Checking</span>
-      </div>
-      <p id="charlie_runner_message" class="charlie-muted">Checking approved mission handoff status...</p>
-      <dl class="charlie-mission-meta">
-        <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
-        <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
-        <div><dt>Release Approved</dt><dd id="charlie_runner_release_next">--</dd></div>
-        <div><dt>Local Runner</dt><dd id="charlie_runner_local">--</dd></div>
-        <div><dt>Last Seen</dt><dd id="charlie_runner_seen">--</dd></div>
-      </dl>
-      <details>
-        <summary>Local runner commands</summary>
-        <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30</pre>
-        <pre id="charlie_runner_control_commands">.\venv\Scripts\python.exe scripts\charlie_runner_control.py status</pre>
-      </details>
-    </section>
-
-    <section class="charlie-panel charlie-review-panel" aria-label="Owner review gate">
-      <div class="ops-panel-header">
-        <div>
-          <span class="ops-panel-kicker">Stage 8</span>
-          <h2>Owner Review</h2>
-        </div>
-        <span class="status-pill status-pill-muted" id="charlie_review_loaded_at">Loading</span>
-      </div>
-      <div id="charlie_review_list" class="charlie-review-list" aria-live="polite"></div>
-    </section>
-
-    <section class="charlie-layout">
-      <aside class="charlie-panel">
+    <section class="charlie-control-room" aria-label="Live mission control room">
+      <aside class="charlie-panel charlie-menu-rail">
         <div class="ops-panel-header">
           <div>
             <span class="ops-panel-kicker">Controls</span>
@@ -174,19 +127,111 @@
           <option value="done">Done</option>
         </select>
         <div id="charlie_message" class="message-box hidden"></div>
+
+        <section class="charlie-queue-preview" aria-label="Mission queue preview">
+          <h3>Active List</h3>
+          <div id="charlie_mission_list" class="charlie-mission-list" aria-live="polite"></div>
+        </section>
       </aside>
 
-      <section class="charlie-panel charlie-missions-panel">
+      <section class="charlie-mission-stage" aria-label="Live CHARLIE workflow">
+        <section class="charlie-panel charlie-live-panel">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Live Flow</span>
+              <h2>CHARLIE Workflow</h2>
+            </div>
+            <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
+          </div>
+          <div id="charlie_live_notice" class="charlie-live-notice" aria-live="polite">Loading local runner heartbeat and mission ledger...</div>
+          <div id="charlie_workflow_map" class="charlie-workflow-map" aria-live="polite"></div>
+        </section>
+
+        <section class="charlie-panel charlie-command-center-panel" aria-label="CHARLIE CORE command center">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">CHARLIE CORE</span>
+              <h2>Command Center</h2>
+            </div>
+            <span class="status-pill status-pill-muted" id="charlie_command_center_loaded_at">Loading</span>
+          </div>
+          <div id="charlie_command_center" class="charlie-command-center-grid" aria-live="polite">
+            <p class="charlie-muted">Loading command center...</p>
+          </div>
+        </section>
+
+        <section class="charlie-panel charlie-missions-panel">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Details</span>
+              <h2>Expanded Mission Records</h2>
+            </div>
+          </div>
+          <p class="charlie-muted">Short mission cards stay in the left rail. Open card details only when deeper vault or technical evidence is needed.</p>
+        </section>
+      </section>
+
+      <aside class="charlie-side-rail" aria-label="Active mission summary">
+        <section class="charlie-panel charlie-runner-panel" aria-label="Local runner handoff status">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Runner</span>
+              <h2>Codex Handoff</h2>
+            </div>
+            <span class="status-pill status-pill-muted" id="charlie_runner_state">Checking</span>
+          </div>
+          <p id="charlie_runner_message" class="charlie-muted">Checking approved mission handoff status...</p>
+          <dl class="charlie-mission-meta">
+            <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
+            <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
+            <div><dt>Release Approved</dt><dd id="charlie_runner_release_next">--</dd></div>
+            <div><dt>Local Runner</dt><dd id="charlie_runner_local">--</dd></div>
+            <div><dt>Last Seen</dt><dd id="charlie_runner_seen">--</dd></div>
+          </dl>
+          <details>
+            <summary>Local runner commands</summary>
+            <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30</pre>
+            <pre id="charlie_runner_control_commands">.\venv\Scripts\python.exe scripts\charlie_runner_control.py status</pre>
+          </details>
+        </section>
+
+        <section class="charlie-panel charlie-active-summary-panel" aria-label="Active workflow summary">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Now</span>
+              <h2>Active Summary</h2>
+            </div>
+          </div>
+          <div id="charlie_active_summary" aria-live="polite">
+            <p class="charlie-muted">Waiting for mission state...</p>
+          </div>
+        </section>
+
+        <section class="charlie-panel charlie-review-panel" aria-label="Owner review gate">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Stage 8</span>
+              <h2>Owner Review</h2>
+            </div>
+            <span class="status-pill status-pill-muted" id="charlie_review_loaded_at">Loading</span>
+          </div>
+          <div id="charlie_review_list" class="charlie-review-list" aria-live="polite"></div>
+        </section>
+      </aside>
+    </section>
+
+    <div id="charlie_review_modal" class="charlie-review-modal hidden" role="dialog" aria-modal="true" aria-label="Owner Review">
+      <div class="charlie-review-modal-panel">
         <div class="ops-panel-header">
           <div>
-            <span class="ops-panel-kicker">Queue</span>
-            <h2>Mission Records</h2>
+            <span class="ops-panel-kicker">Focused Review</span>
+            <h2 id="charlie_review_modal_title">Owner Review</h2>
           </div>
-          <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
+          <button type="button" id="charlie_review_modal_close">Close</button>
         </div>
-        <div id="charlie_mission_list" class="charlie-mission-list" aria-live="polite"></div>
-      </section>
-    </section>
+        <div id="charlie_review_modal_body"></div>
+      </div>
+    </div>
   </main>
   <script src="{{ url_for('static', filename='js/charlieMissionControl.js') }}"></script>
 </body>
