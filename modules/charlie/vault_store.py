@@ -101,22 +101,54 @@ def write_artifact(mission_id, artifact_type, content, title="", summary="", pro
         "confidence": _clean(content.get("confidence") or "", 80),
         "created_by_agent": _clean(agent, 120),
     }
-    sql = """
-        insert into public.charlie_vault_artifacts (
-            artifact_id, mission_id, project_id, artifact_type, title, summary, content_json, source_refs, confidence, created_by_agent, created_at
-        ) values (
-            %(artifact_id)s, %(mission_id)s, nullif(%(project_id)s, ''), %(artifact_type)s, %(title)s, %(summary)s,
-            %(content_json)s::jsonb, %(source_refs)s::jsonb, %(confidence)s, %(created_by_agent)s, now()
-        )
-        on conflict (artifact_id) do update set
-            title = excluded.title,
-            summary = excluded.summary,
-            content_json = excluded.content_json,
-            source_refs = excluded.source_refs,
-            confidence = excluded.confidence,
-            created_by_agent = excluded.created_by_agent
-    """
-    return _execute_write(sql, params, "artifact_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            agent_column = "created_by_agent" if "created_by_agent" in columns else "agent_name"
+            optional_insert_columns = []
+            optional_value_sql = []
+            optional_update_sql = []
+            if "source_refs" in columns:
+                optional_insert_columns.append("source_refs")
+                optional_value_sql.append("%(source_refs)s::jsonb")
+                optional_update_sql.append("source_refs = excluded.source_refs")
+            if "confidence" in columns:
+                optional_insert_columns.append("confidence")
+                optional_value_sql.append("%(confidence)s")
+                optional_update_sql.append("confidence = excluded.confidence")
+            insert_columns = [
+                "artifact_id", "mission_id", "project_id", agent_column, "artifact_type",
+                "title", "summary", "content_json", *optional_insert_columns, "created_at",
+            ]
+            value_sql = [
+                "%(artifact_id)s", "%(mission_id)s", "nullif(%(project_id)s, '')", "%(created_by_agent)s",
+                "%(artifact_type)s", "%(title)s", "%(summary)s", "%(content_json)s::jsonb",
+                *optional_value_sql, "now()",
+            ]
+            update_sql = [
+                "title = excluded.title",
+                "summary = excluded.summary",
+                "content_json = excluded.content_json",
+                f"{agent_column} = excluded.{agent_column}",
+                *optional_update_sql,
+            ]
+            sql = f"""
+                insert into public.charlie_vault_artifacts (
+                    {", ".join(insert_columns)}
+                ) values (
+                    {", ".join(value_sql)}
+                )
+                on conflict (artifact_id) do update set
+                    {", ".join(update_sql)}
+            """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return {"success": False, "configured": True, "status": "artifact_written_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "configured": True, "status": "artifact_written"}, 200
 
 
 def list_artifacts(artifact_type="", mission_id="", limit=20, database_url=None, connect_factory=None):
@@ -141,11 +173,15 @@ def list_artifacts(artifact_type="", mission_id="", limit=20, database_url=None,
     where_sql = "where " + " and ".join(where) if where else ""
     try:
         with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            source_refs_sql = "source_refs" if "source_refs" in columns else "'[]'::jsonb as source_refs"
+            confidence_sql = "confidence" if "confidence" in columns else "''::text as confidence"
+            created_by_sql = "created_by_agent" if "created_by_agent" in columns else "agent_name as created_by_agent"
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
                     select artifact_id, mission_id, project_id, artifact_type, title, summary,
-                           content_json, source_refs, confidence, created_by_agent, created_at
+                           content_json, {source_refs_sql}, {confidence_sql}, {created_by_sql}, created_at
                     from public.charlie_vault_artifacts
                     {where_sql}
                     order by created_at desc
@@ -173,11 +209,15 @@ def get_artifact(artifact_id, database_url=None, connect_factory=None):
         return {"success": False, "configured": False, "status": "not_configured"}, 503
     try:
         with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            source_refs_sql = "source_refs" if "source_refs" in columns else "'[]'::jsonb as source_refs"
+            confidence_sql = "confidence" if "confidence" in columns else "''::text as confidence"
+            created_by_sql = "created_by_agent" if "created_by_agent" in columns else "agent_name as created_by_agent"
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     select artifact_id, mission_id, project_id, artifact_type, title, summary,
-                           content_json, source_refs, confidence, created_by_agent, created_at
+                           content_json, {source_refs_sql}, {confidence_sql}, {created_by_sql}, created_at
                     from public.charlie_vault_artifacts
                     where artifact_id = %(artifact_id)s
                     limit 1
@@ -202,14 +242,20 @@ def update_artifact_content(artifact_id, content, summary="", database_url=None,
         return {"success": False, "configured": False, "status": "not_configured"}, 503
     try:
         with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            assignments = [
+                "content_json = %(content_json)s::jsonb",
+                "summary = coalesce(nullif(%(summary)s, ''), summary)",
+            ]
+            if "source_refs" in columns:
+                assignments.append("source_refs = %(source_refs)s::jsonb")
+            if "confidence" in columns:
+                assignments.append("confidence = %(confidence)s")
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     update public.charlie_vault_artifacts
-                    set content_json = %(content_json)s::jsonb,
-                        summary = coalesce(nullif(%(summary)s, ''), summary),
-                        source_refs = %(source_refs)s::jsonb,
-                        confidence = %(confidence)s
+                    set {", ".join(assignments)}
                     where artifact_id = %(artifact_id)s
                     returning artifact_id
                     """,
@@ -490,6 +536,20 @@ def _connect(database_url, connect_factory=None):
         return connect_factory(database_url)
     import psycopg
     return psycopg.connect(database_url, connect_timeout=10)
+
+
+def _table_columns(connection, table_name):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = %(table_name)s
+            """,
+            {"table_name": table_name},
+        )
+        return {row[0] for row in cursor.fetchall()}
 
 
 def _json(value):
