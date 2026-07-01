@@ -187,18 +187,34 @@ def watch_for_mission(
 
 
 def _active_mission():
-    for status in ("in_progress", "release_in_progress"):
-        loaded, status_code = list_missions(status=status, limit=1)
-        if status_code < 400 and loaded.get("missions"):
-            return loaded["missions"][0]
+    missions, status_code = _owner_queue_missions(
+        statuses=("in_progress", "release_in_progress"),
+        limit=1,
+    )
+    if status_code < 400 and missions:
+        return missions[0]
     return None
 
 
 def _release_approved_mission():
-    loaded, status_code = list_missions(status="release_approved", limit=1)
-    if status_code < 400 and loaded.get("missions"):
-        return loaded["missions"][0]
+    missions, status_code = _owner_queue_missions(statuses=("release_approved",), limit=1)
+    if status_code < 400 and missions:
+        return missions[0]
     return None
+
+
+def _owner_queue_missions(statuses, limit=10):
+    wanted = {str(status or "").strip() for status in statuses if str(status or "").strip()}
+    parsed_limit = max(int(limit or 1), 1)
+    loaded, status_code = list_missions(status="owner_queue", limit=max(parsed_limit * 10, parsed_limit))
+    if status_code >= 400:
+        return [], status_code
+    missions = [
+        mission
+        for mission in (loaded.get("missions") or [])
+        if mission.get("status") in wanted and mission.get("queue_class", "owner_work") == "owner_work"
+    ]
+    return missions[:parsed_limit], status_code
 
 
 def _retryable_queue_error(result, status_code):
@@ -252,7 +268,16 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
-    loaded, status_code = list_missions(status=status, limit=limit)
+    clean_status = str(status or "approved").strip()
+    if clean_status == "approved":
+        missions, status_code = _owner_queue_missions(statuses=("approved",), limit=limit)
+        loaded = {
+            "success": status_code < 400,
+            "status": "ok" if status_code < 400 else "mission_queue_unavailable",
+            "missions": missions,
+        }
+    else:
+        loaded, status_code = list_missions(status=clean_status, limit=limit)
     if status_code >= 400:
         return {
             "success": False,

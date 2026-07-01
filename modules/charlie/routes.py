@@ -425,13 +425,13 @@ def charlie_build_relay_review_media_route(mission_id, filename):
 
 def _owner_work_missions_for_status(status, limit=1):
     parsed_limit = max(int(limit or 1), 1)
-    result, status_code = list_missions(status=status, limit=max(parsed_limit * 5, parsed_limit))
+    result, status_code = list_missions(status="owner_queue", limit=max(parsed_limit * 10, parsed_limit))
     if status_code >= 400:
         return result, status_code
     owner_missions = [
         mission
         for mission in (result.get("missions") or [])
-        if mission.get("queue_class", "owner_work") == "owner_work"
+        if mission.get("status") == status and mission.get("queue_class", "owner_work") == "owner_work"
     ][:parsed_limit]
     return {**result, "missions": owner_missions}, status_code
 
