@@ -6,6 +6,7 @@ import signal
 import subprocess
 import time
 from urllib import request as url_request
+from urllib.parse import urlparse
 from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
@@ -656,6 +657,12 @@ def prepare_release_execution(mission_id="", output_dir=None, database_url=None,
     )
     if status_code >= 400:
         return error, status_code
+    cleanup_result = process_visual_review_cleanup_intent(
+        mission_id=mission["mission_id"],
+        mission=mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
 
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -670,6 +677,7 @@ def prepare_release_execution(mission_id="", output_dir=None, database_url=None,
         "title": mission.get("title", ""),
         "execution_id": execution_id,
         "release_packet_path": str(packet_path),
+        "visual_review_cleanup": cleanup_result,
         "will_complete_no_release": False,
     }, 200
 
@@ -1617,7 +1625,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     qa = artifacts.get("qa_red_team", {})
     reviewer_links = reviewer.get("links") if isinstance(reviewer.get("links"), dict) else {}
     changed_files = reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."]
-    local_preview = _extract_local_preview(reviewer.get("summary", ""))
+    local_preview = _local_preview_from_reviewer(reviewer)
     visual_review = _build_visual_review_packet(
         mission_id=mission.get("mission_id", ""),
         mission_type=mission.get("mission_type", ""),
@@ -1962,6 +1970,23 @@ def _changed_files():
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
 
 
+def _local_preview_from_reviewer(reviewer):
+    reviewer = reviewer if isinstance(reviewer, dict) else {}
+    links = reviewer.get("links") if isinstance(reviewer.get("links"), dict) else {}
+    url = str(links.get("local_preview") or "").strip()
+    local_preview = _extract_local_preview(" ".join([
+        str(reviewer.get("summary") or ""),
+        str(reviewer.get("stdout_tail") or ""),
+        str(reviewer.get("next_action") or ""),
+        url,
+    ]))
+    if url and not local_preview.get("url"):
+        local_preview["url"] = url
+        local_preview["status"] = "captured"
+        local_preview["message"] = ""
+    return local_preview
+
+
 def _build_visual_review_packet(
     mission_id="",
     mission_type="",
@@ -1975,13 +2000,18 @@ def _build_visual_review_packet(
     local_preview = local_preview if isinstance(local_preview, dict) else {}
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     ui_related = _is_ui_related_mission(mission_type, changed_files, final_message)
-    media = _review_media_items(mission_id) if ui_related else []
     local_media_path = str(_review_media_path(mission_id)) if mission_id else ""
     if ui_related and mission_id:
         _review_media_path(mission_id).mkdir(parents=True, exist_ok=True)
+    capture = _capture_visual_review_media(mission_id, local_preview) if ui_related else {
+        "status": "not_required",
+        "captured": False,
+        "reason": "mission_not_ui_related",
+    }
+    media = _review_media_items(mission_id) if ui_related else []
     status = "not_applicable"
     if ui_related:
-        status = "captured" if media else "not_captured"
+        status = "captured" if media else "not_captured_blocked"
     preview_url = str(local_preview.get("url") or "").strip()
     return {
         "contract": "charlie_visual_review_v1",
@@ -1990,6 +2020,7 @@ def _build_visual_review_packet(
         "summary": _visual_review_summary(ui_related, media, preview_url),
         "local_preview": local_preview,
         "media": media,
+        "capture": capture,
         "stage_evidence": _visual_stage_evidence(artifacts),
         "local_media_path": local_media_path,
         "cleanup": {
@@ -1998,6 +2029,69 @@ def _build_visual_review_packet(
             "local_path": local_media_path if ui_related else "",
             "trigger": "owner_final_approval_or_mark_done",
         },
+    }
+
+
+def _capture_visual_review_media(mission_id, local_preview, run_subprocess=None):
+    mission_id = str(mission_id or "").strip()
+    preview_url = str((local_preview or {}).get("url") or "").strip()
+    if not mission_id:
+        return {"captured": False, "status": "mission_id_missing"}
+    if not preview_url:
+        return {
+            "captured": False,
+            "status": "preview_url_not_captured",
+            "reason": "UI mission had no localhost preview URL, so the local runner could not capture screenshots.",
+        }
+    parsed = urlparse(preview_url)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {
+            "captured": False,
+            "status": "preview_url_not_local",
+            "url": preview_url,
+            "reason": "Visual evidence capture only opens local preview URLs from the runner machine.",
+        }
+    media_dir = _review_media_path(mission_id)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    output_path = media_dir / "owner_review_preview.png"
+    command = [
+        "npx",
+        "playwright",
+        "screenshot",
+        "--wait-for-timeout=1000",
+        preview_url,
+        str(output_path),
+    ]
+    runner = run_subprocess or subprocess.run
+    try:
+        completed = runner(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "captured": False,
+            "status": "capture_command_failed",
+            "url": preview_url,
+            "command": " ".join(command),
+            "error_type": exc.__class__.__name__,
+        }
+    captured = completed.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+    return {
+        "captured": captured,
+        "status": "captured" if captured else "capture_command_failed",
+        "url": preview_url,
+        "command": " ".join(command),
+        "path": str(output_path) if captured else "",
+        "returncode": completed.returncode,
+        "stdout_tail": _truncate(completed.stdout or "", 1200),
+        "stderr_tail": _truncate(completed.stderr or "", 1200),
     }
 
 
@@ -2053,8 +2147,8 @@ def _visual_review_summary(ui_related, media, preview_url):
     if media:
         return f"{len(media)} local visual review artifact(s) captured for owner review."
     if preview_url:
-        return "UI mission has a local preview URL; screenshots were not captured yet."
-    return "UI mission detected; no local screenshots or preview media were captured."
+        return "UI mission has a local preview URL, but the local runner could not capture screenshot media."
+    return "UI mission detected; no local preview URL was captured, so screenshot capture is blocked."
 
 
 def _visual_stage_evidence(artifacts):
@@ -2084,6 +2178,83 @@ def cleanup_visual_review_media(mission_id):
         "status": "review_media_cleaned",
         "local_path": str(media_dir),
         "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def process_visual_review_cleanup_intent(mission_id="", mission=None, database_url=None, connect_factory=None):
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return {"processed": False, "status": "mission_id_required"}
+    if not isinstance(mission, dict):
+        loaded, status_code = get_mission(
+            mission_id,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if status_code >= 400:
+            return {"processed": False, "status": loaded.get("status", "mission_load_failed")}
+        mission = loaded.get("mission") or {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = dict(metadata.get("review_packet") or {})
+    visual_review = dict(review_packet.get("visual_review") or {})
+    cleanup = dict(visual_review.get("cleanup") or {})
+    if cleanup.get("status") != "cleanup_requested":
+        return {"processed": False, "status": "cleanup_not_requested"}
+    cleanup_result = cleanup_visual_review_media(mission_id)
+    cleanup.update({
+        "status": "cleaned" if cleanup_result.get("cleaned") else cleanup_result.get("status", "cleanup_failed"),
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "result": cleanup_result,
+    })
+    visual_review["cleanup"] = cleanup
+    review_packet["visual_review"] = visual_review
+    vault_result, vault_status = update_mission_vault(
+        mission_id,
+        {"review_packet": review_packet},
+        notes="Local runner processed visual review cleanup intent.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if vault_status >= 400:
+        return {
+            "processed": False,
+            "status": "cleanup_metadata_update_failed",
+            "cleanup_result": cleanup_result,
+            "vault_status": vault_result.get("status", ""),
+        }
+    return {
+        "processed": True,
+        "status": cleanup.get("status"),
+        "cleanup_result": cleanup_result,
+    }
+
+
+def process_visual_review_cleanup_queue(statuses=None, limit=20, database_url=None, connect_factory=None):
+    statuses = statuses or ("release_approved", "done", "merged", "deployed")
+    processed = []
+    for status in statuses:
+        loaded, status_code = list_missions(
+            status=status,
+            limit=limit,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if status_code >= 400:
+            continue
+        for mission in loaded.get("missions", []):
+            result = process_visual_review_cleanup_intent(
+                mission_id=mission.get("mission_id", ""),
+                mission=mission,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            if result.get("processed"):
+                processed.append({"mission_id": mission.get("mission_id", ""), **result})
+    return {
+        "success": True,
+        "status": "visual_review_cleanup_queue_processed",
+        "processed_count": len(processed),
+        "processed": processed,
     }
 
 

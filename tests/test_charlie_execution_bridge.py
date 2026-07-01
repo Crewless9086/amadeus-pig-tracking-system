@@ -365,6 +365,78 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(inherited["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(inherited["links"]["pr"], "https://github.com/org/repo/pull/61")
 
+    def test_visual_review_capture_writes_local_screenshot_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_runner(command, **_kwargs):
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {"url": "http://127.0.0.1:5000/charlie"},
+                    run_subprocess=fake_runner,
+                )
+                media = execution_bridge._review_media_items("CHARLIE-MISSION-EXEC123")
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["status"], "captured")
+        self.assertEqual(media[0]["filename"], "owner_review_preview.png")
+        self.assertIn("/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/owner_review_preview.png", media[0]["reference"])
+
+    def test_visual_review_packet_blocks_capture_without_preview_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                packet = execution_bridge._build_visual_review_packet(
+                    mission_id="CHARLIE-MISSION-EXEC123",
+                    mission_type="feature build",
+                    changed_files=["templates/charlie.html"],
+                    local_preview={"url": "", "status": "not_captured"},
+                    artifacts={"builder": {"summary": "Changed owner review UI."}},
+                )
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "not_captured_blocked")
+        self.assertEqual(packet["capture"]["status"], "preview_url_not_captured")
+        self.assertEqual(packet["media"], [])
+        self.assertIn("screenshot capture is blocked", packet["summary"])
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        mission = {
+            "mission_id": "CHARLIE-MISSION-EXEC123",
+            "metadata": {
+                "review_packet": {
+                    "summary": "Ready",
+                    "visual_review": {
+                        "ui_related": True,
+                        "cleanup": {"required": True, "status": "cleanup_requested"},
+                    },
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                media_dir = Path(tmp) / "CHARLIE-MISSION-EXEC123"
+                media_dir.mkdir()
+                (media_dir / "owner_review_preview.png").write_bytes(b"fake png")
+
+                result = execution_bridge.process_visual_review_cleanup_intent(
+                    "CHARLIE-MISSION-EXEC123",
+                    mission=mission,
+                )
+
+                self.assertFalse(media_dir.exists())
+
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["status"], "cleaned")
+        update_vault.assert_called_once()
+        review_packet = update_vault.call_args.args[1]["review_packet"]
+        cleanup = review_packet["visual_review"]["cleanup"]
+        self.assertEqual(cleanup["status"], "cleaned")
+        self.assertEqual(cleanup["result"]["status"], "review_media_cleaned")
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_rejects_release_approved_mission(self, get_mission):
         mission = dict(MISSION)

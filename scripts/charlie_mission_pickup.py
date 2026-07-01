@@ -15,6 +15,7 @@ from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
     prepare_release_execution,
+    process_visual_review_cleanup_queue,
     run_agent_execution_bridge_v2,
     run_codex_execution_bridge,
     run_release_execution,
@@ -101,6 +102,10 @@ def watch_for_mission(
     while True:
         checks += 1
         if continuous:
+            cleanup_result = process_visual_review_cleanup_queue()
+            if cleanup_result.get("processed_count"):
+                cleanup_result["checks"] = checks
+                write_runner_heartbeat(cleanup_result)
             active = _active_mission()
             if active:
                 if execute_codex and active.get("status") == "in_progress" and not dry_run:

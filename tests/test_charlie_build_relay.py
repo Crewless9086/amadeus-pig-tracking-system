@@ -586,10 +586,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
             target_stage="tester",
         )
 
-    @patch("modules.charlie.routes.cleanup_visual_review_media")
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_mission_review_decision")
-    def test_mission_review_decision_route_cleans_visual_media_on_done(self, record_review_decision, _owner_access, cleanup_media):
+    def test_mission_review_decision_route_records_done_without_local_cleanup(self, record_review_decision, _owner_access):
         record_review_decision.return_value = ({
             "success": True,
             "status": "ok",
@@ -597,7 +596,6 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "mission_status": "done",
             "review_decision": "mark_done",
         }, 200)
-        cleanup_media.return_value = {"cleaned": True, "status": "review_media_cleaned"}
 
         response = self.client.post(
             "/api/charlie/build-relay/missions/MISSION-1/review",
@@ -607,8 +605,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        self.assertEqual(data["visual_review_cleanup"]["status"], "review_media_cleaned")
-        cleanup_media.assert_called_once_with("MISSION-1")
+        self.assertNotIn("visual_review_cleanup", data)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_status")

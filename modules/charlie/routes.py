@@ -8,7 +8,6 @@ from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
-from modules.charlie.execution_bridge import cleanup_visual_review_media
 from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
@@ -333,9 +332,6 @@ def charlie_build_relay_mission_review_decision_route(mission_id):
         comments=str(payload.get("comments") or "").strip(),
         target_stage=str(payload.get("target_stage") or "builder").strip(),
     )
-    if status_code < 400 and decision in {"approve_final_release", "mark_done"}:
-        result = dict(result)
-        result["visual_review_cleanup"] = cleanup_visual_review_media(mission_id)
     return jsonify(result), status_code
 
 
