@@ -147,6 +147,10 @@ async function main() {
 
   helpers.clearUploadedAndDuplicateDraftRows({ success: true, expected_count: 1, processed_count: 1, success_count: 1, failed_count: 0, blocked_count: 0 });
   assert(!storage.has(draftKey), "complete confirmed upload may clear the localStorage draft");
+  helpers.renderTable({ collectExistingInputs: false });
+  const clearedAfterUpload = helpers.buildDraftPayload({ now: "2026-06-28T12:01:00.000Z" });
+  assert.strictEqual(clearedAfterUpload.expected_row_count, 0, "completed upload should clear stale New Weight inputs from draft state");
+  assert.strictEqual(clearedAfterUpload.actionable_row_count, 0, "completed upload should clear stale New Pen and Notes inputs from draft state");
 
   storage.set("bulkWeightsDraft:v2026-06-15", JSON.stringify({
     ...storedDraft,
@@ -169,6 +173,11 @@ async function main() {
   const importedDraft = helpers.buildDraftPayload({ now: "2026-06-28T12:10:00.000Z" });
   assert.strictEqual(importedDraft.draft_id, "DRAFT-IMPORT");
   assert.strictEqual(importedDraft.rows["PIG-2"].moved_to_pen_id, "PEN-2", "import should restore pen-change rows");
+
+  helpers.discardCurrentDraft();
+  const clearedAfterDiscard = helpers.buildDraftPayload({ now: "2026-06-28T12:11:00.000Z" });
+  assert.strictEqual(clearedAfterDiscard.expected_row_count, 0, "discard draft should clear stale New Weight inputs from draft state");
+  assert.strictEqual(clearedAfterDiscard.actionable_row_count, 0, "discard draft should clear stale New Pen and Notes inputs from draft state");
 
   assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "complete", counts: { actionable_count: 2, processed_count: 2, success_count: 2, failed_count: 0, blocked_count: 0, remaining_count: 0 } }), true);
   assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "partial", counts: { actionable_count: 2, processed_count: 1, success_count: 1, failed_count: 1, remaining_count: 0 } }), false);

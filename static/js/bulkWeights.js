@@ -213,6 +213,29 @@ function writeDraftPayload(payload) {
   return finalPayload;
 }
 
+function removeStoredDraftsMatching(payload = {}) {
+  const keysToRemove = new Set([draftKey(), legacyDraftKey()]);
+  const draftId = String(payload.draft_id || activeDraftId || "").trim();
+  const batchId = String(payload.batch_id || activeBatchId || "").trim();
+  const weightDate = String(payload.weight_date || bulkDateInput.value || "").trim();
+
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key || !key.startsWith("bulkWeightsDraft:v")) continue;
+    const stored = readStoredDraft(key);
+    if (!stored) continue;
+    if (
+      (draftId && stored.draft_id === draftId) ||
+      (batchId && stored.batch_id === batchId) ||
+      (weightDate && stored.weight_date === weightDate)
+    ) {
+      keysToRemove.add(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+}
+
 function persistDraft(options = {}) {
   collectDraftFromDom();
   const payload = writeDraftPayload(buildDraftPayload(options));
@@ -419,26 +442,26 @@ function collectDraftFromDom() {
   });
 }
 
-function countEnteredRows() {
-  collectDraftFromDom();
+function countEnteredRows(options = {}) {
+  if (options.collectExistingInputs !== false) collectDraftFromDom();
   return enteredWeightCount();
 }
 
-function updateSummary() {
+function updateSummary(options = {}) {
   visibleCount.textContent = String(filteredRows().length);
-  enteredCount.textContent = String(countEnteredRows());
+  enteredCount.textContent = String(countEnteredRows(options));
 }
 
-function renderTable() {
+function renderTable(options = {}) {
   clearMessage();
   reviewPanel.classList.add("hidden");
-  collectDraftFromDom();
+  if (options.collectExistingInputs !== false) collectDraftFromDom();
   const rows = filteredRows();
   visibleCount.textContent = String(rows.length);
 
   if (!rows.length) {
     bulkWeightBody.innerHTML = `<tr><td colspan="7" class="table-empty">No active pigs found for this selection.</td></tr>`;
-    updateSummary();
+    updateSummary(options);
     return;
   }
 
@@ -478,7 +501,7 @@ function renderTable() {
       event.preventDefault();
     }, { passive: false });
   });
-  updateSummary();
+  updateSummary(options);
 }
 
 function loadDraft(options = {}) {
@@ -543,13 +566,26 @@ function clearUploadedAndDuplicateDraftRows(uploadData) {
     persistDraft({ statusLabel: "Upload failed - draft kept", validation_status: "upload_incomplete" });
     return false;
   }
-  window.localStorage.removeItem(draftKey());
-  window.localStorage.removeItem(legacyDraftKey());
+  removeStoredDraftsMatching(uploadData || {});
   draftRows = {};
   activeDraftId = createDraftId();
+  activeBatchId = "";
+  lastKnownBatchData = null;
   draftStatus.textContent = "Uploaded";
   hideRecoveryBanner();
   return true;
+}
+
+function discardCurrentDraft() {
+  removeStoredDraftsMatching(recoveredDraftPayload || {});
+  draftRows = {};
+  activeDraftId = createDraftId();
+  activeBatchId = "";
+  lastKnownBatchData = null;
+  draftStatus.textContent = "Discarded";
+  if (continueButton) continueButton.classList.add("hidden");
+  hideRecoveryBanner();
+  renderTable({ collectExistingInputs: false });
 }
 
 function displayReason(row) {
@@ -746,12 +782,11 @@ async function processActiveBatch(options = {}) {
     if (status === "complete" || status === "partial" || status === "failed" || remaining <= 0) {
       if (isCompleteUploadSuccess(data)) {
         clearUploadedAndDuplicateDraftRows(data);
-        activeBatchId = "";
         if (continueButton) continueButton.classList.add("hidden");
         const counts = data.counts || data;
         const duplicateCount = Number(counts.duplicate_count || 0);
         const skippedCount = Number(counts.skipped_row_count || counts.skipped_count || 0);
-        renderTable();
+        renderTable({ collectExistingInputs: false });
         renderReview(data);
         setMessage(`Upload complete: ${Number(counts.success_count || 0)} row action${Number(counts.success_count || 0) === 1 ? "" : "s"} uploaded, ${duplicateCount} already recorded, ${skippedCount} blank/no-change skipped.`, "success");
       } else {
@@ -915,13 +950,7 @@ if (restoreDraftButton) {
 if (discardDraftButton) {
   discardDraftButton.addEventListener("click", () => {
     if (!window.confirm("Discard the saved bulk weight draft for this date?")) return;
-    window.localStorage.removeItem(draftKey());
-    window.localStorage.removeItem(legacyDraftKey());
-    draftRows = {};
-    activeDraftId = createDraftId();
-    draftStatus.textContent = "Discarded";
-    hideRecoveryBanner();
-    renderTable();
+    discardCurrentDraft();
     setMessage("Saved draft discarded for this date.", "success");
   });
 }
@@ -930,6 +959,7 @@ if (typeof window !== "undefined") {
   window.bulkWeightsDraftRecovery = {
     buildDraftPayload,
     clearUploadedAndDuplicateDraftRows,
+    discardCurrentDraft,
     isCompleteUploadSuccess,
     countValue,
     fetchActiveBatchStatus,
@@ -937,6 +967,7 @@ if (typeof window !== "undefined") {
     loadDraft,
     parseBulkJsonResponse,
     persistDraft,
+    renderTable,
     uploadFailureMessage,
     stageBulkBatch,
     processActiveBatch,
