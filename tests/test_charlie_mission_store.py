@@ -8,9 +8,11 @@ from modules.charlie.mission_store import (
     list_missions,
     mission_status_summary,
     normalize_approval_level,
+    normalize_mission_lane,
     record_mission_review_decision,
     record_mission,
     record_mission_event,
+    update_new_mission_intake,
     update_mission_queue_priority,
     update_mission_status,
     update_mission_vault,
@@ -78,6 +80,13 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("mission_vault", mission_params["metadata_json"])
         self.assertIn("agent_workflow", mission_params["metadata_json"])
         self.assertIn("mission_context_pack", mission_params["metadata_json"])
+        self.assertIn('"mission_lane": {"label": "Unassigned / General"', mission_params["metadata_json"])
+
+    def test_normalize_mission_lane_accepts_known_aliases(self):
+        self.assertEqual(normalize_mission_lane("CHARLIE CORE")["id"], "charlie_core")
+        self.assertEqual(normalize_mission_lane("oom sakkie")["label"], "Oom Sakkie")
+        self.assertEqual(normalize_mission_lane("private transfers")["id"], "fred")
+        self.assertEqual(normalize_mission_lane("unknown")["id"], "unassigned")
 
     def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
         sequence = agent_sequence_for_mission("agent build")
@@ -107,6 +116,25 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["missions"][0]["vault"], {})
         self.assertEqual(result["missions"][0]["agent_workflow"], [])
         self.assertEqual(result["missions"][0]["queue_priority"], 100)
+        self.assertEqual(result["missions"][0]["mission_lane"]["label"], "Unassigned / General")
+
+    def test_list_missions_maps_lane_metadata(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "new", "telegram", "12345", "67890",
+            "Build FRED queue", "Build FRED queue", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"mission_lane": {"id": "fred", "label": "FRED"}}, now, now,
+        )
+
+        result, status_code = list_missions(
+            limit=1,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["missions"][0]["mission_lane"]["id"], "fred")
+        self.assertEqual(result["missions"][0]["mission_lane"]["label"], "FRED")
 
     def test_list_missions_orders_status_queue_by_priority(self):
         connection = FakeConnection([])
@@ -302,6 +330,31 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "mission_vault_metadata_required")
 
+    def test_update_new_mission_intake_can_patch_lane_metadata(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "new", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"mission_lane": {"id": "unassigned", "label": "Unassigned / General"}}, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        result, status_code = update_new_mission_intake(
+            "MISSION-1",
+            {"mission_lane": "sam"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connections.pop(0),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertIn("mission_lane", result["changed_fields"])
+        update_params = update_connection.cursor_instance.executed[0][1]
+        self.assertIn('"id": "sam"', update_params["metadata_json"])
+        self.assertIn('"label": "SAM"', update_params["metadata_json"])
+
     def test_update_mission_workflow_step_records_handoff_context(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
         row = (
@@ -348,6 +401,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
             "title": "Review SAM workflow",
             "raw_text": "Fix SAM handoff.",
             "approval_level": "LEVEL 3",
+            "mission_lane": {"id": "sam", "label": "SAM"},
             "vault": {"desired_outcome": "SAM handoff works.", "test_plan": ["python -m unittest tests.test_sam"]},
             "agent_workflow": [{"agent": "tester", "status": "complete", "findings": "Tests passed."}],
             "metadata": {
@@ -361,6 +415,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         })
 
         self.assertTrue(packet["can_approve_final_release"])
+        self.assertEqual(packet["mission"]["mission_lane"]["label"], "SAM")
         self.assertIn("tester: Tests passed.", packet["findings"])
         self.assertEqual(packet["changed_files"], ["modules/sam.py"])
         self.assertEqual(packet["qa_evidence"], ["QA passed."])

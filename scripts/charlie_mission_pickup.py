@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.mission_store import list_missions, update_mission_status
+from modules.charlie.mission_store import list_missions, normalize_mission_lane, update_mission_status
 from modules.charlie.runner_control import write_runner_heartbeat
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -313,6 +313,7 @@ def _codex_chat_content(mission):
     raw_text = str(mission.get("raw_text") or title).strip()
     urgency = str(mission.get("urgency") or "P2").strip()
     mission_type = str(mission.get("mission_type") or "feature build").strip()
+    lane = normalize_mission_lane((mission.get("mission_lane") or {}).get("id") if isinstance(mission.get("mission_lane"), dict) else mission.get("mission_lane", ""))
     approval_level = str(mission.get("approval_level") or "LEVEL 3").strip()
     mission_id = str(mission.get("mission_id") or "").strip()
     runner_mode = _runner_mode(approval_level)
@@ -361,6 +362,12 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 {mission_type}
 ```
 
+### Mission Lane
+
+```text
+{lane["label"]} ({lane["id"]})
+```
+
 ### Approval Level
 
 ```text
@@ -374,6 +381,7 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 ```text
 Mission ID: {mission_id}
 Mission title: {title}
+Mission lane: {lane["label"]} ({lane["id"]})
 Mission status at pickup: in_progress
 Runner mode: {runner_mode}
 Vault stage: {vault.get("mission_stage", "intake")}

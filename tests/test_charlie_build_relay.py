@@ -111,7 +111,16 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["codex_chat_write"]["status"], "repo_file_write_disabled")
         self.assertEqual(action["mission_store"]["status"], "not_configured")
         self.assertEqual(action["mission"]["approval_level"], "LEVEL 3")
+        self.assertEqual(action["mission"]["mission_lane"], "unassigned")
         self.assertIn("Mission intake prepared", action["telegram_text"])
+        self.assertIn("Lane: Unassigned / General", action["telegram_text"])
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_mission_action_infers_lane_from_text(self):
+        action = build_relay_action("/mission Improve FRED private transfers customer replies")
+
+        self.assertEqual(action["mission"]["mission_lane"], "fred")
+        self.assertIn("Lane: FRED", action["telegram_text"])
 
     @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "0"}, clear=True)
     def test_mission_store_can_be_disabled(self):
@@ -231,6 +240,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 "status": "new",
                 "urgency": "P2",
                 "mission_type": "feature build",
+                "mission_lane": {"id": "sam", "label": "SAM"},
                 "approval_level": "LEVEL 3",
                 "title": "Build console",
                 "owner_decision": "",
@@ -242,6 +252,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["command"], "mission_detail")
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("Build console", action["telegram_text"])
+        self.assertIn("Lane: SAM", action["telegram_text"])
         self.assertIn("/approve <id>", action["telegram_text"])
         self.assertIn("inline_keyboard", action["reply_markup"])
 
@@ -397,8 +408,27 @@ class CharlieBuildRelayTests(unittest.TestCase):
         mission_arg = record_mission.call_args.args[0]
         self.assertEqual(mission_arg["title"], "Build mission vault")
         self.assertEqual(mission_arg["desired_outcome"], "Mission is stored with useful context.")
+        self.assertEqual(mission_arg["mission_lane"], "")
         self.assertEqual(mission_arg["media_references"][0]["label"], "Sketch")
         self.assertEqual(record_mission.call_args.kwargs["source_context"]["source"], "charlie_dashboard")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.record_mission")
+    def test_dashboard_can_create_mission_with_lane(self, record_mission, _owner_access):
+        record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions",
+            json={
+                "title": "Build FRED lane",
+                "raw_text": "Improve FRED private transfers replies.",
+                "mission_lane": "fred",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mission_arg = record_mission.call_args.args[0]
+        self.assertEqual(mission_arg["mission_lane"], "fred")
 
     def test_mission_media_sanitizer_preserves_bounded_image_data_urls(self):
         image_reference = "data:image/png;base64," + ("A" * 1024)
@@ -518,6 +548,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
             json={
                 "updates": {
                     "title": "Updated mission",
+                    "mission_lane": "oom_sakkie",
                     "desired_outcome": "Better intake detail.",
                     "media_references": [
                         {"label": "Extra screenshot", "reference": "data:image/png;base64,ZmFrZQ==", "media_type": "image"},
@@ -533,6 +564,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         update_intake.assert_called_once()
         self.assertEqual(update_intake.call_args.args[0], "MISSION-1")
         self.assertEqual(update_intake.call_args.kwargs["updates"]["title"], "Updated mission")
+        self.assertEqual(update_intake.call_args.kwargs["updates"]["mission_lane"], "oom_sakkie")
         self.assertEqual(update_intake.call_args.kwargs["updates"]["media_references"][0]["label"], "Extra screenshot")
         self.assertEqual(update_intake.call_args.kwargs["comment"], "Added before approval.")
 

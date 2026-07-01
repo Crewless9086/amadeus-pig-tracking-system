@@ -71,6 +71,7 @@ def charlie_build_relay_mission_create_route():
         "title": str(payload.get("title") or raw_text).strip(),
         "urgency": str(payload.get("urgency") or "P2").strip(),
         "mission_type": str(payload.get("mission_type") or "feature build").strip(),
+        "mission_lane": str(payload.get("mission_lane") or payload.get("lane") or "").strip(),
         "approval_level": str(payload.get("approval_level") or "LEVEL 3").strip(),
         "desired_outcome": str(payload.get("desired_outcome") or "").strip(),
         "scope_summary": str(payload.get("scope_summary") or "").strip(),

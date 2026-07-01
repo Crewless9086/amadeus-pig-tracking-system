@@ -36,6 +36,32 @@ MISSION_EVENT_TYPES = {
     "queue_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
+MISSION_LANES = {
+    "charlie_core": {
+        "label": "CHARLIE CORE",
+        "description": "Owner command layer, mission runner, governance, and system coordination.",
+    },
+    "oom_sakkie": {
+        "label": "Oom Sakkie",
+        "description": "Farm manager and farm operations command surface.",
+    },
+    "sam": {
+        "label": "SAM",
+        "description": "Sales agent and meat money-path workflow.",
+    },
+    "fred": {
+        "label": "FRED",
+        "description": "AMADEUS Private Transfers customer talking and transport engine.",
+    },
+    "farm_pig_application": {
+        "label": "Farm Pig Application",
+        "description": "Pig tracking, litters, weights, breeding, stock, and farm app workflows.",
+    },
+    "unassigned": {
+        "label": "Unassigned / General",
+        "description": "Mission lane not selected yet.",
+    },
+}
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
 MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
@@ -454,6 +480,40 @@ def normalize_approval_level(value):
     return compact
 
 
+def normalize_mission_lane(value):
+    raw = _clean_text(value, 80)
+    normalized = raw.lower().replace("&", "and")
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+    aliases = {
+        "": "unassigned",
+        "general": "unassigned",
+        "unassigned_general": "unassigned",
+        "charlie": "charlie_core",
+        "charlie_core": "charlie_core",
+        "core": "charlie_core",
+        "oom": "oom_sakkie",
+        "oom_sakkie": "oom_sakkie",
+        "sakkie": "oom_sakkie",
+        "sam": "sam",
+        "sales": "sam",
+        "fred": "fred",
+        "transfers": "fred",
+        "private_transfers": "fred",
+        "amadeus_private_transfers": "fred",
+        "farm": "farm_pig_application",
+        "farm_pig": "farm_pig_application",
+        "farm_pig_application": "farm_pig_application",
+        "pig_tracking": "farm_pig_application",
+        "pig_tracker": "farm_pig_application",
+    }
+    lane_id = aliases.get(normalized, normalized)
+    if lane_id not in MISSION_LANES:
+        lane_id = "unassigned"
+    lane = dict(MISSION_LANES[lane_id])
+    lane["id"] = lane_id
+    return lane
+
+
 def agent_sequence_for_mission(mission_type=""):
     mission_type = _clean_text(mission_type, 80).lower()
     sequence = []
@@ -655,6 +715,13 @@ def update_new_mission_intake(
             metadata["media_references"] = media
             changed_fields.append("media_references")
             previous_values["media_references"] = mission.get("media_references", [])
+
+    if "mission_lane" in updates or "lane" in updates:
+        lane = normalize_mission_lane(updates.get("mission_lane", updates.get("lane", "")))
+        if lane != mission.get("mission_lane", normalize_mission_lane("")):
+            metadata["mission_lane"] = lane
+            changed_fields.append("mission_lane")
+            previous_values["mission_lane"] = mission.get("mission_lane", normalize_mission_lane(""))
 
     if update_values.get("raw_text"):
         vault["problem_statement"] = update_values["raw_text"]
@@ -946,6 +1013,7 @@ def build_mission_review_packet(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    mission_lane = mission.get("mission_lane") if isinstance(mission.get("mission_lane"), dict) else normalize_mission_lane("")
     return {
         "mission": {
             "mission_id": mission.get("mission_id", ""),
@@ -953,6 +1021,7 @@ def build_mission_review_packet(mission):
             "status": mission.get("status", ""),
             "urgency": mission.get("urgency", ""),
             "mission_type": mission.get("mission_type", ""),
+            "mission_lane": mission_lane,
             "approval_level": mission.get("approval_level", ""),
             "updated_at": mission.get("updated_at", ""),
         },
@@ -1072,6 +1141,9 @@ def _insert_event(cursor, mission_id, event_type, notes, metadata):
 
 def _mission_row(row):
     metadata = row[13] if isinstance(row[13], dict) else {}
+    mission_lane = normalize_mission_lane(metadata.get("mission_lane") if isinstance(metadata.get("mission_lane"), (str, dict)) else "")
+    if isinstance(metadata.get("mission_lane"), dict):
+        mission_lane = normalize_mission_lane(metadata["mission_lane"].get("id") or metadata["mission_lane"].get("label"))
     queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
     return {
@@ -1089,6 +1161,7 @@ def _mission_row(row):
         "owner_decision": row[11],
         "codex_chat_write_status": row[12],
         "metadata": metadata,
+        "mission_lane": mission_lane,
         "queue": {
             "priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
             "updated_at": _clean_text(queue.get("updated_at", ""), 80) if queue else "",
@@ -1105,6 +1178,10 @@ def _mission_row(row):
 
 def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
+    lane_value = mission.get("mission_lane", mission.get("lane", metadata.get("mission_lane", "")))
+    if isinstance(lane_value, dict):
+        lane_value = lane_value.get("id") or lane_value.get("label") or ""
+    metadata["mission_lane"] = normalize_mission_lane(lane_value)
     metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
     metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", "")))
     metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", "")))

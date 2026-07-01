@@ -13,6 +13,7 @@ MISSION = {
     "raw_text": "Build useful thing from Telegram.",
     "urgency": "P2",
     "mission_type": "feature build",
+    "mission_lane": {"id": "charlie_core", "label": "CHARLIE CORE"},
     "approval_level": "LEVEL 3",
     "vault": {
         "mission_stage": "planned",
@@ -81,6 +82,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("Build useful thing from Telegram.", content)
         self.assertIn("CHARLIE_MISSION_PROTOCOL.md", content)
         self.assertIn("Runner mode: code_test_pr", content)
+        self.assertIn("### Mission Lane", content)
+        self.assertIn("CHARLIE CORE (charlie_core)", content)
+        self.assertIn("Mission lane: CHARLIE CORE (charlie_core)", content)
         self.assertIn("## MISSION VAULT", content)
         self.assertIn("Owner wants a useful thing.", content)
         self.assertIn("Dashboard shows the useful thing.", content)

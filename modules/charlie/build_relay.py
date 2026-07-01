@@ -12,6 +12,7 @@ from modules.charlie.mission_store import (
     list_missions,
     mission_status_summary,
     normalize_approval_level,
+    normalize_mission_lane,
     record_mission,
     update_mission_status,
     update_mission_workflow_step,
@@ -429,7 +430,8 @@ def _mission_title_line(mission):
     short_id = mission_id[-8:] if mission_id else "no-id"
     title = mission.get("title") or mission.get("raw_text") or "Untitled mission"
     urgency = mission.get("urgency") or "P2"
-    return f"{short_id} | {urgency} | {title}"
+    lane = _mission_lane(mission)
+    return f"{short_id} | {lane['label']} | {urgency} | {title}"
 
 
 def _active_next_instruction(status):
@@ -469,7 +471,8 @@ def _missions_action(source):
     for index, mission in enumerate(missions, start=1):
         mission_id = str(mission.get("mission_id") or "")
         short_id = mission_id[-8:] if mission_id else "no-id"
-        lines.append(f"{index}. {short_id} | {mission.get('status')} | {mission.get('urgency')} | {mission.get('title')}")
+        lane = _mission_lane(mission)
+        lines.append(f"{index}. {short_id} | {mission.get('status')} | {lane['label']} | {mission.get('urgency')} | {mission.get('title')}")
     if not missions:
         lines.append("No stored missions returned.")
     return {
@@ -652,6 +655,7 @@ def _mission_action(mission_text, source, repo_root, command, extra):
         "telegram_text": (
             "Mission intake prepared for CODEX_CHAT.\n\n"
             f"Mission: {mission['title']}\n"
+            f"Lane: {normalize_mission_lane(mission.get('mission_lane'))['label']}\n"
             f"Urgency: {mission['urgency']}\n"
             f"Type: {mission['mission_type']}\n"
             f"Approval level: {mission['approval_level']}\n"
@@ -689,9 +693,32 @@ def _mission_summary(text):
         "raw_text": text,
         "urgency": urgency,
         "mission_type": mission_type,
+        "mission_lane": _infer_mission_lane(text),
         "approval_level": approval_level,
         "build_confidence": "requires Codex inspection before build",
     }
+
+
+def _infer_mission_lane(text):
+    lower = str(text or "").lower()
+    if any(token in lower for token in ["fred", "transfer", "transfers", "private transfers", "transport"]):
+        return "fred"
+    if any(token in lower for token in ["oom sakkie", "oom", "farm manager"]):
+        return "oom_sakkie"
+    if any(token in lower for token in ["sam", "sales agent", "meat sales", "lead", "customer"]):
+        return "sam"
+    if any(token in lower for token in ["pig", "litter", "weight", "breeding", "farm application", "farm app"]):
+        return "farm_pig_application"
+    if any(token in lower for token in ["charlie", "mission", "runner", "codex", "vault"]):
+        return "charlie_core"
+    return "unassigned"
+
+
+def _mission_lane(mission):
+    value = mission.get("mission_lane", "") if isinstance(mission, dict) else ""
+    if isinstance(value, dict):
+        value = value.get("id") or value.get("label") or ""
+    return normalize_mission_lane(value)
 
 
 def _write_mission_to_codex_chat(repo_root, mission_text):
@@ -762,6 +789,7 @@ def _compact_title(text):
 
 def _mission_detail_text(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    lane = _mission_lane(mission)
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     workflow_line = ", ".join(
@@ -775,6 +803,7 @@ def _mission_detail_text(mission):
         f"ID: {mission.get('mission_id')}\n"
         f"Status: {mission.get('status')}\n"
         f"Urgency: {mission.get('urgency')}\n"
+        f"Lane: {lane['label']}\n"
         f"Type: {mission.get('mission_type')}\n"
         f"Approval: {mission.get('approval_level')}\n"
         f"Vault stage: {vault.get('mission_stage', 'intake')}\n"
