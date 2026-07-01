@@ -13,6 +13,7 @@ from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
     list_missions,
+    list_owner_work_missions,
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
@@ -123,7 +124,7 @@ def charlie_build_relay_runner_status_route():
     approved, approved_status = _owner_work_missions_for_status("approved", limit=1)
     approved_queue, approved_queue_status = _owner_work_missions_for_status("approved", limit=5)
     in_progress, in_progress_status = _owner_work_missions_for_status("in_progress", limit=1)
-    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=1)
+    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=20)
     release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=1)
     release_in_progress, release_in_progress_status = _owner_work_missions_for_status("release_in_progress", limit=1)
     if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
@@ -144,7 +145,6 @@ def charlie_build_relay_runner_status_route():
     next_approved = _first_mission(approved)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
-    vault_health, _vault_health_status = vault_tables_health()
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -224,6 +224,7 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     local_status = local_runner_status()
+    vault_health, _vault_health_status = vault_tables_health()
     readiness_items = []
     for mission in recent.get("missions", []):
         readiness_items.append({
@@ -425,19 +426,12 @@ def charlie_build_relay_review_media_route(mission_id, filename):
 
 def _owner_work_missions_for_status(status, limit=1):
     parsed_limit = max(int(limit or 1), 1)
-    result, status_code = list_missions(status="owner_queue", limit=max(parsed_limit * 10, parsed_limit))
-    if status_code >= 400:
-        return result, status_code
-    owner_missions = [
-        mission
-        for mission in (result.get("missions") or [])
-        if mission.get("status") == status and mission.get("queue_class", "owner_work") == "owner_work"
-    ][:parsed_limit]
-    return {**result, "missions": owner_missions}, status_code
+    return list_owner_work_missions(status, limit=parsed_limit)
 
 
 def _first_mission(result):
-    missions = result.get("missions") or []
+    missions = result.get("missions") if isinstance(result, dict) else result
+    missions = missions or []
     return missions[0] if missions else None
 
 
