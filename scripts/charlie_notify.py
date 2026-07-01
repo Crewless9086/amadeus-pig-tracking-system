@@ -18,10 +18,12 @@ def main():
     parser.add_argument("--title", default="CHARLIE update")
     parser.add_argument("--message", required=True)
     parser.add_argument("--level", default="info", choices=["info", "success", "warning", "blocked", "done"])
+    parser.add_argument("--mission-id", default="", help="Attach a mission-specific Status button.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     text = _format_message(args.level, args.title, args.message)
+    reply_markup = _mission_status_keyboard(args.mission_id)
     chat_ids = [
         item.strip()
         for item in str(os.getenv("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS", "") or "").split(",")
@@ -31,13 +33,13 @@ def main():
         print({"success": False, "status": "allowed_user_ids_required"})
         return 2
     if args.dry_run:
-        print({"success": True, "status": "dry_run", "recipient_count": len(chat_ids), "text": text})
+        print({"success": True, "status": "dry_run", "recipient_count": len(chat_ids), "text": text, "reply_markup": reply_markup})
         return 0
 
     deliveries = []
     success = True
     for chat_id in chat_ids:
-        result, status_code = send_charlie_telegram_message(chat_id=chat_id, text=text)
+        result, status_code = send_charlie_telegram_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         deliveries.append({
             "chat_id_set": bool(chat_id),
             "status_code": status_code,
@@ -58,6 +60,13 @@ def _format_message(level, title, message):
         "done": "DONE",
     }.get(level, "INFO")
     return f"CHARLIE {label}: {title}\n\n{str(message or '').strip()}"
+
+
+def _mission_status_keyboard(mission_id):
+    mission_id = str(mission_id or "").strip()[:120]
+    if not mission_id:
+        return None
+    return {"inline_keyboard": [[{"text": "Status", "callback_data": f"status:{mission_id}"}]]}
 
 
 if __name__ == "__main__":

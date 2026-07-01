@@ -163,6 +163,48 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("new=2", action["telegram_text"])
         self.assertIn("Test mission", action["telegram_text"])
 
+    @patch("modules.charlie.build_relay.local_runner_status")
+    @patch("modules.charlie.build_relay.mission_status_summary")
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_status_command_returns_mission_control_overview(self, list_missions, mission_status_summary, local_runner_status):
+        local_runner_status.return_value = {"active": True, "status": "runner_active", "last_seen": "2026-07-01T10:00:00Z"}
+        mission_status_summary.return_value = ({
+            "success": True,
+            "status": "ok",
+            "counts": {"in_progress": 1, "pr_ready": 2, "approved": 3, "new": 4},
+        }, 200)
+
+        def fake_list_missions(status="", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE123",
+                        "status": "in_progress",
+                        "urgency": "P2",
+                        "approval_level": "LEVEL 3",
+                        "title": "Improve status",
+                    }],
+                }, 200)
+            if status == "new":
+                return ({"success": True, "status": "ok", "missions": []}, 200)
+            return ({"success": True, "status": "ok", "missions": []}, 200)
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/status")
+
+        self.assertEqual(action["command"], "status")
+        self.assertIn("CHARLIE Mission Control", action["telegram_text"])
+        self.assertIn("Local runner: active", action["telegram_text"])
+        self.assertIn("Queue: in_progress=1, pr_ready=2, approved=3, new=4", action["telegram_text"])
+        self.assertIn("Active:", action["telegram_text"])
+        self.assertNotIn("Active Branches / PRs", action["telegram_text"])
+        buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-ACTIVE123" for button in buttons))
+        self.assertFalse(action["writes_repo_file"])
+
     @patch("modules.charlie.build_relay.list_missions")
     def test_next_command_reports_active_queue_mission(self, list_missions):
         def fake_list_missions(status="", limit=10):
@@ -219,6 +261,50 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("/approve <id> level1, level3, or level4", action["telegram_text"])
         buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
         self.assertTrue(any(button["callback_data"] == "approve:CHARLIE-MISSION-NEW12345 level3" for button in buttons))
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-NEW12345" for button in buttons))
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.local_runner_status")
+    @patch("modules.charlie.build_relay.get_mission")
+    def test_mission_status_callback_returns_quick_live_update_without_findings(self, get_mission, local_runner_status):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+        get_mission.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "CHARLIE-MISSION-STATUS123",
+                "status": "in_progress",
+                "urgency": "P2",
+                "mission_type": "feature build",
+                "mission_lane": {"id": "charlie_core", "label": "CHARLIE CORE"},
+                "approval_level": "LEVEL 3",
+                "title": "Improve Telegram status",
+                "vault": {
+                    "mission_stage": "builder",
+                    "problem_statement": "Detailed owner problem should not appear.",
+                },
+                "agent_workflow": [
+                    {"agent": "planner", "status": "complete", "findings": "Planner findings should not appear."},
+                    {"agent": "builder", "status": "in_progress", "findings": "Builder findings should not appear."},
+                ],
+                "review_packet": {"summary": "Review packet detail should not appear."},
+            },
+        }, 200)
+
+        action = build_relay_action("status:CHARLIE-MISSION-STATUS123")
+
+        self.assertEqual(action["command"], "mission_status")
+        self.assertIn("Mission status", action["telegram_text"])
+        self.assertIn("Improve Telegram status", action["telegram_text"])
+        self.assertIn("Mission status: in_progress", action["telegram_text"])
+        self.assertIn("Current agent: builder (in_progress)", action["telegram_text"])
+        self.assertIn("Vault stage: builder", action["telegram_text"])
+        self.assertNotIn("Planner findings", action["telegram_text"])
+        self.assertNotIn("Builder findings", action["telegram_text"])
+        self.assertNotIn("Detailed owner problem", action["telegram_text"])
+        self.assertNotIn("Review packet detail", action["telegram_text"])
+        buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-STATUS123" for button in buttons))
         self.assertFalse(action["writes_repo_file"])
 
     @patch("modules.charlie.build_relay.get_mission")
