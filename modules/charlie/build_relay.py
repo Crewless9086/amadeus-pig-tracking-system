@@ -145,6 +145,10 @@ def build_relay_action(text, environ=None):
     repo_root = _repo_root(source)
     if lower in {"/start", "start", "/help", "help", "charlie", "/charlie"}:
         return _help_action()
+    if lower.startswith("/status "):
+        return _mission_status_action(cleaned[len("/status"):].strip())
+    if lower.startswith("status:"):
+        return _mission_status_action(cleaned.split(":", 1)[1].strip())
     if lower in {"/status", "status", "what is happening", "where are we"}:
         return _status_action(repo_root)
     if lower in {"/next", "next", "what next", "what is next", "next steps"}:
@@ -258,7 +262,8 @@ def _help_action():
         "telegram_text": (
             "CHARLIE Build Relay is online as an owner-only command layer.\n\n"
             "Commands:\n"
-            "/status - current repo state summary\n"
+            "/status - quick CHARLIE Mission Control overview\n"
+            "/status <id> - quick live status for one mission\n"
             "/next - current CHARLIE handoff plus missions waiting approval\n"
             "/missions - recent durable mission queue records\n"
             "/mission <id> - show one mission record\n"
@@ -277,21 +282,88 @@ def _help_action():
 
 
 def _status_action(repo_root):
-    current = _read_text(repo_root / "docs" / "00-start-here" / "CURRENT_STATE.md")
-    summary = _first_lines_after(current, "## Active Branches / PRs", max_items=6)
-    if not summary:
-        summary = _first_lines_after(current, "## Production State", max_items=5)
     runner = local_runner_status()
+    summary, _ = mission_status_summary()
+    active = _first_available_mission(("in_progress", "release_in_progress"))
+    review_ready = _first_available_mission(("pr_ready", "blocked"))
+    approved = _first_available_mission(("approved",))
+    release_approved = _first_available_mission(("release_approved",))
+    new_missions = _mission_list_for_status("new", limit=3)
+    keyboard = []
+    lines = [
+        "CHARLIE Mission Control",
+        "",
+        f"Local runner: {_runner_label(runner)}",
+    ]
+    if runner.get("last_seen"):
+        lines.append(f"Runner last seen: {runner.get('last_seen')}")
+    if summary.get("success"):
+        counts = summary.get("counts") or {}
+        lines.append(f"Queue: {_status_counts_line(counts)}")
+    else:
+        lines.append(f"Queue: {summary.get('status', 'unavailable')}")
+
+    if active:
+        mission = active["mission"]
+        lines.extend(["", f"Active: {_mission_title_line(mission)}", f"Status: {mission.get('status')}"])
+        keyboard.append([{"text": "Active Status", "callback_data": f"status:{mission.get('mission_id')}"}])
+    if review_ready:
+        mission = review_ready["mission"]
+        lines.extend(["", f"Owner review: {_mission_title_line(mission)}", f"Status: {mission.get('status')}"])
+        keyboard.append([{"text": "Review Status", "callback_data": f"status:{mission.get('mission_id')}"}])
+    if approved:
+        mission = approved["mission"]
+        lines.extend(["", f"Waiting pickup: {_mission_title_line(mission)}", f"Approval: {mission.get('approval_level') or 'not set'}"])
+        keyboard.append([{"text": "Pickup Status", "callback_data": f"status:{mission.get('mission_id')}"}])
+    if release_approved:
+        mission = release_approved["mission"]
+        lines.extend(["", f"Release approved: {_mission_title_line(mission)}", "Next: local release bridge verifies and closes it."])
+        keyboard.append([{"text": "Release Status", "callback_data": f"status:{mission.get('mission_id')}"}])
+    if new_missions:
+        lines.extend(["", f"Needs approval: {len(new_missions)} recent new mission(s)."])
+        for mission in new_missions[:2]:
+            keyboard.append([
+                {"text": f"Status {str(mission.get('mission_id') or '')[-4:]}", "callback_data": f"status:{mission.get('mission_id')}"},
+                {"text": "Approve L3", "callback_data": f"approve:{mission.get('mission_id')} level3"},
+            ])
+    if not any([active, review_ready, approved, release_approved, new_missions]):
+        lines.extend(["", "No active, review-ready, approved, release-approved, or new missions are visible right now."])
+    lines.extend(["", "Telegram records decisions only. Builds still run through the local Codex/Cursor runner boundary."])
     return {
         "command": "status",
-        "telegram_text": (
-            "CHARLIE status\n\n"
-            f"Local runner: {'active' if runner.get('active') else 'not active'}\n"
-            f"Runner last seen: {runner.get('last_seen') or 'never'}\n\n"
-            + ("\n".join(summary) if summary else "CURRENT_STATE.md could not be summarized.")
-        )[:MAX_REPLY_CHARS],
-        "reply_markup": _main_keyboard(),
+        "telegram_text": "\n".join(lines)[:MAX_REPLY_CHARS],
+        "reply_markup": {"inline_keyboard": keyboard[:6]} if keyboard else _main_keyboard(),
         "local_runner": runner,
+        "mission_store": {"summary_status": summary.get("status")},
+        "writes_repo_file": False,
+    }
+
+
+def _mission_status_action(mission_id):
+    mission_id = _clean_source_value(mission_id)
+    if not mission_id:
+        return {
+            "command": "mission_status",
+            "telegram_text": "Send /status <mission id> or tap a mission Status button.",
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    result, _ = get_mission(mission_id)
+    if not result.get("success"):
+        return {
+            "command": "mission_status",
+            "telegram_text": f"Mission status lookup failed: {result.get('status', 'unavailable')}.",
+            "mission_store": result,
+            "reply_markup": _main_keyboard(),
+            "writes_repo_file": False,
+        }
+    mission = result.get("mission") or {}
+    return {
+        "command": "mission_status",
+        "telegram_text": _mission_status_text(mission),
+        "mission": mission,
+        "mission_store": result,
+        "reply_markup": _mission_decision_keyboard(mission.get("mission_id", "")),
         "writes_repo_file": False,
     }
 
@@ -345,7 +417,10 @@ def _mission_queue_next_action():
             f"Approval: {mission.get('approval_level') or 'not set'}",
             _active_next_instruction(status),
         ])
-        keyboard.append([{"text": "View active mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+        keyboard.append([
+            {"text": "Mission Status", "callback_data": f"status:{mission.get('mission_id')}"},
+            {"text": "View", "callback_data": f"/mission {mission.get('mission_id')}"},
+        ])
 
     if review_ready:
         mission = review_ready["mission"]
@@ -355,7 +430,10 @@ def _mission_queue_next_action():
             f"Status: {mission.get('status')}",
             "This review backlog does not block the local runner from picking the next approved mission.",
         ])
-        keyboard.append([{"text": "View review mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+        keyboard.append([
+            {"text": "Mission Status", "callback_data": f"status:{mission.get('mission_id')}"},
+            {"text": "View", "callback_data": f"/mission {mission.get('mission_id')}"},
+        ])
 
     if approved:
         mission = approved["mission"]
@@ -365,7 +443,10 @@ def _mission_queue_next_action():
             f"Approval: {mission.get('approval_level') or 'not set'}",
             "If the local runner is active, it will pick this up when no mission is in progress or release-in-progress.",
         ])
-        keyboard.append([{"text": "View approved mission", "callback_data": f"/mission {mission.get('mission_id')}"}])
+        keyboard.append([
+            {"text": "Mission Status", "callback_data": f"status:{mission.get('mission_id')}"},
+            {"text": "View", "callback_data": f"/mission {mission.get('mission_id')}"},
+        ])
 
     if release_approved:
         mission = release_approved["mission"]
@@ -375,7 +456,10 @@ def _mission_queue_next_action():
             f"Approval: {mission.get('approval_level') or 'LEVEL 4'}",
             "Next: local Codex release bridge must verify, merge/deploy if applicable, and mark done.",
         ])
-        keyboard.append([{"text": "View release approval", "callback_data": f"/mission {mission.get('mission_id')}"}])
+        keyboard.append([
+            {"text": "Mission Status", "callback_data": f"status:{mission.get('mission_id')}"},
+            {"text": "View", "callback_data": f"/mission {mission.get('mission_id')}"},
+        ])
 
     if new_missions:
         lines.append("")
@@ -384,7 +468,7 @@ def _mission_queue_next_action():
             lines.append(f"{index}. {_mission_title_line(mission)}")
             if index <= 2:
                 keyboard.append([
-                    {"text": f"View {index}", "callback_data": f"/mission {mission.get('mission_id')}"},
+                    {"text": f"Status {index}", "callback_data": f"status:{mission.get('mission_id')}"},
                     {"text": f"Approve L3 {index}", "callback_data": f"approve:{mission.get('mission_id')} level3"},
                 ])
         lines.append("Use /approve <id> level1, level3, or level4 to approve a mission.")
@@ -433,6 +517,18 @@ def _mission_title_line(mission):
     title = mission.get("title") or mission.get("raw_text") or "Untitled mission"
     urgency = mission.get("urgency") or "P2"
     return f"{short_id} | {urgency} | {title}"
+
+
+def _runner_label(runner):
+    if runner.get("active"):
+        return f"active ({runner.get('status') or 'runner_active'})"
+    return runner.get("status") or "not active"
+
+
+def _status_counts_line(counts):
+    priority = ("in_progress", "pr_ready", "blocked", "approved", "release_approved", "new")
+    parts = [f"{key}={counts.get(key, 0)}" for key in priority if counts.get(key)]
+    return ", ".join(parts) if parts else "no active queue counts"
 
 
 def _active_next_instruction(status):
@@ -504,7 +600,10 @@ def _review_action():
         lines.append("No PR-ready or blocked missions are waiting for owner review.")
     for index, mission in enumerate(ready[:6], start=1):
         lines.append(f"{index}. {_mission_title_line(mission)} | {mission.get('status')}")
-        keyboard.append([{"text": f"View {index}", "callback_data": f"/mission {mission.get('mission_id')}"}])
+        keyboard.append([
+            {"text": f"Status {index}", "callback_data": f"status:{mission.get('mission_id')}"},
+            {"text": f"View {index}", "callback_data": f"/mission {mission.get('mission_id')}"},
+        ])
     lines.append("\nUse /mission <id> for detail or /approve <id> level4 after PR verification.")
     return {
         "command": "review",
@@ -815,12 +914,76 @@ def _mission_detail_text(mission):
     )[:MAX_REPLY_CHARS]
 
 
+def _mission_status_text(mission):
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    runner = local_runner_status()
+    current_agent, agent_status = _current_agent_status(workflow)
+    status = str(mission.get("status") or "unknown").strip()
+    return (
+        "Mission status\n\n"
+        f"ID: {mission.get('mission_id')}\n"
+        f"Title: {mission.get('title') or 'Untitled mission'}\n"
+        f"Mission status: {status}\n"
+        f"Approval: {mission.get('approval_level') or 'not set'}\n"
+        f"Vault stage: {vault.get('mission_stage', 'intake')}\n"
+        f"Current agent: {current_agent} ({agent_status})\n"
+        f"Local runner: {_runner_label(runner)}\n"
+        f"Next: {_mission_status_next_action(status, current_agent)}\n\n"
+        "This is a quick live position update only. Findings, review packet detail, media, and diffs stay out of Telegram status."
+    )[:MAX_REPLY_CHARS]
+
+
+def _current_agent_status(workflow):
+    if not isinstance(workflow, list) or not workflow:
+        return "planner", "pending"
+    active_states = {"in_progress", "running", "started", "blocked"}
+    for item in workflow:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "pending").strip().lower()
+        if status in active_states:
+            return str(item.get("agent") or "agent").strip(), status
+    for item in workflow:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "pending").strip().lower()
+        if status in {"pending", "queued", "not_started"}:
+            return str(item.get("agent") or "agent").strip(), status
+    last = next((item for item in reversed(workflow) if isinstance(item, dict)), {})
+    return str(last.get("agent") or "reviewer").strip(), str(last.get("status") or "complete").strip()
+
+
+def _mission_status_next_action(status, current_agent):
+    if status == "new":
+        return "owner approval is needed before local pickup."
+    if status == "approved":
+        return "waiting for the local runner to pick it up."
+    if status == "in_progress":
+        return f"{current_agent} stage is moving through Agent Runner v2."
+    if status == "blocked":
+        return "owner or builder attention is needed before it can advance."
+    if status == "pr_ready":
+        return "owner review is waiting in the CHARLIE dashboard."
+    if status == "release_approved":
+        return "local release bridge must verify and close the release."
+    if status in {"merged", "deployed", "done"}:
+        return "mission is past build execution; closeout/release evidence should be checked."
+    if status == "paused":
+        return "mission is paused until the owner resumes it."
+    if status == "rejected":
+        return "mission is rejected and should not be picked up."
+    return "check the CHARLIE dashboard for the next queue action."
+
+
 def _mission_decision_keyboard(mission_id):
     mission_id = _clean_source_value(mission_id)
     if not mission_id:
         return _main_keyboard()
     return {
         "inline_keyboard": [[
+            {"text": "Status", "callback_data": f"status:{mission_id}"},
+        ], [
             {"text": "Approve L3", "callback_data": f"approve:{mission_id} level3"},
             {"text": "Approve L4", "callback_data": f"approve:{mission_id} level4"},
         ], [

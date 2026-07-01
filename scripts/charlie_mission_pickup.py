@@ -223,6 +223,7 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
             _send_blocked_notification(
                 "CHARLIE agent execution blocked",
                 f"Mission {mission_id} did not complete Agent Runner v2 execution. Status: {result.get('status')}.",
+                mission_id=mission_id,
             )
     return result, status_code
 
@@ -245,6 +246,7 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
             _send_blocked_notification(
                 "Release bridge blocked",
                 f"Mission {mission_id} release bridge stopped. Status: {result.get('status')}.",
+                mission_id=mission_id,
             )
     return result, status_code
 
@@ -537,6 +539,7 @@ def _send_pickup_notification(mission):
         "info",
         "Mission picked up",
         f"Codex picked up: {mission.get('title')} ({mission.get('mission_id')}).",
+        mission_id=mission.get("mission_id"),
     )
 
 
@@ -548,6 +551,7 @@ def _send_review_ready_notification(result):
             f"Mission {result.get('mission_id')} is at owner review. "
             "Open the CHARLIE dashboard Review section and inspect the packet before final approval."
         ),
+        mission_id=result.get("mission_id"),
     )
 
 
@@ -559,6 +563,7 @@ def _send_release_ready_notification(result):
             f"Mission {result.get('mission_id')} has final approval, but release mode is not automatic yet. "
             f"Status: {result.get('status')}."
         ),
+        mission_id=result.get("mission_id"),
     )
 
 
@@ -567,14 +572,15 @@ def _send_done_notification(result):
         "done",
         "Mission completed",
         f"Mission {result.get('mission_id')} reached {result.get('mission_status') or result.get('status')}.",
+        mission_id=result.get("mission_id"),
     )
 
 
-def _send_blocked_notification(title, message):
-    return _send_notification("blocked", title, message)
+def _send_blocked_notification(title, message, mission_id=""):
+    return _send_notification("blocked", title, message, mission_id=mission_id)
 
 
-def _send_notification(level, title, message):
+def _send_notification(level, title, message, mission_id=""):
     original_argv = list(sys.argv)
     try:
         sys.argv = [
@@ -586,6 +592,8 @@ def _send_notification(level, title, message):
             "--message",
             message,
         ]
+        if mission_id:
+            sys.argv.extend(["--mission-id", str(mission_id)])
         return notify_main()
     finally:
         sys.argv = original_argv

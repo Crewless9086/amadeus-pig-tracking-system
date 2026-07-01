@@ -63,6 +63,22 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["runner_mode"], "code_test_pr")
         update_status.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.notify_main")
+    def test_pickup_notification_passes_mission_status_button_id(self, notify_main):
+        captured_argv = []
+
+        def fake_notify_main():
+            captured_argv[:] = list(charlie_mission_pickup.sys.argv)
+            return 0
+
+        notify_main.side_effect = fake_notify_main
+
+        result = charlie_mission_pickup._send_pickup_notification(MISSION)
+
+        self.assertEqual(result, 0)
+        self.assertIn("--mission-id", captured_argv)
+        self.assertIn("CHARLIE-MISSION-123", captured_argv)
+
     @patch("scripts.charlie_mission_pickup.list_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, list_missions):
