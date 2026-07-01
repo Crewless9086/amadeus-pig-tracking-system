@@ -37,6 +37,7 @@
     newMediaPreviews: document.getElementById("charlie_new_media_previews"),
     newUrgency: document.getElementById("charlie_new_urgency"),
     newType: document.getElementById("charlie_new_type"),
+    newLane: document.getElementById("charlie_new_lane"),
     runner: {
       state: document.getElementById("charlie_runner_state"),
       message: document.getElementById("charlie_runner_message"),
@@ -278,6 +279,7 @@
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
+    const lane = missionLane(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -287,6 +289,7 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       <div class="charlie-card-tags">
+        <span class="charlie-lane-tag">${escapeHtml(lane.label)}</span>
         <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
@@ -308,6 +311,7 @@
       </div>
       <dl class="charlie-mission-meta">
         <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
+        <div><dt>Lane</dt><dd>${escapeHtml(lane.label)}</dd></div>
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
         <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
         <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
@@ -364,6 +368,37 @@
     return "Owner work";
   }
 
+  function missionLane(mission) {
+    const rawLane = mission && mission.mission_lane;
+    const value = rawLane && typeof rawLane === "object" ? (rawLane.id || rawLane.label) : rawLane;
+    return laneOption(value);
+  }
+
+  function laneOption(value) {
+    const id = safeText(value || "unassigned");
+    const lanes = {
+      charlie_core: "CHARLIE CORE",
+      oom_sakkie: "Oom Sakkie",
+      sam: "SAM",
+      fred: "FRED",
+      farm_pig_application: "Farm Pig Application",
+      unassigned: "Unassigned / General",
+    };
+    return {id: lanes[id] ? id : "unassigned", label: lanes[id] || lanes.unassigned};
+  }
+
+  function laneOptionsMarkup(selected) {
+    const current = laneOption(selected).id;
+    return [
+      ["unassigned", "Unassigned / General"],
+      ["charlie_core", "CHARLIE CORE"],
+      ["oom_sakkie", "Oom Sakkie"],
+      ["sam", "SAM"],
+      ["fred", "FRED"],
+      ["farm_pig_application", "Farm Pig Application"],
+    ].map(([value, label]) => `<option value="${value}"${value === current ? " selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  }
+
   function reviewCard(mission) {
     const card = document.createElement("article");
     card.className = "charlie-mission-card charlie-review-card";
@@ -375,6 +410,7 @@
     const links = reviewPacket.links || {};
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const blocked = mission.status === "blocked" || reviewPacket.review_status === "agent_blocked";
+    const lane = missionLane(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -383,8 +419,12 @@
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
+      <div class="charlie-card-tags">
+        <span class="charlie-lane-tag">${escapeHtml(lane.label)}</span>
+      </div>
       ${blocked ? blockedReviewBanner(reviewPacket) : ""}
       <dl class="charlie-mission-meta">
+        <div><dt>Lane</dt><dd>${escapeHtml(lane.label)}</dd></div>
         <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
@@ -477,6 +517,7 @@
         <summary>Edit new mission</summary>
         <form data-new-mission-edit-form>
           <label>Title<input name="title" type="text" maxlength="160" value="${escapeHtml(safeText(mission.title || ""))}"></label>
+          <label>Lane<select name="mission_lane">${laneOptionsMarkup(missionLane(mission).id)}</select></label>
           <label>Concept<textarea name="raw_text" rows="4">${escapeHtml(safeText(mission.raw_text || ""))}</textarea></label>
           <label>Desired outcome<textarea name="desired_outcome" rows="3">${escapeHtml(safeText(vault.desired_outcome || ""))}</textarea></label>
           <label>Media / reference links<textarea name="media_references" rows="3" placeholder="Optional: one screenshot path, URL, or note per line">${escapeHtml(mediaText)}</textarea></label>
@@ -627,8 +668,10 @@
 
   function reviewPacketDetailMarkup(packet) {
     const mission = packet.mission || {};
+    const lane = missionLane(mission);
     return `
       <strong>${escapeHtml(safeText(mission.title || mission.mission_id || "Review packet"))}</strong>
+      <div class="charlie-card-tags"><span class="charlie-lane-tag">${escapeHtml(lane.label)}</span></div>
       ${packet.review_status === "agent_blocked" ? blockedReviewBanner(packet) : ""}
       <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
@@ -749,6 +792,7 @@
           desired_outcome: safeText(els.newOutcome && els.newOutcome.value).trim(),
           urgency: els.newUrgency ? els.newUrgency.value : "P2",
           mission_type: els.newType ? els.newType.value : "feature build",
+          mission_lane: els.newLane ? els.newLane.value : "unassigned",
           approval_level: "LEVEL 3",
           media_references: collectMediaReferences(),
         }),
@@ -841,6 +885,7 @@
         body: JSON.stringify({
           updates: {
             title: safeText(formData.get("title")).trim(),
+            mission_lane: safeText(formData.get("mission_lane")).trim() || "unassigned",
             raw_text: safeText(formData.get("raw_text")).trim(),
             desired_outcome: safeText(formData.get("desired_outcome")).trim(),
             media_references: mediaReferences,

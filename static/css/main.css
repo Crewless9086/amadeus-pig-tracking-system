@@ -7977,6 +7977,11 @@ body.oom-farm-command-body {
     font-weight: 700;
 }
 
+.charlie-card-tags .charlie-lane-tag {
+    background: #1f5d53;
+    color: #ffffff;
+}
+
 .charlie-system-missions {
     padding: 10px 12px;
     border: 1px dashed #c9d6d1;
