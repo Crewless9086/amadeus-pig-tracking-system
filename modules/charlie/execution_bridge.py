@@ -338,6 +338,8 @@ def run_agent_execution_bridge_v2(
                 completed,
                 stage_started,
                 blocked_reason=f"Agent artifact missing required keys: {', '.join(validation['missing_keys'])}.",
+                artifact=artifact,
+                artifacts=artifacts,
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
@@ -376,6 +378,8 @@ def run_agent_execution_bridge_v2(
                 completed,
                 stage_started,
                 blocked_reason=quality["reason"],
+                artifact={**artifact, "quality_gate": quality},
+                artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
@@ -1456,34 +1460,67 @@ def _block_agent_stage(
     completed,
     started_at,
     blocked_reason="Agent did not produce a valid final artifact.",
+    artifact=None,
+    artifacts=None,
     database_url=None,
     connect_factory=None,
 ):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    if artifact and agent not in artifacts:
+        artifacts = {**artifacts, agent: artifact}
+    blocked_artifact = {
+        "summary": artifact.get("summary") or blocked_reason,
+        "returncode": getattr(completed, "returncode", None),
+        "stdout_excerpt": _truncate(getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]), 1200),
+        "stderr_excerpt": _truncate(getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]), 1200),
+        "files_inspected": artifact.get("files_inspected", []),
+        "commands_run": artifact.get("commands_run", []),
+        "changed_files": artifact.get("changed_files", []),
+        "stdout_tail": artifact.get("stdout_tail", ""),
+        "stderr_tail": artifact.get("stderr_tail", ""),
+        "quality_gate": artifact.get("quality_gate", {}),
+    }
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
     ledger["blocked_reason"] = blocked_reason
     ledger["completed_at"] = datetime.now(timezone.utc).isoformat()
-    _append_ledger_stage(ledger, agent, "blocked", started_at, paths, artifact={
-        "summary": blocked_reason,
-        "returncode": getattr(completed, "returncode", None),
-        "stdout_excerpt": _truncate(getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]), 1200),
-        "stderr_excerpt": _truncate(getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]), 1200),
-    }, attempt=_stage_attempt_from_path(paths["final_path"]))
+    _append_ledger_stage(ledger, agent, "blocked", started_at, paths, artifact=blocked_artifact, attempt=_stage_attempt_from_path(paths["final_path"]))
     ledger_path = _write_agent_ledger(paths["final_path"].parent, execution_id, ledger)
+    qa_artifact = artifacts.get("qa_red_team") if isinstance(artifacts.get("qa_red_team"), dict) else {}
+    blocked_findings = [
+        f"{agent} blocked the mission: {blocked_reason}",
+        "The mission is in Owner Review so the owner can inspect evidence and send it back deliberately.",
+    ]
+    if artifact.get("bugs"):
+        blocked_findings.extend([f"Bug: {item}" for item in artifact.get("bugs", []) if item])
+    if artifact.get("qa_findings"):
+        blocked_findings.extend([f"QA: {item}" for item in artifact.get("qa_findings", []) if item])
     update_mission_vault(
         mission_id,
         {
             "agent_execution": ledger,
             "review_packet": {
                 "summary": f"CHARLIE Agent Runner v2 blocked at {agent}: {blocked_reason}",
-                "findings": [f"{agent} did not complete a valid stage artifact.", "The mission is blocked visibly instead of silently running."],
-                "errors": [blocked_reason],
-                "bugs": [],
-                "changed_files": _changed_files() or ["No changed files detected by git diff."],
+                "findings": blocked_findings,
+                "errors": [blocked_reason, *_collect_artifact_list(artifacts, "errors")],
+                "bugs": _collect_artifact_list(artifacts, "bugs"),
+                "changed_files": artifact.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
                 "test_evidence": ["Agent workflow stopped before final tester/reviewer evidence."],
+                "qa_evidence": qa_artifact.get("qa_findings") or artifact.get("qa_findings") or [],
                 "links": {},
-                "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent},
+                "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent, "blocked_artifact_path": str(paths["final_path"])},
                 "agent_execution": _agent_execution_summary(ledger),
+                "agent_artifacts": artifacts,
+                "handoff_reports": {
+                    stage_agent: stage_artifact.get("handoff_report", {})
+                    for stage_agent, stage_artifact in artifacts.items()
+                    if isinstance(stage_artifact, dict)
+                },
+                "quality_gates": ledger.get("quality_gates", []),
+                "backflow_events": ledger.get("backflow_events", []),
+                "blocked_agent": agent,
+                "blocked_reason": blocked_reason,
                 "review_status": "agent_blocked",
             },
         },

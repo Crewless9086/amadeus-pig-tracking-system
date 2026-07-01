@@ -524,6 +524,78 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "blocked")
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/routes.py"])
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_block_agent_stage_preserves_failed_qa_artifact_for_owner_review(
+        self,
+        update_vault,
+        update_workflow,
+        update_status,
+        _changed_files,
+    ):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        ledger = {
+            "version": "charlie_agent_runner_v2",
+            "execution_id": "EXEC123",
+            "mission_id": "CHARLIE-MISSION-EXEC123",
+            "stages": [],
+            "backflow_events": [
+                {"from_agent": "qa_red_team", "to_agent": "builder", "reason": "QA failed", "attempt": 1},
+                {"from_agent": "qa_red_team", "to_agent": "builder", "reason": "QA failed", "attempt": 2},
+            ],
+            "quality_gates": [],
+        }
+        artifact = {
+            "summary": "QA found release-blocking risks.",
+            "errors": [],
+            "bugs": ["Mutation routes allow read-role writes."],
+            "files_inspected": ["modules/charlie/routes.py"],
+            "commands_run": ["python -m unittest tests.test_charlie_build_relay"],
+            "qa_findings": ["Owner mutation route requires stronger access gate."],
+            "red_team_status": "fail",
+            "risk_rating": "high",
+            "quality_gate": {"passed": False, "reason": "QA/red-team reported red_team_status=fail."},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            final_path = Path(tmp) / "EXEC123.qa_red_team.final.md"
+            stdout_path = Path(tmp) / "EXEC123.qa_red_team.stdout.txt"
+            stderr_path = Path(tmp) / "EXEC123.qa_red_team.stderr.txt"
+            prompt_path = Path(tmp) / "EXEC123.qa_red_team.prompt.md"
+            for path in (final_path, stdout_path, stderr_path, prompt_path):
+                path.write_text("", encoding="utf-8")
+            result, status_code = execution_bridge._block_agent_stage(
+                "CHARLIE-MISSION-EXEC123",
+                "EXEC123",
+                ledger,
+                "qa_red_team",
+                {
+                    "final_path": final_path,
+                    "stdout_path": stdout_path,
+                    "stderr_path": stderr_path,
+                    "prompt_path": prompt_path,
+                },
+                SimpleNamespace(returncode=0, stdout="", stderr=""),
+                "2026-07-01T06:00:00+00:00",
+                blocked_reason="QA/red-team reported red_team_status=fail.",
+                artifact=artifact,
+                artifacts={"qa_red_team": artifact},
+            )
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["blocked_agent"], "qa_red_team")
+        self.assertEqual(packet["blocked_reason"], "QA/red-team reported red_team_status=fail.")
+        self.assertIn("qa_red_team", packet["agent_artifacts"])
+        self.assertEqual(packet["agent_artifacts"]["qa_red_team"]["risk_rating"], "high")
+        self.assertIn("Owner mutation route requires stronger access gate.", packet["qa_evidence"])
+        self.assertEqual(len(packet["backflow_events"]), 2)
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):
         mission = dict(MISSION)
