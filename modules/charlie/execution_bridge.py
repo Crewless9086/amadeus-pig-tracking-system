@@ -1731,6 +1731,23 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     )
     if reviewer_status >= 400:
         return reviewer_result, reviewer_status
+    ready_result, ready_status = update_mission_status(
+        mission["mission_id"],
+        "pr_ready",
+        owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
+        event_type="status_changed",
+        notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
+        metadata={
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "execution_id": execution_id,
+            "agent_ledger_path": str(ledger_path),
+            "review_status": "ready_for_owner_review",
+        },
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if ready_status >= 400:
+        return ready_result, ready_status
     return {
         "success": True,
         "status": "agent_execution_completed",

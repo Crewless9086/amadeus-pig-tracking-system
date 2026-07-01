@@ -143,16 +143,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_records_stage_artifacts_and_review_packet(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         write_heartbeat,
         _changed_files,
     ):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
 
@@ -186,22 +189,40 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["review_status"], "ready_for_owner_review")
+        update_status.assert_called_with(
+            "CHARLIE-MISSION-EXEC123",
+            "pr_ready",
+            owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
+            event_type="status_changed",
+            notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
+            metadata={
+                "agent_runner_version": execution_bridge.AGENT_RUNNER_VERSION,
+                "execution_id": result["execution_id"],
+                "agent_ledger_path": result["agent_ledger_path"],
+                "review_status": "ready_for_owner_review",
+            },
+            database_url=None,
+            connect_factory=None,
+        )
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_sends_failed_tester_back_to_builder(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         write_heartbeat,
         _changed_files,
     ):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
         tester_calls = {"count": 0}
@@ -239,10 +260,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_send_back_reruns_from_target_stage_only(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         _write_heartbeat,
@@ -272,6 +295,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             }
         }
         get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
         called_agents = []
