@@ -241,7 +241,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "list_sales_leads",
             return_value=(service_result, 200),
-        ) as list_leads:
+        ) as list_leads, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get("/api/sales/meat-leads?limit=12&status=launch_test")
 
         self.assertEqual(response.status_code, 200)
@@ -865,7 +869,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_sales_lead_preorder_contract",
             return_value=(service_result, 200),
-        ) as get_contract:
+        ) as get_contract, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/contract")
 
         self.assertEqual(response.status_code, 200)
@@ -921,7 +929,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_sales_lead_pricing_estimate",
             return_value=(service_result, 200),
-        ) as get_estimate:
+        ) as get_estimate, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get(
                 "/api/sales/meat-leads/OSK-SALES-LEAD-1/pricing-estimate?selected_pig_live_weight_kg=62"
             )
@@ -944,7 +956,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_sales_lead_meat_match",
             return_value=(service_result, 200),
-        ) as get_match:
+        ) as get_match, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get(
                 "/api/sales/meat-leads/OSK-SALES-LEAD-1/meat-match?preference=heaviest&target_packed_kg=25&budget_amount=3000"
             )
@@ -967,7 +983,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_meat_ops_status",
             return_value=(service_result, 200),
-        ) as get_status:
+        ) as get_status, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/meat-ops")
 
         self.assertEqual(response.status_code, 200)
@@ -1076,7 +1096,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_meat_fulfillment_timeline",
             return_value=(service_result, 200),
-        ) as get_timeline:
+        ) as get_timeline, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/fulfillment")
 
         self.assertEqual(response.status_code, 200)
@@ -1094,7 +1118,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             sales_transaction_routes,
             "get_meat_reconciliation_status",
             return_value=(service_result, 200),
-        ) as get_status:
+        ) as get_status, patch.object(
+            sales_transaction_routes,
+            "require_owner_read_access",
+            return_value=None,
+        ):
             response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/reconciliation")
 
         self.assertEqual(response.status_code, 200)
