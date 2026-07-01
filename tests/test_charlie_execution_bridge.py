@@ -2,6 +2,8 @@ import tempfile
 import unittest
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -66,7 +68,15 @@ def _successful_stage_payload(agent):
         "test_status": "pass" if agent == "tester" else None,
         "qa_findings": ["no high risk found"] if agent == "qa_red_team" else None,
         "red_team_status": "pass" if agent == "qa_red_team" else None,
-        "risk_rating": "low" if agent == "qa_red_team" else None,
+        "business_findings": ["business value checked"] if agent == "business_reviewer" else None,
+        "business_status": "pass" if agent == "business_reviewer" else None,
+        "product_findings": ["product workflow checked"] if agent == "product_reviewer" else None,
+        "product_status": "pass" if agent == "product_reviewer" else None,
+        "security_findings": ["permission boundary checked"] if agent == "security_reviewer" else None,
+        "security_status": "pass" if agent == "security_reviewer" else None,
+        "evidence_findings": ["evidence chain checked"] if agent == "evidence_reviewer" else None,
+        "evidence_status": "pass" if agent == "evidence_reviewer" else None,
+        "risk_rating": "low" if agent in {"qa_red_team", "business_reviewer", "product_reviewer", "security_reviewer", "evidence_reviewer"} else None,
         "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
         "release_notes": ["owner review ready"] if agent == "reviewer" else None,
         "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
@@ -141,16 +151,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_records_stage_artifacts_and_review_packet(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         write_heartbeat,
         _changed_files,
     ):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
 
@@ -179,27 +192,47 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("agent_artifacts", vault_metadata["review_packet"])
         self.assertIn("handoff_reports", vault_metadata["review_packet"])
         self.assertIn("qa_red_team", vault_metadata["review_packet"]["agent_artifacts"])
+        self.assertIn("security_reviewer", vault_metadata["review_packet"]["agent_artifacts"])
+        self.assertEqual(vault_metadata["review_packet"]["review_board"]["evidence_reviewer"]["status"], "pass")
         self.assertIn("QA/red-team passed", vault_metadata["review_packet"]["qa_evidence"])
         self.assertIn("quality_gates", vault_metadata["review_packet"])
         self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(vault_metadata["review_packet"]["review_status"], "ready_for_owner_review")
+        update_status.assert_called_with(
+            "CHARLIE-MISSION-EXEC123",
+            "pr_ready",
+            owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
+            event_type="status_changed",
+            notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
+            metadata={
+                "agent_runner_version": execution_bridge.AGENT_RUNNER_VERSION,
+                "execution_id": result["execution_id"],
+                "agent_ledger_path": result["agent_ledger_path"],
+                "review_status": "ready_for_owner_review",
+            },
+            database_url=None,
+            connect_factory=None,
+        )
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_sends_failed_tester_back_to_builder(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         write_heartbeat,
         _changed_files,
     ):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
         tester_calls = {"count": 0}
@@ -237,10 +270,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_send_back_reruns_from_target_stage_only(
         self,
         get_mission,
+        update_status,
         update_vault,
         update_workflow,
         _write_heartbeat,
@@ -270,6 +305,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             }
         }
         get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
         called_agents = []
@@ -290,7 +326,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(called_agents, ["builder", "tester", "qa_red_team", "reviewer"])
+        self.assertEqual(called_agents, [
+            "builder",
+            "tester",
+            "qa_red_team",
+            "product_reviewer",
+            "security_reviewer",
+            "evidence_reviewer",
+            "reviewer",
+        ])
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
         self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
@@ -364,6 +408,214 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(inherited["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(inherited["links"]["pr"], "https://github.com/org/repo/pull/61")
 
+    def test_visual_review_capture_writes_local_screenshot_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_runner(command, **_kwargs):
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {"url": "http://127.0.0.1:5000/charlie"},
+                    run_subprocess=fake_runner,
+                )
+                media = execution_bridge._review_media_items("CHARLIE-MISSION-EXEC123")
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["status"], "captured")
+        self.assertEqual(capture["capture_source"], "generated_owner_review_packet")
+        self.assertEqual(capture["fallback_reason"], "control_dashboard_preview_not_mission_visual")
+        self.assertEqual(media[0]["filename"], "owner_review_preview.png")
+        self.assertIn("/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/owner_review_preview.png", media[0]["reference"])
+
+    def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_runner(command, **_kwargs):
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {"url": "http://127.0.0.1:5000/sales/beacon-media"},
+                    run_subprocess=fake_runner,
+                )
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["capture_source"], "local_preview")
+        self.assertEqual(capture["fallback_reason"], "")
+        self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
+
+    def test_visual_review_packet_generates_fallback_media_without_preview_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_capture(mission_id, _local_preview, **kwargs):
+                    media_dir = execution_bridge._review_media_path(mission_id)
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    (media_dir / "owner_review_preview.png").write_bytes(b"fake png")
+                    return {
+                        "captured": True,
+                        "status": "captured",
+                        "capture_source": "generated_owner_review_packet",
+                        "fallback_reason": "preview_url_not_captured",
+                    }
+
+                with patch("modules.charlie.execution_bridge._capture_visual_review_media", side_effect=fake_capture):
+                    packet = execution_bridge._build_visual_review_packet(
+                        mission_id="CHARLIE-MISSION-EXEC123",
+                        mission_type="feature build",
+                        changed_files=["templates/charlie.html"],
+                        local_preview={"url": "", "status": "not_captured"},
+                        artifacts={"builder": {"summary": "Changed owner review UI."}},
+                    )
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["capture"]["fallback_reason"], "preview_url_not_captured")
+        self.assertEqual(packet["media"][0]["filename"], "owner_review_preview.png")
+
+    def test_visual_review_packet_blocks_when_capture_fallback_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={
+                    "captured": False,
+                    "status": "capture_command_failed",
+                    "fallback_reason": "preview_url_not_captured",
+                }):
+                    packet = execution_bridge._build_visual_review_packet(
+                        mission_id="CHARLIE-MISSION-EXEC123",
+                        mission_type="feature build",
+                        changed_files=["templates/charlie.html"],
+                        local_preview={"url": "", "status": "not_captured"},
+                        artifacts={"builder": {"summary": "Changed owner review UI."}},
+                    )
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "not_captured_blocked")
+        self.assertEqual(packet["capture"]["status"], "capture_command_failed")
+        self.assertEqual(packet["media"], [])
+        self.assertIn("screenshot capture is blocked", packet["summary"])
+
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url")
+    def test_local_preview_infers_reachable_runner_url(self, probe):
+        probe.side_effect = [
+            {"ok": False, "status": "login_redirect"},
+            {"ok": True, "status": "ok", "http_status": 200},
+        ]
+
+        preview = execution_bridge._local_preview_from_reviewer({
+            "summary": "Preview command only.",
+            "links": {},
+        })
+
+        self.assertEqual(preview["url"], "http://127.0.0.1:5002/charlie")
+        self.assertEqual(preview["source"], "local_runner_probe")
+
+    def test_visual_review_blocks_owner_review_for_ui_without_media(self):
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "not_captured_blocked",
+        }))
+        self.assertFalse(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+        }))
+
+    def test_agent_build_mission_type_is_not_ui_by_substring(self):
+        self.assertFalse(execution_bridge._is_ui_related_mission(
+            mission_type="agent build",
+            changed_files=["modules/charlie/execution_bridge.py"],
+            final_message="backend runner update",
+        ))
+
+    def test_extract_local_preview_strips_trailing_quote(self):
+        preview = execution_bridge._extract_local_preview('Open "http://127.0.0.1:5003/charlie"')
+
+        self.assertEqual(preview["url"], "http://127.0.0.1:5003/charlie")
+
+    @patch("modules.charlie.execution_bridge.shutil.which")
+    def test_npx_executable_prefers_windows_cmd_shim(self, which):
+        def fake_which(name):
+            return "C:/node/npx.cmd" if name == "npx.cmd" else None
+
+        which.side_effect = fake_which
+
+        with patch("modules.charlie.execution_bridge.os.name", "nt"):
+            self.assertEqual(execution_bridge._npx_executable(), "C:/node/npx.cmd")
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["planning/CODEX_CHAT.md"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    def test_run_codex_process_writes_final_heartbeat_after_artifact_stop(self, write_heartbeat, _changed_files):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            final_path = tmp_path / "final.md"
+            command = [
+                sys.executable,
+                "-c",
+                "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('done', encoding='utf-8'); time.sleep(5)",
+                str(final_path),
+            ]
+
+            with patch("modules.charlie.execution_bridge.FINAL_ARTIFACT_GRACE_SECONDS", 0), patch(
+                "modules.charlie.execution_bridge.POLL_SECONDS",
+                0.05,
+            ):
+                completed = execution_bridge._run_codex_process(
+                    command,
+                    cwd=tmp,
+                    timeout_seconds=3,
+                    stdout_path=tmp_path / "stdout.txt",
+                    stderr_path=tmp_path / "stderr.txt",
+                    final_path=final_path,
+                    mission_id="CHARLIE-MISSION-EXEC123",
+                )
+                final_exists = final_path.exists()
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertTrue(final_exists)
+        self.assertTrue(any(
+            call.args[0].get("status") == "codex_final_artifact_seen"
+            and call.args[0].get("final_artifact_present") is True
+            for call in write_heartbeat.call_args_list
+        ))
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        mission = {
+            "mission_id": "CHARLIE-MISSION-EXEC123",
+            "metadata": {
+                "review_packet": {
+                    "summary": "Ready",
+                    "visual_review": {
+                        "ui_related": True,
+                        "cleanup": {"required": True, "status": "cleanup_requested"},
+                    },
+                }
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                media_dir = Path(tmp) / "CHARLIE-MISSION-EXEC123"
+                media_dir.mkdir()
+                (media_dir / "owner_review_preview.png").write_bytes(b"fake png")
+
+                result = execution_bridge.process_visual_review_cleanup_intent(
+                    "CHARLIE-MISSION-EXEC123",
+                    mission=mission,
+                )
+
+                self.assertFalse(media_dir.exists())
+
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["status"], "cleaned")
+        update_vault.assert_called_once()
+        review_packet = update_vault.call_args.args[1]["review_packet"]
+        cleanup = review_packet["visual_review"]["cleanup"]
+        self.assertEqual(cleanup["status"], "cleaned")
+        self.assertEqual(cleanup["result"]["status"], "review_media_cleaned")
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_codex_execution_rejects_release_approved_mission(self, get_mission):
         mission = dict(MISSION)
@@ -421,12 +673,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("modules/charlie/execution_bridge.py", vault_metadata["review_packet"]["changed_files"])
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
+    @patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured", "capture_source": "generated_owner_review_packet"})
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_complete_codex_execution_from_existing_final_artifact(
         self,
         update_vault,
         update_workflow,
+        _capture,
         _changed_files,
     ):
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
@@ -450,14 +704,52 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
         self.assertEqual(vault_metadata["review_packet"]["local_preview"]["status"], "captured")
+        self.assertTrue(vault_metadata["review_packet"]["visual_review"]["ui_related"])
+        self.assertEqual(vault_metadata["review_packet"]["visual_review"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
+
+    def test_visual_review_packet_collects_local_runner_media_for_ui_changes(self):
+        mission_id = "CHARLIE-MISSION-VISUAL123"
+        media_dir = execution_bridge._review_media_path(mission_id)
+        if media_dir.exists():
+            shutil.rmtree(media_dir)
+        media_dir.mkdir(parents=True)
+        try:
+            (media_dir / "owner-review.png").write_bytes(b"not-real-image-but-route-contract")
+            with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured"}):
+                packet = execution_bridge._build_visual_review_packet(
+                    mission_id=mission_id,
+                    changed_files=["templates/charlie.html"],
+                    local_preview={"url": "http://127.0.0.1:5000/charlie", "status": "captured"},
+                )
+        finally:
+            shutil.rmtree(media_dir, ignore_errors=True)
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["media"][0]["reference"], "/api/charlie/build-relay/review-media/CHARLIE-MISSION-VISUAL123/owner-review.png")
+        self.assertEqual(packet["cleanup"]["status"], "pending_owner_decision")
+
+    def test_cleanup_visual_review_media_removes_only_runner_media_dir(self):
+        mission_id = "CHARLIE-MISSION-CLEANUP123"
+        media_dir = execution_bridge._review_media_path(mission_id)
+        media_dir.mkdir(parents=True, exist_ok=True)
+        (media_dir / "capture.png").write_bytes(b"temporary")
+
+        result = execution_bridge.cleanup_visual_review_media(mission_id)
+
+        self.assertTrue(result["cleaned"])
+        self.assertEqual(result["status"], "review_media_cleaned")
+        self.assertFalse(media_dir.exists())
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
+    @patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured", "capture_source": "generated_owner_review_packet"})
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_complete_codex_execution_does_not_default_local_preview_to_control_dashboard(
         self,
         update_vault,
         update_workflow,
+        _capture,
         _changed_files,
     ):
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
@@ -595,6 +887,53 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packet["agent_artifacts"]["qa_red_team"]["risk_rating"], "high")
         self.assertIn("Owner mutation route requires stronger access gate.", packet["qa_evidence"])
         self.assertEqual(len(packet["backflow_events"]), 2)
+        self.assertEqual(packet["blocked_summary"]["blocked_at"], "qa_red_team")
+        self.assertEqual(packet["blocked_summary"]["send_back_attempts"], 2)
+        self.assertTrue(packet["unresolved_blockers"])
+        self.assertTrue(any(
+            "Owner mutation route requires stronger access gate." in item.get("finding", "")
+            for item in packet["unresolved_blockers"]
+        ))
+
+    def test_agent_stage_prompt_includes_unresolved_backflow_issues(self):
+        ledger = {
+            "backflow_events": [
+                {
+                    "from_agent": "qa_red_team",
+                    "to_agent": "builder",
+                    "reason": "QA failed",
+                    "unresolved_blockers": [
+                        {
+                            "severity": "high",
+                            "file": "modules/charlie/routes.py",
+                            "finding": "Dashboard route performs destructive cleanup.",
+                        }
+                    ],
+                }
+            ],
+            "unresolved_blockers": [
+                {
+                    "severity": "high",
+                    "file": "modules/charlie/routes.py",
+                    "finding": "Dashboard route performs destructive cleanup.",
+                }
+            ],
+        }
+
+        prompt = execution_bridge.build_agent_stage_prompt(MISSION, "builder", artifacts={}, ledger=ledger)
+
+        self.assertIn("Unresolved agent send-back issues", prompt)
+        self.assertIn("Dashboard route performs destructive cleanup.", prompt)
+        self.assertIn("modules/charlie/routes.py", prompt)
+
+    def test_validate_qa_artifact_allows_empty_findings_when_qa_passes(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["qa_findings"] = []
+
+        result = execution_bridge._validate_agent_artifact("qa_red_team", artifact)
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["missing_keys"], [])
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):

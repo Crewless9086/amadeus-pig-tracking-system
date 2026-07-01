@@ -81,6 +81,47 @@ Recommended direction:
 
 Use the current CHARLIE Agent Runner v2 as the working spine. Build CHARLIE Vault v1 and live deployment verification next. Then add optional specialist stages by workflow template. Only after that introduce a durable workflow engine and model router.
 
+## OWNER-APPROVED COMPLETION ROADMAP - 2026-07-01
+
+The next CHARLIE CORE build target is to complete stages 1 through 6 before moving into deeper income-stream work. These stages define the practical path from the current Agent Runner v2 into a governed CHARLIE Brain.
+
+| Stage | Name | Priority | Target outcome | Status |
+| --- | --- | ---: | --- | --- |
+| 1 | Lock the current runner | P0 | Stuck missions cannot silently remain active; runner state, heartbeat, active mission, stale recovery, and owner-visible status are reliable. | DONE 2026-07-01 |
+| 2 | Finish Mission Vault v1 | P0 | Every mission has a complete working folder: scope, outcome, acceptance criteria, tests, forbidden actions, owner decisions, workflow, evidence, risks, review packet, PR/release evidence, and visual evidence. | DONE 2026-07-01 |
+| 3 | Build the Knowledge Vault / CHARLIE Brain | P0 | Markdown truth remains the human-readable brain, while Supabase stores document registry/index records, ownership, status, tags, summaries, confidence, review dates, and mission links. | DONE 2026-07-01 |
+| 4 | Build project/entity memory | P0 | Each lane/entity has durable memory: goals, business model, risks, systems, constraints, open decisions, active docs, previous missions, and owner preferences. | DONE 2026-07-01 |
+| 5 | Upgrade workflow templates | P1 | Different mission types select the right workflow template and agent sequence instead of treating every mission as a generic code task. | DONE 2026-07-01 |
+| 6 | Complete specialist agent board | P1 | Serious missions can pass through idea/product/business/security/evidence review stages with strict artifacts and backflow before final owner review. | DONE 2026-07-01 |
+
+Stage 1-6 completion criteria:
+
+- The approved plan is recorded in this file.
+- Supabase schema has structured CHARLIE Brain / project memory tables in addition to mission artifact tables.
+- Runtime mission context packs expose active truth docs, workflow templates, project memory, and review board agents.
+- Dashboard command center exposes Vault, Brain, project memory, workflow template, review board, runner truth, risks, artifacts, and owner review quality.
+- Mutation routes remain owner-write gated.
+- Focused CHARLIE tests and frontend route contracts pass.
+
+Stage 1-6 completion evidence:
+
+- Runner recovery: stale/dead executions are surfaced and can be cleared without leaving `in_progress` blocked forever.
+- Mission Vault: mission metadata contains vault, workflow, context pack, review packet, visual review, quality gates, and owner decision data.
+- CHARLIE Brain schema: `202607010001_create_charlie_brain_v1_tables.sql` adds document registry, project memory, and mission brain-context link tables.
+- CHARLIE Brain runtime: mission context packs now include `brain_registry` and lane-specific `project_memory`.
+- Workflow templates: software build, business plan, system improvement, content engine, automation workflow, and income stream templates choose agent order.
+- Specialist board: idea/product/business/security/evidence review agents are wired into sequence, schemas, quality gates, backflow, review packets, and dashboard display.
+- Dashboard: Command Center exposes Vault, Brain, review board, queue, release, deployed/merged, runner, and boundary truth.
+- Verification: focused CHARLIE test group and frontend route contracts passed on 2026-07-01.
+
+Deferred until after Stage 1-6:
+
+- Deep income-stream missions.
+- Durable parallel workflow engine.
+- Automatic model/router selection.
+- Broad MCP/tool permission layer.
+- Long-term learning loop and vector search.
+
 THE PLAN:
 ## CHARLIE CORE: the Dynasty-grade AI workflow system
 

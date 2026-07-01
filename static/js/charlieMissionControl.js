@@ -204,9 +204,22 @@
       return;
     }
     els.list.innerHTML = "";
-    state.missions.forEach((mission) => {
+    const ownerMissions = state.missions.filter((mission) => queueClass(mission) === "owner_work");
+    const systemMissions = state.missions.filter((mission) => queueClass(mission) !== "owner_work");
+    const visibleMissions = ownerMissions.length ? ownerMissions : state.missions;
+    visibleMissions.forEach((mission) => {
       els.list.appendChild(missionCard(mission));
     });
+    if (systemMissions.length && ownerMissions.length) {
+      const details = document.createElement("details");
+      details.className = "charlie-system-missions";
+      details.innerHTML = `<summary>${systemMissions.length} system/test or low-signal mission(s)</summary>`;
+      const wrap = document.createElement("div");
+      wrap.className = "charlie-system-mission-list";
+      systemMissions.forEach((mission) => wrap.appendChild(missionCard(mission)));
+      details.appendChild(wrap);
+      els.list.appendChild(details);
+    }
     renderReview();
   }
 
@@ -218,11 +231,14 @@
     const review = data.review || {};
     const queue = data.queue || {};
     const vault = data.vault || {};
+    const brain = data.brain || {};
     const runner = data.local_runner || {};
     els.commandCenter.innerHTML = `
       ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+      ${commandCenterTile("Brain", brain.version || "charlie_brain_v1", `${brain.document_count || 0} docs | ${brain.project_memory_count || 0} memories`)}
       ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
       ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
+      ${commandCenterTile("Review Board", `${(review.review_board_agents || []).length || 4} agents`, "business/product/security/evidence")}
       ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
       ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
       ${commandCenterTile("Merged", `${(release.merged_waiting_live_verify || []).length} waiting verify`, "Needs live proof for deployed")}
@@ -265,6 +281,7 @@
     const media = Array.isArray(mission.media_references) ? mission.media_references : [];
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
+    const missionQueueClass = queueClass(mission);
     const lane = missionLane(mission);
     card.innerHTML = `
       <div class="charlie-mission-card-header">
@@ -275,6 +292,7 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       <div class="charlie-card-tags">
+        <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
         <span class="charlie-lane-tag">${escapeHtml(lane.label)}</span>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
@@ -282,6 +300,8 @@
         <strong>Mission Vault</strong>
         <span>Stage: ${escapeHtml(safeText(vault.mission_stage || "intake"))}</span>
         <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
+        <span>Brain: ${escapeHtml(safeText(contextPack.brain_registry && contextPack.brain_registry.version || "charlie_brain_v1"))}</span>
+        <span>Project: ${escapeHtml(safeText(contextPack.project_memory && contextPack.project_memory.name || lane.label))}</span>
       </div>
       <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
       <div class="charlie-workflow-actions" aria-label="Mission workflow actions">
@@ -292,6 +312,10 @@
         <button type="button" data-agent-step="builder">Builder Done</button>
         <button type="button" data-agent-step="tester">Tester Done</button>
         <button type="button" data-agent-step="qa_red_team">QA Done</button>
+        <button type="button" data-agent-step="business_reviewer">Business Done</button>
+        <button type="button" data-agent-step="product_reviewer">Product Done</button>
+        <button type="button" data-agent-step="security_reviewer">Security Done</button>
+        <button type="button" data-agent-step="evidence_reviewer">Evidence Done</button>
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
       <dl class="charlie-mission-meta">
@@ -340,6 +364,17 @@
     const editForm = card.querySelector("[data-new-mission-edit-form]");
     if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
     return card;
+  }
+
+  function queueClass(mission) {
+    return safeText((mission && mission.queue_class) || "owner_work") || "owner_work";
+  }
+
+  function queueClassLabel(value) {
+    if (value === "system_noise") return "System noise";
+    if (value === "system_test") return "System test";
+    if (value === "low_signal") return "Low signal";
+    return "Owner work";
   }
 
   function missionLane(mission) {
@@ -404,6 +439,7 @@
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
+      ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
       <details open>
         <summary>Mission findings and review packet</summary>
@@ -439,6 +475,9 @@
       </div>
     `;
     card.querySelector("[data-review-refresh]").addEventListener("click", () => loadReviewPacket(missionId, card));
+    card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+      button.addEventListener("click", () => openVisualReviewOverlay(button));
+    });
     card.querySelectorAll("[data-review-decision]").forEach((button) => {
       button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
     });
@@ -457,6 +496,10 @@
     const forbidden = listMarkup(vault.forbidden_actions, "Default safety gates apply.");
     const mediaItems = mediaMarkup(media, "No media/reference links captured yet.");
     const docs = listMarkup(contextPack.active_truth_docs, "Default start-here docs apply.");
+    const brainDocs = contextPack.brain_registry && Array.isArray(contextPack.brain_registry.documents)
+      ? contextPack.brain_registry.documents.map((item) => `${item.title || item.doc_path}: ${item.summary || item.document_type || ""}`)
+      : [];
+    const memory = contextPack.project_memory || {};
     const sharedRules = listMarkup(contextPack.shared_data_rules, "Shared mission rules are loaded from CHARLIE protocol.");
     return `
       <dl class="charlie-mission-meta charlie-vault-detail">
@@ -467,6 +510,9 @@
       <strong>Tests</strong>${tests}
       <strong>Forbidden</strong>${forbidden}
       <strong>Media / references</strong>${mediaItems}
+      <strong>Project memory</strong>
+      <p>${escapeHtml(safeText(memory.name || "Unassigned / General"))}: ${escapeHtml(safeText(memory.purpose || "No project memory loaded yet."))}</p>
+      <strong>Brain docs</strong>${listMarkup(brainDocs, "No CHARLIE Brain docs indexed for this mission yet.")}
       <strong>Shared context docs</strong>${docs}
       <strong>Shared data rules</strong>${sharedRules}
     `;
@@ -535,10 +581,12 @@
       <p>${escapeHtml(safeText(packet.summary || vault.desired_outcome || mission.raw_text || "Not captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
       <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
+      <strong>Review board</strong>${reviewBoardMarkup(packet.review_board)}
       <strong>Handoff reports</strong>${handoffReportMarkup(packet.handoff_reports)}
       <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
@@ -604,6 +652,9 @@
       const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/review`);
       const container = card.querySelector("[data-review-packet]");
       if (container) container.innerHTML = reviewPacketDetailMarkup(data.review_packet || {});
+      card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+        button.addEventListener("click", () => openVisualReviewOverlay(button));
+      });
       setMessage("Review packet loaded.", "success");
     } catch (error) {
       setMessage(error.message || "Review packet could not be loaded.", "error");
@@ -642,12 +693,15 @@
       <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
+      <strong>Visual Review</strong>${visualReviewMarkup(packet.visual_review || {}, packet.local_preview || {}, packet.links || {})}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
       <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
+      <strong>Review board</strong>${reviewBoardMarkup(packet.review_board)}
       <strong>Handoff reports</strong>${handoffReportMarkup(packet.handoff_reports)}
       <strong>Backflow</strong>${backflowMarkup(packet.backflow_events)}
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
@@ -663,7 +717,8 @@
         <summary>Agent execution timeline</summary>
         ${agentExecutionSummaryMarkup(execution)}
         <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates || execution.quality_gates)}
-        <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || execution.unresolved_blockers)}
       </details>
     `;
   }
@@ -708,10 +763,53 @@
     `).join("")}</div>`;
   }
 
+  function reviewBoardMarkup(board) {
+    const entries = board && typeof board === "object" ? Object.entries(board) : [];
+    if (!entries.length) return '<p class="charlie-muted">No review-board findings captured yet.</p>';
+    return `<div class="charlie-agent-timeline">${entries.map(([agent, item]) => {
+      const findings = Array.isArray(item.findings) ? item.findings : [];
+      const gate = item.quality_gate || {};
+      return `
+        <article class="charlie-agent-stage">
+          <div><strong>${escapeHtml(agent)}</strong> <span>${escapeHtml(safeText(item.status || "pending"))}</span></div>
+          <p>${escapeHtml(safeText(item.summary || ""))}</p>
+          <dl class="charlie-mission-meta">
+            <div><dt>Risk</dt><dd>${escapeHtml(safeText(item.risk_rating || "--"))}</dd></div>
+            <div><dt>Gate</dt><dd>${escapeHtml(safeText(gate.reason || "--"))}</dd></div>
+            <div><dt>Findings</dt><dd>${escapeHtml(firstReviewText(findings, "--"))}</dd></div>
+          </dl>
+        </article>
+      `;
+    }).join("")}</div>`;
+  }
+
   function backflowMarkup(items) {
     const events = Array.isArray(items) ? items : [];
     if (!events.length) return '<p class="charlie-muted">No agent backflow was needed.</p>';
-    return `<ul>${events.map((event) => `<li>${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}</li>`).join("")}</ul>`;
+    return `<ul>${events.map((event) => {
+      const blockers = Array.isArray(event.unresolved_blockers) ? event.unresolved_blockers : [];
+      return `<li>
+        ${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}
+        ${blockers.length ? unresolvedBlockersMarkup(blockers) : ""}
+      </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function unresolvedBlockersMarkup(items) {
+    const blockers = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!blockers.length) return '<p class="charlie-muted">No unresolved blockers captured.</p>';
+    return `<div class="charlie-unresolved-blockers">${blockers.slice(0, 6).map((item) => {
+      if (typeof item === "string") return `<article><strong>Blocker</strong><span>${escapeHtml(item)}</span></article>`;
+      const severity = safeText(item.severity || "medium").toUpperCase();
+      const location = [item.file, item.line].filter(Boolean).join(":");
+      return `
+        <article>
+          <strong>${escapeHtml(severity)}</strong>
+          <span>${escapeHtml(safeText(item.finding || item.message || item.summary || "Unresolved issue"))}</span>
+          ${location ? `<small>${escapeHtml(location)}</small>` : ""}
+        </article>
+      `;
+    }).join("")}</div>`;
   }
 
   async function createMission(event) {
@@ -1049,19 +1147,98 @@
     });
   }
 
+  function visualReviewMarkup(visualReview, localPreview, links) {
+    const review = visualReview && typeof visualReview === "object" ? visualReview : {};
+    const media = Array.isArray(review.media) ? review.media.filter(Boolean) : [];
+    const preview = review.local_preview && typeof review.local_preview === "object" ? review.local_preview : localPreview;
+    const status = safeText(review.status || "not_available");
+    const summary = safeText(review.summary || "No visual review packet was captured for this mission.");
+    const stageEvidence = Array.isArray(review.stage_evidence) ? review.stage_evidence.filter(Boolean) : [];
+    return `
+      <section class="charlie-visual-review" aria-label="Visual Review">
+        <div class="charlie-visual-review-header">
+          <div>
+            <strong>Visual Review</strong>
+            <span>${escapeHtml(status.replace(/_/g, " "))}</span>
+          </div>
+          ${localPreviewMarkup(preview || {}, links || {})}
+        </div>
+        ${media.length ? `<div class="charlie-visual-review-media">${media.map(visualReviewMediaMarkup).join("")}</div>` : `<p class="charlie-muted">${escapeHtml(summary)}</p>`}
+        ${stageEvidence.length ? `<div class="charlie-visual-stage-evidence">${stageEvidence.slice(0, 4).map((item) => `<span>${escapeHtml(safeText(item.agent || "agent"))}: ${escapeHtml(safeText(item.summary || ""))}</span>`).join("")}</div>` : ""}
+      </section>
+    `;
+  }
+
+  function visualReviewMediaMarkup(item) {
+    const label = safeText(item.label || item.filename || "Review media");
+    const reference = safeText(item.reference || item.url || "");
+    const mediaType = safeText(item.media_type || "image");
+    if (!reference) return "";
+    const thumbnail = mediaType === "video"
+      ? `<video src="${escapeHtml(reference)}" muted playsinline preload="metadata"></video>`
+      : `<img src="${escapeHtml(reference)}" alt="${escapeHtml(label)}" loading="lazy">`;
+    return `
+      <button type="button" class="charlie-visual-thumbnail" data-visual-review-open data-media-src="${escapeHtml(reference)}" data-media-label="${escapeHtml(label)}" data-media-type="${escapeHtml(mediaType)}">
+        ${thumbnail}
+        <span>${escapeHtml(label)}</span>
+      </button>
+    `;
+  }
+
   function blockedReviewBanner(packet) {
     const execution = packet.agent_execution || {};
+    const summary = packet.blocked_summary || {};
     const blockedAgent = packet.blocked_agent || execution.blocked_agent || "agent";
     const blockedReason = packet.blocked_reason || execution.blocked_reason || firstReviewText(packet.errors, "Blocked before owner review.");
     const backflowEvents = Array.isArray(packet.backflow_events) ? packet.backflow_events : (Array.isArray(execution.backflow_events) ? execution.backflow_events : []);
-    const attempts = backflowEvents.length ? `${backflowEvents.length} send-back attempt${backflowEvents.length === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const attemptsValue = summary.send_back_attempts !== undefined ? Number(summary.send_back_attempts) : backflowEvents.length;
+    const attempts = attemptsValue ? `${attemptsValue} send-back attempt${attemptsValue === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const lastStage = safeText(summary.last_successful_stage || "");
+    const recommended = safeText(packet.recommended_next_action || summary.recommended_action || "Use Send Back after reviewing the blockers below.");
+    const blockers = packet.unresolved_blockers || summary.unresolved_blockers || execution.unresolved_blockers || [];
     return `
       <div class="charlie-blocked-banner" role="status">
         <strong>Blocked at ${escapeHtml(blockedAgent)}</strong>
         <span>${escapeHtml(blockedReason)}</span>
-        <small>${escapeHtml(attempts)}. Use Send Back after reviewing the evidence below.</small>
+        <small>${escapeHtml(attempts)}${lastStage ? ` | Last passed: ${escapeHtml(lastStage)}` : ""}</small>
+        ${unresolvedBlockersMarkup(blockers)}
+        <small>${escapeHtml(recommended)}</small>
       </div>
     `;
+  }
+
+  function openVisualReviewOverlay(button) {
+    if (!button) return;
+    closeVisualReviewOverlay();
+    const src = safeText(button.dataset.mediaSrc).trim();
+    if (!src) return;
+    const label = safeText(button.dataset.mediaLabel || "Visual review media");
+    const mediaType = safeText(button.dataset.mediaType || "image");
+    const overlay = document.createElement("div");
+    overlay.className = "charlie-visual-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", label);
+    const media = mediaType === "video"
+      ? `<video src="${escapeHtml(src)}" controls autoplay></video>`
+      : `<img src="${escapeHtml(src)}" alt="${escapeHtml(label)}">`;
+    overlay.innerHTML = `
+      <div class="charlie-visual-overlay-panel">
+        <button type="button" class="charlie-visual-overlay-close" aria-label="Close visual review">Close</button>
+        ${media}
+        <strong>${escapeHtml(label)}</strong>
+      </div>
+    `;
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeVisualReviewOverlay();
+    });
+    overlay.querySelector(".charlie-visual-overlay-close").addEventListener("click", closeVisualReviewOverlay);
+    document.body.appendChild(overlay);
+    overlay.querySelector(".charlie-visual-overlay-close").focus();
+  }
+
+  function closeVisualReviewOverlay() {
+    document.querySelectorAll(".charlie-visual-overlay").forEach((overlay) => overlay.remove());
   }
 
   function queuePriorityValue(mission) {
@@ -1088,6 +1265,9 @@
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeVisualReviewOverlay();
+  });
   setupMediaCapture();
   loadMissions();
 })();

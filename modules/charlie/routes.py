@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_from_directory
 
+from modules.auth.owner_access import require_owner_admin_access as require_owner_write_access
 from modules.auth.owner_access import require_owner_read_access
 from modules.charlie.build_relay import (
     build_relay_policy,
@@ -9,6 +11,8 @@ from modules.charlie.build_relay import (
 )
 from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
+    PROJECT_MEMORY,
+    charlie_brain_registry,
     get_mission,
     get_mission_review_packet,
     list_missions,
@@ -24,6 +28,9 @@ from modules.charlie.mission_store import (
 
 
 charlie_bp = Blueprint("charlie", __name__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -59,7 +66,7 @@ def charlie_build_relay_missions_route():
 
 @charlie_bp.route("/charlie/build-relay/missions", methods=["POST"])
 def charlie_build_relay_mission_create_route():
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -71,7 +78,7 @@ def charlie_build_relay_mission_create_route():
         "title": str(payload.get("title") or raw_text).strip(),
         "urgency": str(payload.get("urgency") or "P2").strip(),
         "mission_type": str(payload.get("mission_type") or "feature build").strip(),
-        "mission_lane": str(payload.get("mission_lane") or payload.get("lane") or "").strip(),
+        "mission_lane": str(payload.get("mission_lane") or payload.get("lane") or "unassigned").strip(),
         "approval_level": str(payload.get("approval_level") or "LEVEL 3").strip(),
         "desired_outcome": str(payload.get("desired_outcome") or "").strip(),
         "scope_summary": str(payload.get("scope_summary") or "").strip(),
@@ -226,7 +233,17 @@ def charlie_build_relay_command_center_route():
                 "charlie_owner_decisions",
                 "charlie_deployments",
                 "charlie_audit_log",
+                "charlie_brain_documents",
+                "charlie_project_memory",
+                "charlie_mission_brain_context",
             ],
+        },
+        "brain": {
+            "version": "charlie_brain_v1",
+            "mode": "markdown_truth_docs_indexed_by_supabase",
+            "document_count": len(charlie_brain_registry()),
+            "project_memory_count": len(PROJECT_MEMORY),
+            "entities": sorted(PROJECT_MEMORY.keys()),
         },
         "release": {
             "waiting_final_bridge": release_approved.get("missions", []),
@@ -243,6 +260,12 @@ def charlie_build_relay_command_center_route():
         "review": {
             "ready": review_ready.get("missions", []),
             "blocked": blocked.get("missions", []),
+            "review_board_agents": [
+                "business_reviewer",
+                "product_reviewer",
+                "security_reviewer",
+                "evidence_reviewer",
+            ],
         },
         "recent_missions": recent.get("missions", []),
         "local_runner": local_status,
@@ -266,7 +289,7 @@ def charlie_build_relay_mission_detail_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["PATCH"])
 def charlie_build_relay_mission_update_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -288,6 +311,29 @@ def charlie_build_relay_mission_review_packet_route(mission_id):
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/build-relay/review-media/<mission_id>/<filename>", methods=["GET"])
+def charlie_build_relay_review_media_route(mission_id, filename):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    safe_mission_id = "".join(char if char.isalnum() or char in "_.-" else "-" for char in str(mission_id or ""))[:120]
+    safe_filename = Path(str(filename or "")).name
+    if not safe_mission_id or not safe_filename or Path(safe_filename).suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    media_dir = REVIEW_MEDIA_DIR / safe_mission_id
+    try:
+        resolved_dir = media_dir.resolve()
+        resolved_root = REVIEW_MEDIA_DIR.resolve()
+    except OSError:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    if resolved_root not in resolved_dir.parents:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    media_path = resolved_dir / safe_filename
+    if not media_path.exists() or not media_path.is_file():
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    return send_from_directory(resolved_dir, safe_filename)
+
+
 def _first_mission(result):
     missions = result.get("missions") or []
     return missions[0] if missions else None
@@ -295,13 +341,14 @@ def _first_mission(result):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["POST"])
 def charlie_build_relay_mission_review_decision_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
+    decision = str(payload.get("decision") or "").strip()
     result, status_code = record_mission_review_decision(
         mission_id,
-        decision=str(payload.get("decision") or "").strip(),
+        decision=decision,
         comments=str(payload.get("comments") or "").strip(),
         target_stage=str(payload.get("target_stage") or "builder").strip(),
     )
@@ -310,7 +357,7 @@ def charlie_build_relay_mission_review_decision_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/decision", methods=["POST"])
 def charlie_build_relay_mission_decision_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -331,7 +378,7 @@ def charlie_build_relay_mission_decision_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/queue", methods=["POST"])
 def charlie_build_relay_mission_queue_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -345,7 +392,7 @@ def charlie_build_relay_mission_queue_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/vault", methods=["POST"])
 def charlie_build_relay_mission_vault_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -369,7 +416,7 @@ def charlie_build_relay_mission_vault_route(mission_id):
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/workflow", methods=["POST"])
 def charlie_build_relay_mission_workflow_route(mission_id):
-    denied = require_owner_read_access()
+    denied = require_owner_write_access()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}

@@ -72,6 +72,24 @@ The current runtime remains backward compatible with `charlie_missions.metadata_
 - `charlie_deployments`
 - `charlie_audit_log`
 
+## CHARLIE Brain v1
+
+The CHARLIE Brain does not replace Markdown truth docs. Markdown remains the human-readable brain for SOPs, business models, owner rules, plans, concepts, workflows, and operating knowledge.
+
+Supabase Brain v1 indexes that brain and links it to missions through `supabase/migrations/202607010001_create_charlie_brain_v1_tables.sql`:
+
+- `charlie_brain_documents`
+- `charlie_project_memory`
+- `charlie_mission_brain_context`
+
+Every new mission context pack can include:
+
+- `brain_registry` - active truth docs, document types, tags, summaries, and rules.
+- `project_memory` - lane/entity memory for CHARLIE CORE, Oom Sakkie, SAM, FRED, Farm Pig Application, or Unassigned.
+- `active_truth_docs` - the concrete Markdown docs agents must read before overriding project assumptions.
+
+This is Stage 1-6 foundation only. The next version should add richer retrieval, document review state, prior-decision loading, and similarity search before deep autonomous income-stream work.
+
 ## Blocked Behavior
 
 If an agent does not produce a valid final artifact, CHARLIE records a blocked review packet with:

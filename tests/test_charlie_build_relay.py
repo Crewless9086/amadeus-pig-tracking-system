@@ -111,16 +111,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["codex_chat_write"]["status"], "repo_file_write_disabled")
         self.assertEqual(action["mission_store"]["status"], "not_configured")
         self.assertEqual(action["mission"]["approval_level"], "LEVEL 3")
-        self.assertEqual(action["mission"]["mission_lane"], "unassigned")
+        self.assertEqual(action["mission"]["mission_lane"]["label"], "CHARLIE CORE")
+        self.assertIn("Lane: CHARLIE CORE", action["telegram_text"])
         self.assertIn("Mission intake prepared", action["telegram_text"])
-        self.assertIn("Lane: Unassigned / General", action["telegram_text"])
-
-    @patch.dict(os.environ, {}, clear=True)
-    def test_mission_action_infers_lane_from_text(self):
-        action = build_relay_action("/mission Improve FRED private transfers customer replies")
-
-        self.assertEqual(action["mission"]["mission_lane"], "fred")
-        self.assertIn("Lane: FRED", action["telegram_text"])
 
     @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "0"}, clear=True)
     def test_mission_store_can_be_disabled(self):
@@ -171,6 +164,48 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("new=2", action["telegram_text"])
         self.assertIn("Test mission", action["telegram_text"])
+
+    @patch("modules.charlie.build_relay.local_runner_status")
+    @patch("modules.charlie.build_relay.mission_status_summary")
+    @patch("modules.charlie.build_relay.list_missions")
+    def test_status_command_returns_mission_control_overview(self, list_missions, mission_status_summary, local_runner_status):
+        local_runner_status.return_value = {"active": True, "status": "runner_active", "last_seen": "2026-07-01T10:00:00Z"}
+        mission_status_summary.return_value = ({
+            "success": True,
+            "status": "ok",
+            "counts": {"in_progress": 1, "pr_ready": 2, "approved": 3, "new": 4},
+        }, 200)
+
+        def fake_list_missions(status="", limit=10):
+            if status == "in_progress":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-ACTIVE123",
+                        "status": "in_progress",
+                        "urgency": "P2",
+                        "approval_level": "LEVEL 3",
+                        "title": "Improve status",
+                    }],
+                }, 200)
+            if status == "new":
+                return ({"success": True, "status": "ok", "missions": []}, 200)
+            return ({"success": True, "status": "ok", "missions": []}, 200)
+
+        list_missions.side_effect = fake_list_missions
+
+        action = build_relay_action("/status")
+
+        self.assertEqual(action["command"], "status")
+        self.assertIn("CHARLIE Mission Control", action["telegram_text"])
+        self.assertIn("Local runner: active", action["telegram_text"])
+        self.assertIn("Queue: in_progress=1, pr_ready=2, approved=3, new=4", action["telegram_text"])
+        self.assertIn("Active:", action["telegram_text"])
+        self.assertNotIn("Active Branches / PRs", action["telegram_text"])
+        buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-ACTIVE123" for button in buttons))
+        self.assertFalse(action["writes_repo_file"])
 
     @patch("modules.charlie.build_relay.list_missions")
     def test_next_command_reports_active_queue_mission(self, list_missions):
@@ -228,6 +263,50 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("/approve <id> level1, level3, or level4", action["telegram_text"])
         buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
         self.assertTrue(any(button["callback_data"] == "approve:CHARLIE-MISSION-NEW12345 level3" for button in buttons))
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-NEW12345" for button in buttons))
+        self.assertFalse(action["writes_repo_file"])
+
+    @patch("modules.charlie.build_relay.local_runner_status")
+    @patch("modules.charlie.build_relay.get_mission")
+    def test_mission_status_callback_returns_quick_live_update_without_findings(self, get_mission, local_runner_status):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+        get_mission.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "CHARLIE-MISSION-STATUS123",
+                "status": "in_progress",
+                "urgency": "P2",
+                "mission_type": "feature build",
+                "mission_lane": {"id": "charlie_core", "label": "CHARLIE CORE"},
+                "approval_level": "LEVEL 3",
+                "title": "Improve Telegram status",
+                "vault": {
+                    "mission_stage": "builder",
+                    "problem_statement": "Detailed owner problem should not appear.",
+                },
+                "agent_workflow": [
+                    {"agent": "planner", "status": "complete", "findings": "Planner findings should not appear."},
+                    {"agent": "builder", "status": "in_progress", "findings": "Builder findings should not appear."},
+                ],
+                "review_packet": {"summary": "Review packet detail should not appear."},
+            },
+        }, 200)
+
+        action = build_relay_action("status:CHARLIE-MISSION-STATUS123")
+
+        self.assertEqual(action["command"], "mission_status")
+        self.assertIn("Mission status", action["telegram_text"])
+        self.assertIn("Improve Telegram status", action["telegram_text"])
+        self.assertIn("Mission status: in_progress", action["telegram_text"])
+        self.assertIn("Current agent: builder (in_progress)", action["telegram_text"])
+        self.assertIn("Vault stage: builder", action["telegram_text"])
+        self.assertNotIn("Planner findings", action["telegram_text"])
+        self.assertNotIn("Builder findings", action["telegram_text"])
+        self.assertNotIn("Detailed owner problem", action["telegram_text"])
+        self.assertNotIn("Review packet detail", action["telegram_text"])
+        buttons = [button for row in action["reply_markup"]["inline_keyboard"] for button in row]
+        self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-STATUS123" for button in buttons))
         self.assertFalse(action["writes_repo_file"])
 
     @patch("modules.charlie.build_relay.get_mission")
@@ -240,7 +319,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 "status": "new",
                 "urgency": "P2",
                 "mission_type": "feature build",
-                "mission_lane": {"id": "sam", "label": "SAM"},
+                "mission_lane": {"id": "charlie_core", "label": "CHARLIE CORE"},
                 "approval_level": "LEVEL 3",
                 "title": "Build console",
                 "owner_decision": "",
@@ -252,7 +331,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(action["command"], "mission_detail")
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("Build console", action["telegram_text"])
-        self.assertIn("Lane: SAM", action["telegram_text"])
+        self.assertIn("Lane: CHARLIE CORE", action["telegram_text"])
         self.assertIn("/approve <id>", action["telegram_text"])
         self.assertIn("inline_keyboard", action["reply_markup"])
 
@@ -385,6 +464,22 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_missions.assert_called_once_with(status="", limit="1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.list_missions")
+    def test_missions_route_passes_owner_queue_filter(self, list_missions, _owner_access):
+        list_missions.return_value = ({
+            "success": True,
+            "status": "ok",
+            "missions": [{"mission_id": "MISSION-1", "status": "approved"}],
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions?status=owner_queue&limit=30")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        list_missions.assert_called_once_with(status="owner_queue", limit="30")
+
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.record_mission")
     def test_dashboard_can_create_structured_mission(self, record_mission, _owner_access):
         record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)
@@ -397,6 +492,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 "desired_outcome": "Mission is stored with useful context.",
                 "urgency": "P2",
                 "mission_type": "agent build",
+                "mission_lane": "oom_sakkie",
                 "media_references": [{"label": "Sketch", "reference": "planning/inbox/screenshots/sketch.png"}],
             },
         )
@@ -408,27 +504,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
         mission_arg = record_mission.call_args.args[0]
         self.assertEqual(mission_arg["title"], "Build mission vault")
         self.assertEqual(mission_arg["desired_outcome"], "Mission is stored with useful context.")
-        self.assertEqual(mission_arg["mission_lane"], "")
+        self.assertEqual(mission_arg["mission_lane"], "oom_sakkie")
         self.assertEqual(mission_arg["media_references"][0]["label"], "Sketch")
         self.assertEqual(record_mission.call_args.kwargs["source_context"]["source"], "charlie_dashboard")
-
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
-    @patch("modules.charlie.routes.record_mission")
-    def test_dashboard_can_create_mission_with_lane(self, record_mission, _owner_access):
-        record_mission.return_value = ({"stored": True, "status": "ok", "mission_id": "MISSION-1"}, 201)
-
-        response = self.client.post(
-            "/api/charlie/build-relay/missions",
-            json={
-                "title": "Build FRED lane",
-                "raw_text": "Improve FRED private transfers replies.",
-                "mission_lane": "fred",
-            },
-        )
-
-        self.assertEqual(response.status_code, 201)
-        mission_arg = record_mission.call_args.args[0]
-        self.assertEqual(mission_arg["mission_lane"], "fred")
 
     def test_mission_media_sanitizer_preserves_bounded_image_data_urls(self):
         image_reference = "data:image/png;base64," + ("A" * 1024)
@@ -452,7 +530,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
         self.assertEqual(media, {})
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_vault")
     def test_dashboard_can_update_mission_vault(self, update_mission_vault, _owner_access):
         update_mission_vault.return_value = ({
@@ -478,7 +556,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_vault.call_args.args[0], "MISSION-1")
         self.assertEqual(update_mission_vault.call_args.kwargs["status"], "planned")
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_workflow_step")
     def test_dashboard_can_update_workflow_step(self, update_workflow, _owner_access):
         update_workflow.return_value = ({
@@ -532,7 +610,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["mission"]["mission_id"], "MISSION-1")
         get_mission.assert_called_once_with("MISSION-1")
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.update_new_mission_intake")
     def test_dashboard_can_patch_new_mission_intake(self, update_intake, _owner_access):
         update_intake.return_value = ({
@@ -548,7 +626,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
             json={
                 "updates": {
                     "title": "Updated mission",
-                    "mission_lane": "oom_sakkie",
+                    "mission_lane": "fred",
                     "desired_outcome": "Better intake detail.",
                     "media_references": [
                         {"label": "Extra screenshot", "reference": "data:image/png;base64,ZmFrZQ==", "media_type": "image"},
@@ -564,7 +642,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         update_intake.assert_called_once()
         self.assertEqual(update_intake.call_args.args[0], "MISSION-1")
         self.assertEqual(update_intake.call_args.kwargs["updates"]["title"], "Updated mission")
-        self.assertEqual(update_intake.call_args.kwargs["updates"]["mission_lane"], "oom_sakkie")
+        self.assertEqual(update_intake.call_args.kwargs["updates"]["mission_lane"], "fred")
         self.assertEqual(update_intake.call_args.kwargs["updates"]["media_references"][0]["label"], "Extra screenshot")
         self.assertEqual(update_intake.call_args.kwargs["comment"], "Added before approval.")
 
@@ -591,7 +669,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("Dashboard review decisions", data["review_packet"]["execution_boundary"])
         get_review_packet.assert_called_once_with("MISSION-1")
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.record_mission_review_decision")
     def test_mission_review_decision_route_records_owner_gate_decision(self, record_review_decision, _owner_access):
         record_review_decision.return_value = ({
@@ -618,7 +696,28 @@ class CharlieBuildRelayTests(unittest.TestCase):
             target_stage="tester",
         )
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
+    @patch("modules.charlie.routes.record_mission_review_decision")
+    def test_mission_review_decision_route_records_done_without_local_cleanup(self, record_review_decision, _owner_access):
+        record_review_decision.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission_id": "MISSION-1",
+            "mission_status": "done",
+            "review_decision": "mark_done",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/review",
+            json={"decision": "mark_done", "comments": "No release needed."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertNotIn("visual_review_cleanup", data)
+
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_status")
     def test_mission_decision_route_records_owner_decision(self, update_mission_status, _owner_access):
         update_mission_status.return_value = ({
@@ -641,7 +740,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_mission_status.call_args.kwargs["approval_level"], "LEVEL 3")
         self.assertEqual(update_mission_status.call_args.kwargs["event_type"], "approval_decision")
 
-    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=None)
     @patch("modules.charlie.routes.update_mission_queue_priority")
     def test_mission_queue_route_updates_priority(self, update_queue_priority, _owner_access):
         update_queue_priority.return_value = ({
@@ -665,6 +764,38 @@ class CharlieBuildRelayTests(unittest.TestCase):
             priority=15,
             notes="Move this up.",
         )
+
+    @patch("modules.charlie.routes.require_owner_write_access", return_value=({"success": False, "status": "owner_admin_access_denied"}, 403))
+    @patch("modules.charlie.routes.update_mission_status")
+    def test_mission_decision_route_requires_owner_write_access(self, update_mission_status, _owner_access):
+        response = self.client.post(
+            "/api/charlie/build-relay/missions/MISSION-1/decision",
+            json={"status": "approved", "approval_level": "LEVEL 3"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "owner_admin_access_denied")
+        update_mission_status.assert_not_called()
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.local_runner_status", return_value={"active": False, "status": "runner_not_started"})
+    @patch("modules.charlie.routes.mission_status_summary")
+    @patch("modules.charlie.routes.list_missions")
+    def test_command_center_exposes_vault_brain_and_review_board(self, list_missions, mission_summary, _runner, _owner_access):
+        mission_summary.return_value = ({"success": True, "status": "ok", "counts": {"new": 1}}, 200)
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
+
+        response = self.client.get("/api/charlie/build-relay/command-center")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["vault"]["version"], "charlie_vault_v1")
+        self.assertIn("charlie_brain_documents", data["vault"]["structured_tables"])
+        self.assertEqual(data["brain"]["version"], "charlie_brain_v1")
+        self.assertGreaterEqual(data["brain"]["document_count"], 1)
+        self.assertIn("sam", data["brain"]["entities"])
+        self.assertIn("business_reviewer", data["review"]["review_board_agents"])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.local_runner_status")
@@ -784,7 +915,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertFalse(action["writes_repo_file"])
         self.assertIn("CHARLIE Build Relay", action["telegram_text"])
 
-    def test_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+    def test_placeholder_mission_action_does_not_update_codex_chat(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             planning = root / "planning"
@@ -803,9 +934,33 @@ class CharlieBuildRelayTests(unittest.TestCase):
             action = build_relay_action("/mission Build CHARLIE Relay", environ=env)
             updated = codex_chat.read_text(encoding="utf-8")
 
+            self.assertFalse(action["writes_repo_file"])
+            self.assertEqual(action["mission_store"]["status"], "mission_intake_too_vague")
+            self.assertIn("old", updated)
+            self.assertNotIn("Build CHARLIE Relay", updated)
+
+    def test_specific_mission_action_can_update_codex_chat_when_explicitly_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            planning = root / "planning"
+            planning.mkdir()
+            codex_chat = planning / "CODEX_CHAT.md"
+            codex_chat.write_text(
+                "# CODEX CHAT\n\n"
+                "### Concept / Problem / Idea\n\n```text\nold\n```\n\n"
+                "### Desired Outcome\n\n```text\nold outcome\n```\n",
+                encoding="utf-8",
+            )
+            env = {
+                "CHARLIE_BUILD_RELAY_REPO_ROOT": str(root),
+                "CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED": "1",
+            }
+            action = build_relay_action("/mission Improve CHARLIE queue filters for real owner missions", environ=env)
+            updated = codex_chat.read_text(encoding="utf-8")
+
             self.assertTrue(action["writes_repo_file"])
             self.assertEqual(action["codex_chat_write"]["status"], "codex_chat_updated")
-            self.assertIn("Build CHARLIE Relay", updated)
+            self.assertIn("Improve CHARLIE queue filters", updated)
             self.assertIn("Codex scopes this Telegram mission", updated)
 
 

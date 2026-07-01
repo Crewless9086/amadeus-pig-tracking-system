@@ -9,7 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.execution_bridge import complete_no_release_mission, prepare_release_execution, run_release_execution
+from modules.charlie.execution_bridge import (
+    complete_no_release_mission,
+    prepare_release_execution,
+    process_visual_review_cleanup_queue,
+    run_release_execution,
+)
 
 
 def main():
@@ -19,9 +24,13 @@ def main():
     parser.add_argument("--complete-no-release", action="store_true", help="Mark a release_approved mission done when no merge/deploy is required.")
     parser.add_argument("--merge-pr", action="store_true", help="Merge the PR referenced by the owner-approved review packet.")
     parser.add_argument("--verify-url", default="", help="Optional URL to check after merge before marking deployed instead of merged.")
+    parser.add_argument("--cleanup-review-media", action="store_true", help="Process local visual review cleanup requests for approved/done missions.")
     args = parser.parse_args()
 
-    if args.merge_pr:
+    if args.cleanup_review_media:
+        result = process_visual_review_cleanup_queue()
+        status_code = 200
+    elif args.merge_pr:
         result, status_code = run_release_execution(
             mission_id=args.mission_id,
             merge_pr=True,

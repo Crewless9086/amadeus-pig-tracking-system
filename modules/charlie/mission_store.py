@@ -62,6 +62,120 @@ MISSION_LANES = {
         "description": "Mission lane not selected yet.",
     },
 }
+CHARLIE_BRAIN_DOCUMENTS = [
+    {
+        "doc_path": "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
+        "title": "CHARLIE Mission Protocol",
+        "entity_key": "charlie_core",
+        "document_type": "governance",
+        "tags": ["mission_control", "approval", "owner_gate", "workflow"],
+        "summary": "Mission intake, approval, owner review, and release rules for CHARLIE-controlled work.",
+    },
+    {
+        "doc_path": "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md",
+        "title": "CHARLIE Agent Runner v2",
+        "entity_key": "charlie_core",
+        "document_type": "runner_sop",
+        "tags": ["runner", "agents", "handoff", "quality_gates"],
+        "summary": "Agent Runner v2 workflow, stage artifacts, blocked behavior, owner review, and release handling.",
+    },
+    {
+        "doc_path": "docs/00-start-here/CURRENT_STATE.md",
+        "title": "Current State",
+        "entity_key": "charlie_core",
+        "document_type": "state",
+        "tags": ["current_truth", "status", "system_state"],
+        "summary": "Current project truth and active operational state.",
+    },
+    {
+        "doc_path": "docs/00-start-here/NEXT_STEPS.md",
+        "title": "Next Steps",
+        "entity_key": "charlie_core",
+        "document_type": "planning",
+        "tags": ["next_steps", "roadmap", "priorities"],
+        "summary": "Current roadmap and prioritized work queue context.",
+    },
+    {
+        "doc_path": "docs/00-start-here/WORKFLOW.md",
+        "title": "Workflow",
+        "entity_key": "charlie_core",
+        "document_type": "workflow",
+        "tags": ["workflow", "handoff", "how_we_work"],
+        "summary": "How owner notes become scoped work, phases, and controlled execution.",
+    },
+    {
+        "doc_path": "docs/00-start-here/DEPLOYMENT_SOP.md",
+        "title": "Deployment SOP",
+        "entity_key": "charlie_core",
+        "document_type": "sop",
+        "tags": ["deployment", "release", "verification"],
+        "summary": "Release and deployment safety rules.",
+    },
+    {
+        "doc_path": "docs/00-start-here/OWNER_INBOX_GUIDE.md",
+        "title": "Owner Inbox Guide",
+        "entity_key": "charlie_core",
+        "document_type": "owner_sop",
+        "tags": ["owner", "inbox", "intake"],
+        "summary": "Owner intake and inbox usage guide.",
+    },
+]
+PROJECT_MEMORY = {
+    "charlie_core": {
+        "project_key": "charlie_core",
+        "entity_key": "charlie_core",
+        "name": "CHARLIE CORE",
+        "purpose": "Governed AI operating system for Amadeus missions, agents, evidence, owner review, and release control.",
+        "active_systems": ["Mission Control", "Agent Runner v2", "Mission Vault", "Telegram Build Relay"],
+        "open_priorities": ["runner reliability", "mission vault", "knowledge brain", "owner command center"],
+        "known_risks": ["silent stuck runners", "weak evidence", "over-broad automation authority"],
+    },
+    "oom_sakkie": {
+        "project_key": "oom_sakkie",
+        "entity_key": "oom_sakkie",
+        "name": "Oom Sakkie",
+        "purpose": "Farm manager and operations command surface.",
+        "active_systems": ["farm operations", "specialist dry-run surface"],
+        "open_priorities": ["farm truth", "safe specialist handoffs", "owner-visible command state"],
+        "known_risks": ["farm lifecycle writes without owner approval", "stale operational data"],
+    },
+    "sam": {
+        "project_key": "sam",
+        "entity_key": "sam",
+        "name": "SAM",
+        "purpose": "Sales agent and meat money-path workflow.",
+        "active_systems": ["meat leads", "quotes", "sales conversation learning"],
+        "open_priorities": ["income path clarity", "customer-safe messaging", "evidence-backed sales workflow"],
+        "known_risks": ["public/customer output without owner review", "stock/payment/reservation mistakes"],
+    },
+    "fred": {
+        "project_key": "fred",
+        "entity_key": "fred",
+        "name": "FRED",
+        "purpose": "AMADEUS Private Transfers customer talking and transport engine.",
+        "active_systems": ["private transfer concept lane"],
+        "open_priorities": ["business model", "customer workflow", "quote/reservation boundaries"],
+        "known_risks": ["premature customer commitments", "pricing/availability uncertainty"],
+    },
+    "farm_pig_application": {
+        "project_key": "farm_pig_application",
+        "entity_key": "farm_pig_application",
+        "name": "Farm Pig Application",
+        "purpose": "Pig tracking, litters, weights, breeding, stock, and farm app workflows.",
+        "active_systems": ["pig records", "litters", "weights", "farm Supabase cutover"],
+        "open_priorities": ["data quality", "safe writes", "owner-visible farm truth"],
+        "known_risks": ["lifecycle record corruption", "stale sheet/Supabase state"],
+    },
+    "unassigned": {
+        "project_key": "unassigned",
+        "entity_key": "unassigned",
+        "name": "Unassigned / General",
+        "purpose": "General missions that have not yet been mapped to a business lane.",
+        "active_systems": [],
+        "open_priorities": ["classify lane before deep work"],
+        "known_risks": ["unclear ownership", "wrong context loaded"],
+    },
+}
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
 MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
@@ -75,6 +189,51 @@ MISSION_CONTEXT_DOCS = [
 AGENT_SEQUENCE = ["planner", "architect", "builder", "tester", "reviewer"]
 CORE_AGENT_SEQUENCE_V2 = ["planner", "architect", "builder", "tester", "qa_red_team", "reviewer"]
 SPECIALIST_AGENT_SEQUENCE = ["idea_expander", "product_architect"]
+REVIEW_BOARD_AGENT_SEQUENCE = ["business_reviewer", "product_reviewer", "security_reviewer", "evidence_reviewer"]
+WORKFLOW_TEMPLATES = {
+    "software_build": {
+        "label": "Software Build",
+        "mission_type_tokens": {"software build", "feature build", "agent build", "code", "dashboard", "app"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["product_reviewer", "security_reviewer", "evidence_reviewer"],
+        "quality_focus": ["user workflow", "regression risk", "security/privacy", "test and PR evidence"],
+    },
+    "business_plan": {
+        "label": "Business Plan",
+        "mission_type_tokens": {"business plan", "business", "strategy"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["business_reviewer", "product_reviewer", "evidence_reviewer"],
+        "quality_focus": ["income logic", "owner value", "operational fit", "evidence quality"],
+    },
+    "system_improvement": {
+        "label": "System Improvement",
+        "mission_type_tokens": {"system improvement", "governance", "runner", "relay", "ops"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["product_reviewer", "security_reviewer", "evidence_reviewer"],
+        "quality_focus": ["system truth", "operator workflow", "permission boundary", "rollback evidence"],
+    },
+    "content_engine": {
+        "label": "Content Engine",
+        "mission_type_tokens": {"content engine", "content", "marketing", "post"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["business_reviewer", "product_reviewer", "security_reviewer", "evidence_reviewer"],
+        "quality_focus": ["brand/business fit", "audience flow", "public-output safety", "evidence"],
+    },
+    "automation_workflow": {
+        "label": "Automation Workflow",
+        "mission_type_tokens": {"automation workflow", "automation", "workflow", "n8n"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["product_reviewer", "security_reviewer", "evidence_reviewer"],
+        "quality_focus": ["trigger contract", "data boundary", "failure handling", "run evidence"],
+    },
+    "income_stream": {
+        "label": "Income Stream",
+        "mission_type_tokens": {"income stream", "income", "revenue", "money path", "sales engine"},
+        "specialist_agents": ["idea_expander", "product_architect"],
+        "review_board_agents": ["business_reviewer", "product_reviewer", "security_reviewer", "evidence_reviewer"],
+        "quality_focus": ["profit path", "customer value", "operational capacity", "risk and evidence"],
+    },
+}
 AGENT_DEFINITIONS = {
     "idea_expander": {
         "purpose": "Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.",
@@ -104,6 +263,22 @@ AGENT_DEFINITIONS = {
     },
     "qa_red_team": {
         "purpose": "Challenge the work for regressions, unsafe actions, weak evidence, and owner-risk before review.",
+        "handoff_to": "review_board",
+    },
+    "business_reviewer": {
+        "purpose": "Review owner value, income logic, operational fit, pricing assumptions, and business risks.",
+        "handoff_to": "product_reviewer",
+    },
+    "product_reviewer": {
+        "purpose": "Review user flow, acceptance fit, command-center clarity, and product completeness.",
+        "handoff_to": "security_reviewer",
+    },
+    "security_reviewer": {
+        "purpose": "Review permissions, secrets, data boundaries, public/customer actions, and unsafe automation risk.",
+        "handoff_to": "evidence_reviewer",
+    },
+    "evidence_reviewer": {
+        "purpose": "Review proof quality, tests, artifacts, screenshots, PR links, and reproducibility before final review.",
         "handoff_to": "reviewer",
     },
     "reviewer": {
@@ -119,6 +294,10 @@ AGENT_STAGE_MAP = {
     "builder": "built",
     "tester": "tested",
     "qa_red_team": "qa_reviewed",
+    "business_reviewer": "business_reviewed",
+    "product_reviewer": "product_reviewed",
+    "security_reviewer": "security_reviewed",
+    "evidence_reviewer": "evidence_reviewed",
     "reviewer": "review_ready",
 }
 REVIEW_DECISIONS = {
@@ -136,8 +315,34 @@ REVIEW_DECISION_STATUS = {
     "mark_done": "done",
 }
 QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
+OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
+OWNER_QUEUE_STATUSES = (
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "release_approved",
+    "release_in_progress",
+    "approved",
+    "new",
+)
 QUEUE_PRIORITY_DEFAULT = 100
 QUEUE_PRIORITY_MAX = 999
+OPEN_DUPLICATE_STATUSES = {
+    "new",
+    "triaged",
+    "planned",
+    "approved",
+    "in_progress",
+    "blocked",
+    "pr_ready",
+    "release_approved",
+    "release_in_progress",
+}
+PLACEHOLDER_MISSION_TITLES = {
+    "build charlie relay",
+    "charlie relay",
+    "<idea>",
+}
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -146,6 +351,13 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     raw_text = _clean_text(mission.get("raw_text", ""), 3000)
     if not raw_text:
         return {"stored": False, "status": "mission_text_required"}, 400
+    intake_quality = _mission_intake_quality(mission, raw_text)
+    if intake_quality["blocked"]:
+        return {
+            "stored": False,
+            "status": "mission_intake_too_vague",
+            "reason": intake_quality["reason"],
+        }, 400
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -155,6 +367,20 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
+                duplicate = _find_open_duplicate_mission(cursor, params)
+                if duplicate:
+                    _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                        "source": params["source"],
+                        "duplicate_title": params["title"],
+                    })
+                    return {
+                        "stored": False,
+                        "configured": True,
+                        "status": "duplicate_open_mission",
+                        "mission_id": duplicate["mission_id"],
+                        "existing_status": duplicate["status"],
+                        "title": duplicate["title"],
+                    }, 200
                 cursor.execute(
                     """
                     insert into public.charlie_missions (
@@ -227,8 +453,17 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
 
     parsed_limit = _bounded_limit(limit)
     clean_status = _clean_text(status, 40)
+    queue_filter = _mission_queue_filter(clean_status)
     params = {"status": clean_status, "limit": parsed_limit}
-    where_clause = "where status = %(status)s" if clean_status else ""
+    where_clause = ""
+    if queue_filter == "owner_queue":
+        params["owner_queue_statuses"] = list(OWNER_QUEUE_STATUSES)
+        where_clause = """
+                    where status = any(%(owner_queue_statuses)s)
+                      and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                    """
+    elif clean_status:
+        where_clause = "where status = %(status)s"
     order_clause = _mission_order_clause(clean_status)
     try:
         with _connect(database_url, connect_factory) as connection:
@@ -514,20 +749,103 @@ def normalize_mission_lane(value):
     return lane
 
 
+def normalize_workflow_template(value):
+    raw = _clean_text(value, 100)
+    normalized = raw.lower().replace("&", "and")
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+    aliases = {
+        "": "",
+        "feature": "software_build",
+        "feature_build": "software_build",
+        "software": "software_build",
+        "software_build": "software_build",
+        "agent": "software_build",
+        "agent_build": "software_build",
+        "app": "software_build",
+        "business": "business_plan",
+        "business_plan": "business_plan",
+        "strategy": "business_plan",
+        "system": "system_improvement",
+        "system_improvement": "system_improvement",
+        "governance": "system_improvement",
+        "content": "content_engine",
+        "content_engine": "content_engine",
+        "marketing": "content_engine",
+        "automation": "automation_workflow",
+        "automation_workflow": "automation_workflow",
+        "workflow": "automation_workflow",
+        "n8n": "automation_workflow",
+        "income": "income_stream",
+        "income_stream": "income_stream",
+        "revenue": "income_stream",
+        "money_path": "income_stream",
+        "sales_engine": "income_stream",
+    }
+    template_id = aliases.get(normalized, normalized)
+    if template_id in WORKFLOW_TEMPLATES:
+        return _public_workflow_template(template_id)
+    mission_type = raw.lower()
+    for candidate_id, template in WORKFLOW_TEMPLATES.items():
+        tokens = template.get("mission_type_tokens") or set()
+        if any(token in mission_type for token in tokens):
+            return _public_workflow_template(candidate_id)
+    return _public_workflow_template("software_build")
+
+
+def _public_workflow_template(template_id):
+    template = dict(WORKFLOW_TEMPLATES[template_id])
+    template.pop("mission_type_tokens", None)
+    template["id"] = template_id
+    return template
+
+
 def agent_sequence_for_mission(mission_type=""):
-    mission_type = _clean_text(mission_type, 80).lower()
+    template = normalize_workflow_template(mission_type)
     sequence = []
-    for agent in SPECIALIST_AGENT_SEQUENCE:
-        definition = AGENT_DEFINITIONS.get(agent, {})
-        types = definition.get("mission_types") or set()
-        if any(token in mission_type for token in types):
+    for agent in template.get("specialist_agents") or []:
+        if agent in SPECIALIST_AGENT_SEQUENCE and agent not in sequence:
             sequence.append(agent)
-    sequence.extend(CORE_AGENT_SEQUENCE_V2)
+    sequence.extend([agent for agent in CORE_AGENT_SEQUENCE_V2 if agent != "reviewer"])
+    for agent in template.get("review_board_agents") or []:
+        if agent in REVIEW_BOARD_AGENT_SEQUENCE and agent not in sequence:
+            sequence.append(agent)
+    sequence.append("reviewer")
     return sequence
 
 
 def all_agent_names():
     return list(AGENT_DEFINITIONS.keys())
+
+
+def charlie_brain_registry(entity_key=""):
+    entity_key = _clean_text(entity_key, 80).lower() or ""
+    documents = []
+    for item in CHARLIE_BRAIN_DOCUMENTS:
+        if entity_key and item.get("entity_key") not in {entity_key, "charlie_core"}:
+            continue
+        documents.append({
+            "doc_path": item["doc_path"],
+            "title": item["title"],
+            "entity_key": item["entity_key"],
+            "document_type": item["document_type"],
+            "tags": list(item.get("tags") or []),
+            "summary": item.get("summary", ""),
+            "status": "active",
+            "owner_approved": True,
+            "confidence_level": "working",
+        })
+    return documents
+
+
+def project_memory_for_lane(lane):
+    lane_id = lane.get("id") if isinstance(lane, dict) else ""
+    lane_id = lane_id or normalize_mission_lane(lane)["id"]
+    memory = dict(PROJECT_MEMORY.get(lane_id) or PROJECT_MEMORY["unassigned"])
+    memory["active_truth_docs"] = [
+        item["doc_path"]
+        for item in charlie_brain_registry(memory.get("entity_key", ""))
+    ]
+    return memory
 
 
 def record_mission_event(mission_id, event_type, notes="", metadata=None, database_url=None, connect_factory=None):
@@ -926,6 +1244,18 @@ def record_mission_review_decision(
         "last_owner_review_decision": decision_record,
         "review_status": "final_approved" if decision == "approve_final_release" else decision,
     })
+    if decision in {"approve_final_release", "mark_done"}:
+        visual_review = review_packet.get("visual_review") if isinstance(review_packet.get("visual_review"), dict) else {}
+        cleanup = visual_review.get("cleanup") if isinstance(visual_review.get("cleanup"), dict) else {}
+        if visual_review:
+            cleanup.update({
+                "required": bool(cleanup.get("required", visual_review.get("ui_related", False))),
+                "status": "cleanup_requested",
+                "requested_at": decision_record["recorded_at"],
+                "requested_by_decision": decision,
+            })
+            visual_review["cleanup"] = cleanup
+            review_packet["visual_review"] = visual_review
     if decision == "send_back":
         review_packet["return_to_stage"] = target_stage
         review_packet["owner_comments_pending"] = comments
@@ -1032,6 +1362,7 @@ def build_mission_review_packet(mission):
         "changed_files": _packet_list(packet, "changed_files", []),
         "test_evidence": _packet_list(packet, "test_evidence", vault.get("test_plan") if isinstance(vault.get("test_plan"), list) else []),
         "local_preview": packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {},
+        "visual_review": packet.get("visual_review") if isinstance(packet.get("visual_review"), dict) else _default_visual_review(packet),
         "links": packet.get("links") if isinstance(packet.get("links"), dict) else {},
         "release_notes": _packet_list(packet, "release_notes", []),
         "agent_execution": packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else metadata.get("agent_execution", {}),
@@ -1040,6 +1371,11 @@ def build_mission_review_packet(mission):
         "qa_evidence": _packet_list(packet, "qa_evidence", []),
         "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else {},
         "backflow_events": packet.get("backflow_events") if isinstance(packet.get("backflow_events"), list) else [],
+        "blocked_agent": packet.get("blocked_agent", ""),
+        "blocked_reason": packet.get("blocked_reason", ""),
+        "blocked_summary": packet.get("blocked_summary") if isinstance(packet.get("blocked_summary"), dict) else {},
+        "unresolved_blockers": packet.get("unresolved_blockers") if isinstance(packet.get("unresolved_blockers"), list) else [],
+        "recommended_next_action": packet.get("recommended_next_action", ""),
         "owner_review_decisions": metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else [],
         "agent_workflow": workflow,
         "mission_vault": vault,
@@ -1088,6 +1424,7 @@ def _mission_params(mission, source_context):
     mission_id = _clean_text(mission.get("mission_id", ""), 90) or _mission_id(raw_text, source_context, now)
     metadata = mission.get("metadata", {}) if isinstance(mission.get("metadata"), dict) else {}
     metadata = _mission_metadata(raw_text, mission, source_context, metadata)
+    metadata.setdefault("intake_quality", _mission_intake_quality(mission, raw_text))
     return {
         "mission_id": mission_id,
         "status": _clean_text(mission.get("status", "new"), 40) or "new",
@@ -1146,14 +1483,16 @@ def _mission_row(row):
         mission_lane = normalize_mission_lane(metadata["mission_lane"].get("id") or metadata["mission_lane"].get("label"))
     queue = metadata.get("queue") if isinstance(metadata.get("queue"), dict) else {}
     queue_priority = _clean_queue_priority(queue.get("priority")) if queue else None
+    raw_text = row[5]
+    title = row[6]
     return {
         "mission_id": row[0],
         "status": row[1],
         "source": row[2],
         "telegram_user_id": row[3],
         "telegram_chat_id": row[4],
-        "raw_text": row[5],
-        "title": row[6],
+        "raw_text": raw_text,
+        "title": title,
         "urgency": row[7],
         "mission_type": row[8],
         "approval_level": row[9],
@@ -1167,6 +1506,7 @@ def _mission_row(row):
             "updated_at": _clean_text(queue.get("updated_at", ""), 80) if queue else "",
         },
         "queue_priority": queue_priority if queue_priority is not None else QUEUE_PRIORITY_DEFAULT,
+        "queue_class": _mission_queue_class(title, raw_text, metadata),
         "vault": metadata.get("mission_vault", {}) if isinstance(metadata.get("mission_vault"), dict) else {},
         "agent_workflow": metadata.get("agent_workflow", []) if isinstance(metadata.get("agent_workflow"), list) else [],
         "media_references": metadata.get("media_references", []) if isinstance(metadata.get("media_references"), list) else [],
@@ -1176,15 +1516,81 @@ def _mission_row(row):
     }
 
 
+def _find_open_duplicate_mission(cursor, params):
+    cursor.execute(
+        """
+        select mission_id, status, title, raw_text
+        from public.charlie_missions
+        where status = any(%(statuses)s)
+        order by updated_at desc
+        limit 250
+        """,
+        {"statuses": sorted(OPEN_DUPLICATE_STATUSES)},
+    )
+    new_title = _normalize_mission_text(params.get("title", ""))
+    new_raw = _normalize_mission_text(params.get("raw_text", ""))
+    for row in cursor.fetchall():
+        existing_title = _normalize_mission_text(row[2])
+        existing_raw = _normalize_mission_text(row[3])
+        if new_raw and existing_raw == new_raw:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+        if new_title and existing_title == new_title and len(new_title) >= 18:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+    return None
+
+
+def _mission_intake_quality(mission, raw_text):
+    title = _normalize_mission_text(mission.get("title") or raw_text)
+    raw = _normalize_mission_text(raw_text)
+    if title in PLACEHOLDER_MISSION_TITLES and raw in PLACEHOLDER_MISSION_TITLES:
+        return {
+            "blocked": True,
+            "reason": "placeholder_charlie_relay_title_without_specific_goal",
+            "queue_class": "system_noise",
+        }
+    if len(raw) < 12:
+        return {
+            "blocked": True,
+            "reason": "mission_text_too_short",
+            "queue_class": "low_signal",
+        }
+    return {
+        "blocked": False,
+        "reason": "",
+        "queue_class": _mission_queue_class(mission.get("title") or raw_text, raw_text, mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}),
+    }
+
+
+def _mission_queue_class(title, raw_text, metadata=None):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    intake_quality = metadata.get("intake_quality") if isinstance(metadata.get("intake_quality"), dict) else {}
+    if intake_quality.get("queue_class"):
+        return str(intake_quality.get("queue_class"))
+    normalized_title = _normalize_mission_text(title)
+    normalized_raw = _normalize_mission_text(raw_text)
+    if normalized_title in PLACEHOLDER_MISSION_TITLES and normalized_raw in PLACEHOLDER_MISSION_TITLES:
+        return "system_noise"
+    if "smoke test" in normalized_title or "validation mission" in normalized_title:
+        return "system_test"
+    return "owner_work"
+
+
+def _normalize_mission_text(value):
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
     lane_value = mission.get("mission_lane", mission.get("lane", metadata.get("mission_lane", "")))
     if isinstance(lane_value, dict):
         lane_value = lane_value.get("id") or lane_value.get("label") or ""
     metadata["mission_lane"] = normalize_mission_lane(lane_value)
-    metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
-    metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", "")))
-    metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", "")))
+    template_value = mission.get("workflow_template", mission.get("template", mission.get("mission_type", "")))
+    metadata["workflow_template"] = normalize_workflow_template(template_value)
+    workflow_template_id = metadata["workflow_template"]["id"]
+    metadata.setdefault("mission_vault", _default_mission_vault(raw_text, {**mission, "workflow_template": workflow_template_id}))
+    metadata.setdefault("agent_workflow", _default_agent_workflow(workflow_template_id))
+    metadata.setdefault("mission_context_pack", _default_context_pack(workflow_template_id, metadata["mission_lane"]))
     media_references = mission.get("media_references")
     if isinstance(media_references, list):
         metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
@@ -1201,8 +1607,10 @@ def _mission_metadata(raw_text, mission, source_context, metadata):
 
 
 def _default_mission_vault(raw_text, mission):
+    template = normalize_workflow_template(mission.get("workflow_template", mission.get("template", mission.get("mission_type", ""))))
     return {
         "mission_stage": "intake",
+        "workflow_template": template,
         "problem_statement": _clean_text(raw_text, 1200),
         "desired_outcome": _clean_text(mission.get("desired_outcome", ""), 1200),
         "scope_summary": _clean_text(mission.get("scope_summary", ""), 1200),
@@ -1232,10 +1640,26 @@ def _default_agent_workflow(mission_type=""):
     return workflow
 
 
-def _default_context_pack(mission_type=""):
+def _default_context_pack(mission_type="", mission_lane=None):
     sequence = agent_sequence_for_mission(mission_type)
+    template = normalize_workflow_template(mission_type)
+    lane = normalize_mission_lane(mission_lane.get("id") if isinstance(mission_lane, dict) else mission_lane)
+    project_memory = project_memory_for_lane(lane)
+    brain_docs = charlie_brain_registry(project_memory.get("entity_key", ""))
     return {
         "version": "charlie_context_pack_v1",
+        "workflow_template": template,
+        "project_memory": project_memory,
+        "brain_registry": {
+            "version": "charlie_brain_v1",
+            "storage": "markdown_truth_docs_plus_supabase_registry",
+            "documents": brain_docs,
+            "rules": [
+                "Markdown docs remain the human-readable brain.",
+                "Supabase Brain tables index docs, project memory, mission links, decisions, and evidence.",
+                "Agents must cite active truth docs before overriding project assumptions.",
+            ],
+        },
         "active_truth_docs": list(MISSION_CONTEXT_DOCS),
         "shared_data_rules": [
             "Supabase is the canonical durable source where migrations have cut over the app.",
@@ -1250,11 +1674,43 @@ def _default_context_pack(mission_type=""):
             "LEVEL 4 may merge after verified diff/tests; red-zone actions still require explicit approval.",
         ],
         "agent_order": sequence,
+        "specialist_agents": [agent for agent in sequence if agent in SPECIALIST_AGENT_SEQUENCE],
+        "review_board_agents": [agent for agent in sequence if agent in REVIEW_BOARD_AGENT_SEQUENCE],
+        "quality_focus": list(template.get("quality_focus") or []),
         "parallel_work": "disabled_until_phase_6_parallel_controls",
     }
 
 
 def _mission_order_clause(status):
+    if _mission_queue_filter(status) == "owner_queue":
+        return """
+                    order by
+                        case status
+                            when 'in_progress' then 0
+                            when 'release_in_progress' then 1
+                            when 'pr_ready' then 2
+                            when 'blocked' then 3
+                            when 'release_approved' then 4
+                            when 'approved' then 5
+                            when 'new' then 6
+                            else 7
+                        end asc,
+                        case
+                            when (metadata_json->'queue'->>'priority') ~ '^[0-9]+$'
+                            then (metadata_json->'queue'->>'priority')::int
+                            else %(default_priority)s
+                        end asc,
+                        case urgency
+                            when 'P0' then 0
+                            when 'P1' then 1
+                            when 'P2' then 2
+                            when 'P3' then 3
+                            when 'P4' then 4
+                            else 5
+                        end asc,
+                        created_at asc,
+                        mission_id asc
+                    """.replace("%(default_priority)s", str(QUEUE_PRIORITY_DEFAULT))
     if status in QUEUE_ORDERED_STATUSES:
         return """
                     order by
@@ -1275,6 +1731,10 @@ def _mission_order_clause(status):
                         mission_id asc
                     """.replace("%(default_priority)s", str(QUEUE_PRIORITY_DEFAULT))
     return "order by created_at desc"
+
+
+def _mission_queue_filter(status):
+    return "owner_queue" if _clean_text(status, 40).lower() in OWNER_QUEUE_FILTERS else ""
 
 
 def _clean_queue_priority(value):
@@ -1372,6 +1832,21 @@ def _workflow_findings(workflow):
         if finding:
             findings.append(f"{item.get('agent', 'agent')}: {finding}")
     return findings
+
+
+def _default_visual_review(packet):
+    packet = packet if isinstance(packet, dict) else {}
+    local_preview = packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {}
+    return {
+        "contract": "charlie_visual_review_v1",
+        "ui_related": False,
+        "status": "not_available",
+        "summary": "No visual review packet was captured for this mission.",
+        "local_preview": local_preview,
+        "media": [],
+        "stage_evidence": [],
+        "cleanup": {"required": False, "status": "not_required"},
+    }
 
 
 def _packet_list(packet, key, fallback):

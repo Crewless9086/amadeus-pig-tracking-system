@@ -39,6 +39,13 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
     process_alive = _pid_alive(payload.get("pid"))
     heartbeat_fresh = age_seconds is not None and age_seconds <= STALE_SECONDS
     active = process_alive and heartbeat_fresh
+    final_artifact_present = bool(payload.get("final_artifact_present"))
+    if not final_artifact_present and _execution_artifact_exists(payload.get("execution_artifact", "")):
+        final_artifact_present = True
+        if payload.get("last_result_status") == "codex_running":
+            payload["last_result_status"] = "codex_final_artifact_seen"
+    agent_ledger_path = payload.get("agent_ledger_path", "") or _infer_agent_ledger_path(payload.get("execution_artifact", ""))
+    agent_ledger = _read_agent_ledger_summary(agent_ledger_path)
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
     if active:
         status = "runner_active"
@@ -48,7 +55,10 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         next_action = "Stop the orphaned local CHARLIE runner, then start it again so runner control owns the heartbeat."
     elif payload:
         status = "runner_stale_or_stopped"
-        next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
+        if _ledger_is_interrupted(agent_ledger):
+            next_action = "Previous agent execution was interrupted. Review the latest stage, then rerun or send the mission back before starting a new runner."
+        else:
+            next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
     else:
         status = "runner_not_started"
         next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
@@ -65,15 +75,15 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "last_mission_id": payload.get("last_mission_id", ""),
         "elapsed_seconds": payload.get("elapsed_seconds"),
         "changed_files_count": payload.get("changed_files_count"),
-        "final_artifact_present": payload.get("final_artifact_present"),
+        "final_artifact_present": final_artifact_present,
         "execution_artifact": payload.get("execution_artifact", ""),
         "agent_runner_version": payload.get("agent_runner_version", ""),
         "current_agent": payload.get("current_agent", ""),
         "current_action": payload.get("current_action", ""),
-        "agent_ledger_path": payload.get("agent_ledger_path", ""),
+        "agent_ledger_path": agent_ledger_path,
         "stdout_tail": payload.get("stdout_tail", ""),
         "stderr_tail": payload.get("stderr_tail", ""),
-        "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")),
+        "agent_ledger": agent_ledger,
         "orphan_processes": orphan_processes,
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
@@ -175,6 +185,45 @@ def _read_json(path):
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return {}
+
+
+def _execution_artifact_exists(path):
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return False
+    artifact_path = Path(raw_path)
+    if not artifact_path.is_absolute():
+        artifact_path = REPO_ROOT / artifact_path
+    try:
+        return artifact_path.exists() and artifact_path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _infer_agent_ledger_path(execution_artifact):
+    raw_path = str(execution_artifact or "").strip()
+    if not raw_path:
+        return ""
+    artifact_path = Path(raw_path)
+    if not artifact_path.is_absolute():
+        artifact_path = REPO_ROOT / artifact_path
+    name = artifact_path.name
+    for suffix in (".builder.final.md", ".final.md"):
+        if name.endswith(suffix):
+            candidate = artifact_path.with_name(name[: -len(suffix)] + ".agent-ledger.json")
+            try:
+                if candidate.exists():
+                    return str(candidate)
+            except OSError:
+                return ""
+    return ""
+
+
+def _ledger_is_interrupted(ledger):
+    if not isinstance(ledger, dict) or not ledger:
+        return False
+    latest = ledger.get("latest_stage") if isinstance(ledger.get("latest_stage"), dict) else {}
+    return ledger.get("status") == "running" or latest.get("status") == "running"
 
 
 def _read_agent_ledger_summary(path):

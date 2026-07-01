@@ -64,6 +64,22 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["runner_mode"], "code_test_pr")
         update_status.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.notify_main")
+    def test_pickup_notification_passes_mission_status_button_id(self, notify_main):
+        captured_argv = []
+
+        def fake_notify_main():
+            captured_argv[:] = list(charlie_mission_pickup.sys.argv)
+            return 0
+
+        notify_main.side_effect = fake_notify_main
+
+        result = charlie_mission_pickup._send_pickup_notification(MISSION)
+
+        self.assertEqual(result, 0)
+        self.assertIn("--mission-id", captured_argv)
+        self.assertIn("CHARLIE-MISSION-123", captured_argv)
+
     @patch("scripts.charlie_mission_pickup.list_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, list_missions):
@@ -80,11 +96,10 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "mission_picked_up")
         self.assertIn("Build useful thing from Telegram.", content)
+        self.assertIn("### Mission Lane", content)
+        self.assertIn("CHARLIE CORE", content)
         self.assertIn("CHARLIE_MISSION_PROTOCOL.md", content)
         self.assertIn("Runner mode: code_test_pr", content)
-        self.assertIn("### Mission Lane", content)
-        self.assertIn("CHARLIE CORE (charlie_core)", content)
-        self.assertIn("Mission lane: CHARLIE CORE (charlie_core)", content)
         self.assertIn("## MISSION VAULT", content)
         self.assertIn("Owner wants a useful thing.", content)
         self.assertIn("Dashboard shows the useful thing.", content)
