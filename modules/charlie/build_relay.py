@@ -9,6 +9,7 @@ from urllib import request as urllib_request
 
 from modules.charlie.mission_store import (
     get_mission,
+    list_owner_work_missions,
     list_missions,
     mission_status_summary,
     normalize_approval_level,
@@ -501,18 +502,13 @@ def _first_available_mission(statuses):
 
 
 def _mission_list_for_status(status, limit=3, owner_work_only=False):
-    list_status = "owner_queue" if owner_work_only else status
-    result, status_code = list_missions(status=list_status, limit=max(limit * 10, limit))
+    if owner_work_only:
+        result, status_code = list_owner_work_missions(status, limit=limit)
+    else:
+        result, status_code = list_missions(status=status, limit=limit)
     if status_code >= 400:
         return None
-    missions = result.get("missions") or []
-    if owner_work_only:
-        missions = [
-            mission
-            for mission in missions
-            if mission.get("status") == status and mission.get("queue_class", "owner_work") == "owner_work"
-        ]
-    return missions[:limit]
+    return (result.get("missions") or [])[:limit]
 
 
 def _mission_title_line(mission):

@@ -165,8 +165,8 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
     @patch("modules.charlie.build_relay.local_runner_status")
     @patch("modules.charlie.build_relay.mission_status_summary")
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_status_command_returns_mission_control_overview(self, list_missions, mission_status_summary, local_runner_status):
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_status_command_returns_mission_control_overview(self, list_owner_work_missions, mission_status_summary, local_runner_status):
         local_runner_status.return_value = {"active": True, "status": "runner_active", "last_seen": "2026-07-01T10:00:00Z"}
         mission_status_summary.return_value = ({
             "success": True,
@@ -174,8 +174,8 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "counts": {"in_progress": 1, "pr_ready": 2, "approved": 3, "new": 4},
         }, 200)
 
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
+        def fake_owner_work(status="", limit=10):
+            if status == "in_progress":
                 return ({
                     "success": True,
                     "status": "ok",
@@ -189,7 +189,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 }, 200)
             return ({"success": True, "status": "ok", "missions": []}, 200)
 
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("/status")
 
@@ -203,10 +203,10 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(any(button["callback_data"] == "status:CHARLIE-MISSION-ACTIVE123" for button in buttons))
         self.assertFalse(action["writes_repo_file"])
 
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_next_command_reports_active_queue_mission(self, list_missions):
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_next_command_reports_active_queue_mission(self, list_owner_work_missions):
+        def fake_owner_work(status="", limit=10):
+            if status == "in_progress":
                 return ({
                     "success": True,
                     "status": "ok",
@@ -220,7 +220,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("/next")
 
@@ -232,22 +232,14 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("inline_keyboard", action["reply_markup"])
         self.assertFalse(action["writes_repo_file"])
 
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_next_command_skips_system_test_active_missions(self, list_missions):
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_next_command_uses_status_specific_owner_work_for_active_missions(self, list_owner_work_missions):
+        def fake_owner_work(status="", limit=10):
+            if status == "in_progress":
                 return ({
                     "success": True,
                     "status": "ok",
                     "missions": [
-                        {
-                            "mission_id": "CHARLIE-MISSION-SYSTEM",
-                            "status": "in_progress",
-                            "urgency": "P2",
-                            "approval_level": "LEVEL 3",
-                            "title": "Validation mission smoke test",
-                            "queue_class": "system_test",
-                        },
                         {
                             "mission_id": "CHARLIE-MISSION-OWNER",
                             "status": "in_progress",
@@ -260,19 +252,19 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("/next")
 
         self.assertEqual(action["command"], "next")
         self.assertIn("Real owner mission", action["telegram_text"])
         self.assertNotIn("Validation mission smoke test", action["telegram_text"])
-        list_missions.assert_any_call(status="owner_queue", limit=10)
+        list_owner_work_missions.assert_any_call("in_progress", limit=1)
 
     @patch("modules.charlie.build_relay.local_runner_status")
     @patch("modules.charlie.build_relay.mission_status_summary")
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_status_command_ignores_system_only_queue_missions(self, list_missions, mission_status_summary, local_runner_status):
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_status_command_has_no_system_only_queue_missions_when_owner_filter_empty(self, list_owner_work_missions, mission_status_summary, local_runner_status):
         local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
         mission_status_summary.return_value = ({
             "success": True,
@@ -280,23 +272,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "counts": {"in_progress": 1, "new": 1},
         }, 200)
 
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
-                return ({
-                    "success": True,
-                    "status": "ok",
-                    "missions": [{
-                        "mission_id": "CHARLIE-MISSION-SYSTEM",
-                        "status": "in_progress",
-                        "urgency": "P2",
-                        "approval_level": "LEVEL 3",
-                        "title": "Validation mission smoke test",
-                        "queue_class": "system_test",
-                    }],
-                }, 200)
-            return {"success": True, "status": "ok", "missions": []}, 200
-
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)
 
         action = build_relay_action("/status")
 
@@ -304,10 +280,10 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("No active, review-ready, approved, release-approved, or new missions are visible", action["telegram_text"])
         self.assertNotIn("Validation mission smoke test", action["telegram_text"])
 
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_next_command_lists_new_missions_waiting_approval(self, list_missions):
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_next_command_lists_new_missions_waiting_approval(self, list_owner_work_missions):
+        def fake_owner_work(status="", limit=10):
+            if status == "new":
                 return ({
                     "success": True,
                     "status": "ok",
@@ -321,7 +297,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("next")
 
@@ -487,10 +463,10 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(update_workflow.call_args.kwargs["step_status"], "complete")
         self.assertFalse(action["writes_repo_file"])
 
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_review_command_lists_review_ready_missions(self, list_missions):
-        def fake_list_missions(status="", limit=10):
-            if status == "owner_queue":
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_review_command_lists_review_ready_missions(self, list_owner_work_missions):
+        def fake_owner_work(status="", limit=10):
+            if status == "pr_ready":
                 return ({
                     "success": True,
                     "status": "ok",
@@ -503,7 +479,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_missions.side_effect = fake_list_missions
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("/review")
 
@@ -512,35 +488,52 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("Review SAM mission", action["telegram_text"])
         self.assertIn("inline_keyboard", action["reply_markup"])
 
-    @patch("modules.charlie.build_relay.list_missions")
-    def test_review_command_skips_system_test_review_missions(self, list_missions):
-        list_missions.return_value = ({
-            "success": True,
-            "status": "ok",
-            "missions": [
-                {
-                    "mission_id": "CHARLIE-MISSION-SYSTEM",
-                    "status": "pr_ready",
-                    "urgency": "P2",
-                    "title": "Validation mission smoke test",
-                    "queue_class": "system_test",
-                },
-                {
-                    "mission_id": "CHARLIE-MISSION-OWNER",
-                    "status": "blocked",
-                    "urgency": "P1",
-                    "title": "Owner blocked mission",
-                    "queue_class": "owner_work",
-                },
-            ],
-        }, 200)
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_review_command_uses_status_specific_owner_work_queries(self, list_owner_work_missions):
+        def fake_owner_work(status="", limit=10):
+            if status == "blocked":
+                return ({
+                    "success": True,
+                    "status": "ok",
+                    "missions": [{
+                        "mission_id": "CHARLIE-MISSION-OWNER",
+                        "status": "blocked",
+                        "urgency": "P1",
+                        "title": "Owner blocked mission",
+                        "queue_class": "owner_work",
+                    }],
+                }, 200)
+            return {"success": True, "status": "ok", "missions": []}, 200
+
+        list_owner_work_missions.side_effect = fake_owner_work
 
         action = build_relay_action("/review")
 
         self.assertEqual(action["command"], "review")
         self.assertIn("Owner blocked mission", action["telegram_text"])
         self.assertNotIn("Validation mission smoke test", action["telegram_text"])
-        list_missions.assert_any_call(status="owner_queue", limit=50)
+        list_owner_work_missions.assert_any_call("pr_ready", limit=5)
+        list_owner_work_missions.assert_any_call("blocked", limit=5)
+
+    @patch("modules.charlie.build_relay.list_owner_work_missions")
+    def test_review_command_finds_deep_pr_ready_owner_work_without_mixed_page_probe(self, list_owner_work_missions):
+        list_owner_work_missions.return_value = ({
+            "success": True,
+            "status": "ok",
+            "missions": [{
+                "mission_id": "CHARLIE-MISSION-DEEP-REVIEW",
+                "status": "pr_ready",
+                "urgency": "P1",
+                "title": "Deep owner review mission",
+                "queue_class": "owner_work",
+            }],
+        }, 200)
+
+        action = build_relay_action("/review")
+
+        self.assertEqual(action["command"], "review")
+        self.assertIn("Deep owner review mission", action["telegram_text"])
+        list_owner_work_missions.assert_any_call("pr_ready", limit=5)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_missions")

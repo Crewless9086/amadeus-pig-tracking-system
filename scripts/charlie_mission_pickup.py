@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.mission_store import list_missions, update_mission_status
+from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status
 from modules.charlie.runner_control import write_runner_heartbeat
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -206,14 +206,19 @@ def _release_approved_mission():
 def _owner_queue_missions(statuses, limit=10):
     wanted = {str(status or "").strip() for status in statuses if str(status or "").strip()}
     parsed_limit = max(int(limit or 1), 1)
-    loaded, status_code = list_missions(status="owner_queue", limit=max(parsed_limit * 10, parsed_limit))
-    if status_code >= 400:
-        return [], status_code
-    missions = [
-        mission
-        for mission in (loaded.get("missions") or [])
-        if mission.get("status") in wanted and mission.get("queue_class", "owner_work") == "owner_work"
-    ]
+    if not wanted:
+        return [], 200
+    missions = []
+    for status in statuses:
+        clean_status = str(status or "").strip()
+        if not clean_status or clean_status not in wanted:
+            continue
+        loaded, status_code = list_owner_work_missions(clean_status, limit=parsed_limit)
+        if status_code >= 400:
+            return [], status_code
+        missions.extend(loaded.get("missions") or [])
+        if len(missions) >= parsed_limit:
+            break
     return missions[:parsed_limit], status_code
 
 
