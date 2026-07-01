@@ -6,6 +6,7 @@ from modules.charlie.mission_store import (
     build_mission_review_packet,
     get_mission,
     list_missions,
+    list_owner_work_missions,
     mission_status_summary,
     normalize_approval_level,
     record_mission_review_decision,
@@ -177,15 +178,35 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("created_at asc", sql)
         self.assertEqual(params["owner_queue_statuses"], [
             "in_progress",
-            "blocked",
-            "pr_ready",
-            "release_approved",
             "release_in_progress",
+            "pr_ready",
+            "blocked",
+            "release_approved",
             "approved",
             "new",
         ])
         self.assertNotIn("done", params["owner_queue_statuses"])
         self.assertNotIn("rejected", params["owner_queue_statuses"])
+        self.assertEqual(result["missions"], [])
+
+    def test_list_owner_work_missions_filters_one_status_in_sql(self):
+        connection = FakeConnection([])
+
+        result, status_code = list_owner_work_missions(
+            "approved",
+            limit=20,
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        sql, params = connection.cursor_instance.executed[0]
+        self.assertIn("where status = %(status)s", sql)
+        self.assertIn("metadata_json->'intake_quality'->>'queue_class'", sql)
+        self.assertIn("owner_work", sql)
+        self.assertIn("metadata_json->'queue'->>'priority'", sql)
+        self.assertEqual(params["status"], "approved")
+        self.assertEqual(params["limit"], 20)
         self.assertEqual(result["missions"], [])
 
     def test_list_missions_keeps_recent_order_without_status_filter(self):

@@ -13,6 +13,7 @@ from modules.charlie.mission_store import (
     get_mission,
     get_mission_review_packet,
     list_missions,
+    list_owner_work_missions,
     mission_status_summary,
     record_mission,
     record_mission_review_decision,
@@ -120,12 +121,12 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    approved, approved_status = list_missions(status="approved", limit=1)
-    approved_queue, approved_queue_status = list_missions(status="approved", limit=5)
-    in_progress, in_progress_status = list_missions(status="in_progress", limit=1)
-    pr_ready, pr_ready_status = list_missions(status="pr_ready", limit=1)
-    release_approved, release_approved_status = list_missions(status="release_approved", limit=1)
-    release_in_progress, release_in_progress_status = list_missions(status="release_in_progress", limit=1)
+    approved, approved_status = _owner_work_missions_for_status("approved", limit=1)
+    approved_queue, approved_queue_status = _owner_work_missions_for_status("approved", limit=5)
+    in_progress, in_progress_status = _owner_work_missions_for_status("in_progress", limit=1)
+    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=20)
+    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=1)
+    release_in_progress, release_in_progress_status = _owner_work_missions_for_status("release_in_progress", limit=1)
     if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
         return jsonify({
             "success": False,
@@ -144,7 +145,6 @@ def charlie_build_relay_runner_status_route():
     next_approved = _first_mission(approved)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
-    vault_health, _vault_health_status = vault_tables_health()
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -198,12 +198,12 @@ def charlie_build_relay_command_center_route():
     if denied:
         return denied
     summary, summary_status = mission_status_summary()
-    recent, recent_status = list_missions(limit=8)
-    approved_queue, approved_status = list_missions(status="approved", limit=20)
-    review_ready, review_status = list_missions(status="pr_ready", limit=5)
-    blocked, blocked_status = list_missions(status="blocked", limit=5)
-    release_approved, release_approved_status = list_missions(status="release_approved", limit=5)
-    release_in_progress, release_progress_status = list_missions(status="release_in_progress", limit=5)
+    recent, recent_status = list_missions(status="owner_queue", limit=8)
+    approved_queue, approved_status = _owner_work_missions_for_status("approved", limit=20)
+    review_ready, review_status = _owner_work_missions_for_status("pr_ready", limit=5)
+    blocked, blocked_status = _owner_work_missions_for_status("blocked", limit=5)
+    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=5)
+    release_in_progress, release_progress_status = _owner_work_missions_for_status("release_in_progress", limit=5)
     merged, merged_status = list_missions(status="merged", limit=5)
     deployed, deployed_status = list_missions(status="deployed", limit=5)
     statuses = [
@@ -224,6 +224,7 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     local_status = local_runner_status()
+    vault_health, _vault_health_status = vault_tables_health()
     readiness_items = []
     for mission in recent.get("missions", []):
         readiness_items.append({
@@ -423,8 +424,14 @@ def charlie_build_relay_review_media_route(mission_id, filename):
     return send_from_directory(resolved_dir, safe_filename)
 
 
+def _owner_work_missions_for_status(status, limit=1):
+    parsed_limit = max(int(limit or 1), 1)
+    return list_owner_work_missions(status, limit=parsed_limit)
+
+
 def _first_mission(result):
-    missions = result.get("missions") or []
+    missions = result.get("missions") if isinstance(result, dict) else result
+    missions = missions or []
     return missions[0] if missions else None
 
 

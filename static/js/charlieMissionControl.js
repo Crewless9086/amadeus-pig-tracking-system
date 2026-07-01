@@ -6,6 +6,7 @@
     counts: {},
     loading: false,
     pendingMedia: [],
+    activeFilter: "owner_queue",
   };
   const MAX_MEDIA_ITEMS = 3;
   const MAX_MEDIA_BYTES = 650 * 1024;
@@ -95,6 +96,7 @@
     state.loading = true;
     setMessage("", "info");
     const status = els.filter ? els.filter.value : "";
+    state.activeFilter = status || "";
     const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
     try {
       const [summary, missions, reviewReady, blocked, commandCenter] = await Promise.all([
@@ -205,7 +207,12 @@
     els.list.innerHTML = "";
     const ownerMissions = state.missions.filter((mission) => queueClass(mission) === "owner_work");
     const systemMissions = state.missions.filter((mission) => queueClass(mission) !== "owner_work");
-    const visibleMissions = ownerMissions.length ? ownerMissions : state.missions;
+    const visibleMissions = ownerMissions.length ? ownerMissions : (state.activeFilter === "owner_queue" ? [] : state.missions);
+    if (!visibleMissions.length) {
+      els.list.innerHTML = '<p class="charlie-empty">No owner missions found for this filter.</p>';
+      renderReview();
+      return;
+    }
     visibleMissions.forEach((mission) => {
       els.list.appendChild(missionCard(mission));
     });

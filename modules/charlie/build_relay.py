@@ -9,6 +9,7 @@ from urllib import request as urllib_request
 
 from modules.charlie.mission_store import (
     get_mission,
+    list_owner_work_missions,
     list_missions,
     mission_status_summary,
     normalize_approval_level,
@@ -288,7 +289,7 @@ def _status_action(repo_root):
     review_ready = _first_available_mission(("pr_ready", "blocked"))
     approved = _first_available_mission(("approved",))
     release_approved = _first_available_mission(("release_approved",))
-    new_missions = _mission_list_for_status("new", limit=3)
+    new_missions = _mission_list_for_status("new", limit=3, owner_work_only=True)
     keyboard = []
     lines = [
         "CHARLIE Mission Control",
@@ -492,23 +493,22 @@ def _mission_queue_next_action():
 
 def _first_available_mission(statuses):
     for status in statuses:
-        result, status_code = list_missions(status=status, limit=1)
-        if status_code >= 400:
+        missions = _mission_list_for_status(status, limit=1, owner_work_only=True)
+        if missions is None:
             return None
-        missions = result.get("missions") or []
         if missions:
             return {"status": status, "mission": missions[0]}
     return None
 
 
 def _mission_list_for_status(status, limit=3, owner_work_only=False):
-    result, status_code = list_missions(status=status, limit=max(limit * 5, limit))
+    if owner_work_only:
+        result, status_code = list_owner_work_missions(status, limit=limit)
+    else:
+        result, status_code = list_missions(status=status, limit=limit)
     if status_code >= 400:
         return None
-    missions = result.get("missions") or []
-    if owner_work_only:
-        missions = [mission for mission in missions if mission.get("queue_class", "owner_work") == "owner_work"]
-    return missions[:limit]
+    return (result.get("missions") or [])[:limit]
 
 
 def _mission_title_line(mission):
@@ -591,9 +591,9 @@ def _missions_action(source):
 def _review_action():
     ready = []
     for status in ("pr_ready", "blocked"):
-        result, status_code = list_missions(status=status, limit=5)
-        if status_code < 400:
-            ready.extend(result.get("missions") or [])
+        missions = _mission_list_for_status(status, limit=5, owner_work_only=True)
+        if missions is not None:
+            ready.extend(missions)
     lines = ["CHARLIE review queue"]
     keyboard = []
     if not ready:

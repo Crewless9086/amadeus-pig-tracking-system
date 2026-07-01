@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.mission_store import list_missions, update_mission_status
+from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status
 from modules.charlie.runner_control import write_runner_heartbeat
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -187,18 +187,39 @@ def watch_for_mission(
 
 
 def _active_mission():
-    for status in ("in_progress", "release_in_progress"):
-        loaded, status_code = list_missions(status=status, limit=1)
-        if status_code < 400 and loaded.get("missions"):
-            return loaded["missions"][0]
+    missions, status_code = _owner_queue_missions(
+        statuses=("in_progress", "release_in_progress"),
+        limit=1,
+    )
+    if status_code < 400 and missions:
+        return missions[0]
     return None
 
 
 def _release_approved_mission():
-    loaded, status_code = list_missions(status="release_approved", limit=1)
-    if status_code < 400 and loaded.get("missions"):
-        return loaded["missions"][0]
+    missions, status_code = _owner_queue_missions(statuses=("release_approved",), limit=1)
+    if status_code < 400 and missions:
+        return missions[0]
     return None
+
+
+def _owner_queue_missions(statuses, limit=10):
+    wanted = {str(status or "").strip() for status in statuses if str(status or "").strip()}
+    parsed_limit = max(int(limit or 1), 1)
+    if not wanted:
+        return [], 200
+    missions = []
+    for status in statuses:
+        clean_status = str(status or "").strip()
+        if not clean_status or clean_status not in wanted:
+            continue
+        loaded, status_code = list_owner_work_missions(clean_status, limit=parsed_limit)
+        if status_code >= 400:
+            return [], status_code
+        missions.extend(loaded.get("missions") or [])
+        if len(missions) >= parsed_limit:
+            break
+    return missions[:parsed_limit], status_code
 
 
 def _retryable_queue_error(result, status_code):
@@ -252,7 +273,16 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
-    loaded, status_code = list_missions(status=status, limit=limit)
+    clean_status = str(status or "approved").strip()
+    if clean_status == "approved":
+        missions, status_code = _owner_queue_missions(statuses=("approved",), limit=limit)
+        loaded = {
+            "success": status_code < 400,
+            "status": "ok" if status_code < 400 else "mission_queue_unavailable",
+            "missions": missions,
+        }
+    else:
+        loaded, status_code = list_missions(status=clean_status, limit=limit)
     if status_code >= 400:
         return {
             "success": False,

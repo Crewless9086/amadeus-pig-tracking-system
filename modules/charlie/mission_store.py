@@ -140,10 +140,10 @@ QUEUE_ORDERED_STATUSES = {"approved", "pr_ready", "blocked", "release_approved"}
 OWNER_QUEUE_FILTERS = {"owner_queue", "owner", "active_owner", "actionable"}
 OWNER_QUEUE_STATUSES = (
     "in_progress",
-    "blocked",
-    "pr_ready",
-    "release_approved",
     "release_in_progress",
+    "pr_ready",
+    "blocked",
+    "release_approved",
     "approved",
     "new",
 )
@@ -299,6 +299,58 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
                     from public.charlie_missions
                     {where_clause}
                     {order_clause}
+                    limit %(limit)s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "mission_read_failed",
+            "error_type": exc.__class__.__name__,
+            "missions": [],
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "missions": [_mission_row(row) for row in rows],
+    }, 200
+
+
+def list_owner_work_missions(status, limit=10, database_url=None, connect_factory=None):
+    clean_status = _clean_text(status, 40)
+    if clean_status not in OWNER_QUEUE_STATUSES:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "invalid_owner_queue_status",
+            "allowed_statuses": list(OWNER_QUEUE_STATUSES),
+            "missions": [],
+        }, 400
+
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "missions": []}, 503
+
+    parsed_limit = _bounded_limit(limit)
+    params = {"status": clean_status, "limit": parsed_limit}
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select mission_id, status, source, telegram_user_id, telegram_chat_id,
+                           raw_text, title, urgency, mission_type, approval_level,
+                           selected_next_step, owner_decision, codex_chat_write_status,
+                           metadata_json, created_at, updated_at
+                    from public.charlie_missions
+                    where status = %(status)s
+                      and coalesce(nullif(metadata_json->'intake_quality'->>'queue_class', ''), 'owner_work') = 'owner_work'
+                    {_mission_order_clause(clean_status)}
                     limit %(limit)s
                     """,
                     params,
