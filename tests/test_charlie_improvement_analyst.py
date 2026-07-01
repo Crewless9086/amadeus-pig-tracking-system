@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 from modules.charlie.improvement_analyst import (
     PROPOSAL_LABEL,
     analyze_improvement_opportunities,
+    generate_and_store_proposals,
 )
 
 
@@ -44,6 +46,56 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         ])
 
         self.assertEqual(proposals, [])
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
+    def test_generate_preserves_owner_reviewed_proposal_decision_on_rerun(self, list_missions, list_artifacts, write_artifact):
+        list_missions.return_value = ({
+            "success": True,
+            "missions": [
+                {
+                    "mission_id": "MISSION-1",
+                    "status": "blocked",
+                    "title": "Tests failed",
+                    "metadata": {"review_packet": {"errors": ["Tests failed before owner review."]}},
+                },
+                {
+                    "mission_id": "MISSION-2",
+                    "status": "pr_ready",
+                    "title": "Regression evidence",
+                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                },
+            ],
+        }, 200)
+        list_artifacts.return_value = ({
+            "success": True,
+            "artifacts": [{
+                "artifact_id": "ARTIFACT-TESTS",
+                "content": {
+                    "proposal_id": "CHARLIE-IMPROVEMENT-TESTS",
+                    "label": PROPOSAL_LABEL,
+                    "status": "approved",
+                    "decision_history": [{"decision": "approve", "comments": "Good fix."}],
+                    "last_owner_decision": {"decision": "approve", "comments": "Good fix."},
+                    "created_at": "2026-07-01T10:00:00+00:00",
+                },
+                "created_by_agent": "charlie_improvement_analyst",
+                "created_at": "2026-07-01T10:00:00+00:00",
+            }],
+        }, 200)
+        write_artifact.return_value = ({"success": True, "status": "artifact_written"}, 200)
+
+        result, status = generate_and_store_proposals(database_url="postgresql://example")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        written_proposal = write_artifact.call_args.args[2]
+        self.assertEqual(written_proposal["proposal_id"], "CHARLIE-IMPROVEMENT-TESTS")
+        self.assertEqual(written_proposal["status"], "approved")
+        self.assertEqual(written_proposal["decision_history"][0]["decision"], "approve")
+        self.assertEqual(written_proposal["last_owner_decision"]["decision"], "approve")
+        self.assertEqual(written_proposal["created_at"], "2026-07-01T10:00:00+00:00")
 
 
 if __name__ == "__main__":

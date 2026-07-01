@@ -74,8 +74,10 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
     if status_code >= 400:
         return loaded, status_code
     proposals = analyze_improvement_opportunities(loaded.get("missions", []))
+    existing_by_id = _existing_proposals_by_id(database_url=database_url, connect_factory=connect_factory)
     writes = []
     for proposal in proposals:
+        proposal = _merge_existing_proposal_decision(proposal, existing_by_id.get(proposal["proposal_id"]))
         result, write_status = vault_store.write_artifact(
             IMPROVEMENT_MISSION_ID,
             PROPOSAL_ARTIFACT_TYPE,
@@ -97,6 +99,46 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
         "writes": writes,
         "execution_boundary": _execution_boundary(),
     }, 200
+
+
+def _existing_proposals_by_id(database_url=None, connect_factory=None):
+    loaded, status_code = vault_store.list_artifacts(
+        artifact_type=PROPOSAL_ARTIFACT_TYPE,
+        limit=50,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return {}
+    proposals = {}
+    for artifact in loaded.get("artifacts", []):
+        proposal = _proposal_from_artifact(artifact)
+        proposal_id = _clean(proposal.get("proposal_id", ""), 160)
+        if proposal_id:
+            proposals[proposal_id] = proposal
+    return proposals
+
+
+def _merge_existing_proposal_decision(proposal, existing):
+    if not isinstance(existing, dict):
+        return proposal
+    preserved = dict(proposal)
+    existing_status = _clean(existing.get("status", ""), 40)
+    if existing_status and existing_status != "pending":
+        preserved["status"] = existing_status
+    for key in [
+        "decision_history",
+        "last_owner_decision",
+        "mission_creation_status",
+        "sent_to_mission_id",
+    ]:
+        if existing.get(key):
+            preserved[key] = existing[key]
+    if existing.get("created_at"):
+        preserved["created_at"] = existing["created_at"]
+    if existing.get("artifact_id"):
+        preserved["artifact_id"] = existing["artifact_id"]
+    return preserved
 
 
 def list_improvement_proposals(status="", limit=20, database_url=None, connect_factory=None):
