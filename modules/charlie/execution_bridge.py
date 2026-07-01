@@ -44,7 +44,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected"],
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
-AGENT_BACKFLOW_LIMIT = 2
+AGENT_BACKFLOW_LIMIT = 3
 AGENT_RELEASE_VERIFY_ATTEMPTS = 12
 AGENT_RELEASE_VERIFY_INTERVAL_SECONDS = 10
 
@@ -356,6 +356,8 @@ def run_agent_execution_bridge_v2(
                     to_agent=backflow_target,
                     reason=quality["reason"],
                     attempt=backflow_counts[backflow_target],
+                    artifact=artifact,
+                    quality=quality,
                 )
                 artifacts[agent] = artifact
                 artifacts = _discard_downstream_artifacts(artifacts, backflow_target, agent_sequence)
@@ -367,6 +369,7 @@ def run_agent_execution_bridge_v2(
                     "agent_runner_version": AGENT_RUNNER_VERSION,
                     "current_agent": backflow_target,
                     "current_action": f"{agent} sent work back to {backflow_target}: {quality['reason']}",
+                    "unresolved_blockers": ledger.get("unresolved_blockers", []),
                     "execution_artifact": str(stage_paths["final_path"]),
                     "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
                 })
@@ -1062,6 +1065,9 @@ Desired outcome:
 Owner send-back comments:
 {owner_comments or "None"}
 
+Unresolved agent send-back issues:
+{json.dumps(_agent_unresolved_issue_context(artifacts, ledger), indent=2)[:4000]}
+
 Forbidden actions:
 {_format_list(vault.get("forbidden_actions"))}
 
@@ -1435,15 +1441,21 @@ def _agent_backflow_target(agent, artifact, quality):
     return ""
 
 
-def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt):
+def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifact=None, quality=None):
+    unresolved = _artifact_issue_items(from_agent, artifact, quality)
     event = {
         "from_agent": from_agent,
         "to_agent": to_agent,
         "reason": reason,
         "attempt": int(attempt or 1),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "unresolved_blockers": unresolved,
+        "next_action": str((artifact or {}).get("next_action") or "").strip() if isinstance(artifact, dict) else "",
+        "artifact_path": str((artifact or {}).get("artifact_path") or "").strip() if isinstance(artifact, dict) else "",
     }
     ledger.setdefault("backflow_events", []).append(event)
+    ledger["unresolved_blockers"] = unresolved
+    ledger["last_backflow"] = event
     ledger["last_progress_at"] = event["recorded_at"]
     return event
 
@@ -1482,6 +1494,10 @@ def _block_agent_stage(
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     if artifact and agent not in artifacts:
         artifacts = {**artifacts, agent: artifact}
+    unresolved = _artifact_issue_items(agent, artifact)
+    if unresolved:
+        ledger["unresolved_blockers"] = unresolved
+    blocked_summary = _blocked_review_summary(agent, blocked_reason, ledger, artifact)
     blocked_artifact = {
         "summary": artifact.get("summary") or blocked_reason,
         "returncode": getattr(completed, "returncode", None),
@@ -1509,12 +1525,14 @@ def _block_agent_stage(
         blocked_findings.extend([f"Bug: {item}" for item in artifact.get("bugs", []) if item])
     if artifact.get("qa_findings"):
         blocked_findings.extend([f"QA: {item}" for item in artifact.get("qa_findings", []) if item])
+    blocked_findings.extend(_issue_lines(unresolved))
     update_mission_vault(
         mission_id,
         {
             "agent_execution": ledger,
             "review_packet": {
                 "summary": f"CHARLIE Agent Runner v2 blocked at {agent}: {blocked_reason}",
+                "blocked_summary": blocked_summary,
                 "findings": blocked_findings,
                 "errors": [blocked_reason, *_collect_artifact_list(artifacts, "errors")],
                 "bugs": _collect_artifact_list(artifacts, "bugs"),
@@ -1525,6 +1543,7 @@ def _block_agent_stage(
                 "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent, "blocked_artifact_path": str(paths["final_path"])},
                 "agent_execution": _agent_execution_summary(ledger),
                 "agent_artifacts": artifacts,
+                "unresolved_blockers": unresolved,
                 "handoff_reports": {
                     stage_agent: stage_artifact.get("handoff_report", {})
                     for stage_agent, stage_artifact in artifacts.items()
@@ -1534,6 +1553,7 @@ def _block_agent_stage(
                 "backflow_events": ledger.get("backflow_events", []),
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
+                "recommended_next_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} with the unresolved blockers.",
                 "review_status": "agent_blocked",
             },
         },
@@ -1563,6 +1583,28 @@ def _block_agent_stage(
         "blocked_reason": blocked_reason,
         "agent_ledger_path": str(ledger_path),
     }, 504
+
+
+def _blocked_review_summary(agent, blocked_reason, ledger, artifact):
+    ledger = ledger if isinstance(ledger, dict) else {}
+    artifact = artifact if isinstance(artifact, dict) else {}
+    stages = ledger.get("stages") if isinstance(ledger.get("stages"), list) else []
+    last_complete = ""
+    for stage in reversed(stages):
+        if isinstance(stage, dict) and stage.get("status") == "complete":
+            last_complete = str(stage.get("agent") or "")
+            break
+    backflows = ledger.get("backflow_events") if isinstance(ledger.get("backflow_events"), list) else []
+    unresolved = _artifact_issue_items(agent, artifact)
+    return {
+        "blocked_at": agent,
+        "reason": blocked_reason,
+        "send_back_attempts": len(backflows),
+        "last_successful_stage": last_complete,
+        "unresolved_blockers": unresolved,
+        "recommended_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} after reviewing these blockers.",
+        "human_summary": f"{agent} blocked after {len(backflows)} automatic send-back attempt{'s' if len(backflows) != 1 else ''}.",
+    }
 
 
 def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, output_dir, started_at, database_url=None, connect_factory=None):
@@ -1671,8 +1713,92 @@ def _artifact_stage_summaries(artifacts, agent_sequence):
     return summaries or ["CHARLIE Agent Runner v2 completed all configured stages."]
 
 
+def _artifact_issue_items(agent, artifact, quality=None):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    quality = quality if isinstance(quality, dict) else artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
+    issues = []
+
+    def add_issue(value, default_severity="medium", source="artifact"):
+        if isinstance(value, dict):
+            text = str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
+            if not text:
+                return
+            issues.append({
+                "agent": agent,
+                "severity": str(value.get("severity") or default_severity).strip() or default_severity,
+                "file": str(value.get("file") or "").strip(),
+                "line": value.get("line", ""),
+                "finding": text,
+                "source": source,
+            })
+            return
+        text = str(value or "").strip()
+        if text:
+            issues.append({
+                "agent": agent,
+                "severity": default_severity,
+                "file": "",
+                "line": "",
+                "finding": text,
+                "source": source,
+            })
+
+    for key, severity, source in (
+        ("bugs", "high", "bugs"),
+        ("errors", "high", "errors"),
+        ("qa_findings", str(artifact.get("risk_rating") or "medium").lower(), "qa_findings"),
+    ):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            for item in value:
+                add_issue(item, severity, source)
+        else:
+            add_issue(value, severity, source)
+
+    reason = str(quality.get("reason") or "").strip()
+    if reason and not any(item["finding"] == reason for item in issues):
+        add_issue(reason, "medium", "quality_gate")
+    return issues[:12]
+
+
+def _issue_lines(issues):
+    lines = []
+    for item in issues if isinstance(issues, list) else []:
+        if isinstance(item, dict):
+            where = str(item.get("file") or "").strip()
+            if item.get("line"):
+                where = f"{where}:{item.get('line')}" if where else str(item.get("line"))
+            prefix = f"{where} - " if where else ""
+            text = str(item.get("finding") or "").strip()
+            if text:
+                lines.append(f"{str(item.get('severity') or 'medium').upper()}: {prefix}{text}")
+        elif item:
+            lines.append(str(item))
+    return lines
+
+
+def _agent_unresolved_issue_context(artifacts=None, ledger=None):
+    ledger = ledger if isinstance(ledger, dict) else {}
+    issues = ledger.get("unresolved_blockers") if isinstance(ledger.get("unresolved_blockers"), list) else []
+    if issues:
+        return {
+            "status": "unresolved",
+            "issues": issues[-12:],
+            "backflow_events": ledger.get("backflow_events", [])[-5:] if isinstance(ledger.get("backflow_events"), list) else [],
+        }
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    qa = artifacts.get("qa_red_team") if isinstance(artifacts.get("qa_red_team"), dict) else {}
+    qa_issues = _artifact_issue_items("qa_red_team", qa)
+    return {
+        "status": "unresolved" if qa_issues else "none_recorded",
+        "issues": qa_issues,
+        "backflow_events": ledger.get("backflow_events", [])[-5:] if isinstance(ledger.get("backflow_events"), list) else [],
+    }
+
+
 def _build_handoff_report(mission, agent, artifact, ledger):
     artifact = artifact if isinstance(artifact, dict) else {}
+    unresolved = _agent_unresolved_issue_context({agent: artifact}, ledger)
     return {
         "contract": "charlie_handoff_report_v1",
         "mission_id": mission.get("mission_id", "") if isinstance(mission, dict) else "",
@@ -1687,6 +1813,7 @@ def _build_handoff_report(mission, agent, artifact, ledger):
         "tests": artifact.get("tests_run") or artifact.get("test_evidence") or [],
         "risks": artifact.get("risk_notes") or artifact.get("qa_findings") or [],
         "quality_gate": artifact.get("quality_gate", {}),
+        "unresolved_blockers": unresolved.get("issues", []),
         "next_action": artifact.get("next_action", ""),
         "completed_at": artifact.get("completed_at", datetime.now(timezone.utc).isoformat()),
         "ledger_execution_id": ledger.get("execution_id", "") if isinstance(ledger, dict) else "",
@@ -1740,6 +1867,8 @@ def _agent_execution_summary(ledger):
         "last_progress_at": ledger.get("last_progress_at", ""),
         "blocked_agent": ledger.get("blocked_agent", ""),
         "blocked_reason": ledger.get("blocked_reason", ""),
+        "unresolved_blockers": ledger.get("unresolved_blockers", []),
+        "last_backflow": ledger.get("last_backflow", {}),
         "backflow_events": ledger.get("backflow_events", []),
         "stages": stages,
     }

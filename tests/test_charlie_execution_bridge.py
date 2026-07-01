@@ -631,6 +631,44 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packet["agent_artifacts"]["qa_red_team"]["risk_rating"], "high")
         self.assertIn("Owner mutation route requires stronger access gate.", packet["qa_evidence"])
         self.assertEqual(len(packet["backflow_events"]), 2)
+        self.assertEqual(packet["blocked_summary"]["blocked_at"], "qa_red_team")
+        self.assertEqual(packet["blocked_summary"]["send_back_attempts"], 2)
+        self.assertTrue(packet["unresolved_blockers"])
+        self.assertTrue(any(
+            "Owner mutation route requires stronger access gate." in item.get("finding", "")
+            for item in packet["unresolved_blockers"]
+        ))
+
+    def test_agent_stage_prompt_includes_unresolved_backflow_issues(self):
+        ledger = {
+            "backflow_events": [
+                {
+                    "from_agent": "qa_red_team",
+                    "to_agent": "builder",
+                    "reason": "QA failed",
+                    "unresolved_blockers": [
+                        {
+                            "severity": "high",
+                            "file": "modules/charlie/routes.py",
+                            "finding": "Dashboard route performs destructive cleanup.",
+                        }
+                    ],
+                }
+            ],
+            "unresolved_blockers": [
+                {
+                    "severity": "high",
+                    "file": "modules/charlie/routes.py",
+                    "finding": "Dashboard route performs destructive cleanup.",
+                }
+            ],
+        }
+
+        prompt = execution_bridge.build_agent_stage_prompt(MISSION, "builder", artifacts={}, ledger=ledger)
+
+        self.assertIn("Unresolved agent send-back issues", prompt)
+        self.assertIn("Dashboard route performs destructive cleanup.", prompt)
+        self.assertIn("modules/charlie/routes.py", prompt)
 
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):

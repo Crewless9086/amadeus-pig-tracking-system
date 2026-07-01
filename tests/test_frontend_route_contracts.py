@@ -31,6 +31,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Agent execution timeline", script)
         self.assertIn("qualityGateMarkup", script)
         self.assertIn("backflowMarkup", script)
+        self.assertIn("unresolvedBlockersMarkup", script)
+        self.assertIn("Unresolved blockers", script)
         self.assertIn("Stdout:", script)
         self.assertIn("Stderr:", script)
         self.assertIn("charlie_review_list", template)

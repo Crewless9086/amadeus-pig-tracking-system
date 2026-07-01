@@ -496,6 +496,7 @@
       <p>${escapeHtml(safeText(packet.summary || vault.desired_outcome || mission.raw_text || "Not captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
@@ -604,6 +605,7 @@
       <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
@@ -626,7 +628,8 @@
         <summary>Agent execution timeline</summary>
         ${agentExecutionSummaryMarkup(execution)}
         <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates || execution.quality_gates)}
-        <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Backflow</strong>${backflowMarkup(packet.backflow_events || execution.backflow_events)}
+      <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || execution.unresolved_blockers)}
       </details>
     `;
   }
@@ -674,7 +677,30 @@
   function backflowMarkup(items) {
     const events = Array.isArray(items) ? items : [];
     if (!events.length) return '<p class="charlie-muted">No agent backflow was needed.</p>';
-    return `<ul>${events.map((event) => `<li>${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}</li>`).join("")}</ul>`;
+    return `<ul>${events.map((event) => {
+      const blockers = Array.isArray(event.unresolved_blockers) ? event.unresolved_blockers : [];
+      return `<li>
+        ${escapeHtml(safeText(event.from_agent || "agent"))} -> ${escapeHtml(safeText(event.to_agent || "agent"))}: ${escapeHtml(safeText(event.reason || ""))}
+        ${blockers.length ? unresolvedBlockersMarkup(blockers) : ""}
+      </li>`;
+    }).join("")}</ul>`;
+  }
+
+  function unresolvedBlockersMarkup(items) {
+    const blockers = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!blockers.length) return '<p class="charlie-muted">No unresolved blockers captured.</p>';
+    return `<div class="charlie-unresolved-blockers">${blockers.slice(0, 6).map((item) => {
+      if (typeof item === "string") return `<article><strong>Blocker</strong><span>${escapeHtml(item)}</span></article>`;
+      const severity = safeText(item.severity || "medium").toUpperCase();
+      const location = [item.file, item.line].filter(Boolean).join(":");
+      return `
+        <article>
+          <strong>${escapeHtml(severity)}</strong>
+          <span>${escapeHtml(safeText(item.finding || item.message || item.summary || "Unresolved issue"))}</span>
+          ${location ? `<small>${escapeHtml(location)}</small>` : ""}
+        </article>
+      `;
+    }).join("")}</div>`;
   }
 
   async function createMission(event) {
@@ -1050,15 +1076,22 @@
 
   function blockedReviewBanner(packet) {
     const execution = packet.agent_execution || {};
+    const summary = packet.blocked_summary || {};
     const blockedAgent = packet.blocked_agent || execution.blocked_agent || "agent";
     const blockedReason = packet.blocked_reason || execution.blocked_reason || firstReviewText(packet.errors, "Blocked before owner review.");
     const backflowEvents = Array.isArray(packet.backflow_events) ? packet.backflow_events : (Array.isArray(execution.backflow_events) ? execution.backflow_events : []);
-    const attempts = backflowEvents.length ? `${backflowEvents.length} send-back attempt${backflowEvents.length === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const attemptsValue = summary.send_back_attempts !== undefined ? Number(summary.send_back_attempts) : backflowEvents.length;
+    const attempts = attemptsValue ? `${attemptsValue} send-back attempt${attemptsValue === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    const lastStage = safeText(summary.last_successful_stage || "");
+    const recommended = safeText(packet.recommended_next_action || summary.recommended_action || "Use Send Back after reviewing the blockers below.");
+    const blockers = packet.unresolved_blockers || summary.unresolved_blockers || execution.unresolved_blockers || [];
     return `
       <div class="charlie-blocked-banner" role="status">
         <strong>Blocked at ${escapeHtml(blockedAgent)}</strong>
         <span>${escapeHtml(blockedReason)}</span>
-        <small>${escapeHtml(attempts)}. Use Send Back after reviewing the evidence below.</small>
+        <small>${escapeHtml(attempts)}${lastStage ? ` | Last passed: ${escapeHtml(lastStage)}` : ""}</small>
+        ${unresolvedBlockersMarkup(blockers)}
+        <small>${escapeHtml(recommended)}</small>
       </div>
     `;
   }

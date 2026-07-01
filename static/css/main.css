@@ -8217,6 +8217,38 @@ body.oom-farm-command-body {
     overflow-wrap: anywhere;
 }
 
+.charlie-unresolved-blockers {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.charlie-unresolved-blockers article {
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px;
+    border: 1px solid #f0c49b;
+    border-radius: 8px;
+    background: #fffdf8;
+}
+
+.charlie-unresolved-blockers article strong {
+    color: #8a320c;
+    font-size: 0.76rem;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.charlie-unresolved-blockers article span,
+.charlie-unresolved-blockers article small {
+    overflow-wrap: anywhere;
+}
+
+.charlie-unresolved-blockers article small {
+    color: #795b43;
+    font-size: 0.78rem;
+}
+
 .charlie-agent-execution {
     border-top: 1px solid #d8e1dd;
     padding-top: 10px;
