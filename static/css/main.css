@@ -7871,6 +7871,28 @@ body.oom-farm-command-body {
     margin-top: 10px;
 }
 
+.charlie-blocked-banner {
+    display: grid;
+    gap: 4px;
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid #d77b32;
+    border-left: 5px solid #b94f12;
+    border-radius: 8px;
+    background: #fff7ed;
+    color: #3b2414;
+}
+
+.charlie-blocked-banner strong {
+    margin: 0;
+    color: #8a320c;
+}
+
+.charlie-blocked-banner span,
+.charlie-blocked-banner small {
+    overflow-wrap: anywhere;
+}
+
 .charlie-agent-execution {
     border-top: 1px solid #d8e1dd;
     padding-top: 10px;

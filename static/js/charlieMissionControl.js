@@ -346,6 +346,7 @@
     const localPreview = reviewPacket.local_preview || {};
     const links = reviewPacket.links || {};
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    const blocked = mission.status === "blocked" || reviewPacket.review_status === "agent_blocked";
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -354,6 +355,7 @@
         </div>
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
+      ${blocked ? blockedReviewBanner(reviewPacket) : ""}
       <dl class="charlie-mission-meta">
         <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
@@ -485,6 +487,7 @@
     const vault = mission.vault || {};
     const decisions = mission.metadata && Array.isArray(mission.metadata.owner_review_decisions) ? mission.metadata.owner_review_decisions : [];
     return `
+      ${packet.review_status === "agent_blocked" ? blockedReviewBanner(packet) : ""}
       <strong>Summary</strong>
       <p>${escapeHtml(safeText(packet.summary || vault.desired_outcome || mission.raw_text || "Not captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
@@ -590,6 +593,7 @@
     const mission = packet.mission || {};
     return `
       <strong>${escapeHtml(safeText(mission.title || mission.mission_id || "Review packet"))}</strong>
+      ${packet.review_status === "agent_blocked" ? blockedReviewBanner(packet) : ""}
       <p>${escapeHtml(safeText(packet.summary || "No summary captured yet."))}</p>
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
@@ -996,6 +1000,21 @@
       seen.add(id);
       return true;
     });
+  }
+
+  function blockedReviewBanner(packet) {
+    const execution = packet.agent_execution || {};
+    const blockedAgent = packet.blocked_agent || execution.blocked_agent || "agent";
+    const blockedReason = packet.blocked_reason || execution.blocked_reason || firstReviewText(packet.errors, "Blocked before owner review.");
+    const backflowEvents = Array.isArray(packet.backflow_events) ? packet.backflow_events : (Array.isArray(execution.backflow_events) ? execution.backflow_events : []);
+    const attempts = backflowEvents.length ? `${backflowEvents.length} send-back attempt${backflowEvents.length === 1 ? "" : "s"} before block` : "No automatic send-back before block";
+    return `
+      <div class="charlie-blocked-banner" role="status">
+        <strong>Blocked at ${escapeHtml(blockedAgent)}</strong>
+        <span>${escapeHtml(blockedReason)}</span>
+        <small>${escapeHtml(attempts)}. Use Send Back after reviewing the evidence below.</small>
+      </div>
+    `;
   }
 
   function queuePriorityValue(mission) {
