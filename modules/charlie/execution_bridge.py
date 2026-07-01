@@ -25,6 +25,8 @@ from modules.charlie.runner_control import write_runner_heartbeat
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
+REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 DEFAULT_TIMEOUT_SECONDS = 3600
 FINAL_ARTIFACT_GRACE_SECONDS = 20
 NO_FINAL_ARTIFACT_TIMEOUT_SECONDS = 1200
@@ -461,6 +463,12 @@ def complete_codex_execution_from_artifact(
 
     changed_files = _changed_files()
     local_preview = _extract_local_preview(final_message)
+    visual_review = _build_visual_review_packet(
+        mission_id=mission_id,
+        changed_files=changed_files,
+        local_preview=local_preview,
+        final_message=final_message,
+    )
     review_packet = {
         "review_packet": {
             "summary": _truncate(final_message or "Codex execution completed.", 1600),
@@ -473,6 +481,7 @@ def complete_codex_execution_from_artifact(
             "changed_files": changed_files or ["No changed files detected by git diff."],
             "test_evidence": _extract_test_evidence(final_message),
             "local_preview": local_preview,
+            "visual_review": visual_review,
             "links": {"local_preview": local_preview.get("url", "")},
             "release_notes": ["Review Codex execution artifact before final approval."],
             "execution_artifacts": {
@@ -724,12 +733,14 @@ def complete_no_release_mission(mission_id="", output_dir=None, database_url=Non
     )
     if done_status >= 400:
         return done, done_status
+    cleanup_result = cleanup_visual_review_media(mission_id)
     return {
         "success": True,
         "status": "release_no_release_completed",
         "mission_id": mission_id,
         "mission_status": "done",
         "release_packet_path": release_packet_path,
+        "visual_review_cleanup": cleanup_result,
     }, 200
 
 
@@ -958,6 +969,7 @@ def _complete_release_merge(
     )
     if final_update_status >= 400:
         return final, final_update_status
+    cleanup_result = cleanup_visual_review_media(mission_id)
     return {
         "success": True,
         "status": "release_pr_merged",
@@ -966,6 +978,7 @@ def _complete_release_merge(
         "release_packet_path": release_packet_path,
         "merge_result": merge_result,
         "verify_result": verify_result,
+        "visual_review_cleanup": cleanup_result,
     }, 200
 
 
@@ -1561,7 +1574,16 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     builder = artifacts.get("builder", {})
     qa = artifacts.get("qa_red_team", {})
     reviewer_links = reviewer.get("links") if isinstance(reviewer.get("links"), dict) else {}
+    changed_files = reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."]
     local_preview = _extract_local_preview(reviewer.get("summary", ""))
+    visual_review = _build_visual_review_packet(
+        mission_id=mission.get("mission_id", ""),
+        mission_type=mission.get("mission_type", ""),
+        changed_files=changed_files,
+        local_preview=local_preview,
+        artifacts=artifacts,
+        final_message=reviewer.get("summary", ""),
+    )
     review_links = dict(reviewer_links)
     review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
     review_packet = {
@@ -1570,10 +1592,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "findings": _artifact_stage_summaries(artifacts, _mission_agent_sequence(mission)),
             "errors": _collect_artifact_list(artifacts, "errors"),
             "bugs": _collect_artifact_list(artifacts, "bugs"),
-            "changed_files": reviewer.get("changed_files") or builder.get("changed_files") or _changed_files() or ["No changed files detected by git diff."],
+            "changed_files": changed_files,
             "test_evidence": reviewer.get("test_evidence") or tester.get("tests_run") or ["Tester artifact did not list tests."],
             "qa_evidence": reviewer.get("qa_evidence") or qa.get("qa_findings") or [],
             "local_preview": local_preview,
+            "visual_review": visual_review,
             "links": review_links,
             "pr_url": reviewer.get("pr_url") or review_links.get("pr") or review_links.get("pull_request") or "",
             "pr_number": reviewer.get("pr_number") or "",
@@ -1808,6 +1831,131 @@ def _changed_files():
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _build_visual_review_packet(
+    mission_id="",
+    mission_type="",
+    changed_files=None,
+    local_preview=None,
+    artifacts=None,
+    final_message="",
+):
+    mission_id = str(mission_id or "").strip()
+    changed_files = [str(path or "").strip() for path in (changed_files or []) if str(path or "").strip()]
+    local_preview = local_preview if isinstance(local_preview, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    ui_related = _is_ui_related_mission(mission_type, changed_files, final_message)
+    media = _review_media_items(mission_id) if ui_related else []
+    local_media_path = str(_review_media_path(mission_id)) if mission_id else ""
+    if ui_related and mission_id:
+        _review_media_path(mission_id).mkdir(parents=True, exist_ok=True)
+    status = "not_applicable"
+    if ui_related:
+        status = "captured" if media else "not_captured"
+    preview_url = str(local_preview.get("url") or "").strip()
+    return {
+        "contract": "charlie_visual_review_v1",
+        "ui_related": ui_related,
+        "status": status,
+        "summary": _visual_review_summary(ui_related, media, preview_url),
+        "local_preview": local_preview,
+        "media": media,
+        "stage_evidence": _visual_stage_evidence(artifacts),
+        "local_media_path": local_media_path,
+        "cleanup": {
+            "required": ui_related,
+            "status": "pending_owner_decision" if ui_related else "not_required",
+            "local_path": local_media_path if ui_related else "",
+            "trigger": "owner_final_approval_or_mark_done",
+        },
+    }
+
+
+def _is_ui_related_mission(mission_type="", changed_files=None, final_message=""):
+    mission_type = str(mission_type or "").lower()
+    if any(term in mission_type for term in ("ui", "frontend", "dashboard", "visual", "page", "browser")):
+        return True
+    paths = [str(path or "").replace("\\", "/").lower() for path in (changed_files or [])]
+    ui_prefixes = ("templates/", "static/js/", "static/css/")
+    ui_suffixes = (".html", ".css", ".js", ".jsx", ".tsx", ".vue", ".svelte")
+    if any(path.startswith(ui_prefixes) or path.endswith(ui_suffixes) for path in paths):
+        return True
+    text = str(final_message or "").lower()
+    return "local preview" in text or "screenshot" in text or "visual review" in text
+
+
+def _review_media_path(mission_id):
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "-", str(mission_id or "").strip())[:120] or "unknown"
+    return REVIEW_MEDIA_DIR / safe_id
+
+
+def _review_media_items(mission_id):
+    media_dir = _review_media_path(mission_id)
+    try:
+        resolved_dir = media_dir.resolve()
+        resolved_root = REVIEW_MEDIA_DIR.resolve()
+    except OSError:
+        return []
+    if resolved_root not in resolved_dir.parents and resolved_dir != resolved_root:
+        return []
+    if not media_dir.exists() or not media_dir.is_dir():
+        return []
+    items = []
+    for path in sorted(media_dir.iterdir(), key=lambda item: item.name.lower()):
+        if not path.is_file() or path.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+            continue
+        media_type = "video" if path.suffix.lower() in {".mp4", ".webm"} else "image"
+        items.append({
+            "label": path.stem.replace("_", " ").replace("-", " ")[:120] or path.name,
+            "media_type": media_type,
+            "reference": f"/api/charlie/build-relay/review-media/{media_dir.name}/{path.name}",
+            "path": str(path),
+            "filename": path.name,
+        })
+        if len(items) >= 12:
+            break
+    return items
+
+
+def _visual_review_summary(ui_related, media, preview_url):
+    if not ui_related:
+        return "Mission did not touch detected UI files; visual review media is not required."
+    if media:
+        return f"{len(media)} local visual review artifact(s) captured for owner review."
+    if preview_url:
+        return "UI mission has a local preview URL; screenshots were not captured yet."
+    return "UI mission detected; no local screenshots or preview media were captured."
+
+
+def _visual_stage_evidence(artifacts):
+    evidence = []
+    for agent in ("builder", "tester", "qa_red_team", "reviewer"):
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        summary = _truncate(artifact.get("summary", ""), 220)
+        if summary:
+            evidence.append({"agent": agent, "summary": summary})
+    return evidence
+
+
+def cleanup_visual_review_media(mission_id):
+    media_dir = _review_media_path(mission_id)
+    try:
+        resolved_dir = media_dir.resolve()
+        resolved_root = REVIEW_MEDIA_DIR.resolve()
+    except OSError as exc:
+        return {"cleaned": False, "status": "review_media_path_invalid", "error_type": exc.__class__.__name__}
+    if resolved_root not in resolved_dir.parents:
+        return {"cleaned": False, "status": "review_media_path_outside_runner_root"}
+    if not media_dir.exists():
+        return {"cleaned": True, "status": "review_media_not_present", "local_path": str(media_dir)}
+    shutil.rmtree(media_dir)
+    return {
+        "cleaned": True,
+        "status": "review_media_cleaned",
+        "local_path": str(media_dir),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _release_packet(mission, execution_id):

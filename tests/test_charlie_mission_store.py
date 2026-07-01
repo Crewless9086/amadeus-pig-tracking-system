@@ -354,6 +354,12 @@ class CharlieMissionStoreTests(unittest.TestCase):
                 "review_packet": {
                     "changed_files": ["modules/sam.py"],
                     "local_preview": {"url": "http://127.0.0.1:5000/sales/meat-leads"},
+                    "visual_review": {
+                        "contract": "charlie_visual_review_v1",
+                        "ui_related": True,
+                        "status": "captured",
+                        "media": [{"label": "SAM view", "reference": "/api/charlie/build-relay/review-media/MISSION-1/sam.png", "media_type": "image"}],
+                    },
                     "qa_evidence": ["QA passed."],
                     "handoff_reports": {"qa_red_team": {"summary": "QA passed."}},
                 },
@@ -366,6 +372,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(packet["qa_evidence"], ["QA passed."])
         self.assertIn("qa_red_team", packet["handoff_reports"])
         self.assertEqual(packet["local_preview"]["url"], "http://127.0.0.1:5000/sales/meat-leads")
+        self.assertTrue(packet["visual_review"]["ui_related"])
+        self.assertEqual(packet["visual_review"]["media"][0]["label"], "SAM view")
         self.assertIn("Dashboard review decisions update mission state only", packet["execution_boundary"])
 
     def test_record_mission_review_decision_final_approval_sets_release_approved_level_4(self):
@@ -373,7 +381,15 @@ class CharlieMissionStoreTests(unittest.TestCase):
         row = (
             "MISSION-1", "pr_ready", "telegram", "12345", "67890",
             "Build review gate", "Build review gate", "P1", "feature build", "LEVEL 3",
-            "", "", "", {"review_packet": {"summary": "Ready"}}, now, now,
+            "", "", "", {
+                "review_packet": {
+                    "summary": "Ready",
+                    "visual_review": {
+                        "ui_related": True,
+                        "cleanup": {"required": True, "status": "pending_owner_decision", "local_path": ".charlie_runner/review_media/MISSION-1"},
+                    },
+                },
+            }, now, now,
         )
         read_connection = FakeConnection([row])
         update_connection = FakeConnection([("MISSION-1",)])
@@ -396,6 +412,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(update_params["status"], "release_approved")
         self.assertEqual(update_params["approval_level"], "LEVEL 4")
         self.assertIn("approve_final_release", update_params["metadata_json"])
+        self.assertIn("cleanup_requested", update_params["metadata_json"])
 
     def test_record_mission_review_decision_send_back_keeps_comments_for_next_runner_pickup(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)

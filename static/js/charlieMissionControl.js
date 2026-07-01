@@ -362,6 +362,7 @@
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
+      ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
       <details open>
         <summary>Mission findings and review packet</summary>
@@ -397,6 +398,9 @@
       </div>
     `;
     card.querySelector("[data-review-refresh]").addEventListener("click", () => loadReviewPacket(missionId, card));
+    card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+      button.addEventListener("click", () => openVisualReviewOverlay(button));
+    });
     card.querySelectorAll("[data-review-decision]").forEach((button) => {
       button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
     });
@@ -561,6 +565,9 @@
       const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/review`);
       const container = card.querySelector("[data-review-packet]");
       if (container) container.innerHTML = reviewPacketDetailMarkup(data.review_packet || {});
+      card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
+        button.addEventListener("click", () => openVisualReviewOverlay(button));
+      });
       setMessage("Review packet loaded.", "success");
     } catch (error) {
       setMessage(error.message || "Review packet could not be loaded.", "error");
@@ -600,6 +607,7 @@
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
+      <strong>Visual Review</strong>${visualReviewMarkup(packet.visual_review || {}, packet.local_preview || {}, packet.links || {})}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
       <strong>QA / red-team evidence</strong>${listMarkup(packet.qa_evidence, "No QA/red-team evidence captured yet.")}
@@ -1002,6 +1010,44 @@
     });
   }
 
+  function visualReviewMarkup(visualReview, localPreview, links) {
+    const review = visualReview && typeof visualReview === "object" ? visualReview : {};
+    const media = Array.isArray(review.media) ? review.media.filter(Boolean) : [];
+    const preview = review.local_preview && typeof review.local_preview === "object" ? review.local_preview : localPreview;
+    const status = safeText(review.status || "not_available");
+    const summary = safeText(review.summary || "No visual review packet was captured for this mission.");
+    const stageEvidence = Array.isArray(review.stage_evidence) ? review.stage_evidence.filter(Boolean) : [];
+    return `
+      <section class="charlie-visual-review" aria-label="Visual Review">
+        <div class="charlie-visual-review-header">
+          <div>
+            <strong>Visual Review</strong>
+            <span>${escapeHtml(status.replace(/_/g, " "))}</span>
+          </div>
+          ${localPreviewMarkup(preview || {}, links || {})}
+        </div>
+        ${media.length ? `<div class="charlie-visual-review-media">${media.map(visualReviewMediaMarkup).join("")}</div>` : `<p class="charlie-muted">${escapeHtml(summary)}</p>`}
+        ${stageEvidence.length ? `<div class="charlie-visual-stage-evidence">${stageEvidence.slice(0, 4).map((item) => `<span>${escapeHtml(safeText(item.agent || "agent"))}: ${escapeHtml(safeText(item.summary || ""))}</span>`).join("")}</div>` : ""}
+      </section>
+    `;
+  }
+
+  function visualReviewMediaMarkup(item) {
+    const label = safeText(item.label || item.filename || "Review media");
+    const reference = safeText(item.reference || item.url || "");
+    const mediaType = safeText(item.media_type || "image");
+    if (!reference) return "";
+    const thumbnail = mediaType === "video"
+      ? `<video src="${escapeHtml(reference)}" muted playsinline preload="metadata"></video>`
+      : `<img src="${escapeHtml(reference)}" alt="${escapeHtml(label)}" loading="lazy">`;
+    return `
+      <button type="button" class="charlie-visual-thumbnail" data-visual-review-open data-media-src="${escapeHtml(reference)}" data-media-label="${escapeHtml(label)}" data-media-type="${escapeHtml(mediaType)}">
+        ${thumbnail}
+        <span>${escapeHtml(label)}</span>
+      </button>
+    `;
+  }
+
   function blockedReviewBanner(packet) {
     const execution = packet.agent_execution || {};
     const blockedAgent = packet.blocked_agent || execution.blocked_agent || "agent";
@@ -1015,6 +1061,40 @@
         <small>${escapeHtml(attempts)}. Use Send Back after reviewing the evidence below.</small>
       </div>
     `;
+  }
+
+  function openVisualReviewOverlay(button) {
+    if (!button) return;
+    closeVisualReviewOverlay();
+    const src = safeText(button.dataset.mediaSrc).trim();
+    if (!src) return;
+    const label = safeText(button.dataset.mediaLabel || "Visual review media");
+    const mediaType = safeText(button.dataset.mediaType || "image");
+    const overlay = document.createElement("div");
+    overlay.className = "charlie-visual-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", label);
+    const media = mediaType === "video"
+      ? `<video src="${escapeHtml(src)}" controls autoplay></video>`
+      : `<img src="${escapeHtml(src)}" alt="${escapeHtml(label)}">`;
+    overlay.innerHTML = `
+      <div class="charlie-visual-overlay-panel">
+        <button type="button" class="charlie-visual-overlay-close" aria-label="Close visual review">Close</button>
+        ${media}
+        <strong>${escapeHtml(label)}</strong>
+      </div>
+    `;
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeVisualReviewOverlay();
+    });
+    overlay.querySelector(".charlie-visual-overlay-close").addEventListener("click", closeVisualReviewOverlay);
+    document.body.appendChild(overlay);
+    overlay.querySelector(".charlie-visual-overlay-close").focus();
+  }
+
+  function closeVisualReviewOverlay() {
+    document.querySelectorAll(".charlie-visual-overlay").forEach((overlay) => overlay.remove());
   }
 
   function queuePriorityValue(mission) {
@@ -1041,6 +1121,9 @@
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeVisualReviewOverlay();
+  });
   setupMediaCapture();
   loadMissions();
 })();

@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import json
 import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -450,6 +451,41 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
         self.assertEqual(vault_metadata["review_packet"]["local_preview"]["status"], "captured")
+        self.assertTrue(vault_metadata["review_packet"]["visual_review"]["ui_related"])
+        self.assertEqual(vault_metadata["review_packet"]["visual_review"]["local_preview"]["url"], "http://127.0.0.1:5002/charlie")
+
+    def test_visual_review_packet_collects_local_runner_media_for_ui_changes(self):
+        mission_id = "CHARLIE-MISSION-VISUAL123"
+        media_dir = execution_bridge._review_media_path(mission_id)
+        if media_dir.exists():
+            shutil.rmtree(media_dir)
+        media_dir.mkdir(parents=True)
+        try:
+            (media_dir / "owner-review.png").write_bytes(b"not-real-image-but-route-contract")
+            packet = execution_bridge._build_visual_review_packet(
+                mission_id=mission_id,
+                changed_files=["templates/charlie.html"],
+                local_preview={"url": "http://127.0.0.1:5000/charlie", "status": "captured"},
+            )
+        finally:
+            shutil.rmtree(media_dir, ignore_errors=True)
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["media"][0]["reference"], "/api/charlie/build-relay/review-media/CHARLIE-MISSION-VISUAL123/owner-review.png")
+        self.assertEqual(packet["cleanup"]["status"], "pending_owner_decision")
+
+    def test_cleanup_visual_review_media_removes_only_runner_media_dir(self):
+        mission_id = "CHARLIE-MISSION-CLEANUP123"
+        media_dir = execution_bridge._review_media_path(mission_id)
+        media_dir.mkdir(parents=True, exist_ok=True)
+        (media_dir / "capture.png").write_bytes(b"temporary")
+
+        result = execution_bridge.cleanup_visual_review_media(mission_id)
+
+        self.assertTrue(result["cleaned"])
+        self.assertEqual(result["status"], "review_media_cleaned")
+        self.assertFalse(media_dir.exists())
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")

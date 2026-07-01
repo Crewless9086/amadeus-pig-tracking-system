@@ -1,12 +1,14 @@
 import os
+from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_from_directory
 
 from modules.auth.owner_access import require_owner_read_access
 from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
+from modules.charlie.execution_bridge import cleanup_visual_review_media
 from modules.charlie.runner_control import runner_status as local_runner_status
 from modules.charlie.mission_store import (
     get_mission,
@@ -24,6 +26,9 @@ from modules.charlie.mission_store import (
 
 
 charlie_bp = Blueprint("charlie", __name__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -287,6 +292,29 @@ def charlie_build_relay_mission_review_packet_route(mission_id):
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/build-relay/review-media/<mission_id>/<filename>", methods=["GET"])
+def charlie_build_relay_review_media_route(mission_id, filename):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    safe_mission_id = "".join(char if char.isalnum() or char in "_.-" else "-" for char in str(mission_id or ""))[:120]
+    safe_filename = Path(str(filename or "")).name
+    if not safe_mission_id or not safe_filename or Path(safe_filename).suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    media_dir = REVIEW_MEDIA_DIR / safe_mission_id
+    try:
+        resolved_dir = media_dir.resolve()
+        resolved_root = REVIEW_MEDIA_DIR.resolve()
+    except OSError:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    if resolved_root not in resolved_dir.parents:
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    media_path = resolved_dir / safe_filename
+    if not media_path.exists() or not media_path.is_file():
+        return jsonify({"success": False, "status": "review_media_not_found"}), 404
+    return send_from_directory(resolved_dir, safe_filename)
+
+
 def _first_mission(result):
     missions = result.get("missions") or []
     return missions[0] if missions else None
@@ -298,12 +326,16 @@ def charlie_build_relay_mission_review_decision_route(mission_id):
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
+    decision = str(payload.get("decision") or "").strip()
     result, status_code = record_mission_review_decision(
         mission_id,
-        decision=str(payload.get("decision") or "").strip(),
+        decision=decision,
         comments=str(payload.get("comments") or "").strip(),
         target_stage=str(payload.get("target_stage") or "builder").strip(),
     )
+    if status_code < 400 and decision in {"approve_final_release", "mark_done"}:
+        result = dict(result)
+        result["visual_review_cleanup"] = cleanup_visual_review_media(mission_id)
     return jsonify(result), status_code
 
 

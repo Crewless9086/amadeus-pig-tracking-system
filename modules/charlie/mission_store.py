@@ -859,6 +859,18 @@ def record_mission_review_decision(
         "last_owner_review_decision": decision_record,
         "review_status": "final_approved" if decision == "approve_final_release" else decision,
     })
+    if decision in {"approve_final_release", "mark_done"}:
+        visual_review = review_packet.get("visual_review") if isinstance(review_packet.get("visual_review"), dict) else {}
+        cleanup = visual_review.get("cleanup") if isinstance(visual_review.get("cleanup"), dict) else {}
+        if visual_review:
+            cleanup.update({
+                "required": bool(cleanup.get("required", visual_review.get("ui_related", False))),
+                "status": "cleanup_requested",
+                "requested_at": decision_record["recorded_at"],
+                "requested_by_decision": decision,
+            })
+            visual_review["cleanup"] = cleanup
+            review_packet["visual_review"] = visual_review
     if decision == "send_back":
         review_packet["return_to_stage"] = target_stage
         review_packet["owner_comments_pending"] = comments
@@ -963,6 +975,7 @@ def build_mission_review_packet(mission):
         "changed_files": _packet_list(packet, "changed_files", []),
         "test_evidence": _packet_list(packet, "test_evidence", vault.get("test_plan") if isinstance(vault.get("test_plan"), list) else []),
         "local_preview": packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {},
+        "visual_review": packet.get("visual_review") if isinstance(packet.get("visual_review"), dict) else _default_visual_review(packet),
         "links": packet.get("links") if isinstance(packet.get("links"), dict) else {},
         "release_notes": _packet_list(packet, "release_notes", []),
         "agent_execution": packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else metadata.get("agent_execution", {}),
@@ -1295,6 +1308,21 @@ def _workflow_findings(workflow):
         if finding:
             findings.append(f"{item.get('agent', 'agent')}: {finding}")
     return findings
+
+
+def _default_visual_review(packet):
+    packet = packet if isinstance(packet, dict) else {}
+    local_preview = packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {}
+    return {
+        "contract": "charlie_visual_review_v1",
+        "ui_related": False,
+        "status": "not_available",
+        "summary": "No visual review packet was captured for this mission.",
+        "local_preview": local_preview,
+        "media": [],
+        "stage_evidence": [],
+        "cleanup": {"required": False, "status": "not_required"},
+    }
 
 
 def _packet_list(packet, key, fallback):
