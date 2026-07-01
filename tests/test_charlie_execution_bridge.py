@@ -381,23 +381,76 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(capture["captured"])
         self.assertEqual(capture["status"], "captured")
+        self.assertEqual(capture["capture_source"], "generated_owner_review_packet")
+        self.assertEqual(capture["fallback_reason"], "control_dashboard_preview_not_mission_visual")
         self.assertEqual(media[0]["filename"], "owner_review_preview.png")
         self.assertIn("/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/owner_review_preview.png", media[0]["reference"])
 
-    def test_visual_review_packet_blocks_capture_without_preview_url(self):
+    def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
-                packet = execution_bridge._build_visual_review_packet(
-                    mission_id="CHARLIE-MISSION-EXEC123",
-                    mission_type="feature build",
-                    changed_files=["templates/charlie.html"],
-                    local_preview={"url": "", "status": "not_captured"},
-                    artifacts={"builder": {"summary": "Changed owner review UI."}},
+                def fake_runner(command, **_kwargs):
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {"url": "http://127.0.0.1:5000/sales/beacon-media"},
+                    run_subprocess=fake_runner,
                 )
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["capture_source"], "local_preview")
+        self.assertEqual(capture["fallback_reason"], "")
+        self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
+
+    def test_visual_review_packet_generates_fallback_media_without_preview_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_capture(mission_id, _local_preview, **kwargs):
+                    media_dir = execution_bridge._review_media_path(mission_id)
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    (media_dir / "owner_review_preview.png").write_bytes(b"fake png")
+                    return {
+                        "captured": True,
+                        "status": "captured",
+                        "capture_source": "generated_owner_review_packet",
+                        "fallback_reason": "preview_url_not_captured",
+                    }
+
+                with patch("modules.charlie.execution_bridge._capture_visual_review_media", side_effect=fake_capture):
+                    packet = execution_bridge._build_visual_review_packet(
+                        mission_id="CHARLIE-MISSION-EXEC123",
+                        mission_type="feature build",
+                        changed_files=["templates/charlie.html"],
+                        local_preview={"url": "", "status": "not_captured"},
+                        artifacts={"builder": {"summary": "Changed owner review UI."}},
+                    )
+
+        self.assertTrue(packet["ui_related"])
+        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["capture"]["fallback_reason"], "preview_url_not_captured")
+        self.assertEqual(packet["media"][0]["filename"], "owner_review_preview.png")
+
+    def test_visual_review_packet_blocks_when_capture_fallback_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={
+                    "captured": False,
+                    "status": "capture_command_failed",
+                    "fallback_reason": "preview_url_not_captured",
+                }):
+                    packet = execution_bridge._build_visual_review_packet(
+                        mission_id="CHARLIE-MISSION-EXEC123",
+                        mission_type="feature build",
+                        changed_files=["templates/charlie.html"],
+                        local_preview={"url": "", "status": "not_captured"},
+                        artifacts={"builder": {"summary": "Changed owner review UI."}},
+                    )
 
         self.assertTrue(packet["ui_related"])
         self.assertEqual(packet["status"], "not_captured_blocked")
-        self.assertEqual(packet["capture"]["status"], "preview_url_not_captured")
+        self.assertEqual(packet["capture"]["status"], "capture_command_failed")
         self.assertEqual(packet["media"], [])
         self.assertIn("screenshot capture is blocked", packet["summary"])
 
@@ -432,6 +485,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             changed_files=["modules/charlie/execution_bridge.py"],
             final_message="backend runner update",
         ))
+
+    def test_extract_local_preview_strips_trailing_quote(self):
+        preview = execution_bridge._extract_local_preview('Open "http://127.0.0.1:5003/charlie"')
+
+        self.assertEqual(preview["url"], "http://127.0.0.1:5003/charlie")
+
+    @patch("modules.charlie.execution_bridge.shutil.which")
+    def test_npx_executable_prefers_windows_cmd_shim(self, which):
+        def fake_which(name):
+            return "C:/node/npx.cmd" if name == "npx.cmd" else None
+
+        which.side_effect = fake_which
+
+        with patch("modules.charlie.execution_bridge.os.name", "nt"):
+            self.assertEqual(execution_bridge._npx_executable(), "C:/node/npx.cmd")
 
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
@@ -526,12 +594,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("modules/charlie/execution_bridge.py", vault_metadata["review_packet"]["changed_files"])
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
+    @patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured", "capture_source": "generated_owner_review_packet"})
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_complete_codex_execution_from_existing_final_artifact(
         self,
         update_vault,
         update_workflow,
+        _capture,
         _changed_files,
     ):
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
@@ -566,11 +636,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         media_dir.mkdir(parents=True)
         try:
             (media_dir / "owner-review.png").write_bytes(b"not-real-image-but-route-contract")
-            packet = execution_bridge._build_visual_review_packet(
-                mission_id=mission_id,
-                changed_files=["templates/charlie.html"],
-                local_preview={"url": "http://127.0.0.1:5000/charlie", "status": "captured"},
-            )
+            with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured"}):
+                packet = execution_bridge._build_visual_review_packet(
+                    mission_id=mission_id,
+                    changed_files=["templates/charlie.html"],
+                    local_preview={"url": "http://127.0.0.1:5000/charlie", "status": "captured"},
+                )
         finally:
             shutil.rmtree(media_dir, ignore_errors=True)
 
@@ -592,12 +663,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(media_dir.exists())
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["static/js/charlieMissionControl.js"])
+    @patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured", "capture_source": "generated_owner_review_packet"})
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_complete_codex_execution_does_not_default_local_preview_to_control_dashboard(
         self,
         update_vault,
         update_workflow,
+        _capture,
         _changed_files,
     ):
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)

@@ -1,4 +1,5 @@
 import json
+import html
 import os
 import re
 import shutil
@@ -2192,7 +2193,13 @@ def _build_visual_review_packet(
     local_media_path = str(_review_media_path(mission_id)) if mission_id else ""
     if ui_related and mission_id:
         _review_media_path(mission_id).mkdir(parents=True, exist_ok=True)
-    capture = _capture_visual_review_media(mission_id, local_preview) if ui_related else {
+    capture = _capture_visual_review_media(
+        mission_id,
+        local_preview,
+        changed_files=changed_files,
+        artifacts=artifacts,
+        final_message=final_message,
+    ) if ui_related else {
         "status": "not_required",
         "captured": False,
         "reason": "mission_not_ui_related",
@@ -2221,34 +2228,51 @@ def _build_visual_review_packet(
     }
 
 
-def _capture_visual_review_media(mission_id, local_preview, run_subprocess=None):
+def _capture_visual_review_media(
+    mission_id,
+    local_preview,
+    run_subprocess=None,
+    changed_files=None,
+    artifacts=None,
+    final_message="",
+):
     mission_id = str(mission_id or "").strip()
     preview_url = str((local_preview or {}).get("url") or "").strip()
     if not mission_id:
         return {"captured": False, "status": "mission_id_missing"}
-    if not preview_url:
-        return {
-            "captured": False,
-            "status": "preview_url_not_captured",
-            "reason": "UI mission had no localhost preview URL, so the local runner could not capture screenshots.",
-        }
-    parsed = urlparse(preview_url)
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
-        return {
-            "captured": False,
-            "status": "preview_url_not_local",
-            "url": preview_url,
-            "reason": "Visual evidence capture only opens local preview URLs from the runner machine.",
-        }
     media_dir = _review_media_path(mission_id)
     media_dir.mkdir(parents=True, exist_ok=True)
     output_path = media_dir / "owner_review_preview.png"
+
+    fallback_reason = ""
+    capture_url = preview_url
+    if not preview_url:
+        fallback_reason = "preview_url_not_captured"
+    else:
+        parsed = urlparse(preview_url)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+            fallback_reason = "preview_url_not_local"
+        elif _is_control_dashboard_preview_url(preview_url):
+            fallback_reason = "control_dashboard_preview_not_mission_visual"
+
+    if fallback_reason:
+        html_path = _write_visual_review_preview_html(
+            mission_id=mission_id,
+            media_dir=media_dir,
+            local_preview=local_preview,
+            changed_files=changed_files,
+            artifacts=artifacts,
+            final_message=final_message,
+            fallback_reason=fallback_reason,
+        )
+        capture_url = html_path.resolve().as_uri()
+
     command = [
-        "npx",
+        _npx_executable(),
         "playwright",
         "screenshot",
         "--wait-for-timeout=1000",
-        preview_url,
+        capture_url,
         str(output_path),
     ]
     runner = run_subprocess or subprocess.run
@@ -2276,12 +2300,129 @@ def _capture_visual_review_media(mission_id, local_preview, run_subprocess=None)
         "captured": captured,
         "status": "captured" if captured else "capture_command_failed",
         "url": preview_url,
+        "capture_url": capture_url,
+        "capture_source": "generated_owner_review_packet" if fallback_reason else "local_preview",
+        "fallback_reason": fallback_reason,
         "command": " ".join(command),
         "path": str(output_path) if captured else "",
         "returncode": completed.returncode,
         "stdout_tail": _truncate(completed.stdout or "", 1200),
         "stderr_tail": _truncate(completed.stderr or "", 1200),
     }
+
+
+def _npx_executable():
+    if os.name == "nt":
+        return shutil.which("npx.cmd") or shutil.which("npx.exe") or "npx.cmd"
+    return shutil.which("npx") or "npx"
+
+
+def _is_control_dashboard_preview_url(url):
+    parsed = urlparse(str(url or ""))
+    return parsed.path.rstrip("/") in {"", "/charlie"}
+
+
+def _write_visual_review_preview_html(
+    mission_id="",
+    media_dir=None,
+    local_preview=None,
+    changed_files=None,
+    artifacts=None,
+    final_message="",
+    fallback_reason="",
+):
+    media_dir = Path(media_dir or _review_media_path(mission_id))
+    media_dir.mkdir(parents=True, exist_ok=True)
+    html_path = media_dir / "owner_review_preview.html"
+    html_path.write_text(
+        _visual_review_preview_html(
+            mission_id=mission_id,
+            local_preview=local_preview,
+            changed_files=changed_files,
+            artifacts=artifacts,
+            final_message=final_message,
+            fallback_reason=fallback_reason,
+        ),
+        encoding="utf-8",
+    )
+    return html_path
+
+
+def _visual_review_preview_html(
+    mission_id="",
+    local_preview=None,
+    changed_files=None,
+    artifacts=None,
+    final_message="",
+    fallback_reason="",
+):
+    local_preview = local_preview if isinstance(local_preview, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    changed_files = [str(path or "").strip() for path in (changed_files or []) if str(path or "").strip()]
+    stage_cards = []
+    for agent in ("builder", "tester", "qa_red_team", "reviewer"):
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        summary = _truncate(artifact.get("summary") or "", 320)
+        status = "complete" if summary else "not recorded"
+        stage_cards.append(
+            f"<article><span>{html.escape(agent.replace('_', ' ').title())}</span>"
+            f"<strong>{html.escape(status)}</strong><p>{html.escape(summary or 'No summary captured for this stage.')}</p></article>"
+        )
+    file_items = "".join(f"<li>{html.escape(path)}</li>" for path in changed_files[:12]) or "<li>No changed files listed.</li>"
+    preview_url = str(local_preview.get("url") or "").strip()
+    final_summary = _truncate(final_message or "Owner review packet generated from CHARLIE agent artifacts.", 500)
+    reason = fallback_reason.replace("_", " ") or "generated visual packet"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CHARLIE Owner Review Visual Packet</title>
+  <style>
+    body {{ margin: 0; font-family: Arial, sans-serif; color: #17202a; background: #f5f7fa; }}
+    main {{ width: 1120px; min-height: 720px; padding: 34px; box-sizing: border-box; }}
+    .top {{ display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 24px; }}
+    h1 {{ margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }}
+    .mission {{ color: #506070; font-size: 15px; }}
+    .badge {{ background: #153e75; color: white; padding: 8px 12px; border-radius: 6px; font-weight: 700; }}
+    .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 22px 0; }}
+    article, .panel {{ background: white; border: 1px solid #d7dde5; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(20, 32, 45, .06); }}
+    article span {{ display: block; color: #667789; font-size: 12px; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; }}
+    article strong {{ display: block; font-size: 18px; margin-bottom: 8px; }}
+    article p, .panel p {{ margin: 0; line-height: 1.45; color: #354253; font-size: 14px; }}
+    .two {{ display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; }}
+    h2 {{ margin: 0 0 12px; font-size: 18px; }}
+    ul {{ margin: 0; padding-left: 19px; color: #354253; line-height: 1.55; font-size: 14px; }}
+    .meta {{ margin-top: 14px; color: #657386; font-size: 13px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="top">
+      <div>
+        <h1>CHARLIE Owner Review Visual Packet</h1>
+        <div class="mission">{html.escape(str(mission_id or 'Mission'))}</div>
+      </div>
+      <div class="badge">Ready For Owner Review</div>
+    </div>
+    <section class="panel">
+      <h2>Review Summary</h2>
+      <p>{html.escape(final_summary)}</p>
+      <div class="meta">Capture source: {html.escape(reason)}{html.escape(' | Local preview: ' + preview_url if preview_url else '')}</div>
+    </section>
+    <section class="grid">{''.join(stage_cards)}</section>
+    <section class="two">
+      <div class="panel">
+        <h2>Changed Files</h2>
+        <ul>{file_items}</ul>
+      </div>
+      <div class="panel">
+        <h2>Owner Decision Gate</h2>
+        <p>This packet is generated by the local runner from the completed agent handoff artifacts. Final approval remains owner-controlled before release cleanup or deployment.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>"""
 
 
 def _is_ui_related_mission(mission_type="", changed_files=None, final_message=""):
@@ -2699,7 +2840,7 @@ def _resolve_execution_artifact(mission_id, execution_id="", prompt_path=None, s
 def _extract_local_preview(final_message):
     text = str(final_message or "")
     match = re.search(r"https?://127\.0\.0\.1:\d+/\S*", text)
-    url = match.group(0).rstrip(").,") if match else ""
+    url = match.group(0).rstrip(").,\"'") if match else ""
     return {
         "url": url,
         "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
