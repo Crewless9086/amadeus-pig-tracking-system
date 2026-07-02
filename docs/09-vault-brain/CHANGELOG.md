@@ -6,3 +6,4 @@
 - Split the flat draft into folders for governance, identity, agents, businesses, workflows, playbooks, data, standards, rules, examples, and source maps.
 - Added templates for agents, businesses, and workflows.
 - Preserved first-pass source references from the repo.
+- Added explicit agent/structure guardrails for templates, future registry, future organogram, Brain Guard blocking, and CHARLIE CORE environment/shared-department identification.

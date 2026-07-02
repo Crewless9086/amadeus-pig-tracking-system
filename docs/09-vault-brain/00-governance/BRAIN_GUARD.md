@@ -31,6 +31,10 @@ Before a CHARLIE CORE mission is review-ready, Brain Guard checks:
 
 - owner request is reflected accurately;
 - role and authority boundaries remain correct;
+- business environment and shared departments are identified;
+- new agents use `../02-agents/_AGENT_TEMPLATE.md`;
+- new agents are added to `../02-agents/AGENT_REGISTRY.md` once that registry exists;
+- structure changes update `../01-identity/AGENT_ORGANOGRAM.md` once that organogram exists;
 - source-of-truth rules remain correct;
 - review evidence is complete;
 - business/legal gates remain correct;
