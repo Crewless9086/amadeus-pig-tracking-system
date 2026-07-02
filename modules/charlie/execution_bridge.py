@@ -430,6 +430,8 @@ def run_agent_execution_bridge_v2(
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
+        if agent == "builder":
+            artifact = _auto_package_builder_changes(mission, artifact)
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
             backflow_target = _agent_backflow_target(agent, artifact, quality)
@@ -1671,6 +1673,155 @@ def _artifact_pr_reference(artifact):
         if text:
             return text
     return ""
+
+
+def _auto_package_builder_changes(mission, artifact, runner=None):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    if not _has_release_relevant_changes(changed_files) or _artifact_pr_reference(artifact):
+        return artifact
+    runner = runner or subprocess.run
+    branch_name = _builder_branch_name(mission)
+    result = {
+        "version": "charlie_builder_git_packaging_v1",
+        "attempted": True,
+        "branch_name": branch_name,
+        "commands": [],
+        "status": "started",
+    }
+
+    def run(command):
+        try:
+            completed = runner(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=str(REPO_ROOT),
+                timeout=180,
+                check=False,
+            )
+        except Exception as exc:
+            record = {
+                "command": " ".join(command),
+                "returncode": 1,
+                "stdout": "",
+                "stderr": exc.__class__.__name__,
+            }
+            result["commands"].append(record)
+            return record
+        record = {
+            "command": " ".join(command),
+            "returncode": completed.returncode,
+            "stdout": _truncate(completed.stdout or "", 1200),
+            "stderr": _truncate(completed.stderr or "", 1200),
+        }
+        result["commands"].append(record)
+        return record
+
+    current = run(["git", "branch", "--show-current"])
+    if current["returncode"] != 0:
+        return _builder_packaging_failed(artifact, result, "current_branch_failed")
+    if current["stdout"].strip() != branch_name:
+        created = run(["git", "switch", "-c", branch_name])
+        if created["returncode"] != 0:
+            switched = run(["git", "switch", branch_name])
+            if switched["returncode"] != 0:
+                return _builder_packaging_failed(artifact, result, "branch_create_or_switch_failed")
+
+    add_files = [path for path in changed_files if path and path != "No changed files detected by git diff."]
+    added = run(["git", "add", "--", *add_files])
+    if added["returncode"] != 0:
+        return _builder_packaging_failed(artifact, result, "git_add_failed")
+    diff_check = run(["git", "diff", "--cached", "--quiet", "--", *add_files])
+    if diff_check["returncode"] == 0:
+        return _builder_packaging_failed(artifact, result, "no_staged_changes")
+    if diff_check["returncode"] not in {0, 1}:
+        return _builder_packaging_failed(artifact, result, "staged_diff_check_failed")
+
+    commit_message = _builder_commit_message(mission)
+    committed = run(["git", "commit", "-m", commit_message])
+    if committed["returncode"] != 0:
+        return _builder_packaging_failed(artifact, result, "git_commit_failed")
+    sha = run(["git", "rev-parse", "--short", "HEAD"])
+    pushed = run(["git", "push", "-u", "origin", branch_name])
+    if pushed["returncode"] != 0:
+        return _builder_packaging_failed(artifact, result, "git_push_failed")
+    pr = run([
+        "gh",
+        "pr",
+        "create",
+        "--title",
+        _truncate(str((mission or {}).get("title") or commit_message), 120),
+        "--body",
+        _builder_pr_body(mission, artifact, result),
+        "--base",
+        "main",
+        "--head",
+        branch_name,
+    ])
+    if pr["returncode"] != 0:
+        return _builder_packaging_failed(artifact, result, "gh_pr_create_failed")
+    pr_url = _extract_pr_url(pr["stdout"]) or _extract_pr_url(pr["stderr"])
+    if not pr_url:
+        return _builder_packaging_failed(artifact, result, "pr_url_not_detected")
+
+    packaged = dict(artifact)
+    links = packaged.get("links") if isinstance(packaged.get("links"), dict) else {}
+    links = {**links, "pr": pr_url}
+    packaged.update({
+        "branch_name": branch_name,
+        "commit_sha": sha["stdout"].strip(),
+        "pr_url": pr_url,
+        "links": links,
+        "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
+    })
+    return packaged
+
+
+def _builder_packaging_failed(artifact, result, status):
+    packaged = dict(artifact)
+    packaged["git_packaging"] = {**result, "status": status}
+    errors = packaged.get("errors") if isinstance(packaged.get("errors"), list) else []
+    if not any("runner git packaging failed" in str(item).lower() for item in errors):
+        errors.append(f"Runner git packaging failed: {status}.")
+    packaged["errors"] = errors
+    return packaged
+
+
+def _builder_branch_name(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    suffix = str(mission.get("mission_id") or "")[-8:].lower() or "mission"
+    title = re.sub(r"[^a-z0-9]+", "-", str(mission.get("title") or "charlie-build").lower()).strip("-")
+    title = title[:44].strip("-") or "charlie-build"
+    return f"charlie/{title}-{suffix}"
+
+
+def _builder_commit_message(mission):
+    title = str((mission or {}).get("title") or "CHARLIE mission").strip()
+    return _truncate(f"Build {title}", 72)
+
+
+def _builder_pr_body(mission, artifact, packaging):
+    return "\n".join([
+        f"Mission: {(mission or {}).get('mission_id', '')}",
+        "",
+        str(artifact.get("summary") or "Builder changes packaged by CHARLIE runner."),
+        "",
+        "Tests/evidence:",
+        *[f"- {item}" for item in artifact.get("tests_run", []) if item],
+        *[f"- {item}" for item in artifact.get("commands_run", []) if "test" in str(item).lower() or "check" in str(item).lower()],
+        "",
+        "Runner packaging:",
+        f"- branch: {packaging.get('branch_name', '')}",
+        "- Created by parent runner because Builder subprocess could not record PR evidence.",
+    ]).strip()
+
+
+def _extract_pr_url(value):
+    match = re.search(r"https://github\.com/[^\s]+/pull/\d+", str(value or ""))
+    return match.group(0).rstrip(").,") if match else ""
 
 
 def _inherit_pr_reference(agent, artifact, artifacts):

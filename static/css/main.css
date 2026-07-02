@@ -7702,7 +7702,9 @@ body.oom-farm-command-body {
 /* CHARLIE Mission Control */
 .charlie-body {
     margin: 0;
-    background: #f4f7f6;
+    background:
+        radial-gradient(circle at 18% 0%, rgba(189, 92, 46, 0.16), transparent 28rem),
+        linear-gradient(135deg, #16211f 0%, #24352e 42%, #e7dfd2 100%);
     color: #17211e;
     font-family: Arial, sans-serif;
 }
@@ -7725,6 +7727,12 @@ body.oom-farm-command-body {
 .charlie-header h1 {
     margin: 4px 0 8px;
     font-size: 2rem;
+    color: #f7fbf8;
+}
+
+.charlie-header p,
+.charlie-header .ops-kicker {
+    color: #d7e3de;
 }
 
 .charlie-command-strip {
@@ -7737,10 +7745,10 @@ body.oom-farm-command-body {
 .charlie-command-strip article,
 .charlie-panel,
 .charlie-mission-card {
-    border: 1px solid #d8e1dd;
+    border: 1px solid rgba(58, 83, 73, 0.22);
     border-radius: 8px;
-    background: #ffffff;
-    box-shadow: 0 1px 2px rgba(23, 33, 30, 0.05);
+    background: rgba(250, 252, 248, 0.94);
+    box-shadow: 0 16px 42px rgba(14, 24, 21, 0.12);
 }
 
 .charlie-command-strip article {
@@ -7762,7 +7770,7 @@ body.oom-farm-command-body {
 
 .charlie-control-room {
     display: grid;
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1.45fr) minmax(250px, 340px);
+    grid-template-columns: minmax(220px, 286px) minmax(0, 1.6fr) minmax(270px, 360px);
     gap: 16px;
     align-items: start;
 }
@@ -7790,6 +7798,29 @@ body.oom-farm-command-body {
 
 .charlie-panel {
     padding: 16px;
+}
+
+.charlie-rail-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.charlie-icon-button {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+    border-color: #8b5a34;
+    background: #22352e;
+    color: #f7efe4;
+    font-size: 1.45rem;
+    line-height: 1;
+}
+
+.charlie-icon-button:hover,
+.charlie-icon-button[aria-expanded="true"] {
+    background: #b86033;
+    color: #fffaf2;
 }
 
 .charlie-panel pre {
@@ -7840,6 +7871,19 @@ body.oom-farm-command-body {
     border: 1px solid #d8e1dd;
     border-radius: 8px;
     background: #f7faf9;
+}
+
+.charlie-intake-form.is-collapsed {
+    display: none;
+}
+
+.charlie-safety-boundary {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border-left: 3px solid #b86033;
+    color: #51645d;
+    font-size: 0.8rem;
+    line-height: 1.35;
 }
 
 .charlie-intake-form h3 {
@@ -8101,6 +8145,129 @@ body.oom-farm-command-body {
     padding: 10px 0;
 }
 
+.charlie-organogram {
+    position: relative;
+    min-height: 640px;
+    overflow: hidden;
+    border: 1px solid rgba(49, 92, 77, 0.24);
+    border-radius: 8px;
+    background:
+        linear-gradient(rgba(49, 92, 77, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(49, 92, 77, 0.08) 1px, transparent 1px),
+        #f7faf6;
+    background-size: 32px 32px;
+}
+
+.charlie-organogram::before,
+.charlie-organogram::after {
+    content: "";
+    position: absolute;
+    inset: 72px;
+    border: 1px solid rgba(184, 96, 51, 0.2);
+    border-radius: 999px;
+    pointer-events: none;
+}
+
+.charlie-organogram::after {
+    inset: 132px;
+    border-color: rgba(29, 111, 143, 0.18);
+}
+
+.charlie-core-node {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: min(210px, 42%);
+    min-height: 170px;
+    padding: 18px;
+    border: 1px solid #315c4d;
+    border-radius: 8px;
+    background: #17241f;
+    color: #eef8f3;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 8px rgba(49, 92, 77, 0.1), 0 26px 60px rgba(18, 30, 25, 0.28);
+}
+
+.charlie-core-node strong {
+    font-size: 1.25rem;
+}
+
+.charlie-core-node small,
+.charlie-core-node em {
+    color: #cbd9d4;
+    font-style: normal;
+    overflow-wrap: anywhere;
+}
+
+.charlie-core-orbit {
+    width: 58px;
+    height: 58px;
+    border: 2px solid #b86033;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 8px rgba(184, 96, 51, 0.14), 0 0 18px rgba(184, 96, 51, 0.42);
+}
+
+.charlie-core-node.is-routing .charlie-core-orbit {
+    animation: charliePulse 1.4s ease-in-out infinite;
+}
+
+.charlie-agent-ring {
+    position: absolute;
+    inset: 26px;
+}
+
+.charlie-organogram .charlie-flow-node {
+    position: absolute;
+    width: clamp(132px, 18vw, 178px);
+    min-height: 124px;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(1) {
+    left: 50%;
+    top: 2%;
+    transform: translateX(-50%);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(2) {
+    right: 8%;
+    top: 12%;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(3) {
+    right: 2%;
+    top: 42%;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(4) {
+    right: 13%;
+    bottom: 8%;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(5) {
+    left: 50%;
+    bottom: 2%;
+    transform: translateX(-50%);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(6) {
+    left: 13%;
+    bottom: 8%;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(7) {
+    left: 2%;
+    top: 42%;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(8) {
+    left: 8%;
+    top: 12%;
+}
+
 .charlie-flow-node {
     position: relative;
     display: grid;
@@ -8158,6 +8325,59 @@ body.oom-farm-command-body {
     border-left: 6px solid #b9c7c1;
 }
 
+.charlie-organogram .charlie-flow-link {
+    left: 50%;
+    right: auto;
+    top: 50%;
+    z-index: -1;
+    width: 190px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(29, 111, 143, 0.08), rgba(29, 111, 143, 0.52));
+    transform-origin: left center;
+}
+
+.charlie-organogram .charlie-flow-link::after {
+    display: none;
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(1) .charlie-flow-link {
+    transform: rotate(90deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(2) .charlie-flow-link {
+    transform: rotate(135deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(3) .charlie-flow-link {
+    transform: rotate(180deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(4) .charlie-flow-link {
+    transform: rotate(220deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(5) .charlie-flow-link {
+    transform: rotate(270deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(6) .charlie-flow-link {
+    transform: rotate(320deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(7) .charlie-flow-link {
+    transform: rotate(0deg);
+}
+
+.charlie-organogram .charlie-flow-node:nth-child(8) .charlie-flow-link {
+    transform: rotate(42deg);
+}
+
+.charlie-organogram .charlie-flow-node.is-active .charlie-flow-link,
+.charlie-organogram .charlie-flow-node.is-review-ready .charlie-flow-link {
+    background: linear-gradient(90deg, rgba(184, 96, 51, 0.08), rgba(184, 96, 51, 0.78));
+    animation: charlieSignal 1.2s linear infinite;
+}
+
 .charlie-flow-node.is-complete {
     border-color: #6da887;
     background: #f0f8f4;
@@ -8207,6 +8427,21 @@ body.oom-farm-command-body {
     50% {
         transform: scale(1.35);
         box-shadow: 0 0 0 8px rgba(29, 111, 143, 0);
+    }
+}
+
+@keyframes charlieSignal {
+    0% {
+        opacity: 0.35;
+        filter: saturate(0.8);
+    }
+    50% {
+        opacity: 1;
+        filter: saturate(1.4);
+    }
+    100% {
+        opacity: 0.35;
+        filter: saturate(0.8);
     }
 }
 
@@ -8719,6 +8954,34 @@ body.oom-farm-command-body {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .charlie-organogram {
+        min-height: auto;
+        padding: 14px;
+    }
+
+    .charlie-organogram::before,
+    .charlie-organogram::after {
+        display: none;
+    }
+
+    .charlie-core-node,
+    .charlie-agent-ring,
+    .charlie-organogram .charlie-flow-node {
+        position: static;
+        width: auto;
+        transform: none;
+    }
+
+    .charlie-core-node {
+        margin-bottom: 12px;
+    }
+
+    .charlie-agent-ring {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
     .charlie-flow-link {
         display: none;
     }
@@ -8733,7 +8996,8 @@ body.oom-farm-command-body {
     .charlie-command-center-grid,
     .charlie-mission-meta,
     .charlie-form-row,
-    .charlie-flow-track {
+    .charlie-flow-track,
+    .charlie-agent-ring {
         grid-template-columns: 1fr;
     }
 
