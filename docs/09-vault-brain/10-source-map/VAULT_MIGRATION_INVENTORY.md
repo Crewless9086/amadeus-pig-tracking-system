@@ -25,13 +25,15 @@ Classification values:
 | `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md` | migrated + active_reference | `01-identity/AGENT_ORGANOGRAM.md`, `02-agents/*`, `02-agents/AGENT_REGISTRY.md` | Specialist roster and approval rules. |
 | `docs/05-ai/AGENT_ROLES.md` | migrated + active_reference | `02-agents/*`, `04-workflows/*`, `08-business-rules/*` | Short current operating role register. |
 | `docs/05-ai/RESPONSE_RULES.md` | migrated + active_reference | `07-standards/CUSTOMER_RESPONSE_STANDARD.md`, agent docs | Customer-facing safety rules. |
-| `docs/04-n8n/WORKFLOW_RULES.md` | active_reference | `04-workflows/*`, `08-business-rules/*` | Live n8n rules should remain beside workflow exports until replaced by backend-only contracts. |
-| `docs/04-n8n/CHATWOOT_ATTRIBUTES.md` | active_reference | `06-data/ORDER_DATA_MODEL.md`, `06-data/MEAT_SALES_DATA_MODEL.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md` | Canonical Chatwoot label/attribute register. |
-| `docs/02-backend/*.md` | active_reference | `06-data/*`, `07-standards/*`, workflow docs | Backend contracts and implementation plans should remain close to code. |
-| `docs/03-google-sheets/*.md` | active_reference | `06-data/GOOGLE_SHEETS_LEGACY.md`, `06-data/FARM_DATA_MODEL.md`, `06-data/ORDER_DATA_MODEL.md` | Legacy table/schema truth while sheets still run parts of the farm. |
-| `docs/06-operations/*.md` | review_queue | `07-standards/*`, `05-playbooks/*`, `10-source-map/*` | Runbooks, checklists, migration evidence, and reports need second pass. |
-| `static/assets/agents/*/agent.md` | active_reference | `02-agents/*` | Runtime/static agent cards; keep until source-of-truth direction is decided. |
+| `docs/04-n8n/WORKFLOW_RULES.md` | migrated + active_reference | `04-workflows/N8N_WORKFLOW_SUITE.md`, `08-business-rules/*` | Live n8n rules stay beside workflow exports; doctrine migrated. |
+| `docs/04-n8n/CHATWOOT_ATTRIBUTES.md` | migrated + active_reference | `06-data/ORDER_DATA_MODEL.md`, `06-data/MEAT_SALES_DATA_MODEL.md`, `04-workflows/SAM_MEAT_SALES_WORKFLOW.md`, `04-workflows/N8N_WORKFLOW_SUITE.md` | Canonical Chatwoot label/attribute register. |
+| `docs/04-n8n/*` | migrated + active_reference | `04-workflows/N8N_WORKFLOW_SUITE.md`, standards/rules files | Workflow doctrine migrated; detailed runtime contracts stay active. |
+| `docs/02-backend/*.md` | migrated + active_reference | `06-data/*`, `07-standards/*`, workflow docs | Backend doctrine migrated; technical contracts stay close to code. |
+| `docs/03-google-sheets/*.md` | migrated + active_reference | `06-data/GOOGLE_SHEETS_LEGACY.md`, `06-data/FARM_DATA_MODEL.md`, `06-data/ORDER_DATA_MODEL.md` | Legacy schema/write rules migrated; sheet docs stay active while legacy/fallback remains. |
+| `docs/06-operations/*.md` | migrated + review_queue | `07-standards/*`, `05-playbooks/*`, `10-source-map/*` | Standards/playbooks migrated; raw evidence logs still need later cleanup. |
+| `static/assets/agents/*/agent.md` | migrated + active_reference | `02-agents/*`, `02-agents/AGENT_REGISTRY.md` | Runtime/static asset notes remain; Vault is canonical doctrine. |
 | `planning/*.md` and `planning/inbox/**/*.md` | review_queue | `00-governance/OPEN_QUESTIONS.md`, relevant business/workflow docs | Do not bulk-archive without owner approval. |
+| `planning/CHAT.md` | migrated + archived | `04-workflows/N8N_WORKFLOW_SUITE.md`, `07-standards/CUSTOMER_RESPONSE_STANDARD.md` | Archived to `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`. |
 | `docs/99-archive/**` | review_queue | Archive only | Already archive, but may contain historical decisions worth extracting later. |
 | `external_sources/**/*.md` | review_queue | Relevant business/architecture docs | External briefs should be classified one by one when reused. |
 | `supabase/migrations/README.md` | active_reference | `06-data/SUPABASE_CONTRACTS.md` | Technical migration readme remains beside migrations. |
@@ -47,6 +49,10 @@ Classification values:
 - Amadeus Farm keeps one pig operational truth; agents and n8n must not create shadow truth.
 - FRED/Amadeus Private Transfers is a separate business environment from SAM/Farm Sales.
 - FRED requires legal, insurance, booking, calendar, pricing, payment, and dispatch gates before customer automation.
+- n8n is an orchestration/integration layer, not data truth.
+- Google Sheets remains legacy/runtime reference where explicitly still used, but formula views and sales display views are read-only.
+- Backend/Supabase contracts require dry-run, reconciliation, rollback, health checks, and owner approval before production writes/cutover.
+- Testing, deployment, security, and customer response standards have been promoted into Vault doctrine.
 
 ## Cleanup Rule
 

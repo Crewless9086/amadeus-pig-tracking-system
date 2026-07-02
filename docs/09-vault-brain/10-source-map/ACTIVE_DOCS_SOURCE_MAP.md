@@ -29,6 +29,8 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 - `docs/04-n8n/DO_NOT_CHANGE.md`
 - `docs/04-n8n/WORKFLOW_MAP.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
+- `docs/04-n8n/DATA_FLOW.md`
+- `docs/04-n8n/NODE_RESPONSIBILITIES.md`
 
 ## Agents And Business
 
@@ -75,3 +77,7 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 - `static/js/charlieMissionControl.js`
 - `templates/charlie.html`
 - `tests/test_charlie_*.py`
+
+## Archived After Migration
+
+- `docs/99-archive/legacy/planning_CHAT_2026-04_n8n_sales_agent_rewire.md`

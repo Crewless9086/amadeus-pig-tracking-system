@@ -65,3 +65,16 @@ When owner sends a mission back:
 - record target return stage;
 - keep mission audit trail;
 - show what changed on the next review attempt.
+
+## Review Quality Rule
+
+A review packet is weak if the owner cannot answer these quickly:
+
+- What changed?
+- Why was it needed?
+- What proof exists?
+- What is still risky?
+- What decision is being requested?
+- What happens if I approve it?
+
+If those answers are missing, Brain Guard should block review-ready status.

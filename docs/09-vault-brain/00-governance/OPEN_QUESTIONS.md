@@ -107,3 +107,19 @@ Still needed before Quartermaster becomes active:
 - dashboard placement;
 - Supabase/source-of-truth tables;
 - owner approval gates for purchases and stock changes.
+
+## Repo Cleanup Review
+
+Question: which active source buckets can be demoted after owner review?
+
+Current recommendation:
+
+- Keep `docs/02-backend`, `docs/03-google-sheets`, `docs/04-n8n`, and `docs/06-operations` as active technical/runtime references for now.
+- Do not delete `docs/08-business-modules` until the owner accepts the Vault business docs as correct.
+- Do not delete external sources until each source is explicitly marked keep/archive/delete.
+
+Owner review needed:
+
+- confirm whether `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`, `PORK_SALES_MODEL.md`, and related campaign docs should remain active references after Vault business review;
+- confirm whether old operation evidence logs should be compressed into monthly archive summaries;
+- confirm whether external source folders are still needed locally or can be archived/deleted after useful context is captured.

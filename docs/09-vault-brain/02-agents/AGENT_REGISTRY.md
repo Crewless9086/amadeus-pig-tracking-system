@@ -60,3 +60,16 @@ Every agent must have:
 | Security Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
 | Evidence Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
 | Compliance Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
+
+## Runtime Asset Rule
+
+Static agent cards under `static/assets/agents/*/agent.md` are runtime/UI asset notes, not the canonical agent doctrine. Canonical doctrine lives in this Vault folder.
+
+When a visual identity, voice, role cue, or final voice ID changes:
+
+- update the relevant Vault agent file;
+- update the static asset note;
+- update `static/assets/agents/agent_registry.json` where applicable;
+- record the source/change in the Vault changelog.
+
+Current shared visual family: semi-realistic premium South African farm command team.

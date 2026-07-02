@@ -8,6 +8,7 @@
 - `00-governance/REVIEW_AND_APPROVAL_RULES.md`
 - `00-governance/OWNER_DECISIONS.md`
 - `00-governance/OPEN_QUESTIONS.md`
+- `00-governance/VAULT_READINESS_SCORECARD.md`
 
 ## Identity
 
@@ -64,6 +65,7 @@
 ## Workflows And Playbooks
 
 - `04-workflows/CHARLIE_MISSION_WORKFLOW.md`
+- `04-workflows/N8N_WORKFLOW_SUITE.md`
 - `04-workflows/OWNER_REVIEW_WORKFLOW.md`
 - `04-workflows/RELEASE_WORKFLOW.md`
 - `04-workflows/SEND_BACK_WORKFLOW.md`
@@ -80,3 +82,4 @@
 - `08-business-rules/*.md`
 - `09-examples/*.md`
 - `10-source-map/*.md`
+- `10-source-map/REPO_CLEANUP_STATUS.md`
