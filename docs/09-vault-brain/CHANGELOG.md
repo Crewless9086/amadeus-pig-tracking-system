@@ -1,0 +1,8 @@
+# Vault Brain Changelog
+
+## 2026-07-02
+
+- Created first structured Vault Brain tree.
+- Split the flat draft into folders for governance, identity, agents, businesses, workflows, playbooks, data, standards, rules, examples, and source maps.
+- Added templates for agents, businesses, and workflows.
+- Preserved first-pass source references from the repo.
