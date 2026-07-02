@@ -1,11 +1,11 @@
 const { defineConfig } = require("@playwright/test");
 
 const baseURL = process.env.OOM_SAKKIE_PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000";
-const serverURL = process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_URL || `${baseURL}/oom-sakkie`;
+const serverURL = process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_URL || process.env.CHARLIE_PLAYWRIGHT_SERVER_URL || `${baseURL}/oom-sakkie`;
 
 module.exports = defineConfig({
   testDir: "tests",
-  testMatch: ["oom_sakkie_playwright_behavior.spec.js"],
+  testMatch: ["oom_sakkie_playwright_behavior.spec.js", "charlie_mission_control_playwright.spec.js"],
   timeout: 30000,
   use: {
     baseURL,
