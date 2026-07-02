@@ -115,6 +115,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("charlie_runner_control.py", script)
         self.assertIn("cannot run shell commands", template)
         self.assertIn("send customers", template)
+        self.assertIn("<details open>", template)
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+        self.assertNotRegex(css, r"\.charlie-safety-boundary\s*\{[^}]*display:\s*none")
+        self.assertNotRegex(css, r"\.charlie-runner-panel\s+details\s*\{[^}]*display:\s*none")
 
     def test_oom_sakkie_backend_read_only_relay_workflow_is_safe_contract(self):
         workflow_path = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/workflow.json")

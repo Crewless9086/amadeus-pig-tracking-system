@@ -9113,7 +9113,16 @@ body.oom-farm-command-body {
 }
 
 .charlie-safety-boundary {
-    display: none;
+    display: block;
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(184, 96, 51, 0.34);
+    border-left: 3px solid #b86033;
+    border-radius: 8px;
+    background: rgba(255, 247, 238, 0.92);
+    color: #68432f;
+    font-size: 0.74rem;
+    line-height: 1.35;
 }
 
 .charlie-queue-preview {
@@ -9357,7 +9366,24 @@ body.oom-farm-command-body {
 }
 
 .charlie-runner-panel details {
-    display: none;
+    display: block;
+    margin-top: 8px;
+}
+
+.charlie-runner-panel details summary {
+    cursor: pointer;
+    color: #e9f4ef;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.charlie-runner-panel details pre {
+    max-height: 104px;
+    margin: 6px 0 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.7rem;
 }
 
 .charlie-review-list {
