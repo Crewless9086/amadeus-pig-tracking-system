@@ -6,6 +6,7 @@
 - `00-governance/UPDATE_RULES.md`
 - `00-governance/SOURCE_OF_TRUTH_RULES.md`
 - `00-governance/REVIEW_AND_APPROVAL_RULES.md`
+- `00-governance/OWNER_DECISIONS.md`
 - `00-governance/OPEN_QUESTIONS.md`
 
 ## Identity
