@@ -101,22 +101,178 @@ def write_artifact(mission_id, artifact_type, content, title="", summary="", pro
         "confidence": _clean(content.get("confidence") or "", 80),
         "created_by_agent": _clean(agent, 120),
     }
-    sql = """
-        insert into public.charlie_vault_artifacts (
-            artifact_id, mission_id, project_id, artifact_type, title, summary, content_json, source_refs, confidence, created_by_agent, created_at
-        ) values (
-            %(artifact_id)s, %(mission_id)s, nullif(%(project_id)s, ''), %(artifact_type)s, %(title)s, %(summary)s,
-            %(content_json)s::jsonb, %(source_refs)s::jsonb, %(confidence)s, %(created_by_agent)s, now()
-        )
-        on conflict (artifact_id) do update set
-            title = excluded.title,
-            summary = excluded.summary,
-            content_json = excluded.content_json,
-            source_refs = excluded.source_refs,
-            confidence = excluded.confidence,
-            created_by_agent = excluded.created_by_agent
-    """
-    return _execute_write(sql, params, "artifact_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            agent_column = "created_by_agent" if "created_by_agent" in columns else "agent_name"
+            optional_insert_columns = []
+            optional_value_sql = []
+            optional_update_sql = []
+            if "source_refs" in columns:
+                optional_insert_columns.append("source_refs")
+                optional_value_sql.append("%(source_refs)s::jsonb")
+                optional_update_sql.append("source_refs = excluded.source_refs")
+            if "confidence" in columns:
+                optional_insert_columns.append("confidence")
+                optional_value_sql.append("%(confidence)s")
+                optional_update_sql.append("confidence = excluded.confidence")
+            insert_columns = [
+                "artifact_id", "mission_id", "project_id", agent_column, "artifact_type",
+                "title", "summary", "content_json", *optional_insert_columns, "created_at",
+            ]
+            value_sql = [
+                "%(artifact_id)s", "%(mission_id)s", "nullif(%(project_id)s, '')", "%(created_by_agent)s",
+                "%(artifact_type)s", "%(title)s", "%(summary)s", "%(content_json)s::jsonb",
+                *optional_value_sql, "now()",
+            ]
+            update_sql = [
+                "title = excluded.title",
+                "summary = excluded.summary",
+                "content_json = excluded.content_json",
+                f"{agent_column} = excluded.{agent_column}",
+                *optional_update_sql,
+            ]
+            sql = f"""
+                insert into public.charlie_vault_artifacts (
+                    {", ".join(insert_columns)}
+                ) values (
+                    {", ".join(value_sql)}
+                )
+                on conflict (artifact_id) do update set
+                    {", ".join(update_sql)}
+            """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return {"success": False, "configured": True, "status": "artifact_written_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "configured": True, "status": "artifact_written"}, 200
+
+
+def list_artifacts(artifact_type="", mission_id="", limit=20, database_url=None, connect_factory=None):
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "artifacts": []}, 503
+    artifact_type = _clean(artifact_type, 120)
+    mission_id = _clean(mission_id, 120)
+    try:
+        parsed_limit = int(limit)
+    except (TypeError, ValueError):
+        parsed_limit = 20
+    parsed_limit = max(1, min(parsed_limit, 50))
+    where = []
+    params = {"limit": parsed_limit}
+    if artifact_type:
+        where.append("artifact_type = %(artifact_type)s")
+        params["artifact_type"] = artifact_type
+    if mission_id:
+        where.append("mission_id = %(mission_id)s")
+        params["mission_id"] = mission_id
+    where_sql = "where " + " and ".join(where) if where else ""
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            source_refs_sql = "source_refs" if "source_refs" in columns else "'[]'::jsonb as source_refs"
+            confidence_sql = "confidence" if "confidence" in columns else "''::text as confidence"
+            created_by_sql = "created_by_agent" if "created_by_agent" in columns else "agent_name as created_by_agent"
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select artifact_id, mission_id, project_id, artifact_type, title, summary,
+                           content_json, {source_refs_sql}, {confidence_sql}, {created_by_sql}, created_at
+                    from public.charlie_vault_artifacts
+                    {where_sql}
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "configured": True, "status": "artifact_read_failed", "error_type": exc.__class__.__name__, "artifacts": []}, 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "artifacts": [_artifact_row(row) for row in rows],
+    }, 200
+
+
+def get_artifact(artifact_id, database_url=None, connect_factory=None):
+    artifact_id = _clean(artifact_id, 160)
+    if not artifact_id:
+        return {"success": False, "status": "artifact_id_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            source_refs_sql = "source_refs" if "source_refs" in columns else "'[]'::jsonb as source_refs"
+            confidence_sql = "confidence" if "confidence" in columns else "''::text as confidence"
+            created_by_sql = "created_by_agent" if "created_by_agent" in columns else "agent_name as created_by_agent"
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select artifact_id, mission_id, project_id, artifact_type, title, summary,
+                           content_json, {source_refs_sql}, {confidence_sql}, {created_by_sql}, created_at
+                    from public.charlie_vault_artifacts
+                    where artifact_id = %(artifact_id)s
+                    limit 1
+                    """,
+                    {"artifact_id": artifact_id},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "configured": True, "status": "artifact_read_failed", "error_type": exc.__class__.__name__}, 503
+    if not rows:
+        return {"success": False, "configured": True, "status": "not_found", "artifact_id": artifact_id}, 404
+    return {"success": True, "configured": True, "status": "ok", "artifact": _artifact_row(rows[0])}, 200
+
+
+def update_artifact_content(artifact_id, content, summary="", database_url=None, connect_factory=None):
+    artifact_id = _clean(artifact_id, 160)
+    if not artifact_id:
+        return {"success": False, "status": "artifact_id_required"}, 400
+    content = content if isinstance(content, dict) else {"value": content}
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_artifacts")
+            assignments = [
+                "content_json = %(content_json)s::jsonb",
+                "summary = coalesce(nullif(%(summary)s, ''), summary)",
+            ]
+            if "source_refs" in columns:
+                assignments.append("source_refs = %(source_refs)s::jsonb")
+            if "confidence" in columns:
+                assignments.append("confidence = %(confidence)s")
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update public.charlie_vault_artifacts
+                    set {", ".join(assignments)}
+                    where artifact_id = %(artifact_id)s
+                    returning artifact_id
+                    """,
+                    {
+                        "artifact_id": artifact_id,
+                        "content_json": _json(content),
+                        "summary": _clean(summary or content.get("summary") or "", 1600),
+                        "source_refs": _json(content.get("source_refs") if isinstance(content.get("source_refs"), list) else []),
+                        "confidence": _clean(content.get("confidence") or "", 80),
+                    },
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "configured": True, "status": "artifact_update_failed", "error_type": exc.__class__.__name__}, 503
+    if not rows:
+        return {"success": False, "configured": True, "status": "not_found", "artifact_id": artifact_id}, 404
+    return {"success": True, "configured": True, "status": "artifact_updated", "artifact_id": artifact_id}, 200
 
 
 def write_agent_run(mission_id, agent, run, stage="", database_url=None, connect_factory=None):
@@ -382,6 +538,20 @@ def _connect(database_url, connect_factory=None):
     return psycopg.connect(database_url, connect_timeout=10)
 
 
+def _table_columns(connection, table_name):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and table_name = %(table_name)s
+            """,
+            {"table_name": table_name},
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+
 def _json(value):
     return json.dumps(value if value is not None else {})
 
@@ -395,3 +565,19 @@ def _stable_id(*parts):
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
     prefix = _clean(parts[0] if parts else "charlie", 20).upper()
     return f"CHARLIE-{prefix}-{digest}"
+
+
+def _artifact_row(row):
+    return {
+        "artifact_id": row[0],
+        "mission_id": row[1],
+        "project_id": row[2],
+        "artifact_type": row[3],
+        "title": row[4],
+        "summary": row[5],
+        "content": row[6] if isinstance(row[6], dict) else {},
+        "source_refs": row[7] if isinstance(row[7], list) else [],
+        "confidence": row[8],
+        "created_by_agent": row[9],
+        "created_at": row[10].isoformat() if hasattr(row[10], "isoformat") else str(row[10] or ""),
+    }

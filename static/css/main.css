@@ -7935,6 +7935,37 @@ body.oom-farm-command-body {
     margin-bottom: 16px;
 }
 
+.charlie-improvements-panel {
+    margin-bottom: 16px;
+}
+
+.charlie-improvements-list {
+    display: grid;
+    gap: 12px;
+}
+
+.charlie-improvement-card {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid #d8e1dd;
+    border-radius: 8px;
+    background: #f7faf9;
+}
+
+.charlie-improvement-card h3,
+.charlie-improvement-card p {
+    overflow-wrap: anywhere;
+}
+
+.charlie-improvement-card textarea {
+    min-height: 76px;
+}
+
+.charlie-improvement-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .charlie-command-center-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

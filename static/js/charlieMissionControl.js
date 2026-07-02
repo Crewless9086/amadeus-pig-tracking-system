@@ -2,6 +2,7 @@
   const state = {
     missions: [],
     reviewMissions: [],
+    improvements: [],
     commandCenter: {},
     runnerStatus: {},
     counts: {},
@@ -41,6 +42,8 @@
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
     commandCenter: document.getElementById("charlie_command_center"),
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
+    improvementsList: document.getElementById("charlie_improvements_list"),
+    improvementsAnalyze: document.getElementById("charlie_improvements_analyze"),
     liveNotice: document.getElementById("charlie_live_notice"),
     workflowMap: document.getElementById("charlie_workflow_map"),
     activeSummary: document.getElementById("charlie_active_summary"),
@@ -192,11 +195,13 @@
     try {
       const commandCenter = await fetchJson("/api/charlie/build-relay/command-center");
       state.commandCenter = commandCenter || {};
+      state.improvements = (((commandCenter || {}).improvements || {}).proposals) || [];
       state.reviewMissions = uniqueMissions([
         ...(((commandCenter.review || {}).ready) || []),
         ...(((commandCenter.review || {}).blocked) || []),
       ]);
       renderCommandCenter(state.commandCenter);
+      renderImprovements();
       renderReview();
       renderAliveDashboard();
     } catch (error) {
@@ -290,6 +295,7 @@
     const modelRegistry = core.model_registry || {};
     const toolPermissions = core.tool_permissions || {};
     const runner = data.local_runner || {};
+    const improvements = data.improvements || {};
     els.commandCenter.innerHTML = `
       ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
       ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
@@ -298,6 +304,7 @@
       ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
       ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
       ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
+      ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
       ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
       ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
       ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
@@ -339,6 +346,60 @@
     state.reviewMissions.forEach((mission) => {
       els.reviewList.appendChild(reviewCard(mission));
     });
+  }
+
+  function renderImprovements() {
+    if (!els.improvementsList) return;
+    const proposals = Array.isArray(state.improvements) ? state.improvements : [];
+    if (!proposals.length) {
+      els.improvementsList.innerHTML = '<p class="charlie-empty">No CHARLIE improvement proposals are waiting.</p>';
+      return;
+    }
+    els.improvementsList.innerHTML = proposals.slice(0, 8).map(improvementProposalMarkup).join("");
+    els.improvementsList.querySelectorAll("[data-improvement-decision]").forEach((button) => {
+      button.addEventListener("click", () => recordImprovementDecision(
+        button.dataset.proposalId,
+        button.dataset.improvementDecision,
+        button.closest(".charlie-improvement-card")
+      ));
+    });
+  }
+
+  function improvementProposalMarkup(proposal) {
+    const proposalId = safeText(proposal.artifact_id || proposal.proposal_id);
+    const evidence = Array.isArray(proposal.evidence_refs) ? proposal.evidence_refs : [];
+    const sourceIds = Array.isArray(proposal.source_mission_ids) ? proposal.source_mission_ids : [];
+    return `
+      <article class="charlie-improvement-card">
+        <div class="charlie-mission-card-header">
+          <div>
+            <span class="status-pill">${escapeHtml(safeText(proposal.status || "pending"))}</span>
+            <h3>${escapeHtml(safeText(proposal.problem_detected || "CHARLIE improvement proposal"))}</h3>
+          </div>
+          <code>${escapeHtml(shortId(proposalId))}</code>
+        </div>
+        <dl class="charlie-mission-meta">
+          <div><dt>Area</dt><dd>${escapeHtml(safeText(proposal.target_area || "--"))}</dd></div>
+          <div><dt>Score</dt><dd>${escapeHtml(safeText(proposal.weakness_score || 0))}</dd></div>
+          <div><dt>Recurrence</dt><dd>${escapeHtml(safeText(proposal.recurrence_count || sourceIds.length || 0))}</dd></div>
+          <div><dt>Label</dt><dd>${escapeHtml(safeText(proposal.label || "charlie_self_improvement"))}</dd></div>
+        </dl>
+        <p>${escapeHtml(safeText(proposal.recommendation || "No recommendation captured."))}</p>
+        <details>
+          <summary>Evidence</summary>
+          ${listMarkup(evidence.map((item) => `${item.mission_id || ""}: ${item.evidence || item.title || ""}`), "No evidence references captured.")}
+        </details>
+        <label>
+          Owner comments
+          <textarea rows="3" data-improvement-comments placeholder="Optional owner note"></textarea>
+        </label>
+        <div class="charlie-mission-actions charlie-improvement-actions">
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="approve">Approve</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="reject">Reject</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="send_to_mission">Send To Mission</button>
+        </div>
+      </article>
+    `;
   }
 
   function renderAliveDashboard() {
@@ -1015,6 +1076,38 @@
     }).join("")}</div>`;
   }
 
+  async function analyzeImprovements() {
+    setMessage("Analyzing CHARLIE improvement patterns...", "info");
+    try {
+      await fetchJson("/api/charlie/core/improvements/analyze", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({limit: 50}),
+      });
+      setMessage("Improvement proposals refreshed.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Improvement analysis was not recorded.", "error");
+    }
+  }
+
+  async function recordImprovementDecision(proposalId, decision, card) {
+    if (!proposalId || !decision || !card) return;
+    const comments = safeText(card.querySelector("[data-improvement-comments]") && card.querySelector("[data-improvement-comments]").value).trim();
+    setMessage(`Recording improvement decision ${decision}...`, "info");
+    try {
+      await fetchJson(`/api/charlie/core/improvements/${encodeURIComponent(proposalId)}/decision`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({decision, comments}),
+      });
+      setMessage("Improvement decision recorded.", "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Improvement decision was not recorded.", "error");
+    }
+  }
+
   function unresolvedBlockersMarkup(items) {
     const blockers = Array.isArray(items) ? items.filter(Boolean) : [];
     if (!blockers.length) return '<p class="charlie-muted">No unresolved blockers captured.</p>';
@@ -1485,6 +1578,7 @@
   }
 
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
+  if (els.improvementsAnalyze) els.improvementsAnalyze.addEventListener("click", analyzeImprovements);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
   if (els.reviewModalClose) els.reviewModalClose.addEventListener("click", closeOwnerReviewModal);

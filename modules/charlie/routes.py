@@ -33,6 +33,11 @@ from modules.charlie.core_workflow import (
 from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
+from modules.charlie.improvement_analyst import (
+    generate_and_store_proposals,
+    list_improvement_proposals,
+    record_proposal_decision,
+)
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -225,6 +230,7 @@ def charlie_build_relay_command_center_route():
         }), 503
     local_status = local_runner_status()
     vault_health, _vault_health_status = vault_tables_health()
+    improvements, _improvements_status = list_improvement_proposals(limit=8)
     readiness_items = []
     for mission in recent.get("missions", []):
         readiness_items.append({
@@ -276,6 +282,12 @@ def charlie_build_relay_command_center_route():
             "ready": review_ready.get("missions", []),
             "blocked": blocked.get("missions", []),
         },
+        "improvements": {
+            "proposals": improvements.get("proposals", []),
+            "pending": [proposal for proposal in improvements.get("proposals", []) if proposal.get("status") == "pending"],
+            "status": improvements.get("status", "unavailable"),
+            "execution_boundary": improvements.get("execution_boundary", "Improvement proposals are advisory records only."),
+        },
         "recent_missions": recent.get("missions", []),
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
@@ -289,6 +301,42 @@ def charlie_core_vault_health_route():
     if denied:
         return denied
     result, status_code = vault_tables_health()
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/improvements", methods=["GET"])
+def charlie_core_improvements_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = list_improvement_proposals(
+        status=request.args.get("status", ""),
+        limit=request.args.get("limit", 20),
+    )
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/improvements/analyze", methods=["POST"])
+def charlie_core_improvements_analyze_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = generate_and_store_proposals(limit=payload.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/improvements/<proposal_id>/decision", methods=["POST"])
+def charlie_core_improvement_decision_route(proposal_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_proposal_decision(
+        proposal_id,
+        decision=str(payload.get("decision") or "").strip(),
+        comments=str(payload.get("comments") or "").strip(),
+    )
     return jsonify(result), status_code
 
 
