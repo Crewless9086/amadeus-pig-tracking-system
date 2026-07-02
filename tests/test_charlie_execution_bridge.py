@@ -395,6 +395,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         artifact["changed_files"] = ["static/js/charlieMissionControl.js"]
         artifact["pr_url"] = ""
         artifact["links"] = {"pr": ""}
+        artifact["errors"] = [
+            "Could not create branch/commit/PR because git branch creation failed: Permission denied creating .git/refs/heads/example.lock",
+        ]
 
         packaged = execution_bridge._auto_package_builder_changes(
             {"mission_id": "CHARLIE-MISSION-EXEC123", "title": "Mission Control Dashboard"},
@@ -405,6 +408,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packaged["pr_url"], "https://github.com/org/repo/pull/77")
         self.assertEqual(packaged["commit_sha"], "abc1234")
         self.assertEqual(packaged["git_packaging"]["status"], "pr_created")
+        self.assertEqual(packaged["errors"], [])
         self.assertTrue(any(call[:3] == ["git", "switch", "-c"] for call in calls))
 
     def test_auto_package_builder_changes_records_failure_without_pr(self):

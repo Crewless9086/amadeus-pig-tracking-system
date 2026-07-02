@@ -38,14 +38,20 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
     age_seconds = int((now - last_seen).total_seconds()) if last_seen else None
     process_alive = _pid_alive(payload.get("pid"))
     heartbeat_fresh = age_seconds is not None and age_seconds <= STALE_SECONDS
-    active = process_alive and heartbeat_fresh
+    runner_source_commit = str(payload.get("runner_source_commit") or "").strip()
+    current_source_commit = _current_git_commit()
+    code_stale = bool(runner_source_commit and current_source_commit and runner_source_commit != current_source_commit)
+    active = process_alive and heartbeat_fresh and not code_stale
     final_artifact_present = bool(payload.get("final_artifact_present"))
     if not final_artifact_present and _execution_artifact_exists(payload.get("execution_artifact", "")):
         final_artifact_present = True
         if payload.get("last_result_status") == "codex_running":
             payload["last_result_status"] = "codex_final_artifact_seen"
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
-    if active:
+    if code_stale and process_alive and heartbeat_fresh:
+        status = "runner_code_stale"
+        next_action = "Restart the local CHARLIE runner because main changed after this runner process started."
+    elif active:
         status = "runner_active"
         next_action = "Approved missions should be picked up, executed locally, and moved to owner review while this runner stays active."
     elif orphan_processes:
@@ -73,6 +79,9 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "final_artifact_present": final_artifact_present,
         "execution_artifact": payload.get("execution_artifact", ""),
         "agent_runner_version": payload.get("agent_runner_version", ""),
+        "runner_source_commit": runner_source_commit,
+        "current_source_commit": current_source_commit,
+        "runner_code_stale": code_stale,
         "current_agent": payload.get("current_agent", ""),
         "current_action": payload.get("current_action", ""),
         "agent_ledger_path": payload.get("agent_ledger_path", ""),
@@ -99,6 +108,8 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "last_result_status": str(result.get("status") or ""),
         "last_mission_id": str(result.get("mission_id") or ""),
         "active_status": str(result.get("active_status") or ""),
+        "runner_source_commit": _current_git_commit(),
+        "runner_source_branch": _current_git_branch(),
     }
     for key in (
         "elapsed_seconds",
@@ -173,6 +184,40 @@ def stop_runner():
 def _display_command(command=None):
     command = command or RUNNER_COMMAND
     return " ".join(command).replace(str(REPO_ROOT) + "\\", "")
+
+
+def _current_git_commit():
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _current_git_branch():
+    try:
+        completed = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
 def _read_json(path):

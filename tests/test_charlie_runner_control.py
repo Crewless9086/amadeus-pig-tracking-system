@@ -101,6 +101,26 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertFalse(result["active"])
         self.assertFalse(result["heartbeat_fresh"])
 
+    @patch("modules.charlie.runner_control._current_git_commit", return_value="new-commit")
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    def test_runner_status_reports_code_stale_when_started_from_old_commit(self, _pid_alive, _commit):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            heartbeat.write_text(json.dumps({
+                "pid": 1234,
+                "last_seen": datetime.now(timezone.utc).isoformat(),
+                "last_result_status": "watch_started",
+                "runner_source_commit": "old-commit",
+            }), encoding="utf-8")
+
+            result = runner_control.runner_status(heartbeat)
+
+        self.assertEqual(result["status"], "runner_code_stale")
+        self.assertFalse(result["active"])
+        self.assertTrue(result["runner_code_stale"])
+        self.assertEqual(result["runner_source_commit"], "old-commit")
+        self.assertEqual(result["current_source_commit"], "new-commit")
+
     @patch("modules.charlie.runner_control._pid_alive", return_value=False)
     def test_runner_status_recovers_existing_final_artifact_from_stale_heartbeat(self, _pid_alive):
         with tempfile.TemporaryDirectory() as tmp:

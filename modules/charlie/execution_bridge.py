@@ -2004,6 +2004,7 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     packaged = dict(artifact)
     links = packaged.get("links") if isinstance(packaged.get("links"), dict) else {}
     links = {**links, "pr": pr_url}
+    packaged["errors"] = _remove_resolved_builder_packaging_errors(packaged.get("errors"))
     packaged.update({
         "branch_name": branch_name,
         "commit_sha": sha["stdout"].strip(),
@@ -2012,6 +2013,21 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
     })
     return packaged
+
+
+def _remove_resolved_builder_packaging_errors(errors):
+    cleaned = []
+    for item in errors if isinstance(errors, list) else []:
+        text = _artifact_text(item).lower()
+        if (
+            "could not create branch/commit/pr" in text
+            or "git branch creation failed" in text
+            or "permission denied creating .git/refs/heads" in text
+            or "runner git packaging failed" in text
+        ):
+            continue
+        cleaned.append(item)
+    return cleaned
 
 
 def _builder_packaging_failed(artifact, result, status):
