@@ -7966,6 +7966,22 @@ body.oom-farm-command-body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.charlie-review-inline-decision {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.charlie-review-inline-decision textarea,
+.charlie-review-inline-decision select {
+    width: 100%;
+}
+
+.charlie-review-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
 .charlie-command-center-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

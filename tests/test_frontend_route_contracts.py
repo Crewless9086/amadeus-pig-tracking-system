@@ -50,6 +50,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("charlie-flow-node is-", script)
         self.assertIn("openReviewDetails", script)
         self.assertIn("data-review-details", script)
+        self.assertIn("charlie-review-inline-decision", script)
+        self.assertIn('data-review-decision="approve_final_release"', script)
         self.assertIn("Generated owner packet, not live screenshot", script)
         self.assertIn("is-review-ready", script)
         self.assertIn("is-send-back", script)

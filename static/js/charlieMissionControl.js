@@ -695,8 +695,30 @@
         ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
         <div class="charlie-review-packet">${reviewPacketMarkup(mission, reviewPacket)}</div>
       </details>
+      <div class="charlie-review-inline-decision">
+        <label for="review_inline_comments_${escapeHtml(missionId)}">Owner comments</label>
+        <textarea id="review_inline_comments_${escapeHtml(missionId)}" rows="3" data-review-comments placeholder="Optional approval or send-back note"></textarea>
+        <label>
+          Return stage
+          <select data-review-target-stage>
+            <option value="builder">Builder</option>
+            <option value="tester">Tester</option>
+            <option value="qa_red_team">QA / Red Team</option>
+            <option value="reviewer">Reviewer</option>
+            <option value="planner">Planner</option>
+            <option value="architect">Architect</option>
+            <option value="product_architect">Product Architect</option>
+            <option value="idea_expander">Idea Expander</option>
+          </select>
+        </label>
+      </div>
       <div class="charlie-mission-actions charlie-review-actions">
         <button type="button" data-open-owner-review>Open Review</button>
+        <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+        <button type="button" data-review-decision="send_back">Send Back</button>
+        <button type="button" data-review-decision="pause">Pause</button>
+        <button type="button" data-review-decision="reject">Reject</button>
+        <button type="button" data-review-decision="mark_done">Mark Done</button>
       </div>
     `;
     card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
@@ -709,6 +731,9 @@
         else state.openReviewDetails.delete(missionId);
       });
     }
+    card.querySelectorAll("[data-review-decision]").forEach((button) => {
+      button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
+    });
     card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
   }
