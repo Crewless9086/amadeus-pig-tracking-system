@@ -603,11 +603,8 @@ def normalize_approval_level(value):
 def agent_sequence_for_mission(mission_type=""):
     plan = build_core_plan({"mission_type": mission_type, "raw_text": mission_type})
     sequence = plan.get("workflow_template", {}).get("agent_order") or []
-    review_board_only = {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "publisher"}
     runner_sequence = []
     for agent in sequence:
-        if agent in review_board_only:
-            continue
         if agent in AGENT_DEFINITIONS and agent not in runner_sequence:
             runner_sequence.append(agent)
     return runner_sequence or list(CORE_AGENT_SEQUENCE_V2)

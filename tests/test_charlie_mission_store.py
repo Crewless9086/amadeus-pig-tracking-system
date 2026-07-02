@@ -116,7 +116,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
         self.assertEqual(sequence[:2], ["idea_expander", "product_architect"])
         self.assertIn("qa_red_team", sequence)
-        self.assertEqual(sequence[-1], "reviewer")
+        self.assertIn("evidence_reviewer", sequence)
+        self.assertEqual(sequence[-1], "publisher")
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)

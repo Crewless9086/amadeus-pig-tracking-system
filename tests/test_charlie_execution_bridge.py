@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -32,6 +33,9 @@ MISSION = {
 
 
 def _agent_from_prompt(prompt):
+    match = re.search(r"You are the CHARLIE CORE ([A-Z_]+) agent", prompt)
+    if match:
+        return match.group(1).lower()
     for candidate in execution_bridge.all_agent_names():
         if f"{candidate.upper()} agent" in prompt:
             return candidate
@@ -80,10 +84,11 @@ def _successful_stage_payload(agent):
         "qa_findings": ["no high risk found"] if agent == "qa_red_team" else None,
         "red_team_status": "pass" if agent == "qa_red_team" else None,
         "risk_rating": "low" if agent == "qa_red_team" else None,
-        "recommended_owner_decision": "approve_final_release" if agent == "reviewer" else None,
-        "release_notes": ["owner review ready"] if agent == "reviewer" else None,
-        "test_evidence": ["unit tests passed"] if agent == "reviewer" else None,
-        "qa_evidence": ["QA/red-team passed"] if agent == "reviewer" else None,
+        "recommended_owner_decision": "approve_final_release" if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
+        "release_notes": ["owner review ready"] if agent in {"reviewer", "publisher"} else None,
+        "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
+        "test_evidence": ["unit tests passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
+        "qa_evidence": ["QA/red-team passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
     }
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -330,7 +335,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(called_agents, ["builder", "tester", "qa_red_team", "reviewer"])
+        self.assertEqual(called_agents, [
+            "builder",
+            "tester",
+            "qa_red_team",
+            "security_reviewer",
+            "evidence_reviewer",
+            "reviewer",
+            "publisher",
+        ])
         vault_metadata = update_vault.call_args.args[1]
         self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
         self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
