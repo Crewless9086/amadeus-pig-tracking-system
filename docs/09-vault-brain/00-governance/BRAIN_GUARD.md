@@ -40,3 +40,16 @@ Before a CHARLIE CORE mission is review-ready, Brain Guard checks:
 - business/legal gates remain correct;
 - stale docs or contradictions are called out;
 - `CHANGELOG.md` is updated when needed.
+
+## Runtime Enforcement
+
+CHARLIE Agent Runner v2 now enforces a first runtime Brain Guard gate before owner review:
+
+- every active stage artifact must record `vault_sources_used`;
+- at least one cited source must be under `docs/09-vault-brain/`;
+- the runner loads a bounded Vault Brain context pack into Codex prompts before each stage;
+- missions that change Vault-sensitive agent/workflow/runtime files must record `vault_updates` or a clear `no_vault_update_required` reason;
+- Brain Guard blocks `pr_ready` / owner-review handoff when active stage evidence does not meet these rules;
+- preserved legacy artifacts from older send-back runs are recorded as warnings instead of blocking current reruns.
+
+This runtime gate does not replace owner review. It prevents CHARLIE CORE from presenting work as review-ready when the Vault Brain was ignored or when knowledge-update discipline is missing.

@@ -3,10 +3,12 @@
 1. Owner creates or approves a mission.
 2. CHARLIE normalizes it into a mission contract.
 3. Local runner picks up approved mission.
-4. Planner, Architect, Builder, Tester, QA Red Team, and Reviewer stages run.
-5. Reviewer prepares owner review packet.
-6. Mission stops at owner review.
-7. Owner approves final release, sends back, pauses, rejects, or marks done.
+4. Runner loads relevant Vault Brain context into each stage prompt.
+5. Planner, Architect, Builder, Tester, QA Red Team, and Reviewer stages run.
+6. Brain Guard checks Vault citations and update discipline.
+7. Reviewer prepares owner review packet only after Brain Guard passes.
+8. Mission stops at owner review.
+9. Owner approves final release, sends back, pauses, rejects, or marks done.
 
 ## Mission Contract
 
@@ -37,8 +39,22 @@ Each stage must produce structured evidence:
 - Tester: exact tests and pass/fail evidence.
 - QA/Red-Team: regression/security/privacy/UX/evidence challenge.
 - Reviewer: owner review packet and recommended decision.
+- All stages: `vault_sources_used`, commands/files inspected, and either Vault updates or a no-update reason when relevant.
 
 Missing artifacts block progress. Tester failure returns to Builder. Reviewer send-back returns to the named stage and preserves prior artifacts.
+
+## Vault Enforcement
+
+CHARLIE CORE missions are not allowed to be treated as review-ready unless the active stage artifacts prove Vault Brain usage.
+
+The runner checks:
+
+- stage artifacts cite `docs/09-vault-brain/` sources;
+- the mission has a Mission Vault payload;
+- Vault-sensitive changes to CHARLIE runtime, agent docs, or workflow docs include `vault_updates` or `no_vault_update_required`;
+- preserved upstream artifacts from old send-back runs are visible as warnings, not silent truth.
+
+If these checks fail, Brain Guard blocks owner review and the mission remains blocked until the responsible stage fixes the evidence or updates the Vault.
 
 ## Approval Levels
 
@@ -61,3 +77,4 @@ Telegram and `/charlie` record mission authority, but they do not execute shell 
 - `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`
 - `docs/06-operations/CHARLIE_BUILD_RELAY_PLAN.md`
 - `planning/CHARLIE_CORE_EXTENDED_PLAN.md`
+- `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`

@@ -52,6 +52,17 @@ APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
 MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
+    "docs/09-vault-brain/INDEX.md",
+    "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+    "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
+    "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+    "docs/09-vault-brain/01-identity/SYSTEM_HIERARCHY.md",
+    "docs/09-vault-brain/01-identity/CHARLIE.md",
+    "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+    "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+    "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+    "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+    "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
     "docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md",
     "docs/00-start-here/CURRENT_STATE.md",
     "docs/00-start-here/NEXT_STEPS.md",
@@ -1557,6 +1568,9 @@ def _default_context_pack(mission_type=""):
         "version": "charlie_context_pack_v1",
         "active_truth_docs": list(MISSION_CONTEXT_DOCS),
         "shared_data_rules": [
+            "Vault Brain docs under docs/09-vault-brain are the canonical doctrine for agents, workflows, business rules, data rules, standards, and playbooks.",
+            "Every CHARLIE CORE mission must cite the Vault Brain docs used before owner review.",
+            "Brain Guard must block review-ready status when Vault-sensitive work lacks Vault update evidence or an explicit no-update reason.",
             "Supabase is the canonical durable source where migrations have cut over the app.",
             "Google Sheets is legacy/reference/export unless a route is explicitly still in fallback mode.",
             "Mission findings must be recorded in the Mission Vault before handoff to the next role.",

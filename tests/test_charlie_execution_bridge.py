@@ -43,6 +43,12 @@ def _successful_stage_payload(agent):
         "summary": f"{agent} completed",
         "errors": [],
         "bugs": [],
+        "vault_sources_used": [
+            "docs/09-vault-brain/INDEX.md",
+            "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+        ],
+        "vault_updates": [],
+        "no_vault_update_required": "No agent/workflow/business/data/standard doctrine changed in this stage.",
         "files_inspected": ["modules/charlie/execution_bridge.py"],
         "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
         "stdout_tail": "",
@@ -108,6 +114,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["will_execute_codex"])
         self.assertIn("Build execution bridge", prompt)
         self.assertIn("No web-triggered shell execution.", prompt)
+        self.assertIn("CHARLIE Vault Brain context", prompt)
+        self.assertIn("docs/09-vault-brain/INDEX.md", prompt)
         self.assertIn("Stop at owner review", prompt)
 
     @patch("modules.charlie.execution_bridge.get_mission")
@@ -183,6 +191,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("agent_execution", vault_metadata)
         self.assertIn("agent_artifacts", vault_metadata["review_packet"])
         self.assertIn("handoff_reports", vault_metadata["review_packet"])
+        self.assertTrue(vault_metadata["review_packet"]["brain_guard"]["passed"])
         self.assertIn("qa_red_team", vault_metadata["review_packet"]["agent_artifacts"])
         self.assertIn("QA/red-team passed", vault_metadata["review_packet"]["qa_evidence"])
         self.assertIn("quality_gates", vault_metadata["review_packet"])
@@ -332,6 +341,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "release_notes": ["ready"],
             "changed_files": ["modules/charlie/execution_bridge.py"],
             "test_evidence": ["unit tests passed"],
+            "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
+            "no_vault_update_required": "Runner behavior was unchanged.",
         }
 
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
@@ -348,6 +359,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "commands_run": ["git diff --stat"],
             "changed_files": ["modules/charlie/execution_bridge.py"],
             "build_notes": ["patched"],
+            "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
+            "no_vault_update_required": "Runner behavior was unchanged.",
         }
 
         result = execution_bridge._agent_quality_gate("builder", artifact)
@@ -367,11 +380,57 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "changed_files": ["modules/charlie/execution_bridge.py"],
             "test_evidence": ["unit tests passed"],
             "links": {"pr": "https://github.com/org/repo/pull/61"},
+            "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
+            "no_vault_update_required": "Runner behavior was unchanged.",
         }
 
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
 
         self.assertTrue(result["passed"])
+
+    def test_agent_quality_gate_requires_vault_source(self):
+        artifact = _successful_stage_payload("planner")
+        artifact["vault_sources_used"] = []
+
+        result = execution_bridge._agent_quality_gate("planner", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("Vault Brain sources", result["reason"])
+
+    def test_agent_quality_gate_blocks_sensitive_change_without_vault_update_decision(self):
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = ["modules/charlie/execution_bridge.py"]
+        artifact["vault_updates"] = []
+        artifact["no_vault_update_required"] = ""
+        artifact["pr_url"] = "https://github.com/org/repo/pull/61"
+        artifact["links"] = {"pr": "https://github.com/org/repo/pull/61"}
+
+        result = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("Vault-sensitive files", result["reason"])
+
+    def test_brain_guard_blocks_owner_review_without_vault_citations(self):
+        artifacts = {
+            "planner": {
+                "summary": "planned",
+                "vault_sources_used": [],
+            }
+        }
+
+        result = execution_bridge._brain_guard_review_gate(MISSION, artifacts, ["modules/charlie/execution_bridge.py"])
+
+        self.assertFalse(result["passed"])
+        self.assertIn("Vault Brain discipline", result["reason"])
+        self.assertTrue(result["findings"])
+
+    def test_agent_stage_prompt_includes_vault_context_and_required_fields(self):
+        prompt = execution_bridge.build_agent_stage_prompt(MISSION, "planner", artifacts={}, ledger={})
+
+        self.assertIn("CHARLIE Vault Brain context", prompt)
+        self.assertIn("docs/09-vault-brain/INDEX.md", prompt)
+        self.assertIn("vault_sources_used", prompt)
+        self.assertIn("vault_updates", prompt)
 
     def test_reviewer_inherits_builder_pr_reference(self):
         reviewer = {

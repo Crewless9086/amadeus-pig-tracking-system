@@ -41,14 +41,14 @@ NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
 AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
 AGENT_ARTIFACT_REQUIRED_KEYS = {
-    "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected"],
-    "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected"],
-    "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected"],
-    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected"],
-    "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected"],
-    "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected"],
-    "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected"],
-    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected"],
+    "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected", "vault_sources_used"],
+    "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected", "vault_sources_used"],
+    "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
+    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
+    "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected", "vault_sources_used"],
+    "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected", "vault_sources_used"],
+    "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected", "vault_sources_used"],
+    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
     "qa_red_team": {"qa_findings"},
@@ -57,6 +57,75 @@ AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 3
 AGENT_RELEASE_VERIFY_ATTEMPTS = 12
 AGENT_RELEASE_VERIFY_INTERVAL_SECONDS = 10
+VAULT_BRAIN_ROOT = REPO_ROOT / "docs" / "09-vault-brain"
+VAULT_CONTEXT_CHAR_BUDGET = 12000
+VAULT_REQUIRED_BASE_DOCS = [
+    "docs/09-vault-brain/INDEX.md",
+    "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+    "docs/09-vault-brain/00-governance/UPDATE_RULES.md",
+    "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+    "docs/09-vault-brain/01-identity/SYSTEM_HIERARCHY.md",
+    "docs/09-vault-brain/01-identity/CHARLIE.md",
+    "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+    "docs/09-vault-brain/02-agents/AGENT_REGISTRY.md",
+    "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+    "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+    "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
+]
+VAULT_CONTEXT_BY_TEMPLATE = {
+    "software_build": [
+        "docs/09-vault-brain/05-playbooks/FEATURE_BUILD.md",
+        "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
+        "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
+    ],
+    "system_improvement": [
+        "docs/09-vault-brain/05-playbooks/AGENT_BUILD.md",
+        "docs/09-vault-brain/05-playbooks/LIVE_OPERATIONS_FIX.md",
+        "docs/09-vault-brain/07-standards/DEPLOYMENT_STANDARD.md",
+    ],
+    "business_plan": [
+        "docs/09-vault-brain/03-business/README.md",
+        "docs/09-vault-brain/05-playbooks/INCOME_STREAM.md",
+        "docs/09-vault-brain/08-business-rules/LEGAL_AND_POPIA_REVIEW.md",
+    ],
+    "content_engine": [
+        "docs/09-vault-brain/03-business/BEACON_MARKETING.md",
+        "docs/09-vault-brain/05-playbooks/MARKETING_CAMPAIGN.md",
+        "docs/09-vault-brain/08-business-rules/MARKETING_RULES.md",
+        "docs/09-vault-brain/08-business-rules/MEDIA_PRIVACY_RULES.md",
+    ],
+    "automation_workflow": [
+        "docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md",
+        "docs/09-vault-brain/05-playbooks/LIVE_OPERATIONS_FIX.md",
+        "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
+    ],
+    "income_stream": [
+        "docs/09-vault-brain/03-business/MEAT_SALES.md",
+        "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
+        "docs/09-vault-brain/03-business/AMADEUS_PRIVATE_TRANSFERS.md",
+        "docs/09-vault-brain/05-playbooks/INCOME_STREAM.md",
+        "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
+        "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md",
+    ],
+}
+VAULT_CONTEXT_BY_KEYWORD = {
+    "bulk weight": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/FARM_RULES.md"],
+    "weight": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/FARM_RULES.md"],
+    "pig": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md"],
+    "order": ["docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md"],
+    "sam": ["docs/09-vault-brain/02-agents/sales/SAM.md", "docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md"],
+    "beacon": ["docs/09-vault-brain/02-agents/marketing/BEACON.md", "docs/09-vault-brain/03-business/BEACON_MARKETING.md"],
+    "fred": ["docs/09-vault-brain/02-agents/transport/FRED.md", "docs/09-vault-brain/03-business/AMADEUS_PRIVATE_TRANSFERS.md"],
+    "dashboard": ["docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md", "docs/09-vault-brain/09-examples/GOLD_STANDARD_DASHBOARD.md"],
+    "supabase": ["docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md", "docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md"],
+    "n8n": ["docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md"],
+}
+VAULT_SENSITIVE_PATH_PREFIXES = (
+    "modules/charlie/",
+    "scripts/charlie_",
+    "docs/09-vault-brain/02-agents/",
+    "docs/09-vault-brain/04-workflows/",
+)
 
 
 def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None, database_url=None, connect_factory=None):
@@ -1007,6 +1076,7 @@ def build_codex_execution_prompt(mission):
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
+    vault_context = build_vault_brain_context(mission)
     return f"""You are the local Codex executor for a CHARLIE mission.
 
 Mission ID: {mission.get("mission_id", "")}
@@ -1023,6 +1093,9 @@ Follow these documents before changing anything:
 - docs/00-start-here/NEXT_STEPS.md
 - docs/00-start-here/WORKFLOW.md
 - docs/00-start-here/DEPLOYMENT_SOP.md
+
+CHARLIE Vault Brain context:
+{_format_vault_context(vault_context)}
 
 Mission Vault:
 - Problem: {vault.get("problem_statement") or mission.get("raw_text", "")}
@@ -1043,11 +1116,13 @@ Shared context pack:
 
 Required behavior:
 1. Execute planner, architect, builder, tester, and reviewer responsibilities in order.
-2. Stay within the recorded approval level and the forbidden actions.
-3. Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records unless the mission explicitly authorizes that action and the deployment SOP is clean.
-4. Run focused verification that fits the actual changes.
-5. Stop at owner review. Do not mark the mission done.
-6. In your final response, include: summary, files changed, tests run, errors/bugs, local preview link or command, and recommended owner review decision.
+2. Use the Vault Brain before opinion. Do not rely on memory where Vault truth exists.
+3. Cite the Vault docs used in your final evidence.
+4. Stay within the recorded approval level and the forbidden actions.
+5. Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records unless the mission explicitly authorizes that action and the deployment SOP is clean.
+6. Run focused verification that fits the actual changes.
+7. Stop at owner review. Do not mark the mission done.
+8. In your final response, include: summary, files changed, tests run, errors/bugs, Vault sources used, local preview link or command, and recommended owner review decision.
 """
 
 
@@ -1058,6 +1133,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     review_packet = (mission.get("metadata") or {}).get("review_packet") if isinstance(mission.get("metadata"), dict) else {}
     owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
     sequence = _mission_agent_sequence(mission)
+    vault_context = build_vault_brain_context(mission)
     return f"""You are the CHARLIE CORE {agent.upper()} agent running inside Agent Runner v2.
 
 Mission ID: {mission.get("mission_id", "")}
@@ -1075,6 +1151,9 @@ Required CHARLIE docs to follow:
 - docs/00-start-here/NEXT_STEPS.md
 - docs/00-start-here/WORKFLOW.md
 - docs/00-start-here/DEPLOYMENT_SOP.md
+
+CHARLIE Vault Brain context:
+{_format_vault_context(vault_context)}
 
 Desired outcome:
 {vault.get("desired_outcome") or ""}
@@ -1096,11 +1175,13 @@ Mission agent order:
 
 You must work like an interactive coding agent:
 - inspect the repo before asserting facts
+- check the Vault Brain before opinion, and cite the docs you used
 - read relevant files
 - run focused commands when useful
 - patch only scoped files
 - recover from errors
 - record what you did and what remains
+- if you change agents, workflows, CHARLIE CORE runtime, business rules, data contracts, or standards, update the matching Vault Brain doc; otherwise record why no Vault update was required
 
 Stage responsibility:
 {_agent_stage_instruction(agent)}
@@ -1111,6 +1192,7 @@ Return concise markdown, and include a JSON object fenced as ```json with these 
 
 Every final JSON object is normalized into a CHARLIE handoff report with:
 - mission_id, agent, status, summary
+- vault_sources_used and vault_updates/no_vault_update_required
 - files_inspected, commands_run, stdout_tail, stderr_tail
 - changed_files, risks, tests, quality_gate, next_action
 - artifact_path and completed_at
@@ -1118,6 +1200,98 @@ Every final JSON object is normalized into a CHARLIE handoff report with:
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
+
+
+def build_vault_brain_context(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    docs = _vault_context_doc_paths(mission)
+    entries = []
+    remaining = VAULT_CONTEXT_CHAR_BUDGET
+    for relative_path in docs:
+        text = _read_repo_text(relative_path)
+        status = "loaded" if text else "missing"
+        excerpt = ""
+        if text and remaining > 0:
+            excerpt = _truncate(text, min(remaining, 1600))
+            remaining -= len(excerpt)
+        entries.append({
+            "path": relative_path,
+            "status": status,
+            "excerpt": excerpt,
+        })
+    return {
+        "version": "charlie_vault_brain_context_v1",
+        "root": "docs/09-vault-brain",
+        "rule": "Vault Brain is canonical project truth for CHARLIE identity, agents, workflows, business rules, data rules, standards, and playbooks.",
+        "docs": entries,
+        "missing_docs": [entry["path"] for entry in entries if entry["status"] != "loaded"],
+    }
+
+
+def _vault_context_doc_paths(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    project_truth = core.get("project_truth") if isinstance(core.get("project_truth"), dict) else {}
+    template = str(project_truth.get("workflow_template") or "").strip()
+    if not template:
+        vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+        project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
+        template = str(project_truth.get("workflow_template") or "").strip()
+    docs = list(VAULT_REQUIRED_BASE_DOCS)
+    docs.extend(VAULT_CONTEXT_BY_TEMPLATE.get(template, []))
+    haystack = " ".join([
+        str(mission.get("mission_type") or ""),
+        str(mission.get("title") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    for keyword, keyword_docs in VAULT_CONTEXT_BY_KEYWORD.items():
+        if keyword in haystack:
+            docs.extend(keyword_docs)
+    return _unique_existing_order(docs)
+
+
+def _format_vault_context(context):
+    context = context if isinstance(context, dict) else {}
+    lines = [
+        f"- Version: {context.get('version', '')}",
+        f"- Rule: {context.get('rule', '')}",
+    ]
+    missing = context.get("missing_docs") if isinstance(context.get("missing_docs"), list) else []
+    if missing:
+        lines.append(f"- Missing docs: {', '.join(missing)}")
+    for entry in context.get("docs", []):
+        if not isinstance(entry, dict):
+            continue
+        lines.append(f"\n### {entry.get('path', '')} ({entry.get('status', '')})")
+        excerpt = str(entry.get("excerpt") or "").strip()
+        lines.append(excerpt if excerpt else "No excerpt loaded.")
+    return "\n".join(lines)
+
+
+def _read_repo_text(relative_path):
+    clean = str(relative_path or "").replace("\\", "/").lstrip("/")
+    path = (REPO_ROOT / clean).resolve()
+    try:
+        path.relative_to(REPO_ROOT)
+    except ValueError:
+        return ""
+    if not path.exists() or not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def _unique_existing_order(items):
+    result = []
+    seen = set()
+    for item in items:
+        text = str(item or "").strip().replace("\\", "/")
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
 
 
 def _agent_stage_instruction(agent):
@@ -1147,6 +1321,9 @@ def _agent_required_schema(agent):
         "summary": "short factual summary",
         "errors": [],
         "bugs": [],
+        "vault_sources_used": ["docs/09-vault-brain/..."],
+        "vault_updates": [],
+        "no_vault_update_required": "reason when no Vault doc update was needed",
         "files_inspected": [],
         "commands_run": [],
         "stdout_tail": "short relevant command output tail or empty",
@@ -1372,10 +1549,21 @@ def _agent_quality_gate(agent, artifact):
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
     commands = artifact.get("commands_run") if isinstance(artifact.get("commands_run"), list) else []
     inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
+    vault_sources = _artifact_vault_sources(artifact)
     if not commands:
         return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
     if not inspected:
         return {"passed": False, "reason": f"{agent} did not record files_inspected evidence."}
+    if not vault_sources:
+        return {"passed": False, "reason": f"{agent} did not record Vault Brain sources used."}
+    if not _artifact_has_vault_brain_source(artifact):
+        return {"passed": False, "reason": f"{agent} did not cite a docs/09-vault-brain source."}
+    sensitive_changes = _vault_sensitive_changed_files(artifact.get("changed_files"))
+    if sensitive_changes and not _artifact_records_vault_update_decision(artifact):
+        return {
+            "passed": False,
+            "reason": f"{agent} changed Vault-sensitive files but did not record vault_updates or no_vault_update_required.",
+        }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
         if status != "pass":
@@ -1414,6 +1602,37 @@ def _agent_quality_gate(agent, artifact):
         "reason": f"{agent} quality gate passed.",
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _artifact_vault_sources(artifact):
+    sources = artifact.get("vault_sources_used")
+    if isinstance(sources, str):
+        sources = [sources]
+    if not isinstance(sources, list):
+        sources = []
+    return [str(item or "").strip().replace("\\", "/") for item in sources if str(item or "").strip()]
+
+
+def _artifact_has_vault_brain_source(artifact):
+    return any(source.startswith("docs/09-vault-brain/") for source in _artifact_vault_sources(artifact))
+
+
+def _artifact_records_vault_update_decision(artifact):
+    updates = artifact.get("vault_updates")
+    if isinstance(updates, str):
+        updates = [updates]
+    has_update = bool([item for item in updates or [] if str(item or "").strip()])
+    has_no_update_reason = bool(str(artifact.get("no_vault_update_required") or "").strip())
+    return has_update or has_no_update_reason
+
+
+def _vault_sensitive_changed_files(changed_files):
+    files = [str(item or "").strip().replace("\\", "/") for item in (changed_files if isinstance(changed_files, list) else [])]
+    return [
+        path for path in files
+        if path and path != "No changed files detected by git diff."
+        and any(path.startswith(prefix) for prefix in VAULT_SENSITIVE_PATH_PREFIXES)
+    ]
 
 
 def _artifact_pr_reference(artifact):
@@ -1681,6 +1900,35 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             database_url=database_url,
             connect_factory=connect_factory,
         )
+    brain_guard = _brain_guard_review_gate(mission, artifacts, changed_files, ledger=ledger)
+    if not brain_guard["passed"]:
+        blocked_reason = brain_guard["reason"]
+        block_artifact = {
+            **reviewer,
+            "summary": blocked_reason,
+            "bugs": [
+                *[item for item in (reviewer.get("bugs") or []) if item],
+                *brain_guard.get("findings", []),
+            ],
+            "errors": [blocked_reason],
+            "changed_files": changed_files,
+            "quality_gate": {"passed": False, "reason": blocked_reason, "brain_guard": brain_guard},
+            "brain_guard": brain_guard,
+            "next_action": "Send back to the responsible stage and update/cite the Vault Brain before owner review.",
+        }
+        return _block_completed_agent_review(
+            mission=mission,
+            execution_id=execution_id,
+            ledger=ledger,
+            agent="brain_guard",
+            artifact=block_artifact,
+            artifacts={**artifacts, "brain_guard": block_artifact},
+            ledger_path=ledger_path,
+            output_dir=output_dir,
+            blocked_reason=blocked_reason,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     review_links = dict(reviewer_links)
     review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
     review_board = build_review_board_packet(mission, artifacts)
@@ -1714,6 +1962,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "agent_execution": _agent_execution_summary(ledger),
             "quality_gates": ledger.get("quality_gates", []),
             "backflow_events": ledger.get("backflow_events", []),
+            "brain_guard": brain_guard,
             "agent_artifacts": artifacts,
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
@@ -1780,6 +2029,54 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
 def _visual_review_blocks_owner_review(visual_review):
     visual_review = visual_review if isinstance(visual_review, dict) else {}
     return bool(visual_review.get("ui_related")) and visual_review.get("status") != "captured"
+
+
+def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
+    mission = mission if isinstance(mission, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    ledger = ledger if isinstance(ledger, dict) else {}
+    preserved = set(ledger.get("preserved_upstream_artifacts") if isinstance(ledger.get("preserved_upstream_artifacts"), list) else [])
+    findings = []
+    warnings = []
+    context = build_vault_brain_context(mission)
+    if context.get("missing_docs"):
+        findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    if not vault:
+        findings.append("Mission Vault payload is missing from the mission.")
+    for agent, artifact in artifacts.items():
+        if not isinstance(artifact, dict):
+            continue
+        if not _artifact_has_vault_brain_source(artifact):
+            if agent in preserved:
+                warnings.append(f"{agent} is preserved legacy evidence and did not cite any docs/09-vault-brain source.")
+            else:
+                findings.append(f"{agent} did not cite any docs/09-vault-brain source.")
+    sensitive_changes = _vault_sensitive_changed_files(changed_files)
+    if sensitive_changes:
+        records_update = False
+        for artifact in artifacts.values():
+            if isinstance(artifact, dict) and _artifact_records_vault_update_decision(artifact):
+                records_update = True
+                break
+        if not records_update:
+            findings.append(
+                "Vault-sensitive files changed without any artifact recording vault_updates or no_vault_update_required: "
+                + ", ".join(sensitive_changes)
+            )
+    passed = not findings
+    return {
+        "version": "charlie_brain_guard_gate_v1",
+        "agent": "brain_guard",
+        "passed": passed,
+        "reason": "Brain Guard passed. Vault Brain was cited and update discipline was recorded." if passed else "Brain Guard blocked owner review because Vault Brain discipline is incomplete.",
+        "findings": findings,
+        "warnings": warnings,
+        "preserved_legacy_artifacts": sorted(preserved),
+        "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
+        "sensitive_changed_files": sensitive_changes,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _block_completed_agent_review(

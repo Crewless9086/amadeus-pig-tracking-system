@@ -6,19 +6,19 @@ Purpose: give CHARLIE, Brain Guard, and Charl a clear view of how complete the V
 
 ## Current Estimate
 
-Vault Brain readiness: `82-87%`
+Vault Brain readiness: `86-90%`
 
-This means the Vault is now strong enough to guide CHARLIE CORE missions, but still needs owner review and a few deeper follow-up passes before it should be treated as fully bulletproof.
+This means the Vault is now strong enough to guide CHARLIE CORE missions and has first-pass runtime enforcement through CHARLIE Agent Runner v2, but still needs owner review and deeper follow-up passes before it should be treated as fully bulletproof.
 
 ## Area Scores
 
 | Area | Score | Notes |
 | --- | ---: | --- |
-| Governance | 90% | Brain Guard, update rules, source-of-truth rules, owner decisions, open questions, and review gates exist. |
+| Governance | 92% | Brain Guard, update rules, source-of-truth rules, owner decisions, open questions, review gates, and first-pass runtime blocking exist. |
 | Identity / hierarchy | 90% | Charl, CHARLIE, CHARLIE CORE, Oom Sakkie, organogram, and system hierarchy are separated. |
 | Agent structure | 85% | Agent files and registry exist; runtime asset rule added; some future departments still not designed. |
 | Business doctrine | 80% | Meat Sales, Amadeus Farm, BEACON, FRED/Transfers are structured; owner still needs to review details. |
-| Workflows | 85% | CHARLIE, n8n, SAM Meat, Beacon, Herdmaster, release, send-back, migration workflows are documented. |
+| Workflows | 88% | CHARLIE, n8n, SAM Meat, Beacon, Herdmaster, release, send-back, migration workflows are documented; CHARLIE runner now loads Vault context and records Brain Guard results. |
 | Data doctrine | 85% | Order, farm, Sheets legacy, Supabase, telemetry, Beacon, Vault data rules are much stronger. |
 | Standards | 90% | Testing, deployment, evidence, security, customer response, UI standards now have enforceable rules. |
 | Playbooks | 80% | Bugfix, live operations, data migration, agent build, income stream, feature, dashboard, marketing playbooks exist. |
@@ -32,7 +32,7 @@ This means the Vault is now strong enough to guide CHARLIE CORE missions, but st
 - More real mission examples converted into gold-standard packets.
 - Compression of large operation evidence logs into durable lessons.
 - External source review and cleanup.
-- Runtime enforcement so Brain Guard automatically blocks missions when Vault docs are stale.
+- Deeper runtime enforcement beyond first-pass Brain Guard checks, including richer semantic source validation and automatic Vault write-through for approved doctrine changes.
 
 ## Current CHARLIE CORE Use Recommendation
 
