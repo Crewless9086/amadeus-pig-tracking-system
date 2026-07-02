@@ -36,6 +36,18 @@ TARGET_AREAS = {
         "keywords": ["docs", "documentation", "sop", "protocol", "current_state", "next_steps"],
         "recommendation": "Update CHARLIE docs where repeated operator confusion or stale guidance appears.",
     },
+    "vault_retrieval": {
+        "keywords": ["vault", "vault_sources_used", "source coverage", "retrieval", "brain"],
+        "recommendation": "Improve Vault retrieval, required source coverage, and source selection evidence for this mission type.",
+    },
+    "brain_guard": {
+        "keywords": ["brain guard", "brain_guard", "vault discipline", "update discipline", "no_vault_update_required"],
+        "recommendation": "Tighten Brain Guard checks so ignored or stale Vault doctrine blocks earlier with clearer repair instructions.",
+    },
+    "owner_preferences": {
+        "keywords": ["owner preference", "buttons", "messy", "overflow", "missing button", "not what i want"],
+        "recommendation": "Convert owner feedback into enforced prompt rules, UI standards, and mission acceptance checks.",
+    },
 }
 
 

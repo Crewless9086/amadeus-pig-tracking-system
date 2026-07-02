@@ -12,6 +12,7 @@ from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
 
+from modules.charlie import vault_store
 from modules.charlie.mission_store import (
     AGENT_SEQUENCE,
     agent_sequence_for_mission,
@@ -27,6 +28,11 @@ from modules.charlie.core_workflow import (
     build_handoff_report as build_core_handoff_report,
     build_review_board_packet,
     evaluate_core_readiness,
+)
+from modules.charlie.vault_retrieval import (
+    evaluate_vault_source_coverage,
+    owner_preference_packet,
+    retrieve_vault_sources,
 )
 
 
@@ -1204,25 +1210,30 @@ Stop at the required artifact for this stage.
 
 def build_vault_brain_context(mission):
     mission = mission if isinstance(mission, dict) else {}
-    docs = _vault_context_doc_paths(mission)
+    retrieval = retrieve_vault_sources(mission, limit=16, excerpt_chars=900)
     entries = []
     remaining = VAULT_CONTEXT_CHAR_BUDGET
-    for relative_path in docs:
-        text = _read_repo_text(relative_path)
-        status = "loaded" if text else "missing"
-        excerpt = ""
-        if text and remaining > 0:
-            excerpt = _truncate(text, min(remaining, 1600))
+    for source in retrieval.get("sources", []):
+        relative_path = source.get("path", "") if isinstance(source, dict) else ""
+        text = source.get("excerpt", "") if isinstance(source, dict) else ""
+        status = source.get("status", "missing") if isinstance(source, dict) else "missing"
+        excerpt = text
+        if excerpt and remaining > 0:
+            excerpt = _truncate(excerpt, min(remaining, 1600))
             remaining -= len(excerpt)
         entries.append({
             "path": relative_path,
             "status": status,
+            "score": source.get("score", 0) if isinstance(source, dict) else 0,
+            "reasons": source.get("reasons", []) if isinstance(source, dict) else [],
             "excerpt": excerpt,
         })
     return {
         "version": "charlie_vault_brain_context_v1",
         "root": "docs/09-vault-brain",
         "rule": "Vault Brain is canonical project truth for CHARLIE identity, agents, workflows, business rules, data rules, standards, and playbooks.",
+        "retrieval": retrieval,
+        "owner_preferences": owner_preference_packet(),
         "docs": entries,
         "missing_docs": [entry["path"] for entry in entries if entry["status"] != "loaded"],
     }
@@ -1259,10 +1270,22 @@ def _format_vault_context(context):
     missing = context.get("missing_docs") if isinstance(context.get("missing_docs"), list) else []
     if missing:
         lines.append(f"- Missing docs: {', '.join(missing)}")
+    retrieval = context.get("retrieval") if isinstance(context.get("retrieval"), dict) else {}
+    if retrieval:
+        lines.append(f"- Selection rule: {retrieval.get('selection_rule', '')}")
+        lines.append(f"- Workflow template: {retrieval.get('workflow_template', '')}")
+    owner_preferences = context.get("owner_preferences") if isinstance(context.get("owner_preferences"), dict) else {}
+    preferences = owner_preferences.get("preferences") if isinstance(owner_preferences.get("preferences"), list) else []
+    if preferences:
+        lines.append("\n### Owner Preferences")
+        lines.extend(f"- {item}" for item in preferences)
     for entry in context.get("docs", []):
         if not isinstance(entry, dict):
             continue
-        lines.append(f"\n### {entry.get('path', '')} ({entry.get('status', '')})")
+        reasons = ", ".join(entry.get("reasons", [])) if isinstance(entry.get("reasons"), list) else ""
+        lines.append(f"\n### {entry.get('path', '')} ({entry.get('status', '')}, score {entry.get('score', 0)})")
+        if reasons:
+            lines.append(f"Selected because: {reasons}")
         excerpt = str(entry.get("excerpt") or "").strip()
         lines.append(excerpt if excerpt else "No excerpt loaded.")
     return "\n".join(lines)
@@ -1936,6 +1959,15 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         if item.get("agent") in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
             item["status"] = "pass"
             item["summary"] = "Runner evidence is ready for owner inspection."
+    normalized_vault_writes = _write_normalized_vault_records(
+        mission,
+        execution_id=execution_id,
+        ledger=ledger,
+        artifacts=artifacts,
+        brain_guard=brain_guard,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -1963,6 +1995,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "quality_gates": ledger.get("quality_gates", []),
             "backflow_events": ledger.get("backflow_events", []),
             "brain_guard": brain_guard,
+            "normalized_vault_writes": normalized_vault_writes,
             "agent_artifacts": artifacts,
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
@@ -2031,6 +2064,113 @@ def _visual_review_blocks_owner_review(visual_review):
     return bool(visual_review.get("ui_related")) and visual_review.get("status") != "captured"
 
 
+def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, brain_guard, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    ledger = ledger if isinstance(ledger, dict) else {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    mission_id = mission.get("mission_id", "")
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
+    writes = []
+
+    def record(label, result_status):
+        result, status_code = result_status
+        writes.append({
+            "label": label,
+            "status_code": status_code,
+            "success": bool(result.get("success")),
+            "status": result.get("status", ""),
+            "error_type": result.get("error_type", ""),
+        })
+
+    record("project", vault_store.write_project({
+        "project_id": project_truth.get("project_key") or mission.get("mission_type") or "charlie_core",
+        "project_key": project_truth.get("project_key") or "charlie_core",
+        "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
+        "purpose": vault.get("desired_outcome") or vault.get("problem_statement") or mission.get("raw_text", ""),
+        "workflow_template": project_truth.get("workflow_template") or mission.get("mission_type") or "software_build",
+        "metadata": {"mission_id": mission_id, "project_truth": project_truth},
+    }, database_url=database_url, connect_factory=connect_factory))
+
+    for agent, artifact in artifacts.items():
+        if not isinstance(artifact, dict):
+            continue
+        record(f"artifact:{agent}", vault_store.write_artifact(
+            mission_id,
+            f"agent_artifact_{agent}",
+            artifact,
+            title=f"{agent} artifact",
+            summary=artifact.get("summary", ""),
+            project_id=project_truth.get("project_key") or "",
+            agent=agent,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        ))
+        record(f"agent_run:{agent}", vault_store.write_agent_run(
+            mission_id,
+            agent,
+            {
+                "execution_id": execution_id,
+                "attempt": artifact.get("attempt", 1),
+                "status": "complete",
+                "started_at": ledger.get("started_at", ""),
+                "completed_at": artifact.get("completed_at") or ledger.get("completed_at", ""),
+                "tool_calls": [{"command": command} for command in artifact.get("commands_run", []) if command],
+                "metadata": artifact,
+            },
+            stage=agent,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        ))
+        handoff = artifact.get("handoff_report") if isinstance(artifact.get("handoff_report"), dict) else {}
+        if handoff:
+            record(f"handoff:{agent}", vault_store.write_handoff_report(
+                handoff,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            ))
+        quality = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
+        if quality:
+            record(f"quality:{agent}", vault_store.write_quality_gate(
+                mission_id,
+                f"{agent}_quality_gate",
+                "pass" if quality.get("passed") else "fail",
+                reason=quality.get("reason", ""),
+                evidence=quality,
+                stage=agent,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            ))
+
+    record("brain_guard", vault_store.write_quality_gate(
+        mission_id,
+        "brain_guard_review_gate",
+        "pass" if brain_guard.get("passed") else "fail",
+        reason=brain_guard.get("reason", ""),
+        evidence=brain_guard,
+        stage="brain_guard",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    ))
+    record("audit", vault_store.write_audit_event(
+        "agent_runner_v2_completed_owner_review_packet",
+        mission_id=mission_id,
+        actor="charlie_core",
+        target=execution_id,
+        risk_level="medium",
+        metadata={"brain_guard": brain_guard, "agent_count": len(artifacts)},
+        database_url=database_url,
+        connect_factory=connect_factory,
+    ))
+    return {
+        "version": "charlie_normalized_vault_write_through_v1",
+        "configured": any(item["status"] != "not_configured" for item in writes),
+        "success_count": sum(1 for item in writes if item["success"]),
+        "failed_count": sum(1 for item in writes if not item["success"]),
+        "writes": writes,
+    }
+
+
 def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     mission = mission if isinstance(mission, dict) else {}
     artifacts = artifacts if isinstance(artifacts, dict) else {}
@@ -2039,11 +2179,20 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     findings = []
     warnings = []
     context = build_vault_brain_context(mission)
+    retrieval = context.get("retrieval") if isinstance(context.get("retrieval"), dict) else retrieve_vault_sources(mission)
+    active_artifacts = {
+        agent: artifact
+        for agent, artifact in artifacts.items()
+        if agent not in preserved
+    }
+    source_coverage = evaluate_vault_source_coverage(active_artifacts, retrieval)
     if context.get("missing_docs"):
         findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     if not vault:
         findings.append("Mission Vault payload is missing from the mission.")
+    if not source_coverage.get("passed"):
+        findings.append(f"Vault source coverage score is {source_coverage.get('score', 0)}; required coverage not met.")
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
             continue
@@ -2073,6 +2222,9 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "findings": findings,
         "warnings": warnings,
         "preserved_legacy_artifacts": sorted(preserved),
+        "source_coverage": source_coverage,
+        "retrieval": retrieval,
+        "owner_preferences": context.get("owner_preferences", {}),
         "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
         "sensitive_changed_files": sensitive_changes,
         "checked_at": datetime.now(timezone.utc).isoformat(),

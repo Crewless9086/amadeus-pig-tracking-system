@@ -53,3 +53,15 @@ CHARLIE Agent Runner v2 now enforces a first runtime Brain Guard gate before own
 - preserved legacy artifacts from older send-back runs are recorded as warnings instead of blocking current reruns.
 
 This runtime gate does not replace owner review. It prevents CHARLIE CORE from presenting work as review-ready when the Vault Brain was ignored or when knowledge-update discipline is missing.
+
+## Runtime Enforcement v2
+
+The second runtime pass adds stronger operating rails:
+
+- Vault retrieval selects sources by base doctrine, workflow template, keyword match, and local token overlap.
+- Stage prompts include source-selection reasons and owner preference rules.
+- Brain Guard records source coverage, uncited agents, missing required docs, selected-but-uncited docs, and preserved legacy artifact warnings.
+- Completed missions write best-effort normalized Vault records for projects, artifacts, agent runs, handoffs, quality gates, Brain Guard, and audit.
+- The command center exposes autonomy readiness, Vault retrieval counts, owner preference rules, tool permissions, model registry, and remaining safety boundaries.
+
+Brain Guard still cannot self-approve. It can only prove whether Vault discipline is strong enough for owner review.

@@ -33,6 +33,7 @@ from modules.charlie.core_workflow import (
 from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
+from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
 from modules.charlie.improvement_analyst import (
     generate_and_store_proposals,
     list_improvement_proposals,
@@ -233,13 +234,20 @@ def charlie_build_relay_command_center_route():
     improvements, _improvements_status = list_improvement_proposals(limit=8)
     readiness_items = []
     for mission in recent.get("missions", []):
+        retrieval = retrieve_vault_sources(mission, limit=8, excerpt_chars=0)
         readiness_items.append({
             "mission_id": mission.get("mission_id", ""),
             "title": mission.get("title", ""),
             "status": mission.get("status", ""),
             "core_readiness": evaluate_core_readiness(mission),
+            "vault_retrieval": {
+                "workflow_template": retrieval.get("workflow_template", ""),
+                "selected_count": retrieval.get("selected_count", 0),
+                "sources": [{"path": item.get("path", ""), "score": item.get("score", 0), "reasons": item.get("reasons", [])} for item in retrieval.get("sources", [])],
+                "missing_docs": retrieval.get("missing_docs", []),
+            },
         })
-    return jsonify({
+    response = {
         "success": True,
         "status": "ok",
         "charlie_core": {
@@ -249,6 +257,7 @@ def charlie_build_relay_command_center_route():
             "recent_readiness": readiness_items,
             "model_registry": model_registry_packet(),
             "tool_permissions": tool_permission_registry(),
+            "owner_preferences": owner_preference_packet(),
         },
         "counts": summary.get("counts", {}),
         "vault": {
@@ -292,7 +301,9 @@ def charlie_build_relay_command_center_route():
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
-    }), 200
+    }
+    response["autonomy_readiness"] = autonomy_readiness_packet(response)
+    return jsonify(response), 200
 
 
 @charlie_bp.route("/charlie/core/vault-health", methods=["GET"])

@@ -51,10 +51,17 @@ The runner checks:
 
 - stage artifacts cite `docs/09-vault-brain/` sources;
 - the mission has a Mission Vault payload;
+- retrieved Vault sources have source-selection reasons and source coverage evidence;
 - Vault-sensitive changes to CHARLIE runtime, agent docs, or workflow docs include `vault_updates` or `no_vault_update_required`;
 - preserved upstream artifacts from old send-back runs are visible as warnings, not silent truth.
 
 If these checks fail, Brain Guard blocks owner review and the mission remains blocked until the responsible stage fixes the evidence or updates the Vault.
+
+## Autonomy Boundary
+
+CHARLIE CORE can run supervised missions with stronger memory, retrieval, tests, and evidence than before. It must still stop for owner review before release, money, customer contact, public posting, migrations, stock reservations, or farm lifecycle writes.
+
+The target is to outperform a single assistant on repeatability, memory, evidence, queue discipline, and overnight throughput. It is not allowed to outperform the owner gate by bypassing it.
 
 ## Approval Levels
 

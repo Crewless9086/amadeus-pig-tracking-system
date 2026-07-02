@@ -294,12 +294,18 @@
     const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
     const modelRegistry = core.model_registry || {};
     const toolPermissions = core.tool_permissions || {};
+    const ownerPreferences = core.owner_preferences || {};
+    const autonomy = data.autonomy_readiness || {};
     const runner = data.local_runner || {};
     const improvements = data.improvements || {};
+    const retrievalCount = recentReadiness.reduce((total, item) => total + Number((item.vault_retrieval || {}).selected_count || 0), 0);
     els.commandCenter.innerHTML = `
       ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
+      ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
       ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
       ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
+      ${commandCenterTile("Vault Retrieval", `${retrievalCount} source hits`, recentReadiness.length ? "ranked by mission context" : "waiting for missions")}
+      ${commandCenterTile("Owner Rules", `${(ownerPreferences.preferences || []).length} active`, "applied in stage prompts")}
       ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
       ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
       ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
@@ -314,7 +320,7 @@
       ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
         shortId(item.mission_id || ""),
         `${Number((item.core_readiness || {}).overall_percent || 0)}% ready`,
-        item.title || item.status || "recent mission"
+        `${item.title || item.status || "recent mission"} | ${(item.vault_retrieval || {}).selected_count || 0} Vault docs`
       )).join("")}
     `;
   }

@@ -48,6 +48,19 @@ class CharlieModelAndPermissionTests(unittest.TestCase):
         self.assertEqual(audit["audit_status"], "blocked")
         self.assertFalse(audit["permission"]["permitted"])
 
+    def test_visual_checks_are_allowed_for_tester_without_owner_approval(self):
+        result = check_tool_permission("tester", "visual_check", owner_approved=False)
+
+        self.assertTrue(result["permitted"])
+        self.assertEqual(result["decision_reason"], "allowed")
+
+    def test_brain_guard_can_write_learning_but_not_repo(self):
+        learning = check_tool_permission("brain_guard", "learning_write", owner_approved=False)
+        repo = check_tool_permission("brain_guard", "repo_write", owner_approved=True)
+
+        self.assertTrue(learning["permitted"])
+        self.assertFalse(repo["permitted"])
+
 
 if __name__ == "__main__":
     unittest.main()
