@@ -56,3 +56,20 @@ Still needed before automation:
 - emergency/incident SOP;
 - customer message rules;
 - dispatch source-of-truth records.
+
+## Quartermaster / Farm Stock And Feed Control
+
+Question: what exact farm stock, feed, natural resource, purchasing, expense, receipt, and stock-adjustment workflows should Quartermaster own?
+
+Still needed before Quartermaster becomes active:
+
+- feed categories and natural farm feed/resource list;
+- stock item categories;
+- purchase approval rules;
+- expense capture rules;
+- receipt storage rules;
+- stock adjustment rules;
+- stocktake frequency;
+- dashboard placement;
+- Supabase/source-of-truth tables;
+- owner approval gates for purchases and stock changes.

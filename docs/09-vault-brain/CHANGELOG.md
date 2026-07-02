@@ -12,3 +12,4 @@
 - Converted owner identity review notes into clean operating doctrine for Charl, CHARLIE, CHARLIE CORE, Oom Sakkie, hierarchy, and execution boundaries.
 - Split `02-agents` into `owner-command/` for CHARLIE and `charlie-core/` for CHARLIE CORE workflow agents.
 - Added the owner Dynasty direction note as future strategic backbone guidance.
+- Converted owner agent-personality comments into clean doctrine for owner-command, CHARLIE CORE, and farm agents.
