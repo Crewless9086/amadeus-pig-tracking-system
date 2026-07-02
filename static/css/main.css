@@ -8465,12 +8465,13 @@ body.oom-farm-command-body {
 .charlie-return-loop span {
     display: grid;
     place-items: center;
-    width: 32px;
+    min-width: 56px;
     height: 32px;
+    padding: 0 8px;
     border-radius: 999px;
     background: #fff0df;
     color: #b94f12;
-    font-size: 1.3rem;
+    font-size: 0.78rem;
     font-weight: 700;
 }
 
@@ -8933,6 +8934,393 @@ body.oom-farm-command-body {
     width: 100%;
 }
 
+.charlie-body {
+    background:
+        linear-gradient(180deg, #08100f 0%, #0f1b1a 52%, #182321 100%);
+    color: #e8f1ed;
+}
+
+.charlie-shell {
+    width: min(1500px, calc(100% - 28px));
+}
+
+.charlie-header {
+    align-items: center;
+    border-bottom: 1px solid rgba(125, 190, 174, 0.22);
+}
+
+.charlie-header h1 {
+    color: #f5fbf9;
+    letter-spacing: 0;
+}
+
+.ops-header-actions a {
+    border: 1px solid rgba(112, 155, 146, 0.42);
+    background: #101d1c;
+    color: #d6e7e2;
+}
+
+.charlie-command-strip article,
+.charlie-panel,
+.charlie-mission-card {
+    border-color: rgba(104, 146, 138, 0.34);
+    background: #111e1d;
+    color: #edf7f3;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+}
+
+.charlie-command-strip article {
+    min-height: 88px;
+    border-left: 4px solid #2b84a0;
+}
+
+.charlie-command-strip span,
+.charlie-muted,
+.charlie-mission-meta dt,
+.charlie-panel label,
+.charlie-live-notice,
+.charlie-flow-title small {
+    color: #aebfba;
+}
+
+.charlie-command-strip strong,
+.charlie-mission-card h3,
+.charlie-panel h2,
+.charlie-panel h3,
+.charlie-flow-title strong {
+    color: #f4fbf8;
+}
+
+.charlie-command-strip article:nth-child(4),
+.charlie-blocked-banner {
+    border-left-color: #d35b4f;
+}
+
+.charlie-command-strip article:nth-child(5) {
+    border-left-color: #7f63c4;
+}
+
+.charlie-control-room {
+    grid-template-columns: minmax(230px, 300px) minmax(0, 1.7fr) minmax(280px, 370px);
+}
+
+.charlie-panel select,
+.charlie-panel input,
+.charlie-panel textarea,
+.charlie-panel button,
+.charlie-mission-actions button {
+    border-color: rgba(137, 174, 166, 0.48);
+    background: #182827;
+    color: #eef8f4;
+}
+
+.charlie-panel input,
+.charlie-panel textarea,
+.charlie-intake-form,
+.charlie-media-drop,
+.charlie-empty,
+.charlie-system-missions,
+.charlie-improvement-card,
+.charlie-agent-stage,
+.charlie-visual-review,
+.charlie-review-focus-grid aside,
+.charlie-live-notice,
+.charlie-mission-meta div {
+    border-color: rgba(126, 164, 156, 0.34);
+    background: #0c1716;
+    color: #e6f1ed;
+}
+
+.charlie-panel button:hover,
+.charlie-mission-actions button:hover,
+#charlie_refresh:hover,
+.ops-header-actions a:hover {
+    border-color: #2aa7c8;
+    background: #17363b;
+    color: #ffffff;
+}
+
+.charlie-icon-button,
+.charlie-mission-actions button[data-review-decision="approve_final_release"] {
+    border-color: #31b973;
+    background: #0d5d38;
+    color: #f4fff8;
+}
+
+.charlie-mission-actions button[data-review-decision="send_back"],
+.charlie-mission-actions button[data-review-decision="pause"],
+.charlie-mission-actions button[data-review-decision="reject"] {
+    border-color: #c86d45;
+    background: #3a2118;
+    color: #ffe9da;
+}
+
+.charlie-safety-boundary {
+    border-left-color: #d7a52b;
+    color: #d7c8a8;
+}
+
+.status-pill,
+.charlie-card-tags span,
+.charlie-vault-summary span,
+.charlie-agent-stage > div span,
+.charlie-flow-title span {
+    background: #17312e;
+    color: #dff4ee;
+}
+
+.charlie-command-center-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.charlie-command-center-tile {
+    min-height: 96px;
+    border-color: rgba(100, 154, 143, 0.34);
+    background: #0b1716;
+}
+
+.charlie-command-center-tile strong,
+.charlie-command-center-tile span {
+    color: #effaf6;
+}
+
+.charlie-command-center-tile code {
+    color: #aebfba;
+}
+
+.charlie-flow-title {
+    border-bottom-color: rgba(126, 164, 156, 0.28);
+}
+
+.charlie-flow-title > div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.charlie-state-token {
+    min-width: 124px;
+    justify-content: center;
+    text-align: center;
+}
+
+.charlie-state-token.is-running {
+    background: #103d35;
+    color: #65e28d;
+}
+
+.charlie-state-token.is-stopped,
+.charlie-state-token.is-no-mission {
+    background: #273130;
+    color: #c5d3cf;
+}
+
+.charlie-state-token.is-stale,
+.charlie-state-token.is-blocked {
+    background: #441f17;
+    color: #ffbd90;
+}
+
+.charlie-state-token.is-review-ready {
+    background: #31234f;
+    color: #d6c7ff;
+}
+
+.charlie-control-hero {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+    margin-top: 12px;
+}
+
+.charlie-core-node {
+    position: static;
+    display: grid;
+    place-items: start;
+    width: auto;
+    min-height: 162px;
+    padding: 18px;
+    border: 1px solid rgba(56, 172, 201, 0.5);
+    background: #071211;
+    color: #eef8f3;
+    text-align: left;
+    transform: none;
+    box-shadow: inset 0 0 0 1px rgba(45, 170, 204, 0.16), 0 20px 44px rgba(0, 0, 0, 0.26);
+}
+
+.charlie-core-orbit {
+    width: 42px;
+    height: 42px;
+    border: 1px solid #38acc9;
+    border-radius: 8px;
+    background: #102a30;
+    box-shadow: inset 0 0 0 6px rgba(56, 172, 201, 0.12);
+}
+
+.charlie-hero-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.charlie-runner-metric {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-height: 122px;
+    padding: 12px;
+    border: 1px solid rgba(126, 164, 156, 0.3);
+    border-radius: 8px;
+    background: #0c1716;
+}
+
+.charlie-runner-metric span,
+.charlie-runner-metric small {
+    color: #aebfba;
+    overflow-wrap: anywhere;
+}
+
+.charlie-runner-metric strong {
+    color: #f6fffb;
+    overflow-wrap: anywhere;
+}
+
+.charlie-agent-lane {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.charlie-organogram,
+.charlie-agent-ring,
+.charlie-flow-link,
+.charlie-organogram::before,
+.charlie-organogram::after {
+    display: none;
+}
+
+.charlie-flow-node,
+.charlie-organogram .charlie-flow-node {
+    position: relative;
+    display: grid;
+    gap: 7px;
+    width: auto;
+    min-height: 132px;
+    padding: 12px;
+    border: 1px solid rgba(132, 170, 162, 0.36);
+    border-radius: 8px;
+    background: #0c1716;
+    transform: none;
+}
+
+.charlie-flow-node strong {
+    color: #f5fbf8;
+}
+
+.charlie-flow-node small,
+.charlie-flow-node em {
+    color: #adbfba;
+}
+
+.charlie-flow-node.is-complete {
+    border-color: #37a66d;
+    background: #0d211a;
+}
+
+.charlie-flow-node.is-active {
+    border-color: #e0b529;
+    background: #241f0f;
+    box-shadow: 0 0 0 2px rgba(224, 181, 41, 0.18), 0 0 28px rgba(224, 181, 41, 0.16);
+}
+
+.charlie-flow-node.is-blocked,
+.charlie-flow-node.is-send-back {
+    border-color: #d35b4f;
+    background: #2a1512;
+}
+
+.charlie-flow-node.is-review-ready {
+    border-color: #8d6bd4;
+    background: #1d1730;
+}
+
+.charlie-flow-pulse {
+    width: 10px;
+    height: 10px;
+}
+
+.charlie-agent-strip {
+    max-height: 168px;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.charlie-agent-badge {
+    min-height: 28px;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-card-header h3,
+.charlie-mission-card p,
+.charlie-review-packet,
+.charlie-mission-meta dd,
+.charlie-panel pre,
+.charlie-mission-card code {
+    overflow-wrap: anywhere;
+}
+
+.charlie-queue-preview .charlie-mission-card p {
+    display: block;
+    overflow: visible;
+}
+
+.charlie-review-card p {
+    display: block;
+    overflow: visible;
+    -webkit-line-clamp: unset;
+}
+
+.charlie-evidence-drawer {
+    padding: 10px;
+    border: 1px solid rgba(126, 164, 156, 0.3);
+    border-radius: 8px;
+    background: #0a1514;
+}
+
+.charlie-evidence-drawer summary,
+.charlie-mission-card details summary,
+.charlie-system-missions summary {
+    color: #eaf6f2;
+}
+
+.charlie-review-actions {
+    grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+}
+
+.charlie-mission-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charlie-visual-thumbnail,
+.charlie-media-preview,
+.charlie-media-reference,
+.charlie-unresolved-blockers article,
+.charlie-return-loop {
+    border-color: rgba(126, 164, 156, 0.32);
+    background: #101d1c;
+    color: #eaf5f1;
+}
+
+.charlie-review-modal-panel,
+.charlie-visual-overlay-panel {
+    background: #101d1c;
+    color: #eef8f4;
+}
+
 @media (max-width: 900px) {
     .charlie-header,
     .charlie-control-room,
@@ -8950,7 +9338,9 @@ body.oom-farm-command-body {
     .charlie-command-strip,
     .charlie-command-center-grid,
     .charlie-mission-meta,
-    .charlie-flow-track {
+    .charlie-flow-track,
+    .charlie-control-hero,
+    .charlie-hero-metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -8997,7 +9387,10 @@ body.oom-farm-command-body {
     .charlie-mission-meta,
     .charlie-form-row,
     .charlie-flow-track,
-    .charlie-agent-ring {
+    .charlie-agent-ring,
+    .charlie-control-hero,
+    .charlie-hero-metrics,
+    .charlie-review-actions {
         grid-template-columns: 1fr;
     }
 
