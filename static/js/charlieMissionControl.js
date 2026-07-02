@@ -9,6 +9,8 @@
     loading: false,
     pendingMedia: [],
     activeFilter: "owner_queue",
+    openReviewDetails: new Set(),
+    activeReviewMissionId: "",
   };
   const AUTO_REFRESH_MS = 8000;
   const AGENT_ORDER = ["idea_expander", "product_architect", "planner", "architect", "builder", "tester", "qa_red_team", "reviewer"];
@@ -330,6 +332,12 @@
   function renderReview() {
     if (els.reviewLoadedAt) els.reviewLoadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
     if (!els.reviewList) return;
+    els.reviewList.querySelectorAll("[data-review-details]").forEach((details) => {
+      const missionId = safeText(details.dataset.reviewDetails);
+      if (!missionId) return;
+      if (details.open) state.openReviewDetails.add(missionId);
+      else state.openReviewDetails.delete(missionId);
+    });
     if (!state.reviewMissions.length) {
       els.reviewList.innerHTML = '<p class="charlie-empty">No missions are waiting at owner review.</p>';
       return;
@@ -682,7 +690,7 @@
       </dl>
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
       <p>${escapeHtml(safeText(reviewPacket.summary || mission.raw_text || title)).slice(0, 220)}</p>
-      <details>
+      <details data-review-details="${escapeHtml(missionId)}"${state.openReviewDetails.has(missionId) ? " open" : ""}>
         <summary>Short evidence</summary>
         ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
         <div class="charlie-review-packet">${reviewPacketMarkup(mission, reviewPacket)}</div>
@@ -694,6 +702,13 @@
     card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
       button.addEventListener("click", () => openVisualReviewOverlay(button));
     });
+    const details = card.querySelector("[data-review-details]");
+    if (details) {
+      details.addEventListener("toggle", () => {
+        if (details.open) state.openReviewDetails.add(missionId);
+        else state.openReviewDetails.delete(missionId);
+      });
+    }
     card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
   }
@@ -709,6 +724,7 @@
     const missionId = safeText(mission.mission_id);
     const title = safeText(mission.title || mission.raw_text || "Owner Review");
     const reviewPacket = reviewPacketForMission(mission);
+    state.activeReviewMissionId = missionId;
     if (els.reviewModalTitle) els.reviewModalTitle.textContent = title;
     els.reviewModalBody.innerHTML = focusedReviewMarkup(mission, reviewPacket);
     els.reviewModal.classList.remove("hidden");
@@ -727,6 +743,7 @@
   function closeOwnerReviewModal() {
     if (!els.reviewModal) return;
     els.reviewModal.classList.add("hidden");
+    state.activeReviewMissionId = "";
     document.body.classList.remove("charlie-modal-open");
     if (els.reviewModalBody) els.reviewModalBody.innerHTML = "";
   }
@@ -1448,12 +1465,16 @@
     const status = safeText(review.status || "not_available");
     const summary = safeText(review.summary || "No visual review packet was captured for this mission.");
     const stageEvidence = Array.isArray(review.stage_evidence) ? review.stage_evidence.filter(Boolean) : [];
+    const captureSource = safeText(review.capture_source || (review.capture || {}).capture_source || "");
+    const generatedPacket = captureSource === "generated_owner_review_packet" || /control dashboard preview not mission visual/i.test(summary);
+    const visualLabel = generatedPacket ? "Generated owner packet, not live screenshot" : "Mission visual evidence";
     return `
       <section class="charlie-visual-review" aria-label="Visual Review">
         <div class="charlie-visual-review-header">
           <div>
             <strong>Visual Review</strong>
             <span>${escapeHtml(status.replace(/_/g, " "))}</span>
+            <small>${escapeHtml(visualLabel)}</small>
           </div>
           ${localPreviewMarkup(preview || {}, links || {})}
         </div>
