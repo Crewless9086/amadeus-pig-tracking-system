@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request, send_from_directory
 
 from modules.auth.owner_access import require_owner_read_access
 from modules.charlie.build_relay import (
+    MISSION_STORE_ENABLED_ENV,
     build_relay_policy,
     handle_charlie_telegram_webhook,
 )
@@ -203,25 +204,29 @@ def charlie_build_relay_command_center_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    summary, summary_status = mission_status_summary()
-    recent, recent_status = list_missions(status="owner_queue", limit=8)
-    approved_queue, approved_status = _owner_work_missions_for_status("approved", limit=20)
-    review_ready, review_status = _owner_work_missions_for_status("pr_ready", limit=5)
-    blocked, blocked_status = _owner_work_missions_for_status("blocked", limit=5)
-    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=5)
-    release_in_progress, release_progress_status = _owner_work_missions_for_status("release_in_progress", limit=5)
-    merged, merged_status = list_missions(status="merged", limit=5)
-    deployed, deployed_status = list_missions(status="deployed", limit=5)
+    if _mission_store_enabled():
+        summary, summary_status = mission_status_summary()
+        owner_queue, owner_queue_status = list_missions(status="owner_queue", limit=50)
+        owner_queue_missions = owner_queue.get("missions", [])
+        vault_health, _vault_health_status = vault_tables_health()
+        improvements, _improvements_status = list_improvement_proposals(limit=8)
+    else:
+        summary, summary_status = {"success": True, "status": "mission_store_disabled", "counts": {}}, 200
+        owner_queue, owner_queue_status = {"success": True, "status": "mission_store_disabled", "missions": []}, 200
+        owner_queue_missions = []
+        vault_health = {"success": False, "status": "mission_store_disabled", "message": "Mission store is disabled for this local preview."}
+        improvements = {"success": True, "status": "mission_store_disabled", "proposals": []}
+    recent = {"success": owner_queue.get("success", False), "status": owner_queue.get("status", ""), "missions": owner_queue_missions[:8]}
+    approved_queue = {"missions": _mission_bucket(owner_queue_missions, "approved", 20)}
+    review_ready = {"missions": _mission_bucket(owner_queue_missions, "pr_ready", 5)}
+    blocked = {"missions": _mission_bucket(owner_queue_missions, "blocked", 5)}
+    release_approved = {"missions": _mission_bucket(owner_queue_missions, "release_approved", 5)}
+    release_in_progress = {"missions": _mission_bucket(owner_queue_missions, "release_in_progress", 5)}
+    merged = {"missions": [], "source": "summary_count_only"}
+    deployed = {"missions": [], "source": "summary_count_only"}
     statuses = [
         summary_status,
-        recent_status,
-        approved_status,
-        review_status,
-        blocked_status,
-        release_approved_status,
-        release_progress_status,
-        merged_status,
-        deployed_status,
+        owner_queue_status,
     ]
     if max(statuses) >= 400:
         return jsonify({
@@ -230,8 +235,6 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     local_status = local_runner_status()
-    vault_health, _vault_health_status = vault_tables_health()
-    improvements, _improvements_status = list_improvement_proposals(limit=8)
     readiness_items = []
     for mission in recent.get("missions", []):
         retrieval = retrieve_vault_sources(mission, limit=8, excerpt_chars=0)
@@ -280,6 +283,8 @@ def charlie_build_relay_command_center_route():
             "in_progress": release_in_progress.get("missions", []),
             "merged_waiting_live_verify": merged.get("missions", []),
             "deployed": deployed.get("missions", []),
+            "merged_count": summary.get("counts", {}).get("merged", 0),
+            "deployed_count": summary.get("counts", {}).get("deployed", 0),
             "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
         },
         "queue": {
@@ -427,6 +432,10 @@ def _running_on_render():
     return bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID") or os.getenv("RENDER_EXTERNAL_HOSTNAME"))
 
 
+def _mission_store_enabled():
+    return str(os.getenv(MISSION_STORE_ENABLED_ENV, "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>", methods=["GET"])
 def charlie_build_relay_mission_detail_route(mission_id):
     denied = require_owner_read_access()
@@ -481,6 +490,13 @@ def charlie_build_relay_review_media_route(mission_id, filename):
     if not media_path.exists() or not media_path.is_file():
         return jsonify({"success": False, "status": "review_media_not_found"}), 404
     return send_from_directory(resolved_dir, safe_filename)
+
+
+def _mission_bucket(missions, status, limit):
+    return [
+        mission for mission in (missions or [])
+        if str(mission.get("status", "")).strip() == status
+    ][:limit]
 
 
 def _owner_work_missions_for_status(status, limit=1):
