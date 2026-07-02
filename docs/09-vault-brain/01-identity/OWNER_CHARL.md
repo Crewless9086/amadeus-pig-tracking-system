@@ -32,6 +32,12 @@ CHARLIE and all agents should understand that Charl prioritizes:
 - family, animals, nature, and operational resilience;
 - large long-term opportunity while still executing the next practical step.
 
+## Dynasty Direction
+
+Charl is building toward a full Dynasty structure, not isolated short-term businesses.
+
+The Dynasty backbone will be added to the Vault Brain when the owner uploads/reviews it. Once accepted, CHARLIE and all agents should use it as a long-term strategic backbone for building from the ground up, aligning businesses, agents, income streams, systems, and operating decisions to the same larger direction.
+
 ## Approval Authority
 
 Charl approves:

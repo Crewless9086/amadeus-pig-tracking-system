@@ -22,15 +22,15 @@
 
 - `02-agents/_AGENT_TEMPLATE.md`
 - `02-agents/AGENT_REGISTRY.md`
-- `02-agents/charlie/CHARLIE.md`
-- `02-agents/charlie/BRAIN_GUARD.md`
-- `02-agents/charlie/IMPROVEMENT_ANALYST.md`
-- `02-agents/charlie/PLANNER.md`
-- `02-agents/charlie/ARCHITECT.md`
-- `02-agents/charlie/BUILDER.md`
-- `02-agents/charlie/TESTER.md`
-- `02-agents/charlie/QA_RED_TEAM.md`
-- `02-agents/charlie/REVIEWER.md`
+- `02-agents/owner-command/CHARLIE.md`
+- `02-agents/charlie-core/BRAIN_GUARD.md`
+- `02-agents/charlie-core/IMPROVEMENT_ANALYST.md`
+- `02-agents/charlie-core/PLANNER.md`
+- `02-agents/charlie-core/ARCHITECT.md`
+- `02-agents/charlie-core/BUILDER.md`
+- `02-agents/charlie-core/TESTER.md`
+- `02-agents/charlie-core/QA_RED_TEAM.md`
+- `02-agents/charlie-core/REVIEWER.md`
 - `02-agents/farm/OOM_SAKKIE.md`
 - `02-agents/farm/HERDMASTER.md`
 - `02-agents/farm/ROOTLINE.md`

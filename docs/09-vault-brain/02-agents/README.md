@@ -2,6 +2,15 @@
 
 Each agent has one dedicated file. Do not add new agents to a shared catch-all file.
 
+## Folder Map
+
+- `owner-command/` - CHARLIE himself, the owner command layer and digital operating identity.
+- `charlie-core/` - CHARLIE CORE workflow agents: Planner, Architect, Builder, Tester, QA Red Team, Reviewer, Improvement Analyst, and Brain Guard.
+- `farm/` - Amadeus Farm command and farm operations agents.
+- `sales/` - Amadeus Farm Sales agents under SAM.
+- `marketing/` - shared Marketing department agents under Beacon.
+- `transport/` - Amadeus Private Transfers agents under FRED.
+
 To create a new agent:
 
 1. Copy `_AGENT_TEMPLATE.md`.

@@ -10,3 +10,5 @@
 - Added the approved agent organogram, agent registry, and Amadeus Farm Sales structure with SAM as Farm Sales CEO and planned specialist sales agents.
 - Captured owner-reviewed governance decisions and reduced open questions to unresolved verification/legal items.
 - Converted owner identity review notes into clean operating doctrine for Charl, CHARLIE, CHARLIE CORE, Oom Sakkie, hierarchy, and execution boundaries.
+- Split `02-agents` into `owner-command/` for CHARLIE and `charlie-core/` for CHARLIE CORE workflow agents.
+- Added the owner Dynasty direction note as future strategic backbone guidance.

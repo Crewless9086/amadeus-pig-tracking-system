@@ -17,16 +17,16 @@ Every agent must have:
 
 | Agent | Home | Commander | Status | File |
 | --- | --- | --- | --- | --- |
-| CHARLIE | Owner Command | Charl | Active/maturing | `charlie/CHARLIE.md` |
+| CHARLIE | Owner Command | Charl | Active/maturing | `owner-command/CHARLIE.md` |
 | CHARLIE CORE | Workflow System | CHARLIE | Active/maturing | `../01-identity/CHARLIE_CORE.md` |
-| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Draft/required | `charlie/BRAIN_GUARD.md` |
-| Planner | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/PLANNER.md` |
-| Architect | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/ARCHITECT.md` |
-| Builder | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/BUILDER.md` |
-| Tester | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/TESTER.md` |
-| QA Red Team | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/QA_RED_TEAM.md` |
-| Reviewer | CHARLIE CORE | CHARLIE CORE | Draft | `charlie/REVIEWER.md` |
-| Improvement Analyst | CHARLIE CORE | CHARLIE CORE | Active foundation | `charlie/IMPROVEMENT_ANALYST.md` |
+| Brain Guard | CHARLIE CORE / Governance | CHARLIE | Draft/required | `charlie-core/BRAIN_GUARD.md` |
+| Planner | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/PLANNER.md` |
+| Architect | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/ARCHITECT.md` |
+| Builder | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/BUILDER.md` |
+| Tester | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/TESTER.md` |
+| QA Red Team | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/QA_RED_TEAM.md` |
+| Reviewer | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/REVIEWER.md` |
+| Improvement Analyst | CHARLIE CORE | CHARLIE CORE | Active foundation | `charlie-core/IMPROVEMENT_ANALYST.md` |
 
 ## Business Environment Agents
 
