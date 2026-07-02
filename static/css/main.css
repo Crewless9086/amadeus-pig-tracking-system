@@ -9365,6 +9365,10 @@ body.oom-farm-command-body {
     min-height: 0;
 }
 
+.charlie-runner-panel {
+    display: block;
+}
+
 .charlie-runner-panel details {
     display: block;
     margin-top: 8px;

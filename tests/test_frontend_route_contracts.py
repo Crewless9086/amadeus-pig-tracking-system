@@ -1,11 +1,18 @@
-from pathlib import Path
 import json
+import re
 import unittest
+from pathlib import Path
 
 from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def _css_rule(self, css, selector):
+        pattern = re.compile(re.escape(selector) + r"\s*\{(?P<body>[^}]*)\}", re.MULTILINE)
+        matches = list(pattern.finditer(css))
+        self.assertTrue(matches, f"Missing CSS rule for {selector}")
+        return matches[-1].group("body")
+
     def test_charlie_mission_control_page_contract(self):
         template = Path("templates/charlie.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControl.js").read_text(encoding="utf-8")
@@ -116,9 +123,22 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("cannot run shell commands", template)
         self.assertIn("send customers", template)
         self.assertIn("<details open>", template)
+        self.assertIn("Local runner commands", template)
+        self.assertIn("scripts\\charlie_mission_pickup.py --watch --continuous --notify --execute-codex", template)
+        self.assertIn("scripts\\charlie_runner_control.py status", template)
         css = Path("static/css/main.css").read_text(encoding="utf-8")
         self.assertNotRegex(css, r"\.charlie-safety-boundary\s*\{[^}]*display:\s*none")
         self.assertNotRegex(css, r"\.charlie-runner-panel\s+details\s*\{[^}]*display:\s*none")
+        safety_rule = self._css_rule(css, ".charlie-safety-boundary")
+        runner_panel_rule = self._css_rule(css, ".charlie-runner-panel")
+        runner_details_rule = self._css_rule(css, ".charlie-runner-panel details")
+        runner_summary_rule = self._css_rule(css, ".charlie-runner-panel details summary")
+        runner_pre_rule = self._css_rule(css, ".charlie-runner-panel details pre")
+        self.assertIn("display: block", safety_rule)
+        self.assertNotIn("display: none", runner_panel_rule)
+        self.assertIn("display: block", runner_details_rule)
+        self.assertNotIn("display: none", runner_summary_rule)
+        self.assertNotIn("display: none", runner_pre_rule)
 
     def test_oom_sakkie_backend_read_only_relay_workflow_is_safe_contract(self):
         workflow_path = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/workflow.json")
