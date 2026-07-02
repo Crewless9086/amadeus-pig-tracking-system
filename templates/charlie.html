@@ -11,7 +11,8 @@
     <header class="charlie-header">
       <div>
         <span class="ops-kicker">Owner Command Layer</span>
-        <h1>CHARLIE Mission Control</h1>
+        <h1>CHARLIE CORE</h1>
+        <strong class="charlie-title-subline">Mission Control</strong>
         <p id="charlie_status_line">Loading mission queue...</p>
       </div>
       <nav class="ops-header-actions" aria-label="CHARLIE navigation">
@@ -147,14 +148,41 @@
             <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
           </div>
           <div id="charlie_live_notice" class="charlie-live-notice" aria-live="polite">Loading local runner heartbeat and mission ledger...</div>
+          <div class="charlie-progress-shell" aria-label="Live mission progress">
+            <div>
+              <strong id="charlie_progress_text">Progress loading</strong>
+              <span id="charlie_progress_detail">Waiting for runner data</span>
+            </div>
+            <div class="charlie-progress-track"><span id="charlie_progress_fill"></span></div>
+          </div>
           <div id="charlie_workflow_map" class="charlie-workflow-map" aria-live="polite"></div>
+        </section>
+
+        <section class="charlie-panel charlie-alert-panel" aria-label="Alerts">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Signals</span>
+              <h2>Alerts</h2>
+            </div>
+          </div>
+          <div id="charlie_alerts" class="charlie-alert-list" aria-live="polite"></div>
+        </section>
+
+        <section class="charlie-panel charlie-approved-panel" aria-label="Approved mission workflow order">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Queue</span>
+              <h2>Approved Order</h2>
+            </div>
+          </div>
+          <div id="charlie_approved_queue" class="charlie-approved-queue" aria-live="polite"></div>
         </section>
 
         <section class="charlie-panel charlie-command-center-panel" aria-label="CHARLIE CORE command center">
           <div class="ops-panel-header">
             <div>
               <span class="ops-panel-kicker">CHARLIE CORE</span>
-              <h2>Command Center</h2>
+              <h2>System Snapshot</h2>
             </div>
             <span class="status-pill status-pill-muted" id="charlie_command_center_loaded_at">Loading</span>
           </div>
@@ -176,15 +204,6 @@
           </div>
         </section>
 
-        <section class="charlie-panel charlie-missions-panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Details</span>
-              <h2>Expanded Mission Records</h2>
-            </div>
-          </div>
-          <p class="charlie-muted">Short mission cards stay in the left rail. Open card details only when deeper vault or technical evidence is needed.</p>
-        </section>
       </section>
 
       <aside class="charlie-side-rail" aria-label="Active mission summary">
@@ -248,6 +267,32 @@
         <div id="charlie_review_modal_body"></div>
       </div>
     </div>
+
+    <div id="charlie_approval_modal" class="charlie-review-modal hidden" role="dialog" aria-modal="true" aria-label="Approve Mission">
+      <div class="charlie-approval-modal-panel">
+        <div class="ops-panel-header">
+          <div>
+            <span class="ops-panel-kicker">Approval</span>
+            <h2 id="charlie_approval_title">Approve Mission</h2>
+          </div>
+          <button type="button" id="charlie_approval_close">Close</button>
+        </div>
+        <p id="charlie_approval_summary" class="charlie-muted">Choose the approval level for this mission.</p>
+        <div class="charlie-approval-levels">
+          <button type="button" data-approval-level="LEVEL 1">LEVEL 1 <span>Read-only investigation</span></button>
+          <button type="button" data-approval-level="LEVEL 3">LEVEL 3 <span>Code, test, branch, PR</span></button>
+          <button type="button" data-approval-level="LEVEL 4">LEVEL 4 <span>Release bridge after final review</span></button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="charlie-terminal-window" aria-label="Codex terminal activity">
+      <div>
+        <span class="charlie-live-dot"></span>
+        <strong>Codex Runner</strong>
+      </div>
+      <pre id="charlie_terminal_output">Waiting for runner heartbeat...</pre>
+    </aside>
   </main>
   <script src="{{ url_for('static', filename='js/charlieMissionControl.js') }}"></script>
 </body>
