@@ -404,6 +404,9 @@ def run_agent_execution_bridge_v2(
 
         artifact = _agent_artifact_from_final(agent, _read_text(stage_paths["final_path"]))
         artifact = _inherit_pr_reference(agent, artifact, artifacts)
+        ui_contract = _ui_quality_contract_for_mission(mission)
+        if ui_contract.get("ui_related"):
+            artifact["ui_quality_contract"] = ui_contract
         artifact.update({
             "agent": agent,
             "artifact_path": str(stage_paths["final_path"]),
@@ -553,11 +556,19 @@ def complete_codex_execution_from_artifact(
 
     changed_files = _changed_files()
     local_preview = _extract_local_preview(final_message)
+    mission = {
+        "mission_id": mission_id,
+        "mission_type": "",
+        "raw_text": final_message,
+        "metadata": {},
+    }
     visual_review = _build_visual_review_packet(
         mission_id=mission_id,
+        mission_type=mission.get("mission_type", ""),
         changed_files=changed_files,
         local_preview=local_preview,
         final_message=final_message,
+        mission=mission,
     )
     review_packet = {
         "review_packet": {
@@ -1142,6 +1153,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
     sequence = _mission_agent_sequence(mission)
     vault_context = build_vault_brain_context(mission)
+    ui_contract = _ui_quality_contract_for_mission(mission)
     return f"""You are the CHARLIE CORE {agent.upper()} agent running inside Agent Runner v2.
 
 Mission ID: {mission.get("mission_id", "")}
@@ -1169,6 +1181,12 @@ Desired outcome:
 Owner send-back comments:
 {owner_comments or "None"}
 
+Mission media/reference attachments:
+{_format_media_references(_mission_media_references(mission))}
+
+UI mission quality contract:
+{json.dumps(ui_contract, indent=2)}
+
 Unresolved agent send-back issues:
 {json.dumps(_agent_unresolved_issue_context(artifacts, ledger), indent=2)[:4000]}
 
@@ -1190,6 +1208,7 @@ You must work like an interactive coding agent:
 - recover from errors
 - record what you did and what remains
 - if you change agents, workflows, CHARLIE CORE runtime, business rules, data contracts, or standards, update the matching Vault Brain doc; otherwise record why no Vault update was required
+- if this is a UI mission, inspect and cite every attached reference image/path you can access, build against the actual owner workflow, provide a real local preview URL, and include desktop/laptop plus mobile browser evidence
 
 Stage responsibility:
 {_agent_stage_instruction(agent)}
@@ -1238,6 +1257,75 @@ def build_vault_brain_context(mission):
         "owner_preferences": owner_preference_packet(),
         "docs": entries,
         "missing_docs": [entry["path"] for entry in entries if entry["status"] != "loaded"],
+    }
+
+
+def _mission_media_references(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    direct = mission.get("media_references") if isinstance(mission.get("media_references"), list) else []
+    stored = metadata.get("media_references") if isinstance(metadata.get("media_references"), list) else []
+    media = []
+    seen = set()
+    for item in [*direct, *stored]:
+        if not isinstance(item, dict):
+            continue
+        reference = str(item.get("reference") or item.get("url") or item.get("path") or "").strip()
+        if not reference or reference in seen:
+            continue
+        seen.add(reference)
+        media.append({
+            "label": str(item.get("label") or reference).strip()[:120],
+            "reference": reference,
+            "media_type": str(item.get("media_type") or "reference").strip()[:40],
+        })
+    return media[:12]
+
+
+def _format_media_references(items):
+    items = items if isinstance(items, list) else []
+    if not items:
+        return "- No media references captured."
+    lines = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "Reference").strip()
+        reference = str(item.get("reference") or "").strip()
+        media_type = str(item.get("media_type") or "reference").strip()
+        if reference:
+            lines.append(f"- {label} ({media_type}): {reference}")
+    return "\n".join(lines) or "- No media references captured."
+
+
+def _ui_quality_contract_for_mission(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    media = _mission_media_references(mission)
+    image_media = [
+        item for item in media
+        if str(item.get("media_type") or "").lower() == "image"
+        or re.search(r"\.(png|jpe?g|webp|gif)$", str(item.get("reference") or ""), re.IGNORECASE)
+        or str(item.get("reference") or "").startswith("data:image/")
+    ]
+    text = " ".join([
+        str(mission.get("mission_type") or ""),
+        str(mission.get("title") or ""),
+        str(mission.get("raw_text") or ""),
+    ])
+    ui_related = bool(image_media) or _is_ui_related_mission(mission.get("mission_type", ""), [], text)
+    return {
+        "version": "charlie_ui_quality_contract_v1",
+        "ui_related": ui_related,
+        "reference_media_required": bool(image_media),
+        "media_references": media,
+        "required_vault_docs": [
+            "docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md",
+            "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
+            "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+            "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
+        ],
+        "required_viewports": ["desktop/laptop", "mobile"],
+        "gate": "UI missions must provide real local preview screenshots for desktop/laptop and mobile before owner review; generated fallback packets do not satisfy the gate.",
     }
 
 
@@ -1332,13 +1420,14 @@ def _agent_stage_instruction(agent):
         return (
             "Implement only the scoped change, keep diffs tight, and record changed files. "
             "When changed_files contains releaseable changes under LEVEL 3 or higher, create or update a branch, commit the scoped diff, push it, open a PR, "
-            "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. Do not merge."
+            "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. For UI missions, provide a real local_preview URL for the changed page, "
+            "visual_reference_analysis, media_references_used, viewport_plan, and browser_check_plan. Do not merge."
         )
     if agent == "tester":
-        return "Run focused verification, investigate failures, and return pass/fail evidence."
+        return "Run focused verification, investigate failures, and return pass/fail evidence. For UI missions, run browser-level desktop/laptop and mobile checks against the actual changed route and record screenshots_captured or browser_checks."
     if agent == "qa_red_team":
-        return "Pressure-test the work for regressions, weak evidence, unsafe actions, missing tests, security/privacy risk, and owner-facing failure modes."
-    return "Review diff, requirements, tests, safety gates, release notes, and prepare owner review recommendation."
+        return "Pressure-test the work for regressions, weak evidence, unsafe actions, missing tests, security/privacy risk, owner-facing failure modes, and visual mismatch against attached reference media."
+    return "Review diff, requirements, tests, safety gates, release notes, visual evidence for UI missions, and prepare owner review recommendation."
 
 
 def _agent_required_schema(agent):
@@ -1367,6 +1456,11 @@ def _agent_required_schema(agent):
         base.update({
             "changed_files": [],
             "build_notes": [],
+            "local_preview": {"url": "http://127.0.0.1:PORT/actual-changed-route"},
+            "media_references_used": [],
+            "visual_reference_analysis": "required for UI missions with reference media",
+            "viewport_plan": ["desktop/laptop viewport", "mobile viewport"],
+            "browser_check_plan": [],
             "branch_name": "branch containing scoped changed files",
             "commit_sha": "commit containing scoped changed files",
             "pr_url": "pull request URL when changed_files contains releaseable changes",
@@ -1374,13 +1468,23 @@ def _agent_required_schema(agent):
             "links": {"pr": "pull request URL"},
         })
     elif agent == "tester":
-        base.update({"tests_run": [], "test_status": "pass|fail|blocked"})
+        base.update({
+            "tests_run": [],
+            "test_status": "pass|fail|blocked",
+            "browser_checks": [],
+            "screenshots_captured": [],
+            "media_references_used": [],
+            "visual_reference_analysis": "required for UI missions with reference media",
+        })
     elif agent == "qa_red_team":
         base.update({
             "qa_findings": [],
             "red_team_status": "pass|fail|blocked",
             "risk_rating": "low|medium|high|critical",
             "send_back_stage": "builder|tester|reviewer when status is fail",
+            "visual_quality_findings": [],
+            "reference_match_assessment": "required for UI missions",
+            "media_references_used": [],
         })
     else:
         base.update({
@@ -1388,6 +1492,9 @@ def _agent_required_schema(agent):
             "release_notes": [],
             "changed_files": [],
             "test_evidence": [],
+            "visual_acceptance_decision": "approve|send_back|pause for UI missions",
+            "visual_review_notes": [],
+            "media_references_used": [],
             "pr_url": "pull request URL when changed_files contains releaseable changes",
             "pr_number": "pull request number when changed_files contains releaseable changes",
             "links": {"pr": "pull request URL", "local_preview": "local preview URL if available"},
@@ -1572,6 +1679,8 @@ def _validate_agent_artifact(agent, artifact):
 def _agent_quality_gate(agent, artifact):
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
+    errors = _blocking_artifact_items(agent, artifact, errors)
+    bugs = _blocking_artifact_items(agent, artifact, bugs)
     commands = artifact.get("commands_run") if isinstance(artifact.get("commands_run"), list) else []
     inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
     vault_sources = _artifact_vault_sources(artifact)
@@ -1583,6 +1692,9 @@ def _agent_quality_gate(agent, artifact):
         return {"passed": False, "reason": f"{agent} did not record Vault Brain sources used."}
     if not _artifact_has_vault_brain_source(artifact):
         return {"passed": False, "reason": f"{agent} did not cite a docs/09-vault-brain source."}
+    ui_quality = _ui_agent_quality_gate(agent, artifact)
+    if not ui_quality["passed"]:
+        return ui_quality
     sensitive_changes = _vault_sensitive_changed_files(artifact.get("changed_files"))
     if sensitive_changes and not _artifact_records_vault_update_decision(artifact):
         return {
@@ -1629,6 +1741,67 @@ def _agent_quality_gate(agent, artifact):
     }
 
 
+def _ui_agent_quality_gate(agent, artifact):
+    contract = artifact.get("ui_quality_contract") if isinstance(artifact.get("ui_quality_contract"), dict) else {}
+    if not contract.get("ui_related") or agent not in {"builder", "tester", "qa_red_team", "reviewer"}:
+        return {"passed": True, "reason": "ui_quality_not_required"}
+    reference_required = bool(contract.get("reference_media_required"))
+    if reference_required and not _artifact_has_list_value(artifact, "media_references_used"):
+        return {"passed": False, "reason": f"{agent} did not cite attached UI reference media."}
+    if reference_required and not _artifact_has_text_value(artifact, "visual_reference_analysis") and not _artifact_has_text_value(artifact, "reference_match_assessment"):
+        return {"passed": False, "reason": f"{agent} did not explain how the attached UI reference media was used."}
+    if agent == "builder":
+        local_preview = artifact.get("local_preview") if isinstance(artifact.get("local_preview"), dict) else {}
+        links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
+        preview_url = str(local_preview.get("url") or links.get("local_preview") or "").strip()
+        if not preview_url:
+            return {"passed": False, "reason": "Builder did not provide a real local preview URL for the changed UI."}
+        if _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, artifact.get("changed_files"), artifact.get("summary", "")):
+            return {"passed": False, "reason": "Builder local preview points at the CHARLIE control dashboard instead of the changed UI route."}
+        if not _artifact_has_list_value(artifact, "viewport_plan"):
+            return {"passed": False, "reason": "Builder did not record a desktop/mobile viewport plan."}
+    if agent == "tester":
+        if not (_artifact_has_list_value(artifact, "browser_checks") or _artifact_has_list_value(artifact, "screenshots_captured")):
+            return {"passed": False, "reason": "Tester did not record browser or screenshot evidence for the UI mission."}
+        if not _artifact_mentions_viewports(artifact):
+            return {"passed": False, "reason": "Tester did not record desktop/laptop and mobile viewport evidence."}
+    if agent == "qa_red_team":
+        if not (_artifact_has_list_value(artifact, "visual_quality_findings") or _artifact_has_text_value(artifact, "reference_match_assessment")):
+            return {"passed": False, "reason": "QA/red-team did not record visual quality/reference-match findings for the UI mission."}
+    if agent == "reviewer":
+        decision = str(artifact.get("visual_acceptance_decision") or "").strip().lower()
+        if decision != "approve":
+            return {"passed": False, "reason": f"Reviewer visual acceptance decision is {decision or 'missing'}."}
+        if not _artifact_has_list_value(artifact, "visual_review_notes"):
+            return {"passed": False, "reason": "Reviewer did not record visual review notes for the UI mission."}
+    return {"passed": True, "reason": "ui_quality_gate_passed"}
+
+
+def _artifact_has_text_value(artifact, key):
+    return bool(str((artifact or {}).get(key) or "").strip())
+
+
+def _artifact_has_list_value(artifact, key):
+    value = (artifact or {}).get(key)
+    if isinstance(value, list):
+        return any(str(item or "").strip() for item in value)
+    return bool(str(value or "").strip())
+
+
+def _artifact_mentions_viewports(artifact):
+    values = []
+    for key in ("browser_checks", "screenshots_captured", "tests_run", "test_evidence", "stdout_tail"):
+        value = (artifact or {}).get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value)
+        elif value:
+            values.append(str(value))
+    text = " ".join(values).lower()
+    desktop = any(term in text for term in ("desktop", "laptop", "1440", "1366", "1280"))
+    mobile = any(term in text for term in ("mobile", "390", "375", "414"))
+    return desktop and mobile
+
+
 def _artifact_vault_sources(artifact):
     sources = artifact.get("vault_sources_used")
     if isinstance(sources, str):
@@ -1673,6 +1846,67 @@ def _artifact_pr_reference(artifact):
         if text:
             return text
     return ""
+
+
+def _artifact_text(value):
+    if isinstance(value, dict):
+        return str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
+    return str(value or "").strip()
+
+
+def _has_passing_fallback_test_evidence(artifact):
+    status = str((artifact or {}).get("test_status") or "").strip().lower()
+    if status != "pass":
+        return False
+    evidence = []
+    for key in ("tests_run", "test_evidence", "commands_run", "stdout_tail"):
+        value = artifact.get(key) if isinstance(artifact, dict) else None
+        if isinstance(value, list):
+            evidence.extend(str(item or "") for item in value)
+        elif value:
+            evidence.append(str(value))
+    evidence_text = " ".join(evidence).lower()
+    return "unittest" in evidence_text and (" ok" in evidence_text or "pass" in evidence_text or "passed" in evidence_text)
+
+
+def _is_non_blocking_local_pytest_issue(agent, artifact, value):
+    if agent != "tester" or not _has_passing_fallback_test_evidence(artifact):
+        return False
+    text = _artifact_text(value).lower()
+    return "pytest" in text and (
+        "no module named pytest" in text
+        or "pytest is not installed" in text
+        or "pytest unavailable" in text
+        or "pytest is unavailable" in text
+    )
+
+
+def _is_resolved_pr_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "reviewer"} or not _artifact_pr_reference(artifact):
+        return False
+    text = _artifact_text(value).lower()
+    return "pr" in text and (
+        "no pr url" in text
+        or "no pr link" in text
+        or "no pr reference" in text
+        or "no pr url/number" in text
+        or "no pr url or number" in text
+        or "no pull request" in text
+        or "pr evidence is missing" in text
+    )
+
+
+def _blocking_artifact_items(agent, artifact, values):
+    if not isinstance(values, list):
+        values = [values] if values else []
+    blocking = []
+    for value in values:
+        if _is_non_blocking_local_pytest_issue(agent, artifact, value):
+            continue
+        if _is_resolved_pr_process_issue(agent, artifact, value):
+            continue
+        blocking.append(value)
+    return blocking
 
 
 def _auto_package_builder_changes(mission, artifact, runner=None):
@@ -1825,7 +2059,7 @@ def _extract_pr_url(value):
 
 
 def _inherit_pr_reference(agent, artifact, artifacts):
-    if agent != "reviewer" or _artifact_pr_reference(artifact):
+    if agent == "builder" or _artifact_pr_reference(artifact):
         return artifact
     builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
     pr_reference = _artifact_pr_reference(builder)
@@ -2045,6 +2279,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         local_preview=local_preview,
         artifacts=artifacts,
         final_message=reviewer.get("summary", ""),
+        mission=mission,
     )
     if _visual_review_blocks_owner_review(visual_review):
         blocked_reason = visual_review.get("summary") or "UI mission visual review media was not captured."
@@ -2212,7 +2447,26 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
 
 def _visual_review_blocks_owner_review(visual_review):
     visual_review = visual_review if isinstance(visual_review, dict) else {}
-    return bool(visual_review.get("ui_related")) and visual_review.get("status") != "captured"
+    if not visual_review.get("ui_related"):
+        return False
+    if visual_review.get("status") != "captured":
+        return True
+    capture = visual_review.get("capture") if isinstance(visual_review.get("capture"), dict) else {}
+    if capture.get("capture_source") != "local_preview":
+        return True
+    return not _visual_review_has_required_viewport_media(visual_review)
+
+
+def _visual_review_has_required_viewport_media(visual_review):
+    media = visual_review.get("media") if isinstance(visual_review.get("media"), list) else []
+    filenames = " ".join(
+        str(item.get("filename") or item.get("label") or "").lower()
+        for item in media
+        if isinstance(item, dict)
+    )
+    has_desktop = "preview" in filenames or "desktop" in filenames or "laptop" in filenames
+    has_mobile = "mobile" in filenames
+    return has_desktop and has_mobile
 
 
 def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, brain_guard, database_url=None, connect_factory=None):
@@ -2527,9 +2781,9 @@ def _artifact_issue_items(agent, artifact, quality=None):
     ):
         value = artifact.get(key)
         if isinstance(value, list):
-            for item in value:
+            for item in _blocking_artifact_items(agent, artifact, value):
                 add_issue(item, severity, source)
-        else:
+        elif _blocking_artifact_items(agent, artifact, [value]):
             add_issue(value, severity, source)
 
     reason = str(quality.get("reason") or "").strip()
@@ -2836,12 +3090,14 @@ def _build_visual_review_packet(
     local_preview=None,
     artifacts=None,
     final_message="",
+    mission=None,
 ):
     mission_id = str(mission_id or "").strip()
     changed_files = [str(path or "").strip() for path in (changed_files or []) if str(path or "").strip()]
     local_preview = local_preview if isinstance(local_preview, dict) else {}
     artifacts = artifacts if isinstance(artifacts, dict) else {}
-    ui_related = _is_ui_related_mission(mission_type, changed_files, final_message)
+    ui_contract = _ui_quality_contract_for_mission(mission or {"mission_type": mission_type, "raw_text": final_message})
+    ui_related = bool(ui_contract.get("ui_related")) or _is_ui_related_mission(mission_type, changed_files, final_message)
     local_media_path = str(_review_media_path(mission_id)) if mission_id else ""
     if ui_related and mission_id:
         _review_media_path(mission_id).mkdir(parents=True, exist_ok=True)
@@ -2866,6 +3122,8 @@ def _build_visual_review_packet(
         "ui_related": ui_related,
         "status": status,
         "summary": _visual_review_summary(ui_related, media, preview_url),
+        "required_media": ["desktop/laptop screenshot", "mobile screenshot"] if ui_related else [],
+        "ui_quality_contract": ui_contract if ui_related else {},
         "local_preview": local_preview,
         "media": media,
         "capture": capture,
@@ -2894,7 +3152,6 @@ def _capture_visual_review_media(
         return {"captured": False, "status": "mission_id_missing"}
     media_dir = _review_media_path(mission_id)
     media_dir.mkdir(parents=True, exist_ok=True)
-    output_path = media_dir / "owner_review_preview.png"
 
     fallback_reason = ""
     capture_url = preview_url
@@ -2904,7 +3161,7 @@ def _capture_visual_review_media(
         parsed = urlparse(preview_url)
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
-        elif _is_control_dashboard_preview_url(preview_url):
+        elif _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, changed_files, final_message):
             fallback_reason = "control_dashboard_preview_not_mission_visual"
 
     if fallback_reason:
@@ -2919,35 +3176,54 @@ def _capture_visual_review_media(
         )
         capture_url = html_path.resolve().as_uri()
 
-    command = [
-        _npx_executable(),
-        "playwright",
-        "screenshot",
-        "--wait-for-timeout=1000",
-        capture_url,
-        str(output_path),
-    ]
     runner = run_subprocess or subprocess.run
-    try:
-        completed = runner(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=str(REPO_ROOT),
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {
-            "captured": False,
-            "status": "capture_command_failed",
-            "url": preview_url,
+    targets = [("owner_review_preview.png", "1440,900", "desktop/laptop")]
+    if not fallback_reason:
+        targets.append(("owner_review_mobile.png", "390,844", "mobile"))
+    captures = []
+    for filename, viewport, label in targets:
+        output_path = media_dir / filename
+        command = [
+            _npx_executable(),
+            "playwright",
+            "screenshot",
+            f"--viewport-size={viewport}",
+            "--wait-for-timeout=1000",
+            capture_url,
+            str(output_path),
+        ]
+        try:
+            completed = runner(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=str(REPO_ROOT),
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            captures.append({
+                "label": label,
+                "captured": False,
+                "status": "capture_command_failed",
+                "command": " ".join(command),
+                "error_type": exc.__class__.__name__,
+            })
+            continue
+        captured_item = completed.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+        captures.append({
+            "label": label,
+            "captured": captured_item,
+            "status": "captured" if captured_item else "capture_command_failed",
             "command": " ".join(command),
-            "error_type": exc.__class__.__name__,
-        }
-    captured = completed.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+            "path": str(output_path) if captured_item else "",
+            "returncode": completed.returncode,
+            "stdout_tail": _truncate(completed.stdout or "", 1200),
+            "stderr_tail": _truncate(completed.stderr or "", 1200),
+        })
+    captured = bool(captures) and all(item.get("captured") for item in captures)
     return {
         "captured": captured,
         "status": "captured" if captured else "capture_command_failed",
@@ -2955,11 +3231,12 @@ def _capture_visual_review_media(
         "capture_url": capture_url,
         "capture_source": "generated_owner_review_packet" if fallback_reason else "local_preview",
         "fallback_reason": fallback_reason,
-        "command": " ".join(command),
-        "path": str(output_path) if captured else "",
-        "returncode": completed.returncode,
-        "stdout_tail": _truncate(completed.stdout or "", 1200),
-        "stderr_tail": _truncate(completed.stderr or "", 1200),
+        "captures": captures,
+        "command": captures[-1].get("command", "") if captures else "",
+        "path": captures[0].get("path", "") if captures and captures[0].get("captured") else "",
+        "returncode": 0 if captured else 1,
+        "stdout_tail": _truncate(" | ".join(item.get("stdout_tail", "") for item in captures), 1200),
+        "stderr_tail": _truncate(" | ".join(item.get("stderr_tail", "") or item.get("error_type", "") for item in captures), 1200),
     }
 
 
@@ -2972,6 +3249,16 @@ def _npx_executable():
 def _is_control_dashboard_preview_url(url):
     parsed = urlparse(str(url or ""))
     return parsed.path.rstrip("/") in {"", "/charlie"}
+
+
+def _preview_url_matches_changed_ui(url, changed_files=None, final_message=""):
+    parsed = urlparse(str(url or ""))
+    path = parsed.path.rstrip("/") or "/"
+    files = " ".join(str(item or "").replace("\\", "/").lower() for item in (changed_files or []))
+    text = f"{files} {str(final_message or '').lower()}"
+    if path == "/charlie":
+        return any(token in text for token in ("templates/charlie.html", "charliemissioncontrol", "mission control", "/charlie"))
+    return path != "/"
 
 
 def _write_visual_review_preview_html(
@@ -3127,7 +3414,7 @@ def _visual_review_summary(ui_related, media, preview_url):
     if not ui_related:
         return "Mission did not touch detected UI files; visual review media is not required."
     if media:
-        return f"{len(media)} local visual review artifact(s) captured for owner review."
+        return f"{len(media)} local visual review artifact(s) captured; UI owner review requires real desktop/laptop and mobile screenshots from the changed page."
     if preview_url:
         return "UI mission has a local preview URL, but the local runner could not capture screenshot media."
     return "UI mission detected; no local preview URL was captured, so screenshot capture is blocked."
