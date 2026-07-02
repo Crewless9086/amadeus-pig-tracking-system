@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from modules.charlie.core_workflow import AGENT_DOCTRINE_PATHS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VAULT_ROOT = REPO_ROOT / "docs" / "09-vault-brain"
@@ -85,13 +87,15 @@ OWNER_PREFERENCES = [
 ]
 
 
-def retrieve_vault_sources(mission, limit=14, excerpt_chars=900):
+def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
     mission = mission if isinstance(mission, dict) else {}
     limit = max(1, min(int(limit or 14), 30))
+    agent = str(agent or "").strip().lower()
     query = _mission_query(mission)
     tokens = _tokens(query)
     template = _workflow_template(mission)
-    required = _unique(BASE_REQUIRED_DOCS + TEMPLATE_REQUIRED_DOCS.get(template, []))
+    agent_docs = _agent_required_docs(agent)
+    required = _unique(BASE_REQUIRED_DOCS + agent_docs + TEMPLATE_REQUIRED_DOCS.get(template, []))
     candidates = {path: {"path": path, "reasons": ["required_base_or_template"], "score": 40} for path in required}
 
     for token, paths in KEYWORD_DOCS.items():
@@ -118,6 +122,8 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900):
     return {
         "version": VAULT_RETRIEVAL_VERSION,
         "query": query,
+        "agent": agent,
+        "agent_doctrine_docs": agent_docs,
         "workflow_template": template,
         "selected_count": len(ranked),
         "required_docs": required,
@@ -125,6 +131,32 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900):
         "missing_docs": [item["path"] for item in ranked if item["status"] != "loaded"],
         "selection_rule": "base doctrine + workflow template + keyword mapping + local token overlap",
     }
+
+
+def _agent_required_docs(agent):
+    docs = []
+    doctrine = AGENT_DOCTRINE_PATHS.get(str(agent or "").strip().lower(), "")
+    if doctrine:
+        docs.append(doctrine)
+    if agent in {"product_architect", "product_reviewer"}:
+        docs.extend([
+            "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
+            "docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md",
+            "docs/09-vault-brain/09-examples/GOLD_STANDARD_DASHBOARD.md",
+        ])
+    if agent in {"risk_agent", "qa_red_team", "security_reviewer", "brain_guard", "council_synthesis"}:
+        docs.extend([
+            "docs/09-vault-brain/00-governance/BRAIN_GUARD.md",
+            "docs/09-vault-brain/07-standards/SECURITY_AND_SECRETS_STANDARD.md",
+        ])
+    if agent in {"evidence_reviewer", "reviewer"}:
+        docs.append("docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md")
+    if agent in {"business_model_agent", "business_reviewer"}:
+        docs.extend([
+            "docs/09-vault-brain/03-business/README.md",
+            "docs/09-vault-brain/05-playbooks/INCOME_STREAM.md",
+        ])
+    return _unique(docs)
 
 
 def owner_preference_packet():

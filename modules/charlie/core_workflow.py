@@ -72,6 +72,11 @@ SPECIALIST_AGENTS = {
         "may": ["block high-risk gaps", "request owner decisions"],
         "may_not": ["dismiss legal/compliance uncertainty"],
     },
+    "council_synthesis": {
+        "purpose": "Reconcile upstream agent thinking into one council-approved brief before planning or building.",
+        "may": ["resolve agent conflicts", "produce build brief", "request send-back when upstream artifacts conflict"],
+        "may_not": ["edit code", "approve release", "hide unresolved blockers"],
+    },
     "planner": {
         "purpose": "Break approved direction into scoped tasks, gates, tests, and rollback plan.",
         "may": ["create build plan", "sequence work"],
@@ -133,6 +138,28 @@ SPECIALIST_AGENTS = {
 REVIEW_BOARD_AGENTS = ["product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"]
 
 
+AGENT_DOCTRINE_PATHS = {
+    "idea_expander": "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
+    "concept_strategist": "docs/09-vault-brain/02-agents/charlie-core/CONCEPT_STRATEGIST.md",
+    "product_architect": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_ARCHITECT.md",
+    "technical_architect": "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
+    "business_model_agent": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_MODEL_AGENT.md",
+    "risk_agent": "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
+    "council_synthesis": "docs/09-vault-brain/02-agents/charlie-core/COUNCIL_SYNTHESIS.md",
+    "planner": "docs/09-vault-brain/02-agents/charlie-core/PLANNER.md",
+    "architect": "docs/09-vault-brain/02-agents/charlie-core/ARCHITECT.md",
+    "builder": "docs/09-vault-brain/02-agents/charlie-core/BUILDER.md",
+    "tester": "docs/09-vault-brain/02-agents/charlie-core/TESTER.md",
+    "qa_red_team": "docs/09-vault-brain/02-agents/charlie-core/QA_RED_TEAM.md",
+    "product_reviewer": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_REVIEWER.md",
+    "business_reviewer": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_REVIEWER.md",
+    "security_reviewer": "docs/09-vault-brain/02-agents/charlie-core/SECURITY_REVIEWER.md",
+    "evidence_reviewer": "docs/09-vault-brain/02-agents/charlie-core/EVIDENCE_REVIEWER.md",
+    "reviewer": "docs/09-vault-brain/02-agents/charlie-core/REVIEWER.md",
+    "publisher": "docs/09-vault-brain/02-agents/charlie-core/PUBLISHER.md",
+}
+
+
 WORKFLOW_TEMPLATES = {
     "software_build": {
         "label": "Software Build",
@@ -159,13 +186,16 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["system", "workflow", "governance", "dashboard", "runner"],
         "agent_order": [
             "idea_expander",
+            "product_architect",
             "technical_architect",
             "risk_agent",
+            "council_synthesis",
             "planner",
             "architect",
             "builder",
             "tester",
             "qa_red_team",
+            "product_reviewer",
             "security_reviewer",
             "evidence_reviewer",
             "reviewer",
@@ -183,6 +213,7 @@ WORKFLOW_TEMPLATES = {
             "business_model_agent",
             "risk_agent",
             "product_architect",
+            "council_synthesis",
             "business_reviewer",
             "evidence_reviewer",
             "reviewer",
@@ -198,6 +229,7 @@ WORKFLOW_TEMPLATES = {
             "concept_strategist",
             "product_architect",
             "risk_agent",
+            "council_synthesis",
             "business_reviewer",
             "evidence_reviewer",
             "reviewer",
@@ -213,6 +245,7 @@ WORKFLOW_TEMPLATES = {
             "idea_expander",
             "technical_architect",
             "risk_agent",
+            "council_synthesis",
             "planner",
             "architect",
             "builder",
@@ -238,6 +271,7 @@ WORKFLOW_TEMPLATES = {
             "business_reviewer",
             "security_reviewer",
             "evidence_reviewer",
+            "council_synthesis",
             "reviewer",
         ],
         "required_artifacts": ["idea_brief", "business_model", "risk_register", "income_stream_readiness", "owner_decision_packet"],
@@ -309,6 +343,7 @@ def agent_instruction_pack(agent):
         "agent": agent,
         "identity": f"You are CHARLIE {agent.replace('_', ' ').title()}.",
         "mission": definition.get("purpose", "Complete the assigned CHARLIE stage."),
+        "doctrine_path": AGENT_DOCTRINE_PATHS.get(agent, ""),
         "authority": {
             "may": definition.get("may", []),
             "may_not": definition.get("may_not", []),
@@ -339,6 +374,7 @@ def build_workflow(template_id):
             "purpose": SPECIALIST_AGENTS.get(agent, {}).get("purpose", ""),
             "handoff_to": next_agent,
             "required_output": HANDOFF_VERSION,
+            "doctrine_path": AGENT_DOCTRINE_PATHS.get(agent, ""),
             "instruction_pack": agent_instruction_pack(agent),
             "findings": "",
         })

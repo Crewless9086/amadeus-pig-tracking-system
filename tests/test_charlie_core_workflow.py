@@ -1,6 +1,7 @@
 import unittest
 
 from modules.charlie.core_workflow import (
+    AGENT_DOCTRINE_PATHS,
     HANDOFF_VERSION,
     VAULT_SCHEMA,
     WORKFLOW_TEMPLATES,
@@ -45,6 +46,11 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(metadata["agent_workflow"])
         self.assertTrue(all(item["required_output"] == HANDOFF_VERSION for item in metadata["agent_workflow"]))
         self.assertTrue(all(item.get("instruction_pack") for item in metadata["agent_workflow"]))
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+        self.assertIn("product_architect", agents)
+        self.assertIn("council_synthesis", agents)
+        self.assertIn("product_reviewer", agents)
+        self.assertTrue(all(AGENT_DOCTRINE_PATHS.get(agent) for agent in agents))
 
     def test_handoff_report_requires_auditable_fields(self):
         report = build_handoff_report(

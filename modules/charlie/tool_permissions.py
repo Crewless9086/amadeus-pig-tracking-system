@@ -31,6 +31,7 @@ AGENT_TOOL_ALLOWLIST = {
     "technical_architect": {"vault_read", "repo_read", "test_run"},
     "business_model_agent": {"vault_read", "repo_read"},
     "risk_agent": {"vault_read", "repo_read"},
+    "council_synthesis": {"vault_read", "repo_read"},
     "planner": {"vault_read", "repo_read"},
     "architect": {"vault_read", "repo_read", "test_run"},
     "builder": {"vault_read", "vault_write", "repo_read", "repo_write", "test_run", "browser_check", "visual_check", "git_commit", "git_push"},

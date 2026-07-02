@@ -1,6 +1,6 @@
 import unittest
 
-from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
+from modules.charlie.model_registry import choose_agent_model, choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.tool_permissions import audit_tool_call, check_tool_permission, permission_packet
 
 
@@ -22,7 +22,15 @@ class CharlieModelAndPermissionTests(unittest.TestCase):
         packet = model_registry_packet()
 
         self.assertIn("models", packet)
+        self.assertIn("agent_model_map", packet)
         self.assertIn("safety_note", packet)
+
+    def test_agent_model_assignment_records_runtime_note(self):
+        model = choose_agent_model("security_reviewer", mission_type="system improvement", risk_level="high")
+
+        self.assertEqual(model["registry_key"], "security_review")
+        self.assertEqual(model["agent"], "security_reviewer")
+        self.assertIn("runtime_note", model)
 
     def test_tool_permission_blocks_red_zone_without_owner_approval(self):
         result = check_tool_permission("builder", "migration", owner_approved=False)

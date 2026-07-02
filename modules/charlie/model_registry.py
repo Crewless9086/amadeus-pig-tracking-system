@@ -56,6 +56,30 @@ TASK_MODEL_MAP = {
 }
 
 
+AGENT_MODEL_MAP = {
+    "idea_expander": "default_reasoning",
+    "concept_strategist": "business_review",
+    "product_architect": "default_reasoning",
+    "technical_architect": "default_reasoning",
+    "business_model_agent": "business_review",
+    "risk_agent": "security_review",
+    "council_synthesis": "default_reasoning",
+    "planner": "default_reasoning",
+    "architect": "default_reasoning",
+    "builder": "default_reasoning",
+    "tester": "default_reasoning",
+    "qa_red_team": "security_review",
+    "product_reviewer": "default_reasoning",
+    "business_reviewer": "business_review",
+    "security_reviewer": "security_review",
+    "evidence_reviewer": "default_reasoning",
+    "reviewer": "default_reasoning",
+    "publisher": "default_reasoning",
+    "brain_guard": "security_review",
+    "improvement_analyst": "business_review",
+}
+
+
 def choose_model(task_type="", risk_level="medium", required_use_case=""):
     task = str(task_type or "").strip().lower().replace(" ", "_")
     key = TASK_MODEL_MAP.get(task, "default_reasoning")
@@ -70,6 +94,24 @@ def choose_model(task_type="", risk_level="medium", required_use_case=""):
     model["registry_key"] = key
     model["selected_at"] = datetime.now(timezone.utc).isoformat()
     model["selection_reason"] = f"task_type={task or 'default'} risk_level={risk_level or 'medium'}"
+    return model
+
+
+def choose_agent_model(agent="", mission_type="", risk_level="medium"):
+    agent = str(agent or "").strip().lower()
+    model_key = AGENT_MODEL_MAP.get(agent, "default_reasoning")
+    if str(risk_level or "").lower() in {"high", "critical"} and agent not in {"idea_expander", "product_architect"}:
+        if agent in {"risk_agent", "qa_red_team", "security_reviewer", "brain_guard"}:
+            model_key = "security_review"
+        elif "income" in str(mission_type or "").lower() or agent in {"business_model_agent", "business_reviewer"}:
+            model_key = "business_review"
+    model = dict(MODEL_REGISTRY.get(model_key, MODEL_REGISTRY["default_reasoning"]))
+    model["registry_key"] = model_key if model_key in MODEL_REGISTRY else "default_reasoning"
+    model["agent"] = agent
+    model["mission_type"] = str(mission_type or "").strip()
+    model["selected_at"] = datetime.now(timezone.utc).isoformat()
+    model["selection_reason"] = f"agent={agent or 'unknown'} mission_type={mission_type or 'unknown'} risk_level={risk_level or 'medium'}"
+    model["runtime_note"] = "Advisory assignment until the runner is connected to per-agent provider/model execution."
     return model
 
 
@@ -92,5 +134,6 @@ def model_registry_packet():
         "version": MODEL_REGISTRY_VERSION,
         "models": MODEL_REGISTRY,
         "task_model_map": TASK_MODEL_MAP,
+        "agent_model_map": AGENT_MODEL_MAP,
         "safety_note": "Model routing is advisory until live provider/model prices are explicitly configured and benchmarked.",
     }

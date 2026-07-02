@@ -25,10 +25,12 @@ from modules.charlie.mission_store import (
 )
 from modules.charlie.runner_control import write_runner_heartbeat
 from modules.charlie.core_workflow import (
+    AGENT_DOCTRINE_PATHS,
     build_handoff_report as build_core_handoff_report,
     build_review_board_packet,
     evaluate_core_readiness,
 )
+from modules.charlie.model_registry import choose_agent_model
 from modules.charlie.vault_retrieval import (
     evaluate_vault_source_coverage,
     owner_preference_packet,
@@ -49,11 +51,16 @@ AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
 AGENT_ARTIFACT_REQUIRED_KEYS = {
     "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected", "vault_sources_used"],
     "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected", "vault_sources_used"],
+    "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected", "vault_sources_used"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected", "vault_sources_used"],
     "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected", "vault_sources_used"],
+    "product_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
+    "business_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
+    "security_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
+    "evidence_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
@@ -1152,14 +1159,23 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     review_packet = (mission.get("metadata") or {}).get("review_packet") if isinstance(mission.get("metadata"), dict) else {}
     owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
     sequence = _mission_agent_sequence(mission)
-    vault_context = build_vault_brain_context(mission)
+    vault_context = build_vault_brain_context(mission, agent=agent)
     ui_contract = _ui_quality_contract_for_mission(mission)
+    model_assignment = choose_agent_model(
+        agent=agent,
+        mission_type=mission.get("mission_type", ""),
+        risk_level="high" if ui_contract.get("ui_related") else "medium",
+    )
+    doctrine_path = AGENT_DOCTRINE_PATHS.get(str(agent or "").strip().lower(), "")
     return f"""You are the CHARLIE CORE {agent.upper()} agent running inside Agent Runner v2.
 
 Mission ID: {mission.get("mission_id", "")}
 Title: {mission.get("title", "")}
 Approval level: {mission.get("approval_level", "")}
 Mission type: {mission.get("mission_type", "")}
+Agent doctrine file: {doctrine_path or "MISSING - Brain Guard must block this workflow until doctrine exists."}
+Model assignment:
+{json.dumps(model_assignment, indent=2)}
 
 Mission:
 {mission.get("raw_text", "")}
@@ -1209,6 +1225,7 @@ You must work like an interactive coding agent:
 - record what you did and what remains
 - if you change agents, workflows, CHARLIE CORE runtime, business rules, data contracts, or standards, update the matching Vault Brain doc; otherwise record why no Vault update was required
 - if this is a UI mission, inspect and cite every attached reference image/path you can access, build against the actual owner workflow, provide a real local preview URL, and include desktop/laptop plus mobile browser evidence
+- behave as this specific agent, not as a generic prompt; challenge upstream artifacts when they are weak, contradictory, or not aligned with your doctrine
 
 Stage responsibility:
 {_agent_stage_instruction(agent)}
@@ -1229,9 +1246,9 @@ Stop at the required artifact for this stage.
 """
 
 
-def build_vault_brain_context(mission):
+def build_vault_brain_context(mission, agent=""):
     mission = mission if isinstance(mission, dict) else {}
-    retrieval = retrieve_vault_sources(mission, limit=16, excerpt_chars=900)
+    retrieval = retrieve_vault_sources(mission, limit=16, excerpt_chars=900, agent=agent)
     entries = []
     remaining = VAULT_CONTEXT_CHAR_BUDGET
     for source in retrieval.get("sources", []):
@@ -1251,6 +1268,7 @@ def build_vault_brain_context(mission):
         })
     return {
         "version": "charlie_vault_brain_context_v1",
+        "agent": str(agent or "").strip().lower(),
         "root": "docs/09-vault-brain",
         "rule": "Vault Brain is canonical project truth for CHARLIE identity, agents, workflows, business rules, data rules, standards, and playbooks.",
         "retrieval": retrieval,
@@ -1412,6 +1430,8 @@ def _agent_stage_instruction(agent):
         return "Clarify the rough idea, expected owner value, target user/workflow, constraints, non-goals, and what must not be assumed."
     if agent == "product_architect":
         return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
+    if agent == "council_synthesis":
+        return "Read upstream agent artifacts, resolve conflicts, preserve owner intent, and produce one council-approved build brief before Planner and Builder proceed."
     if agent == "planner":
         return "Read mission context and define scope, acceptance criteria, test plan, risks, and exact next handoff."
     if agent == "architect":
@@ -1450,6 +1470,14 @@ def _agent_required_schema(agent):
         base.update({"opportunity": "clear owner opportunity", "owner_value": "why this matters", "non_goals": []})
     elif agent == "product_architect":
         base.update({"user_flow": [], "acceptance_boundaries": [], "risk_notes": []})
+    elif agent == "council_synthesis":
+        base.update({
+            "agreements": [],
+            "conflicts_resolved": [],
+            "unresolved_blockers": [],
+            "build_brief": "single council-approved brief for Planner and Builder",
+            "acceptance_priorities": [],
+        })
     elif agent == "architect":
         base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
     elif agent == "builder":
@@ -1629,6 +1657,8 @@ def _agent_artifact_from_final(agent, final_message):
         artifact.update({"opportunity": artifact["summary"], "owner_value": artifact["summary"], "non_goals": []})
     elif agent == "product_architect":
         artifact.update({"user_flow": [artifact["summary"]], "acceptance_boundaries": [], "risk_notes": []})
+    elif agent == "council_synthesis":
+        artifact.update({"agreements": [artifact["summary"]], "conflicts_resolved": [], "unresolved_blockers": [], "build_brief": artifact["summary"], "acceptance_priorities": []})
     elif agent == "planner":
         artifact.update({"acceptance_criteria": ["Review final artifact."], "test_plan": ["Run focused verification."], "scope": artifact["summary"]})
     elif agent == "architect":
@@ -2601,6 +2631,25 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
     warnings = []
     context = build_vault_brain_context(mission)
     retrieval = context.get("retrieval") if isinstance(context.get("retrieval"), dict) else retrieve_vault_sources(mission)
+    agent_sequence = _mission_agent_sequence(mission)
+    missing_doctrine = _missing_agent_doctrine(agent_sequence)
+    if missing_doctrine:
+        findings.append(
+            "Selected workflow has agents without loaded Vault doctrine files: "
+            + ", ".join(f"{item['agent']} -> {item['path'] or 'no path'}" for item in missing_doctrine)
+        )
+    ui_text = " ".join([
+        str(mission.get("mission_type") or ""),
+        str(mission.get("title") or ""),
+        str(mission.get("raw_text") or ""),
+    ])
+    if _is_ui_related_mission(mission.get("mission_type", ""), changed_files, ui_text):
+        for required_agent in ["product_architect", "product_reviewer", "evidence_reviewer"]:
+            if required_agent not in agent_sequence:
+                findings.append(f"UI/product mission workflow is missing required agent: {required_agent}.")
+        if "builder" in agent_sequence and "product_architect" in agent_sequence:
+            if agent_sequence.index("product_architect") > agent_sequence.index("builder"):
+                findings.append("UI/product mission has Product Architect after Builder; product brief must happen before build.")
     active_artifacts = {
         agent: artifact
         for agent, artifact in artifacts.items()
@@ -2644,12 +2693,33 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "warnings": warnings,
         "preserved_legacy_artifacts": sorted(preserved),
         "source_coverage": source_coverage,
+        "agent_sequence": agent_sequence,
+        "missing_doctrine": missing_doctrine,
         "retrieval": retrieval,
         "owner_preferences": context.get("owner_preferences", {}),
         "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
         "sensitive_changed_files": sensitive_changes,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _missing_agent_doctrine(agent_sequence):
+    missing = []
+    for agent in agent_sequence if isinstance(agent_sequence, list) else []:
+        clean_agent = str(agent or "").strip().lower()
+        path_text = AGENT_DOCTRINE_PATHS.get(clean_agent, "")
+        if not path_text:
+            missing.append({"agent": clean_agent, "path": ""})
+            continue
+        path = (REPO_ROOT / path_text).resolve()
+        try:
+            path.relative_to(REPO_ROOT)
+        except ValueError:
+            missing.append({"agent": clean_agent, "path": path_text})
+            continue
+        if not path.exists() or not path.is_file():
+            missing.append({"agent": clean_agent, "path": path_text})
+    return missing
 
 
 def _block_completed_agent_review(

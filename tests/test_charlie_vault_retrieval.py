@@ -23,6 +23,18 @@ class CharlieVaultRetrievalTests(unittest.TestCase):
         self.assertIn("docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", paths)
         self.assertFalse(packet["missing_docs"])
 
+    def test_retrieve_vault_sources_loads_agent_doctrine(self):
+        packet = retrieve_vault_sources({
+            "title": "Improve dashboard UI",
+            "raw_text": "Make CHARLIE CORE dashboard owner actions visible.",
+            "mission_type": "system improvement",
+        }, agent="product_architect", limit=20, excerpt_chars=40)
+
+        paths = [item["path"] for item in packet["sources"]]
+        self.assertEqual(packet["agent"], "product_architect")
+        self.assertIn("docs/09-vault-brain/02-agents/charlie-core/PRODUCT_ARCHITECT.md", paths)
+        self.assertIn("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md", paths)
+
     def test_source_coverage_requires_active_agents_to_cite_vault(self):
         retrieval = retrieve_vault_sources({"title": "CHARLIE runner"}, limit=4, excerpt_chars=0)
         result = evaluate_vault_source_coverage(

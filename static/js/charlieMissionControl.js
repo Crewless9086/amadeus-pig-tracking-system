@@ -13,16 +13,45 @@
     activeReviewMissionId: "",
   };
   const AUTO_REFRESH_MS = 8000;
-  const AGENT_ORDER = ["idea_expander", "product_architect", "planner", "architect", "builder", "tester", "qa_red_team", "reviewer"];
+  const AGENT_ORDER = [
+    "idea_expander",
+    "concept_strategist",
+    "product_architect",
+    "technical_architect",
+    "business_model_agent",
+    "risk_agent",
+    "council_synthesis",
+    "planner",
+    "architect",
+    "builder",
+    "tester",
+    "qa_red_team",
+    "product_reviewer",
+    "business_reviewer",
+    "security_reviewer",
+    "evidence_reviewer",
+    "reviewer",
+    "publisher",
+  ];
   const AGENT_LABELS = {
     idea_expander: "Idea",
+    concept_strategist: "Concept",
     product_architect: "Product",
+    technical_architect: "Tech",
+    business_model_agent: "Business",
+    risk_agent: "Risk",
+    council_synthesis: "Council",
     planner: "Planner",
     architect: "Architect",
     builder: "Builder",
     tester: "Tester",
     qa_red_team: "QA",
+    product_reviewer: "Product Review",
+    business_reviewer: "Business Review",
+    security_reviewer: "Security",
+    evidence_reviewer: "Evidence",
     reviewer: "Reviewer",
+    publisher: "Publisher",
   };
   const WORKFLOW_VISUAL_STATES = ["is-complete", "is-active", "is-blocked", "is-send-back", "is-review-ready", "is-pending"];
   const MAX_MEDIA_ITEMS = 3;
@@ -432,6 +461,7 @@
         ? "Render cannot see this laptop's .charlie_runner heartbeat. Live local runner data is available only on the local dashboard."
         : runner.next_action || "Local runner heartbeat and mission ledger are feeding this live workflow.";
     }
+    const displayAgents = workflowDisplayOrder(workflow);
     els.workflowMap.innerHTML = `
       <div class="charlie-flow-title">
         <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
@@ -446,7 +476,7 @@
           <em>${escapeHtml(shortMissionLine(activeMission, runner))}</em>
         </article>
         <div class="charlie-agent-ring">
-        ${AGENT_ORDER.map((agent, index) => workflowNodeMarkup(agent, workflow, {
+        ${displayAgents.map((agent, index) => workflowNodeMarkup(agent, workflow, {
           activeAgent,
           blocked,
           reviewReady,
@@ -513,6 +543,13 @@
     const workflow = mission && Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     if (workflow.length) return workflow;
     return AGENT_ORDER.map((agent) => ({agent, status: "pending"}));
+  }
+
+  function workflowDisplayOrder(workflow) {
+    const selected = (Array.isArray(workflow) ? workflow : [])
+      .map((entry) => normalizeAgent(entry && entry.agent))
+      .filter(Boolean);
+    return selected.length ? selected : AGENT_ORDER.slice();
   }
 
   function workflowNodeMarkup(agent, workflow, context) {

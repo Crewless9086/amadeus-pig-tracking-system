@@ -20,12 +20,24 @@ Every agent must have:
 | CHARLIE | Owner Command | Charl | Active/maturing | `owner-command/CHARLIE.md` |
 | CHARLIE CORE | Workflow System | CHARLIE | Active/maturing | `../01-identity/CHARLIE_CORE.md` |
 | Brain Guard | CHARLIE CORE / Governance | CHARLIE | Draft/required | `charlie-core/BRAIN_GUARD.md` |
+| Idea Expander | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/IDEA_EXPANDER.md` |
+| Concept Strategist | CHARLIE CORE | CHARLIE CORE | Active strategy stage | `charlie-core/CONCEPT_STRATEGIST.md` |
+| Product Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/PRODUCT_ARCHITECT.md` |
+| Technical Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/TECHNICAL_ARCHITECT.md` |
+| Business Model Agent | CHARLIE CORE | CHARLIE CORE | Active business stage | `charlie-core/BUSINESS_MODEL_AGENT.md` |
+| Risk Agent | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/RISK_AGENT.md` |
+| Council Synthesis | CHARLIE CORE | CHARLIE CORE | Active council stage | `charlie-core/COUNCIL_SYNTHESIS.md` |
 | Planner | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/PLANNER.md` |
 | Architect | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/ARCHITECT.md` |
 | Builder | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/BUILDER.md` |
 | Tester | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/TESTER.md` |
 | QA Red Team | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/QA_RED_TEAM.md` |
+| Product Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/PRODUCT_REVIEWER.md` |
+| Security Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/SECURITY_REVIEWER.md` |
+| Evidence Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/EVIDENCE_REVIEWER.md` |
+| Business Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/BUSINESS_REVIEWER.md` |
 | Reviewer | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/REVIEWER.md` |
+| Publisher | CHARLIE CORE | CHARLIE CORE | Active release-prep role | `charlie-core/PUBLISHER.md` |
 | Improvement Analyst | CHARLIE CORE | CHARLIE CORE | Active foundation | `charlie-core/IMPROVEMENT_ANALYST.md` |
 
 ## Business Environment Agents
@@ -57,8 +69,8 @@ Every agent must have:
 | Beacon Performance Analyst | Marketing | Beacon | Future module | `marketing/BEACON_PERFORMANCE_ANALYST.md` |
 | Research Engine CEO | Research Engine | CHARLIE | Not designed | not created |
 | Business Intelligence CEO | Business Intelligence | CHARLIE | Not designed | not created |
-| Security Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
-| Evidence Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
+| Security Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Active review-board role | `charlie-core/SECURITY_REVIEWER.md` |
+| Evidence Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Active review-board role | `charlie-core/EVIDENCE_REVIEWER.md` |
 | Compliance Reviewer | Legal / Risk / Evidence | CHARLIE CORE | Planned review-board role | not created |
 
 ## Runtime Asset Rule
