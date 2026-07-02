@@ -8019,6 +8019,7 @@ body.oom-farm-command-body {
 .charlie-review-inline-decision textarea,
 .charlie-review-inline-decision select {
     width: 100%;
+    min-width: 0;
 }
 
 .charlie-review-actions {
@@ -8061,6 +8062,7 @@ body.oom-farm-command-body {
 .charlie-review-list {
     display: grid;
     gap: 12px;
+    min-width: 0;
 }
 
 .charlie-review-list {
@@ -8069,6 +8071,8 @@ body.oom-farm-command-body {
 
 .charlie-mission-card {
     padding: 14px;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .charlie-queue-preview {
@@ -8645,20 +8649,27 @@ body.oom-farm-command-body {
 
 .charlie-mission-card details {
     margin-top: 10px;
+    min-width: 0;
 }
 
 .charlie-mission-card details ul {
     margin: 8px 0 12px 18px;
     padding: 0;
+    min-width: 0;
 }
 
 .charlie-mission-card details li {
     margin: 4px 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .charlie-mission-card pre {
     max-height: 260px;
     overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
     padding: 10px;
     border-radius: 6px;
     background: #101816;
@@ -9035,6 +9046,32 @@ body.oom-farm-command-body {
     color: #e6f1ed;
 }
 
+.charlie-panel,
+.charlie-panel *,
+.charlie-mission-card,
+.charlie-mission-card *,
+.charlie-review-card,
+.charlie-review-card *,
+.charlie-flow-node,
+.charlie-flow-node *,
+.charlie-runner-metric,
+.charlie-runner-metric *,
+.charlie-command-center-tile,
+.charlie-command-center-tile * {
+    min-width: 0;
+}
+
+.charlie-panel input,
+.charlie-panel textarea,
+.charlie-panel select {
+    max-width: 100%;
+}
+
+#charlie_new_media_file,
+[data-new-mission-media-files] {
+    display: none;
+}
+
 .charlie-panel button:hover,
 .charlie-mission-actions button:hover,
 #charlie_refresh:hover,
@@ -9074,7 +9111,7 @@ body.oom-farm-command-body {
 }
 
 .charlie-command-center-grid {
-    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(128px, 100%), 1fr));
 }
 
 .charlie-command-center-tile {
@@ -9192,7 +9229,7 @@ body.oom-farm-command-body {
 
 .charlie-agent-lane {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(148px, 100%), 1fr));
     gap: 10px;
     margin-top: 14px;
 }
@@ -9273,8 +9310,23 @@ body.oom-farm-command-body {
 .charlie-review-packet,
 .charlie-mission-meta dd,
 .charlie-panel pre,
-.charlie-mission-card code {
+.charlie-mission-card code,
+.charlie-mission-card details li,
+.charlie-mission-card details summary,
+.charlie-review-inline-decision label,
+.charlie-visual-review-header,
+.charlie-visual-stage-evidence,
+.charlie-blocked-banner,
+.charlie-unresolved-blockers,
+.charlie-return-loop {
     overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.charlie-mission-card pre,
+.charlie-panel pre {
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .charlie-queue-preview .charlie-mission-card p {

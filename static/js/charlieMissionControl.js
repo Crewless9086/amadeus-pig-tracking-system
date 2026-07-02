@@ -1058,7 +1058,7 @@
       <details class="charlie-new-mission-edit">
         <summary>Edit new mission</summary>
         <form data-new-mission-edit-form>
-          <label>Title<input name="title" type="text" maxlength="160" value="${escapeHtml(safeText(mission.title || ""))}"></label>
+          <label>Title<textarea name="title" rows="2" maxlength="160">${escapeHtml(safeText(mission.title || ""))}</textarea></label>
           <label>Concept<textarea name="raw_text" rows="4">${escapeHtml(safeText(mission.raw_text || ""))}</textarea></label>
           <label>Desired outcome<textarea name="desired_outcome" rows="3">${escapeHtml(safeText(vault.desired_outcome || ""))}</textarea></label>
           <label>Media / reference links<textarea name="media_references" rows="3" placeholder="Optional: one screenshot path, URL, or note per line">${escapeHtml(mediaText)}</textarea></label>
