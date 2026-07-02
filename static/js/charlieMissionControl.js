@@ -67,6 +67,7 @@
     list: document.getElementById("charlie_mission_list"),
     reviewList: document.getElementById("charlie_review_list"),
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
+    ownerActionDock: document.getElementById("charlie_owner_action_dock"),
     commandCenter: document.getElementById("charlie_command_center"),
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
     improvementsList: document.getElementById("charlie_improvements_list"),
@@ -211,11 +212,13 @@
         ].join("\n");
       }
       renderAliveDashboard();
+      renderOwnerActionDock();
     } catch (error) {
       els.runner.state.textContent = "Unavailable";
       els.runner.message.textContent = error.message || "Runner handoff status could not be loaded.";
       state.runnerStatus = {status: "unavailable", next_action: els.runner.message.textContent};
       renderAliveDashboard();
+      renderOwnerActionDock();
     }
   }
 
@@ -232,6 +235,7 @@
       renderImprovements();
       renderReview();
       renderAliveDashboard();
+      renderOwnerActionDock();
     } catch (error) {
       if (els.commandCenter) {
         els.commandCenter.innerHTML = `<p class="charlie-muted">${escapeHtml(error.message || "Command center unavailable.")}</p>`;
@@ -274,6 +278,7 @@
     if (els.loadedAt) els.loadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
     renderCommandCenter();
     renderAliveDashboard();
+    renderOwnerActionDock();
     if (!els.list) return;
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
@@ -303,6 +308,81 @@
       els.list.appendChild(details);
     }
     renderReview();
+  }
+
+  function currentReviewMission() {
+    const missions = Array.isArray(state.reviewMissions) ? state.reviewMissions : [];
+    return missions.find((mission) => mission.status === "pr_ready") || missions.find((mission) => mission.status === "blocked") || missions[0] || null;
+  }
+
+  function reviewCounts() {
+    const review = ((state.commandCenter || {}).review || {});
+    const ready = Array.isArray(review.ready) ? review.ready.length : state.reviewMissions.filter((mission) => mission.status === "pr_ready").length;
+    const blocked = Array.isArray(review.blocked) ? review.blocked.length : state.reviewMissions.filter((mission) => mission.status === "blocked").length;
+    return {ready, blocked};
+  }
+
+  function renderOwnerActionDock() {
+    if (!els.ownerActionDock) return;
+    const mission = currentReviewMission();
+    const counts = reviewCounts();
+    const runnerLabel = runnerStateLabel((state.runnerStatus || {}).status);
+    const title = mission ? safeText(mission.title || mission.raw_text || mission.mission_id) : "No owner-review packet is ready";
+    const missionId = mission ? safeText(mission.mission_id) : "";
+    const status = mission ? safeText(mission.status || "review") : "no mission";
+    els.ownerActionDock.innerHTML = `
+      <div>
+        <span class="ops-panel-kicker">Owner Actions</span>
+        <h2>Review Gate</h2>
+        <p><strong>${escapeHtml(title)}</strong></p>
+        <dl class="charlie-owner-action-state">
+          <div><dt>State</dt><dd>${escapeHtml(status)}</dd></div>
+          <div><dt>Runner</dt><dd>${escapeHtml(runnerLabel)}</dd></div>
+          <div><dt>Ready</dt><dd>${escapeHtml(String(counts.ready))}</dd></div>
+          <div><dt>Blocked</dt><dd>${escapeHtml(String(counts.blocked))}</dd></div>
+        </dl>
+      </div>
+      <div class="charlie-owner-action-controls">
+        <textarea rows="2" data-review-comments placeholder="${mission ? "Optional owner review note" : "Owner comments require a review-ready or blocked mission"}"${mission ? "" : " disabled"}></textarea>
+        <select data-review-target-stage${mission ? "" : " disabled"}>
+          <option value="builder">Builder</option>
+          <option value="tester">Tester</option>
+          <option value="qa_red_team">QA / Red Team</option>
+          <option value="product_reviewer">Product Reviewer</option>
+          <option value="security_reviewer">Security Reviewer</option>
+          <option value="evidence_reviewer">Evidence Reviewer</option>
+          <option value="reviewer">Reviewer</option>
+          <option value="planner">Planner</option>
+          <option value="architect">Architect</option>
+          <option value="council_synthesis">Council Synthesis</option>
+          <option value="risk_agent">Risk Agent</option>
+          <option value="technical_architect">Technical Architect</option>
+          <option value="product_architect">Product Architect</option>
+          <option value="idea_expander">Idea Expander</option>
+        </select>
+        <div class="charlie-mission-actions charlie-review-actions">
+          <button type="button" data-dock-open-review>Open Review</button>
+          <button type="button" data-dock-refresh>Refresh Evidence</button>
+          <button type="button" data-review-decision="approve_final_release"${mission ? "" : " disabled"}>Approve Final</button>
+          <button type="button" data-review-decision="send_back"${mission ? "" : " disabled"}>Send Back</button>
+          <button type="button" data-review-decision="pause"${mission ? "" : " disabled"}>Pause</button>
+          <button type="button" data-review-decision="reject"${mission ? "" : " disabled"}>Reject</button>
+        </div>
+      </div>
+    `;
+    const openButton = els.ownerActionDock.querySelector("[data-dock-open-review]");
+    if (openButton) openButton.addEventListener("click", () => mission ? openOwnerReviewModal(mission) : openEmptyOwnerReviewModal());
+    const refreshButton = els.ownerActionDock.querySelector("[data-dock-refresh]");
+    if (refreshButton) refreshButton.addEventListener("click", loadMissions);
+    els.ownerActionDock.querySelectorAll("[data-review-decision]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (!missionId) {
+          openEmptyOwnerReviewModal();
+          return;
+        }
+        recordReviewDecision(missionId, button.dataset.reviewDecision, els.ownerActionDock);
+      });
+    });
   }
 
   function renderCommandCenter() {
@@ -377,6 +457,10 @@
       els.reviewList.querySelectorAll("[data-review-empty-action]").forEach((button) => {
         button.addEventListener("click", () => {
           const action = safeText(button.dataset.reviewEmptyAction || "review");
+          if (action === "Open Review") {
+            openEmptyOwnerReviewModal();
+            return;
+          }
           setMessage(`No owner-review mission is available for ${action}. Refresh evidence or wait for Builder, Tester, QA, and Reviewer to pass the gate.`, "info");
         });
       });
@@ -954,6 +1038,44 @@
     els.reviewModalBody.querySelectorAll("[data-review-decision]").forEach((button) => {
       button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, els.reviewModalBody));
     });
+    if (els.reviewModalClose) els.reviewModalClose.focus();
+  }
+
+  function openEmptyOwnerReviewModal() {
+    if (!els.reviewModal || !els.reviewModalBody) return;
+    const counts = reviewCounts();
+    if (els.reviewModalTitle) els.reviewModalTitle.textContent = "Owner Review Gate";
+    els.reviewModalBody.innerHTML = `
+      <section class="charlie-empty-review-focus">
+        <strong>No owner-review packet is ready</strong>
+        <p>Open Review is available for evidence, but final decisions need a blocked or review-ready mission id so CHARLIE CORE can preserve the audit trail.</p>
+        <dl class="charlie-mission-meta">
+          <div><dt>Runner state</dt><dd>${escapeHtml(runnerStateLabel((state.runnerStatus || {}).status))}</dd></div>
+          <div><dt>Review ready</dt><dd>${escapeHtml(String(counts.ready))}</dd></div>
+          <div><dt>Blocked</dt><dd>${escapeHtml(String(counts.blocked))}</dd></div>
+          <div><dt>Next action</dt><dd>${escapeHtml(safeText((state.runnerStatus || {}).next_action || "Wait for Builder, Tester, QA, and Reviewer evidence."))}</dd></div>
+        </dl>
+        <details class="charlie-evidence-drawer" open>
+          <summary>Evidence and details</summary>
+          <ul>
+            <li>Refresh Evidence reloads mission records, runner heartbeat, and command-center review queues.</li>
+            <li>Approve Final, Send Back, Pause, and Reject remain disabled until a real mission reaches blocked or review-ready.</li>
+            <li>The dashboard cannot run shell commands, merge, deploy, send customers, take payments, reserve stock, or change farm lifecycle records.</li>
+          </ul>
+        </details>
+        <div class="charlie-mission-actions charlie-review-actions">
+          <button type="button" data-review-refresh>Refresh Evidence</button>
+          <button type="button" disabled>Approve Final</button>
+          <button type="button" disabled>Send Back</button>
+          <button type="button" disabled>Pause</button>
+          <button type="button" disabled>Reject</button>
+        </div>
+      </section>
+    `;
+    const refreshButton = els.reviewModalBody.querySelector("[data-review-refresh]");
+    if (refreshButton) refreshButton.addEventListener("click", loadMissions);
+    els.reviewModal.classList.remove("hidden");
+    document.body.classList.add("charlie-modal-open");
     if (els.reviewModalClose) els.reviewModalClose.focus();
   }
 

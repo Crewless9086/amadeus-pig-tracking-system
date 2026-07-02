@@ -7775,6 +7775,94 @@ body.oom-farm-command-body {
     align-items: start;
 }
 
+.charlie-owner-action-dock {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.45fr);
+    gap: 14px;
+    align-items: start;
+    margin: 0 0 16px;
+    padding: 16px;
+    border: 1px solid rgba(58, 83, 73, 0.22);
+    border-radius: 8px;
+    background: rgba(250, 252, 248, 0.94);
+    box-shadow: 0 16px 42px rgba(14, 24, 21, 0.12);
+}
+
+.charlie-owner-action-dock > *,
+.charlie-owner-action-dock button,
+.charlie-owner-action-dock textarea,
+.charlie-owner-action-dock select {
+    min-width: 0;
+}
+
+.charlie-owner-action-dock h2,
+.charlie-owner-action-dock p {
+    margin: 0;
+}
+
+.charlie-owner-action-dock h2 {
+    margin-top: 4px;
+}
+
+.charlie-owner-action-dock p {
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+}
+
+.charlie-owner-action-state {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 12px 0 0;
+}
+
+.charlie-owner-action-state div {
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid #d8e1dd;
+    border-radius: 8px;
+    background: #f7faf9;
+}
+
+.charlie-owner-action-state dt {
+    color: #5f6f69;
+    font-size: 0.78rem;
+}
+
+.charlie-owner-action-state dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+}
+
+.charlie-owner-action-controls {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-owner-action-controls textarea,
+.charlie-owner-action-controls select {
+    width: 100%;
+    max-width: 100%;
+    border: 1px solid #b9c7c1;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #17211e;
+    font: inherit;
+}
+
+.charlie-owner-action-controls textarea {
+    padding: 10px;
+    resize: vertical;
+}
+
+.charlie-owner-action-controls select {
+    min-height: 40px;
+    padding: 0 10px;
+    font-weight: 700;
+}
+
 .charlie-menu-rail,
 .charlie-side-rail {
     position: sticky;
@@ -8977,7 +9065,8 @@ body.oom-farm-command-body {
 
 .charlie-command-strip article,
 .charlie-panel,
-.charlie-mission-card {
+.charlie-mission-card,
+.charlie-owner-action-dock {
     border-color: rgba(104, 146, 138, 0.34);
     background: #111e1d;
     color: #edf7f3;
@@ -8999,6 +9088,8 @@ body.oom-farm-command-body {
 }
 
 .charlie-command-strip strong,
+.charlie-owner-action-dock h2,
+.charlie-owner-action-dock p,
 .charlie-mission-card h3,
 .charlie-panel h2,
 .charlie-panel h3,
@@ -9065,6 +9156,33 @@ body.oom-farm-command-body {
 .charlie-panel textarea,
 .charlie-panel select {
     max-width: 100%;
+}
+
+.charlie-owner-action-state div,
+.charlie-owner-action-controls textarea,
+.charlie-owner-action-controls select,
+.charlie-empty-review-focus {
+    border-color: rgba(126, 164, 156, 0.34);
+    background: #0c1716;
+    color: #e6f1ed;
+}
+
+.charlie-owner-action-state dt {
+    color: #aebfba;
+}
+
+.charlie-owner-action-controls button:disabled,
+.charlie-review-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+}
+
+.charlie-empty-review-focus {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid rgba(126, 164, 156, 0.34);
+    border-radius: 8px;
 }
 
 #charlie_new_media_file,
@@ -9380,6 +9498,7 @@ body.oom-farm-command-body {
 @media (max-width: 900px) {
     .charlie-header,
     .charlie-control-room,
+    .charlie-owner-action-dock,
     .charlie-review-focus-grid {
         grid-template-columns: 1fr;
         display: grid;
@@ -9394,6 +9513,7 @@ body.oom-farm-command-body {
     .charlie-command-strip,
     .charlie-command-center-grid,
     .charlie-mission-meta,
+    .charlie-owner-action-state,
     .charlie-flow-track,
     .charlie-control-hero,
     .charlie-hero-metrics {
@@ -9441,6 +9561,7 @@ body.oom-farm-command-body {
     .charlie-command-strip,
     .charlie-command-center-grid,
     .charlie-mission-meta,
+    .charlie-owner-action-state,
     .charlie-form-row,
     .charlie-flow-track,
     .charlie-agent-ring,
