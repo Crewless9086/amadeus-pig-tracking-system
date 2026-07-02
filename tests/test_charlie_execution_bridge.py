@@ -512,6 +512,64 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(inherited["pr_url"], "https://github.com/org/repo/pull/61")
         self.assertEqual(inherited["links"]["pr"], "https://github.com/org/repo/pull/61")
 
+    def test_ui_prompt_includes_media_references_and_quality_contract(self):
+        mission = dict(MISSION)
+        mission["mission_type"] = "ui dashboard"
+        mission["raw_text"] = "Build a dashboard from the attached screenshot."
+        mission["media_references"] = [
+            {
+                "label": "Owner reference",
+                "reference": "screenshots/Screenshot 2026-07-02 201251.png",
+                "media_type": "image",
+            }
+        ]
+
+        prompt = execution_bridge.build_agent_stage_prompt(mission, "builder", artifacts={}, ledger={})
+
+        self.assertIn("Mission media/reference attachments", prompt)
+        self.assertIn("Owner reference (image): screenshots/Screenshot 2026-07-02 201251.png", prompt)
+        self.assertIn("charlie_ui_quality_contract_v1", prompt)
+        self.assertIn("CHARLIE_CORE_UI_MISSION_STANDARD.md", prompt)
+
+    def test_ui_builder_gate_requires_reference_media_and_preview(self):
+        artifact = _successful_stage_payload("builder")
+        artifact["ui_quality_contract"] = {
+            "ui_related": True,
+            "reference_media_required": True,
+            "media_references": [{"reference": "screenshots/ref.png"}],
+        }
+        artifact["media_references_used"] = []
+        artifact["visual_reference_analysis"] = ""
+        artifact["local_preview"] = {}
+        artifact["viewport_plan"] = []
+
+        result = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("reference media", result["reason"])
+
+    def test_ui_tester_gate_requires_desktop_and_mobile_browser_evidence(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
+        artifact["browser_checks"] = ["desktop 1440 screenshot passed"]
+        artifact["screenshots_captured"] = []
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("desktop/laptop and mobile", result["reason"])
+
+    def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
+        artifact["visual_review_notes"] = ["Desktop and mobile screenshots inspected."]
+        artifact["visual_acceptance_decision"] = ""
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("visual acceptance", result["reason"])
+
     def test_visual_review_capture_writes_local_screenshot_media(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
@@ -522,16 +580,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 capture = execution_bridge._capture_visual_review_media(
                     "CHARLIE-MISSION-EXEC123",
                     {"url": "http://127.0.0.1:5000/charlie"},
+                    changed_files=["templates/charlie.html", "static/js/charlieMissionControl.js"],
                     run_subprocess=fake_runner,
                 )
                 media = execution_bridge._review_media_items("CHARLIE-MISSION-EXEC123")
 
         self.assertTrue(capture["captured"])
         self.assertEqual(capture["status"], "captured")
-        self.assertEqual(capture["capture_source"], "generated_owner_review_packet")
-        self.assertEqual(capture["fallback_reason"], "control_dashboard_preview_not_mission_visual")
-        self.assertEqual(media[0]["filename"], "owner_review_preview.png")
-        self.assertIn("/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/owner_review_preview.png", media[0]["reference"])
+        self.assertEqual(capture["capture_source"], "local_preview")
+        self.assertEqual(capture["fallback_reason"], "")
+        filenames = {item["filename"] for item in media}
+        self.assertEqual(filenames, {"owner_review_preview.png", "owner_review_mobile.png"})
+        self.assertTrue(any(
+            "/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/owner_review_preview.png" in item["reference"]
+            for item in media
+        ))
 
     def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -550,6 +613,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(capture["capture_source"], "local_preview")
         self.assertEqual(capture["fallback_reason"], "")
         self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
+        self.assertEqual(len(capture["captures"]), 2)
 
     def test_visual_review_packet_generates_fallback_media_without_preview_url(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -578,6 +642,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packet["status"], "captured")
         self.assertEqual(packet["capture"]["fallback_reason"], "preview_url_not_captured")
         self.assertEqual(packet["media"][0]["filename"], "owner_review_preview.png")
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review(packet))
 
     def test_visual_review_packet_blocks_when_capture_fallback_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -621,9 +686,17 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "ui_related": True,
             "status": "not_captured_blocked",
         }))
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+            "capture": {"capture_source": "generated_owner_review_packet"},
+            "media": [{"filename": "owner_review_preview.png"}],
+        }))
         self.assertFalse(execution_bridge._visual_review_blocks_owner_review({
             "ui_related": True,
             "status": "captured",
+            "capture": {"capture_source": "local_preview"},
+            "media": [{"filename": "owner_review_preview.png"}, {"filename": "owner_review_mobile.png"}],
         }))
 
     def test_agent_build_mission_type_is_not_ui_by_substring(self):

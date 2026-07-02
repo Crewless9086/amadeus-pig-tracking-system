@@ -13,6 +13,9 @@ Owner dashboards must help Charl decide quickly. They must not bury decisions, h
 - Use clear labels and short action names.
 - Avoid one-note palettes and unreadable contrast.
 - Do not let long IDs, JSON, or filenames break layout.
+- For UI missions, follow `docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md`.
+- Dashboard work is not review-ready until real desktop/laptop and mobile visual evidence exists for the changed page.
+- Attached reference screenshots must be cited and compared against the built screen.
 
 ## CHARLIE Dashboard Requirements
 
