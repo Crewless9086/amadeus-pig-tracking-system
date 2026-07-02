@@ -13,3 +13,5 @@
 - Split `02-agents` into `owner-command/` for CHARLIE and `charlie-core/` for CHARLIE CORE workflow agents.
 - Added the owner Dynasty direction note as future strategic backbone guidance.
 - Converted owner agent-personality comments into clean doctrine for owner-command, CHARLIE CORE, and farm agents.
+- Migrated first high-value non-Vault source content into the Vault: meat sales, pork business model, pig purpose/allocation, farm operating model, SAM knowledge, and Amadeus Private Transfers.
+- Added `10-source-map/VAULT_MIGRATION_INVENTORY.md` and strengthened archive/source-map rules so cleanup can happen only after useful context is migrated and referenced.

@@ -57,6 +57,40 @@ Still needed before automation:
 - customer message rules;
 - dispatch source-of-truth records.
 
+Additional business decisions needed from the owner after Vault review:
+
+- confirm whether the OMODA is the only Phase 1 vehicle;
+- confirm the first public service area and whether Still Bay/Jongensfontein is included from day one;
+- confirm whether route prices in `03-business/AMADEUS_PRIVATE_TRANSFERS.md` are approved launch prices or planning-only numbers;
+- confirm the exact cancellation/refund rule before and after booking cutoff;
+- confirm who may drive and whether each driver has or needs PrDP;
+- confirm whether Amadeus Private Transfers gets a separate WhatsApp number before the first public test.
+
+## Meat Sales Launch Settings
+
+Question: which meat-sales settings are approved for the first real public sales cycle?
+
+Working assumptions now captured in the Vault:
+
+- Pilot V1 focuses publicly on half carcass / Set A;
+- full carcass is manual override for trusted known customers;
+- standard launch price direction is around `R130/kg` VAT-inclusive;
+- custom processing later is around `R145-R150/kg`;
+- standard carcass deposit is 50%;
+- custom cut deposit is 70% once that lane opens;
+- Zone 1 is Riversdale, Albertinia, and Still Bay;
+- first four weeks are capped at 1 pig/week.
+
+Still needs owner approval:
+
+- exact first launch price/kg;
+- exact delivery fee rules by town/zone;
+- exact cancellation rule after slaughter booking;
+- exact legal slaughter facility and butcher;
+- exact cold-chain manual checklist for first deliveries;
+- exact label wording and layout;
+- exact minimum profit/pig and delivery-margin thresholds.
+
 ## Quartermaster / Farm Stock And Feed Control
 
 Question: what exact farm stock, feed, natural resource, purchasing, expense, receipt, and stock-adjustment workflows should Quartermaster own?

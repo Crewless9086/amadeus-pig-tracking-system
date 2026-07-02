@@ -1,5 +1,9 @@
 # Active Docs Source Map
 
+The Vault Brain is the controlling doctrine layer. The files below remain active source references because they are close to code, workflows, schemas, or current operational evidence.
+
+Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readiness.
+
 ## Highest-Level Sources
 
 - `docs/00-start-here/README.md`
@@ -30,12 +34,37 @@
 
 - `docs/05-ai/AGENT_ROLES.md`
 - `docs/05-ai/RESPONSE_RULES.md`
+- `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md`
 - `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
 - `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 - `docs/08-business-modules/PORK_SALES_MODEL.md`
+- `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
+- `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`
+- `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`
 - `config/sam_farm_knowledge.json`
+
+## Operations And Evidence
+
+- `docs/06-operations/RUNBOOK.md`
+- `docs/06-operations/TESTING_CHECKLIST.md`
+- `docs/06-operations/RELEASE_CHECKLIST.md`
+- `docs/06-operations/TROUBLESHOOTING.md`
+- `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md`
+- `docs/06-operations/GS_MIG_FINAL_AUDIT.md`
+
+## Static Agent Assets
+
+- `static/assets/agents/oom-sakkie/agent.md`
+- `static/assets/agents/sam/agent.md`
+- `static/assets/agents/beacon/agent.md`
+- `static/assets/agents/herdmaster/agent.md`
+- `static/assets/agents/rootline/agent.md`
+- `static/assets/agents/quartermaster/agent.md`
+- `static/assets/agents/gatekeeper/agent.md`
+- `static/assets/agents/butcher/agent.md`
+- `static/assets/agents/ledger/agent.md`
 
 ## Runtime/Code Sources
 
