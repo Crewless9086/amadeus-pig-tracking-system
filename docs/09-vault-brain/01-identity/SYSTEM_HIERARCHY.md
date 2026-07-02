@@ -11,6 +11,12 @@
 7. FRED: future transport/private transfers commander under CHARLIE.
 8. Specialist agents: narrow departments that summarize, suggest, prepare, and escalate inside approved boundaries.
 
+## Execution Principle
+
+CHARLIE may execute approved actions on Charl's behalf only through authorized rails, audit trails, and the correct approval level.
+
+Business-environment commanders such as Oom Sakkie and FRED may execute only inside their environment, only through approved workflows, and only when safety/legal/customer/farm gates are satisfied.
+
 ## Department Map
 
 | Department | Commander | Current state |

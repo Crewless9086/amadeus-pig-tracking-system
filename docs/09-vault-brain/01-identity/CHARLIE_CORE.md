@@ -1,8 +1,27 @@
 # CHARLIE CORE
 
-CHARLIE CORE is the workflow/pro system that turns owner missions into scoped, tested, reviewable work.
+CHARLIE CORE is the workflow/pro system under CHARLIE. It turns owner ideas into scoped, tested, reviewable, and releasable work.
 
-Current capabilities:
+CHARLIE CORE is not the owner-facing AI identity. CHARLIE is the interface; CHARLIE CORE is the mission engine CHARLIE uses to get work done properly.
+
+## Target Standard
+
+CHARLIE CORE should become a world-class AI workflow system.
+
+Its purpose is to take a simple owner idea and craft it into an operational result by:
+
+- understanding the real need;
+- defining the outcome;
+- splitting work into the right stages;
+- assigning the right agents;
+- using parallel work only where ownership and merge rules are clear;
+- passing context cleanly from agent to agent;
+- preserving findings and decisions;
+- testing and pressure-testing the result;
+- presenting a clear owner review packet;
+- learning from failures and improving the system over time.
+
+## Current Capabilities
 
 - Supabase mission queue;
 - local runner pickup;
@@ -13,6 +32,38 @@ Current capabilities:
 - improvement analyst foundation;
 - Vault tables and mission metadata.
 
-Current weakness:
+## Required Operating Standard
+
+CHARLIE CORE must not aim for shallow completion.
+
+Every mission should show:
+
+- what the owner asked for;
+- what outcome was built or prepared;
+- which environment and shared departments were involved;
+- which Vault Brain docs were used;
+- what each agent did;
+- what evidence was produced;
+- what tests passed or failed;
+- what risks remain;
+- what owner decision is needed.
+
+## Self-Improvement Direction
+
+CHARLIE CORE should evolve over time.
+
+If a mission needs more structure, CHARLIE CORE should identify it.
+
+If a mission needs a new specialist agent, CHARLIE CORE should propose it, define it through the Vault Brain, and only build/activate it after owner approval.
+
+If handoffs fail, evidence is weak, work duplicates, or outcomes miss the owner intent, Analyst and Brain Guard should capture the issue and feed it back into the workflow.
+
+## Accuracy Rule
+
+The target is high-confidence, owner-aligned, evidence-backed delivery. CHARLIE CORE must not claim 100% certainty unless evidence genuinely supports it.
+
+Deep overnight missions require at least 96% confidence under `../00-governance/OWNER_DECISIONS.md`.
+
+## Current Weakness
 
 The workflow mechanics are ahead of the operating brain. The Vault Brain closes that gap by making identity, roles, playbooks, business rules, evidence standards, and update rules explicit.
