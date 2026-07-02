@@ -451,6 +451,49 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
 
+    def test_pr_reference_inherits_from_builder_for_tester_and_reviewer(self):
+        builder = _successful_stage_payload("builder")
+        tester = _successful_stage_payload("tester")
+        tester["pr_url"] = ""
+        tester["links"] = {}
+        reviewer = _successful_stage_payload("reviewer")
+        reviewer["pr_url"] = ""
+        reviewer["links"] = {}
+
+        inherited_tester = execution_bridge._inherit_pr_reference("tester", tester, {"builder": builder})
+        inherited_reviewer = execution_bridge._inherit_pr_reference("reviewer", reviewer, {"builder": builder})
+
+        self.assertEqual(inherited_tester["pr_url"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(inherited_tester["links"]["pr"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(inherited_reviewer["pr_url"], "https://github.com/org/repo/pull/61")
+
+    def test_tester_quality_gate_accepts_pytest_unavailable_when_unittest_passed(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["errors"] = ["python.exe: No module named pytest"]
+        artifact["tests_run"] = ["python -m unittest tests.test_frontend_route_contracts -v"]
+        artifact["stdout_tail"] = "Ran 37 tests in 1.436s OK"
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"])
+
+    def test_tester_quality_gate_ignores_resolved_missing_pr_process_bug(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["pr_url"] = "https://github.com/org/repo/pull/61"
+        artifact["links"] = {"pr": "https://github.com/org/repo/pull/61"}
+        artifact["bugs"] = [
+            {
+                "severity": "medium",
+                "finding": "Release/process issue remains outside tester scope: no PR URL or number is available for owner final review.",
+            }
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+        issues = execution_bridge._artifact_issue_items("tester", artifact)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(issues, [])
+
     def test_agent_quality_gate_requires_vault_source(self):
         artifact = _successful_stage_payload("planner")
         artifact["vault_sources_used"] = []

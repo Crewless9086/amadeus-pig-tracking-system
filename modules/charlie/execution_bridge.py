@@ -1572,6 +1572,8 @@ def _validate_agent_artifact(agent, artifact):
 def _agent_quality_gate(agent, artifact):
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
+    errors = _blocking_artifact_items(agent, artifact, errors)
+    bugs = _blocking_artifact_items(agent, artifact, bugs)
     commands = artifact.get("commands_run") if isinstance(artifact.get("commands_run"), list) else []
     inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
     vault_sources = _artifact_vault_sources(artifact)
@@ -1673,6 +1675,67 @@ def _artifact_pr_reference(artifact):
         if text:
             return text
     return ""
+
+
+def _artifact_text(value):
+    if isinstance(value, dict):
+        return str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
+    return str(value or "").strip()
+
+
+def _has_passing_fallback_test_evidence(artifact):
+    status = str((artifact or {}).get("test_status") or "").strip().lower()
+    if status != "pass":
+        return False
+    evidence = []
+    for key in ("tests_run", "test_evidence", "commands_run", "stdout_tail"):
+        value = artifact.get(key) if isinstance(artifact, dict) else None
+        if isinstance(value, list):
+            evidence.extend(str(item or "") for item in value)
+        elif value:
+            evidence.append(str(value))
+    evidence_text = " ".join(evidence).lower()
+    return "unittest" in evidence_text and (" ok" in evidence_text or "pass" in evidence_text or "passed" in evidence_text)
+
+
+def _is_non_blocking_local_pytest_issue(agent, artifact, value):
+    if agent != "tester" or not _has_passing_fallback_test_evidence(artifact):
+        return False
+    text = _artifact_text(value).lower()
+    return "pytest" in text and (
+        "no module named pytest" in text
+        or "pytest is not installed" in text
+        or "pytest unavailable" in text
+        or "pytest is unavailable" in text
+    )
+
+
+def _is_resolved_pr_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "reviewer"} or not _artifact_pr_reference(artifact):
+        return False
+    text = _artifact_text(value).lower()
+    return "pr" in text and (
+        "no pr url" in text
+        or "no pr link" in text
+        or "no pr reference" in text
+        or "no pr url/number" in text
+        or "no pr url or number" in text
+        or "no pull request" in text
+        or "pr evidence is missing" in text
+    )
+
+
+def _blocking_artifact_items(agent, artifact, values):
+    if not isinstance(values, list):
+        values = [values] if values else []
+    blocking = []
+    for value in values:
+        if _is_non_blocking_local_pytest_issue(agent, artifact, value):
+            continue
+        if _is_resolved_pr_process_issue(agent, artifact, value):
+            continue
+        blocking.append(value)
+    return blocking
 
 
 def _auto_package_builder_changes(mission, artifact, runner=None):
@@ -1825,7 +1888,7 @@ def _extract_pr_url(value):
 
 
 def _inherit_pr_reference(agent, artifact, artifacts):
-    if agent != "reviewer" or _artifact_pr_reference(artifact):
+    if agent == "builder" or _artifact_pr_reference(artifact):
         return artifact
     builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
     pr_reference = _artifact_pr_reference(builder)
@@ -2527,9 +2590,9 @@ def _artifact_issue_items(agent, artifact, quality=None):
     ):
         value = artifact.get(key)
         if isinstance(value, list):
-            for item in value:
+            for item in _blocking_artifact_items(agent, artifact, value):
                 add_issue(item, severity, source)
-        else:
+        elif _blocking_artifact_items(agent, artifact, [value]):
             add_issue(value, severity, source)
 
     reason = str(quality.get("reason") or "").strip()
