@@ -368,6 +368,69 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("Builder changed releaseable files", result["reason"])
 
+    def test_auto_package_builder_changes_adds_pr_evidence(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
+            if command[:3] == ["git", "switch", "-c"]:
+                return SimpleNamespace(returncode=0, stdout="switched", stderr="")
+            if command[:2] == ["git", "add"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["git", "diff", "--cached", "--quiet"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            if command[:2] == ["git", "commit"]:
+                return SimpleNamespace(returncode=0, stdout="committed", stderr="")
+            if command[:3] == ["git", "rev-parse", "--short"]:
+                return SimpleNamespace(returncode=0, stdout="abc1234\n", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            if command[:3] == ["gh", "pr", "create"]:
+                return SimpleNamespace(returncode=0, stdout="https://github.com/org/repo/pull/77\n", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = ["static/js/charlieMissionControl.js"]
+        artifact["pr_url"] = ""
+        artifact["links"] = {"pr": ""}
+
+        packaged = execution_bridge._auto_package_builder_changes(
+            {"mission_id": "CHARLIE-MISSION-EXEC123", "title": "Mission Control Dashboard"},
+            artifact,
+            runner=fake_runner,
+        )
+
+        self.assertEqual(packaged["pr_url"], "https://github.com/org/repo/pull/77")
+        self.assertEqual(packaged["commit_sha"], "abc1234")
+        self.assertEqual(packaged["git_packaging"]["status"], "pr_created")
+        self.assertTrue(any(call[:3] == ["git", "switch", "-c"] for call in calls))
+
+    def test_auto_package_builder_changes_records_failure_without_pr(self):
+        def fake_runner(command, **_kwargs):
+            if command[:3] == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="main\n", stderr="")
+            if command[:3] == ["git", "switch", "-c"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="permission denied")
+            if command[:2] == ["git", "switch"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="not found")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = ["static/js/charlieMissionControl.js"]
+        artifact["pr_url"] = ""
+        artifact["links"] = {"pr": ""}
+
+        packaged = execution_bridge._auto_package_builder_changes(
+            {"mission_id": "CHARLIE-MISSION-EXEC123", "title": "Mission Control Dashboard"},
+            artifact,
+            runner=fake_runner,
+        )
+
+        self.assertEqual(packaged["git_packaging"]["status"], "branch_create_or_switch_failed")
+        self.assertFalse(execution_bridge._artifact_pr_reference(packaged))
+
     def test_reviewer_quality_gate_accepts_pr_for_changed_files(self):
         artifact = {
             "summary": "review complete",

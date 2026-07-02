@@ -63,10 +63,12 @@
             <span class="ops-panel-kicker">Controls</span>
             <h2>Mission Queue</h2>
           </div>
-          <button type="button" id="charlie_refresh">Refresh</button>
+          <div class="charlie-rail-actions">
+            <button type="button" id="charlie_add_mission" class="charlie-icon-button" aria-expanded="false" aria-controls="charlie_mission_create_form" title="Add mission">+</button>
+            <button type="button" id="charlie_refresh">Refresh</button>
+          </div>
         </div>
-        <p class="charlie-muted">These controls record mission decisions only. They cannot run shell commands, merge, deploy, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.</p>
-        <form id="charlie_mission_create_form" class="charlie-intake-form">
+        <form id="charlie_mission_create_form" class="charlie-intake-form is-collapsed">
           <h3>New Mission</h3>
           <label for="charlie_new_title">Title</label>
           <input id="charlie_new_title" type="text" placeholder="Short mission title" maxlength="160">
@@ -111,6 +113,7 @@
           </div>
           <button type="submit">Create Mission</button>
         </form>
+        <p class="charlie-safety-boundary">Dashboard decisions cannot run shell commands, merge, deploy, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.</p>
         <label for="charlie_status_filter">Status</label>
         <select id="charlie_status_filter">
           <option value="owner_queue" selected>Owner Queue</option>

@@ -52,6 +52,7 @@
     reviewModalBody: document.getElementById("charlie_review_modal_body"),
     reviewModalClose: document.getElementById("charlie_review_modal_close"),
     refresh: document.getElementById("charlie_refresh"),
+    addMission: document.getElementById("charlie_add_mission"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
     createForm: document.getElementById("charlie_mission_create_form"),
@@ -437,13 +438,21 @@
         <span>${escapeHtml(activeMission ? activeMission.status || "unknown" : "waiting")}</span>
       </div>
       ${blocked ? blockedReviewBanner(blockedPacket) : ""}
-      <div class="charlie-flow-track" data-active-agent="${escapeHtml(activeAgent || "")}">
+      <div class="charlie-organogram" data-active-agent="${escapeHtml(activeAgent || "")}">
+        <article class="charlie-core-node ${activeAgent ? "is-routing" : ""}">
+          <span class="charlie-core-orbit"></span>
+          <strong>CHARLIE CORE</strong>
+          <small>${escapeHtml(runnerStateLabel(runner.status))}</small>
+          <em>${escapeHtml(shortMissionLine(activeMission, runner))}</em>
+        </article>
+        <div class="charlie-agent-ring">
         ${AGENT_ORDER.map((agent, index) => workflowNodeMarkup(agent, workflow, {
           activeAgent,
           blocked,
           reviewReady,
-          isLast: index === AGENT_ORDER.length - 1,
+          index,
         })).join("")}
+        </div>
       </div>
       ${backflowEvents.length ? `<div class="charlie-flow-backflows">${backflowEvents.slice(0, 4).map(backflowLoopMarkup).join("")}</div>` : ""}
     `;
@@ -461,7 +470,7 @@
     els.activeSummary.innerHTML = `
       ${blocked ? blockedReviewBanner(reviewPacket) : ""}
       <dl class="charlie-mission-meta">
-        <div><dt>Agent</dt><dd>${escapeHtml(local.current_agent || latest.agent || workflowActiveAgent(workflowForMission(activeMission)) || "--")}</dd></div>
+        <div><dt>Agent</dt><dd>${escapeHtml(agentDisplayName(local.current_agent || latest.agent || workflowActiveAgent(workflowForMission(activeMission)) || "--"))}</dd></div>
         <div><dt>Action</dt><dd>${escapeHtml(local.current_action || latest.current_action || local.last_result_status || "--")}</dd></div>
         <div><dt>Ledger</dt><dd>${escapeHtml(local.agent_ledger_path || "--")}</dd></div>
         <div><dt>Artifact</dt><dd>${escapeHtml(local.execution_artifact || "--")}</dd></div>
@@ -493,6 +502,13 @@
     return Array.isArray(items) && items.length ? items[0] : null;
   }
 
+  function shortMissionLine(mission, runner) {
+    if (mission && mission.mission_id) {
+      return `${shortId(mission.mission_id)} | ${mission.urgency || "P2"} | ${mission.approval_level || "LEVEL 3"}`;
+    }
+    return (runner && runner.next_action) || "waiting for mission";
+  }
+
   function workflowForMission(mission) {
     const workflow = mission && Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     if (workflow.length) return workflow;
@@ -504,12 +520,12 @@
     const status = workflowNodeStatus(agent, item, context);
     const label = AGENT_LABELS[agent] || agent;
     return `
-      <article class="charlie-flow-node is-${escapeHtml(status)}" data-agent="${escapeHtml(agent)}">
+      <article class="charlie-flow-node is-${escapeHtml(status)}" data-agent="${escapeHtml(agent)}" style="--agent-index:${Number(context.index || 0)}">
         <span class="charlie-flow-pulse"></span>
         <strong>${escapeHtml(label)}</strong>
         <small>${escapeHtml(status.replace(/-/g, " "))}</small>
         <em>${escapeHtml(shortAgentSummary(item))}</em>
-        ${context.isLast ? "" : '<span class="charlie-flow-link" aria-hidden="true"></span>'}
+        <span class="charlie-flow-link" aria-hidden="true"></span>
       </article>
     `;
   }
@@ -748,6 +764,11 @@
     const name = safeText(agent.agent || "agent");
     const status = safeText(agent.status || "pending");
     return `<span class="status-pill status-pill-muted charlie-agent-badge is-${escapeHtml(status.toLowerCase().replace(/_/g, "-"))}">${escapeHtml(name)}: ${escapeHtml(status)}</span>`;
+  }
+
+  function agentDisplayName(value) {
+    const normalized = normalizeAgent(value);
+    return AGENT_LABELS[normalized] || safeText(value);
   }
 
   function openOwnerReviewModal(mission) {
@@ -1609,6 +1630,13 @@
   }
 
   if (els.refresh) els.refresh.addEventListener("click", loadMissions);
+  if (els.addMission && els.createForm) {
+    els.addMission.addEventListener("click", () => {
+      const isCollapsed = els.createForm.classList.toggle("is-collapsed");
+      els.addMission.setAttribute("aria-expanded", String(!isCollapsed));
+      if (!isCollapsed && els.newTitle) els.newTitle.focus();
+    });
+  }
   if (els.improvementsAnalyze) els.improvementsAnalyze.addEventListener("click", analyzeImprovements);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
