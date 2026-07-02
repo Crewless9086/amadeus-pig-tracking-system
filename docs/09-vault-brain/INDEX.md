@@ -15,10 +15,12 @@
 - `01-identity/CHARLIE_CORE.md`
 - `01-identity/OOM_SAKKIE.md`
 - `01-identity/SYSTEM_HIERARCHY.md`
+- `01-identity/AGENT_ORGANOGRAM.md`
 
 ## Agents
 
 - `02-agents/_AGENT_TEMPLATE.md`
+- `02-agents/AGENT_REGISTRY.md`
 - `02-agents/charlie/CHARLIE.md`
 - `02-agents/charlie/BRAIN_GUARD.md`
 - `02-agents/charlie/IMPROVEMENT_ANALYST.md`
@@ -34,6 +36,10 @@
 - `02-agents/farm/GATEKEEPER.md`
 - `02-agents/farm/QUARTERMASTER.md`
 - `02-agents/sales/SAM.md`
+- `02-agents/sales/MEAT_SALES_AGENT.md`
+- `02-agents/sales/LIVE_PIG_SALES_AGENT.md`
+- `02-agents/sales/SLAUGHTER_ABATTOIR_SALES_AGENT.md`
+- `02-agents/sales/BUTCHER_CUSTOM_CUTS_SALES_AGENT.md`
 - `02-agents/sales/BUTCHER.md`
 - `02-agents/sales/LEDGER.md`
 - `02-agents/marketing/BEACON.md`

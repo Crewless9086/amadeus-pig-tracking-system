@@ -13,9 +13,11 @@ Read:
 1. `INDEX.md`
 2. `00-governance/BRAIN_GUARD.md`
 3. `01-identity/SYSTEM_HIERARCHY.md`
-4. `01-identity/CHARLIE.md`
-5. `02-agents/README.md`
-6. the specific agent, business, workflow, or standard file for the mission.
+4. `01-identity/AGENT_ORGANOGRAM.md`
+5. `01-identity/CHARLIE.md`
+6. `02-agents/AGENT_REGISTRY.md`
+7. `02-agents/README.md`
+8. the specific agent, business, workflow, or standard file for the mission.
 
 ## Folder Map
 

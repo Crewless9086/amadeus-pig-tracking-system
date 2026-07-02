@@ -7,3 +7,4 @@
 - Added templates for agents, businesses, and workflows.
 - Preserved first-pass source references from the repo.
 - Added explicit agent/structure guardrails for templates, future registry, future organogram, Brain Guard blocking, and CHARLIE CORE environment/shared-department identification.
+- Added the approved agent organogram, agent registry, and Amadeus Farm Sales structure with SAM as Farm Sales CEO and planned specialist sales agents.
