@@ -8028,7 +8028,7 @@ body.oom-farm-command-body {
 
 .charlie-command-center-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
     gap: 10px;
 }
 
@@ -8040,14 +8040,18 @@ body.oom-farm-command-body {
     border: 1px solid #d8e1dd;
     border-radius: 8px;
     background: #f7faf9;
+    min-width: 0;
 }
 
 .charlie-command-center-tile strong {
     font-size: 0.95rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .charlie-command-center-tile span,
 .charlie-command-center-tile code {
+    min-width: 0;
     overflow-wrap: anywhere;
     color: #5f6f69;
     font-size: 0.84rem;
@@ -9070,7 +9074,7 @@ body.oom-farm-command-body {
 }
 
 .charlie-command-center-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
 
 .charlie-command-center-tile {

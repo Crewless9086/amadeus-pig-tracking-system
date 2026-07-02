@@ -373,13 +373,69 @@
       else state.openReviewDetails.delete(missionId);
     });
     if (!state.reviewMissions.length) {
-      els.reviewList.innerHTML = '<p class="charlie-empty">No missions are waiting at owner review.</p>';
+      els.reviewList.innerHTML = emptyOwnerReviewMarkup();
+      els.reviewList.querySelectorAll("[data-review-empty-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const action = safeText(button.dataset.reviewEmptyAction || "review");
+          setMessage(`No owner-review mission is available for ${action}. Refresh evidence or wait for Builder, Tester, QA, and Reviewer to pass the gate.`, "info");
+        });
+      });
+      const refreshButton = els.reviewList.querySelector("[data-review-refresh]");
+      if (refreshButton) refreshButton.addEventListener("click", loadMissions);
       return;
     }
     els.reviewList.innerHTML = "";
     state.reviewMissions.forEach((mission) => {
       els.reviewList.appendChild(reviewCard(mission));
     });
+  }
+
+  function emptyOwnerReviewMarkup() {
+    return `
+      <article class="charlie-mission-card charlie-review-card charlie-review-empty-card">
+        <div class="charlie-mission-card-header">
+          <div>
+            <span class="status-pill status-pill-muted">No mission</span>
+            <h3>No owner-review packet is ready</h3>
+          </div>
+          <code>stage-8</code>
+        </div>
+        <dl class="charlie-mission-meta">
+          <div><dt>Runner state</dt><dd>${escapeHtml(runnerStateLabel((state.runnerStatus || {}).status))}</dd></div>
+          <div><dt>Review ready</dt><dd>0 missions</dd></div>
+          <div><dt>Blocked</dt><dd>${escapeHtml(safeText((((state.commandCenter || {}).review || {}).blocked || []).length || 0))}</dd></div>
+          <div><dt>Next action</dt><dd>${escapeHtml(safeText((state.runnerStatus || {}).next_action || "No review packet is available yet."))}</dd></div>
+        </dl>
+        <details class="charlie-evidence-drawer" open>
+          <summary>Evidence and details</summary>
+          <p class="charlie-muted">Owner approval controls stay visible, but final decisions require a mission with a captured PR, tests, review packet, and desktop/mobile visual evidence.</p>
+          <ul>
+            <li>Open Review: unavailable until a mission reaches blocked or review-ready.</li>
+            <li>Refresh Evidence: reloads dashboard state, runner heartbeat, and command-center review queues.</li>
+            <li>Approve, Send Back, Pause, Reject, and Mark Done: require a mission id so CHARLIE CORE can preserve the audit trail.</li>
+          </ul>
+        </details>
+        <div class="charlie-review-inline-decision">
+          <label for="review_empty_comments">Owner comments</label>
+          <textarea id="review_empty_comments" rows="3" placeholder="Comments attach only after a mission reaches owner review." disabled></textarea>
+          <label>
+            Return stage
+            <select disabled>
+              <option>No mission selected</option>
+            </select>
+          </label>
+        </div>
+        <div class="charlie-mission-actions charlie-review-actions">
+          <button type="button" data-review-empty-action="Open Review">Open Review</button>
+          <button type="button" data-review-refresh>Refresh Evidence</button>
+          <button type="button" data-review-empty-action="Approve Final">Approve Final</button>
+          <button type="button" data-review-empty-action="Send Back">Send Back</button>
+          <button type="button" data-review-empty-action="Pause">Pause</button>
+          <button type="button" data-review-empty-action="Reject">Reject</button>
+          <button type="button" data-review-empty-action="Mark Done">Mark Done</button>
+        </div>
+      </article>
+    `;
   }
 
   function renderImprovements() {
