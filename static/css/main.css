@@ -9009,3 +9009,463 @@ body.oom-farm-command-body {
         grid-template-columns: 1fr auto;
     }
 }
+
+/* CHARLIE CORE command-center rebuild overrides */
+.charlie-body {
+    background:
+        linear-gradient(rgba(24, 210, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(24, 210, 255, 0.04) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, rgba(24, 210, 255, 0.14), transparent 34rem),
+        linear-gradient(135deg, #03080d 0%, #07131c 48%, #111411 100%);
+    background-size: 36px 36px, 36px 36px, auto, auto;
+    color: #eaf3f6;
+}
+
+.charlie-shell {
+    width: min(1480px, calc(100% - 28px));
+    padding: 14px 0 32px;
+}
+
+.charlie-header {
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0 16px;
+}
+
+.charlie-header h1 {
+    font-size: 1.55rem;
+    color: #f4fbff;
+    letter-spacing: 0;
+}
+
+.charlie-header p,
+.charlie-header .ops-kicker {
+    color: #9bc5d3;
+}
+
+.charlie-system-status {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 4px 10px;
+    min-width: 310px;
+    padding: 10px 14px;
+    border: 1px solid rgba(75, 157, 192, 0.36);
+    border-radius: 8px;
+    background: rgba(5, 15, 23, 0.84);
+    box-shadow: inset 0 0 24px rgba(24, 210, 255, 0.06);
+}
+
+.charlie-system-status span,
+.charlie-system-status small {
+    color: #9bc5d3;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+}
+
+.charlie-system-status strong {
+    justify-self: start;
+    padding: 3px 9px;
+    border: 1px solid rgba(40, 211, 119, 0.45);
+    border-radius: 6px;
+    background: rgba(40, 211, 119, 0.14);
+    color: #41ec8b;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+}
+
+.charlie-system-status strong[data-state="blocked"],
+.charlie-system-status strong[data-state="needs-review"] {
+    border-color: rgba(255, 196, 58, 0.55);
+    background: rgba(255, 196, 58, 0.13);
+    color: #ffd45a;
+}
+
+.charlie-system-status small {
+    grid-column: 1 / -1;
+    text-transform: none;
+}
+
+.charlie-command-strip {
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.charlie-command-strip article,
+.charlie-panel,
+.charlie-mission-card {
+    border-color: rgba(75, 157, 192, 0.3);
+    background: rgba(8, 20, 30, 0.88);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.charlie-command-strip article {
+    padding: 10px 12px;
+}
+
+.charlie-command-strip span,
+.charlie-muted,
+.charlie-mission-meta dt {
+    color: #94b7c5;
+}
+
+.charlie-command-strip strong,
+.charlie-panel h2,
+.charlie-panel h3,
+.charlie-mission-card h3,
+.charlie-flow-title strong {
+    color: #f4fbff;
+}
+
+.charlie-command-strip strong {
+    font-size: 1.35rem;
+}
+
+.charlie-control-room {
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1.55fr) minmax(300px, 360px);
+    gap: 14px;
+}
+
+.charlie-panel {
+    padding: 14px;
+}
+
+.charlie-icon-button {
+    border-color: rgba(24, 210, 255, 0.48);
+    background: #0d57c8;
+    color: #f8fbff;
+}
+
+.charlie-icon-button:hover,
+.charlie-icon-button[aria-expanded="true"] {
+    background: #0f8fff;
+}
+
+.charlie-intake-form,
+.charlie-live-notice,
+.charlie-media-preview,
+.charlie-media-reference,
+.charlie-improvement-card,
+.charlie-system-missions,
+.charlie-agent-stage,
+.charlie-review-focus-grid aside,
+.charlie-visual-review {
+    border-color: rgba(75, 157, 192, 0.28);
+    background: rgba(5, 15, 23, 0.72);
+    color: #c9dbe2;
+}
+
+.charlie-safety-boundary,
+.charlie-media-drop span,
+.charlie-command-center-tile code,
+.charlie-flow-node small,
+.charlie-flow-node em,
+.charlie-visual-review-header span,
+.charlie-visual-stage-evidence span {
+    color: #9bc5d3;
+}
+
+.charlie-review-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.charlie-command-center-grid,
+.charlie-command-metrics,
+.charlie-command-detail-grid,
+.charlie-artifact-summary,
+.charlie-artifact-card {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-command-metrics,
+.charlie-command-detail-grid {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.charlie-command-center-tile {
+    min-height: 92px;
+    border-color: rgba(75, 157, 192, 0.28);
+    background: rgba(6, 18, 28, 0.86);
+}
+
+.charlie-command-center-tile strong {
+    color: #7ddcff;
+}
+
+.charlie-command-center-tile span {
+    color: #f5fbff;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.charlie-mission-lane {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-lane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid rgba(75, 157, 192, 0.22);
+    border-radius: 8px;
+    background: rgba(5, 15, 23, 0.72);
+}
+
+.charlie-lane-header strong {
+    color: #7ddcff;
+    font-size: 0.86rem;
+    text-transform: uppercase;
+}
+
+.charlie-lane-header span {
+    min-width: 26px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #0d57c8;
+    color: #fff;
+    text-align: center;
+    font-weight: 700;
+}
+
+.charlie-lane-list {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-organogram {
+    border-color: rgba(75, 157, 192, 0.28);
+    background:
+        linear-gradient(rgba(24, 210, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(24, 210, 255, 0.05) 1px, transparent 1px),
+        rgba(3, 10, 16, 0.92);
+    background-size: 30px 30px;
+}
+
+.charlie-core-node {
+    border-color: rgba(24, 210, 255, 0.56);
+    background: #07131c;
+}
+
+.charlie-flow-node {
+    border-color: rgba(75, 157, 192, 0.34);
+    background: rgba(6, 18, 28, 0.92);
+}
+
+.charlie-flow-node.is-complete {
+    background: rgba(40, 211, 119, 0.12);
+}
+
+.charlie-flow-node.is-active {
+    background: rgba(24, 210, 255, 0.12);
+}
+
+.charlie-flow-node.is-blocked,
+.charlie-flow-node.is-send-back {
+    background: rgba(255, 196, 58, 0.12);
+}
+
+.charlie-flow-node.is-review-ready {
+    background: rgba(139, 91, 255, 0.12);
+}
+
+.charlie-mission-card-header {
+    align-items: flex-start;
+}
+
+.charlie-mission-card h3,
+.charlie-mission-card p,
+.charlie-mission-meta dd,
+.charlie-command-center-tile span,
+.charlie-command-center-tile code {
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-card p {
+    color: #c9dbe2;
+}
+
+.charlie-card-tags span,
+.charlie-vault-summary span,
+.charlie-mission-card code,
+.charlie-agent-stage > div span {
+    background: rgba(24, 210, 255, 0.1);
+    color: #a8e7ff;
+}
+
+.charlie-mission-meta div {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.charlie-mission-meta dd {
+    color: #f2fbff;
+}
+
+.charlie-menu-rail .charlie-mission-meta,
+.charlie-side-rail .charlie-mission-meta,
+.charlie-agent-stage .charlie-mission-meta,
+.charlie-review-focus-grid .charlie-mission-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charlie-agent-stage .charlie-mission-meta dd {
+    font-size: 0.78rem;
+}
+
+.charlie-mission-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 8px;
+}
+
+.charlie-mission-actions button,
+#charlie_refresh {
+    white-space: normal;
+}
+
+.charlie-owner-actions button[data-action="approved"],
+.charlie-review-actions button[data-review-decision="approve_final_release"] {
+    border-color: rgba(40, 211, 119, 0.56);
+    background: #0d6d42;
+    color: #f4fff8;
+}
+
+.charlie-review-actions button[data-open-owner-review] {
+    border-color: rgba(24, 210, 255, 0.62);
+    background: #0d57c8;
+    color: #fff;
+}
+
+.charlie-owner-actions button[data-action="paused"],
+.charlie-review-actions button[data-review-decision="pause"] {
+    border-color: rgba(255, 196, 58, 0.62);
+    background: #6d530d;
+    color: #fff7d8;
+}
+
+.charlie-owner-actions button[data-action="rejected"],
+.charlie-owner-actions button[data-action="blocked"],
+.charlie-review-actions button[data-review-decision="reject"],
+.charlie-review-actions button[data-review-decision="send_back"] {
+    border-color: rgba(255, 88, 88, 0.62);
+    background: #75221f;
+    color: #fff3f1;
+}
+
+.charlie-evidence-details {
+    padding: 10px;
+    border: 1px solid rgba(75, 157, 192, 0.24);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.charlie-evidence-details summary,
+.charlie-mission-card summary {
+    color: #7ddcff;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.charlie-review-card .charlie-evidence-details {
+    max-height: none;
+    overflow: visible;
+}
+
+.charlie-review-card.is-blocked {
+    border-color: rgba(255, 88, 88, 0.58);
+}
+
+.charlie-review-card.is-pr-ready {
+    border-color: rgba(139, 91, 255, 0.58);
+}
+
+.charlie-blocked-banner {
+    border-color: rgba(255, 88, 88, 0.5);
+    background: rgba(58, 14, 16, 0.88);
+    color: #ffe2dd;
+}
+
+.charlie-blocked-banner strong {
+    color: #ffb4a8;
+}
+
+.charlie-return-loop,
+.charlie-unresolved-blockers article {
+    border-color: rgba(255, 196, 58, 0.42);
+    background: rgba(38, 27, 8, 0.78);
+}
+
+.charlie-return-loop small,
+.charlie-unresolved-blockers article small {
+    color: #d4b981;
+}
+
+.charlie-unresolved-blockers article strong {
+    color: #ffd45a;
+}
+
+.charlie-review-modal-panel,
+.charlie-visual-overlay-panel {
+    background: #07131c;
+    color: #eaf3f6;
+}
+
+@media (max-width: 1180px) {
+    .charlie-control-room {
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    }
+
+    .charlie-side-rail {
+        grid-column: 1 / -1;
+        position: static;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .charlie-control-room {
+        grid-template-columns: 1fr;
+    }
+
+    .charlie-organogram .charlie-flow-node {
+        position: static !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+        width: auto !important;
+        transform: none !important;
+    }
+
+    .charlie-system-status {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .charlie-command-metrics,
+    .charlie-command-detail-grid,
+    .charlie-side-rail {
+        grid-template-columns: repeat(2, minmax(150px, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .charlie-shell {
+        width: min(100% - 18px, 1480px);
+    }
+
+    .charlie-system-status,
+    .charlie-control-room,
+    .charlie-command-metrics,
+    .charlie-command-detail-grid,
+    .charlie-side-rail,
+    .charlie-review-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .charlie-command-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

@@ -40,8 +40,11 @@
     list: document.getElementById("charlie_mission_list"),
     reviewList: document.getElementById("charlie_review_list"),
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
+    systemStatus: document.getElementById("charlie_system_status"),
+    systemLastUpdate: document.getElementById("charlie_system_last_update"),
     commandCenter: document.getElementById("charlie_command_center"),
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
+    artifactSummary: document.getElementById("charlie_artifact_summary"),
     improvementsList: document.getElementById("charlie_improvements_list"),
     improvementsAnalyze: document.getElementById("charlie_improvements_analyze"),
     liveNotice: document.getElementById("charlie_live_notice"),
@@ -236,6 +239,7 @@
     if (els.statusLine) {
       els.statusLine.textContent = `${state.missions.length} mission records loaded. Decisions here update mission state only.`;
     }
+    if (els.systemLastUpdate) els.systemLastUpdate.textContent = `Last update ${new Date().toLocaleTimeString()}`;
     Object.keys(els.counts).forEach((key) => {
       if (!els.counts[key]) return;
       if (key === "release") {
@@ -248,6 +252,7 @@
     renderCommandCenter();
     renderAliveDashboard();
     if (!els.list) return;
+    renderArtifactSummary();
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
       renderReview();
@@ -262,9 +267,7 @@
       renderReview();
       return;
     }
-    visibleMissions.forEach((mission) => {
-      els.list.appendChild(missionCard(mission));
-    });
+    renderMissionLanes(visibleMissions);
     if (systemMissions.length && ownerMissions.length) {
       const details = document.createElement("details");
       details.className = "charlie-system-missions";
@@ -300,29 +303,26 @@
     const runner = data.local_runner || {};
     const improvements = data.improvements || {};
     const retrievalCount = recentReadiness.reduce((total, item) => total + Number((item.vault_retrieval || {}).selected_count || 0), 0);
+    const runnerValue = runner.active ? "Running" : (data.local_runner_scope === "render_cannot_see_laptop_runner" ? "Local unknown" : "Stopped");
     els.commandCenter.innerHTML = `
-      ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
-      ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
-      ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
-      ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
-      ${commandCenterTile("Vault Retrieval", `${retrievalCount} source hits`, recentReadiness.length ? "ranked by mission context" : "waiting for missions")}
-      ${commandCenterTile("Owner Rules", `${(ownerPreferences.preferences || []).length} active`, "applied in stage prompts")}
-      ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
-      ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
-      ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
-      ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
-      ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
-      ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
-      ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
-      ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
-      ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
-      ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
-      ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
-      ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
-        shortId(item.mission_id || ""),
-        `${Number((item.core_readiness || {}).overall_percent || 0)}% ready`,
-        `${item.title || item.status || "recent mission"} | ${(item.vault_retrieval || {}).selected_count || 0} Vault docs`
-      )).join("")}
+      <section class="charlie-command-metrics" aria-label="Command metrics">
+        ${commandCenterTile("Mission Truth", `${(review.ready || []).length} review ready`, `${(review.blocked || []).length} blocked | ${(queue.approved || []).length} waiting pickup`)}
+        ${commandCenterTile("Runner State", runnerValue, runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : runnerStateLabel((state.runnerStatus || {}).status))}
+        ${commandCenterTile("Risk Gate", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} Vault table gap(s)` : "Vault checks available")}
+        ${commandCenterTile("Release Gate", `${(release.waiting_final_bridge || []).length} waiting`, release.verify_url_configured ? "Live verify configured" : "Needs verify URL")}
+      </section>
+      <section class="charlie-command-detail-grid" aria-label="Core detail">
+        ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
+        ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
+        ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+        ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
+        ${commandCenterTile("Vault Retrieval", `${retrievalCount} source hits`, recentReadiness.length ? "ranked by mission context" : "waiting for missions")}
+        ${commandCenterTile("Owner Rules", `${(ownerPreferences.preferences || []).length} active`, "applied in stage prompts")}
+        ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
+        ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
+        ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
+        ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      </section>
     `;
   }
 
@@ -412,6 +412,25 @@
   function renderAliveDashboard() {
     renderWorkflowMap();
     renderActiveSummary();
+    renderSystemStatus();
+    renderArtifactSummary();
+  }
+
+  function renderSystemStatus() {
+    if (!els.systemStatus) return;
+    const runner = state.runnerStatus || {};
+    const local = runner.local_runner || {};
+    const status = runner.status || "unknown";
+    const remoteBlind = runner.local_runner_scope === "render_cannot_see_laptop_runner";
+    const hasBlocked = state.reviewMissions.some((mission) => mission.status === "blocked");
+    let label = "Needs Review";
+    if (local.active) label = "Operational";
+    else if (remoteBlind) label = "Local Only";
+    else if (status.includes("waiting")) label = "Waiting Pickup";
+    else if (status.includes("idle")) label = "Idle";
+    else if (hasBlocked) label = "Blocked";
+    els.systemStatus.textContent = label;
+    els.systemStatus.dataset.state = label.toLowerCase().replace(/\s+/g, "-");
   }
 
   function renderWorkflowMap() {
@@ -496,6 +515,45 @@
       || firstMissionFromList(state.reviewMissions)
       || firstMissionFromList(state.missions)
       || null;
+  }
+
+  function renderMissionLanes(missions) {
+    if (!els.list) return;
+    const lanes = [
+      {key: "active", title: "Active", statuses: ["approved", "in_progress", "release_approved", "release_in_progress"]},
+      {key: "review", title: "Needs Owner Action", statuses: ["pr_ready", "blocked", "new"]},
+      {key: "later", title: "Paused / Done", statuses: ["paused", "rejected", "done", "merged", "deployed"]},
+    ];
+    const used = new Set();
+    lanes.forEach((lane) => {
+      const laneMissions = missions.filter((mission) => lane.statuses.includes(safeText(mission.status)));
+      laneMissions.forEach((mission) => used.add(mission.mission_id));
+      els.list.appendChild(missionLane(lane, laneMissions));
+    });
+    const overflow = missions.filter((mission) => !used.has(mission.mission_id));
+    if (overflow.length) {
+      els.list.appendChild(missionLane({key: "other", title: "Other"}, overflow));
+    }
+  }
+
+  function missionLane(lane, missions) {
+    const section = document.createElement("section");
+    section.className = `charlie-mission-lane is-${lane.key}`;
+    section.innerHTML = `
+      <div class="charlie-lane-header">
+        <strong>${escapeHtml(lane.title)}</strong>
+        <span>${missions.length}</span>
+      </div>
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "charlie-lane-list";
+    if (!missions.length) {
+      wrap.innerHTML = '<p class="charlie-empty">Nothing in this lane.</p>';
+    } else {
+      missions.forEach((mission) => wrap.appendChild(missionCard(mission)));
+    }
+    section.appendChild(wrap);
+    return section;
   }
 
   function firstMissionFromList(items) {
@@ -589,7 +647,7 @@
 
   function missionCard(mission) {
     const card = document.createElement("article");
-    card.className = "charlie-mission-card";
+    card.className = `charlie-mission-card is-${escapeHtml(safeText(mission.status || "unknown").replace(/_/g, "-"))}`;
     const missionId = safeText(mission.mission_id);
     const title = safeText(mission.title || mission.raw_text || "Untitled mission");
     const vault = mission.vault || {};
@@ -608,6 +666,8 @@
       </div>
       <div class="charlie-card-tags">
         <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
+        <span>${escapeHtml(safeText(mission.urgency || "P2"))}</span>
+        <span>${escapeHtml(safeText(mission.approval_level || "LEVEL 3"))}</span>
       </div>
       <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
       <div class="charlie-vault-summary">
@@ -616,6 +676,8 @@
         <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
       </div>
       <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
+      <details class="charlie-workflow-detail">
+        <summary>Stage handoff controls</summary>
       <div class="charlie-workflow-actions" aria-label="Mission workflow actions">
         <button type="button" data-agent-step="idea_expander">Idea Done</button>
         <button type="button" data-agent-step="product_architect">Product Done</button>
@@ -626,6 +688,7 @@
         <button type="button" data-agent-step="qa_red_team">QA Done</button>
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
+      </details>
       <dl class="charlie-mission-meta">
         <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
         <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
@@ -633,7 +696,7 @@
         <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
-      <div class="charlie-mission-actions">
+      <div class="charlie-mission-actions charlie-owner-actions">
         <button type="button" data-queue-priority="${Math.max(1, queuePriority - 10)}">Earlier</button>
         <button type="button" data-queue-priority="${Math.min(999, queuePriority + 10)}">Later</button>
         <button type="button" data-vault-stage="planned">Mark Planned</button>
@@ -686,7 +749,7 @@
 
   function reviewCard(mission) {
     const card = document.createElement("article");
-    card.className = "charlie-mission-card charlie-review-card";
+    card.className = `charlie-mission-card charlie-review-card is-${escapeHtml(safeText(mission.status || "review").replace(/_/g, "-"))}`;
     const missionId = safeText(mission.mission_id);
     const title = safeText(mission.title || mission.raw_text || "Untitled mission");
     const metadata = mission.metadata || {};
@@ -712,7 +775,7 @@
       </dl>
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
       <p>${escapeHtml(safeText(reviewPacket.summary || mission.raw_text || title)).slice(0, 220)}</p>
-      <details data-review-details="${escapeHtml(missionId)}"${state.openReviewDetails.has(missionId) ? " open" : ""}>
+      <details class="charlie-evidence-details" data-review-details="${escapeHtml(missionId)}"${state.openReviewDetails.has(missionId) ? " open" : " open"}>
         <summary>Short evidence</summary>
         ${visualReviewMarkup(reviewPacket.visual_review || {}, localPreview, links)}
         <div class="charlie-review-packet">${reviewPacketMarkup(mission, reviewPacket)}</div>
@@ -849,6 +912,34 @@
           </div>
         </aside>
       </div>
+    `;
+  }
+
+  function renderArtifactSummary() {
+    if (!els.artifactSummary) return;
+    const mission = currentMissionForFlow();
+    const packet = reviewPacketForMission(mission);
+    const links = packet.links || {};
+    const changedFiles = Array.isArray(packet.changed_files) ? packet.changed_files : [];
+    const tests = Array.isArray(packet.test_evidence) ? packet.test_evidence : [];
+    const blockers = packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers) || [];
+    const preview = packet.local_preview || {};
+    els.artifactSummary.innerHTML = `
+      <article class="charlie-artifact-card">
+        <strong>${escapeHtml(mission ? mission.title || mission.mission_id || "Selected mission" : "No active mission")}</strong>
+        <dl class="charlie-mission-meta">
+          <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || packet.pr_url || packet.diff_url)}</dd></div>
+          <div><dt>Local preview</dt><dd>${localPreviewMarkup(preview, links)}</dd></div>
+          <div><dt>Files</dt><dd>${escapeHtml(changedFiles.length ? `${changedFiles.length} captured` : "Not captured")}</dd></div>
+          <div><dt>Tests</dt><dd>${escapeHtml(tests.length ? `${tests.length} evidence item(s)` : "Not captured")}</dd></div>
+        </dl>
+        <details class="charlie-evidence-details" open>
+          <summary>Evidence and artifacts</summary>
+          <strong>Changed files</strong>${listMarkup(changedFiles, "No changed files captured yet.")}
+          <strong>Test evidence</strong>${listMarkup(tests, "No test evidence captured yet.")}
+          <strong>Blockers</strong>${unresolvedBlockersMarkup(blockers)}
+        </details>
+      </article>
     `;
   }
 

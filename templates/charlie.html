@@ -10,9 +10,14 @@
   <main class="charlie-shell">
     <header class="charlie-header">
       <div>
-        <span class="ops-kicker">Owner Command Layer</span>
-        <h1>CHARLIE Mission Control</h1>
+        <span class="ops-kicker">CHARLIE is the AI owner interface</span>
+        <h1>CHARLIE CORE Mission Control</h1>
         <p id="charlie_status_line">Loading mission queue...</p>
+      </div>
+      <div class="charlie-system-status" aria-label="System status">
+        <span>System Status</span>
+        <strong id="charlie_system_status">Checking</strong>
+        <small id="charlie_system_last_update">Last update pending</small>
       </div>
       <nav class="ops-header-actions" aria-label="CHARLIE navigation">
         <a href="/">Dashboard</a>
@@ -61,7 +66,7 @@
         <div class="ops-panel-header">
           <div>
             <span class="ops-panel-kicker">Controls</span>
-            <h2>Mission Queue</h2>
+          <h2>Mission Queue Lanes</h2>
           </div>
           <div class="charlie-rail-actions">
             <button type="button" id="charlie_add_mission" class="charlie-icon-button" aria-expanded="false" aria-controls="charlie_mission_create_form" title="Add mission">+</button>
@@ -142,7 +147,7 @@
           <div class="ops-panel-header">
             <div>
               <span class="ops-panel-kicker">Live Flow</span>
-              <h2>CHARLIE Workflow</h2>
+          <h2>Active Runner Flow</h2>
             </div>
             <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
           </div>
@@ -160,6 +165,18 @@
           </div>
           <div id="charlie_command_center" class="charlie-command-center-grid" aria-live="polite">
             <p class="charlie-muted">Loading command center...</p>
+          </div>
+        </section>
+
+        <section class="charlie-panel charlie-evidence-panel" aria-label="Evidence and artifact summary">
+          <div class="ops-panel-header">
+            <div>
+              <span class="ops-panel-kicker">Evidence</span>
+              <h2>Artifacts And Blockers</h2>
+            </div>
+          </div>
+          <div id="charlie_artifact_summary" class="charlie-artifact-summary" aria-live="polite">
+            <p class="charlie-muted">Waiting for mission evidence...</p>
           </div>
         </section>
 
