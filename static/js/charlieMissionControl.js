@@ -84,6 +84,18 @@
     addMission: document.getElementById("charlie_add_mission"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
+    headerSystemState: document.getElementById("charlie_header_system_state"),
+    headerRunnerState: document.getElementById("charlie_header_runner_state"),
+    bottom: {
+      health: document.getElementById("charlie_bottom_health"),
+      healthDetail: document.getElementById("charlie_bottom_health_detail"),
+      runner: document.getElementById("charlie_bottom_runner"),
+      runnerDetail: document.getElementById("charlie_bottom_runner_detail"),
+      review: document.getElementById("charlie_bottom_review"),
+      reviewDetail: document.getElementById("charlie_bottom_review_detail"),
+      truth: document.getElementById("charlie_bottom_truth"),
+      truthDetail: document.getElementById("charlie_bottom_truth_detail"),
+    },
     createForm: document.getElementById("charlie_mission_create_form"),
     newTitle: document.getElementById("charlie_new_title"),
     newConcept: document.getElementById("charlie_new_concept"),
@@ -168,6 +180,8 @@
     } catch (error) {
       setMessage(error.message || "Could not load CHARLIE missions.", "error");
       if (els.statusLine) els.statusLine.textContent = "Mission queue unavailable.";
+      state.runnerStatus = state.runnerStatus || {status: "unavailable", next_action: "Mission queue unavailable."};
+      renderAliveDashboard();
     } finally {
       state.loading = false;
     }
@@ -441,6 +455,36 @@
   function renderAliveDashboard() {
     renderWorkflowMap();
     renderActiveSummary();
+    renderBottomRail();
+  }
+
+  function renderBottomRail() {
+    if (!els.bottom || !els.bottom.health) return;
+    const data = state.commandCenter || {};
+    const runner = state.runnerStatus || {};
+    const vault = data.vault || {};
+    const vaultHealth = vault.health || {};
+    const review = data.review || {};
+    const local = runner.local_runner || data.local_runner || {};
+    const recentReadiness = Array.isArray(((data.charlie_core || {}).recent_readiness)) ? data.charlie_core.recent_readiness : [];
+    const readinessAverage = recentReadiness.length
+      ? Math.round(recentReadiness.reduce((total, item) => total + Number((item.core_readiness || {}).overall_percent || 0), 0) / recentReadiness.length)
+      : 0;
+    const readyCount = Array.isArray(review.ready) ? review.ready.length : state.reviewMissions.length;
+    const blockedCount = Array.isArray(review.blocked) ? review.blocked.length : 0;
+    const runnerLabel = runnerStateLabel(runner.status || (local.active ? "active_mission_in_progress" : "idle_no_approved_mission"));
+    const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
+    const systemLabel = vaultMissing ? "Attention" : "Operational";
+    if (els.headerSystemState) els.headerSystemState.textContent = systemLabel;
+    if (els.headerRunnerState) els.headerRunnerState.textContent = runnerLabel;
+    els.bottom.health.textContent = readinessAverage ? `${readinessAverage}%` : (vaultHealth.status || "Unknown");
+    els.bottom.healthDetail.textContent = vaultMissing ? `${vaultMissing} Vault table issue(s)` : "Vault/data readiness visible";
+    els.bottom.runner.textContent = runnerLabel;
+    els.bottom.runnerDetail.textContent = local.active ? `${local.current_agent || "Agent"} running` : (runner.local_runner_scope || "local boundary");
+    els.bottom.review.textContent = `${readyCount} ready / ${blockedCount} blocked`;
+    els.bottom.reviewDetail.textContent = "Evidence required before owner review";
+    els.bottom.truth.textContent = vault.version || "Vault Brain";
+    els.bottom.truthDetail.textContent = data.execution_boundary || "Dashboard records decisions only";
   }
 
   function renderWorkflowMap() {
@@ -454,6 +498,7 @@
     const blocked = activeMission && (activeMission.status === "blocked" || blockedPacket.review_status === "agent_blocked");
     const reviewReady = activeMission && activeMission.status === "pr_ready";
     const backflowEvents = backflowEventsForMission(activeMission);
+    const allAgents = workflowOrderedAgents(workflow);
     if (els.liveNotice) {
       const remoteBlind = runner.local_runner_scope === "render_cannot_see_laptop_runner";
       els.liveNotice.classList.toggle("is-warning", remoteBlind || Boolean(blocked));
@@ -462,9 +507,17 @@
         : runner.next_action || "Local runner heartbeat and mission ledger are feeding this live workflow.";
     }
     const displayAgents = workflowDisplayOrder(workflow);
+    const firstVisible = displayAgents.length && allAgents.length ? Math.max(0, allAgents.indexOf(displayAgents[0])) + 1 : 0;
+    const lastVisible = displayAgents.length ? firstVisible + displayAgents.length - 1 : 0;
+    const stageScope = allAgents.length && displayAgents.length
+      ? `Stages ${firstVisible}-${lastVisible} of ${allAgents.length}`
+      : "Workflow waiting";
     els.workflowMap.innerHTML = `
       <div class="charlie-flow-title">
-        <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
+        <div>
+          <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
+          <small>${escapeHtml(stageScope)}</small>
+        </div>
         <span>${escapeHtml(activeMission ? activeMission.status || "unknown" : "waiting")}</span>
       </div>
       ${blocked ? blockedReviewBanner(blockedPacket) : ""}
@@ -483,6 +536,13 @@
           index,
         })).join("")}
         </div>
+      </div>
+      <div class="charlie-flow-legend" aria-label="Workflow status legend">
+        <span><i class="is-complete"></i>Completed</span>
+        <span><i class="is-active"></i>Active</span>
+        <span><i class="is-review-ready"></i>Review</span>
+        <span><i class="is-blocked"></i>Blocked</span>
+        <span><i class="is-send-back"></i>Send Back</span>
       </div>
       ${backflowEvents.length ? `<div class="charlie-flow-backflows">${backflowEvents.slice(0, 4).map(backflowLoopMarkup).join("")}</div>` : ""}
     `;
@@ -546,6 +606,15 @@
   }
 
   function workflowDisplayOrder(workflow) {
+    const ordered = workflowOrderedAgents(workflow);
+    const active = normalizeAgent((state.runnerStatus.local_runner || {}).current_agent || workflowActiveAgent(workflow));
+    if (!active || ordered.length <= 6) return ordered.slice(0, 6);
+    const activeIndex = Math.max(0, ordered.indexOf(active));
+    const start = Math.max(0, Math.min(activeIndex - 2, ordered.length - 6));
+    return ordered.slice(start, start + 6);
+  }
+
+  function workflowOrderedAgents(workflow) {
     const selected = (Array.isArray(workflow) ? workflow : [])
       .map((entry) => normalizeAgent(entry && entry.agent))
       .filter(Boolean);

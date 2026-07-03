@@ -14,6 +14,11 @@
         <h1>CHARLIE Mission Control</h1>
         <p id="charlie_status_line">Loading mission queue...</p>
       </div>
+      <div class="charlie-system-status" aria-label="System status">
+        <span>System Status</span>
+        <strong id="charlie_header_system_state">Checking</strong>
+        <small id="charlie_header_runner_state">Runner check pending</small>
+      </div>
       <nav class="ops-header-actions" aria-label="CHARLIE navigation">
         <a href="/">Dashboard</a>
         <a href="/oom-sakkie">Oom Sakkie</a>
@@ -234,6 +239,29 @@
           <div id="charlie_review_list" class="charlie-review-list" aria-live="polite"></div>
         </section>
       </aside>
+    </section>
+
+    <section class="charlie-bottom-rail" aria-label="Command center health strip">
+      <article>
+        <span>System Health</span>
+        <strong id="charlie_bottom_health">Checking</strong>
+        <small id="charlie_bottom_health_detail">Vault and data readiness</small>
+      </article>
+      <article>
+        <span>Runner Status</span>
+        <strong id="charlie_bottom_runner">Checking</strong>
+        <small id="charlie_bottom_runner_detail">Local runner boundary</small>
+      </article>
+      <article>
+        <span>Review Quality</span>
+        <strong id="charlie_bottom_review">Checking</strong>
+        <small id="charlie_bottom_review_detail">Owner review evidence</small>
+      </article>
+      <article>
+        <span>Source Truth</span>
+        <strong id="charlie_bottom_truth">Vault Brain</strong>
+        <small id="charlie_bottom_truth_detail">Supabase runtime plus Vault guidance</small>
+      </article>
     </section>
 
     <div id="charlie_review_modal" class="charlie-review-modal hidden" role="dialog" aria-modal="true" aria-label="Owner Review">
