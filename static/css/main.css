@@ -9142,6 +9142,11 @@ body.oom-farm-command-body {
     top: 12px;
 }
 
+.charlie-menu-rail {
+    max-height: calc(100vh - 24px);
+    overflow: hidden;
+}
+
 .charlie-mission-stage,
 .charlie-side-rail {
     gap: 12px;
@@ -9237,6 +9242,36 @@ body.oom-farm-command-body {
 .charlie-mission-card {
     position: relative;
     padding: 12px;
+}
+
+.charlie-menu-rail .charlie-queue-preview {
+    min-height: 0;
+}
+
+.charlie-menu-rail .charlie-mission-list {
+    max-height: min(52vh, 620px);
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-color: rgba(82, 191, 255, 0.55) rgba(4, 13, 22, 0.72);
+}
+
+.charlie-menu-rail .charlie-mission-card {
+    min-height: 0;
+}
+
+.charlie-menu-rail .charlie-workflow-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charlie-menu-rail .charlie-mission-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charlie-menu-rail .charlie-mission-actions button,
+.charlie-menu-rail .charlie-workflow-actions button {
+    min-height: 34px;
+    padding: 7px 8px;
+    font-size: 0.76rem;
 }
 
 .charlie-mission-card.is-current {
@@ -9612,8 +9647,29 @@ body.oom-farm-command-body {
     background: rgba(45, 33, 7, 0.46);
 }
 
+.charlie-review-empty-state {
+    display: grid;
+    gap: 10px;
+}
+
+.charlie-review-empty-state strong {
+    color: #f7fbff;
+}
+
+.charlie-review-empty-state span {
+    color: #91a9bd;
+    font-size: 0.86rem;
+    line-height: 1.35;
+}
+
 .charlie-review-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.charlie-review-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+    filter: grayscale(0.35);
 }
 
 .charlie-review-actions button[data-review-decision="approve_final_release"] {
@@ -9648,6 +9704,29 @@ body.oom-farm-command-body {
     .charlie-menu-rail,
     .charlie-side-rail {
         position: static;
+    }
+
+    .charlie-control-room {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .charlie-mission-stage {
+        order: 1;
+    }
+
+    .charlie-side-rail {
+        order: 2;
+    }
+
+    .charlie-menu-rail {
+        order: 3;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .charlie-menu-rail .charlie-mission-list {
+        max-height: 520px;
     }
 
     .charlie-agent-ring,
@@ -9696,6 +9775,10 @@ body.oom-farm-command-body {
 
     .charlie-live-panel {
         min-height: 0;
+    }
+
+    .charlie-menu-rail .charlie-mission-list {
+        max-height: 440px;
     }
 
     .charlie-organogram {

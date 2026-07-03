@@ -165,7 +165,7 @@
     setMessage("", "info");
     const status = els.filter ? els.filter.value : "";
     state.activeFilter = status || "";
-    const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
+    const query = status ? `?status=${encodeURIComponent(status)}&limit=30&compact=1` : "?limit=30&compact=1";
     try {
       const [summary, missions] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
@@ -401,7 +401,20 @@
       else state.openReviewDetails.delete(missionId);
     });
     if (!state.reviewMissions.length) {
-      els.reviewList.innerHTML = '<p class="charlie-empty">No missions are waiting at owner review.</p>';
+      els.reviewList.innerHTML = `
+        <div class="charlie-empty charlie-review-empty-state">
+          <strong>No missions are waiting at owner review.</strong>
+          <span>Owner release controls activate only when a mission reaches review ready or blocked review.</span>
+          <div class="charlie-mission-actions charlie-review-actions" aria-label="Owner review controls unavailable">
+            <button type="button" disabled>Open Review</button>
+            <button type="button" disabled>Approve Final</button>
+            <button type="button" disabled>Send Back</button>
+            <button type="button" disabled>Pause</button>
+            <button type="button" disabled>Reject</button>
+            <button type="button" disabled>Mark Done</button>
+          </div>
+        </div>
+      `;
       return;
     }
     els.reviewList.innerHTML = "";

@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_from_directory
@@ -76,6 +76,9 @@ def charlie_build_relay_missions_route():
         status=request.args.get("status", ""),
         limit=request.args.get("limit", 10),
     )
+    compact = str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"}
+    if compact and isinstance(result, dict) and isinstance(result.get("missions"), list):
+        result = {**result, "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])]}
     return jsonify(result), status_code
 
 
@@ -148,7 +151,7 @@ def charlie_build_relay_runner_status_route():
     review_backlog = pr_ready
     next_approved = _first_mission(approved_queue)
     next_release_approved = _first_mission(release_approved)
-    local_status = local_runner_status()
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False))
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -227,7 +230,7 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     detailed = str(request.args.get("detail") or "").strip().lower() in {"1", "true", "yes", "full"}
-    local_status = local_runner_status()
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False))
     if detailed:
         vault_health, _vault_health_status = vault_tables_health()
         improvements, _improvements_status = list_improvement_proposals(limit=8)
@@ -561,6 +564,7 @@ def _mission_dashboard_summary(mission):
         )
         if key in review_packet
     }
+    compact_review_packet = _compact_review_packet(compact_review_packet)
     compact_metadata = {}
     if compact_review_packet:
         compact_metadata["review_packet"] = compact_review_packet
@@ -579,25 +583,173 @@ def _mission_dashboard_summary(mission):
         )
         if key in vault
     }
+    for key in ("problem_statement", "desired_outcome", "source_truth"):
+        if key in compact_vault:
+            compact_vault[key] = _short_text(compact_vault.get(key), 500)
     return {
         "mission_id": mission.get("mission_id", ""),
         "status": mission.get("status", ""),
         "source": mission.get("source", ""),
-        "raw_text": mission.get("raw_text", ""),
-        "title": mission.get("title", ""),
+        "raw_text": _short_text(mission.get("raw_text", ""), 700),
+        "title": _short_text(mission.get("title", ""), 180),
         "urgency": mission.get("urgency", ""),
         "mission_type": mission.get("mission_type", ""),
         "approval_level": mission.get("approval_level", ""),
-        "selected_next_step": mission.get("selected_next_step", ""),
-        "owner_decision": mission.get("owner_decision", ""),
+        "selected_next_step": _short_text(mission.get("selected_next_step", ""), 300),
+        "owner_decision": _short_text(mission.get("owner_decision", ""), 300),
         "created_at": mission.get("created_at", ""),
         "updated_at": mission.get("updated_at", ""),
         "queue_class": mission.get("queue_class", "owner_work"),
         "queue_priority": mission.get("queue_priority"),
         "vault": compact_vault,
-        "agent_workflow": mission.get("agent_workflow", []),
+        "agent_workflow": _compact_workflow(mission.get("agent_workflow", [])),
         "metadata": compact_metadata,
     }
+
+
+def _compact_workflow(workflow):
+    items = workflow if isinstance(workflow, list) else []
+    compact = []
+    for item in items[:24]:
+        item = item if isinstance(item, dict) else {}
+        compact.append({
+            "agent": _short_text(item.get("agent", ""), 60),
+            "status": _short_text(item.get("status", "pending"), 40),
+            "findings": _short_text(item.get("findings", ""), 220),
+            "updated_at": _short_text(item.get("updated_at", ""), 60),
+        })
+    return compact
+
+
+def _compact_review_packet(packet):
+    packet = packet if isinstance(packet, dict) else {}
+    compact = dict(packet)
+    if "summary" in compact:
+        compact["summary"] = _short_text(compact.get("summary"), 900)
+    if "blocked_reason" in compact:
+        compact["blocked_reason"] = _short_text(compact.get("blocked_reason"), 500)
+    if "test_evidence" in compact:
+        compact["test_evidence"] = [_short_text(item, 350) for item in _as_list(compact.get("test_evidence"))[:4]]
+    if "backflow_events" in compact:
+        compact["backflow_events"] = _compact_event_list(compact.get("backflow_events"), limit=3)
+    if "unresolved_blockers" in compact:
+        compact["unresolved_blockers"] = _compact_event_list(compact.get("unresolved_blockers"), limit=5)
+    if "visual_review" in compact:
+        compact["visual_review"] = _compact_visual_review(compact.get("visual_review"))
+    return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
+
+
+def _compact_visual_review(visual_review):
+    review = visual_review if isinstance(visual_review, dict) else {}
+    media = []
+    for item in _as_list(review.get("media"))[:4]:
+        item = item if isinstance(item, dict) else {}
+        reference = str(item.get("reference") or item.get("url") or "").strip()
+        if reference.startswith("data:image/"):
+            reference = ""
+        media.append({
+            "label": _short_text(item.get("label") or item.get("filename") or "Review media", 90),
+            "reference": reference,
+            "media_type": item.get("media_type") or "image",
+        })
+    capture = review.get("capture") if isinstance(review.get("capture"), dict) else {}
+    return {
+        "status": review.get("status", ""),
+        "summary": _short_text(review.get("summary"), 600),
+        "capture_source": review.get("capture_source") or capture.get("capture_source", ""),
+        "local_preview": review.get("local_preview") if isinstance(review.get("local_preview"), dict) else {},
+        "media": [item for item in media if item.get("reference")],
+        "stage_evidence": _compact_event_list(review.get("stage_evidence"), limit=4),
+    }
+
+
+def _compact_runner_status(status):
+    status = status if isinstance(status, dict) else {}
+    compact = {
+        key: status.get(key)
+        for key in (
+            "success",
+            "status",
+            "active",
+            "pid",
+            "process_alive",
+            "heartbeat_fresh",
+            "last_seen",
+            "age_seconds",
+            "last_result_status",
+            "last_mission_id",
+            "elapsed_seconds",
+            "changed_files_count",
+            "final_artifact_present",
+            "execution_artifact",
+            "agent_runner_version",
+            "runner_source_commit",
+            "current_source_commit",
+            "runner_code_stale",
+            "current_agent",
+            "current_action",
+            "agent_ledger_path",
+            "log_path",
+            "heartbeat_path",
+            "command",
+            "next_action",
+            "can_start_from_web",
+            "can_stop_from_web",
+        )
+        if key in status
+    }
+    compact["stdout_tail"] = _short_text(status.get("stdout_tail"), 500)
+    compact["stderr_tail"] = _short_text(status.get("stderr_tail"), 500)
+    compact["orphan_processes"] = _compact_event_list(status.get("orphan_processes"), limit=3)
+    compact["agent_ledger"] = _compact_agent_ledger(status.get("agent_ledger"))
+    return compact
+
+
+def _compact_agent_ledger(ledger):
+    ledger = ledger if isinstance(ledger, dict) else {}
+    latest = ledger.get("latest_stage") if isinstance(ledger.get("latest_stage"), dict) else {}
+    return {
+        "version": ledger.get("version", ""),
+        "execution_id": ledger.get("execution_id", ""),
+        "status": ledger.get("status", ""),
+        "last_progress_at": ledger.get("last_progress_at", ""),
+        "blocked_agent": ledger.get("blocked_agent", ""),
+        "blocked_reason": _short_text(ledger.get("blocked_reason"), 400),
+        "backflow_events": _compact_event_list(ledger.get("backflow_events"), limit=3),
+        "latest_stage": {
+            "agent": latest.get("agent", ""),
+            "status": latest.get("status", ""),
+            "attempt": latest.get("attempt", 1),
+            "current_action": _short_text(latest.get("current_action"), 220),
+            "commands_run": [_short_text(item, 180) for item in _as_list(latest.get("commands_run"))[-3:]],
+            "files_inspected": [_short_text(item, 160) for item in _as_list(latest.get("files_inspected"))[-5:]],
+            "changed_files": [_short_text(item, 160) for item in _as_list(latest.get("changed_files"))[-5:]],
+            "stdout_tail": _short_text(latest.get("stdout_tail"), 500),
+            "stderr_tail": _short_text(latest.get("stderr_tail"), 500),
+            "quality_gate": latest.get("quality_gate") if isinstance(latest.get("quality_gate"), dict) else {},
+        },
+    }
+
+
+def _compact_event_list(items, limit=5):
+    compact = []
+    for item in _as_list(items)[:limit]:
+        if isinstance(item, dict):
+            compact.append({str(key): _short_text(value, 300) for key, value in item.items() if key not in {"reference", "image", "data_url"}})
+        else:
+            compact.append(_short_text(item, 300))
+    return compact
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else ([] if value in (None, "") else [value])
+
+
+def _short_text(value, limit=500):
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 1]}..."
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["POST"])
