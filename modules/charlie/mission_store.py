@@ -606,8 +606,8 @@ def normalize_approval_level(value):
     return compact
 
 
-def agent_sequence_for_mission(mission_type=""):
-    plan = build_core_plan({"mission_type": mission_type, "raw_text": mission_type})
+def agent_sequence_for_mission(mission_type="", raw_text=""):
+    plan = build_core_plan({"mission_type": mission_type, "raw_text": raw_text or mission_type})
     sequence = plan.get("workflow_template", {}).get("agent_order") or []
     runner_sequence = []
     for agent in sequence:
@@ -1503,8 +1503,8 @@ def _normalize_mission_text(value):
 def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
     metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
-    metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", "")))
-    metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", "")))
+    metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", ""), raw_text))
+    metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", ""), raw_text))
     media_references = mission.get("media_references")
     if isinstance(media_references, list):
         metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
@@ -1545,8 +1545,8 @@ def _default_mission_vault(raw_text, mission):
     }
 
 
-def _default_agent_workflow(mission_type=""):
-    sequence = agent_sequence_for_mission(mission_type)
+def _default_agent_workflow(mission_type="", raw_text=""):
+    sequence = agent_sequence_for_mission(mission_type, raw_text)
     workflow = []
     for index, agent in enumerate(sequence):
         definition = AGENT_DEFINITIONS[agent]
@@ -1565,8 +1565,8 @@ def _default_agent_workflow(mission_type=""):
     return workflow
 
 
-def _default_context_pack(mission_type=""):
-    sequence = agent_sequence_for_mission(mission_type)
+def _default_context_pack(mission_type="", raw_text=""):
+    sequence = agent_sequence_for_mission(mission_type, raw_text)
     return {
         "version": "charlie_context_pack_v1",
         "active_truth_docs": list(MISSION_CONTEXT_DOCS),

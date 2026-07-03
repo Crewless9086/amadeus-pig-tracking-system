@@ -743,6 +743,20 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_risk_agent_ui_send_back_targets_frontend_implementation(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "send_back",
+            "visual_acceptance_decision": "send_back",
+            "visual_review_notes": ["Mobile screenshot is too tall and owner buttons are buried."],
+        })
+        quality = execution_bridge._agent_quality_gate("risk_agent", artifact)
+
+        target = execution_bridge._agent_backflow_target("risk_agent", artifact, quality)
+
+        self.assertFalse(quality["passed"])
+        self.assertEqual(target, "frontend_design_implementer")
+
     def test_technical_architect_can_record_risks_without_judgement_block(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["risk_notes"] = [

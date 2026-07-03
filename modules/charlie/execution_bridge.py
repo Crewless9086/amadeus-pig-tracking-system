@@ -1679,7 +1679,7 @@ def _mission_agent_sequence(mission):
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     agent_order = context_pack.get("agent_order") if isinstance(context_pack.get("agent_order"), list) else []
     cleaned = [str(agent or "").strip().lower() for agent in agent_order if str(agent or "").strip().lower() in all_agent_names()]
-    return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""))
+    return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
 
 
 def _execution_start_agent(mission, agent_sequence=None):
@@ -2562,6 +2562,13 @@ def _has_release_relevant_changes(changed_files):
 def _agent_backflow_target(agent, artifact, quality):
     if agent == "tester":
         return "builder"
+    if agent in {"risk_agent", "visual_qa_reviewer", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer"}:
+        target = str(artifact.get("send_back_stage") or "").strip().lower()
+        if target in all_agent_names():
+            return target
+        if _artifact_has_ui_evidence(artifact):
+            return "frontend_design_implementer"
+        return "builder"
     if agent == "qa_red_team":
         target = str(artifact.get("send_back_stage") or "").strip().lower()
         return target if target in {"builder", "tester", "reviewer"} else "builder"
@@ -2569,6 +2576,24 @@ def _agent_backflow_target(agent, artifact, quality):
         target = str(artifact.get("send_back_stage") or "").strip().lower()
         return target if target in all_agent_names() else "builder"
     return ""
+
+
+def _artifact_has_ui_evidence(artifact):
+    keys = (
+        "visual_acceptance_decision",
+        "visual_review_notes",
+        "media_references_used",
+        "screenshots_captured",
+        "browser_checks",
+        "reference_match_assessment",
+    )
+    if any(key in artifact and _artifact_has_list_value(artifact, key) for key in keys):
+        return True
+    text = " ".join(
+        str(artifact.get(key) or "")
+        for key in ("summary", "stdout_tail", "stderr_tail", "next_action")
+    ).lower()
+    return any(term in text for term in ("ui", "visual", "screenshot", "browser", "/charlie", "dashboard"))
 
 
 def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifact=None, quality=None):

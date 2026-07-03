@@ -114,10 +114,23 @@ class CharlieMissionStoreTests(unittest.TestCase):
     def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
         sequence = agent_sequence_for_mission("agent build")
 
-        self.assertEqual(sequence[:2], ["idea_expander", "product_architect"])
+        self.assertEqual(sequence[:3], ["idea_expander", "source_mapper", "product_architect"])
         self.assertIn("qa_red_team", sequence)
         self.assertIn("evidence_reviewer", sequence)
         self.assertEqual(sequence[-1], "publisher")
+
+    def test_agent_sequence_uses_raw_text_to_route_ui_system_improvement(self):
+        sequence = agent_sequence_for_mission(
+            "system improvement",
+            "Rebuild the CHARLIE CORE dashboard command center UI from the attached screenshot.",
+        )
+
+        self.assertIn("visual_reference_interpreter", sequence)
+        self.assertIn("creative_ui_designer", sequence)
+        self.assertIn("ux_interaction_designer", sequence)
+        self.assertIn("frontend_design_implementer", sequence)
+        self.assertIn("visual_qa_reviewer", sequence)
+        self.assertLess(sequence.index("visual_reference_interpreter"), sequence.index("frontend_design_implementer"))
 
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
