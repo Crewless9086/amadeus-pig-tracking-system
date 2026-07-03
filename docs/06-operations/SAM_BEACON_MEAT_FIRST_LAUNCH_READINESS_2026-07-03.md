@@ -26,7 +26,7 @@ Controlled owner-supervised pilot is acceptable only after the owner reviews the
 - `python -m unittest tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_meat_price_book tests.test_meat_match_engine`
   - 41 tests passed.
 - `python -m unittest tests.test_sales_transaction_read tests.test_sales_transaction_routes tests.test_order_routes tests.test_order_service_reservation`
-  - 104 tests passed.
+  - 105 tests passed, including the denied owner-access money-path route regression.
 - `node --check static/js/beaconMedia.js`
   - Passed.
 
@@ -76,6 +76,14 @@ Controlled owner-supervised pilot is acceptable only after the owner reviews the
    - This is the safe state until page credentials, owner confirmation, and exact post packet review are completed.
 
 ## Fix Applied During This Mission
+
+CHARLIE CORE mission: `CHARLIE-MISSION-467F6D2AF2471047`.
+
+Runner execution: `F2471047-20260703T100712Z-7312794072`.
+
+Runner outcome: blocked at Tester for correct operational launch gates after code verification passed.
+
+PR: `https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/84`.
 
 Beacon Facebook posting policy now separates configured capability from active posting authority.
 
