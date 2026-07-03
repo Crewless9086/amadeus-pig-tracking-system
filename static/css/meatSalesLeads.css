@@ -142,6 +142,61 @@
   border-color: #b8cab8;
 }
 
+.meat-launch-gate {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #fff;
+  margin-top: 12px;
+  padding: 14px;
+}
+
+.meat-launch-gate .section-header-compact {
+  margin-bottom: 10px;
+}
+
+.meat-launch-gate-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.meat-launch-gate-item {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #fbfcfa;
+  min-width: 0;
+  padding: 10px;
+}
+
+.meat-launch-gate-item[data-ready="true"] {
+  background: #eef7ec;
+  border-color: #b8cab8;
+}
+
+.meat-launch-gate-item strong,
+.meat-launch-gate-item span,
+.meat-launch-gate-item small {
+  display: block;
+}
+
+.meat-launch-gate-item strong {
+  color: #203528;
+  font-size: 0.78rem;
+}
+
+.meat-launch-gate-item span {
+  color: #203528;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 4px;
+}
+
+.meat-launch-gate-item small {
+  color: #607066;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
 .meat-leads-workflow {
   display: grid;
   gap: 20px;
@@ -513,6 +568,7 @@
 .meat-lead-row,
 .meat-control-room,
 .sam-command-brief,
+.meat-launch-gate,
 .meat-price-book-panel {
   min-width: 0;
 }
@@ -583,6 +639,7 @@
 
 @media (max-width: 980px) {
   .meat-control-room,
+  .meat-launch-gate-grid,
   .meat-leads-workflow,
   .meat-lead-facts,
   .meat-lead-form-grid,
@@ -594,7 +651,8 @@
   }
 
   .meat-control-metrics,
-  .meat-control-checklist {
+  .meat-control-checklist,
+  .meat-launch-gate-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -632,6 +690,7 @@
 
   .meat-control-metrics,
   .meat-control-checklist,
+  .meat-launch-gate-grid,
   .meat-leads-summary {
     grid-template-columns: 1fr;
   }

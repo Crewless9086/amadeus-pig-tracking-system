@@ -12,6 +12,7 @@
     meatFulfillment: null,
     meatReconciliation: null,
     pilotReadiness: null,
+    launchGate: null,
     showAllTools: false,
   };
 
@@ -38,6 +39,8 @@
     pilotNextGate: byId("meat_pilot_next_gate"),
     pilotMetrics: byId("meat_pilot_metrics"),
     pilotChecklist: byId("meat_pilot_checklist"),
+    launchGateStatus: byId("meat_launch_gate_status"),
+    launchGate: byId("meat_launch_gate"),
     detailPanel: byId("meat_leads_detail_panel"),
     toggleTools: byId("meat_toggle_tools"),
     detailTitle: byId("meat_lead_detail_title"),
@@ -511,10 +514,73 @@
     `).join("");
   };
 
+  const gateItem = (label, ready, detail) => `
+    <div class="meat-launch-gate-item" data-ready="${ready ? "true" : "false"}">
+      <strong>${ready ? "Ready" : "Check"}</strong>
+      <span>${safe(label)}</span>
+      <small>${safe(detail)}</small>
+    </div>
+  `;
+
+  const renderLaunchGate = () => {
+    const gate = state.launchGate || {};
+    const sam = gate.samPolicy?.policy || {};
+    const facebook = gate.facebookPolicy?.policy || {};
+    const planning = gate.planning || {};
+    const planningSummary = planning.summary || {};
+    const readiness = state.pilotReadiness || {};
+    const templatePack = readiness.template_pack || {};
+    const checklist = Array.isArray(readiness.checklist) ? readiness.checklist : [];
+    const mediaReady = checklist.some((item) => item.key === "beacon_media" && item.complete);
+    const stockReady = Number(planningSummary.ready_now || 0) > 0;
+    const samReady = Boolean(
+      sam.enabled
+      && sam.token_configured
+      && sam.autoreply_enabled
+      && sam.llm_enabled
+      && sam.agent_v3_enabled
+      && sam.chatwoot_hygiene_enabled
+      && sam.bank_details_configured
+    );
+    const beaconReady = Boolean(
+      facebook.enabled
+      && facebook.page_id_configured
+      && facebook.page_access_token_configured
+    );
+    const templateReady = Boolean(templatePack.all_configured);
+    const allReady = samReady && beaconReady && templateReady && stockReady && mediaReady;
+    elements.launchGateStatus.textContent = allReady
+      ? "Live gate is ready for an owner-reviewed, capped first post."
+      : "Live gate still has checks before the first public post.";
+    elements.launchGate.innerHTML = [
+      gateItem("SAM V3 live agent", samReady, samReady ? "V3, LLM, autoreply, hygiene, token, and bank details are configured." : "Check SAM V3, LLM, autoreply, hygiene, token, and bank details."),
+      gateItem("Beacon Facebook gate", beaconReady, beaconReady ? "Posting gate has page credentials and remains owner-confirmed." : "Check Facebook posting envs/page credentials."),
+      gateItem("WhatsApp templates", templateReady, templateReady ? `${templatePack.configured_count || 0}/${templatePack.required_count || 0} templates configured.` : `${templatePack.configured_count || 0}/${templatePack.required_count || 0} templates configured.`),
+      gateItem("Ready meat stock", stockReady, `${planningSummary.ready_now || 0} ready now, ${planningSummary.next_14_days || 0} in next 14 days.`),
+      gateItem("Approved Beacon media", mediaReady, mediaReady ? "At least one approved image is ready for launch." : "Approve/select a launch image before posting."),
+    ].join("");
+  };
+
+  const loadLaunchGate = async () => {
+    try {
+      const [samPolicy, facebookPolicy, planning] = await Promise.all([
+        fetchJson("/api/sales/channels/chatwoot/sam-meat/policy"),
+        fetchJson("/api/beacon/facebook-posting-policy"),
+        fetchJson("/api/pig-weights/meat-planning"),
+      ]);
+      state.launchGate = { samPolicy, facebookPolicy, planning };
+      renderLaunchGate();
+    } catch (error) {
+      elements.launchGateStatus.textContent = `Launch gate unavailable: ${error.message}`;
+      elements.launchGate.innerHTML = "";
+    }
+  };
+
   const loadPilotReadiness = async () => {
     try {
       state.pilotReadiness = await fetchJson("/api/sales/meat-pilot-readiness?limit=50&status=launch_test");
       renderPilotReadiness();
+      renderLaunchGate();
       renderToolVisibility();
     } catch (error) {
       elements.pilotNextGate.textContent = `Pilot readiness unavailable: ${error.message}`;
@@ -1248,6 +1314,7 @@
       renderLeadList();
       if (state.selectedLeadId) await loadLeadDetail(state.selectedLeadId);
       await loadPilotReadiness();
+      await loadLaunchGate();
     } catch (error) {
       setMessage(`Could not load meat leads: ${error.message}`, "error");
       elements.list.innerHTML = '<div class="table-empty">Meat leads could not be loaded.</div>';
@@ -2169,5 +2236,6 @@
   renderMeatReconciliation();
   loadPriceBook();
   loadPilotReadiness();
+  loadLaunchGate();
   loadLeads();
 })();
