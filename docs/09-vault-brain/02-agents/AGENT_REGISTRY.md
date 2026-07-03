@@ -12,6 +12,13 @@ Every agent must have:
 - a clear status;
 - defined authority and forbidden actions;
 - source data and owner gates.
+- a 96% confidence target and clarification behavior when confidence is lower.
+
+Confidence rule:
+
+- If an agent is below 96% confidence, it must ask a clarifying question, inspect more source evidence, or mark the output as draft/advisory.
+- No agent may present a final answer, final recommendation, ready-for-review artifact, customer-facing message, or build handoff as complete while below 96% confidence.
+- Confidence must come from source truth, tests, runtime data, mission evidence, or owner-approved context. Confident wording alone does not count.
 
 ## Core Owner And Workflow Agents
 

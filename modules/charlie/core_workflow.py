@@ -437,6 +437,8 @@ def agent_instruction_pack(agent):
             "Check mission vault before opinion.",
             "Cite vault/source context when making claims.",
             "Mark assumptions and uncertainty.",
+            "Target 96% confidence before finalizing; below 96%, ask a clarifying question or inspect more source evidence.",
+            "Do not mark a handoff as complete if confidence is below 96% or if the confidence reason is not evidence-backed.",
             "Write a handoff report before completion.",
         ],
         "output_contract": HANDOFF_VERSION,
@@ -444,6 +446,7 @@ def agent_instruction_pack(agent):
             "All required artifacts for this stage are present.",
             "Tests or review evidence are recorded where applicable.",
             "Risks and owner decisions are explicit.",
+            "Confidence is at least 96% or the output is clearly marked draft/advisory with a clarification request.",
         ],
     }
 

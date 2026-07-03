@@ -5,6 +5,7 @@ from modules.charlie.core_workflow import (
     HANDOFF_VERSION,
     VAULT_SCHEMA,
     WORKFLOW_TEMPLATES,
+    agent_instruction_pack,
     attach_core_plan_to_metadata,
     build_core_plan,
     build_handoff_report,
@@ -65,6 +66,15 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertEqual(visual["registry_key"], "vision_design")
         self.assertEqual(implementer["registry_key"], "frontend_build")
         self.assertEqual(qa["registry_key"], "vision_design")
+
+    def test_agent_instruction_pack_requires_confidence_or_clarification(self):
+        pack = agent_instruction_pack("builder")
+        rules = " ".join(pack["vault_rules"] + pack["quality_bar"]).lower()
+
+        self.assertIn("96", rules)
+        self.assertIn("clarifying", rules)
+        self.assertIn("evidence", rules)
+        self.assertIn("confidence", rules)
 
     def test_core_plan_attaches_vault_schema_workflow_and_instruction_packs(self):
         mission = {
