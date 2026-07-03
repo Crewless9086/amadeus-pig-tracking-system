@@ -83,6 +83,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(all(item.get("instruction_pack") for item in metadata["agent_workflow"]))
         agents = [item["agent"] for item in metadata["agent_workflow"]]
         self.assertIn("product_architect", agents)
+        self.assertIn("source_mapper", agents)
         self.assertIn("council_synthesis", agents)
         self.assertIn("product_reviewer", agents)
         self.assertTrue(all(AGENT_DOCTRINE_PATHS.get(agent) for agent in agents))

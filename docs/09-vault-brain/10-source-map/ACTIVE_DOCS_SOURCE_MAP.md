@@ -4,6 +4,8 @@ The Vault Brain is the controlling doctrine layer. The files below remain active
 
 Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readiness.
 
+Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENTATION_SOURCE_MAP.md`.
+
 ## Highest-Level Sources
 
 - `docs/00-start-here/README.md`
@@ -70,6 +72,7 @@ Use `VAULT_MIGRATION_INVENTORY.md` to track migration status and archive readine
 
 ## Runtime/Code Sources
 
+- `modules/charlie/source_map.py`
 - `modules/charlie/mission_store.py`
 - `modules/charlie/vault_store.py`
 - `modules/charlie/execution_bridge.py`

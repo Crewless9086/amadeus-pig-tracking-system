@@ -5,6 +5,7 @@ Brain Guard keeps this folder current when new docs become authoritative or old 
 Files:
 
 - `ACTIVE_DOCS_SOURCE_MAP.md`: source docs that remain active references.
+- `IMPLEMENTATION_SOURCE_MAP.md`: active implementation map linking Vault doctrine to routes, modules, tests, migrations, and legacy sources.
 - `VAULT_MIGRATION_INVENTORY.md`: migration status, classification, and Vault targets for non-Vault docs.
 - `ARCHIVE_REVIEW_QUEUE.md`: sources that cannot be removed until Brain Guard and owner approve cleanup.
 - `MIGRATION_NOTES.md`: dated notes for Vault Brain consolidation work.

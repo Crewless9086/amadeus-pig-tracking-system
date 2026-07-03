@@ -34,6 +34,7 @@ from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
+from modules.charlie.source_map import IMPLEMENTATION_SOURCE_MAP, SOURCE_MAP_VERSION, implementation_source_packet
 from modules.charlie.improvement_analyst import (
     generate_and_store_proposals,
     list_improvement_proposals,
@@ -244,6 +245,7 @@ def charlie_build_relay_command_center_route():
                 "workflow_template": retrieval.get("workflow_template", ""),
                 "selected_count": retrieval.get("selected_count", 0),
                 "sources": [{"path": item.get("path", ""), "score": item.get("score", 0), "reasons": item.get("reasons", [])} for item in retrieval.get("sources", [])],
+                "implementation_sources": retrieval.get("implementation_sources", {}),
                 "missing_docs": retrieval.get("missing_docs", []),
             },
         })
@@ -402,6 +404,25 @@ def charlie_core_templates_route():
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
         "workflow_templates": WORKFLOW_TEMPLATES,
+    }), 200
+
+
+@charlie_bp.route("/charlie/core/source-map", methods=["GET"])
+def charlie_core_source_map_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    mission = {
+        "mission_type": request.args.get("mission_type", ""),
+        "title": request.args.get("title", ""),
+        "raw_text": request.args.get("q", ""),
+    }
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "version": SOURCE_MAP_VERSION,
+        "source_map": IMPLEMENTATION_SOURCE_MAP,
+        "matched": implementation_source_packet(mission) if any(mission.values()) else {},
     }), 200
 
 

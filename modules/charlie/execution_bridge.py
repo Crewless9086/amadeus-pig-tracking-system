@@ -31,6 +31,10 @@ from modules.charlie.core_workflow import (
     evaluate_core_readiness,
 )
 from modules.charlie.model_registry import choose_agent_model
+from modules.charlie.source_map import (
+    implementation_source_packet,
+    validate_implementation_inspection,
+)
 from modules.charlie.vault_retrieval import (
     evaluate_vault_source_coverage,
     owner_preference_packet,
@@ -54,6 +58,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "visual_reference_interpreter": ["summary", "media_references_used", "layout_requirements", "visual_hierarchy", "reference_match_checklist", "commands_run", "files_inspected", "vault_sources_used"],
     "creative_ui_designer": ["summary", "ui_concept", "layout_system", "visual_direction", "design_requirements", "commands_run", "files_inspected", "vault_sources_used"],
     "ux_interaction_designer": ["summary", "primary_workflows", "owner_actions", "responsive_behavior", "interaction_requirements", "commands_run", "files_inspected", "vault_sources_used"],
+    "source_mapper": ["summary", "implementation_inventory", "current_sources", "legacy_sources", "tests_to_run", "implementation_sources_used", "commands_run", "files_inspected", "vault_sources_used"],
     "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
@@ -419,6 +424,9 @@ def run_agent_execution_bridge_v2(
         ui_contract = _ui_quality_contract_for_mission(mission)
         if ui_contract.get("ui_related"):
             artifact["ui_quality_contract"] = ui_contract
+        implementation_context = implementation_source_packet(mission)
+        if implementation_context.get("matched_sections"):
+            artifact["implementation_source_map"] = implementation_context
         artifact.update({
             "agent": agent,
             "artifact_path": str(stage_paths["final_path"]),
@@ -1165,6 +1173,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     owner_comments = review_packet.get("owner_comments_pending", "") if isinstance(review_packet, dict) else ""
     sequence = _mission_agent_sequence(mission)
     vault_context = build_vault_brain_context(mission, agent=agent)
+    implementation_context = implementation_source_packet(mission)
     ui_contract = _ui_quality_contract_for_mission(mission)
     model_assignment = choose_agent_model(
         agent=agent,
@@ -1195,6 +1204,9 @@ Required CHARLIE docs to follow:
 
 CHARLIE Vault Brain context:
 {_format_vault_context(vault_context)}
+
+Implementation source map:
+{json.dumps(implementation_context, indent=2)[:8000]}
 
 Desired outcome:
 {vault.get("desired_outcome") or ""}
@@ -1230,6 +1242,7 @@ You must work like an interactive coding agent:
 - record what you did and what remains
 - if you change agents, workflows, CHARLIE CORE runtime, business rules, data contracts, or standards, update the matching Vault Brain doc; otherwise record why no Vault update was required
 - if this is a UI mission, inspect and cite every attached reference image/path you can access, build against the actual owner workflow, provide a real local preview URL, and include desktop/laptop plus mobile browser evidence
+- if this is an income, sales, SAM, Beacon, order, WhatsApp, Chatwoot, or n8n-related mission, inspect and cite the implementation source map paths before advising or building; strategy docs alone are not enough
 - behave as this specific agent, not as a generic prompt; challenge upstream artifacts when they are weak, contradictory, or not aligned with your doctrine
 
 Stage responsibility:
@@ -1447,6 +1460,11 @@ def _agent_stage_instruction(agent):
         return (
             "Define the owner workflows, visible action placement, interaction states, responsive behavior, empty/loading/error states, and how the user moves through the screen."
         )
+    if agent == "source_mapper":
+        return (
+            "Map what already exists before anyone plans or builds. Inspect the implementation source map, then read or verify relevant routes, modules, templates, JS, tests, migrations, active docs, and legacy n8n/Sheets sources. "
+            "Separate current Supabase/app truth from legacy n8n/Google Sheets behavior and identify exact tests to prove the mission."
+        )
     if agent == "product_architect":
         return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
     if agent == "council_synthesis":
@@ -1522,6 +1540,17 @@ def _agent_required_schema(agent):
             "responsive_behavior": [],
             "interaction_requirements": [],
             "empty_loading_error_states": [],
+        })
+    elif agent == "source_mapper":
+        base.update({
+            "implementation_inventory": [],
+            "current_sources": [],
+            "legacy_sources": [],
+            "routes_found": [],
+            "tests_to_run": [],
+            "migrations_found": [],
+            "implementation_sources_used": [],
+            "source_truth_summary": "what exists now, what is legacy, and what must be tested",
         })
     elif agent == "product_architect":
         base.update({"user_flow": [], "acceptance_boundaries": [], "risk_notes": []})
@@ -1758,6 +1787,17 @@ def _agent_artifact_from_final(agent, final_message):
             "interaction_requirements": [],
             "empty_loading_error_states": [],
         })
+    elif agent == "source_mapper":
+        artifact.update({
+            "implementation_inventory": [artifact["summary"]],
+            "current_sources": [],
+            "legacy_sources": [],
+            "routes_found": [],
+            "tests_to_run": [],
+            "migrations_found": [],
+            "implementation_sources_used": [],
+            "source_truth_summary": artifact["summary"],
+        })
     elif agent == "product_architect":
         artifact.update({"user_flow": [artifact["summary"]], "acceptance_boundaries": [], "risk_notes": []})
     elif agent == "council_synthesis":
@@ -1847,6 +1887,9 @@ def _agent_quality_gate(agent, artifact):
         return {"passed": False, "reason": f"{agent} did not record Vault Brain sources used."}
     if not _artifact_has_vault_brain_source(artifact):
         return {"passed": False, "reason": f"{agent} did not cite a docs/09-vault-brain source."}
+    implementation_quality = _implementation_source_quality_gate(agent, artifact)
+    if not implementation_quality["passed"]:
+        return implementation_quality
     ui_quality = _ui_agent_quality_gate(agent, artifact)
     if not ui_quality["passed"]:
         return ui_quality
@@ -1966,6 +2009,53 @@ def _ui_agent_quality_gate(agent, artifact):
         if agent == "visual_qa_reviewer" and not _artifact_has_text_value(artifact, "reference_match_assessment"):
             return {"passed": False, "reason": "Visual QA Reviewer did not assess reference match."}
     return {"passed": True, "reason": "ui_quality_gate_passed"}
+
+
+def _implementation_source_quality_gate(agent, artifact):
+    source_map = artifact.get("implementation_source_map") if isinstance(artifact.get("implementation_source_map"), dict) else {}
+    if not source_map.get("matched_sections"):
+        return {"passed": True, "reason": "implementation_source_map_not_required"}
+    if agent not in {
+        "source_mapper",
+        "technical_architect",
+        "business_model_agent",
+        "risk_agent",
+        "planner",
+        "architect",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "business_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+    }:
+        return {"passed": True, "reason": "implementation_source_gate_not_for_agent"}
+    if agent == "source_mapper":
+        validation = validate_implementation_inspection(artifact, source_map)
+        if not validation["passed"]:
+            return {
+                "passed": False,
+                "reason": f"Source Mapper did not inspect required implementation groups: {', '.join(validation['missing_groups']) or 'none matched'}.",
+                "implementation_inspection": validation,
+            }
+    elif _implementation_sensitive_source_map(source_map):
+        values = []
+        for key in ("files_inspected", "implementation_sources_used"):
+            value = artifact.get(key)
+            if isinstance(value, list):
+                values.extend(str(item or "").replace("\\", "/") for item in value)
+        required = set(source_map.get("required_inspection_paths") or [])
+        if not required.intersection(values):
+            return {
+                "passed": False,
+                "reason": f"{agent} did not cite any matched implementation source-map path.",
+            }
+    return {"passed": True, "reason": "implementation_source_gate_passed"}
+
+
+def _implementation_sensitive_source_map(source_map):
+    sections = source_map.get("matched_sections") if isinstance(source_map.get("matched_sections"), list) else []
+    return any(section.get("must_inspect_before_advice") for section in sections if isinstance(section, dict))
 
 
 def _artifact_has_text_value(artifact, key):

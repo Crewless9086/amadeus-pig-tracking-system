@@ -78,6 +78,11 @@ SPECIALIST_AGENTS = {
         "may": ["write architecture plan", "identify affected files", "define test plan"],
         "may_not": ["perform broad refactors without approval"],
     },
+    "source_mapper": {
+        "purpose": "Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.",
+        "may": ["inspect repo structure", "produce implementation inventory", "identify current vs legacy truth"],
+        "may_not": ["advise from Vault strategy alone", "edit code", "approve release"],
+    },
     "business_model_agent": {
         "purpose": "Evaluate revenue logic, pricing assumptions, cost drivers, and commercial next actions.",
         "may": ["produce business model notes", "flag financial assumptions"],
@@ -172,6 +177,7 @@ AGENT_DOCTRINE_PATHS = {
     "creative_ui_designer": "docs/09-vault-brain/02-agents/charlie-core/CREATIVE_UI_DESIGNER.md",
     "ux_interaction_designer": "docs/09-vault-brain/02-agents/charlie-core/UX_INTERACTION_DESIGNER.md",
     "technical_architect": "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
+    "source_mapper": "docs/09-vault-brain/02-agents/charlie-core/SOURCE_MAPPER.md",
     "business_model_agent": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_MODEL_AGENT.md",
     "risk_agent": "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
     "council_synthesis": "docs/09-vault-brain/02-agents/charlie-core/COUNCIL_SYNTHESIS.md",
@@ -197,6 +203,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["ui", "frontend", "dashboard", "visual", "page", "browser", "screen", "interface", "command center", "control room"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "visual_reference_interpreter",
             "creative_ui_designer",
             "ux_interaction_designer",
@@ -234,6 +241,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["feature build", "software", "agent build", "bug fix"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "product_architect",
             "technical_architect",
             "planner",
@@ -254,6 +262,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["system", "workflow", "governance", "dashboard", "runner"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "product_architect",
             "technical_architect",
             "risk_agent",
@@ -277,6 +286,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["business plan", "strategy", "business", "new venture"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "concept_strategist",
             "business_model_agent",
             "risk_agent",
@@ -294,6 +304,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["content", "marketing", "campaign", "beacon"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "concept_strategist",
             "product_architect",
             "risk_agent",
@@ -311,6 +322,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["automation", "n8n", "integration", "process"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "technical_architect",
             "risk_agent",
             "council_synthesis",
@@ -331,6 +343,7 @@ WORKFLOW_TEMPLATES = {
         "mission_type_aliases": ["income", "income stream", "revenue", "sales", "private transfers", "fred", "sam"],
         "agent_order": [
             "idea_expander",
+            "source_mapper",
             "concept_strategist",
             "business_model_agent",
             "risk_agent",

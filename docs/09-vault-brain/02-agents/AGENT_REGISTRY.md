@@ -27,6 +27,7 @@ Every agent must have:
 | Creative UI Designer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI workflow stage | `charlie-core/CREATIVE_UI_DESIGNER.md` |
 | UX Interaction Designer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI workflow stage | `charlie-core/UX_INTERACTION_DESIGNER.md` |
 | Technical Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/TECHNICAL_ARCHITECT.md` |
+| Source Mapper | CHARLIE CORE / Implementation Truth | CHARLIE CORE | Active workflow stage | `charlie-core/SOURCE_MAPPER.md` |
 | Business Model Agent | CHARLIE CORE | CHARLIE CORE | Active business stage | `charlie-core/BUSINESS_MODEL_AGENT.md` |
 | Risk Agent | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/RISK_AGENT.md` |
 | Council Synthesis | CHARLIE CORE | CHARLIE CORE | Active council stage | `charlie-core/COUNCIL_SYNTHESIS.md` |

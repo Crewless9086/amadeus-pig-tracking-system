@@ -85,6 +85,7 @@ AGENT_MODEL_MAP = {
     "creative_ui_designer": "vision_design",
     "ux_interaction_designer": "vision_design",
     "technical_architect": "default_reasoning",
+    "source_mapper": "default_reasoning",
     "business_model_agent": "business_review",
     "risk_agent": "security_review",
     "council_synthesis": "default_reasoning",

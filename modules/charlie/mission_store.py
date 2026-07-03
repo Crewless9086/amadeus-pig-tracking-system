@@ -122,6 +122,7 @@ AGENT_STAGE_MAP = {
     "creative_ui_designer": "ui_concept_ready",
     "ux_interaction_designer": "interaction_spec_ready",
     "technical_architect": "architecture_ready",
+    "source_mapper": "implementation_mapped",
     "business_model_agent": "business_model_ready",
     "risk_agent": "risk_reviewed",
     "planner": "planned",

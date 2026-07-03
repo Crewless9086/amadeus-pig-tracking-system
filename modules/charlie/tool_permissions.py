@@ -32,6 +32,7 @@ AGENT_TOOL_ALLOWLIST = {
     "creative_ui_designer": {"vault_read", "repo_read", "visual_check"},
     "ux_interaction_designer": {"vault_read", "repo_read", "browser_check", "visual_check"},
     "technical_architect": {"vault_read", "repo_read", "test_run"},
+    "source_mapper": {"vault_read", "repo_read", "test_run", "browser_check"},
     "business_model_agent": {"vault_read", "repo_read"},
     "risk_agent": {"vault_read", "repo_read"},
     "council_synthesis": {"vault_read", "repo_read"},

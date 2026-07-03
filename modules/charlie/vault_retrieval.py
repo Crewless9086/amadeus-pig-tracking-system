@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 from modules.charlie.core_workflow import AGENT_DOCTRINE_PATHS
+from modules.charlie.source_map import implementation_source_packet
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -128,6 +129,7 @@ def retrieve_vault_sources(mission, limit=14, excerpt_chars=900, agent=""):
         "selected_count": len(ranked),
         "required_docs": required,
         "sources": ranked,
+        "implementation_sources": implementation_source_packet(mission),
         "missing_docs": [item["path"] for item in ranked if item["status"] != "loaded"],
         "selection_rule": "base doctrine + workflow template + keyword mapping + local token overlap",
     }
