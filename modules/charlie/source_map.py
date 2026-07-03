@@ -140,7 +140,7 @@ IMPLEMENTATION_SOURCE_MAP = {
         "label": "Beacon Marketing",
         "status": "built_gated",
         "summary": "Beacon media library, campaign draft selection, publish packets, manual post evidence, Facebook execution gate, and performance tracking.",
-        "keywords": ["beacon", "marketing", "campaign", "post", "facebook", "media", "asset", "launch"],
+        "keywords": ["beacon", "marketing", "campaign", "facebook", "facebook post", "beacon media", "media asset", "campaign launch"],
         "vault_docs": [
             "docs/09-vault-brain/03-business/BEACON_MARKETING.md",
             "docs/09-vault-brain/04-workflows/BEACON_CAMPAIGN_WORKFLOW.md",

@@ -62,6 +62,23 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertNotIn("modules/beacon/media_library.py", packet["required_inspection_paths"])
 
+    def test_ui_media_reference_contract_does_not_map_beacon(self):
+        mission = {
+            "mission_type": "system improvement",
+            "title": "CHARLIE CORE Dashboard Command Center UI Retest",
+            "raw_text": (
+                "UI agents must cite media_references_used and use the attached screenshot. "
+                "Rework /charlie Mission Control with owner review buttons and runner status."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("charlie_core_dashboard", keys)
+        self.assertNotIn("beacon_marketing", keys)
+        self.assertNotIn("modules/beacon/media_library.py", packet["required_inspection_paths"])
+
     def test_sam_meat_income_mission_maps_existing_implementation(self):
         mission = {
             "mission_type": "income stream",
