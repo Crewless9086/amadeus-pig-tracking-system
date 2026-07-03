@@ -386,17 +386,29 @@ def _score_entry(query, entry):
 
 def _keyword_is_negated(lower, keyword):
     start = 0
+    seen = False
     while True:
         index = lower.find(keyword, start)
         if index < 0:
-            return False
-        before = lower[max(0, index - 32):index]
-        after = lower[index:index + len(keyword) + 36]
-        if any(marker in before for marker in ("hold all ", "no ", "not ", "do not ", "don't ", "without ", "forbidden ", "out of scope ")):
-            return True
-        if any(marker in after for marker in (" forbidden", " out of scope", " on hold", " posting work", " remains on hold")):
-            return True
+            return seen
+        seen = True
+        before, after = _keyword_clause_context(lower, keyword, index)
+        if not any(marker in before for marker in ("hold all ", "no ", "not ", "do not ", "don't ", "without ", "forbidden ", "out of scope ")):
+            if not any(marker in after for marker in (" forbidden", " forbidden context", " out of scope", " on hold", " posting work", " remains on hold")):
+                return False
         start = index + len(keyword)
+
+
+def _keyword_clause_context(lower, keyword, index):
+    clause_markers = [".", ";", "\n", "\r"]
+    starts = [lower.rfind(marker, 0, index) for marker in clause_markers]
+    clause_start = max(starts)
+    ends = [lower.find(marker, index + len(keyword)) for marker in clause_markers]
+    ends = [end for end in ends if end >= 0]
+    clause_end = min(ends) if ends else len(lower)
+    before = lower[clause_start + 1:index][-140:]
+    after = lower[index:clause_end][: len(keyword) + 120]
+    return before, after
 
 
 def _mission_query(mission):

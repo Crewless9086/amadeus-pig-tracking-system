@@ -40,6 +40,27 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertNotIn("modules/beacon/media_library.py", packet["required_inspection_paths"])
 
+    def test_forbidden_clause_lists_do_not_map_sales_sources(self):
+        mission = {
+            "mission_type": "system improvement",
+            "title": "CHARLIE CORE Dashboard Command Center UI Retest",
+            "raw_text": (
+                "This is a CHARLIE CORE dashboard mission only. "
+                "Hold all SAM, Beacon, meat sales, Facebook posting, WhatsApp, and income-stream work out of scope. "
+                "Do not change SAM, Beacon, meat sales, WhatsApp, Facebook posting, or live income systems. "
+                "Rework /charlie Mission Control with owner review buttons and runner status."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("charlie_core_dashboard", keys)
+        self.assertNotIn("sam_meat_sales", keys)
+        self.assertNotIn("beacon_marketing", keys)
+        self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
+        self.assertNotIn("modules/beacon/media_library.py", packet["required_inspection_paths"])
+
     def test_sam_meat_income_mission_maps_existing_implementation(self):
         mission = {
             "mission_type": "income stream",
