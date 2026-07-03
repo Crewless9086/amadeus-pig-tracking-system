@@ -73,6 +73,8 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "evidence_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
+AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
+AGENT_CONFIDENCE_MINIMUM = 0.96
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
     "builder": {"changed_files"},
     "frontend_design_implementer": {"changed_files"},
@@ -1513,6 +1515,8 @@ def _agent_required_schema(agent):
         "commands_run": [],
         "stdout_tail": "short relevant command output tail or empty",
         "stderr_tail": "short relevant error output tail or empty",
+        "confidence": "96% or higher when final; use a decimal like 0.97 or a percent like 97%",
+        "confidence_reason": "evidence-backed reason citing source truth, tests, screenshots, logs, runtime data, or owner-approved context",
         "next_action": "next handoff",
     }
     if agent == "planner":
@@ -1862,7 +1866,10 @@ def _extract_json_object(text):
 
 
 def _validate_agent_artifact(agent, artifact):
-    required = AGENT_ARTIFACT_REQUIRED_KEYS.get(agent, ["summary"])
+    required = list(AGENT_ARTIFACT_REQUIRED_KEYS.get(agent, ["summary"]))
+    for key in AGENT_CONFIDENCE_REQUIRED_KEYS:
+        if key not in required:
+            required.append(key)
     allow_empty = AGENT_ARTIFACT_ALLOW_EMPTY_KEYS.get(agent, set())
     missing = []
     for key in required:
@@ -1885,6 +1892,9 @@ def _agent_quality_gate(agent, artifact):
     commands = artifact.get("commands_run") if isinstance(artifact.get("commands_run"), list) else []
     inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
     vault_sources = _artifact_vault_sources(artifact)
+    confidence_quality = _artifact_confidence_quality_gate(agent, artifact)
+    if not confidence_quality["passed"]:
+        return confidence_quality
     if not commands:
         return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
     if not inspected:
@@ -1943,6 +1953,50 @@ def _agent_quality_gate(agent, artifact):
         "reason": f"{agent} quality gate passed.",
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _artifact_confidence_quality_gate(agent, artifact):
+    confidence = _parse_confidence_value(artifact.get("confidence"))
+    reason = str(artifact.get("confidence_reason") or "").strip()
+    if confidence is None:
+        return {"passed": False, "reason": f"{agent} did not record a parseable confidence value."}
+    if confidence < AGENT_CONFIDENCE_MINIMUM:
+        return {
+            "passed": False,
+            "reason": f"{agent} confidence {confidence:.0%} is below the required 96%; clarify or inspect more evidence.",
+        }
+    if not reason:
+        return {"passed": False, "reason": f"{agent} did not record an evidence-backed confidence_reason."}
+    evidence_terms = ("source", "vault", "test", "evidence", "repo", "file", "screenshot", "log", "runtime", "owner")
+    if not any(term in reason.lower() for term in evidence_terms):
+        return {"passed": False, "reason": f"{agent} confidence_reason is not evidence-backed."}
+    return {"passed": True, "reason": "confidence_gate_passed"}
+
+
+def _parse_confidence_value(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        if number > 1:
+            number = number / 100.0
+        return number if 0 <= number <= 1 else None
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    match = re.search(r"(\d+(?:\.\d+)?)\s*%", text)
+    if match:
+        return float(match.group(1)) / 100.0
+    match = re.search(r"\b(0(?:\.\d+)?|1(?:\.0+)?)\b", text)
+    if match:
+        return float(match.group(1))
+    match = re.search(r"\b(\d+(?:\.\d+)?)\b", text)
+    if match:
+        number = float(match.group(1))
+        if number > 1:
+            number = number / 100.0
+        return number if 0 <= number <= 1 else None
+    return None
 
 
 def _ui_agent_quality_gate(agent, artifact):

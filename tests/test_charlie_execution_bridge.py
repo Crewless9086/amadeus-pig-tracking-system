@@ -57,6 +57,8 @@ def _successful_stage_payload(agent):
         "commands_run": ["python -m unittest tests.test_charlie_execution_bridge"],
         "stdout_tail": "",
         "stderr_tail": "",
+        "confidence": "98%",
+        "confidence_reason": "Based on Vault Brain source docs, inspected repo files, and focused test evidence.",
         "next_action": "continue",
         "opportunity": "clear owner opportunity" if agent == "idea_expander" else None,
         "owner_value": "owner value clear" if agent == "idea_expander" else None,
@@ -113,6 +115,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(validation["valid"], validation)
         self.assertTrue(quality["passed"], quality)
+
+    def test_agent_artifact_requires_confidence_fields(self):
+        artifact = _successful_stage_payload("planner")
+        artifact.pop("confidence")
+
+        validation = execution_bridge._validate_agent_artifact("planner", artifact)
+
+        self.assertFalse(validation["valid"])
+        self.assertIn("confidence", validation["missing_keys"])
+
+    def test_agent_quality_gate_blocks_below_ninety_six_confidence(self):
+        artifact = _successful_stage_payload("planner")
+        artifact["confidence"] = "95%"
+        artifact["confidence_reason"] = "Based on Vault Brain docs and inspected repo files."
+
+        quality = execution_bridge._agent_quality_gate("planner", artifact)
+
+        self.assertFalse(quality["passed"])
+        self.assertIn("below the required 96", quality["reason"])
 
     def test_ui_quality_gate_accepts_structured_ui_council_evidence(self):
         contract = {
@@ -411,6 +432,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "test_evidence": ["unit tests passed"],
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
             "no_vault_update_required": "Runner behavior was unchanged.",
+            "confidence": "98%",
+            "confidence_reason": "Based on Vault Brain source docs, inspected repo files, and unit test evidence.",
         }
 
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
@@ -429,6 +452,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "build_notes": ["patched"],
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
             "no_vault_update_required": "Runner behavior was unchanged.",
+            "confidence": "98%",
+            "confidence_reason": "Based on Vault Brain source docs, inspected repo files, and diff evidence.",
         }
 
         result = execution_bridge._agent_quality_gate("builder", artifact)
@@ -517,6 +542,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "links": {"pr": "https://github.com/org/repo/pull/61"},
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
             "no_vault_update_required": "Runner behavior was unchanged.",
+            "qa_evidence": ["QA/red-team passed"],
+            "confidence": "98%",
+            "confidence_reason": "Based on Vault Brain source docs, inspected repo files, PR evidence, and unit tests.",
         }
 
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
