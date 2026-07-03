@@ -495,7 +495,9 @@ def extract_meat_facts(message, inbound=None, *, environ=None, llm_extractor=Non
     facts["llm_status"] = "not_enabled"
 
     llm_patch = {}
-    if _truthy(source.get(LLM_ENABLED_ENV)):
+    if _truthy(source.get(LLM_ENABLED_ENV)) and _truthy(source.get(AGENT_V3_ENABLED_ENV)):
+        facts["llm_status"] = "deferred_to_agent_v3"
+    elif _truthy(source.get(LLM_ENABLED_ENV)):
         extractor = llm_extractor or _call_sam_meat_llm
         llm_patch = extractor(message, inbound, source) or {}
         if llm_patch:
@@ -2596,10 +2598,13 @@ def _truthy(value):
 
 
 def _timeout(source):
+    source = source or {}
+    default_timeout = 4 if _truthy(source.get("RENDER")) else 8
+    max_timeout = 6 if _truthy(source.get("RENDER")) else 30
     try:
-        return max(1, min(30, int(source.get(LLM_TIMEOUT_ENV, "8"))))
+        return max(1, min(max_timeout, int(source.get(LLM_TIMEOUT_ENV, str(default_timeout)))))
     except (TypeError, ValueError):
-        return 8
+        return default_timeout
 
 
 def _with_supported_temperature(payload, source, temperature):

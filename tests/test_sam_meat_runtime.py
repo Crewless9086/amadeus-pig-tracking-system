@@ -329,6 +329,31 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["payment_method"], "Cash")
         self.assertTrue(facts["llm_used"])
 
+    def test_extract_meat_facts_defers_extractor_llm_when_agent_v3_is_enabled(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="Hello"))
+        extractor = Mock(return_value={"product_type": "full_carcass"})
+
+        facts = sam_meat_runtime.extract_meat_facts(
+            inbound["content"],
+            inbound,
+            environ={
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+            },
+            llm_extractor=extractor,
+        )
+
+        extractor.assert_not_called()
+        self.assertFalse(facts["llm_used"])
+        self.assertEqual(facts["llm_status"], "deferred_to_agent_v3")
+
+    def test_render_llm_timeout_is_capped_below_worker_timeout(self):
+        self.assertEqual(sam_meat_runtime._timeout({
+            "RENDER": "true",
+            "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS": "30",
+        }), 6)
+        self.assertEqual(sam_meat_runtime._timeout({"RENDER": "true"}), 4)
+
     def test_delivery_address_is_extracted_when_customer_supplies_it(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Delivery please to address 12 Long Street, Riversdale. EFT is fine.",

@@ -174,7 +174,7 @@ def _chatwoot_transport(method, conversation_id, body, source, suffix=""):
         headers["Content-Type"] = "application/json"
     req = urllib_request.Request(path, data=data, headers=headers, method=method)
     try:
-        with urllib_request.urlopen(req, timeout=20) as response:
+        with urllib_request.urlopen(req, timeout=5) as response:
             raw = response.read().decode("utf-8", errors="replace")
             return {
                 "status_code": getattr(response, "status", 200),
