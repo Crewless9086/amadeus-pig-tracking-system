@@ -6005,12 +6005,12 @@ def literal_false_is_allowed():
         self.assertFalse(result["calls_chatwoot"])
         self.assertFalse(result["creates_order"])
 
-    def test_sales_lead_conflict_updates_tracking_context_only(self):
+    def test_sales_lead_conflict_preserves_append_only_lead_rows(self):
         source = Path("modules/oom_sakkie/sales_campaign_store.py").read_text(encoding="utf-8")
 
-        self.assertIn("on conflict (lead_id) do update set", source)
-        self.assertIn("interest_json = excluded.interest_json", source)
-        self.assertIn("next_owner_action = excluded.next_owner_action", source)
+        self.assertIn("on conflict (lead_id) do nothing", source)
+        self.assertNotIn("interest_json = excluded.interest_json", source)
+        self.assertNotIn("next_owner_action = excluded.next_owner_action", source)
         self.assertNotIn("sends_customer_message = excluded.sends_customer_message", source)
         self.assertNotIn("creates_order = excluded.creates_order", source)
         self.assertNotIn("changes_stock = excluded.changes_stock", source)
