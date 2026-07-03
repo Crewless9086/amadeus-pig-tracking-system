@@ -35,11 +35,13 @@ The fallback path must also sound human. LLM timeout must not cause robotic repl
 - customer name and phone/context;
 - product interest: half carcass, full carcass, or later custom cut;
 - cut set, defaulting to Set A in pilot unless owner overrides;
-- delivery or collection;
+- delivery address/farm name and useful driver notes;
 - town/area and address/location context where relevant;
 - timing expectation;
 - payment method, currently EFT only;
-- budget, target packed kg, or match preference when customer gives it;
+- freezer size, target packed kg, family size, or match preference when customer gives it;
+
+Public meat sales are delivery-first. SAM must not present collection as a normal option because there is no collection point yet. If a customer asks to collect, SAM should explain that the first public run is planned around delivery and capture the delivery details, unless the owner later approves a collection exception.
 - active price book and VAT-inclusive pricing;
 - clear WhatsApp service-window or template state.
 

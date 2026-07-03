@@ -123,7 +123,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["product_type"], "half_carcass")
         self.assertEqual(facts["cut_set"], "Set A")
         self.assertEqual(facts["location"], "Riversdale")
-        self.assertEqual(facts["delivery_or_collection"], "collection")
+        self.assertEqual(facts["delivery_or_collection"], "delivery")
         self.assertEqual(facts["payment_method"], "EFT")
         self.assertFalse(facts["llm_used"])
 
@@ -136,7 +136,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["product_type"], "half_carcass")
         self.assertEqual(facts["cut_set"], "Set A")
         self.assertEqual(facts["location"], "Riversdale")
-        self.assertEqual(facts["delivery_or_collection"], "collection")
+        self.assertEqual(facts["delivery_or_collection"], "delivery")
         self.assertEqual(facts["timing"], "next week")
         self.assertEqual(facts["payment_method"], "EFT")
         self.assertFalse(facts["llm_used"])
@@ -275,7 +275,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["product_type"], "half_carcass")
         self.assertEqual(facts["cut_set"], "Set A")
         self.assertEqual(facts["location"], "Riversdale")
-        self.assertEqual(facts["delivery_or_collection"], "collection")
+        self.assertEqual(facts["delivery_or_collection"], "delivery")
         self.assertEqual(facts["timing"], "next week")
         self.assertEqual(facts["payment_method"], "EFT")
         self.assertFalse(facts["llm_used"])
@@ -470,7 +470,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", decision["reply_text"])
         self.assertIn("Set D", decision["reply_text"])
-        self.assertIn("Budget Bulk Pack", decision["reply_text"])
+        self.assertIn("Slow-Cook Family Roast Pack", decision["reply_text"])
+        self.assertNotIn("Budget", decision["reply_text"])
 
     def test_non_pork_request_is_redirected_without_pretending_to_sell_it(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -1093,7 +1094,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         agent = Mock(return_value={
             "intent": "meat_preorder",
             "should_reply": True,
-            "reply_text": "Just to confirm, would you like delivery or collection?",
+            "reply_text": "Just to confirm, what delivery address or farm name should I use?",
             "facts_patch": {"delivery_or_collection": "delivery"},
             "confidence": 0.62,
             "requires_confirmation": True,
@@ -1112,7 +1113,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(result["agent_decision"]["facts_patch"], {})
         self.assertNotEqual(result["facts"].get("delivery_or_collection"), "delivery")
-        self.assertIn("delivery or collection", result["sam_decision"]["reply_text"].lower())
+        self.assertIn("delivery", result["sam_decision"]["reply_text"].lower())
+        self.assertIn("delivery address", result["sam_decision"]["reply_text"].lower())
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")

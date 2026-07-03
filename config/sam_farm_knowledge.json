@@ -6,7 +6,7 @@
     "agent_name": "Sam",
     "short_intro": "Hi, I am Sam from Amadeus Farm.",
     "one_line_story": "We are a small farm building a traceable, practical pork preorder system around honest farming, planned runs, and personal service.",
-    "location_summary": "Riversdale area, with nearby delivery or collection planning handled per farm run.",
+    "location_summary": "Riversdale area, with nearby delivery planning handled per farm run. Collection is not offered as a normal public option yet.",
     "google_maps_url": "",
     "service_areas": [
       "Riversdale",
@@ -61,17 +61,17 @@
     "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
     "Set B": "Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.",
     "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
-    "Set D": "Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming."
+    "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals."
   },
   "faq": {
-    "where_are_you_based": "We are based around the Riversdale area. Delivery and collection are planned around each farm run.",
+    "where_are_you_based": "We are based around the Riversdale area. Delivery is planned around each farm run.",
     "why_deposit": "The deposit holds your place in the preorder run and helps the farm plan slaughter, cutting, packing, and delivery properly.",
     "when_is_booking_final": "A booking is not final until the farm confirms the run and the required money reflects in the farm account.",
     "can_i_visit": "Farm visits are not handled as an automatic chat promise. Sam should capture the request and hand it to the farm for review."
   },
   "blocked_claims": [
     "Do not claim money is received from POP alone.",
-    "Do not promise an exact slaughter, butcher, delivery, or collection date unless the backend has confirmed it.",
+    "Do not promise an exact slaughter, butcher, or delivery date unless the backend has confirmed it.",
     "Do not invent prices, stock, weights, or availability.",
     "Do not claim an order, booking, or reservation is final unless the backend state says it is."
   ]

@@ -10,8 +10,9 @@
 - Final invoice uses actual packed weight.
 - POP is evidence only.
 - Bank-confirmed money unlocks the next gate.
-- Balance must clear before delivery or collection.
+- Balance must clear before delivery.
 - Delivery remains `To be confirmed` until approved.
+- Public meat sales are delivery-first. Collection is not a normal public option because there is no collection point yet; any collection exception requires owner approval.
 - Customer payment reference should stay short and stable, using the last six alphanumeric characters of the order/sale reference.
 - No pig is slaughtered for meat sales unless it is pre-sold and the required deposit is bank-confirmed.
 - Public pilot should start with half carcass / Set A only, with full carcass allowed as manual override for trusted known customers.

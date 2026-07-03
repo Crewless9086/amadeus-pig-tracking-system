@@ -76,7 +76,7 @@ FORBIDDEN_ACTIONS = [
 
 OWNER_REVIEW_CHECKLIST = [
     "Choose which channel goes first: WhatsApp status, WhatsApp channel, Facebook, Instagram, or direct known buyers.",
-    "Confirm whether public copy may mention Riversdale delivery/collection or should keep the area broad.",
+    "Confirm whether public copy may mention Riversdale delivery routes or should keep the area broad.",
     "Confirm whether public copy may mention a price/kg or should keep price on request until the pilot is proven.",
     "Choose the approved farm photo or video set before any public post is prepared.",
     "Confirm the first pilot target: how many halves/full carcasses should Sam try to fill before pausing demand.",
@@ -712,7 +712,7 @@ def build_meat_launch_campaign_packet(payload=None):
         "story_updates": _story_updates(farm_name, area),
         "owner_review_checklist": list(OWNER_REVIEW_CHECKLIST),
         "handoff_to_sam": {
-            "inbound_prompt": "When a buyer replies, Sam should collect product, cut set, town, delivery/collection, address/location when delivery is requested, timing, payment preference, budget/target kg where useful, and final booking-review confirmation.",
+            "inbound_prompt": "When a buyer replies, Sam should collect product, cut set, town, delivery address or farm name, useful driver notes, timing, payment preference, freezer size or target kg where useful, and final booking-review confirmation.",
             "must_not_say": [
                 "Your order is confirmed.",
                 "Your price is final.",
@@ -862,19 +862,19 @@ def _campaign_angles(farm_name, area, product_focus):
             "title": "Set A Family Freezer Pack",
             "summary": "Explain Set A as the practical family freezer option while keeping price, timing, and final packed weight for the farm confirmation step.",
             "best_channel": "Facebook and direct known buyers",
-            "sam_handoff": "Answer what Set A includes, then collect town, delivery/collection, timing, and payment preference.",
+            "sam_handoff": "Answer what Set A includes, then collect town, delivery address or farm name, timing, and payment preference.",
         },
         {
             "id": "farm_to_freezer_story",
             "title": "Farm To Freezer Story",
             "summary": f"Show the journey from farm planning to packed pork, with limited availability and pre-booking as part of the story rather than a pressure tactic.",
             "best_channel": "Instagram story and WhatsApp status",
-            "sam_handoff": "Invite replies from people who want Sam to check the best fit for their freezer, budget, or target kg.",
+            "sam_handoff": "Invite replies from people who want Sam to check the best fit for their freezer, household size, or target kg.",
         },
         {
             "id": "local_route_pilot",
             "title": "Local Route Pilot",
-            "summary": f"Keep the first run focused around {area}, so delivery and collection promises stay controlled while demand is measured.",
+            "summary": f"Keep the first run focused around {area}, so delivery promises stay controlled while demand is measured.",
             "best_channel": "WhatsApp status and known-buyer share",
             "sam_handoff": "Capture address or shared location when delivery is requested.",
         },
@@ -895,7 +895,7 @@ def _channel_drafts(farm_name, area, product_focus):
             "label": "WhatsApp Status 2",
             "channel": "WhatsApp status",
             "intent": "Explain the offer simply",
-            "text": "Limited pork freezer preorders are opening. This is not ready-shelf stock; it is pre-booked farm pork, packed after processing, with final weight confirmed once known. Ask Sam about half carcass Set A, full carcass, delivery, or collection.",
+            "text": "Limited pork freezer preorders are opening. This is not ready-shelf stock; it is pre-booked farm pork, packed after processing, with final weight confirmed once known. Ask Sam about half carcass Set A, full carcass, or delivery planning.",
         },
         {
             "id": "whatsapp_channel",
@@ -909,7 +909,7 @@ def _channel_drafts(farm_name, area, product_focus):
             "label": "Facebook Post Draft",
             "channel": "Facebook",
             "intent": "Public demand generation",
-            "text": f"{farm_name} is preparing a limited pork freezer preorder pilot for {area}. We are starting small so that every booking can be handled properly. The first focus is {product_focus}. This is pre-booked farm pork, not unlimited shop stock: price, timing, delivery/collection, deposit steps, and final packed weight are confirmed before the booking is accepted. If you want pork for your freezer, send us a message and Sam will collect the details.",
+            "text": f"{farm_name} is preparing a limited pork freezer preorder pilot for {area}. We are starting small so that every booking can be handled properly. The first focus is {product_focus}. This is pre-booked farm pork, not unlimited shop stock: price, timing, delivery planning, deposit steps, and final packed weight are confirmed before the booking is accepted. If you want pork for your freezer, send us a message and Sam will collect the details.",
         },
         {
             "id": "instagram_caption",
@@ -923,7 +923,7 @@ def _channel_drafts(farm_name, area, product_focus):
             "label": "Customer Education Draft",
             "channel": "Facebook/WhatsApp explainer",
             "intent": "Reduce confusion about final weight",
-            "text": "How the freezer preorder works: availability is limited, so interest is captured first. The farm then confirms price/kg, timing, delivery or collection, and deposit steps. Packed weight is estimated early, but the final amount is only confirmed after processing, because real carcass and cut yield can vary.",
+            "text": "How the freezer preorder works: availability is limited, so interest is captured first. The farm then confirms price/kg, timing, delivery planning, and deposit steps. Packed weight is estimated early, but the final amount is only confirmed after processing, because real carcass and cut yield can vary.",
         },
     ]
 
@@ -943,7 +943,7 @@ def _story_updates(farm_name, area):
         {
             "id": "story_slide_3",
             "label": "Story Slide 3",
-            "text": "Sam will collect the details: half or full carcass, town, delivery or collection, timing, payment preference, and any budget or freezer-size target. Limited pre-booked run only.",
+            "text": "Sam will collect the details: half or full carcass, town, delivery address or farm name, timing, payment preference, and any freezer-size or target-kg preference. Limited pre-booked run only.",
         },
         {
             "id": "story_slide_4",

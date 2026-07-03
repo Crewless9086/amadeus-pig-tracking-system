@@ -327,7 +327,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("Set A Family Freezer Pack", sales_agent_system)
         self.assertIn("Set B Braai Pack", sales_agent_system)
         self.assertIn("Set C Lean Pack", sales_agent_system)
-        self.assertIn("Set D Budget Bulk Pack", sales_agent_system)
+        self.assertIn("Set D Slow-Cook Family Roast Pack", sales_agent_system)
         self.assertIn("do not offer or prepare a formal quote until owner/Ledger has confirmed price/kg", sales_agent_system)
         self.assertIn("ask only the next safe missing question", sales_agent_system)
 

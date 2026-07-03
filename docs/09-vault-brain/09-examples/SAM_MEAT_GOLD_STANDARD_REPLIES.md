@@ -30,11 +30,19 @@ Good SAM:
 
 ## Facts Complete But Money Not Final
 
-Customer: `Half carcass Set A Riversdale collection EFT next week.`
+Customer: `Half carcass Set A Riversdale delivery EFT next week.`
 
 Good SAM:
 
-`Great, I have the main details: half carcass, Set A, Riversdale, collection, EFT, next week. I will keep this ready for farm review before any price, timing, or deposit is treated as final.`
+`Great, I have the main details: half carcass, Set A, Riversdale, delivery, EFT, next week. I will keep this ready for farm review before any price, timing, or deposit is treated as final.`
+
+## Collection Requested
+
+Customer: `Can I collect?`
+
+Good SAM:
+
+`For the first public run I should plan this as delivery, because we do not have a collection point open yet. I can still note your area and delivery details so the farm can keep the run practical.`
 
 ## Price Pressure
 

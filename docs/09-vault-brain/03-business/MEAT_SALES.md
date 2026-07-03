@@ -47,7 +47,7 @@ Pilot V1 should stay simple:
 - Custom cut orders should use 70% deposit when that lane opens.
 - Final invoice uses actual packed weight.
 - POP is evidence only; bank-confirmed money unlocks the next gate.
-- Balance must clear before delivery or collection.
+- Balance must clear before delivery.
 - Customer payment reference should stay short and stable, using the last six alphanumeric characters of the order/sale reference.
 
 ## Pricing Direction
@@ -100,7 +100,7 @@ Future sets:
 
 - Set B / Braai Pack;
 - Set C / Lean Pack;
-- Set D / Budget Bulk Pack;
+- Set D / Slow-Cook Family Roast Pack;
 - Custom Cut option.
 
 ## Weekly Operating Rhythm
@@ -108,10 +108,10 @@ Future sets:
 Suggested first rhythm:
 
 - Monday: close orders, confirm deposits, finalize cut sets, allocate pigs;
-- Tuesday/Wednesday: confirm slaughter bookings, prepare delivery/collection schedule, print labels and customer notes;
+- Tuesday/Wednesday: confirm slaughter bookings, prepare delivery schedule, print labels and customer notes;
 - Thursday: pigs sent to legal slaughter facility;
 - Friday: butchery/cutting/packing, final weights confirmed, final invoices issued;
-- Saturday: local delivery or collection.
+- Saturday: local delivery.
 
 Scaling rule:
 

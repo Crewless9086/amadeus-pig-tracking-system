@@ -65,7 +65,7 @@ CUT_SET_MENU = {
     "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
     "Set B": "Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.",
     "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
-    "Set D": "Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming.",
+    "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals.",
 }
 ROBOTIC_REPLY_PATTERNS = [
     r"\bI am still with you on the pork preorder\b",
@@ -748,7 +748,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif not facts.get("location"):
         reply = _next_fact_question(facts)
     elif not facts.get("delivery_or_collection"):
-        reply = "For the handover, should I plan this as collection or delivery? We keep that clear early so the farm run stays practical."
+        reply = "For the handover, I should plan this as delivery. Which street address or farm name should I use for the delivery note?"
     elif facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         reply = _next_fact_question(facts)
     elif not facts.get("timing"):
@@ -1094,7 +1094,7 @@ def _agent_v3_payload(context_packet, facts, source):
                 "cut_set": "Set A|Set B|Set C|Set D",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery|collection",
+                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
                 "delivery_address_line_1": "street address, farm name, or shared location label",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1187,7 +1187,7 @@ def _agent_v2_payload(inbound, facts, prior_context, source):
                 "cut_set": "Set A|Set B|Set C|Set D",
                 "location": "town or area",
                 "timing": "this week|next week|next available farm run|customer wording",
-                "delivery_or_collection": "delivery|collection",
+                "delivery_or_collection": "delivery only for public meat sales unless owner approves an exception",
                 "delivery_address_line_1": "street address or farm name",
                 "delivery_town": "town",
                 "delivery_area": "area/suburb",
@@ -1425,7 +1425,7 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
     if re.search(r"\bi am still with you\b|\bplease send\b|\btell me what you are looking for\b", lowered):
         issues.append("robotic_macro_tone")
         score -= 20
-    if not re.search(r"\b(farm|pork|freezer|delivery|collection|set|carcass|price|payment|order|booking|details|run)\b", lowered):
+    if not re.search(r"\b(farm|pork|freezer|delivery|set|carcass|price|payment|order|booking|details|run)\b", lowered):
         issues.append("weak_sales_usefulness")
         score -= 10
     score = max(0, min(100, score))
@@ -1471,7 +1471,7 @@ def _missing_meat_fields(facts):
     if not facts.get("location"):
         missing.append("location")
     if not facts.get("delivery_or_collection"):
-        missing.append("delivery_or_collection")
+        missing.append("delivery_address_line_1")
     if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         missing.append("delivery_address_line_1")
     if not facts.get("timing"):
@@ -1567,7 +1567,7 @@ def _deterministic_extract(message):
 
     delivery_or_collection = ""
     if re.search(r"\bcollect|collection|pickup|pick up\b", normalized):
-        delivery_or_collection = "collection"
+        delivery_or_collection = "delivery"
     elif re.search(r"\bdeliver|delivery\b", normalized):
         delivery_or_collection = "delivery"
 
@@ -1657,8 +1657,8 @@ def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None
     elif re.search(r"\b(lean|less fat|healthy|mince|stew)\b", normalized):
         suggestion = "Set C is the better fit if you want leaner freezer meat, mince and stew cuts with fewer fatty belly cuts."
         suggested_set = "Set C"
-    elif re.search(r"\b(budget|cheap|cheapest|bulk)\b", normalized):
-        suggestion = "Set D is the practical budget-bulk option, with larger roasting cuts, mince, stew meat and mixed chops."
+    elif re.search(r"\b(slow\s*cook|roast|roasting|family\s+meal|larger\s+cuts|bulk)\b", normalized):
+        suggestion = "Set D is the better fit if you want larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking and family meals."
         suggested_set = "Set D"
     else:
         suggestion = (
@@ -1685,8 +1685,8 @@ def _partial_meat_fact_reply(message, facts):
         return ""
     if facts.get("delivery_or_collection") == "delivery" and facts.get("location") and not facts.get("delivery_address_line_1"):
         return _next_fact_question(facts)
-    if facts.get("delivery_or_collection") == "collection" and facts.get("location") and not facts.get("timing"):
-        return "When would you ideally like the pork: this week, next week, or the next available farm run?"
+    if facts.get("delivery_or_collection") == "delivery" and facts.get("location") and not facts.get("delivery_address_line_1"):
+        return _next_fact_question(facts)
     return (
         "I can work with that. Should I treat this as a cut-set pork pack, "
         "or are you asking for a half carcass?"
@@ -1888,7 +1888,7 @@ def _next_fact_question(facts):
     if not facts.get("location"):
         return "Which town or area should I plan around so the farm run stays practical?"
     if not facts.get("delivery_or_collection"):
-        return "For the handover, should I plan this as collection or delivery?"
+        return "For the handover, I should plan this as delivery. Which street address or farm name should I use for the delivery note?"
     if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         return "That can work. For delivery I just need the street address or farm name, plus any directions or driver notes that make the drop-off easy."
     if not facts.get("timing"):
@@ -1905,7 +1905,7 @@ def _price_or_document_guard_reply(message, facts):
         return ""
     missing = []
     if not facts.get("delivery_or_collection"):
-        missing.append("delivery or collection")
+        missing.append("delivery address")
     if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         missing.append("delivery address")
     if not facts.get("timing"):
@@ -2534,7 +2534,7 @@ def _normal_location(value):
 def _normal_delivery(value):
     text = str(value or "").lower()
     if "collect" in text or "pickup" in text:
-        return "collection"
+        return "delivery"
     if "deliver" in text:
         return "delivery"
     return ""

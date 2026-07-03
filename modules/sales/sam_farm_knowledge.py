@@ -14,7 +14,7 @@ DEFAULT_KNOWLEDGE = {
         "agent_name": "Sam",
         "short_intro": "Hi, I am Sam from Amadeus Farm.",
         "one_line_story": "We help customers with planned farm pork preorders and related farm sales questions.",
-        "location_summary": "Riversdale area.",
+        "location_summary": "Riversdale area, with delivery planned per farm run.",
         "google_maps_url": "",
         "service_areas": ["Riversdale"],
     },

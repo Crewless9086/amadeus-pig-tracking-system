@@ -72,7 +72,7 @@ After the lead exists, Sam can keep collecting preferences:
 
 1. cut set
 2. timing
-3. delivery or collection preference
+3. delivery address or farm name
 4. payment preference
 
 Sam must not invent or confirm:
