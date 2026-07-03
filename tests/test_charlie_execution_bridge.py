@@ -165,6 +165,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(execution_bridge._ui_agent_quality_gate("creative_ui_designer", designer_artifact)["passed"])
         self.assertTrue(execution_bridge._ui_agent_quality_gate("visual_qa_reviewer", visual_reviewer_artifact)["passed"])
 
+    def test_ui_design_agent_schemas_include_reference_media_field(self):
+        for agent in ["creative_ui_designer", "ux_interaction_designer"]:
+            schema = execution_bridge._agent_required_schema(agent)
+            required = execution_bridge._validate_agent_artifact(agent, {
+                **{key: "value" for key in schema},
+                "errors": [],
+                "bugs": [],
+                "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+                "vault_updates": [],
+                "files_inspected": ["static/js/charlieMissionControl.js"],
+                "commands_run": ["rg charlie static/js/charlieMissionControl.js"],
+                "media_references_used": ["screenshots/reference.png"],
+                "confidence": "97%",
+                "confidence_reason": "Based on Vault Brain source docs, repo file inspection, and screenshot evidence.",
+            })
+
+            self.assertIn("media_references_used", schema)
+            self.assertTrue(required["valid"], required)
+
     @patch("modules.charlie.execution_bridge.shutil.which")
     @patch("modules.charlie.execution_bridge.os.name", "nt")
     def test_codex_executable_prefers_windows_cmd_shim(self, which):

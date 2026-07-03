@@ -1534,6 +1534,7 @@ def _agent_required_schema(agent):
         })
     elif agent == "creative_ui_designer":
         base.update({
+            "media_references_used": [],
             "ui_concept": "named design direction",
             "layout_system": [],
             "visual_direction": [],
@@ -1543,6 +1544,7 @@ def _agent_required_schema(agent):
         })
     elif agent == "ux_interaction_designer":
         base.update({
+            "media_references_used": [],
             "primary_workflows": [],
             "owner_actions": [],
             "responsive_behavior": [],
