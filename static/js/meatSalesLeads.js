@@ -694,7 +694,7 @@
           <em data-risk="${safe(action.risk, "idle")}">${safe(action.risk, "idle")}</em>
         </span>
         <span>${leadSummaryText(lead)}</span>
-        <small>${safe(lead.status)} / ${safe(latestEventType(lead), "no event")} / ${safe(lead.whatsapp_window_state, "window unknown")}</small>
+        <small>${safe(lead.lead_id)} / ${safe(lead.status)} / ${safe(latestEventType(lead), "no event")} / ${safe(lead.whatsapp_window_state, "window unknown")}</small>
         <span class="meat-lead-next-action">${safe(action.label)}<small>${safe(action.moneyState)}</small></span>
       `;
       button.addEventListener("click", () => selectLead(lead.lead_id));
@@ -1211,7 +1211,7 @@
       ? safe(lead.contact_label || lead.lead_label, "Loading lead...")
       : "Select a lead";
     elements.detailStatus.textContent = hasLead
-      ? `${safe(lead.status)} / ${safe(contract.contract_status, "contract pending")}`
+      ? `${safe(lead.lead_id || state.selectedLeadId)} / ${safe(lead.status)} / ${safe(contract.contract_status, "contract pending")}`
       : "Lead details will show here.";
     renderOperatorStrip(hasLead ? lead : null, contract);
     renderCommandPanel(hasLead ? lead : {}, contract);

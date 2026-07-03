@@ -2028,6 +2028,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/pig-weights/meat-planning", js)
         self.assertIn("SAM V3 live agent", js)
         self.assertIn("Approved Beacon media", js)
+        self.assertIn("${safe(lead.lead_id)}", js)
+        self.assertIn("lead.lead_id || state.selectedLeadId", js)
         self.assertIn("/api/sales/meat-leads?limit=50&status=launch_test", js)
         self.assertIn("/api/sales/meat-pricing?limit=50", js)
         self.assertIn("/api/sales/meat-pricing", js)
