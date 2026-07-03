@@ -7841,6 +7841,12 @@ body.oom-farm-command-body {
     gap: 10px;
 }
 
+.charlie-owner-note-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(180px, 0.6fr);
+    gap: 10px;
+}
+
 .charlie-owner-action-controls textarea,
 .charlie-owner-action-controls select {
     width: 100%;
@@ -8113,6 +8119,8 @@ body.oom-farm-command-body {
 .charlie-review-actions {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    align-items: stretch;
+    margin-top: 0;
 }
 
 .charlie-command-center-grid {
@@ -9161,6 +9169,8 @@ body.oom-farm-command-body {
 .charlie-owner-action-state div,
 .charlie-owner-action-controls textarea,
 .charlie-owner-action-controls select,
+.charlie-owner-note-grid textarea,
+.charlie-owner-note-grid select,
 .charlie-empty-review-focus {
     border-color: rgba(126, 164, 156, 0.34);
     background: #0c1716;
@@ -9510,6 +9520,25 @@ body.oom-farm-command-body {
         position: static;
     }
 
+    .charlie-owner-action-dock {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        padding: 10px;
+    }
+
+    .charlie-owner-action-dock h2 {
+        font-size: 1.05rem;
+    }
+
+    .charlie-owner-action-dock p {
+        font-size: 0.88rem;
+    }
+
+    .charlie-owner-note-grid {
+        grid-template-columns: 1fr;
+    }
+
     .charlie-command-strip,
     .charlie-command-center-grid,
     .charlie-mission-meta,
@@ -9569,6 +9598,39 @@ body.oom-farm-command-body {
     .charlie-hero-metrics,
     .charlie-review-actions {
         grid-template-columns: 1fr;
+    }
+
+    .charlie-owner-action-dock {
+        gap: 8px;
+    }
+
+    .charlie-owner-action-state {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .charlie-owner-action-controls {
+        gap: 8px;
+    }
+
+    .charlie-owner-action-controls textarea {
+        min-height: 44px;
+    }
+
+    .charlie-owner-action-controls select {
+        min-height: 36px;
+    }
+
+    .charlie-owner-action-dock .charlie-review-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .charlie-owner-action-dock .charlie-review-actions button {
+        min-height: 36px;
+        padding: 0 8px;
+        font-size: 0.82rem;
+        line-height: 1.1;
+        white-space: normal;
     }
 
     .charlie-review-modal {

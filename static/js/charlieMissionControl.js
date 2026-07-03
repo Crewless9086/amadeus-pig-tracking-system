@@ -150,16 +150,29 @@
     if (state.loading) return;
     state.loading = true;
     setMessage("", "info");
+    renderOwnerActionDock();
+    renderAliveDashboard();
     const status = els.filter ? els.filter.value : "";
     state.activeFilter = status || "";
     const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
     try {
-      const [summary, missions] = await Promise.all([
+      const [summaryResult, missionsResult] = await Promise.allSettled([
         fetchJson("/api/charlie/build-relay/missions/summary"),
         fetchJson(`/api/charlie/build-relay/missions${query}`),
       ]);
-      state.missions = missions.missions || [];
-      state.counts = summary.counts || {};
+      if (summaryResult.status === "fulfilled") {
+        state.counts = summaryResult.value.counts || {};
+      }
+      if (missionsResult.status === "fulfilled") {
+        state.missions = missionsResult.value.missions || [];
+      }
+      if (summaryResult.status === "rejected" && missionsResult.status === "rejected") {
+        throw missionsResult.reason || summaryResult.reason;
+      }
+      if (summaryResult.status === "rejected" || missionsResult.status === "rejected") {
+        const partialError = summaryResult.status === "rejected" ? summaryResult.reason : missionsResult.reason;
+        setMessage(`Partial CHARLIE state loaded. ${partialError.message || "One dashboard API is still unavailable."}`, "info");
+      }
       state.reviewMissions = state.missions.filter((mission) => ["pr_ready", "blocked"].includes(mission.status));
       render();
       loadRunnerStatus();
@@ -238,8 +251,15 @@
       renderOwnerActionDock();
     } catch (error) {
       if (els.commandCenter) {
-        els.commandCenter.innerHTML = `<p class="charlie-muted">${escapeHtml(error.message || "Command center unavailable.")}</p>`;
+        els.commandCenter.innerHTML = `
+          <article class="charlie-command-center-tile charlie-command-center-partial">
+            <strong>Command Center</strong>
+            <span>Partial state visible</span>
+            <code>${escapeHtml(error.message || "Command center unavailable.")}</code>
+          </article>
+        `;
       }
+      renderOwnerActionDock();
     }
   }
 
@@ -343,23 +363,6 @@
         </dl>
       </div>
       <div class="charlie-owner-action-controls">
-        <textarea rows="2" data-review-comments placeholder="${mission ? "Optional owner review note" : "Owner comments require a review-ready or blocked mission"}"${mission ? "" : " disabled"}></textarea>
-        <select data-review-target-stage${mission ? "" : " disabled"}>
-          <option value="builder">Builder</option>
-          <option value="tester">Tester</option>
-          <option value="qa_red_team">QA / Red Team</option>
-          <option value="product_reviewer">Product Reviewer</option>
-          <option value="security_reviewer">Security Reviewer</option>
-          <option value="evidence_reviewer">Evidence Reviewer</option>
-          <option value="reviewer">Reviewer</option>
-          <option value="planner">Planner</option>
-          <option value="architect">Architect</option>
-          <option value="council_synthesis">Council Synthesis</option>
-          <option value="risk_agent">Risk Agent</option>
-          <option value="technical_architect">Technical Architect</option>
-          <option value="product_architect">Product Architect</option>
-          <option value="idea_expander">Idea Expander</option>
-        </select>
         <div class="charlie-mission-actions charlie-review-actions">
           <button type="button" data-dock-open-review>Open Review</button>
           <button type="button" data-dock-refresh>Refresh Evidence</button>
@@ -367,6 +370,25 @@
           <button type="button" data-review-decision="send_back"${mission ? "" : " disabled"}>Send Back</button>
           <button type="button" data-review-decision="pause"${mission ? "" : " disabled"}>Pause</button>
           <button type="button" data-review-decision="reject"${mission ? "" : " disabled"}>Reject</button>
+        </div>
+        <div class="charlie-owner-note-grid">
+          <textarea rows="2" data-review-comments placeholder="${mission ? "Optional owner review note" : "Owner comments require a review-ready or blocked mission"}"${mission ? "" : " disabled"}></textarea>
+          <select data-review-target-stage${mission ? "" : " disabled"}>
+            <option value="builder">Builder</option>
+            <option value="tester">Tester</option>
+            <option value="qa_red_team">QA / Red Team</option>
+            <option value="product_reviewer">Product Reviewer</option>
+            <option value="security_reviewer">Security Reviewer</option>
+            <option value="evidence_reviewer">Evidence Reviewer</option>
+            <option value="reviewer">Reviewer</option>
+            <option value="planner">Planner</option>
+            <option value="architect">Architect</option>
+            <option value="council_synthesis">Council Synthesis</option>
+            <option value="risk_agent">Risk Agent</option>
+            <option value="technical_architect">Technical Architect</option>
+            <option value="product_architect">Product Architect</option>
+            <option value="idea_expander">Idea Expander</option>
+          </select>
         </div>
       </div>
     `;
@@ -1946,6 +1968,8 @@
     }
   });
   setupMediaCapture();
+  renderOwnerActionDock();
+  renderAliveDashboard();
   loadMissions();
   window.setInterval(loadMissions, AUTO_REFRESH_MS);
 })();
