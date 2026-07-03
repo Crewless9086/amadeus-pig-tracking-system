@@ -160,12 +160,19 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
-    prior_context = _merge_inbound_attribute_context(
-        _conversation_lead_context(inbound.get("conversation_id")),
-        inbound,
-    )
+    context_errors = []
+    try:
+        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
+    except Exception as exc:
+        lead_context = {}
+        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
+    prior_context = _merge_inbound_attribute_context(lead_context, inbound)
     facts = _merge_prior_context(facts, prior_context)
-    context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
+    try:
+        context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
+    except Exception as exc:
+        context_errors.append(_integration_failure("sam_v3_context_packet_failed", exc))
+        context_packet = _fallback_sam_v3_context_packet(inbound, prior_context)
     product_knowledge_preselected = _should_use_product_knowledge_tool(inbound.get("content"), facts, prior_context)
     if product_knowledge_preselected:
         agent_decision = {
@@ -200,8 +207,14 @@ def handle_sam_meat_chatwoot_inbound(
         lead_payload["lead_id"] = prior_context["lead_id"]
     else:
         lead_payload["lead_id"] = _fresh_lead_id(inbound, facts)
-    record_result, record_status = record_sam_meat_intake_lead(lead_payload)
-    booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
+    try:
+        record_result, record_status = record_sam_meat_intake_lead(lead_payload)
+    except Exception as exc:
+        record_result, record_status = _integration_failure("sam_meat_intake_record_failed", exc), 503
+    try:
+        booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
+    except Exception as exc:
+        booking_confirmation = _integration_failure("booking_confirmation_record_failed", exc)
     decision = build_sam_meat_decision(
         inbound,
         facts,
@@ -228,7 +241,10 @@ def handle_sam_meat_chatwoot_inbound(
             )
             decision["reply_source"] = "hard_booking_gate"
             decision["deposit_payment_instruction"] = deposit_instruction
-    pop_capture = _record_pop_if_ready(inbound, prior_context, source)
+    try:
+        pop_capture = _record_pop_if_ready(inbound, prior_context, source)
+    except Exception as exc:
+        pop_capture = _integration_failure("pop_capture_record_failed", exc)
     if pop_capture.get("recorded") or pop_capture.get("detected"):
         decision["reply_text"] = (
             "Thanks, I have received the payment proof. "
@@ -245,18 +261,24 @@ def handle_sam_meat_chatwoot_inbound(
         source,
         rewriter=llm_reply_rewriter,
     )
-    fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
-    chatwoot_hygiene = sync_sam_meat_chatwoot_hygiene(
-        inbound.get("conversation_id"),
-        lead_payload=lead_payload,
-        facts=facts,
-        inbound=inbound,
-        decision=decision,
-        prior_context=prior_context,
-        booking_confirmation=booking_confirmation,
-        pop_capture=pop_capture,
-        environ=source,
-    )
+    try:
+        fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
+    except Exception as exc:
+        fulfillment_capture = _integration_failure("fulfillment_capture_record_failed", exc)
+    try:
+        chatwoot_hygiene = sync_sam_meat_chatwoot_hygiene(
+            inbound.get("conversation_id"),
+            lead_payload=lead_payload,
+            facts=facts,
+            inbound=inbound,
+            decision=decision,
+            prior_context=prior_context,
+            booking_confirmation=booking_confirmation,
+            pop_capture=pop_capture,
+            environ=source,
+        )
+    except Exception as exc:
+        chatwoot_hygiene = _integration_failure("chatwoot_hygiene_sync_failed", exc)
 
     send_result = {}
     document_send_result = {}
@@ -309,6 +331,7 @@ def handle_sam_meat_chatwoot_inbound(
         "facts": facts,
         "agent_decision": agent_decision,
         "sam_context_packet": context_packet,
+        "context_errors": context_errors,
         "prior_context": prior_context,
         "lead_payload": lead_payload,
         "lead_result": record_result,
@@ -327,7 +350,10 @@ def handle_sam_meat_chatwoot_inbound(
         "policy": sam_meat_webhook_policy(source),
         **_authority_flags(sent or document_sent, sent or document_sent),
     }
-    learning_result, learning_status = record_learning_event_from_sam_result(result)
+    try:
+        learning_result, learning_status = record_learning_event_from_sam_result(result)
+    except Exception as exc:
+        learning_result, learning_status = _integration_failure("conversation_learning_record_failed", exc), 503
     result["conversation_learning"] = {
         "status_code": learning_status,
         "status": learning_result.get("status"),
@@ -339,6 +365,59 @@ def handle_sam_meat_chatwoot_inbound(
         "changes_runtime_now": False,
     }
     return result, status_code
+
+
+def _integration_failure(status, exc):
+    return {
+        "success": False,
+        "status": status,
+        "error_type": exc.__class__.__name__,
+        "error": str(exc)[:180],
+    }
+
+
+def _fallback_sam_v3_context_packet(inbound, prior_context):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    return {
+        "version": "sam_v3_context_packet_fallback_v1",
+        "agent": "Sam Meat",
+        "current_message": inbound.get("content") or "",
+        "customer": {
+            "name": inbound.get("customer_name") or "",
+            "phone": inbound.get("customer_phone") or "",
+            "contact_id": inbound.get("contact_id") or "",
+            "channel": inbound.get("channel") or "",
+            "conversation_id": inbound.get("conversation_id") or "",
+        },
+        "chatwoot": {
+            "conversation_id": inbound.get("conversation_id") or "",
+            "labels": inbound.get("conversation_labels") if isinstance(inbound.get("conversation_labels"), list) else [],
+            "custom_attributes": inbound.get("conversation_custom_attributes") if isinstance(inbound.get("conversation_custom_attributes"), dict) else {},
+            "whatsapp_window_state": inbound.get("whatsapp_window_state") or "unknown",
+        },
+        "conversation": {
+            "recent_messages": [{"role": "customer", "content": inbound.get("content") or ""}],
+            "summary": inbound.get("content") or "",
+        },
+        "lead": {
+            "lead_id": prior_context.get("lead_id", ""),
+            "interest": prior_context.get("interest") if isinstance(prior_context.get("interest"), dict) else {},
+            "latest_event": prior_context.get("latest_event", ""),
+        },
+        "source_context": {"available": False, "source": "fallback"},
+        "farm_knowledge": {"public_profile": {}, "meat_sales": {}, "knowledge_status": "fallback"},
+        "business_rules": [],
+        "allowed_actions": ["reply_to_customer", "request_missing_fact", "handoff_for_owner_review"],
+        "blocked_actions": [
+            "invent_price",
+            "confirm_final_availability",
+            "confirm_booking_without_gate",
+            "confirm_payment_without_bank_receipt",
+            "reserve_stock_without_gate",
+        ],
+        "context_quality": {"status": "fallback", "missing": ["full_context_packet"]},
+    }
 
 
 def parse_chatwoot_inbound(payload):

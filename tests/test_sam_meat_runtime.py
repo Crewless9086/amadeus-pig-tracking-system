@@ -683,6 +683,53 @@ class SamMeatRuntimeTests(unittest.TestCase):
         event_types = [call.args[1]["event_type"] for call in mock_event.call_args_list]
         self.assertEqual(event_types, ["sam_meat_autoreply_attempted", "sam_meat_autoreply_sent"])
 
+    @patch("modules.sales.sam_meat_runtime.sync_sam_meat_chatwoot_hygiene")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_handle_inbound_returns_json_when_hygiene_sync_fails(self, mock_record, mock_hygiene):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "contract": {},
+        }, 201)
+        mock_hygiene.side_effect = RuntimeError("production hygiene mismatch")
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["chatwoot_hygiene"]["status"], "chatwoot_hygiene_sync_failed")
+        self.assertEqual(result["chatwoot_hygiene"]["error_type"], "RuntimeError")
+
+    @patch("modules.sales.sam_meat_runtime.build_sam_v3_context_packet")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_handle_inbound_uses_fallback_context_when_context_sources_fail(self, mock_record, mock_lead, mock_context):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "contract": {},
+        }, 201)
+        mock_lead.side_effect = RuntimeError("lead context mismatch")
+        mock_context.side_effect = RuntimeError("context packet mismatch")
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["sam_context_packet"]["version"], "sam_v3_context_packet_fallback_v1")
+        self.assertEqual(
+            [item["status"] for item in result["context_errors"]],
+            ["conversation_lead_context_failed", "sam_v3_context_packet_failed"],
+        )
+
     @patch("modules.sales.sam_meat_runtime.send_meat_estimated_quote_to_chatwoot")
     @patch("modules.sales.sam_meat_runtime.build_meat_estimated_quote_packet")
     @patch("modules.sales.sam_meat_runtime.record_sales_lead_event")
