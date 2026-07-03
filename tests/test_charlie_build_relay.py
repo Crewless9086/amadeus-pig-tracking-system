@@ -568,6 +568,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         list_missions.assert_called_once_with(status="owner_queue", limit="30")
 
+    @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "1"}, clear=False)
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.vault_tables_health")
     @patch("modules.charlie.routes.local_runner_status")
@@ -576,31 +577,21 @@ class CharlieBuildRelayTests(unittest.TestCase):
     @patch("modules.charlie.routes.list_improvement_proposals")
     @patch("modules.charlie.routes.list_missions")
     def test_command_center_uses_status_specific_owner_work_buckets(self, list_missions, list_improvement_proposals, mission_status_summary, list_owner_work_missions, local_runner_status, vault_tables_health, _owner_access):
-        mission_status_summary.return_value = ({"success": True, "status": "ok", "counts": {"approved": 1}}, 200)
+        mission_status_summary.return_value = ({"success": True, "status": "ok", "counts": {"approved": 1, "merged": 2, "deployed": 3}}, 200)
         list_improvement_proposals.return_value = ({"success": True, "status": "ok", "proposals": []}, 200)
         list_missions.return_value = ({
             "success": True,
             "status": "ok",
-            "missions": [{
-                "mission_id": "CHARLIE-MISSION-RECENT",
-                "title": "Recent active mission",
-                "status": "in_progress",
-            }],
+            "missions": [
+                {"mission_id": "CHARLIE-MISSION-RECENT", "title": "Recent active mission", "status": "in_progress"},
+                {"mission_id": "CHARLIE-MISSION-DEEP-APPROVED", "status": "approved", "title": "Deep approved"},
+                {"mission_id": "CHARLIE-MISSION-DEEP-REVIEW", "status": "pr_ready", "title": "Deep review"},
+                {"mission_id": "CHARLIE-MISSION-DEEP-BLOCKED", "status": "blocked", "title": "Deep blocked"},
+                {"mission_id": "CHARLIE-MISSION-DEEP-RELEASE", "status": "release_approved", "title": "Deep release"},
+            ],
         }, 200)
         local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
         vault_tables_health.return_value = ({"success": True, "status": "ok"}, 200)
-
-        def fake_owner_work(status="", limit=10):
-            missions_by_status = {
-                "approved": [{"mission_id": "CHARLIE-MISSION-DEEP-APPROVED", "status": "approved", "title": "Deep approved"}],
-                "pr_ready": [{"mission_id": "CHARLIE-MISSION-DEEP-REVIEW", "status": "pr_ready", "title": "Deep review"}],
-                "blocked": [{"mission_id": "CHARLIE-MISSION-DEEP-BLOCKED", "status": "blocked", "title": "Deep blocked"}],
-                "release_approved": [{"mission_id": "CHARLIE-MISSION-DEEP-RELEASE", "status": "release_approved", "title": "Deep release"}],
-                "release_in_progress": [],
-            }
-            return {"success": True, "status": "ok", "missions": missions_by_status.get(status, [])[:limit]}, 200
-
-        list_owner_work_missions.side_effect = fake_owner_work
 
         response = self.client.get("/api/charlie/build-relay/command-center")
         data = response.get_json()
@@ -610,11 +601,32 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["review"]["ready"][0]["mission_id"], "CHARLIE-MISSION-DEEP-REVIEW")
         self.assertEqual(data["review"]["blocked"][0]["mission_id"], "CHARLIE-MISSION-DEEP-BLOCKED")
         self.assertEqual(data["release"]["waiting_final_bridge"][0]["mission_id"], "CHARLIE-MISSION-DEEP-RELEASE")
-        list_missions.assert_any_call(status="owner_queue", limit=8)
-        list_missions.assert_any_call(status="merged", limit=5)
-        list_missions.assert_any_call(status="deployed", limit=5)
-        list_owner_work_missions.assert_any_call("approved", limit=20)
-        list_owner_work_missions.assert_any_call("pr_ready", limit=5)
+        self.assertEqual(data["release"]["merged_count"], 2)
+        self.assertEqual(data["release"]["deployed_count"], 3)
+        list_missions.assert_called_once_with(status="owner_queue", limit=50)
+        list_owner_work_missions.assert_not_called()
+
+    @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED": "0"}, clear=False)
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.vault_tables_health")
+    @patch("modules.charlie.routes.local_runner_status")
+    @patch("modules.charlie.routes.mission_status_summary")
+    @patch("modules.charlie.routes.list_improvement_proposals")
+    @patch("modules.charlie.routes.list_missions")
+    def test_command_center_skips_store_reads_when_mission_store_disabled(self, list_missions, list_improvement_proposals, mission_status_summary, local_runner_status, vault_tables_health, _owner_access):
+        local_runner_status.return_value = {"active": False, "status": "runner_not_started"}
+
+        response = self.client.get("/api/charlie/build-relay/command-center")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["recent_missions"], [])
+        self.assertEqual(data["review"]["ready"], [])
+        self.assertEqual(data["vault"]["health"]["status"], "mission_store_disabled")
+        list_missions.assert_not_called()
+        mission_status_summary.assert_not_called()
+        list_improvement_proposals.assert_not_called()
+        vault_tables_health.assert_not_called()
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_mission")

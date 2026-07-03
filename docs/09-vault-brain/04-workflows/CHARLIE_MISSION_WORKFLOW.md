@@ -10,6 +10,10 @@
 8. Mission stops at owner review.
 9. Owner approves final release, sends back, pauses, rejects, or marks done.
 
+The `/charlie` dashboard must keep owner review actions visible in the first working viewport. Open Review and evidence refresh stay available for diagnosis when no mission is ready, but Approve Final, Send Back, Pause, Reject, and Mark Done require a real blocked or review-ready mission id so the audit trail is preserved.
+
+When the local mission store is disabled for preview or diagnostics, the command-center API should report an explicit disabled/empty mission state instead of blocking the dashboard on unavailable store reads.
+
 ## Mission Contract
 
 Every mission must resolve to:

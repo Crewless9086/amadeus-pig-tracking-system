@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-03
+
+- Added CHARLIE Mission Workflow guidance that `/charlie` must keep owner review actions visible in the first working viewport, keep diagnostic Open Review/evidence refresh available when no mission is ready, and preserve mission-id gating for final owner decisions.
+- Added command-center preview guidance that a disabled local mission store should return an explicit disabled/empty state instead of blocking dashboard rendering on unavailable store reads.
+
 ## 2026-07-02
 
 - Created first structured Vault Brain tree.
