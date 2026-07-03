@@ -277,8 +277,42 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(policy["page_id_configured"])
         self.assertFalse(policy["page_access_token_configured"])
         self.assertEqual(policy["required_owner_confirmation"], "POST EXACT BEACON PACKET")
+        self.assertFalse(policy["text_posting_configured"])
+        self.assertFalse(policy["media_storage_configured"])
+        self.assertFalse(policy["image_posting_configured"])
+        self.assertFalse(policy["posts_text_only_now"])
+        self.assertFalse(policy["posts_media_now"])
+        self.assertFalse(policy["posts_image_now"])
         self.assertFalse(policy["boosts_post"])
         self.assertFalse(policy["spends_money"])
+
+    def test_facebook_posting_policy_reports_readiness_only_when_enabled(self):
+        disabled_policy = facebook_posting_policy(environ={
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        })
+
+        self.assertFalse(disabled_policy["enabled"])
+        self.assertTrue(disabled_policy["text_posting_configured"])
+        self.assertTrue(disabled_policy["media_storage_configured"])
+        self.assertTrue(disabled_policy["image_posting_configured"])
+        self.assertFalse(disabled_policy["posts_text_only_now"])
+        self.assertFalse(disabled_policy["posts_media_now"])
+        self.assertFalse(disabled_policy["posts_image_now"])
+
+        enabled_policy = facebook_posting_policy(environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        })
+
+        self.assertTrue(enabled_policy["posts_text_only_now"])
+        self.assertTrue(enabled_policy["posts_media_now"])
+        self.assertTrue(enabled_policy["posts_image_now"])
 
     def test_facebook_post_execution_requires_exact_owner_confirmation(self):
         result, status = execute_beacon_facebook_page_post({

@@ -561,6 +561,9 @@ def facebook_posting_policy(environ=None):
     token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
     supabase_url = _clean_text(source.get(SUPABASE_URL_ENV))
     supabase_key = _clean_text(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV))
+    page_credentials_configured = bool(page_id and token)
+    media_storage_configured = bool(supabase_url and supabase_key)
+    posting_ready = bool(enabled and page_credentials_configured)
     return {
         "success": True,
         "mode": "beacon_facebook_page_post_execution_gate",
@@ -574,9 +577,12 @@ def facebook_posting_policy(environ=None):
         "page_access_token_env": FACEBOOK_PAGE_ACCESS_TOKEN_ENV,
         "graph_version_env": FACEBOOK_GRAPH_VERSION_ENV,
         "required_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
-        "posts_text_only_now": True,
-        "posts_media_now": bool(supabase_url and supabase_key),
-        "posts_image_now": bool(supabase_url and supabase_key),
+        "text_posting_configured": page_credentials_configured,
+        "media_storage_configured": media_storage_configured,
+        "image_posting_configured": bool(page_credentials_configured and media_storage_configured),
+        "posts_text_only_now": posting_ready,
+        "posts_media_now": bool(posting_ready and media_storage_configured),
+        "posts_image_now": bool(posting_ready and media_storage_configured),
         "media_source": "approved_beacon_supabase_image_signed_url",
         "boosts_or_spends_now": False,
         "required_envs": [
@@ -1450,7 +1456,7 @@ def _facebook_post_validation_error(params, policy):
             return "selected_image_asset_not_public_use_approved"
         if not asset.get("storage_bucket") or not asset.get("storage_path"):
             return "selected_image_asset_storage_missing"
-        if not policy.get("posts_media_now"):
+        if not policy.get("media_storage_configured"):
             return "facebook_image_posting_storage_not_configured"
     if params.get("owner_confirmation") != FACEBOOK_POST_CONFIRMATION_PHRASE:
         return "owner_confirmation_required"
