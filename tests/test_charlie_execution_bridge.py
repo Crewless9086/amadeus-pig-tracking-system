@@ -1309,6 +1309,16 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["missing_keys"], [])
 
+    def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
+        artifact = _successful_stage_payload("technical_architect")
+        artifact["files_to_inspect"] = []
+        artifact["implementation_plan"] = []
+
+        result = execution_bridge._validate_agent_artifact("technical_architect", artifact)
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["missing_keys"], [])
+
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_prepare_release_execution_writes_release_packet(self, get_mission):
         mission = dict(MISSION)
