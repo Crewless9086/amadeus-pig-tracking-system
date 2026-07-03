@@ -24,6 +24,24 @@
 
       <div id="beacon_media_message" class="message-box hidden"></div>
 
+      <section class="beacon-launch-rail" aria-label="First meat launch steps">
+        <article>
+          <span>1</span>
+          <strong>Choose Media</strong>
+          <small>Upload or select one real image, then approve public use.</small>
+        </article>
+        <article>
+          <span>2</span>
+          <strong>Review Post</strong>
+          <small>Prepare the Facebook packet and read the exact text.</small>
+        </article>
+        <article>
+          <span>3</span>
+          <strong>Post</strong>
+          <small>Use the Facebook gate only after final owner confirmation.</small>
+        </article>
+      </section>
+
       <section class="summary-metric-grid beacon-media-summary" aria-label="Beacon media summary">
         <article>
           <span>Needs Review</span>
@@ -129,7 +147,8 @@
           <div id="beacon_facebook_post_result" class="beacon-facebook-post-result"></div>
           <div id="beacon_facebook_post_execution_list" class="beacon-facebook-post-list"></div>
         </div>
-        <div class="beacon-manual-post-panel" aria-label="Beacon manual post evidence">
+        <details class="beacon-manual-post-panel beacon-advanced-panel" aria-label="Beacon manual post evidence">
+          <summary>Advanced: Manual Post Evidence</summary>
           <div class="page-header section-header-compact">
             <div>
               <h3>Manual Post Evidence</h3>
@@ -189,8 +208,9 @@
             <button type="button" id="beacon_manual_post_record" class="button-link">Record Manual Post Evidence</button>
           </div>
           <div id="beacon_manual_post_evidence_list" class="beacon-manual-post-list"></div>
-        </div>
-        <div class="beacon-performance-panel" aria-label="Beacon campaign performance and boost recommendation">
+        </details>
+        <details class="beacon-performance-panel beacon-advanced-panel" aria-label="Beacon campaign performance and boost recommendation">
+          <summary>Advanced: Performance + Boost Recommendation</summary>
           <div class="page-header section-header-compact">
             <div>
               <h3>Performance + Boost Recommendation</h3>
@@ -267,7 +287,7 @@
           </div>
           <div id="beacon_boost_packet_result" class="beacon-boost-packet-result"></div>
           <div id="beacon_performance_event_list" class="beacon-performance-list"></div>
-        </div>
+        </details>
       </section>
 
       <section class="beacon-media-workflow">
