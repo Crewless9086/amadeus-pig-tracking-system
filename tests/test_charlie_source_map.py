@@ -8,6 +8,38 @@ from modules.charlie.vault_retrieval import retrieve_vault_sources
 
 
 class CharlieSourceMapTests(unittest.TestCase):
+    def test_charlie_dashboard_maps_dashboard_sources(self):
+        mission = {
+            "mission_type": "dashboard ui",
+            "title": "CHARLIE CORE dashboard command center",
+            "raw_text": "Redesign /charlie Mission Control and prove owner review buttons.",
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("charlie_core_dashboard", keys)
+        self.assertIn("static/js/charlieMissionControl.js", packet["required_inspection_paths"])
+        self.assertIn("tests/test_frontend_route_contracts.py", packet["required_inspection_paths"])
+        self.assertIn("/api/charlie/build-relay/runner/status", packet["required_routes"])
+
+    def test_forbidden_sam_beacon_mentions_do_not_map_sales_sources(self):
+        mission = {
+            "mission_type": "dashboard ui",
+            "title": "CHARLIE CORE dashboard command center",
+            "raw_text": "Hold all Beacon/SAM meat posting work; this mission is only for CHARLIE CORE dashboard quality.",
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("charlie_core_dashboard", keys)
+        self.assertNotIn("sam_meat_sales", keys)
+        self.assertNotIn("beacon_marketing", keys)
+        self.assertIn("static/js/charlieMissionControl.js", packet["required_inspection_paths"])
+        self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
+        self.assertNotIn("modules/beacon/media_library.py", packet["required_inspection_paths"])
+
     def test_sam_meat_income_mission_maps_existing_implementation(self):
         mission = {
             "mission_type": "income stream",

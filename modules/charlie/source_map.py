@@ -6,6 +6,54 @@ SOURCE_MAP_VERSION = "charlie_implementation_source_map_v1"
 
 
 IMPLEMENTATION_SOURCE_MAP = {
+    "charlie_core_dashboard": {
+        "label": "CHARLIE CORE Dashboard",
+        "status": "built_active_workflow",
+        "summary": "CHARLIE mission control dashboard, mission queue, runner status, owner review, source-map, Vault readiness, and agent workflow UI.",
+        "keywords": ["charlie core", "/charlie", "charlie dashboard", "mission control", "command center", "dashboard ui", "owner review", "runner status"],
+        "vault_docs": [
+            "docs/09-vault-brain/01-identity/CHARLIE_CORE.md",
+            "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+            "docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md",
+            "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md",
+            "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
+        ],
+        "app_routes": [
+            "/charlie",
+            "/api/charlie/build-relay/missions",
+            "/api/charlie/build-relay/runner/status",
+            "/api/charlie/build-relay/command-center",
+            "/api/charlie/build-relay/missions/<mission_id>/review",
+            "/api/charlie/build-relay/missions/<mission_id>/decision",
+        ],
+        "code_paths": [
+            "app.py",
+            "templates/charlie.html",
+            "static/js/charlieMissionControl.js",
+            "static/css/main.css",
+            "modules/charlie/routes.py",
+            "modules/charlie/mission_store.py",
+            "modules/charlie/runner_control.py",
+            "modules/charlie/execution_bridge.py",
+            "modules/charlie/core_workflow.py",
+            "modules/charlie/source_map.py",
+        ],
+        "tests": [
+            "tests/test_charlie_build_relay.py",
+            "tests/test_charlie_execution_bridge.py",
+            "tests/test_charlie_mission_store.py",
+            "tests/test_charlie_core_workflow.py",
+            "tests/test_charlie_source_map.py",
+            "tests/test_frontend_route_contracts.py",
+        ],
+        "migrations": [
+            "supabase/migrations/202606300001_create_charlie_mission_queue.sql",
+            "supabase/migrations/202606300002_create_charlie_vault_v1_tables.sql",
+            "supabase/migrations/202607010002_create_charlie_core_v3_tables.sql",
+        ],
+        "legacy_sources": [],
+        "must_inspect_before_advice": True,
+    },
     "sam_meat_sales": {
         "label": "SAM Meat Sales",
         "status": "built_active_pilot",
@@ -330,10 +378,25 @@ def _score_entry(query, entry):
     reasons = []
     for keyword in entry.get("keywords", []):
         keyword = str(keyword or "").lower()
-        if keyword and keyword in lower:
+        if keyword and keyword in lower and not _keyword_is_negated(lower, keyword):
             score += 30 if " " in keyword else 18
             reasons.append(f"keyword:{keyword}")
     return score, reasons
+
+
+def _keyword_is_negated(lower, keyword):
+    start = 0
+    while True:
+        index = lower.find(keyword, start)
+        if index < 0:
+            return False
+        before = lower[max(0, index - 32):index]
+        after = lower[index:index + len(keyword) + 36]
+        if any(marker in before for marker in ("hold all ", "no ", "not ", "do not ", "don't ", "without ", "forbidden ", "out of scope ")):
+            return True
+        if any(marker in after for marker in (" forbidden", " out of scope", " on hold", " posting work", " remains on hold")):
+            return True
+        start = index + len(keyword)
 
 
 def _mission_query(mission):
