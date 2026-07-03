@@ -1614,6 +1614,30 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         handle_inbound.assert_called_once_with({"event": "message_created"})
 
+    def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_meat_chatwoot_inbound",
+            side_effect=RuntimeError("production-only mismatch"),
+        ):
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-meat/inbound",
+                json={"event": "message_created"},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 500)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["status"], "sam_meat_inbound_unhandled_exception")
+        self.assertEqual(payload["error_type"], "RuntimeError")
+        self.assertFalse(payload["sent"])
+        self.assertFalse(payload["sends_customer_message"])
+        self.assertFalse(payload["calls_chatwoot"])
+
 
 if __name__ == "__main__":
     unittest.main()

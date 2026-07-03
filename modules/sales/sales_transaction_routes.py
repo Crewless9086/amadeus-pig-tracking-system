@@ -286,7 +286,22 @@ def sam_meat_chatwoot_inbound():
         status_code = 403 if denied.get("status") == "sam_meat_backend_webhook_auth_denied" else 503
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
-    result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+    try:
+        result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+    except Exception as exc:
+        result, status_code = {
+            "success": False,
+            "status": "sam_meat_inbound_unhandled_exception",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "processed": False,
+            "sent": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 500
     return jsonify(result), status_code
 
 
