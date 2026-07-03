@@ -10,6 +10,13 @@ class SalesTransactionRoutesTests(unittest.TestCase):
     def setUp(self):
         app.testing = True
         self.client = app.test_client()
+        self.owner_money_path_guard = patch.object(
+            sales_transaction_routes,
+            "_require_owner_meat_money_path_access",
+            return_value=None,
+        )
+        self.owner_money_path_guard.start()
+        self.addCleanup(self.owner_money_path_guard.stop)
 
     def test_sales_transaction_list_route_is_read_only(self):
         service_result = {
@@ -251,6 +258,54 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         list_leads.assert_called_once_with(limit="12", status_filter="launch_test")
+
+    def test_meat_money_path_routes_stop_before_service_when_owner_access_denied(self):
+        denied = {
+            "success": False,
+            "status": "owner_read_access_denied",
+            "requires_owner_session": True,
+        }
+        routes = [
+            ("get", "/api/sales/meat-leads/OSK-SALES-LEAD-1/estimated-quote", "build_meat_estimated_quote_packet"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/estimated-quote/pdf", "generate_meat_estimated_quote_pdf"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/estimated-quote/send", "send_meat_estimated_quote_to_chatwoot"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/deposit-pro-forma/pdf", "generate_meat_deposit_pro_forma_pdf"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/final-invoice/pdf", "generate_meat_final_invoice_pdf"),
+            ("get", "/api/sales/meat-leads/OSK-SALES-LEAD-1/payment-gate", "get_meat_payment_gate"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/carcass-reservations", "create_carcass_reservation_from_lead"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/reservation-events", "record_carcass_reservation_event"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/deposit-events", "record_meat_deposit_event"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts", "build_meat_instruction_drafts"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/reconciliation-events", "record_meat_reconciliation_event"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/dad-booking-packet", "build_dad_booking_packet"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/fulfillment-events", "record_meat_fulfillment_event"),
+            ("get", "/api/sales/meat-deliveries/driver-route", "list_meat_driver_route"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/driver-events", "record_meat_driver_delivery_event"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-draft", "build_meat_journey_notification_draft"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-approval", "approve_meat_journey_notification"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-send", "send_meat_journey_notification"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/approval", "approve_meat_instruction_draft"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/send", "send_approved_meat_instruction"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/exception", "record_meat_instruction_exception"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/owner-money-path-approval", "record_owner_money_path_approval"),
+            ("get", "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-draft", "get_sales_lead_customer_followup_draft"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-send-approval", "record_customer_followup_send_approval"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-send", "send_customer_followup_to_chatwoot"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-booking-confirmation", "record_customer_booking_confirmation"),
+            ("post", "/api/sales/meat-leads/OSK-SALES-LEAD-1/draft-order", "create_draft_order_from_sales_lead"),
+        ]
+
+        for method, path, service_name in routes:
+            with self.subTest(path=path), patch.object(
+                sales_transaction_routes,
+                "_require_owner_meat_money_path_access",
+                return_value=(denied, 403),
+            ), patch.object(sales_transaction_routes, service_name) as service:
+                response = getattr(self.client, method)(path, json={"test": True})
+
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.get_json()["status"], "owner_read_access_denied")
+            service.assert_not_called()
 
     def test_beacon_media_policy_route_returns_storage_policy(self):
         with patch.object(

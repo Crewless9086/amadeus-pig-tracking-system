@@ -26,7 +26,7 @@ Controlled owner-supervised pilot is acceptable only after the owner reviews the
 - `python -m unittest tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_meat_price_book tests.test_meat_match_engine`
   - 41 tests passed.
 - `python -m unittest tests.test_sales_transaction_read tests.test_sales_transaction_routes tests.test_order_routes tests.test_order_service_reservation`
-  - 104 tests passed.
+  - 105 tests passed, including the denied owner-access money-path route regression.
 - `node --check static/js/beaconMedia.js`
   - Passed.
 
@@ -77,6 +77,14 @@ Controlled owner-supervised pilot is acceptable only after the owner reviews the
 
 ## Fix Applied During This Mission
 
+CHARLIE CORE mission: `CHARLIE-MISSION-467F6D2AF2471047`.
+
+Runner execution: `F2471047-20260703T100712Z-7312794072`.
+
+Runner outcome: blocked at Tester for correct operational launch gates after code verification passed.
+
+PR: `https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/84`.
+
 Beacon Facebook posting policy now separates configured capability from active posting authority.
 
 - `text_posting_configured`, `media_storage_configured`, and `image_posting_configured` describe configuration.
@@ -84,6 +92,12 @@ Beacon Facebook posting policy now separates configured capability from active p
 - Image post validation now checks storage configuration separately from execution authority.
 
 This prevents the dashboard/API from implying that Beacon can post now when Meta posting is still locked.
+
+Builder send-back fix: meat money-path routes now require owner read access at the route boundary before invoking quote/document, payment-gate, reservation, deposit, fulfilment, delivery, instruction, customer follow-up, booking-confirmation, or draft-order services.
+
+- Added shared route helper `_require_owner_meat_money_path_access()`.
+- Added regression coverage proving denied owner access returns before service calls.
+- This does not unlock customer sends, public posts, stock reservation, payment confirmation, or lifecycle writes.
 
 ## Owner Gates Before First Public Push
 
@@ -120,4 +134,3 @@ For this income-stream class of mission, CHARLIE CORE must always inspect:
 - Owner approval gates before any public/customer output.
 
 The mission should not be considered review-ready if it only changes UI or copy without proving these gates.
-

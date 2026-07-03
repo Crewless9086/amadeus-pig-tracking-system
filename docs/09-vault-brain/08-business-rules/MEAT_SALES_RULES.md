@@ -23,6 +23,8 @@
 - First four weeks should cap at 1 pig/week.
 - Do not expand routes, cut sets, or volume because one customer asks.
 - Expansion requires repeated successful delivery cycles, cold-chain confidence, calm admin, and owner approval.
+- First public/customer launch must stay blocked until WhatsApp template names, owner-approved Beacon media, exact channel approval, pilot cap, and bank-confirmed money gates are proven.
+- A controlled first pilot may use owner-reviewed manual draft/direct outreach only; it must not use automation, public posting, reservation, payment confirmation, fulfilment, or lifecycle writes until the matching backend gate passes.
 
 ## Pricing And Margin Rules
 
