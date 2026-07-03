@@ -393,8 +393,8 @@ def _keyword_is_negated(lower, keyword):
             return seen
         seen = True
         before, after = _keyword_clause_context(lower, keyword, index)
-        if not any(marker in before for marker in ("hold all ", "no ", "not ", "do not ", "don't ", "without ", "forbidden ", "out of scope ")):
-            if not any(marker in after for marker in (" forbidden", " forbidden context", " out of scope", " on hold", " posting work", " remains on hold")):
+        if not any(marker in before for marker in ("hold all ", "no ", "not ", "do not ", "don't ", "without ", "forbidden ", "forbidden/", "out of scope ", "out-of-scope ", "ignore ", "exclude ", "excluded ")):
+            if not any(marker in after for marker in (" forbidden", " forbidden context", " out of scope", " out-of-scope", " on hold", " posting work", " remains on hold", " clause", " clauses")):
                 return False
         start = index + len(keyword)
 

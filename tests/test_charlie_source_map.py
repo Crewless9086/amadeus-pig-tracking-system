@@ -48,6 +48,7 @@ class CharlieSourceMapTests(unittest.TestCase):
                 "This is a CHARLIE CORE dashboard mission only. "
                 "Hold all SAM, Beacon, meat sales, Facebook posting, WhatsApp, and income-stream work out of scope. "
                 "Do not change SAM, Beacon, meat sales, WhatsApp, Facebook posting, or live income systems. "
+                "The source mapper must ignore forbidden/out-of-scope SAM/Beacon/Facebook/WhatsApp clauses. "
                 "Rework /charlie Mission Control with owner review buttons and runner status."
             ),
         }
