@@ -1922,6 +1922,9 @@ def _agent_quality_gate(agent, artifact):
     ui_quality = _ui_agent_quality_gate(agent, artifact)
     if not ui_quality["passed"]:
         return ui_quality
+    judgement_quality = _judgement_evidence_quality_gate(agent, artifact)
+    if not judgement_quality["passed"]:
+        return judgement_quality
     sensitive_changes = _vault_sensitive_changed_files(artifact.get("changed_files"))
     if sensitive_changes and not _artifact_records_vault_update_decision(artifact):
         return {
@@ -2176,6 +2179,109 @@ def _artifact_records_vault_update_decision(artifact):
     has_update = bool([item for item in updates or [] if str(item or "").strip()])
     has_no_update_reason = bool(str(artifact.get("no_vault_update_required") or "").strip())
     return has_update or has_no_update_reason
+
+
+def _judgement_evidence_quality_gate(agent, artifact):
+    judgement_agents = {
+        "tester",
+        "risk_agent",
+        "qa_red_team",
+        "visual_qa_reviewer",
+        "product_reviewer",
+        "business_reviewer",
+        "security_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+    }
+    if agent not in judgement_agents:
+        return {"passed": True, "reason": "judgement_gate_not_required"}
+
+    decision_fields = {
+        "recommended_owner_decision": {"approve_final_release", "approve", "mark_done"},
+        "visual_acceptance_decision": {"approve"},
+        "red_team_status": {"pass"},
+        "test_status": {"pass"},
+    }
+    for field, passing_values in decision_fields.items():
+        if field not in artifact:
+            continue
+        decision = str(artifact.get(field) or "").strip().lower()
+        if decision and decision not in passing_values:
+            return {
+                "passed": False,
+                "reason": f"{agent} recorded non-passing {field}={decision}.",
+            }
+
+    negative = _negative_judgement_evidence(agent, artifact)
+    if negative:
+        return {
+            "passed": False,
+            "reason": f"{agent} recorded blocking evidence: {_truncate(_artifact_text(negative[0]), 180)}",
+            "blocking_evidence": [_artifact_text(item) for item in negative[:5]],
+        }
+    return {"passed": True, "reason": "judgement_gate_passed"}
+
+
+def _negative_judgement_evidence(agent, artifact):
+    fields = (
+        "test_evidence",
+        "tests_run",
+        "visual_review_notes",
+        "qa_evidence",
+        "qa_findings",
+        "risk_notes",
+        "changed_files",
+        "release_notes",
+        "stdout_tail",
+        "stderr_tail",
+        "summary",
+        "next_action",
+    )
+    values = []
+    for field in fields:
+        value = artifact.get(field)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value:
+            values.append(value)
+    return [value for value in values if _is_blocking_judgement_text(agent, artifact, value)]
+
+
+def _is_blocking_judgement_text(agent, artifact, value):
+    text = _artifact_text(value).lower()
+    if not text:
+        return False
+    if _is_non_blocking_local_pytest_issue(agent, artifact, value):
+        return False
+    blocking_phrases = (
+        "send_back",
+        "send back",
+        "must not be approved",
+        "cannot approve",
+        "do not approve",
+        "not approve",
+        "visual_acceptance_decision\": \"send_back",
+        "visual acceptance decision is send_back",
+        "browser gate failed",
+        "playwright cannot reach",
+        "playwright failed",
+        "npm run test:charlie:browser",
+        "failed browser",
+        "failed screenshot",
+        "failed visual",
+        "out-of-scope",
+        "out of scope",
+        "stale pr",
+        "stale branch",
+        "diff against current main also includes",
+        "pytest module missing",
+        "no module named pytest",
+    )
+    if any(phrase in text for phrase in blocking_phrases):
+        return True
+    if re.search(r"\b(fail|failed|failing|failure)\b", text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", text):
+        return True
+    return False
 
 
 def _vault_sensitive_changed_files(changed_files):

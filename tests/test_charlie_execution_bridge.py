@@ -720,6 +720,39 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("visual acceptance", result["reason"])
 
+    def test_risk_agent_blocks_send_back_and_failed_browser_evidence(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "send_back",
+            "visual_acceptance_decision": "send_back",
+            "test_evidence": [
+                "node --check static/js/charlieMissionControl.js: pass",
+                "npm run test:charlie:browser on PR branch: fail, 2 failed",
+                "python -m pytest focused suite in main worktree: not run, pytest module missing",
+            ],
+            "changed_files": [
+                "Diff against current main also includes many out-of-scope files and must not be approved as-is",
+            ],
+            "visual_review_notes": [
+                "Reviewer cannot approve visual acceptance while Playwright cannot reach the expected /charlie command center.",
+            ],
+        })
+
+        result = execution_bridge._agent_quality_gate("risk_agent", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("recommended_owner_decision=send_back", result["reason"])
+
+    def test_technical_architect_can_record_risks_without_judgement_block(self):
+        artifact = _successful_stage_payload("technical_architect")
+        artifact["risk_notes"] = [
+            "A stale PR or failed browser gate would require send back during review.",
+        ]
+
+        result = execution_bridge._agent_quality_gate("technical_architect", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_visual_review_capture_writes_local_screenshot_media(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
