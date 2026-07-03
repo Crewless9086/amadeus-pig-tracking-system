@@ -74,6 +74,29 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertTrue(validation["passed"], validation)
         self.assertEqual(validation["missing_groups"], [])
 
+    def test_vault_sources_used_alone_does_not_satisfy_source_mapper_gate(self):
+        source_packet = implementation_source_packet({
+            "mission_type": "income stream",
+            "title": "SAM meat readiness",
+            "raw_text": "Test SAM Meat Sales.",
+        })
+        artifact = {
+            "files_inspected": [
+                "modules/sales/sam_meat_runtime.py",
+                "tests/test_sam_meat_runtime.py",
+                "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+            ],
+            "implementation_sources_used": [],
+            "vault_sources_used": [
+                "docs/09-vault-brain/03-business/MEAT_SALES.md",
+            ],
+        }
+
+        validation = validate_implementation_inspection(artifact, source_packet)
+
+        self.assertFalse(validation["passed"], validation)
+        self.assertIn("vault_docs", validation["missing_groups"])
+
 
 if __name__ == "__main__":
     unittest.main()

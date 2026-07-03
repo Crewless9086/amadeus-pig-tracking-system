@@ -1463,7 +1463,8 @@ def _agent_stage_instruction(agent):
     if agent == "source_mapper":
         return (
             "Map what already exists before anyone plans or builds. Inspect the implementation source map, then read or verify relevant routes, modules, templates, JS, tests, migrations, active docs, and legacy n8n/Sheets sources. "
-            "Separate current Supabase/app truth from legacy n8n/Google Sheets behavior and identify exact tests to prove the mission."
+            "Separate current Supabase/app truth from legacy n8n/Google Sheets behavior and identify exact tests to prove the mission. "
+            "For every matched source-map section, include at least one matched vault_docs path, one code_paths path, one tests path, and any matched legacy_sources path in files_inspected or implementation_sources_used; vault_sources_used alone is not enough for this gate."
         )
     if agent == "product_architect":
         return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
@@ -1549,7 +1550,9 @@ def _agent_required_schema(agent):
             "routes_found": [],
             "tests_to_run": [],
             "migrations_found": [],
-            "implementation_sources_used": [],
+            "implementation_sources_used": [
+                "Include matched vault_docs, code_paths, tests, migrations, and legacy_sources paths from the implementation source map here."
+            ],
             "source_truth_summary": "what exists now, what is legacy, and what must be tested",
         })
     elif agent == "product_architect":
