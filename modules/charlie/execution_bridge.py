@@ -58,6 +58,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "visual_reference_interpreter": ["summary", "media_references_used", "layout_requirements", "visual_hierarchy", "reference_match_checklist", "commands_run", "files_inspected", "vault_sources_used"],
     "creative_ui_designer": ["summary", "ui_concept", "layout_system", "visual_direction", "design_requirements", "commands_run", "files_inspected", "vault_sources_used"],
     "ux_interaction_designer": ["summary", "primary_workflows", "owner_actions", "responsive_behavior", "interaction_requirements", "commands_run", "files_inspected", "vault_sources_used"],
+    "technical_architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "implementation_sources_used", "commands_run", "files_inspected", "vault_sources_used"],
     "source_mapper": ["summary", "implementation_inventory", "current_sources", "legacy_sources", "tests_to_run", "implementation_sources_used", "commands_run", "files_inspected", "vault_sources_used"],
     "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
@@ -1566,6 +1567,15 @@ def _agent_required_schema(agent):
         })
     elif agent == "product_architect":
         base.update({"user_flow": [], "acceptance_boundaries": [], "risk_notes": []})
+    elif agent == "technical_architect":
+        base.update({
+            "files_to_inspect": [],
+            "risk_notes": [],
+            "implementation_plan": [],
+            "implementation_sources_used": [
+                "Include matched implementation source-map paths that were inspected, not only Vault docs."
+            ],
+        })
     elif agent == "council_synthesis":
         base.update({
             "agreements": [],

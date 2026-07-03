@@ -65,15 +65,17 @@ def _successful_stage_payload(agent):
         "non_goals": ["no broad rebuild"] if agent == "idea_expander" else None,
         "user_flow": ["owner creates mission", "agents execute", "owner reviews"] if agent == "product_architect" else None,
         "acceptance_boundaries": ["owner approval remains required"] if agent == "product_architect" else None,
-        "risk_notes": ["risk checked"] if agent in {"product_architect", "architect"} else None,
         "implementation_inventory": ["Mapped current app and legacy sources"] if agent == "source_mapper" else None,
         "current_sources": ["modules/charlie/execution_bridge.py"] if agent == "source_mapper" else None,
         "legacy_sources": ["none"] if agent == "source_mapper" else None,
         "routes_found": ["/api/charlie/runner-status"] if agent == "source_mapper" else None,
         "tests_to_run": ["tests.test_charlie_execution_bridge"] if agent == "source_mapper" else None,
         "migrations_found": ["none"] if agent == "source_mapper" else None,
-        "implementation_sources_used": ["modules/charlie/execution_bridge.py"] if agent == "source_mapper" else None,
         "source_truth_summary": "Current source mapped" if agent == "source_mapper" else None,
+        "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent in {"technical_architect", "architect"} else None,
+        "risk_notes": ["risk checked"] if agent in {"product_architect", "technical_architect", "architect"} else None,
+        "implementation_plan": ["patch runner"] if agent in {"technical_architect", "architect"} else None,
+        "implementation_sources_used": ["modules/charlie/execution_bridge.py"] if agent in {"source_mapper", "technical_architect"} else None,
         "agreements": ["owner intent preserved"] if agent == "council_synthesis" else None,
         "conflicts_resolved": ["product and technical brief aligned"] if agent == "council_synthesis" else None,
         "unresolved_blockers": [] if agent == "council_synthesis" else None,
@@ -81,8 +83,6 @@ def _successful_stage_payload(agent):
         "acceptance_priorities": ["visible owner actions"] if agent == "council_synthesis" else None,
         "acceptance_criteria": ["acceptance"] if agent == "planner" else None,
         "test_plan": ["tests"] if agent == "planner" else None,
-        "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent == "architect" else None,
-        "implementation_plan": ["patch runner"] if agent == "architect" else None,
         "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "reviewer"} else None,
         "build_notes": ["patched"] if agent == "builder" else None,
         "branch_name": "charlie/test-pr-evidence" if agent == "builder" else None,
@@ -183,6 +183,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
             self.assertIn("media_references_used", schema)
             self.assertTrue(required["valid"], required)
+
+    def test_technical_architect_schema_requires_implementation_sources(self):
+        schema = execution_bridge._agent_required_schema("technical_architect")
+        artifact = _successful_stage_payload("technical_architect")
+        artifact.update({
+            "files_to_inspect": ["static/js/charlieMissionControl.js"],
+            "risk_notes": ["review evidence must be proven"],
+            "implementation_plan": ["preserve owner review controls"],
+            "implementation_sources_used": ["static/js/charlieMissionControl.js"],
+        })
+
+        validation = execution_bridge._validate_agent_artifact("technical_architect", artifact)
+
+        self.assertIn("implementation_sources_used", schema)
+        self.assertTrue(validation["valid"], validation)
 
     @patch("modules.charlie.execution_bridge.shutil.which")
     @patch("modules.charlie.execution_bridge.os.name", "nt")
