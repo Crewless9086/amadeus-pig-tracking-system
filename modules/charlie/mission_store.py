@@ -1825,7 +1825,7 @@ def _connect(database_url, connect_factory=None):
     if connect_factory:
         return connect_factory(database_url)
     import psycopg
-    return psycopg.connect(database_url, connect_timeout=10)
+    return psycopg.connect(database_url, connect_timeout=3)
 
 
 def _mission_id(raw_text, source_context, created_at):

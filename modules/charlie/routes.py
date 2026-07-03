@@ -128,28 +128,25 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    approved, approved_status = _owner_work_missions_for_status("approved", limit=1)
-    approved_queue, approved_queue_status = _owner_work_missions_for_status("approved", limit=5)
-    in_progress, in_progress_status = _owner_work_missions_for_status("in_progress", limit=1)
-    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=20)
-    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=1)
-    release_in_progress, release_in_progress_status = _owner_work_missions_for_status("release_in_progress", limit=1)
-    if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
+    owner_queue, owner_queue_status = list_missions(status="owner_queue", limit=30)
+    queue_missions = [_mission_dashboard_summary(mission) for mission in owner_queue.get("missions", [])]
+    buckets = _mission_status_buckets(queue_missions)
+    approved_queue = buckets.get("approved", [])[:5]
+    in_progress = buckets.get("in_progress", [])[:1]
+    pr_ready = buckets.get("pr_ready", [])[:5]
+    release_approved = buckets.get("release_approved", [])[:1]
+    release_in_progress = buckets.get("release_in_progress", [])[:1]
+    if owner_queue_status >= 400:
         return jsonify({
             "success": False,
             "status": "runner_handoff_unavailable",
-            "approved_status": approved.get("status"),
-            "approved_queue_status": approved_queue.get("status"),
-            "in_progress_status": in_progress.get("status"),
-            "pr_ready_status": pr_ready.get("status"),
-            "release_approved_status": release_approved.get("status"),
-            "release_in_progress_status": release_in_progress.get("status"),
+            "owner_queue_status": owner_queue.get("status"),
             "can_run_shell_from_web": False,
         }), 503
 
     active_mission = _first_mission(in_progress) or _first_mission(release_in_progress)
-    review_backlog = pr_ready.get("missions", [])
-    next_approved = _first_mission(approved)
+    review_backlog = pr_ready
+    next_approved = _first_mission(approved_queue)
     next_release_approved = _first_mission(release_approved)
     local_status = local_runner_status()
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
@@ -176,7 +173,7 @@ def charlie_build_relay_runner_status_route():
         "active_mission": active_mission,
         "review_backlog": review_backlog,
         "next_approved_mission": next_approved,
-        "approved_queue": approved_queue.get("missions", []),
+        "approved_queue": approved_queue,
         "next_release_approved_mission": next_release_approved,
         "next_action": next_action,
         "local_runner": local_status,
@@ -206,21 +203,20 @@ def charlie_build_relay_command_center_route():
         return denied
     summary, summary_status = mission_status_summary()
     recent, recent_status = list_missions(status="owner_queue", limit=8)
-    approved_queue, approved_status = _owner_work_missions_for_status("approved", limit=20)
-    review_ready, review_status = _owner_work_missions_for_status("pr_ready", limit=5)
-    blocked, blocked_status = _owner_work_missions_for_status("blocked", limit=5)
-    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=5)
-    release_in_progress, release_progress_status = _owner_work_missions_for_status("release_in_progress", limit=5)
-    merged, merged_status = list_missions(status="merged", limit=5)
-    deployed, deployed_status = list_missions(status="deployed", limit=5)
+    recent_missions = [_mission_dashboard_summary(mission) for mission in recent.get("missions", [])]
+    buckets = _mission_status_buckets(recent_missions)
+    approved_queue = buckets.get("approved", [])[:20]
+    review_ready = buckets.get("pr_ready", [])[:5]
+    blocked = buckets.get("blocked", [])[:5]
+    release_approved = buckets.get("release_approved", [])[:5]
+    release_in_progress = buckets.get("release_in_progress", [])[:5]
+    merged = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
+    deployed = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
+    merged_status = 200
+    deployed_status = 200
     statuses = [
         summary_status,
         recent_status,
-        approved_status,
-        review_status,
-        blocked_status,
-        release_approved_status,
-        release_progress_status,
         merged_status,
         deployed_status,
     ]
@@ -230,11 +226,27 @@ def charlie_build_relay_command_center_route():
             "status": "command_center_unavailable",
             "statuses": statuses,
         }), 503
+    detailed = str(request.args.get("detail") or "").strip().lower() in {"1", "true", "yes", "full"}
     local_status = local_runner_status()
-    vault_health, _vault_health_status = vault_tables_health()
-    improvements, _improvements_status = list_improvement_proposals(limit=8)
+    if detailed:
+        vault_health, _vault_health_status = vault_tables_health()
+        improvements, _improvements_status = list_improvement_proposals(limit=8)
+    else:
+        vault_health = {
+            "success": True,
+            "status": "fast_refresh_not_checked",
+            "missing_tables": [],
+            "tables": {},
+        }
+        improvements = {
+            "success": True,
+            "status": "fast_refresh_not_checked",
+            "proposals": [],
+            "execution_boundary": "Improvement proposals are loaded in full detail mode.",
+        }
     readiness_items = []
-    for mission in recent.get("missions", []):
+    readiness_missions = recent.get("missions", [])[:3 if detailed else 0]
+    for mission in readiness_missions:
         retrieval = retrieve_vault_sources(mission, limit=8, excerpt_chars=0)
         readiness_items.append({
             "mission_id": mission.get("mission_id", ""),
@@ -257,6 +269,7 @@ def charlie_build_relay_command_center_route():
             "overall_target": "90%+ workflow readiness before deep income-stream missions",
             "templates": sorted(WORKFLOW_TEMPLATES.keys()),
             "recent_readiness": readiness_items,
+            "readiness_detail": "full" if detailed else "summary_only_fast_refresh",
             "model_registry": model_registry_packet(),
             "tool_permissions": tool_permission_registry(),
             "owner_preferences": owner_preference_packet(),
@@ -278,20 +291,20 @@ def charlie_build_relay_command_center_route():
             ],
         },
         "release": {
-            "waiting_final_bridge": release_approved.get("missions", []),
-            "in_progress": release_in_progress.get("missions", []),
+            "waiting_final_bridge": release_approved,
+            "in_progress": release_in_progress,
             "merged_waiting_live_verify": merged.get("missions", []),
             "deployed": deployed.get("missions", []),
             "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
         },
         "queue": {
-            "approved": approved_queue.get("missions", []),
+            "approved": approved_queue,
             "ordering": "queue.priority asc, urgency asc, created_at asc",
             "execution_boundary": "Local runner picks only one approved mission at a time and waits while a mission is active or in release.",
         },
         "review": {
-            "ready": review_ready.get("missions", []),
-            "blocked": blocked.get("missions", []),
+            "ready": review_ready,
+            "blocked": blocked,
         },
         "improvements": {
             "proposals": improvements.get("proposals", []),
@@ -299,7 +312,7 @@ def charlie_build_relay_command_center_route():
             "status": improvements.get("status", "unavailable"),
             "execution_boundary": improvements.get("execution_boundary", "Improvement proposals are advisory records only."),
         },
-        "recent_missions": recent.get("missions", []),
+        "recent_missions": recent_missions,
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
@@ -513,6 +526,78 @@ def _first_mission(result):
     missions = result.get("missions") if isinstance(result, dict) else result
     missions = missions or []
     return missions[0] if missions else None
+
+
+def _mission_status_buckets(missions):
+    buckets = {}
+    for mission in missions or []:
+        if not isinstance(mission, dict):
+            continue
+        status = str(mission.get("status") or "").strip()
+        if not status:
+            continue
+        buckets.setdefault(status, []).append(mission)
+    return buckets
+
+
+def _mission_dashboard_summary(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    compact_review_packet = {
+        key: review_packet.get(key)
+        for key in (
+            "summary",
+            "review_status",
+            "blocked_agent",
+            "blocked_reason",
+            "local_preview",
+            "links",
+            "test_evidence",
+            "visual_review",
+            "recommended_next_action",
+            "backflow_events",
+            "unresolved_blockers",
+        )
+        if key in review_packet
+    }
+    compact_metadata = {}
+    if compact_review_packet:
+        compact_metadata["review_packet"] = compact_review_packet
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    compact_vault = {
+        key: vault.get(key)
+        for key in (
+            "mission_stage",
+            "confidence_target",
+            "problem_statement",
+            "desired_outcome",
+            "current_agent",
+            "review_quality",
+            "vault_readiness",
+            "source_truth",
+        )
+        if key in vault
+    }
+    return {
+        "mission_id": mission.get("mission_id", ""),
+        "status": mission.get("status", ""),
+        "source": mission.get("source", ""),
+        "raw_text": mission.get("raw_text", ""),
+        "title": mission.get("title", ""),
+        "urgency": mission.get("urgency", ""),
+        "mission_type": mission.get("mission_type", ""),
+        "approval_level": mission.get("approval_level", ""),
+        "selected_next_step": mission.get("selected_next_step", ""),
+        "owner_decision": mission.get("owner_decision", ""),
+        "created_at": mission.get("created_at", ""),
+        "updated_at": mission.get("updated_at", ""),
+        "queue_class": mission.get("queue_class", "owner_work"),
+        "queue_priority": mission.get("queue_priority"),
+        "vault": compact_vault,
+        "agent_workflow": mission.get("agent_workflow", []),
+        "metadata": compact_metadata,
+    }
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["POST"])

@@ -9239,6 +9239,26 @@ body.oom-farm-command-body {
     padding: 12px;
 }
 
+.charlie-mission-card.is-current {
+    border-color: rgba(255, 209, 64, 0.72);
+    box-shadow: 0 0 0 1px rgba(255, 209, 64, 0.16), 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.charlie-mission-card.is-current::before {
+    content: "Active";
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    padding: 3px 7px;
+    border: 1px solid rgba(255, 209, 64, 0.52);
+    border-radius: 5px;
+    background: rgba(55, 39, 7, 0.92);
+    color: #ffd140;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
 .charlie-mission-card-header {
     align-items: flex-start;
 }
@@ -9291,8 +9311,44 @@ body.oom-farm-command-body {
 }
 
 .charlie-command-center-grid {
-    grid-template-columns: repeat(6, minmax(116px, 1fr));
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
     gap: 8px;
+}
+
+.charlie-command-section {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(101, 151, 204, 0.24);
+    border-radius: 8px;
+    background: rgba(4, 13, 22, 0.52);
+}
+
+.charlie-command-section header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(101, 151, 204, 0.18);
+}
+
+.charlie-command-section header span {
+    color: #52bfff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.charlie-command-section header strong {
+    min-width: 0;
+    color: #f7fbff;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
 }
 
 .charlie-command-center-tile {
@@ -9596,7 +9652,7 @@ body.oom-farm-command-body {
 
     .charlie-agent-ring,
     .charlie-command-center-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -9609,6 +9665,7 @@ body.oom-farm-command-body {
     .charlie-system-status,
     .charlie-command-strip,
     .charlie-command-center-grid,
+    .charlie-command-section,
     .charlie-agent-ring,
     .charlie-bottom-rail,
     .charlie-mission-meta,

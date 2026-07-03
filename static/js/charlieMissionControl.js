@@ -338,29 +338,41 @@
     const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
     const modelRegistry = core.model_registry || {};
     const toolPermissions = core.tool_permissions || {};
-    const ownerPreferences = core.owner_preferences || {};
     const autonomy = data.autonomy_readiness || {};
     const runner = data.local_runner || {};
     const improvements = data.improvements || {};
     const retrievalCount = recentReadiness.reduce((total, item) => total + Number((item.vault_retrieval || {}).selected_count || 0), 0);
+    const readinessLabel = readinessAverage ? `${readinessAverage}% recent` : "Fast refresh";
+    const retrievalLabel = recentReadiness.length ? `${retrievalCount} source hits` : "On demand";
     els.commandCenter.innerHTML = `
-      ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
-      ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
-      ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
-      ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
-      ${commandCenterTile("Vault Retrieval", `${retrievalCount} source hits`, recentReadiness.length ? "ranked by mission context" : "waiting for missions")}
-      ${commandCenterTile("Owner Rules", `${(ownerPreferences.preferences || []).length} active`, "applied in stage prompts")}
-      ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
-      ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
-      ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
-      ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
-      ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
-      ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
-      ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
-      ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
-      ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
-      ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
-      ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      <section class="charlie-command-section">
+        <header><span>Project Truth</span><strong>CHARLIE CORE</strong></header>
+        ${commandCenterTile("Core Readiness", readinessLabel, core.readiness_detail || core.overall_target || "summary refresh")}
+        ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+        ${commandCenterTile("Source Truth", retrievalLabel, recentReadiness.length ? "ranked by mission context" : "deep source-map retrieval skipped for speed")}
+        ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Review / Risk</span><strong>Owner Decisions</strong></header>
+        ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
+        ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
+        ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
+        ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Runtime</span><strong>Runner / Vault</strong></header>
+        ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
+        ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
+        ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
+        ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Artifacts</span><strong>Release Proof</strong></header>
+        ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
+        ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
+        ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
+        ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
+      </section>
       ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
         shortId(item.mission_id || ""),
         `${Number((item.core_readiness || {}).overall_percent || 0)}% ready`,
@@ -704,6 +716,8 @@
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
+    const activeFlowMission = currentMissionForFlow();
+    if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
