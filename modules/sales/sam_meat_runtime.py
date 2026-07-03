@@ -912,28 +912,19 @@ def _rewrite_code_reply_if_needed(decision, inbound, facts, prior_context, conte
     if not original:
         return decision
     if not _truthy(source.get(LLM_ENABLED_ENV)) or not str(source.get(LLM_MODEL_ENV, "") or "").strip() or not str(source.get(OPENAI_API_KEY_ENV, "") or "").strip():
-        decision["should_reply"] = False
-        decision["decision"] = "no_reply"
-        decision["reply_text"] = ""
-        decision["reply_source"] = "code_reply_withheld_llm_rewrite_unavailable"
+        decision["reply_source"] = "code_fallback_rewrite_unavailable"
         decision["rewrite_status"] = "llm_rewrite_unavailable"
         return decision
     caller = rewriter or _call_sam_meat_reply_rewriter_llm
     raw = caller(decision, inbound, facts, prior_context, context_packet, source)
     if isinstance(raw, dict) and raw.get("_llm_error"):
-        decision["should_reply"] = False
-        decision["decision"] = "no_reply"
-        decision["reply_text"] = ""
-        decision["reply_source"] = "code_reply_withheld_rewrite_failed"
+        decision["reply_source"] = "code_fallback_rewrite_failed"
         decision["rewrite_status"] = "rewrite_llm_call_failed"
         decision["rewrite_error"] = raw.get("_llm_error", {})
         return decision
     rewritten = _safe_rewritten_reply(raw)
     if not rewritten:
-        decision["should_reply"] = False
-        decision["decision"] = "no_reply"
-        decision["reply_text"] = ""
-        decision["reply_source"] = "code_reply_withheld_rewrite_failed"
+        decision["reply_source"] = "code_fallback_rewrite_failed"
         decision["rewrite_status"] = "rewrite_failed_or_blocked"
         return decision
     decision["reply_text"] = rewritten

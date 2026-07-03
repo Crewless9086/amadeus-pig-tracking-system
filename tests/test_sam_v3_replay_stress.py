@@ -411,7 +411,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_code_sales_reply_is_withheld_when_rewriter_unavailable(self, mock_record, mock_active):
+    def test_code_sales_reply_falls_back_when_rewriter_unavailable(self, mock_record, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
@@ -431,9 +431,9 @@ class SamV3ReplayStressTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertFalse(result["sam_decision"]["should_reply"])
-        self.assertEqual(result["sam_decision"]["reply_text"], "")
-        self.assertEqual(result["sam_decision"]["reply_source"], "code_reply_withheld_llm_rewrite_unavailable")
+        self.assertTrue(result["sam_decision"]["should_reply"])
+        self.assertIn("pork", result["sam_decision"]["reply_text"])
+        self.assertEqual(result["sam_decision"]["reply_source"], "code_fallback_rewrite_unavailable")
 
     def test_replay_stress_v3_rejects_payment_booking_and_money_hallucinations(self):
         unsafe_outputs = [
