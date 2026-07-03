@@ -102,6 +102,18 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_builder_artifact_accepts_empty_changed_files_for_verification_mission(self):
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = []
+        artifact["pr_url"] = ""
+        artifact["links"] = {"pr": ""}
+
+        validation = execution_bridge._validate_agent_artifact("builder", artifact)
+        quality = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+        self.assertTrue(quality["passed"], quality)
+
     def test_ui_quality_gate_accepts_structured_ui_council_evidence(self):
         contract = {
             "ui_related": True,

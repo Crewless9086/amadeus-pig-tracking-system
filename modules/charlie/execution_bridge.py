@@ -74,7 +74,10 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
+    "builder": {"changed_files"},
+    "frontend_design_implementer": {"changed_files"},
     "qa_red_team": {"qa_findings"},
+    "reviewer": {"changed_files"},
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 3
