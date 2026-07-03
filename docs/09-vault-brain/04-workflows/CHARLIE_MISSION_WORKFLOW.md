@@ -19,6 +19,8 @@ Every mission must resolve to:
 - title;
 - urgency;
 - mission type;
+- selected agent team;
+- reason each selected agent is needed;
 - approval level;
 - allowed scope;
 - forbidden scope;
@@ -28,6 +30,10 @@ Every mission must resolve to:
 - rollback/recovery plan;
 - owner decisions needed;
 - review/debrief packet.
+
+CHARLIE CORE must not run every agent for every mission. Intake must classify the mission and select the smallest capable agent team. UI missions use the UI council. Income-stream missions use business, risk, and evidence agents. Simple bugfixes should not wait on business or marketing agents unless the bug touches those areas.
+
+For UI missions, the selected team must include Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, and Visual QA Reviewer when screenshots, dashboard redesigns, approval flows, command centers, or visual references are involved.
 
 ## Stage Evidence
 

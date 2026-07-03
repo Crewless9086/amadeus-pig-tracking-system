@@ -5,7 +5,7 @@ Each agent has one dedicated file. Do not add new agents to a shared catch-all f
 ## Folder Map
 
 - `owner-command/` - CHARLIE himself, the owner command layer and digital operating identity.
-- `charlie-core/` - CHARLIE CORE workflow agents: Planner, Architect, Builder, Tester, QA Red Team, Reviewer, Improvement Analyst, and Brain Guard.
+- `charlie-core/` - CHARLIE CORE workflow agents: Planner, Architect, Builder, Tester, QA Red Team, Reviewer, Improvement Analyst, Brain Guard, and specialist council agents such as UI/design, business, risk, and evidence roles.
 - `farm/` - Amadeus Farm command and farm operations agents.
 - `sales/` - Amadeus Farm Sales agents under SAM.
 - `marketing/` - shared Marketing department agents under Beacon.
@@ -22,5 +22,7 @@ To create a new agent:
 7. Update `../CHANGELOG.md`.
 
 Before any CHARLIE CORE build starts, the mission must state which business environment and which shared departments the agent belongs to or depends on.
+
+UI and dashboard missions must route through the UI council agents when design judgment is required: Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, and Visual QA Reviewer.
 
 Brain Guard must block review-ready status when an agent/workflow changed but the Vault Brain was not updated.

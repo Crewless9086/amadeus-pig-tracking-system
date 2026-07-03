@@ -15,11 +15,13 @@ from modules.charlie.core_workflow import (
     evaluate_core_readiness,
     evaluate_review_board,
 )
+from modules.charlie.model_registry import choose_agent_model
 
 
 class CharlieCoreWorkflowTests(unittest.TestCase):
     def test_templates_cover_required_mission_types(self):
         expected = {
+            "ui_product_build",
             "software_build",
             "system_improvement",
             "business_plan",
@@ -30,6 +32,39 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(expected.issubset(set(WORKFLOW_TEMPLATES)))
         self.assertEqual(classify_workflow_template("income stream", "build FRED revenue path"), "income_stream")
         self.assertEqual(classify_workflow_template("content engine", "BEACON marketing"), "content_engine")
+        self.assertEqual(classify_workflow_template("feature build", "rebuild dashboard UI from screenshot"), "ui_product_build")
+
+    def test_ui_product_build_routes_through_design_council(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-UI",
+            "title": "Mission Control dashboard UI",
+            "raw_text": "Rebuild the CHARLIE command center to match the attached screenshot.",
+            "mission_type": "dashboard ui",
+        }
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        expected_agents = [
+            "visual_reference_interpreter",
+            "creative_ui_designer",
+            "ux_interaction_designer",
+            "frontend_design_implementer",
+            "visual_qa_reviewer",
+        ]
+        for agent in expected_agents:
+            self.assertIn(agent, agents)
+            self.assertTrue(AGENT_DOCTRINE_PATHS.get(agent))
+        self.assertLess(agents.index("creative_ui_designer"), agents.index("frontend_design_implementer"))
+        self.assertLess(agents.index("frontend_design_implementer"), agents.index("visual_qa_reviewer"))
+
+    def test_design_agents_have_specific_model_assignments(self):
+        visual = choose_agent_model("creative_ui_designer", mission_type="dashboard ui")
+        implementer = choose_agent_model("frontend_design_implementer", mission_type="dashboard ui")
+        qa = choose_agent_model("visual_qa_reviewer", mission_type="dashboard ui")
+
+        self.assertEqual(visual["registry_key"], "vision_design")
+        self.assertEqual(implementer["registry_key"], "frontend_build")
+        self.assertEqual(qa["registry_key"], "vision_design")
 
     def test_core_plan_attaches_vault_schema_workflow_and_instruction_packs(self):
         mission = {

@@ -23,6 +23,9 @@ Every agent must have:
 | Idea Expander | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/IDEA_EXPANDER.md` |
 | Concept Strategist | CHARLIE CORE | CHARLIE CORE | Active strategy stage | `charlie-core/CONCEPT_STRATEGIST.md` |
 | Product Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/PRODUCT_ARCHITECT.md` |
+| Visual Reference Interpreter | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI workflow stage | `charlie-core/VISUAL_REFERENCE_INTERPRETER.md` |
+| Creative UI Designer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI workflow stage | `charlie-core/CREATIVE_UI_DESIGNER.md` |
+| UX Interaction Designer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI workflow stage | `charlie-core/UX_INTERACTION_DESIGNER.md` |
 | Technical Architect | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/TECHNICAL_ARCHITECT.md` |
 | Business Model Agent | CHARLIE CORE | CHARLIE CORE | Active business stage | `charlie-core/BUSINESS_MODEL_AGENT.md` |
 | Risk Agent | CHARLIE CORE | CHARLIE CORE | Active workflow stage | `charlie-core/RISK_AGENT.md` |
@@ -30,8 +33,10 @@ Every agent must have:
 | Planner | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/PLANNER.md` |
 | Architect | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/ARCHITECT.md` |
 | Builder | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/BUILDER.md` |
+| Frontend Design Implementer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI implementation stage | `charlie-core/FRONTEND_DESIGN_IMPLEMENTER.md` |
 | Tester | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/TESTER.md` |
 | QA Red Team | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/QA_RED_TEAM.md` |
+| Visual QA Reviewer | CHARLIE CORE / UI Council | CHARLIE CORE | Active UI review-board role | `charlie-core/VISUAL_QA_REVIEWER.md` |
 | Product Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/PRODUCT_REVIEWER.md` |
 | Security Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/SECURITY_REVIEWER.md` |
 | Evidence Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/EVIDENCE_REVIEWER.md` |

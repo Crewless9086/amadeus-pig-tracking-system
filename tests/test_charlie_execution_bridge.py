@@ -94,6 +94,36 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_ui_quality_gate_accepts_structured_ui_council_evidence(self):
+        contract = {
+            "ui_related": True,
+            "reference_media_required": True,
+        }
+        interpreter_artifact = {
+            "ui_quality_contract": contract,
+            "media_references_used": ["screenshots/reference.png"],
+            "layout_requirements": ["left mission rail, central agent flow, right mission summary"],
+            "reference_match_checklist": ["preserve three-zone command-center layout"],
+        }
+        designer_artifact = {
+            "ui_quality_contract": contract,
+            "media_references_used": ["screenshots/reference.png"],
+            "ui_concept": "Operational command center",
+            "layout_system": ["left rail", "center workflow", "right summary"],
+            "what_not_to_do": ["Do not only change colors."],
+        }
+        visual_reviewer_artifact = {
+            "ui_quality_contract": contract,
+            "media_references_used": ["screenshots/reference.png"],
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": ["Matches the reference structure on desktop and mobile."],
+            "reference_match_assessment": "Reference layout and owner actions are preserved.",
+        }
+
+        self.assertTrue(execution_bridge._ui_agent_quality_gate("visual_reference_interpreter", interpreter_artifact)["passed"])
+        self.assertTrue(execution_bridge._ui_agent_quality_gate("creative_ui_designer", designer_artifact)["passed"])
+        self.assertTrue(execution_bridge._ui_agent_quality_gate("visual_qa_reviewer", visual_reviewer_artifact)["passed"])
+
     @patch("modules.charlie.execution_bridge.shutil.which")
     @patch("modules.charlie.execution_bridge.os.name", "nt")
     def test_codex_executable_prefers_windows_cmd_shim(self, which):

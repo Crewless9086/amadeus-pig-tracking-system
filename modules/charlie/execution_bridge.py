@@ -51,13 +51,18 @@ AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
 AGENT_ARTIFACT_REQUIRED_KEYS = {
     "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected", "vault_sources_used"],
     "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected", "vault_sources_used"],
+    "visual_reference_interpreter": ["summary", "media_references_used", "layout_requirements", "visual_hierarchy", "reference_match_checklist", "commands_run", "files_inspected", "vault_sources_used"],
+    "creative_ui_designer": ["summary", "ui_concept", "layout_system", "visual_direction", "design_requirements", "commands_run", "files_inspected", "vault_sources_used"],
+    "ux_interaction_designer": ["summary", "primary_workflows", "owner_actions", "responsive_behavior", "interaction_requirements", "commands_run", "files_inspected", "vault_sources_used"],
     "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected", "vault_sources_used"],
+    "frontend_design_implementer": ["summary", "changed_files", "implementation_notes", "local_preview", "media_references_used", "visual_reference_analysis", "viewport_plan", "browser_check_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected", "vault_sources_used"],
     "qa_red_team": ["summary", "qa_findings", "red_team_status", "risk_rating", "commands_run", "files_inspected", "vault_sources_used"],
     "product_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
+    "visual_qa_reviewer": ["summary", "recommended_owner_decision", "visual_acceptance_decision", "visual_review_notes", "reference_match_assessment", "media_references_used", "commands_run", "files_inspected", "vault_sources_used"],
     "business_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "security_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "evidence_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
@@ -1428,6 +1433,20 @@ def _unique_existing_order(items):
 def _agent_stage_instruction(agent):
     if agent == "idea_expander":
         return "Clarify the rough idea, expected owner value, target user/workflow, constraints, non-goals, and what must not be assumed."
+    if agent == "visual_reference_interpreter":
+        return (
+            "Inspect every attached UI/reference image and convert it into a hard visual contract: layout zones, hierarchy, density, navigation, "
+            "cards/panels, active states, side rails, bottom bars, colors only where meaningful, and the specific similarities the build must preserve."
+        )
+    if agent == "creative_ui_designer":
+        return (
+            "Create the UI design direction before code. Produce a distinctive concept, information architecture, layout system, visual hierarchy, "
+            "component treatment, and reference-match requirements. Do not accept color-only restyling as a design."
+        )
+    if agent == "ux_interaction_designer":
+        return (
+            "Define the owner workflows, visible action placement, interaction states, responsive behavior, empty/loading/error states, and how the user moves through the screen."
+        )
     if agent == "product_architect":
         return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
     if agent == "council_synthesis":
@@ -1443,10 +1462,20 @@ def _agent_stage_instruction(agent):
             "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. For UI missions, provide a real local_preview URL for the changed page, "
             "visual_reference_analysis, media_references_used, viewport_plan, and browser_check_plan. Do not merge."
         )
+    if agent == "frontend_design_implementer":
+        return (
+            "Implement the approved UI concept and interaction spec in the real frontend. Preserve the visual-reference contract, keep owner actions visible, "
+            "avoid overflow/hidden controls, capture a real local preview URL, and prepare desktop/mobile browser checks before Builder packaging."
+        )
     if agent == "tester":
         return "Run focused verification, investigate failures, and return pass/fail evidence. For UI missions, run browser-level desktop/laptop and mobile checks against the actual changed route and record screenshots_captured or browser_checks."
     if agent == "qa_red_team":
         return "Pressure-test the work for regressions, weak evidence, unsafe actions, missing tests, security/privacy risk, owner-facing failure modes, and visual mismatch against attached reference media."
+    if agent == "visual_qa_reviewer":
+        return (
+            "Compare the finished UI screenshots and local preview against the owner reference media and UI concept. Block if the result is only a color change, "
+            "misses the reference layout, hides buttons, overflows, or lacks desktop/mobile proof."
+        )
     return "Review diff, requirements, tests, safety gates, release notes, visual evidence for UI missions, and prepare owner review recommendation."
 
 
@@ -1468,6 +1497,32 @@ def _agent_required_schema(agent):
         base.update({"acceptance_criteria": [], "test_plan": [], "scope": "scoped work"})
     elif agent == "idea_expander":
         base.update({"opportunity": "clear owner opportunity", "owner_value": "why this matters", "non_goals": []})
+    elif agent == "visual_reference_interpreter":
+        base.update({
+            "media_references_used": [],
+            "layout_requirements": [],
+            "visual_hierarchy": [],
+            "interaction_clues": [],
+            "reference_match_checklist": [],
+            "non_negotiable_visual_elements": [],
+        })
+    elif agent == "creative_ui_designer":
+        base.update({
+            "ui_concept": "named design direction",
+            "layout_system": [],
+            "visual_direction": [],
+            "component_requirements": [],
+            "design_requirements": [],
+            "what_not_to_do": ["Do not only change colors."],
+        })
+    elif agent == "ux_interaction_designer":
+        base.update({
+            "primary_workflows": [],
+            "owner_actions": [],
+            "responsive_behavior": [],
+            "interaction_requirements": [],
+            "empty_loading_error_states": [],
+        })
     elif agent == "product_architect":
         base.update({"user_flow": [], "acceptance_boundaries": [], "risk_notes": []})
     elif agent == "council_synthesis":
@@ -1495,6 +1550,18 @@ def _agent_required_schema(agent):
             "pr_number": "pull request number when changed_files contains releaseable changes",
             "links": {"pr": "pull request URL"},
         })
+    elif agent == "frontend_design_implementer":
+        base.update({
+            "changed_files": [],
+            "implementation_notes": [],
+            "local_preview": {"url": "http://127.0.0.1:PORT/actual-changed-route"},
+            "media_references_used": [],
+            "visual_reference_analysis": "how the implementation matches the reference and approved UI concept",
+            "viewport_plan": ["desktop/laptop viewport", "mobile viewport"],
+            "browser_check_plan": [],
+            "design_requirements_met": [],
+            "known_visual_gaps": [],
+        })
     elif agent == "tester":
         base.update({
             "tests_run": [],
@@ -1513,6 +1580,16 @@ def _agent_required_schema(agent):
             "visual_quality_findings": [],
             "reference_match_assessment": "required for UI missions",
             "media_references_used": [],
+        })
+    elif agent == "visual_qa_reviewer":
+        base.update({
+            "recommended_owner_decision": "approve_final_release|send_back|pause",
+            "visual_acceptance_decision": "approve|send_back|pause",
+            "visual_review_notes": [],
+            "reference_match_assessment": "clear assessment against owner reference media and UI concept",
+            "media_references_used": [],
+            "screenshots_reviewed": [],
+            "send_back_stage": "frontend_design_implementer|builder|tester when visual evidence fails",
         })
     else:
         base.update({
@@ -1655,6 +1732,32 @@ def _agent_artifact_from_final(agent, final_message):
     }
     if agent == "idea_expander":
         artifact.update({"opportunity": artifact["summary"], "owner_value": artifact["summary"], "non_goals": []})
+    elif agent == "visual_reference_interpreter":
+        artifact.update({
+            "media_references_used": [],
+            "layout_requirements": [artifact["summary"]],
+            "visual_hierarchy": [],
+            "interaction_clues": [],
+            "reference_match_checklist": [],
+            "non_negotiable_visual_elements": [],
+        })
+    elif agent == "creative_ui_designer":
+        artifact.update({
+            "ui_concept": artifact["summary"],
+            "layout_system": [],
+            "visual_direction": [],
+            "component_requirements": [],
+            "design_requirements": [artifact["summary"]],
+            "what_not_to_do": ["Do not only change colors."],
+        })
+    elif agent == "ux_interaction_designer":
+        artifact.update({
+            "primary_workflows": [artifact["summary"]],
+            "owner_actions": [],
+            "responsive_behavior": [],
+            "interaction_requirements": [],
+            "empty_loading_error_states": [],
+        })
     elif agent == "product_architect":
         artifact.update({"user_flow": [artifact["summary"]], "acceptance_boundaries": [], "risk_notes": []})
     elif agent == "council_synthesis":
@@ -1665,10 +1768,32 @@ def _agent_artifact_from_final(agent, final_message):
         artifact.update({"files_to_inspect": _changed_files(), "risk_notes": [], "implementation_plan": [artifact["summary"]]})
     elif agent == "builder":
         artifact.update({"changed_files": _changed_files(), "build_notes": [artifact["summary"]]})
+    elif agent == "frontend_design_implementer":
+        artifact.update({
+            "changed_files": _changed_files(),
+            "implementation_notes": [artifact["summary"]],
+            "local_preview": {"url": ""},
+            "media_references_used": [],
+            "visual_reference_analysis": "",
+            "viewport_plan": [],
+            "browser_check_plan": [],
+            "design_requirements_met": [],
+            "known_visual_gaps": [],
+        })
     elif agent == "tester":
         artifact.update({"tests_run": _extract_test_evidence(final_message), "test_status": "pass" if not artifact["errors"] else "blocked"})
     elif agent == "qa_red_team":
         artifact.update({"qa_findings": [artifact["summary"]], "red_team_status": "pass" if not artifact["errors"] else "blocked", "risk_rating": "low" if not artifact["errors"] else "high"})
+    elif agent == "visual_qa_reviewer":
+        artifact.update({
+            "recommended_owner_decision": "send_back" if artifact["errors"] else "approve_final_release",
+            "visual_acceptance_decision": "pause" if artifact["errors"] else "approve",
+            "visual_review_notes": [artifact["summary"]],
+            "reference_match_assessment": artifact["summary"],
+            "media_references_used": [],
+            "screenshots_reviewed": [],
+            "send_back_stage": "frontend_design_implementer",
+        })
     else:
         artifact.update({"recommended_owner_decision": "approve_final_release", "release_notes": ["Review PR and test evidence before final approval."], "changed_files": _changed_files(), "test_evidence": _extract_test_evidence(final_message)})
     return artifact
@@ -1773,23 +1898,57 @@ def _agent_quality_gate(agent, artifact):
 
 def _ui_agent_quality_gate(agent, artifact):
     contract = artifact.get("ui_quality_contract") if isinstance(artifact.get("ui_quality_contract"), dict) else {}
-    if not contract.get("ui_related") or agent not in {"builder", "tester", "qa_red_team", "reviewer"}:
+    ui_agents = {
+        "visual_reference_interpreter",
+        "creative_ui_designer",
+        "ux_interaction_designer",
+        "frontend_design_implementer",
+        "builder",
+        "tester",
+        "qa_red_team",
+        "visual_qa_reviewer",
+        "reviewer",
+    }
+    if not contract.get("ui_related") or agent not in ui_agents:
         return {"passed": True, "reason": "ui_quality_not_required"}
     reference_required = bool(contract.get("reference_media_required"))
     if reference_required and not _artifact_has_list_value(artifact, "media_references_used"):
         return {"passed": False, "reason": f"{agent} did not cite attached UI reference media."}
-    if reference_required and not _artifact_has_text_value(artifact, "visual_reference_analysis") and not _artifact_has_text_value(artifact, "reference_match_assessment"):
+    if reference_required and not (
+        any(_artifact_has_text_value(artifact, key) for key in ("visual_reference_analysis", "reference_match_assessment", "ui_concept"))
+        or any(_artifact_has_list_value(artifact, key) for key in ("layout_requirements", "interaction_requirements", "design_requirements", "visual_review_notes"))
+    ):
         return {"passed": False, "reason": f"{agent} did not explain how the attached UI reference media was used."}
-    if agent == "builder":
+    if agent == "visual_reference_interpreter":
+        if not _artifact_has_list_value(artifact, "layout_requirements"):
+            return {"passed": False, "reason": "Visual Reference Interpreter did not extract layout requirements."}
+        if not _artifact_has_list_value(artifact, "reference_match_checklist"):
+            return {"passed": False, "reason": "Visual Reference Interpreter did not create a reference-match checklist."}
+    if agent == "creative_ui_designer":
+        if not _artifact_has_text_value(artifact, "ui_concept"):
+            return {"passed": False, "reason": "Creative UI Designer did not define a UI concept."}
+        if not _artifact_has_list_value(artifact, "layout_system"):
+            return {"passed": False, "reason": "Creative UI Designer did not define the layout system."}
+        anti_pattern_text = " ".join(str(item or "") for item in artifact.get("what_not_to_do", []) if isinstance(artifact.get("what_not_to_do"), list)).lower()
+        if "color" not in anti_pattern_text:
+            return {"passed": False, "reason": "Creative UI Designer did not guard against color-only restyling."}
+    if agent == "ux_interaction_designer":
+        if not _artifact_has_list_value(artifact, "owner_actions"):
+            return {"passed": False, "reason": "UX Interaction Designer did not define visible owner actions."}
+        if not _artifact_has_list_value(artifact, "responsive_behavior"):
+            return {"passed": False, "reason": "UX Interaction Designer did not define responsive behavior."}
+    if agent in {"builder", "frontend_design_implementer"}:
         local_preview = artifact.get("local_preview") if isinstance(artifact.get("local_preview"), dict) else {}
         links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
         preview_url = str(local_preview.get("url") or links.get("local_preview") or "").strip()
         if not preview_url:
-            return {"passed": False, "reason": "Builder did not provide a real local preview URL for the changed UI."}
+            return {"passed": False, "reason": f"{agent} did not provide a real local preview URL for the changed UI."}
         if _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, artifact.get("changed_files"), artifact.get("summary", "")):
-            return {"passed": False, "reason": "Builder local preview points at the CHARLIE control dashboard instead of the changed UI route."}
+            return {"passed": False, "reason": f"{agent} local preview points at the CHARLIE control dashboard instead of the changed UI route."}
         if not _artifact_has_list_value(artifact, "viewport_plan"):
-            return {"passed": False, "reason": "Builder did not record a desktop/mobile viewport plan."}
+            return {"passed": False, "reason": f"{agent} did not record a desktop/mobile viewport plan."}
+        if agent == "frontend_design_implementer" and not _artifact_has_list_value(artifact, "design_requirements_met"):
+            return {"passed": False, "reason": "Frontend Design Implementer did not list design requirements met."}
     if agent == "tester":
         if not (_artifact_has_list_value(artifact, "browser_checks") or _artifact_has_list_value(artifact, "screenshots_captured")):
             return {"passed": False, "reason": "Tester did not record browser or screenshot evidence for the UI mission."}
@@ -1798,12 +1957,14 @@ def _ui_agent_quality_gate(agent, artifact):
     if agent == "qa_red_team":
         if not (_artifact_has_list_value(artifact, "visual_quality_findings") or _artifact_has_text_value(artifact, "reference_match_assessment")):
             return {"passed": False, "reason": "QA/red-team did not record visual quality/reference-match findings for the UI mission."}
-    if agent == "reviewer":
+    if agent in {"visual_qa_reviewer", "reviewer"}:
         decision = str(artifact.get("visual_acceptance_decision") or "").strip().lower()
         if decision != "approve":
-            return {"passed": False, "reason": f"Reviewer visual acceptance decision is {decision or 'missing'}."}
+            return {"passed": False, "reason": f"{agent} visual acceptance decision is {decision or 'missing'}."}
         if not _artifact_has_list_value(artifact, "visual_review_notes"):
-            return {"passed": False, "reason": "Reviewer did not record visual review notes for the UI mission."}
+            return {"passed": False, "reason": f"{agent} did not record visual review notes for the UI mission."}
+        if agent == "visual_qa_reviewer" and not _artifact_has_text_value(artifact, "reference_match_assessment"):
+            return {"passed": False, "reason": "Visual QA Reviewer did not assess reference match."}
     return {"passed": True, "reason": "ui_quality_gate_passed"}
 
 

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+import re
 
 
 CHARLIE_CORE_VERSION = "charlie_core_v3"
@@ -57,6 +58,21 @@ SPECIALIST_AGENTS = {
         "may": ["write requirements", "define acceptance criteria"],
         "may_not": ["ship code", "approve release"],
     },
+    "visual_reference_interpreter": {
+        "purpose": "Convert owner screenshots, sketches, and reference media into concrete layout, hierarchy, interaction, and visual-match requirements.",
+        "may": ["inspect mission media", "extract visual requirements", "define reference-match checklist"],
+        "may_not": ["treat reference media as optional", "edit code", "approve release"],
+    },
+    "creative_ui_designer": {
+        "purpose": "Design a distinctive, owner-aligned UI concept with information architecture, visual hierarchy, layout rhythm, and interaction intent before implementation.",
+        "may": ["produce UI concept", "define layout system", "specify visual direction"],
+        "may_not": ["settle for color-only changes", "ship code", "approve release"],
+    },
+    "ux_interaction_designer": {
+        "purpose": "Turn the UI concept into ergonomic workflows, visible actions, responsive behavior, empty/error states, and owner decision paths.",
+        "may": ["design interaction flow", "define responsive states", "protect owner actions"],
+        "may_not": ["hide approval controls", "skip mobile/desktop states", "approve release"],
+    },
     "technical_architect": {
         "purpose": "Design implementation structure, file/API/data impacts, integration risk, and test strategy.",
         "may": ["write architecture plan", "identify affected files", "define test plan"],
@@ -92,6 +108,11 @@ SPECIALIST_AGENTS = {
         "may": ["edit scoped files", "run tests", "commit on feature branch"],
         "may_not": ["merge main", "deploy", "delete data", "change secrets"],
     },
+    "frontend_design_implementer": {
+        "purpose": "Translate approved UI concept and interaction spec into frontend code while preserving the visual reference contract.",
+        "may": ["edit scoped frontend files", "run browser checks", "capture visual proof"],
+        "may_not": ["ignore designer requirements", "merge main", "deploy", "delete data", "change secrets"],
+    },
     "tester": {
         "purpose": "Run unit, integration, regression, and workflow checks with explicit evidence.",
         "may": ["fail the mission", "request fixes"],
@@ -116,6 +137,11 @@ SPECIALIST_AGENTS = {
         "purpose": "Check that the result matches owner intent, user value, and acceptance criteria.",
         "may": ["send back unclear product outcomes"],
         "may_not": ["approve technical work without test evidence"],
+    },
+    "visual_qa_reviewer": {
+        "purpose": "Compare the finished UI against owner reference media, design requirements, desktop/mobile screenshots, and visible owner actions.",
+        "may": ["block color-only UI changes", "send back visual mismatch", "require new screenshots"],
+        "may_not": ["approve without visual evidence", "accept broken controls", "ignore reference media"],
     },
     "business_reviewer": {
         "purpose": "Check commercial logic, income-stream readiness, and owner decision clarity.",
@@ -142,6 +168,9 @@ AGENT_DOCTRINE_PATHS = {
     "idea_expander": "docs/09-vault-brain/02-agents/charlie-core/IDEA_EXPANDER.md",
     "concept_strategist": "docs/09-vault-brain/02-agents/charlie-core/CONCEPT_STRATEGIST.md",
     "product_architect": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_ARCHITECT.md",
+    "visual_reference_interpreter": "docs/09-vault-brain/02-agents/charlie-core/VISUAL_REFERENCE_INTERPRETER.md",
+    "creative_ui_designer": "docs/09-vault-brain/02-agents/charlie-core/CREATIVE_UI_DESIGNER.md",
+    "ux_interaction_designer": "docs/09-vault-brain/02-agents/charlie-core/UX_INTERACTION_DESIGNER.md",
     "technical_architect": "docs/09-vault-brain/02-agents/charlie-core/TECHNICAL_ARCHITECT.md",
     "business_model_agent": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_MODEL_AGENT.md",
     "risk_agent": "docs/09-vault-brain/02-agents/charlie-core/RISK_AGENT.md",
@@ -149,9 +178,11 @@ AGENT_DOCTRINE_PATHS = {
     "planner": "docs/09-vault-brain/02-agents/charlie-core/PLANNER.md",
     "architect": "docs/09-vault-brain/02-agents/charlie-core/ARCHITECT.md",
     "builder": "docs/09-vault-brain/02-agents/charlie-core/BUILDER.md",
+    "frontend_design_implementer": "docs/09-vault-brain/02-agents/charlie-core/FRONTEND_DESIGN_IMPLEMENTER.md",
     "tester": "docs/09-vault-brain/02-agents/charlie-core/TESTER.md",
     "qa_red_team": "docs/09-vault-brain/02-agents/charlie-core/QA_RED_TEAM.md",
     "product_reviewer": "docs/09-vault-brain/02-agents/charlie-core/PRODUCT_REVIEWER.md",
+    "visual_qa_reviewer": "docs/09-vault-brain/02-agents/charlie-core/VISUAL_QA_REVIEWER.md",
     "business_reviewer": "docs/09-vault-brain/02-agents/charlie-core/BUSINESS_REVIEWER.md",
     "security_reviewer": "docs/09-vault-brain/02-agents/charlie-core/SECURITY_REVIEWER.md",
     "evidence_reviewer": "docs/09-vault-brain/02-agents/charlie-core/EVIDENCE_REVIEWER.md",
@@ -161,6 +192,43 @@ AGENT_DOCTRINE_PATHS = {
 
 
 WORKFLOW_TEMPLATES = {
+    "ui_product_build": {
+        "label": "UI Product Build",
+        "mission_type_aliases": ["ui", "frontend", "dashboard", "visual", "page", "browser", "screen", "interface", "command center", "control room"],
+        "agent_order": [
+            "idea_expander",
+            "visual_reference_interpreter",
+            "creative_ui_designer",
+            "ux_interaction_designer",
+            "product_architect",
+            "technical_architect",
+            "council_synthesis",
+            "planner",
+            "architect",
+            "frontend_design_implementer",
+            "builder",
+            "tester",
+            "qa_red_team",
+            "visual_qa_reviewer",
+            "product_reviewer",
+            "security_reviewer",
+            "evidence_reviewer",
+            "reviewer",
+            "publisher",
+        ],
+        "required_artifacts": [
+            "idea_brief",
+            "visual_reference_brief",
+            "ui_concept",
+            "interaction_spec",
+            "product_requirements",
+            "technical_architecture",
+            "build_plan",
+            "visual_test_report",
+            "review_board_packet",
+        ],
+        "owner_gates": ["approve_build", "approve_visual_direction", "approve_final_release"],
+    },
     "software_build": {
         "label": "Software Build",
         "mission_type_aliases": ["feature build", "software", "agent build", "bug fix"],
@@ -322,7 +390,11 @@ def clean_list(value, max_items=20, max_len=500):
 
 def classify_workflow_template(mission_type="", raw_text=""):
     haystack = f"{mission_type} {raw_text}".lower()
+    if re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
+        return "ui_product_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():
+        if template_id == "ui_product_build":
+            continue
         for alias in template["mission_type_aliases"]:
             if alias in haystack:
                 return template_id
