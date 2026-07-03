@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meat Sales Reference</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell sales-overview-shell">
+    <div class="page-card sales-overview-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Meat Sales Reference</h1>
+          <p>Owner reference for the current pork offer, cut sets, pricing assumptions, and gates.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/sales/meat-leads">Meat Leads</a>
+          <a href="/sales/beacon-media">Beacon Media</a>
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <section class="summary-metric-grid" aria-label="Meat sales launch reference summary">
+        <article>
+          <span>Public Pilot</span>
+          <strong>Half carcass / Set A</strong>
+        </article>
+        <article>
+          <span>Planning Price</span>
+          <strong>R130/kg VAT incl.</strong>
+        </article>
+        <article>
+          <span>Standard Deposit</span>
+          <strong>50%</strong>
+        </article>
+        <article>
+          <span>Target Pig</span>
+          <strong>60kg live</strong>
+        </article>
+      </section>
+
+      <section class="dashboard-section" aria-label="Current meat sales offer">
+        <div class="section-header-compact">
+          <div>
+            <h2>Current Offer</h2>
+            <p>Use this as the internal truth while reviewing Beacon posts and SAM leads.</p>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="ops-list-item">
+            <strong>Pilot product</strong>
+            <span>Half carcass with Set A / Family Freezer Pack as the public default.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Manual override</strong>
+            <span>Full carcass can be offered to known/trusted customers when stock and fulfilment allow it.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Later products</strong>
+            <span>Custom cuts and assisted slaughter stay later add-ons until the first standard meat cycles are stable.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Launch area</strong>
+            <span>Zone 1: Riversdale, Albertinia, and Still Bay unless owner approves otherwise.</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="dashboard-section" aria-label="Cut set menu">
+        <div class="section-header-compact">
+          <div>
+            <h2>Cut Sets</h2>
+            <p>These are product descriptions, not a promise of exact final weights or final availability.</p>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="ops-list-item">
+            <strong>Set A: Family Freezer Pack</strong>
+            <span>Pork chops; leg portions or roasts; shoulder roasts; belly strips; ribs; mince or stew meat; bones for soup or stock.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Set B: Braai Pack</strong>
+            <span>Chops; rashers or belly strips; ribs; shoulder steaks; sosatie or stew cubes; mince or sausage meat option.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Set C: Lean Pack</strong>
+            <span>Lean chops; leg steaks; lean shoulder cuts; mince; stew cubes; fewer fatty belly cuts.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Set D: Budget Bulk Pack</strong>
+            <span>Larger roasting cuts; mince; stew meat; soup bones; shoulder; mixed chops; less detailed trimming.</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="dashboard-section" aria-label="Meat sales money rules">
+        <div class="section-header-compact">
+          <div>
+            <h2>Pricing And Payment</h2>
+            <p>Planning figures for owner review. Final quotes still depend on backend gates and owner approval.</p>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="ops-list-item">
+            <strong>Standard half/full carcass</strong>
+            <span>Planning price around R130/kg VAT-inclusive at launch.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Custom cut lane</strong>
+            <span>Later target around R145-R150/kg with higher admin and deposit requirements.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Deposit</strong>
+            <span>Standard carcass orders use 50% deposit of the estimated VAT-inclusive total.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Final invoice</strong>
+            <span>Final balance uses actual packed weight. Balance must clear before delivery or collection.</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="dashboard-section" aria-label="Meat sales safety gates">
+        <div class="section-header-compact">
+          <div>
+            <h2>Non-Negotiable Gates</h2>
+            <p>These rules protect the farm from overpromising and cash-flow mistakes.</p>
+          </div>
+        </div>
+        <div class="overview-grid">
+          <article class="ops-list-item">
+            <strong>No slaughter without money</strong>
+            <span>No pig is slaughtered for meat sales unless it is pre-sold and the required deposit is bank-confirmed.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>POP is not payment</strong>
+            <span>Proof of payment is evidence only. Bank-confirmed money unlocks the next gate.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>No invented promises</strong>
+            <span>SAM, Beacon, Butcher, and Ledger must not invent price, availability, delivery, booking, or payment confirmation.</span>
+          </article>
+          <article class="ops-list-item">
+            <strong>Demand cap</strong>
+            <span>Sell only what the farm can safely fulfil from pigs over 60kg and approved operational capacity.</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="dashboard-section" aria-label="Source references">
+        <div class="section-header-compact">
+          <div>
+            <h2>Source References</h2>
+            <p>Where this page gets its current rules.</p>
+          </div>
+        </div>
+        <div class="ops-list">
+          <div class="ops-list-item">
+            <strong>Vault Brain</strong>
+            <span>docs/09-vault-brain/03-business/MEAT_SALES.md and docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md</span>
+          </div>
+          <div class="ops-list-item">
+            <strong>Detailed business model</strong>
+            <span>docs/08-business-modules/PORK_SALES_MODEL.md</span>
+          </div>
+          <div class="ops-list-item">
+            <strong>SAM runtime cut menu</strong>
+            <span>modules/sales/sam_meat_runtime.py</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

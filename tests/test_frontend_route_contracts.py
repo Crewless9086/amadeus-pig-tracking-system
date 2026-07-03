@@ -625,6 +625,34 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Beacon Media", html)
         self.assertIn("beaconMedia.js", html)
 
+    def test_meat_sales_reference_page_lists_cut_sets_and_money_rules(self):
+        from app import app
+
+        app_source = Path("app.py").read_text(encoding="utf-8")
+        template = Path("templates/meat-sales-reference.html").read_text(encoding="utf-8")
+
+        self.assertIn('@app.route("/sales/meat-reference")', app_source)
+        self.assertIn('return render_template("meat-sales-reference.html")', app_source)
+        self.assertIn("Meat Sales Reference", template)
+        self.assertIn("Set A: Family Freezer Pack", template)
+        self.assertIn("Set B: Braai Pack", template)
+        self.assertIn("Set C: Lean Pack", template)
+        self.assertIn("Set D: Budget Bulk Pack", template)
+        self.assertIn("R130/kg VAT-inclusive", template)
+        self.assertIn("50% deposit", template)
+        self.assertIn("POP is not payment", template)
+        self.assertIn("docs/09-vault-brain/03-business/MEAT_SALES.md", template)
+        self.assertIn('href="/sales/meat-reference"', Path("templates/sales-dashboard.html").read_text(encoding="utf-8"))
+        self.assertIn('href="/sales/meat-reference"', Path("templates/meat-sales-leads.html").read_text(encoding="utf-8"))
+
+        client = app.test_client()
+        response = client.get("/sales/meat-reference")
+        self.assertIn(response.status_code, {200, 302})
+        if response.status_code == 200:
+            html = response.get_data(as_text=True)
+            self.assertIn("Meat Sales Reference", html)
+            self.assertIn("Family Freezer Pack", html)
+
     def test_oom_sakkie_product_vision_and_agent_dock_exist(self):
         from app import app
 

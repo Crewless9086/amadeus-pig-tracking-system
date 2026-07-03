@@ -72,6 +72,14 @@ def meat_sales_leads_page():
     return render_template("meat-sales-leads.html")
 
 
+@app.route("/sales/meat-reference")
+def meat_sales_reference_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("meat-sales-reference.html")
+
+
 @app.route("/owner/login", methods=["GET"])
 def owner_login_page():
     return owner_login_get()
