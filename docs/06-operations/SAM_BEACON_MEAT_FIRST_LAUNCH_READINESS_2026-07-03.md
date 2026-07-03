@@ -85,6 +85,12 @@ Beacon Facebook posting policy now separates configured capability from active p
 
 This prevents the dashboard/API from implying that Beacon can post now when Meta posting is still locked.
 
+Builder send-back fix: meat money-path routes now require owner read access at the route boundary before invoking quote/document, payment-gate, reservation, deposit, fulfilment, delivery, instruction, customer follow-up, booking-confirmation, or draft-order services.
+
+- Added shared route helper `_require_owner_meat_money_path_access()`.
+- Added regression coverage proving denied owner access returns before service calls.
+- This does not unlock customer sends, public posts, stock reservation, payment confirmation, or lifecycle writes.
+
 ## Owner Gates Before First Public Push
 
 1. Pick first launch channel.
@@ -120,4 +126,3 @@ For this income-stream class of mission, CHARLIE CORE must always inspect:
 - Owner approval gates before any public/customer output.
 
 The mission should not be considered review-ready if it only changes UI or copy without proving these gates.
-

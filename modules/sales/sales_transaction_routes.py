@@ -106,6 +106,10 @@ def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _require_owner_meat_money_path_access():
+    return require_owner_read_access()
+
+
 def _sam_command_state_access_allowed(remote_addr, headers):
     try:
         address = ipaddress.ip_address(str(remote_addr or "").strip())
@@ -581,6 +585,9 @@ def meat_sales_lead_pricing_estimate(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote", methods=["GET", "POST"])
 def meat_sales_lead_estimated_quote(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     if request.method == "GET":
         payload = {
@@ -593,6 +600,9 @@ def meat_sales_lead_estimated_quote(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote/pdf", methods=["POST"])
 def meat_sales_lead_estimated_quote_pdf(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = generate_meat_estimated_quote_pdf(lead_id, payload)
     return jsonify(result), status_code
@@ -600,6 +610,9 @@ def meat_sales_lead_estimated_quote_pdf(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote/send", methods=["POST"])
 def meat_sales_lead_estimated_quote_send(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = send_meat_estimated_quote_to_chatwoot(lead_id, payload)
     return jsonify(result), status_code
@@ -607,6 +620,9 @@ def meat_sales_lead_estimated_quote_send(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/deposit-pro-forma/pdf", methods=["POST"])
 def meat_sales_lead_deposit_pro_forma_pdf(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = generate_meat_deposit_pro_forma_pdf(lead_id, payload)
     return jsonify(result), status_code
@@ -614,6 +630,9 @@ def meat_sales_lead_deposit_pro_forma_pdf(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/final-invoice/pdf", methods=["POST"])
 def meat_sales_lead_final_invoice_pdf(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = generate_meat_final_invoice_pdf(lead_id, payload)
     return jsonify(result), status_code
@@ -647,12 +666,18 @@ def meat_sales_lead_ops_status(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/payment-gate", methods=["GET"])
 def meat_sales_lead_payment_gate(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     result, status_code = get_meat_payment_gate(lead_id)
     return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/carcass-reservations", methods=["POST"])
 def meat_sales_lead_carcass_reservation(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = create_carcass_reservation_from_lead(lead_id, payload)
     return jsonify(result), status_code
@@ -660,6 +685,9 @@ def meat_sales_lead_carcass_reservation(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/reservation-events", methods=["POST"])
 def meat_sales_lead_reservation_event(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_carcass_reservation_event(lead_id, payload)
     return jsonify(result), status_code
@@ -667,6 +695,9 @@ def meat_sales_lead_reservation_event(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/deposit-events", methods=["POST"])
 def meat_sales_lead_deposit_event(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_deposit_event(lead_id, payload)
     return jsonify(result), status_code
@@ -674,6 +705,9 @@ def meat_sales_lead_deposit_event(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts", methods=["POST"])
 def meat_sales_lead_instruction_drafts(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = build_meat_instruction_drafts(lead_id, payload)
     return jsonify(result), status_code
@@ -699,6 +733,9 @@ def meat_sales_lead_reconciliation_status(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/reconciliation-events", methods=["POST"])
 def meat_sales_lead_reconciliation_event(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_reconciliation_event(lead_id, payload)
     return jsonify(result), status_code
@@ -706,6 +743,9 @@ def meat_sales_lead_reconciliation_event(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/dad-booking-packet", methods=["GET", "POST"])
 def meat_sales_lead_dad_booking_packet(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = build_dad_booking_packet(lead_id, payload)
     return jsonify(result), status_code
@@ -713,6 +753,9 @@ def meat_sales_lead_dad_booking_packet(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment-events", methods=["POST"])
 def meat_sales_lead_fulfillment_event(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_fulfillment_event(lead_id, payload)
     return jsonify(result), status_code
@@ -720,6 +763,9 @@ def meat_sales_lead_fulfillment_event(lead_id):
 
 @sales_bp.route("/sales/meat-deliveries/driver-route", methods=["GET"])
 def meat_sales_driver_route():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     result, status_code = list_meat_driver_route(
         driver_label=request.args.get("driver", ""),
         scheduled_date=request.args.get("date", ""),
@@ -729,6 +775,9 @@ def meat_sales_driver_route():
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/driver-events", methods=["POST"])
 def meat_sales_lead_driver_event(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_driver_delivery_event(lead_id, payload)
     return jsonify(result), status_code
@@ -736,6 +785,9 @@ def meat_sales_lead_driver_event(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-draft", methods=["POST"])
 def meat_sales_lead_journey_notification_draft(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = build_meat_journey_notification_draft(lead_id, payload)
     return jsonify(result), status_code
@@ -743,6 +795,9 @@ def meat_sales_lead_journey_notification_draft(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-approval", methods=["POST"])
 def meat_sales_lead_journey_notification_approval(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = approve_meat_journey_notification(lead_id, payload)
     return jsonify(result), status_code
@@ -750,6 +805,9 @@ def meat_sales_lead_journey_notification_approval(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-send", methods=["POST"])
 def meat_sales_lead_journey_notification_send(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = send_meat_journey_notification(lead_id, payload)
     return jsonify(result), status_code
@@ -757,6 +815,9 @@ def meat_sales_lead_journey_notification_send(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/approval", methods=["POST"])
 def meat_sales_lead_instruction_draft_approval(lead_id, instruction_draft_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = approve_meat_instruction_draft(lead_id, instruction_draft_id, payload)
     return jsonify(result), status_code
@@ -764,6 +825,9 @@ def meat_sales_lead_instruction_draft_approval(lead_id, instruction_draft_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/send", methods=["POST"])
 def meat_sales_lead_instruction_draft_send(lead_id, instruction_draft_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = send_approved_meat_instruction(lead_id, instruction_draft_id, payload)
     return jsonify(result), status_code
@@ -771,6 +835,9 @@ def meat_sales_lead_instruction_draft_send(lead_id, instruction_draft_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/exception", methods=["POST"])
 def meat_sales_lead_instruction_draft_exception(lead_id, instruction_draft_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_instruction_exception(lead_id, instruction_draft_id, payload)
     return jsonify(result), status_code
@@ -778,6 +845,9 @@ def meat_sales_lead_instruction_draft_exception(lead_id, instruction_draft_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/owner-money-path-approval", methods=["POST"])
 def meat_sales_lead_owner_money_path_approval(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_owner_money_path_approval(lead_id, payload)
     return jsonify(result), status_code
@@ -785,12 +855,18 @@ def meat_sales_lead_owner_money_path_approval(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-draft", methods=["GET"])
 def meat_sales_lead_customer_followup_draft(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     result, status_code = get_sales_lead_customer_followup_draft(lead_id)
     return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-send-approval", methods=["POST"])
 def meat_sales_lead_customer_followup_send_approval(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_customer_followup_send_approval(lead_id, payload)
     return jsonify(result), status_code
@@ -798,6 +874,9 @@ def meat_sales_lead_customer_followup_send_approval(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-send", methods=["POST"])
 def meat_sales_lead_customer_followup_send(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     if not _env_truthy(os.getenv("OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED")):
         return jsonify({
             "success": False,
@@ -816,6 +895,9 @@ def meat_sales_lead_customer_followup_send(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/customer-booking-confirmation", methods=["POST"])
 def meat_sales_lead_customer_booking_confirmation(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = record_customer_booking_confirmation(lead_id, payload)
     return jsonify(result), status_code
@@ -823,6 +905,9 @@ def meat_sales_lead_customer_booking_confirmation(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/draft-order", methods=["POST"])
 def meat_sales_lead_draft_order(lead_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = create_draft_order_from_sales_lead(lead_id, payload)
     return jsonify(result), status_code
