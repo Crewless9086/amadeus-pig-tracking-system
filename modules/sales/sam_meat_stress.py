@@ -15,6 +15,13 @@ FORBIDDEN_REPLY_PATTERNS = [
     r"\bbutcher\b.*\b(booked|confirmed)\b",
 ]
 
+HUMAN_QUALITY_FORBIDDEN_FRAGMENTS = [
+    "I am still with you on the pork preorder",
+    "Please send the delivery street address",
+    "Tell me what you are looking for and I will guide you from there",
+    "half carcass, full carcass, or a cut-set pack",
+]
+
 
 STRESS_SCENARIOS = [
     {
@@ -578,6 +585,12 @@ def evaluate_scenario(scenario):
         201,
         prior_context=prior_context,
     )
+    decision["response_review"] = sam_meat_runtime._review_sam_response(
+        decision,
+        inbound,
+        facts,
+        prior_context,
+    )
     hygiene = build_sam_meat_chatwoot_hygiene_payload(
         lead_payload=sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts),
         facts=facts,
@@ -593,6 +606,7 @@ def evaluate_scenario(scenario):
     _check_labels(scenario, hygiene, issues)
     _check_attrs(scenario, hygiene, issues)
     _check_forbidden_reply(decision, issues)
+    _check_response_review(decision, issues)
     return _result(scenario, inbound, facts, decision, hygiene, issues)
 
 
@@ -696,6 +710,20 @@ def _check_forbidden_reply(decision, issues):
     for pattern in FORBIDDEN_REPLY_PATTERNS:
         if re.search(pattern, reply, re.I):
             issues.append(_issue("forbidden_reply", f"Forbidden pattern {pattern!r} matched reply {reply!r}"))
+    for fragment in HUMAN_QUALITY_FORBIDDEN_FRAGMENTS:
+        if fragment.lower() in reply.lower():
+            issues.append(_issue("human_quality", f"Robotic fragment {fragment!r} appeared in reply {reply!r}"))
+
+
+def _check_response_review(decision, issues):
+    review = decision.get("response_review") if isinstance(decision.get("response_review"), dict) else {}
+    if not review:
+        issues.append(_issue("response_review", "Missing SAM response review packet."))
+        return
+    if not review.get("safe_to_send"):
+        issues.append(_issue("response_review", f"Response review blocked send: {review.get('blocked_reasons')!r}"))
+    if int(review.get("score") or 0) < 80:
+        issues.append(_issue("response_review", f"Response review score too low: {review.get('score')!r} issues={review.get('issues')!r}"))
 
 
 def _result(scenario, inbound, facts, decision, hygiene, issues):
@@ -710,6 +738,7 @@ def _result(scenario, inbound, facts, decision, hygiene, issues):
         "status": inbound.get("status"),
         "facts": facts,
         "reply_text": decision.get("reply_text", ""),
+        "response_review": decision.get("response_review", {}),
         "labels": hygiene.get("labels", []),
         "custom_attributes": hygiene.get("custom_attributes", {}),
     }

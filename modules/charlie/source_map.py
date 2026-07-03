@@ -17,6 +17,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/08-business-rules/MEAT_SALES_RULES.md",
             "docs/09-vault-brain/02-agents/sales/SAM.md",
             "docs/09-vault-brain/02-agents/sales/MEAT_SALES_AGENT.md",
+            "docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md",
+            "docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md",
+            "docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md",
         ],
         "app_routes": [
             "/sales/meat-leads",

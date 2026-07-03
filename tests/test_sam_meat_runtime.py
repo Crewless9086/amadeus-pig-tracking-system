@@ -207,7 +207,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             prior_context=prior_context,
         )
 
-        self.assertIn("For delivery I need the street address", decision["reply_text"])
+        self.assertIn("street address", decision["reply_text"])
+        self.assertIn("farm name", decision["reply_text"])
         self.assertNotIn("Hi, I am Sam", decision["reply_text"])
 
     def test_address_with_street_name_before_number_is_captured_after_delivery_prompt(self):
@@ -515,7 +516,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("For delivery I need the street address", decision["reply_text"])
+        self.assertIn("street address", decision["reply_text"])
+        self.assertIn("farm name", decision["reply_text"])
 
     def test_vague_pork_options_reply_is_specific_and_not_generic_intro(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -548,7 +550,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertIn("I hear you", decision["reply_text"])
         self.assertIn("Amadeus Farm", decision["reply_text"])
-        self.assertIn("For delivery I need the street address", decision["reply_text"])
+        self.assertIn("street address", decision["reply_text"])
+        self.assertIn("farm name", decision["reply_text"])
 
     def test_deposit_question_explains_reason_without_repeating_payment_method(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -1581,6 +1584,68 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(lead_payload["lead_qualification_status"], "qualified_meat_lead")
         self.assertEqual(lead_payload["status"], "interested")
         self.assertTrue(lead_payload["lead_qualification"]["appears_in_sam_command_room"])
+
+    def test_agent_v3_payload_uses_specific_model_override(self):
+        payload = sam_meat_runtime._agent_v3_payload(
+            {"allowed_actions": [], "blocked_actions": []},
+            {"product_type": "unknown"},
+            {
+                "SAM_MEAT_BACKEND_LLM_MODEL": "base-model",
+                "SAM_MEAT_BACKEND_AGENT_V3_MODEL": "agent-model",
+            },
+        )
+
+        self.assertEqual(payload["model"], "agent-model")
+        self.assertIn("SAM_MEAT_PERSONALITY", payload["messages"][0]["content"])
+
+    def test_reply_rewriter_payload_uses_specific_model_override(self):
+        payload = sam_meat_runtime._reply_rewriter_payload(
+            {"reply_text": "Ask for timing", "reply_source": "code_fallback"},
+            {"content": "Half carcass Set A Riversdale collection EFT"},
+            {"product_type": "half_carcass"},
+            {},
+            {},
+            {
+                "SAM_MEAT_BACKEND_LLM_MODEL": "base-model",
+                "SAM_MEAT_BACKEND_REPLY_MODEL": "reply-model",
+            },
+        )
+
+        self.assertEqual(payload["model"], "reply-model")
+        self.assertIn("SAM_MEAT_HUMAN_SALES_PLAYBOOK", payload["messages"][0]["content"])
+
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_handle_inbound_attaches_response_review_to_sam_decision(self, mock_record, mock_contract):
+        mock_record.return_value = ({"success": True, "lead_id": "OSK-SALES-LEAD-TEST"}, 201)
+        mock_contract.return_value = ({"success": True, "contract": {"contract_status": "needs_owner_confirmation"}}, 200)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Half carcass Set A Riversdale collection EFT next week"),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        review = result["sam_decision"]["response_review"]
+        self.assertEqual(review["version"], "sam_human_response_review_v1")
+        self.assertTrue(review["safe_to_send"])
+        self.assertGreaterEqual(review["score"], 80)
+        self.assertEqual(result["response_review"], review)
+
+    def test_response_review_blocks_unsafe_public_reply(self):
+        review = sam_meat_runtime._review_sam_response(
+            {
+                "should_reply": True,
+                "reply_text": "Your order is confirmed and payment is received.",
+                "reply_source": "llm_agent_v3",
+            },
+            {"content": "I want pork"},
+            {"product_type": "half_carcass"},
+        )
+
+        self.assertFalse(review["safe_to_send"])
+        self.assertIn("confirms_booking_without_gate", review["blocked_reasons"])
+        self.assertIn("confirms_payment_without_bank_gate", review["blocked_reasons"])
 if __name__ == "__main__":
 
     unittest.main()

@@ -16,6 +16,20 @@ SAM must not invent price, availability, payment confirmation, final booking, sl
 6. SAM may send or draft wording only when the approved backend gate allows it.
 7. Analyst/Oom Sakkie records learning evidence from confusion, objections, missing facts, conversion/loss reason, and follow-up needs.
 
+## Agentic Conversation Loop
+
+For each inbound message, SAM must:
+
+1. classify the conversation stage;
+2. load lead memory, Chatwoot attributes, recent messages, and Beacon/source campaign context;
+3. select only the next useful action;
+4. draft a human WhatsApp reply;
+5. run safety, human-tone, memory, and escalation review;
+6. send only when the service window and backend gates allow it;
+7. record append-only evidence and learning metadata.
+
+The fallback path must also sound human. LLM timeout must not cause robotic replies or silence when a safe deterministic answer exists.
+
 ## Required Facts Before Quote
 
 - customer name and phone/context;
@@ -37,6 +51,7 @@ SAM must not invent price, availability, payment confirmation, final booking, sl
 - Chatwoot labels and attributes must preserve existing conversation state.
 - Vague meat-interest phrases should be treated as meat interest and answered with one meat-specific next question, not a generic loop.
 - SAM must not use internal rollout words such as `pilot` in customer-facing messages.
+- SAM must not sound robotic in customer-facing messages. Use the personality, playbook, and gold-standard examples when crafting live replies.
 
 ## Source References
 
@@ -44,3 +59,6 @@ SAM must not invent price, availability, payment confirmation, final booking, sl
 - `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
 - `docs/05-ai/AGENT_ROLES.md`
+- `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`
+- `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`
+- `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`

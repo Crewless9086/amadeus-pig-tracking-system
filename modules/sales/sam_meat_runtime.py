@@ -54,6 +54,8 @@ LLM_ENABLED_ENV = "SAM_MEAT_BACKEND_LLM_ENABLED"
 AGENT_V2_ENABLED_ENV = "SAM_MEAT_BACKEND_AGENT_V2_ENABLED"
 AGENT_V3_ENABLED_ENV = "SAM_MEAT_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_MEAT_BACKEND_LLM_MODEL"
+AGENT_V3_MODEL_ENV = "SAM_MEAT_BACKEND_AGENT_V3_MODEL"
+REPLY_REWRITER_MODEL_ENV = "SAM_MEAT_BACKEND_REPLY_MODEL"
 LLM_URL_ENV = "SAM_MEAT_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
@@ -82,7 +84,7 @@ def sam_meat_webhook_policy(environ=None):
     agent_v2_enabled = _truthy(source.get(AGENT_V2_ENABLED_ENV))
     agent_v3_enabled = _truthy(source.get(AGENT_V3_ENABLED_ENV))
     hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
-    llm_configured = bool(str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
+    llm_configured = bool(_configured_llm_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
     return {
         "enabled": enabled,
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
@@ -103,6 +105,10 @@ def sam_meat_webhook_policy(environ=None):
         "agent_v2_enabled_env": AGENT_V2_ENABLED_ENV,
         "agent_v3_enabled_env": AGENT_V3_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
+        "agent_v3_model_env": AGENT_V3_MODEL_ENV,
+        "reply_rewriter_model_env": REPLY_REWRITER_MODEL_ENV,
+        "agent_v3_model_configured": bool(_configured_llm_model(source, AGENT_V3_MODEL_ENV)),
+        "reply_rewriter_model_configured": bool(_configured_llm_model(source, REPLY_REWRITER_MODEL_ENV)),
         "api_key_env": OPENAI_API_KEY_ENV,
         "bank_details_configured": _bank_details_configured(source),
         "bank_detail_envs": [
@@ -261,6 +267,12 @@ def handle_sam_meat_chatwoot_inbound(
         source,
         rewriter=llm_reply_rewriter,
     )
+    response_review = _review_sam_response(decision, inbound, facts, prior_context, agent_decision)
+    decision["response_review"] = response_review
+    if not response_review.get("safe_to_send"):
+        decision["should_reply"] = False
+        decision["reply_source"] = "blocked_by_response_review"
+        decision["blocked_actions"] = sorted(set((decision.get("blocked_actions") or []) + ["response_review_blocked"]))
     try:
         fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
     except Exception as exc:
@@ -341,6 +353,7 @@ def handle_sam_meat_chatwoot_inbound(
         "fulfillment_capture": fulfillment_capture,
         "chatwoot_hygiene": chatwoot_hygiene,
         "sam_decision": decision,
+        "response_review": response_review,
         "sent": sent,
         "send_status": send_status,
         "chatwoot_send": send_result,
@@ -609,6 +622,31 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "last_inbound_at": inbound.get("last_inbound_at") or "",
     }
 
+
+def _known_detail_summary(facts):
+    facts = facts if isinstance(facts, dict) else {}
+    product = {
+        "half_carcass": "half carcass",
+        "full_carcass": "full carcass",
+        "custom_cut": "custom cut pack",
+        "assisted_slaughter": "assisted slaughter",
+    }.get(facts.get("product_type"), "pork request")
+    parts = [product]
+    if facts.get("cut_set"):
+        parts.append(str(facts["cut_set"]))
+    if facts.get("location"):
+        parts.append(str(facts["location"]))
+    if facts.get("delivery_or_collection"):
+        parts.append(str(facts["delivery_or_collection"]))
+    if facts.get("timing"):
+        parts.append(str(facts["timing"]))
+    if facts.get("payment_method"):
+        parts.append(str(facts["payment_method"]))
+    if facts.get("delivery_address_line_1"):
+        parts.append("delivery address noted")
+    return ", ".join(_clean(part, 80) for part in parts if _clean(part, 80))
+
+
 def _fresh_lead_id(inbound, facts):
     seed = json.dumps(
         {
@@ -721,9 +759,10 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif not facts.get("payment_method"):
         reply = _next_fact_question(facts)
     else:
+        details = _known_detail_summary(facts)
         reply = (
-            "Thanks, I have noted your pork interest for the farm to review. "
-            "This is pre-booked Amadeus Farm pork, so I still need the farm to confirm price, timing, and the deposit rule before quoting or booking anything."
+            f"Great, I have the main details: {details}. "
+            "I will keep this ready for the farm to review before any price, timing, or deposit step moves forward."
         )
 
     if lead_id:
@@ -785,7 +824,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
 
 
 def _call_sam_meat_llm(message, inbound, source):
-    if not (str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
+    if not (_configured_llm_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
         return {}
     payload = _llm_payload(message, inbound, source)
     req = urllib_request.Request(
@@ -911,7 +950,7 @@ def _rewrite_code_reply_if_needed(decision, inbound, facts, prior_context, conte
     original = _clean(decision.get("reply_text"), 1800)
     if not original:
         return decision
-    if not _truthy(source.get(LLM_ENABLED_ENV)) or not str(source.get(LLM_MODEL_ENV, "") or "").strip() or not str(source.get(OPENAI_API_KEY_ENV, "") or "").strip():
+    if not _truthy(source.get(LLM_ENABLED_ENV)) or not _configured_llm_model(source, REPLY_REWRITER_MODEL_ENV) or not str(source.get(OPENAI_API_KEY_ENV, "") or "").strip():
         decision["reply_source"] = "code_fallback_rewrite_unavailable"
         decision["rewrite_status"] = "llm_rewrite_unavailable"
         return decision
@@ -963,18 +1002,20 @@ def _call_sam_meat_reply_rewriter_llm(decision, inbound, facts, prior_context, c
 def _reply_rewriter_payload(decision, inbound, facts, prior_context, context_packet, source):
     system = (
         "You are Sam, Amadeus Farm's public WhatsApp sales agent. "
+        "Follow SAM_MEAT_PERSONALITY, SAM_MEAT_HUMAN_SALES_PLAYBOOK, and SAM_MEAT_GOLD_STANDARD_REPLIES as live doctrine. "
         "Rewrite the backend's structured reply brief into a natural human customer message. "
         "The backend brief is policy, not wording. Do not copy its phrasing. "
         "If the brief contains named product options, cut sets, or included cuts, preserve those facts in the customer reply. "
         "Never promise to send a set sheet when the brief already contains the set details; answer with the details instead. "
-        "Be warm, useful, confident, and commercially focused. Avoid sounding like a form or a chatbot. "
+        "Be warm, useful, confident, and commercially focused. Avoid sounding like a form, checklist, or chatbot. "
+        "Show memory by not asking for facts the context already has. "
         "Ask at most one natural next question. "
         "Never invent prices, weights, stock, booking status, payment confirmation, slaughter dates, butcher slots, or delivery dates. "
         "Never say payment is confirmed. Never create or confirm an order. Never use the word pilot. "
         "Return JSON only."
     )
     return _with_supported_temperature({
-        "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
+        "model": _configured_llm_model(source, REPLY_REWRITER_MODEL_ENV),
         "messages": [
             {"role": "system", "content": system},
             {
@@ -1015,9 +1056,18 @@ def _safe_rewritten_reply(raw):
     return reply
 
 
+def _configured_llm_model(source, override_env=None):
+    source = source if source is not None else os.environ
+    model = ""
+    if override_env:
+        model = str(source.get(override_env, "") or "").strip()
+    return model or str(source.get(LLM_MODEL_ENV, "") or "").strip()
+
+
 def _agent_v3_payload(context_packet, facts, source):
     system = (
         "You are Sam, the public-facing LLM-first sales agent for Amadeus Farm. "
+        "Follow SAM_MEAT_PERSONALITY, SAM_MEAT_HUMAN_SALES_PLAYBOOK, and SAM_MEAT_GOLD_STANDARD_REPLIES as active doctrine. "
         "Your job is to make customers feel heard, understand the farm offer, and move real buyers toward a safe owner-approved sale. "
         "Speak like a capable human farm salesperson on WhatsApp: warm, confident, concise, practical, and commercially useful. "
         "Do not sound like a form, workflow, chatbot menu, support macro, or database field collector. "
@@ -1062,7 +1112,7 @@ def _agent_v3_payload(context_packet, facts, source):
         }
     }
     return _with_supported_temperature({
-        "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
+        "model": _configured_llm_model(source, AGENT_V3_MODEL_ENV),
         "messages": [
             {"role": "system", "content": system},
             {
@@ -1299,13 +1349,136 @@ def _agent_reply_blockers(reply):
     unsafe_patterns = [
         (r"\br\s*\d", "mentions_money_amount"),
         (r"\b(booking|order|reservation)\b.{0,40}\b(confirmed|final|booked|reserved)\b", "confirms_booking_without_gate"),
-        (r"\b(payment|money|deposit)\b.{0,40}\b(received|confirmed|cleared|reflects)\b", "confirms_payment_without_bank_gate"),
+        (r"\b(payment|money|deposit)\b.{0,40}\b(received|confirmed|cleared)\b", "confirms_payment_without_bank_gate"),
+        (r"\bmoney\b.{0,20}\b(has reflected|is reflected|already reflected)\b", "confirms_payment_without_bank_gate"),
         (r"\b(slaughter|butcher|delivery|collection)\b.{0,40}\b(booked|confirmed|scheduled)\b", "confirms_fulfillment_without_gate"),
     ]
     for pattern, label in unsafe_patterns:
         if re.search(pattern, text):
             blockers.append(label)
     return blockers
+
+
+def _review_sam_response(decision, inbound, facts, prior_context=None, agent_decision=None):
+    decision = decision if isinstance(decision, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    reply = _clean(decision.get("reply_text"), 1800)
+    should_reply = bool(decision.get("should_reply"))
+    issues = []
+    blocked = []
+    score = 100
+    if not should_reply:
+        return {
+            "version": "sam_human_response_review_v1",
+            "safe_to_send": True,
+            "score": 96,
+            "human_tone_status": "not_applicable",
+            "memory_status": "not_applicable",
+            "usefulness_status": "not_applicable",
+            "escalation_required": False,
+            "stage": _conversation_stage(facts, prior_context, inbound),
+            "issues": [],
+            "blocked_reasons": [],
+            "confidence_target": 96,
+        }
+    if not reply:
+        blocked.append("empty_reply")
+        score -= 60
+    for blocker in _agent_reply_blockers(reply):
+        blocked.append(blocker)
+        score -= 35
+    lowered = reply.lower()
+    internal_terms = [
+        "json",
+        "backend",
+        "database",
+        "runtime",
+        "workflow",
+        "webhook",
+        "source map",
+        "vault",
+        "pilot",
+    ]
+    for term in internal_terms:
+        if term in lowered:
+            issues.append(f"internal_term:{term}")
+            score -= 12
+    if len(reply) > 700:
+        issues.append("too_long_for_whatsapp")
+        score -= 10
+    if reply.count("?") > 1:
+        issues.append("asks_more_than_one_question")
+        score -= 10
+    if re.search(r"\b(which|what)\s+town\b|\btown or area\b", lowered) and facts.get("location"):
+        issues.append("repeats_known_location")
+        score -= 20
+    if re.search(r"\bcollection or delivery\b|\bdelivery or collection\b", lowered) and facts.get("delivery_or_collection"):
+        issues.append("repeats_known_handover_mode")
+        score -= 20
+    if re.search(r"\bstreet address\b|\bfarm name\b|\bdriver notes\b", lowered) and facts.get("delivery_address_line_1"):
+        issues.append("repeats_known_delivery_address")
+        score -= 20
+    if re.search(r"\bhalf carcass, full carcass, or\b", lowered):
+        issues.append("menu_like_reply")
+        score -= 12
+    if re.search(r"\bi am still with you\b|\bplease send\b|\btell me what you are looking for\b", lowered):
+        issues.append("robotic_macro_tone")
+        score -= 20
+    if not re.search(r"\b(farm|pork|freezer|delivery|collection|set|carcass|price|payment|order|booking|details|run)\b", lowered):
+        issues.append("weak_sales_usefulness")
+        score -= 10
+    score = max(0, min(100, score))
+    safe_to_send = not blocked
+    if any(item.startswith("internal_term:") and item.endswith(":pilot") for item in issues):
+        safe_to_send = False
+        blocked.append("uses_pilot_word")
+    return {
+        "version": "sam_human_response_review_v1",
+        "safe_to_send": safe_to_send,
+        "score": score,
+        "human_tone_status": "pass" if score >= 92 and not any("tone" in item or "menu_like" in item for item in issues) else "needs_polish",
+        "memory_status": "pass" if not any(item.startswith("repeats_known_") for item in issues) else "possible_repeat",
+        "usefulness_status": "pass" if "weak_sales_usefulness" not in issues else "weak",
+        "escalation_required": not safe_to_send or bool(decision.get("requires_confirmation")),
+        "stage": _conversation_stage(facts, prior_context, inbound),
+        "issues": issues,
+        "blocked_reasons": sorted(set(blocked)),
+        "confidence_target": 96,
+        "agent_decision": _agent_decision_summary(agent_decision),
+    }
+
+
+def _conversation_stage(facts, prior_context=None, inbound=None):
+    facts = facts if isinstance(facts, dict) else {}
+    text = _normalized_customer_text((inbound or {}).get("content") if isinstance(inbound, dict) else "")
+    if _asks_money_or_document(text):
+        return "owner_money_review"
+    if re.search(r"\b(pop|proof|paid|payment)\b", text):
+        return "payment_evidence"
+    if facts.get("product_type") == "unknown":
+        return "warm_campaign_interest" if _meat_interest_detected(text) else "general_sales_open"
+    missing = _missing_meat_fields(facts)
+    if missing:
+        return "missing_fact:" + missing[0]
+    return "ready_for_owner_review"
+
+
+def _missing_meat_fields(facts):
+    missing = []
+    if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
+        missing.append("cut_set")
+    if not facts.get("location"):
+        missing.append("location")
+    if not facts.get("delivery_or_collection"):
+        missing.append("delivery_or_collection")
+    if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
+        missing.append("delivery_address_line_1")
+    if not facts.get("timing"):
+        missing.append("timing")
+    if not facts.get("payment_method"):
+        missing.append("payment_method")
+    return missing
 
 
 def _agent_decision_summary(agent_decision):
@@ -1573,12 +1746,12 @@ def _is_opening_sales_greeting(message, facts=None, prior_context=None):
 def _contextual_meat_fallback_reply(message, facts, prior_context=None, knowledge=None):
     text = str(message or "").lower()
     if re.search(r"\b(thanks|thank you|ok|okay|cool|great|perfect)\b", text) and len(text.split()) <= 4:
-        return "Pleasure. I will keep the pork preorder details together here."
+        return "Pleasure. I will keep the pork details together here."
     next_step = _next_fact_question(facts)
     if next_step and next_step != "I have the core details and will keep the next step clear.":
-        return f"Got it. I am keeping this on the pork preorder. {next_step}"
+        return f"Got it, I am keeping this with your pork request. {next_step}"
     return (
-        "Got it. I am keeping this on the pork preorder. "
+        "Got it, I am keeping this with your pork request. "
         "Tell me what you want to adjust or ask, and I will keep it practical."
     )
 
@@ -1589,10 +1762,10 @@ def _sam_intro_options_reply(knowledge=None):
     intro = profile.get("short_intro") or "Hi, I am Sam from Amadeus Farm."
     story = profile.get("one_line_story") or "I can help you find the right farm sales path."
     if not menu:
-        menu = "Pork meat sales, live pig sales, or farm information."
+        menu = "pork freezer options, live pig interest, or farm information"
     return (
         f"{intro} {story} "
-        f"I can help with {menu}. If you are here for pork, I can quickly help you choose the right freezer option."
+        f"I can help with {menu}. If you are here for pork, are you looking for household freezer stock or a bigger order?"
     )
 
 
@@ -1620,8 +1793,8 @@ def _vague_meat_interest_reply(message, facts, knowledge=None):
         )
     if re.search(r"\b(i\s+want|i'?m\s+looking|looking\s+for|need)\b", normalized):
         return (
-            "Good, I can help with pork for the freezer. To keep it practical, I first need to know whether you want a half carcass, "
-            "a full carcass, or a smaller cut-set pack."
+            "Good, you are in the right place. I can help with pork for the freezer. "
+            "Are you buying mainly for household freezer stock, or for a bigger group?"
         )
     return (
         "I can help with pork meat orders. Most buyers start by choosing the size of the freezer order, then we narrow down the cut style. "
@@ -1711,13 +1884,13 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
 
 def _next_fact_question(facts):
     if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        return "For the cutting style, Set A is the safest family freezer pack. Should I note Set A, or would you like the other cut sets first?"
+        return "That can work. For the cutting style, Set A is the safest family freezer pack. Should I note Set A for you, or would you like the other sets first?"
     if not facts.get("location"):
-        return "Which town or area should I plan around so the farm can keep the run practical?"
+        return "Which town or area should I plan around so the farm run stays practical?"
     if not facts.get("delivery_or_collection"):
         return "For the handover, should I plan this as collection or delivery?"
     if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
-        return "For delivery I need the street address or farm name, plus any useful directions or driver notes that will make the drop-off easy."
+        return "That can work. For delivery I just need the street address or farm name, plus any directions or driver notes that make the drop-off easy."
     if not facts.get("timing"):
         return "When would you ideally like the pork: this week, next week, or the next available farm run?"
     if not facts.get("payment_method"):
@@ -1741,8 +1914,9 @@ def _price_or_document_guard_reply(message, facts):
         missing.append("payment method")
     missing_text = f" I still need {', '.join(missing)}." if missing else ""
     return (
-        "I can note the request, but the farm must confirm price, timing, and any deposit rule "
-        f"before quoting, invoicing, or booking anything.{missing_text}"
+        "I can help with that, but I do not want to give you a loose number. "
+        "The farm must confirm and approve the price, timing, and any deposit rule before I quote or book anything."
+        f"{missing_text}"
     )
 
 
@@ -1764,8 +1938,8 @@ def _quote_blocker_reply(blockers):
     if not missing:
         return ""
     return (
-        "I am not able to prepare the estimated quote yet because the farm document gate is missing "
-        f"{', '.join(missing)}."
+        "I cannot prepare the estimated quote properly yet. The farm still needs "
+        f"{', '.join(missing)} before the quote can be sent."
     )
 
 

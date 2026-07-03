@@ -26,3 +26,6 @@ Source reference: `docs/05-ai/RESPONSE_RULES.md`.
 - No desperate discounting.
 - No cheap positioning for premium lanes.
 - No defensive price explanations unless the customer asks directly and approved wording exists.
+- The reply must sound like a capable person in the business, not like a backend status line.
+- A safe deterministic fallback is allowed only when it still passes the human-tone and memory checks.
+- If a reply cannot be made useful, safe, and human, do not auto-send; escalate or wait.
