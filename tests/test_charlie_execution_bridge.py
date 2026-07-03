@@ -133,6 +133,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(validation["valid"])
         self.assertIn("confidence", validation["missing_keys"])
 
+    def test_source_mapper_allows_empty_legacy_sources_for_current_only_section(self):
+        artifact = _successful_stage_payload("source_mapper")
+        artifact["legacy_sources"] = []
+
+        validation = execution_bridge._validate_agent_artifact("source_mapper", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+
     def test_agent_quality_gate_blocks_below_ninety_six_confidence(self):
         artifact = _successful_stage_payload("planner")
         artifact["confidence"] = "95%"

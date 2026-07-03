@@ -77,6 +77,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
 AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
 AGENT_CONFIDENCE_MINIMUM = 0.96
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
+    "source_mapper": {"legacy_sources"},
     "builder": {"changed_files"},
     "frontend_design_implementer": {"changed_files"},
     "qa_red_team": {"qa_findings"},
