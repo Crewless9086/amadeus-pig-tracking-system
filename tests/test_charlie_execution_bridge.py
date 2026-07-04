@@ -846,6 +846,39 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_parallel_read_only_risk_agent_defers_downstream_evidence_warning(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "send_back",
+            "changed_files": [],
+            "risks": [
+                "Cannot certify persisted owner review packet because review packet persistence happens in a later stage.",
+            ],
+            "next_action": "Require final reviewer to prove persisted review packet and test evidence before pr_ready.",
+        })
+
+        result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result["deferred_blocker"])
+        self.assertIn("deferred_evidence", result["reason"])
+
+    def test_parallel_read_only_risk_agent_still_blocks_present_red_zone_violation(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "send_back",
+            "changed_files": [],
+            "risks": [
+                "Mission attempted a production data write without owner approval.",
+            ],
+            "next_action": "Stop and require owner approval before any production data write.",
+        })
+
+        result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("recommended_owner_decision=send_back", result["reason"])
+
     def test_risk_agent_ui_send_back_targets_frontend_implementation(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

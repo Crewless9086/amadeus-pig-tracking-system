@@ -1589,6 +1589,12 @@ def _agent_stage_instruction(agent):
         )
     if agent == "product_architect":
         return "Design the user/product flow, acceptance boundaries, business fit, and what the technical Planner must preserve."
+    if agent == "risk_agent":
+        return (
+            "Find current technical, product, operational, business, legal, data, and owner-trust risks before build. "
+            "In read-only planning, do not send_back solely because downstream final artifacts, test evidence, review-packet persistence, or owner approval evidence cannot exist yet; "
+            "record those as required mitigations for later agents. Send back only for a present, proven violation of scope, safety, authority, data, or owner gates."
+        )
     if agent == "council_synthesis":
         return "Read upstream agent artifacts, resolve conflicts, preserve owner intent, and produce one council-approved build brief before Planner and Builder proceed."
     if agent == "planner":
@@ -1975,7 +1981,7 @@ def _run_parallel_read_only_agents(
                 connect_factory=connect_factory,
             )
             return {"blocked": True, "result": result, "status_code": status_code}
-        quality = _agent_quality_gate(agent, artifact)
+        quality = _parallel_read_only_quality_gate(agent, artifact)
         if not quality["passed"]:
             result, status_code = _block_agent_stage(
                 mission["mission_id"],
@@ -2035,6 +2041,81 @@ def _run_parallel_read_only_agents(
         "artifacts": parallel_artifacts,
         "parallel_execution": ledger.get("parallel_planning_execution", {}),
     }
+
+
+def _parallel_read_only_quality_gate(agent, artifact):
+    quality = _agent_quality_gate(agent, artifact)
+    if quality.get("passed"):
+        return quality
+    if _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
+        return {
+            "passed": True,
+            "reason": f"parallel_read_only_deferred_evidence_warning: {quality.get('reason', '')}",
+            "deferred_blocker": True,
+            "deferred_reason": quality.get("reason", ""),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    return quality
+
+
+def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
+    if agent not in {"risk_agent", "product_architect", "technical_architect", "business_model_agent"}:
+        return False
+    if _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else []):
+        return False
+    if _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []):
+        return False
+    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    if any(str(item or "").strip() and str(item or "").strip() != "No changed files detected by git diff." for item in changed_files):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in [
+            quality.get("reason"),
+            artifact.get("summary"),
+            artifact.get("next_action"),
+            artifact.get("recommended_owner_decision"),
+            artifact.get("quality_gate", {}).get("reason") if isinstance(artifact.get("quality_gate"), dict) else "",
+            *_artifact_value_list(artifact.get("risks")),
+            *_artifact_value_list(artifact.get("risk_notes")),
+            *_artifact_value_list(artifact.get("warnings")),
+            *_artifact_value_list(artifact.get("required_mitigations")),
+        ]
+    ).lower()
+    future_terms = (
+        "downstream",
+        "later agent",
+        "later stage",
+        "final artifact",
+        "final-artifact",
+        "test evidence",
+        "review packet",
+        "review-packet",
+        "owner review",
+        "pr_ready",
+        "persistence",
+        "persisted",
+        "cannot certify",
+        "cannot be certified",
+        "not yet",
+    )
+    present_violation_terms = (
+        "red-zone",
+        "red zone",
+        "production data write",
+        "customer send",
+        "public post",
+        "payment",
+        "reserve stock",
+        "merge",
+        "deploy",
+        "migration",
+        "secret leak",
+        "security vulnerability",
+        "out-of-scope change",
+        "unauthorized",
+    )
+    return any(term in text for term in future_terms) and not any(term in text for term in present_violation_terms)
 
 
 def _readonly_command_base(command_base):
