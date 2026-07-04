@@ -345,6 +345,56 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             connect_factory=None,
         )
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
+        self.assertTrue(any(call.args[0].get("status") == "parallel_read_only_agents_running" for call in write_heartbeat.call_args_list))
+        self.assertIn("parallel_planning_execution", vault_metadata["agent_execution"])
+
+    @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_IDEA_EXPANDER": "reasoning-model-a"}, clear=False)
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_parallel_read_only_agents_use_readonly_sandbox_and_agent_model(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        commands_by_agent = {}
+
+        def fake_runner(command, *_args, **kwargs):
+            prompt = kwargs["input"]
+            agent = _agent_from_prompt(prompt)
+            commands_by_agent[agent] = command
+            payload = _successful_stage_payload(agent)
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "agent_execution_completed")
+        self.assertEqual(commands_by_agent["idea_expander"][commands_by_agent["idea_expander"].index("--sandbox") + 1], "read-only")
+        self.assertIn("--model", commands_by_agent["idea_expander"])
+        self.assertIn("reasoning-model-a", commands_by_agent["idea_expander"])
+        vault_metadata = update_vault.call_args.args[1]
+        self.assertEqual(
+            vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],
+            "reasoning-model-a",
+        )
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")

@@ -4,6 +4,7 @@ from unittest.mock import patch
 from modules.charlie.improvement_analyst import (
     PROPOSAL_LABEL,
     analyze_improvement_opportunities,
+    create_owner_gated_improvement_missions,
     generate_and_store_proposals,
     record_proposal_decision,
 )
@@ -114,6 +115,48 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertEqual(result["status"], "proposal_write_failed")
         self.assertEqual(result["failed_write_count"], 1)
         self.assertEqual(result["writes"][0]["status"], "artifact_write_failed")
+
+    @patch("modules.charlie.improvement_analyst.mission_store.record_mission")
+    @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.mission_store.list_missions")
+    def test_create_owner_gated_improvement_missions_does_not_apply_changes(
+        self,
+        list_missions,
+        list_artifacts,
+        write_artifact,
+        record_mission,
+    ):
+        list_missions.return_value = ({
+            "success": True,
+            "missions": [
+                {
+                    "mission_id": "MISSION-1",
+                    "status": "blocked",
+                    "title": "Tests failed",
+                    "metadata": {"review_packet": {"errors": ["Tests failed before owner review."]}},
+                },
+                {
+                    "mission_id": "MISSION-2",
+                    "status": "pr_ready",
+                    "title": "Regression evidence",
+                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                },
+            ],
+        }, 200)
+        list_artifacts.return_value = ({"success": True, "artifacts": []}, 200)
+        write_artifact.return_value = ({"success": True, "status": "artifact_written"}, 200)
+        record_mission.return_value = ({"stored": True, "status": "mission_recorded", "mission_id": "MISSION-IMPROVE"}, 201)
+
+        result, status = create_owner_gated_improvement_missions(database_url="postgresql://example")
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["created_count"], 1)
+        created_payload = record_mission.call_args.args[0]
+        self.assertEqual(created_payload["mission_type"], "system improvement")
+        self.assertIn("No proposal content applies itself automatically.", created_payload["acceptance_criteria"])
+        self.assertIn("does not approve, build, merge, deploy", result["execution_boundary"])
 
     @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")

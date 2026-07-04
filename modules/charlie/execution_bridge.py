@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib import request as url_request
 from urllib.parse import urlparse
 from urllib.error import URLError
@@ -59,6 +60,18 @@ NO_FINAL_ARTIFACT_TIMEOUT_SECONDS = 1200
 NO_FINAL_ARTIFACT_WARNING_SECONDS = 600
 POLL_SECONDS = 5
 AGENT_RUNNER_VERSION = "charlie_agent_runner_v2"
+READ_ONLY_PARALLEL_AGENTS = {
+    "idea_expander",
+    "concept_strategist",
+    "product_architect",
+    "visual_reference_interpreter",
+    "creative_ui_designer",
+    "ux_interaction_designer",
+    "technical_architect",
+    "source_mapper",
+    "business_model_agent",
+    "risk_agent",
+}
 AGENT_ARTIFACT_REQUIRED_KEYS = {
     "idea_expander": ["summary", "opportunity", "owner_value", "non_goals", "commands_run", "files_inspected", "vault_sources_used"],
     "product_architect": ["summary", "user_flow", "acceptance_boundaries", "risk_notes", "commands_run", "files_inspected", "vault_sources_used"],
@@ -365,6 +378,28 @@ def run_agent_execution_bridge_v2(
     agent_queue = _agent_queue_from(start_agent, agent_sequence)
     stage_attempts = {agent: 0 for agent in agent_sequence}
     backflow_counts = {agent: 0 for agent in agent_sequence}
+    parallel_agents = _parallel_read_only_prefix(agent_queue)
+    if parallel_agents:
+        parallel_result = _run_parallel_read_only_agents(
+            mission=mission,
+            execution_id=execution_id,
+            ledger=ledger,
+            artifacts=artifacts,
+            agents=parallel_agents,
+            output_dir=output_dir,
+            command_base=command_base,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            stage_attempts=stage_attempts,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if parallel_result.get("blocked"):
+            return parallel_result["result"], parallel_result["status_code"]
+        artifacts.update(parallel_result.get("artifacts", {}))
+        agent_queue = [agent for agent in agent_queue if agent not in set(parallel_agents)]
+        ledger["parallel_planning_execution"] = parallel_result.get("parallel_execution", {})
+        _write_agent_ledger(output_dir, execution_id, ledger)
     while agent_queue:
         agent = agent_queue.pop(0)
         stage_attempts[agent] = int(stage_attempts.get(agent, 0)) + 1
@@ -379,8 +414,13 @@ def run_agent_execution_bridge_v2(
         stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
         prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
         stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
+        model_assignment = choose_agent_model(
+            agent=agent,
+            mission_type=mission.get("mission_type", ""),
+            risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
+        )
         command = [
-            *command_base,
+            *_agent_command_base(command_base, model_assignment),
             "--output-last-message",
             str(stage_paths["final_path"]),
             "-",
@@ -451,6 +491,7 @@ def run_agent_execution_bridge_v2(
             "stdout_tail": _tail_text(completed.stdout or _read_text(stage_paths["stdout_path"]), 1200),
             "stderr_tail": _tail_text(completed.stderr or _read_text(stage_paths["stderr_path"]), 1200),
             "attempt": stage_attempts[agent],
+            "model_assignment": model_assignment,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         validation = _validate_agent_artifact(agent, artifact)
@@ -1769,6 +1810,252 @@ def _execution_start_agent(mission, agent_sequence=None):
         if target in agent_sequence:
             return target
     return agent_sequence[0]
+
+
+def _parallel_read_only_prefix(agent_queue):
+    if str(os.getenv("CHARLIE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        return []
+    agents = []
+    for agent in agent_queue or []:
+        if agent in READ_ONLY_PARALLEL_AGENTS:
+            agents.append(agent)
+            continue
+        break
+    return agents if len(agents) > 1 else []
+
+
+def _run_parallel_read_only_agents(
+    mission,
+    execution_id,
+    ledger,
+    artifacts,
+    agents,
+    output_dir,
+    command_base,
+    runner,
+    timeout_seconds,
+    stage_attempts,
+    database_url=None,
+    connect_factory=None,
+):
+    started_at = datetime.now(timezone.utc).isoformat()
+    parallel_artifacts = {}
+    futures = {}
+    max_workers = max(1, min(int(os.getenv("CHARLIE_PARALLEL_READONLY_WORKERS") or 3), len(agents)))
+    ledger["parallel_planning_execution"] = {
+        "version": "charlie_parallel_agent_execution_v1",
+        "mode": "read_only_specialists_parallel",
+        "agents": list(agents),
+        "started_at": started_at,
+        "max_workers": max_workers,
+        "sandbox": "read-only",
+    }
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for agent in agents:
+            stage_attempts[agent] = int(stage_attempts.get(agent, 0)) + 1
+            _record_execution_stage(
+                mission["mission_id"],
+                agent,
+                "active",
+                f"CHARLIE parallel read-only stage started {agent} attempt {stage_attempts[agent]}.",
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
+            prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
+            stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
+            model_assignment = choose_agent_model(
+                agent=agent,
+                mission_type=mission.get("mission_type", ""),
+                risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
+            )
+            command = [
+                *_readonly_command_base(_agent_command_base(command_base, model_assignment)),
+                "--output-last-message",
+                str(stage_paths["final_path"]),
+                "-",
+            ]
+            stage_started = datetime.now(timezone.utc).isoformat()
+            _append_ledger_stage(
+                ledger,
+                agent,
+                "running",
+                stage_started,
+                stage_paths,
+                current_action=f"{agent} running read-only parallel attempt {stage_attempts[agent]}",
+                command=command,
+                attempt=stage_attempts[agent],
+            )
+            futures[executor.submit(
+                runner,
+                command,
+                input=prompt,
+                cwd=str(REPO_ROOT),
+                timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
+                stdout_path=stage_paths["stdout_path"],
+                stderr_path=stage_paths["stderr_path"],
+                final_path=stage_paths["final_path"],
+                mission_id=mission["mission_id"],
+            )] = {
+                "agent": agent,
+                "paths": stage_paths,
+                "started_at": stage_started,
+                "command": command,
+                "attempt": stage_attempts[agent],
+            }
+        _write_agent_ledger(output_dir, execution_id, ledger)
+        write_runner_heartbeat({
+            "status": "parallel_read_only_agents_running",
+            "mission_id": mission["mission_id"],
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "current_agent": "parallel_planning",
+            "current_action": f"Running read-only agents in parallel: {', '.join(agents)}",
+            "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+        })
+
+        completed_by_agent = {}
+        for future in as_completed(futures):
+            context = futures[future]
+            completed_by_agent[context["agent"]] = (context, future.result())
+
+    for agent in agents:
+        context, completed = completed_by_agent[agent]
+        paths = context["paths"]
+        paths["stdout_path"].write_text(completed.stdout or "", encoding="utf-8")
+        paths["stderr_path"].write_text(completed.stderr or "", encoding="utf-8")
+        final_message = _read_text(paths["final_path"]) or (completed.stdout or "").strip()
+        if final_message and not _read_text(paths["final_path"]):
+            paths["final_path"].write_text(final_message, encoding="utf-8")
+        if completed.returncode != 0 or not _read_text(paths["final_path"]):
+            result, status_code = _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                paths,
+                completed,
+                context["started_at"],
+                blocked_reason="Parallel read-only agent did not produce a valid final artifact.",
+                artifacts={**artifacts, **parallel_artifacts},
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            return {"blocked": True, "result": result, "status_code": status_code}
+        artifact = _agent_artifact_from_final(agent, _read_text(paths["final_path"]))
+        artifact.update({
+            "agent": agent,
+            "parallel_mode": "read_only",
+            "artifact_path": str(paths["final_path"]),
+            "stdout_path": str(paths["stdout_path"]),
+            "stderr_path": str(paths["stderr_path"]),
+            "stdout_tail": _tail_text(completed.stdout or _read_text(paths["stdout_path"]), 1200),
+            "stderr_tail": _tail_text(completed.stderr or _read_text(paths["stderr_path"]), 1200),
+            "attempt": context["attempt"],
+            "model_assignment": choose_agent_model(
+                agent=agent,
+                mission_type=mission.get("mission_type", ""),
+                risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
+            ),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        validation = _validate_agent_artifact(agent, artifact)
+        if not validation["valid"]:
+            result, status_code = _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                paths,
+                completed,
+                context["started_at"],
+                blocked_reason=f"Parallel read-only artifact missing required keys: {', '.join(validation['missing_keys'])}.",
+                artifact=artifact,
+                artifacts={**artifacts, **parallel_artifacts},
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            return {"blocked": True, "result": result, "status_code": status_code}
+        quality = _agent_quality_gate(agent, artifact)
+        if not quality["passed"]:
+            result, status_code = _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                paths,
+                completed,
+                context["started_at"],
+                blocked_reason=f"Parallel read-only quality gate failed: {quality['reason']}",
+                artifact={**artifact, "quality_gate": quality},
+                artifacts={**artifacts, **parallel_artifacts, agent: {**artifact, "quality_gate": quality}},
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            return {"blocked": True, "result": result, "status_code": status_code}
+        artifact["quality_gate"] = quality
+        artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
+        parallel_artifacts[agent] = artifact
+        _append_ledger_stage(
+            ledger,
+            agent,
+            "complete",
+            context["started_at"],
+            paths,
+            artifact=artifact,
+            command=context["command"],
+            attempt=context["attempt"],
+        )
+        _record_mission_memory_event(
+            mission,
+            build_memory_event(agent, "parallel_agent_complete", attempt=context["attempt"], artifact=artifact, quality_gate=quality),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        _record_execution_stage(
+            mission["mission_id"],
+            agent,
+            "complete",
+            _truncate(artifact.get("summary") or f"{agent} completed in parallel read-only mode.", 1000),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+    completed_at = datetime.now(timezone.utc).isoformat()
+    ledger["parallel_planning_execution"]["completed_at"] = completed_at
+    ledger["parallel_planning_execution"]["status"] = "complete"
+    write_runner_heartbeat({
+        "status": "parallel_read_only_agents_complete",
+        "mission_id": mission["mission_id"],
+        "agent_runner_version": AGENT_RUNNER_VERSION,
+        "current_agent": "parallel_planning",
+        "current_action": f"Completed read-only agents in parallel: {', '.join(agents)}",
+        "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+    })
+    return {
+        "blocked": False,
+        "artifacts": parallel_artifacts,
+        "parallel_execution": ledger.get("parallel_planning_execution", {}),
+    }
+
+
+def _readonly_command_base(command_base):
+    command = list(command_base or [])
+    for index, item in enumerate(command[:-1]):
+        if item == "--sandbox":
+            command[index + 1] = "read-only"
+            return command
+    return [*command, "--sandbox", "read-only"]
+
+
+def _agent_command_base(command_base, model_assignment):
+    command = list(command_base or [])
+    model_assignment = model_assignment if isinstance(model_assignment, dict) else {}
+    runtime_model = str(model_assignment.get("runtime_model") or "").strip()
+    if not runtime_model:
+        return command
+    for flag in ("--model", "-m"):
+        if flag in command:
+            return command
+    return [*command, "--model", runtime_model]
 
 
 def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=None):
@@ -3115,6 +3402,9 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
                 "execution_id": execution_id,
                 "attempt": artifact.get("attempt", 1),
                 "status": "complete",
+                "model_provider": (artifact.get("model_assignment") or {}).get("runtime_provider") if isinstance(artifact.get("model_assignment"), dict) else "",
+                "model_name": (artifact.get("model_assignment") or {}).get("runtime_model") or (artifact.get("model_assignment") or {}).get("model") if isinstance(artifact.get("model_assignment"), dict) else "",
+                "cost_estimate": (artifact.get("model_assignment") or {}).get("estimated_cost") if isinstance(artifact.get("model_assignment"), dict) else None,
                 "started_at": ledger.get("started_at", ""),
                 "completed_at": artifact.get("completed_at") or ledger.get("completed_at", ""),
                 "tool_calls": [{"command": command} for command in artifact.get("commands_run", []) if command],

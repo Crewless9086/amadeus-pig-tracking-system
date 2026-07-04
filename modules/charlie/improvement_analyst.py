@@ -172,6 +172,47 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
     }, 200
 
 
+def create_owner_gated_improvement_missions(limit=50, max_create=3, database_url=None, connect_factory=None):
+    generated, status_code = generate_and_store_proposals(
+        limit=limit,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return generated, status_code
+    proposals = generated.get("proposals") if isinstance(generated.get("proposals"), list) else []
+    candidates = [
+        proposal for proposal in proposals
+        if proposal.get("status") == "pending"
+        and int(proposal.get("weakness_score") or 0) >= 70
+        and proposal.get("applies_automatically") is False
+    ][:max(1, min(int(max_create or 3), 10))]
+    created = []
+    for proposal in candidates:
+        mission_result, mission_status = _create_improvement_mission(
+            proposal,
+            "Created automatically by Analyst loop as owner-gated improvement mission. Owner approval still required before build.",
+            database_url,
+            connect_factory,
+        )
+        created.append({
+            "proposal_id": proposal.get("proposal_id", ""),
+            "target_area": proposal.get("target_area", ""),
+            "status_code": mission_status,
+            "created": bool(mission_result.get("stored")),
+            "mission_id": mission_result.get("mission_id", ""),
+            "mission_status": mission_result.get("status", ""),
+        })
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "created_count": len([item for item in created if item.get("created")]),
+        "created": created,
+        "execution_boundary": "Analyst may create owner-gated improvement missions only; it does not approve, build, merge, deploy, or modify production behavior.",
+    }, 200
+
+
 def _existing_proposals_by_id(database_url=None, connect_factory=None):
     loaded, status_code = vault_store.list_artifacts(
         artifact_type=PROPOSAL_ARTIFACT_TYPE,

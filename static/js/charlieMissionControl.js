@@ -10,6 +10,8 @@
     pendingMedia: [],
     activeFilter: "owner_queue",
     openReviewDetails: new Set(),
+    openReplayDebug: new Set(),
+    replayDebugPackets: {},
     activeReviewMissionId: "",
   };
   const AUTO_REFRESH_MS = 8000;
@@ -878,6 +880,10 @@
       </div>
       <div class="charlie-replay-debug" data-replay-debug aria-live="polite"></div>
     `;
+    const replayContainer = card.querySelector("[data-replay-debug]");
+    if (state.openReplayDebug.has(missionId) && state.replayDebugPackets[missionId] && replayContainer) {
+      replayContainer.innerHTML = replayDebugMarkup(state.replayDebugPackets[missionId]);
+    }
     card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
       button.addEventListener("click", () => openVisualReviewOverlay(button));
     });
@@ -1157,6 +1163,8 @@
     setMessage("Loading mission replay debug...", "info");
     try {
       const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/replay`);
+      state.openReplayDebug.add(missionId);
+      state.replayDebugPackets[missionId] = data;
       if (container) container.innerHTML = replayDebugMarkup(data);
       setMessage("Replay debug loaded.", "success");
     } catch (error) {

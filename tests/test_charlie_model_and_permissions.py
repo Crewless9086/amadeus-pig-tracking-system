@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from modules.charlie.model_registry import choose_agent_model, choose_model, estimate_model_cost, model_registry_packet
 from modules.charlie.tool_permissions import audit_tool_call, check_tool_permission, permission_packet
@@ -31,6 +32,13 @@ class CharlieModelAndPermissionTests(unittest.TestCase):
         self.assertEqual(model["registry_key"], "security_review")
         self.assertEqual(model["agent"], "security_reviewer")
         self.assertIn("runtime_note", model)
+
+    @patch.dict("os.environ", {"CHARLIE_AGENT_MODEL_SECURITY_REVIEWER": "security-model-live"}, clear=False)
+    def test_agent_model_assignment_uses_runtime_env_when_configured(self):
+        model = choose_agent_model("security_reviewer", mission_type="system improvement", risk_level="high")
+
+        self.assertTrue(model["runtime_configured"])
+        self.assertEqual(model["runtime_model"], "security-model-live")
 
     def test_tool_permission_blocks_red_zone_without_owner_approval(self):
         result = check_tool_permission("builder", "migration", owner_approved=False)

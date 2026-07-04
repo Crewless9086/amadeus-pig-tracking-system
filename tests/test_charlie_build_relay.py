@@ -820,6 +820,30 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_mission.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.get_mission")
+    def test_mission_replay_stress_route_returns_score_and_golden_candidate(self, get_mission, _owner_access):
+        get_mission.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "MISSION-1",
+                "mission_type": "dashboard ui",
+                "metadata": {
+                    "mission_memory": {"events": [{"agent": "reviewer", "type": "agent_complete", "summary": "Ready."}]},
+                    "review_packet": {"review_status": "ready_for_owner_review", "test_evidence": ["tests passed"]},
+                },
+            },
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions/MISSION-1/replay/stress")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertIn("score", data["stress"])
+        self.assertTrue(data["golden_example_candidate"]["qualifies"])
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     def test_core_templates_route_returns_vault_and_workflow_templates(self, _owner_access):
         response = self.client.get("/api/charlie/core/templates")
         data = response.get_json()

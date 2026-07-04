@@ -71,11 +71,11 @@ def append_memory_event(metadata, event):
     agent = _clean(event.get("agent"), 80)
     if agent:
         memory["latest_by_agent"][agent] = event
-    if event.get("type") in {"agent_complete", "agent_blocked", "agent_backflow", "agent_recovered"}:
+    if event.get("type") in {"agent_complete", "parallel_agent_complete", "agent_blocked", "agent_backflow", "agent_recovered"}:
         memory["attempts"] = [*memory["attempts"], _attempt_record(event)][-MAX_ATTEMPTS:]
-    if event.get("type") in {"agent_complete", "agent_note"}:
+    if event.get("type") in {"agent_complete", "parallel_agent_complete", "agent_note"}:
         memory["agent_notes"] = [*memory["agent_notes"], _agent_note(event)][-MAX_AGENT_NOTES:]
-    if event.get("type") in {"agent_complete", "agent_handoff"}:
+    if event.get("type") in {"agent_complete", "parallel_agent_complete", "agent_handoff"}:
         memory["handoffs"] = [*memory["handoffs"], _handoff_record(event)][-MAX_HANDOFFS:]
     if event.get("type") in {"agent_blocked", "partial_recovery", "agent_backflow", "agent_recovered"}:
         memory["recovery_notes"] = [*memory["recovery_notes"], _recovery_record(event)][-MAX_RECOVERY_NOTES:]

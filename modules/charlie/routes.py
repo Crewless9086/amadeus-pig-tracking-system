@@ -39,11 +39,13 @@ from modules.charlie.mission_memory import (
     partial_recovery_contract_packet,
     replay_packet,
 )
+from modules.charlie.replay_stress import golden_example_candidate, stress_replay_mission
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
 from modules.charlie.source_map import IMPLEMENTATION_SOURCE_MAP, SOURCE_MAP_VERSION, implementation_source_packet
 from modules.charlie.improvement_analyst import (
     analyze_mission_replay,
+    create_owner_gated_improvement_missions,
     generate_and_store_proposals,
     list_improvement_proposals,
     record_proposal_decision,
@@ -378,6 +380,19 @@ def charlie_core_improvements_analyze_mission_route(mission_id):
     return jsonify(result), status_code
 
 
+@charlie_bp.route("/charlie/core/improvements/create-owner-gated", methods=["POST"])
+def charlie_core_improvements_create_owner_gated_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_owner_gated_improvement_missions(
+        limit=payload.get("limit", 50),
+        max_create=payload.get("max_create", 3),
+    )
+    return jsonify(result), status_code
+
+
 @charlie_bp.route("/charlie/core/improvements/<proposal_id>/decision", methods=["POST"])
 def charlie_core_improvement_decision_route(proposal_id):
     denied = require_owner_read_access()
@@ -547,6 +562,23 @@ def charlie_build_relay_mission_replay_route(mission_id):
         ]),
     })
     return jsonify(packet), 200
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/replay/stress", methods=["GET"])
+def charlie_build_relay_mission_replay_stress_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_mission(mission_id)
+    if status_code >= 400:
+        return jsonify(result), status_code
+    mission = result.get("mission") or {}
+    return jsonify({
+        "success": True,
+        "status": "ok",
+        "stress": stress_replay_mission(mission),
+        "golden_example_candidate": golden_example_candidate(mission),
+    }), 200
 
 
 @charlie_bp.route("/charlie/build-relay/review-media/<mission_id>/<filename>", methods=["GET"])

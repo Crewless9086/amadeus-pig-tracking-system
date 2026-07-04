@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 
@@ -138,14 +139,50 @@ def choose_agent_model(agent="", mission_type="", risk_level="medium"):
     model["mission_type"] = str(mission_type or "").strip()
     model["selected_at"] = datetime.now(timezone.utc).isoformat()
     model["selection_reason"] = f"agent={agent or 'unknown'} mission_type={mission_type or 'unknown'} risk_level={risk_level or 'medium'}"
-    model["runtime_note"] = "Advisory assignment until the runner is connected to per-agent provider/model execution."
+    runtime = _runtime_model_config(agent, model["registry_key"])
+    model.update(runtime)
     return model
+
+
+def _runtime_model_config(agent, registry_key):
+    agent_key = str(agent or "").strip().upper().replace("-", "_")
+    registry_env_key = str(registry_key or "").strip().upper().replace("-", "_")
+    model_name = (
+        os.getenv(f"CHARLIE_AGENT_MODEL_{agent_key}")
+        or os.getenv(f"CHARLIE_MODEL_{registry_env_key}")
+        or ""
+    ).strip()
+    provider = (
+        os.getenv(f"CHARLIE_AGENT_PROVIDER_{agent_key}")
+        or os.getenv(f"CHARLIE_PROVIDER_{registry_env_key}")
+        or "codex_cli"
+    ).strip()
+    input_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_INPUT_COST_PER_1K")
+    output_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_OUTPUT_COST_PER_1K")
+    return {
+        "runtime_provider": provider,
+        "runtime_model": model_name,
+        "runtime_configured": bool(model_name),
+        "runtime_note": (
+            "Runner will request this per-agent model from the Codex CLI."
+            if model_name
+            else "No per-agent runtime model env configured; runner uses the Codex CLI default while recording advisory routing."
+        ),
+        "runtime_cost_overrides": {
+            "input_cost_per_1k": _float_or_none(input_cost),
+            "output_cost_per_1k": _float_or_none(output_cost),
+        },
+    }
 
 
 def estimate_model_cost(model_key, input_tokens=0, output_tokens=0):
     model = MODEL_REGISTRY.get(model_key, MODEL_REGISTRY["default_reasoning"])
-    input_cost = (max(int(input_tokens or 0), 0) / 1000) * float(model.get("input_cost_per_1k") or 0)
-    output_cost = (max(int(output_tokens or 0), 0) / 1000) * float(model.get("output_cost_per_1k") or 0)
+    runtime = _runtime_model_config("", model_key)
+    overrides = runtime.get("runtime_cost_overrides") if isinstance(runtime.get("runtime_cost_overrides"), dict) else {}
+    input_rate = overrides.get("input_cost_per_1k") if overrides.get("input_cost_per_1k") is not None else model.get("input_cost_per_1k")
+    output_rate = overrides.get("output_cost_per_1k") if overrides.get("output_cost_per_1k") is not None else model.get("output_cost_per_1k")
+    input_cost = (max(int(input_tokens or 0), 0) / 1000) * float(input_rate or 0)
+    output_cost = (max(int(output_tokens or 0), 0) / 1000) * float(output_rate or 0)
     return {
         "model_key": model_key if model_key in MODEL_REGISTRY else "default_reasoning",
         "input_tokens": max(int(input_tokens or 0), 0),
@@ -153,6 +190,7 @@ def estimate_model_cost(model_key, input_tokens=0, output_tokens=0):
         "estimated_cost": round(input_cost + output_cost, 6),
         "currency": "USD",
         "cost_source": "manual_registry_config",
+        "runtime_model": runtime.get("runtime_model", ""),
     }
 
 
@@ -162,5 +200,20 @@ def model_registry_packet():
         "models": MODEL_REGISTRY,
         "task_model_map": TASK_MODEL_MAP,
         "agent_model_map": AGENT_MODEL_MAP,
+        "runtime_env": {
+            "agent_model_pattern": "CHARLIE_AGENT_MODEL_<AGENT_NAME>",
+            "registry_model_pattern": "CHARLIE_MODEL_<REGISTRY_KEY>",
+            "cost_patterns": [
+                "CHARLIE_MODEL_<REGISTRY_KEY>_INPUT_COST_PER_1K",
+                "CHARLIE_MODEL_<REGISTRY_KEY>_OUTPUT_COST_PER_1K",
+            ],
+        },
         "safety_note": "Model routing is advisory until live provider/model prices are explicitly configured and benchmarked.",
     }
+
+
+def _float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
