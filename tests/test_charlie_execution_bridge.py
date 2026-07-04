@@ -1096,6 +1096,26 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_parallel_read_only_risk_agent_defers_read_only_environment_test_failure(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "changed_files": [],
+            "errors": [
+                "Focused unittest suite failed because Python tempfile found no usable temporary directory and .charlie_runner writes were denied by the read-only environment.",
+            ],
+            "test_evidence": [
+                "python -m unittest ... => FAILED in this read-only sandbox with environment write/temp errors, not a proven code regression.",
+            ],
+            "confidence_reason": "Failures are attributable to read-only environment constraints rather than asserted product defects.",
+            "next_action": "Tester must rerun focused unittest suite in a writable local runner before owner review.",
+        })
+
+        result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result["deferred_blocker"])
+
     def test_parallel_read_only_risk_agent_still_blocks_present_red_zone_violation(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

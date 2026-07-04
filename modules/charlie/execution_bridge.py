@@ -2065,7 +2065,8 @@ def _parallel_read_only_quality_gate(agent, artifact):
 def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
     if agent not in {"risk_agent", "product_architect", "technical_architect", "business_model_agent"}:
         return False
-    if _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else []):
+    blocking_errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else [])
+    if blocking_errors and not _read_only_errors_are_environment_only(agent, artifact, blocking_errors):
         return False
     if _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []):
         return False
@@ -2084,6 +2085,7 @@ def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
             *_artifact_value_list(artifact.get("risk_notes")),
             *_artifact_value_list(artifact.get("warnings")),
             *_artifact_value_list(artifact.get("required_mitigations")),
+            *_artifact_value_list(artifact.get("test_evidence")),
         ]
     ).lower()
     future_terms = (
@@ -2129,6 +2131,44 @@ def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
         "unauthorized",
     )
     return any(term in text for term in future_terms) and not any(term in text for term in present_violation_terms)
+
+
+def _read_only_errors_are_environment_only(agent, artifact, errors):
+    if agent != "risk_agent":
+        return False
+    text = " ".join(_artifact_text(item).lower() for item in _artifact_value_list(errors))
+    context = " ".join(
+        str(value or "").lower()
+        for value in [
+            artifact.get("summary"),
+            artifact.get("confidence_reason"),
+            artifact.get("next_action"),
+            artifact.get("stdout_tail"),
+            artifact.get("stderr_tail"),
+            *_artifact_value_list(artifact.get("test_evidence")),
+        ]
+    )
+    environment_terms = (
+        "read-only",
+        "read only",
+        "no usable temporary directory",
+        "tempdir",
+        "temporary directory",
+        "permissionerror",
+        "permission denied",
+        "write denial",
+        ".charlie_runner",
+    )
+    non_regression_terms = (
+        "not a proven code regression",
+        "not a proven present",
+        "rather than asserted product defects",
+        "environment constraints",
+        "environment-blocked",
+    )
+    return any(term in text or term in context for term in environment_terms) and any(
+        term in text or term in context for term in non_regression_terms
+    )
 
 
 def _readonly_command_base(command_base):
