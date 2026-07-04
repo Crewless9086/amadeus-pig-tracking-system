@@ -401,9 +401,25 @@ def clean_list(value, max_items=20, max_len=500):
     return items
 
 
+def explicit_non_ui_requested(text):
+    haystack = str(text or "").lower()
+    return bool(re.search(
+        r"\b("
+        r"non-ui|non visual|non-visual|"
+        r"not ui|not a ui|not visual|not a visual|"
+        r"no ui|no frontend|no visual|"
+        r"without ui|without frontend|without visual|"
+        r"do not change ui|do not change the ui|"
+        r"do not touch ui|do not touch the ui|"
+        r"no ui changes?|no frontend changes?|no visual changes?"
+        r")\b",
+        haystack,
+    ))
+
+
 def classify_workflow_template(mission_type="", raw_text=""):
     haystack = f"{mission_type} {raw_text}".lower()
-    explicit_non_ui = bool(re.search(r"\b(non-ui|not ui|not a ui|non visual|non-visual|not visual|not a visual)\b", haystack))
+    explicit_non_ui = explicit_non_ui_requested(haystack)
     if not explicit_non_ui and re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
         return "ui_product_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():

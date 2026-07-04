@@ -43,6 +43,20 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
             ),
             "system_improvement",
         )
+        self.assertEqual(
+            classify_workflow_template(
+                "system improvement",
+                "Run a no UI owner review packet persistence canary. Do not change UI or product behavior.",
+            ),
+            "system_improvement",
+        )
+        self.assertEqual(
+            classify_workflow_template(
+                "system improvement",
+                "Verify the runner without UI changes and without frontend work.",
+            ),
+            "system_improvement",
+        )
 
     def test_ui_product_build_routes_through_design_council(self):
         mission = {

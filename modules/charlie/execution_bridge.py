@@ -30,6 +30,7 @@ from modules.charlie.core_workflow import (
     build_handoff_report as build_core_handoff_report,
     build_review_board_packet,
     evaluate_core_readiness,
+    explicit_non_ui_requested,
 )
 from modules.charlie.model_registry import choose_agent_model
 from modules.charlie.mission_memory import (
@@ -4528,6 +4529,9 @@ def _visual_review_preview_html(
 
 
 def _is_ui_related_mission(mission_type="", changed_files=None, final_message=""):
+    combined_text = f"{mission_type} {final_message}"
+    if explicit_non_ui_requested(combined_text):
+        return False
     mission_type = str(mission_type or "").lower()
     if re.search(r"\b(ui|frontend|dashboard|visual|page|browser)\b", mission_type):
         return True

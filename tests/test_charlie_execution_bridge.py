@@ -1131,6 +1131,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             final_message="backend runner update",
         ))
 
+    def test_explicit_no_ui_language_overrides_visual_review_terms(self):
+        self.assertFalse(execution_bridge._is_ui_related_mission(
+            mission_type="system improvement",
+            changed_files=["modules/charlie/execution_bridge.py"],
+            final_message="Run a no UI owner review packet canary. Do not change UI. Visual review is not required.",
+        ))
+
     def test_extract_local_preview_strips_trailing_quote(self):
         preview = execution_bridge._extract_local_preview('Open "http://127.0.0.1:5003/charlie"')
 

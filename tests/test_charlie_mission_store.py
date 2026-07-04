@@ -132,6 +132,19 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("visual_qa_reviewer", sequence)
         self.assertLess(sequence.index("visual_reference_interpreter"), sequence.index("frontend_design_implementer"))
 
+    def test_agent_sequence_respects_explicit_no_ui_system_improvement(self):
+        sequence = agent_sequence_for_mission(
+            "system improvement",
+            "Run a no UI owner review packet persistence canary. Do not change UI or product behavior.",
+        )
+
+        self.assertNotIn("visual_reference_interpreter", sequence)
+        self.assertNotIn("creative_ui_designer", sequence)
+        self.assertNotIn("ux_interaction_designer", sequence)
+        self.assertNotIn("frontend_design_implementer", sequence)
+        self.assertIn("risk_agent", sequence)
+        self.assertIn("technical_architect", sequence)
+
     def test_list_missions_maps_rows(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
         row = (
