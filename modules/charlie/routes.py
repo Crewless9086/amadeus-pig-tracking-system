@@ -142,21 +142,26 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    owner_queue, owner_queue_status = _dashboard_owner_queue(limit=8)
-    if owner_queue_status >= 400:
+    buckets, bucket_statuses = _dashboard_owner_work_buckets([
+        ("in_progress", 1),
+        ("release_in_progress", 1),
+        ("pr_ready", 5),
+        ("release_approved", 1),
+        ("approved", 5),
+    ])
+    if max(bucket_statuses) >= 400:
         return jsonify({
             "success": False,
             "status": "runner_handoff_unavailable",
-            "owner_queue_status": owner_queue.get("status"),
+            "owner_queue_status": "owner_work_status_bucket_unavailable",
+            "statuses": bucket_statuses,
             "can_run_shell_from_web": False,
         }), 503
-    queue_missions = owner_queue.get("missions", [])
-    buckets = _mission_status_buckets(queue_missions)
-    approved_queue = buckets.get("approved", [])[:5]
-    in_progress = buckets.get("in_progress", [])[:1]
-    pr_ready = buckets.get("pr_ready", [])[:5]
-    release_approved = buckets.get("release_approved", [])[:1]
-    release_in_progress = buckets.get("release_in_progress", [])[:1]
+    approved_queue = buckets.get("approved", [])
+    in_progress = buckets.get("in_progress", [])
+    pr_ready = buckets.get("pr_ready", [])
+    release_approved = buckets.get("release_approved", [])
+    release_in_progress = buckets.get("release_in_progress", [])
 
     active_mission = _first_mission(in_progress) or _first_mission(release_in_progress)
     review_backlog = pr_ready
@@ -218,12 +223,18 @@ def charlie_build_relay_command_center_route():
     summary, summary_status = mission_status_summary()
     recent, recent_status = _dashboard_owner_queue(limit=8)
     recent_missions = recent.get("missions", [])
-    buckets = _mission_status_buckets(recent_missions)
-    approved_queue = buckets.get("approved", [])[:20]
-    review_ready = buckets.get("pr_ready", [])[:5]
-    blocked = buckets.get("blocked", [])[:5]
-    release_approved = buckets.get("release_approved", [])[:5]
-    release_in_progress = buckets.get("release_in_progress", [])[:5]
+    buckets, bucket_statuses = _dashboard_owner_work_buckets([
+        ("approved", 20),
+        ("pr_ready", 5),
+        ("blocked", 5),
+        ("release_approved", 5),
+        ("release_in_progress", 5),
+    ])
+    approved_queue = buckets.get("approved", [])
+    review_ready = buckets.get("pr_ready", [])
+    blocked = buckets.get("blocked", [])
+    release_approved = buckets.get("release_approved", [])
+    release_in_progress = buckets.get("release_in_progress", [])
     merged = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
     deployed = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
     merged_status = 200
@@ -231,6 +242,7 @@ def charlie_build_relay_command_center_route():
     statuses = [
         summary_status,
         recent_status,
+        *bucket_statuses,
         merged_status,
         deployed_status,
     ]
@@ -607,6 +619,27 @@ def charlie_build_relay_review_media_route(mission_id, filename):
 def _owner_work_missions_for_status(status, limit=1):
     parsed_limit = max(int(limit or 1), 1)
     return list_owner_work_missions(status, limit=parsed_limit)
+
+
+def _dashboard_owner_work_status_queue(status, limit=1):
+    result, status_code = _owner_work_missions_for_status(status, limit=limit)
+    if status_code >= 400:
+        return result, status_code
+    return {
+        **result,
+        "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])],
+    }, status_code
+
+
+def _dashboard_owner_work_buckets(status_limits):
+    buckets = {}
+    statuses = []
+    for status, limit in status_limits:
+        result, status_code = _dashboard_owner_work_status_queue(status, limit=limit)
+        statuses.append(status_code)
+        if status_code < 400:
+            buckets[status] = result.get("missions", [])
+    return buckets, statuses or [200]
 
 
 def _dashboard_owner_queue(limit=8):
