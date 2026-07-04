@@ -324,6 +324,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("handoff_reports", vault_metadata["review_packet"])
         self.assertTrue(vault_metadata["review_packet"]["brain_guard"]["passed"])
         self.assertIn("qa_red_team", vault_metadata["review_packet"]["agent_artifacts"])
+        self.assertNotIn("stdout_tail", vault_metadata["review_packet"]["agent_artifacts"]["qa_red_team"])
+        self.assertNotIn("stderr_tail", vault_metadata["review_packet"]["agent_artifacts"]["qa_red_team"])
         self.assertIn("QA/red-team passed", vault_metadata["review_packet"]["qa_evidence"])
         self.assertIn("quality_gates", vault_metadata["review_packet"])
         self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
@@ -347,6 +349,57 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
         self.assertTrue(any(call.args[0].get("status") == "parallel_read_only_agents_running" for call in write_heartbeat.call_args_list))
         self.assertIn("parallel_planning_execution", vault_metadata["agent_execution"])
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_blocks_when_review_packet_persist_fails(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = (
+            {"success": False, "status": "mission_vault_update_failed", "error_type": "payload_too_large"},
+            503,
+        )
+
+        def fake_runner(*_args, **kwargs):
+            prompt = kwargs["input"]
+            agent = _agent_from_prompt(prompt)
+            payload = _successful_stage_payload(agent)
+            payload["stdout_tail"] = "x" * 5000
+            payload["stderr_tail"] = "y" * 5000
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "owner_review_packet_persist_failed")
+        self.assertEqual(result["mission_status"], "in_progress")
+        self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
+        vault_metadata = update_vault.call_args.args[1]
+        compact_artifact = vault_metadata["review_packet"]["agent_artifacts"]["reviewer"]
+        self.assertNotIn("stdout_tail", compact_artifact)
+        self.assertNotIn("stderr_tail", compact_artifact)
+        self.assertLessEqual(len(compact_artifact["stdout_tail_excerpt"]), 500)
+        if compact_artifact.get("stderr_tail_excerpt"):
+            self.assertLessEqual(len(compact_artifact["stderr_tail_excerpt"]), 500)
 
     @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_IDEA_EXPANDER": "reasoning-model-a"}, clear=False)
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])

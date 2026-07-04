@@ -3076,7 +3076,7 @@ def _block_agent_stage(
                 "links": {},
                 "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent, "blocked_artifact_path": str(paths["final_path"])},
                 "agent_execution": _agent_execution_summary(ledger),
-                "agent_artifacts": artifacts,
+                "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
                 "unresolved_blockers": unresolved,
                 "handoff_reports": {
                     stage_agent: stage_artifact.get("handoff_report", {})
@@ -3266,7 +3266,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "backflow_events": ledger.get("backflow_events", []),
             "brain_guard": brain_guard,
             "normalized_vault_writes": normalized_vault_writes,
-            "agent_artifacts": artifacts,
+            "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
                 for agent, artifact in artifacts.items()
@@ -3284,13 +3284,24 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         },
         "agent_execution": ledger,
     }
-    update_mission_vault(
+    vault_result, vault_status = update_mission_vault(
         mission["mission_id"],
         review_packet,
         notes="CHARLIE Agent Runner v2 populated owner review packet.",
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    if vault_status >= 400 or not vault_result.get("success"):
+        return {
+            "success": False,
+            "status": "owner_review_packet_persist_failed",
+            "mission_id": mission["mission_id"],
+            "mission_status": mission.get("status", "in_progress"),
+            "error_status": vault_result.get("status", ""),
+            "error_type": vault_result.get("error_type", ""),
+            "agent_ledger_path": str(ledger_path),
+            "next_action": "Do not mark pr_ready. Compact or repair review packet persistence, then rerun from reviewer.",
+        }, max(int(vault_status or 500), 500)
     reviewer_result, reviewer_status = update_mission_workflow_step(
         mission["mission_id"],
         "reviewer",
@@ -3605,7 +3616,7 @@ def _block_completed_agent_review(
             "blocked_agent": agent,
         },
         "agent_execution": _agent_execution_summary(ledger),
-        "agent_artifacts": artifacts,
+        "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
         "unresolved_blockers": unresolved,
         "handoff_reports": {
             stage_agent: stage_artifact.get("handoff_report", {})
@@ -3659,6 +3670,71 @@ def _collect_artifact_list(artifacts, key):
         elif value:
             collected.append(value)
     return collected
+
+
+def _compact_agent_artifacts_for_review(artifacts):
+    compact = {}
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    keep_keys = [
+        "agent",
+        "summary",
+        "status",
+        "confidence",
+        "confidence_reason",
+        "changed_files",
+        "files_inspected",
+        "commands_run",
+        "tests_run",
+        "test_evidence",
+        "test_status",
+        "qa_findings",
+        "red_team_status",
+        "risk_rating",
+        "risk_notes",
+        "errors",
+        "bugs",
+        "next_action",
+        "recommended_owner_decision",
+        "release_notes",
+        "quality_gate",
+        "model_assignment",
+        "artifact_path",
+        "stdout_path",
+        "stderr_path",
+        "attempt",
+        "completed_at",
+        "pr_url",
+        "pr_number",
+        "links",
+        "local_preview",
+        "visual_review",
+        "brain_guard",
+    ]
+    for agent, artifact in artifacts.items():
+        if not isinstance(artifact, dict):
+            continue
+        item = {}
+        for key in keep_keys:
+            if key not in artifact:
+                continue
+            value = artifact.get(key)
+            if key in {"summary", "confidence_reason", "next_action"}:
+                value = _truncate(value, 1200)
+            elif key in {"errors", "bugs", "qa_findings", "risk_notes", "tests_run", "test_evidence", "commands_run", "files_inspected", "changed_files", "release_notes"}:
+                value = [_truncate(entry, 500) for entry in _artifact_value_list(value)[:30]]
+            item[key] = value
+        stdout_tail = _truncate(artifact.get("stdout_tail", ""), 500)
+        stderr_tail = _truncate(artifact.get("stderr_tail", ""), 500)
+        if stdout_tail:
+            item["stdout_tail_excerpt"] = stdout_tail
+        if stderr_tail:
+            item["stderr_tail_excerpt"] = stderr_tail
+        compact[agent] = item
+    return compact
+
+
+def _artifact_value_list(value):
+    return value if isinstance(value, list) else ([] if value in (None, "") else [value])
 
 
 def _artifact_stage_summaries(artifacts, agent_sequence):
