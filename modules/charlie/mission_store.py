@@ -1031,6 +1031,8 @@ def record_mission_review_decision(
     if load_status >= 400:
         return loaded, load_status
     mission = loaded.get("mission") or {}
+    if decision == "send_back":
+        target_stage = _normalize_review_send_back_stage(target_stage, mission.get("agent_workflow") or [])
     metadata = dict(mission.get("metadata") or {})
     decisions = metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else []
     decision_record = {
@@ -1752,6 +1754,16 @@ def _return_workflow_to_stage(workflow, target_stage, comments):
         elif target_seen:
             known[agent]["status"] = "pending"
     return [known[name] for name in sequence]
+
+
+def _normalize_review_send_back_stage(target_stage, workflow):
+    target_stage = _clean_text(target_stage, 80).strip().lower() or "builder"
+    sequence = _workflow_sequence(workflow)
+    if target_stage in sequence:
+        return target_stage
+    if target_stage == "frontend_design_implementer" and "builder" in sequence:
+        return "builder"
+    return "builder" if "builder" in sequence else sequence[0]
 
 
 def _workflow_sequence(workflow):

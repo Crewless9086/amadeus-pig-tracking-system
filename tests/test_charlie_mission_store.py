@@ -578,6 +578,46 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("Fix the error panel.", update_params["metadata_json"])
         self.assertIn('"mission_stage": "returned_to_builder"', update_params["metadata_json"])
 
+    def test_record_mission_review_decision_send_back_normalizes_invalid_ui_target_to_builder(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890",
+            "No UI canary", "No UI canary", "P2", "system improvement", "LEVEL 3",
+            "", "", "", {
+                "agent_workflow": [
+                    {"agent": "planner", "status": "complete"},
+                    {"agent": "architect", "status": "complete"},
+                    {"agent": "builder", "status": "complete"},
+                    {"agent": "tester", "status": "complete"},
+                    {"agent": "qa_red_team", "status": "complete"},
+                    {"agent": "reviewer", "status": "complete"},
+                ],
+                "mission_vault": {"mission_stage": "review_ready"},
+                "review_packet": {"review_status": "ready_for_owner_review"},
+            }, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        result, status_code = record_mission_review_decision(
+            "MISSION-1",
+            "send_back",
+            comments="Fix non-UI verification evidence.",
+            target_stage="frontend_design_implementer",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connections.pop(0),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        update_params = update_connection.cursor_instance.executed[0][1]
+        metadata_json = update_params["metadata_json"]
+        self.assertIn('"target_stage": "builder"', metadata_json)
+        self.assertIn('"return_to_stage": "builder"', metadata_json)
+        self.assertIn('"mission_stage": "returned_to_builder"', metadata_json)
+        self.assertNotIn("returned_to_frontend_design_implementer", metadata_json)
+
     def test_mission_status_summary_maps_counts(self):
         result, status_code = mission_status_summary(
             database_url="postgres://unit-test",
