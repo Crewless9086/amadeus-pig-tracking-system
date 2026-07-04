@@ -1,4 +1,4 @@
-﻿import os
+import os
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_from_directory
