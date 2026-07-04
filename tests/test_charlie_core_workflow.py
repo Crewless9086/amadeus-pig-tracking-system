@@ -35,6 +35,15 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertEqual(classify_workflow_template("content engine", "BEACON marketing"), "content_engine")
         self.assertEqual(classify_workflow_template("feature build", "rebuild dashboard UI from screenshot"), "ui_product_build")
 
+    def test_non_ui_visual_gate_language_does_not_route_to_ui_workflow(self):
+        self.assertEqual(
+            classify_workflow_template(
+                "system canary",
+                "Verify non-UI visual pause gate hardening for risk_agent without frontend work.",
+            ),
+            "system_improvement",
+        )
+
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",

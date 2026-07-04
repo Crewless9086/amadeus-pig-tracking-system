@@ -403,7 +403,8 @@ def clean_list(value, max_items=20, max_len=500):
 
 def classify_workflow_template(mission_type="", raw_text=""):
     haystack = f"{mission_type} {raw_text}".lower()
-    if re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
+    explicit_non_ui = bool(re.search(r"\b(non-ui|not ui|not a ui|non visual|non-visual|not visual|not a visual)\b", haystack))
+    if not explicit_non_ui and re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
         return "ui_product_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():
         if template_id == "ui_product_build":
