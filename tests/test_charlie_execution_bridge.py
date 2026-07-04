@@ -726,6 +726,31 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
 
+    def test_reviewer_quality_gate_treats_missing_pytest_as_advisory_with_unittest_pass(self):
+        artifact = {
+            "summary": "review complete",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "commands_run": ["python -m pytest tests/test_charlie_execution_bridge.py", "python -m unittest tests.test_charlie_execution_bridge"],
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": ["verification only"],
+            "changed_files": [],
+            "test_evidence": [
+                {"command": "python -m unittest tests.test_charlie_execution_bridge", "result": "pass", "output": "Ran 77 tests OK"},
+                {"command": "python -m pytest ...", "result": "not_run", "output": "No module named pytest"},
+            ],
+            "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
+            "no_vault_update_required": "Reviewer verification only.",
+            "qa_evidence": ["QA passed"],
+            "confidence": "97%",
+            "confidence_reason": "Based on Vault Brain source docs, inspected repo files, reviewer evidence, and unittest test evidence.",
+        }
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"])
+
     def test_auto_package_builder_changes_adds_pr_evidence(self):
         calls = []
 

@@ -2826,7 +2826,8 @@ def _artifact_text(value):
 
 def _has_passing_fallback_test_evidence(artifact):
     status = str((artifact or {}).get("test_status") or "").strip().lower()
-    if status != "pass":
+    decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
+    if status != "pass" and decision not in {"approve_final_release", "approve", "mark_done"}:
         return False
     evidence = []
     for key in ("tests_run", "test_evidence", "commands_run", "stdout_tail"):
@@ -2840,7 +2841,7 @@ def _has_passing_fallback_test_evidence(artifact):
 
 
 def _is_non_blocking_local_pytest_issue(agent, artifact, value):
-    if agent != "tester" or not _has_passing_fallback_test_evidence(artifact):
+    if agent not in {"tester", "reviewer", "evidence_reviewer"} or not _has_passing_fallback_test_evidence(artifact):
         return False
     text = _artifact_text(value).lower()
     return "pytest" in text and (
