@@ -988,6 +988,26 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
+    def test_write_process_text_recovers_from_permission_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "stage.stdout.txt"
+            calls = {"count": 0}
+            original_write_text = Path.write_text
+
+            def fake_write_text(path, text, *args, **kwargs):
+                calls["count"] += 1
+                if Path(path) == target and calls["count"] == 1:
+                    raise PermissionError("locked")
+                return original_write_text(path, text, *args, **kwargs)
+
+            with patch.object(Path, "write_text", fake_write_text):
+                result = execution_bridge._write_process_text(target, "runner output")
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["error_type"], "PermissionError")
+            self.assertTrue(Path(result["fallback_path"]).exists())
+            self.assertEqual(Path(result["fallback_path"]).read_text(encoding="utf-8"), "runner output")
+
     def test_agent_stage_prompt_includes_vault_context_and_required_fields(self):
         prompt = execution_bridge.build_agent_stage_prompt(MISSION, "planner", artifacts={}, ledger={})
 

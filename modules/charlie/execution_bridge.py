@@ -265,11 +265,11 @@ def run_codex_execution_bridge(
         final_path=final_path,
         mission_id=mission_id,
     )
-    stdout_path.write_text(completed.stdout or "", encoding="utf-8")
-    stderr_path.write_text(completed.stderr or "", encoding="utf-8")
+    _write_process_text(stdout_path, completed.stdout or "")
+    _write_process_text(stderr_path, completed.stderr or "")
     final_message = _read_text(final_path) or (completed.stdout or "").strip()
     if final_message and not _read_text(final_path):
-        final_path.write_text(final_message, encoding="utf-8")
+        _write_process_text(final_path, final_message)
 
     if completed.returncode != 0:
         if completed.returncode == 124 and not _read_text(final_path):
@@ -457,11 +457,11 @@ def run_agent_execution_bridge_v2(
             final_path=stage_paths["final_path"],
             mission_id=mission["mission_id"],
         )
-        stage_paths["stdout_path"].write_text(completed.stdout or "", encoding="utf-8")
-        stage_paths["stderr_path"].write_text(completed.stderr or "", encoding="utf-8")
+        _write_process_text(stage_paths["stdout_path"], completed.stdout or "")
+        _write_process_text(stage_paths["stderr_path"], completed.stderr or "")
         final_message = _read_text(stage_paths["final_path"]) or (completed.stdout or "").strip()
         if final_message and not _read_text(stage_paths["final_path"]):
-            stage_paths["final_path"].write_text(final_message, encoding="utf-8")
+            _write_process_text(stage_paths["final_path"], final_message)
 
         if completed.returncode != 0 or not _read_text(stage_paths["final_path"]):
             return _block_agent_stage(
@@ -1931,11 +1931,11 @@ def _run_parallel_read_only_agents(
     for agent in agents:
         context, completed = completed_by_agent[agent]
         paths = context["paths"]
-        paths["stdout_path"].write_text(completed.stdout or "", encoding="utf-8")
-        paths["stderr_path"].write_text(completed.stderr or "", encoding="utf-8")
+        _write_process_text(paths["stdout_path"], completed.stdout or "")
+        _write_process_text(paths["stderr_path"], completed.stderr or "")
         final_message = _read_text(paths["final_path"]) or (completed.stdout or "").strip()
         if final_message and not _read_text(paths["final_path"]):
-            paths["final_path"].write_text(final_message, encoding="utf-8")
+            _write_process_text(paths["final_path"], final_message)
         if completed.returncode != 0 or not _read_text(paths["final_path"]):
             result, status_code = _block_agent_stage(
                 mission["mission_id"],
@@ -2260,6 +2260,22 @@ def _write_agent_ledger(output_dir, execution_id, ledger):
     path = Path(output_dir) / f"{execution_id}.agent-ledger.json"
     path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
     return path
+
+
+def _write_process_text(path, text):
+    path = Path(path)
+    try:
+        path.write_text(text or "", encoding="utf-8")
+        return {"success": True, "path": str(path)}
+    except PermissionError as exc:
+        fallback = path.with_name(f"{path.stem}.recovered{path.suffix}")
+        fallback.write_text(text or "", encoding="utf-8")
+        return {
+            "success": False,
+            "path": str(path),
+            "fallback_path": str(fallback),
+            "error_type": exc.__class__.__name__,
+        }
 
 
 def _agent_artifact_from_final(agent, final_message):
