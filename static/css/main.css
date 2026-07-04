@@ -55,6 +55,17 @@ body {
   box-shadow: var(--shadow);
 }
 
+.orders-page-shell {
+  display: block;
+  padding: 24px;
+}
+
+.orders-page-card {
+  max-width: 1480px;
+  margin: 0 auto;
+  border-radius: 18px;
+}
+
 .page-header {
   margin-bottom: 28px;
 }
@@ -1693,9 +1704,52 @@ button:disabled {
 
 .orders-status-tabs {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
   gap: 10px;
   margin: 18px 0;
+}
+
+.orders-page-card .history-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.orders-page-card .sales-filters-grid {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.orders-page-card .pig-list-grid {
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  align-items: stretch;
+}
+
+.orders-page-card .empty-state {
+  grid-column: 1 / -1;
+}
+
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.empty-state-actions button {
+  min-height: 40px;
+  border: 1px solid var(--green-main);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--green-dark);
+  padding: 9px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.empty-state-actions button:hover,
+.empty-state-actions button:focus-visible {
+  background: var(--green-main);
+  color: #ffffff;
+  outline: none;
 }
 
 .order-status-tab {
@@ -2554,6 +2608,16 @@ button:disabled {
 
   .orders-status-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders-page-shell {
+    padding: 18px 12px;
+  }
+
+  .orders-page-card .sales-filters-grid,
+  .orders-page-card .history-summary-grid,
+  .orders-page-card .pig-list-grid {
+    grid-template-columns: 1fr;
   }
 
   .summary-hero,

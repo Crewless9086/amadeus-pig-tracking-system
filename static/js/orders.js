@@ -64,27 +64,38 @@ function countByStatus(statuses) {
   return allOrders.filter(order => statuses.includes(orderStatus(order))).length;
 }
 
-function renderSummary(filteredOrders) {
-  const activeCount = countByStatus(["Draft", "Pending_Approval", "Approved"]);
-  const pendingCount = countByStatus(["Pending_Approval"]);
-  const approvedCount = countByStatus(["Approved"]);
-  const visibleValue = filteredOrders.reduce((sum, order) => sum + Number(order.active_line_total || 0), 0);
-
-  ordersSummary.innerHTML = `
-    ${renderSummaryCard("Active Orders", activeCount)}
-    ${renderSummaryCard("Pending Approval", pendingCount)}
-    ${renderSummaryCard("Approved", approvedCount)}
-    ${renderSummaryCard("Visible Value", formatMoney(visibleValue))}
-  `;
-}
-
-function renderStatusTabs() {
+function getTabCounts() {
   const counts = {};
   STATUS_TABS.forEach(tab => {
     counts[tab.id] = tab.statuses
       ? allOrders.filter(order => tab.statuses.includes(orderStatus(order))).length
       : allOrders.length;
   });
+  return counts;
+}
+
+function renderSummary(filteredOrders) {
+  const counts = getTabCounts();
+  const activeCount = countByStatus(["Draft", "Pending_Approval", "Approved"]);
+  const pendingCount = countByStatus(["Pending_Approval"]);
+  const approvedCount = countByStatus(["Approved"]);
+  const completedCount = countByStatus(["Completed"]);
+  const cancelledCount = countByStatus(["Cancelled"]);
+  const visibleValue = filteredOrders.reduce((sum, order) => sum + Number(order.active_line_total || 0), 0);
+
+  ordersSummary.innerHTML = `
+    ${renderSummaryCard("Active Orders", activeCount)}
+    ${renderSummaryCard("Pending Approval", pendingCount)}
+    ${renderSummaryCard("Approved", approvedCount)}
+    ${renderSummaryCard("Completed", completedCount)}
+    ${renderSummaryCard("Cancelled", cancelledCount)}
+    ${renderSummaryCard("All Orders", counts.all || 0)}
+    ${renderSummaryCard("Visible Value", formatMoney(visibleValue))}
+  `;
+}
+
+function renderStatusTabs() {
+  const counts = getTabCounts();
 
   ordersTabs.innerHTML = STATUS_TABS.map(tab => {
     const selected = tab.id === activeTabId;
@@ -236,12 +247,48 @@ function renderOrdersList(orders) {
   ordersList.innerHTML = "";
 
   if (!orders.length) {
+    const counts = getTabCounts();
+    const currentTab = STATUS_TABS.find(tab => tab.id === activeTabId) || STATUS_TABS[0];
+    const hasSearchOrFilters = Boolean(
+      ordersSearch.value.trim()
+      || sourceFilter.value
+      || paymentFilter.value
+      || locationFilter.value
+    );
+    const historicalCount = (counts.completed || 0) + (counts.cancelled || 0);
+    const activeCount = counts.active || 0;
+
+    let headline = "No matching orders found.";
+    let detail = "Try another status tab or filter combination.";
+    let actions = "";
+
+    if (activeTabId === "active" && !hasSearchOrFilters && activeCount === 0 && historicalCount > 0) {
+      headline = "No active orders right now.";
+      detail = `${historicalCount} historical migrated orders are available: ${counts.completed || 0} completed and ${counts.cancelled || 0} cancelled.`;
+      actions = `
+        <div class="empty-state-actions">
+          <button type="button" data-empty-tab="completed">Completed (${counts.completed || 0})</button>
+          <button type="button" data-empty-tab="cancelled">Cancelled (${counts.cancelled || 0})</button>
+          <button type="button" data-empty-tab="all">All (${counts.all || 0})</button>
+        </div>
+      `;
+    } else if (hasSearchOrFilters) {
+      detail = `No ${currentTab.label.toLowerCase()} orders match the current search and filters.`;
+    }
+
     ordersList.innerHTML = `
       <div class="empty-state">
-        <strong>No matching orders found.</strong>
-        <span>Try another status tab or filter combination.</span>
+        <strong>${escapeHtml(headline)}</strong>
+        <span>${escapeHtml(detail)}</span>
+        ${actions}
       </div>
     `;
+    ordersList.querySelectorAll("[data-empty-tab]").forEach(button => {
+      button.addEventListener("click", function () {
+        activeTabId = button.dataset.emptyTab;
+        applyOrderFilters();
+      });
+    });
     return;
   }
 
