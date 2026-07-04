@@ -2655,6 +2655,8 @@ def _judgement_evidence_quality_gate(agent, artifact):
     for field, passing_values in decision_fields.items():
         if field not in artifact:
             continue
+        if field == "visual_acceptance_decision" and not _artifact_is_ui_related(artifact):
+            continue
         decision = str(artifact.get(field) or "").strip().lower()
         if decision and decision not in passing_values:
             return {
@@ -2670,6 +2672,21 @@ def _judgement_evidence_quality_gate(agent, artifact):
             "blocking_evidence": [_artifact_text(item) for item in negative[:5]],
         }
     return {"passed": True, "reason": "judgement_gate_passed"}
+
+
+def _artifact_is_ui_related(artifact):
+    contract = artifact.get("ui_quality_contract") if isinstance(artifact.get("ui_quality_contract"), dict) else {}
+    if contract.get("ui_related"):
+        return True
+    values = []
+    for key in ("media_references_used", "screenshots_captured", "browser_checks", "reference_match_assessment"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value:
+            values.append(value)
+    text = " ".join(str(item or "") for item in values).lower()
+    return any(term in text for term in ("screenshot", "viewport", "visual reference", "desktop", "mobile", "ui"))
 
 
 def _negative_judgement_evidence(agent, artifact):

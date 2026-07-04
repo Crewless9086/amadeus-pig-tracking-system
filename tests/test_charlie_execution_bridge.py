@@ -880,6 +880,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_non_ui_risk_agent_visual_pause_is_not_a_judgement_block(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "test_evidence": ["focused risk checks passed"],
+            "visual_acceptance_decision": "pause",
+            "visual_review_notes": ["Mission is not UI-related. No visual evidence required."],
+            "risk_notes": ["Present blockers: none found."],
+        })
+
+        result = execution_bridge._agent_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_risk_agent_ui_send_back_targets_frontend_implementation(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
