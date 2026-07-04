@@ -1696,6 +1696,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["missing_keys"], [])
 
+    def test_qa_quality_gate_treats_medium_pass_findings_as_advisory(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "pass"
+        artifact["risk_rating"] = "medium"
+        artifact["qa_findings"] = [
+            "No release-blocking runner reliability defect was proven by this QA stage.",
+            "Owner review evidence must disclose the dirty worktree caveat.",
+        ]
+        artifact["confidence"] = "97%"
+        artifact["confidence_reason"] = "Based on Vault Brain source docs, inspected repo files, QA evidence, and unit test evidence."
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"])
+
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["files_to_inspect"] = []

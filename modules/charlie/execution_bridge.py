@@ -2712,12 +2712,22 @@ def _negative_judgement_evidence(agent, artifact):
     )
     values = []
     for field in fields:
+        if field == "qa_findings" and _qa_findings_are_advisory(agent, artifact):
+            continue
         value = artifact.get(field)
         if isinstance(value, list):
             values.extend(value)
         elif value:
             values.append(value)
     return [value for value in values if _is_blocking_judgement_text(agent, artifact, value)]
+
+
+def _qa_findings_are_advisory(agent, artifact):
+    if agent != "qa_red_team":
+        return False
+    status = str((artifact or {}).get("red_team_status") or "").strip().lower()
+    risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
+    return status == "pass" and risk not in {"high", "critical"}
 
 
 def _is_blocking_judgement_text(agent, artifact, value):
