@@ -204,10 +204,7 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
             continue
-        sources = artifact.get("vault_sources_used")
-        if isinstance(sources, str):
-            sources = [sources]
-        sources = {str(source or "").replace("\\", "/") for source in sources or [] if str(source or "").strip()}
+        sources = set(_artifact_vault_sources(artifact))
         cited.update(sources)
         if not any(source.startswith("docs/09-vault-brain/") for source in sources):
             uncited_agents.append(agent)
@@ -230,6 +227,24 @@ def evaluate_vault_source_coverage(artifacts, retrieval_packet):
         "missing_required_docs": missing_required,
         "selected_not_cited": selected_not_cited,
     }
+
+
+def _artifact_vault_sources(artifact):
+    sources = []
+    for key in ("vault_sources_used", "inputs_used", "files_inspected"):
+        value = artifact.get(key)
+        if isinstance(value, str):
+            sources.append(value)
+        elif isinstance(value, list):
+            sources.extend(value)
+    canonical = artifact.get("canonical") if isinstance(artifact.get("canonical"), dict) else {}
+    for key in ("vault_sources_used", "inputs_used", "files_inspected"):
+        value = canonical.get(key)
+        if isinstance(value, str):
+            sources.append(value)
+        elif isinstance(value, list):
+            sources.extend(value)
+    return [str(source or "").strip().replace("\\", "/") for source in sources if str(source or "").strip()]
 
 
 def autonomy_readiness_packet(command_center=None):

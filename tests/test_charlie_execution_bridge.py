@@ -959,6 +959,35 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("Vault Brain discipline", result["reason"])
         self.assertTrue(result["findings"])
 
+    def test_brain_guard_accepts_vault_docs_cited_in_canonical_inputs(self):
+        artifacts = {
+            "planner": {
+                "summary": "planned",
+                "vault_sources_used": ["mission_vault", "mission_context_pack"],
+                "no_vault_update_required": "No Vault doctrine changed.",
+                "canonical": {
+                    "inputs_used": [
+                        "docs/09-vault-brain/INDEX.md",
+                        "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+                    ],
+                },
+            }
+        }
+
+        result = execution_bridge._brain_guard_review_gate(MISSION, artifacts, ["README.md"])
+
+        self.assertTrue(result["passed"])
+        self.assertFalse(result["findings"])
+
+    def test_passed_quality_gate_reason_is_not_unresolved_issue(self):
+        issues = execution_bridge._artifact_issue_items(
+            "qa_red_team",
+            {"qa_findings": [], "errors": [], "bugs": []},
+            {"passed": True, "reason": "qa_red_team quality gate passed."},
+        )
+
+        self.assertEqual(issues, [])
+
     def test_agent_stage_prompt_includes_vault_context_and_required_fields(self):
         prompt = execution_bridge.build_agent_stage_prompt(MISSION, "planner", artifacts={}, ledger={})
 

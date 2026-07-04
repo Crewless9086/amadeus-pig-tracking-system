@@ -2409,7 +2409,7 @@ def _agent_quality_gate(agent, artifact):
     if not vault_sources:
         return {"passed": False, "reason": f"{agent} did not record Vault Brain sources used."}
     if not _artifact_has_vault_brain_source(artifact):
-        return {"passed": False, "reason": f"{agent} did not cite a docs/09-vault-brain source."}
+        return {"passed": False, "reason": f"{agent} did not cite Vault Brain sources from docs/09-vault-brain."}
     implementation_quality = _implementation_source_quality_gate(agent, artifact)
     if not implementation_quality["passed"]:
         return implementation_quality
@@ -2654,11 +2654,21 @@ def _artifact_mentions_viewports(artifact):
 
 
 def _artifact_vault_sources(artifact):
-    sources = artifact.get("vault_sources_used")
-    if isinstance(sources, str):
-        sources = [sources]
-    if not isinstance(sources, list):
-        sources = []
+    artifact = artifact if isinstance(artifact, dict) else {}
+    sources = []
+    for key in ("vault_sources_used", "inputs_used", "files_inspected"):
+        value = artifact.get(key)
+        if isinstance(value, str):
+            sources.append(value)
+        elif isinstance(value, list):
+            sources.extend(value)
+    canonical = artifact.get("canonical") if isinstance(artifact.get("canonical"), dict) else {}
+    for key in ("vault_sources_used", "inputs_used", "files_inspected"):
+        value = canonical.get(key)
+        if isinstance(value, str):
+            sources.append(value)
+        elif isinstance(value, list):
+            sources.extend(value)
     return [str(item or "").strip().replace("\\", "/") for item in sources if str(item or "").strip()]
 
 
@@ -4078,7 +4088,7 @@ def _artifact_issue_items(agent, artifact, quality=None):
             add_issue(value, severity, source)
 
     reason = str(quality.get("reason") or "").strip()
-    if reason and not any(item["finding"] == reason for item in issues):
+    if reason and quality.get("passed") is False and not any(item["finding"] == reason for item in issues):
         add_issue(reason, "medium", "quality_gate")
     return issues[:12]
 
