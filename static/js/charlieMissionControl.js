@@ -84,6 +84,18 @@
     addMission: document.getElementById("charlie_add_mission"),
     filter: document.getElementById("charlie_status_filter"),
     loadedAt: document.getElementById("charlie_loaded_at"),
+    headerSystemState: document.getElementById("charlie_header_system_state"),
+    headerRunnerState: document.getElementById("charlie_header_runner_state"),
+    bottom: {
+      health: document.getElementById("charlie_bottom_health"),
+      healthDetail: document.getElementById("charlie_bottom_health_detail"),
+      runner: document.getElementById("charlie_bottom_runner"),
+      runnerDetail: document.getElementById("charlie_bottom_runner_detail"),
+      review: document.getElementById("charlie_bottom_review"),
+      reviewDetail: document.getElementById("charlie_bottom_review_detail"),
+      truth: document.getElementById("charlie_bottom_truth"),
+      truthDetail: document.getElementById("charlie_bottom_truth_detail"),
+    },
     createForm: document.getElementById("charlie_mission_create_form"),
     newTitle: document.getElementById("charlie_new_title"),
     newConcept: document.getElementById("charlie_new_concept"),
@@ -153,7 +165,7 @@
     setMessage("", "info");
     const status = els.filter ? els.filter.value : "";
     state.activeFilter = status || "";
-    const query = status ? `?status=${encodeURIComponent(status)}&limit=30` : "?limit=30";
+    const query = status ? `?status=${encodeURIComponent(status)}&limit=12&compact=1` : "?limit=12&compact=1";
     try {
       const [summary, missions] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
@@ -168,6 +180,8 @@
     } catch (error) {
       setMessage(error.message || "Could not load CHARLIE missions.", "error");
       if (els.statusLine) els.statusLine.textContent = "Mission queue unavailable.";
+      state.runnerStatus = state.runnerStatus || {status: "unavailable", next_action: "Mission queue unavailable."};
+      renderAliveDashboard();
     } finally {
       state.loading = false;
     }
@@ -324,29 +338,41 @@
     const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
     const modelRegistry = core.model_registry || {};
     const toolPermissions = core.tool_permissions || {};
-    const ownerPreferences = core.owner_preferences || {};
     const autonomy = data.autonomy_readiness || {};
     const runner = data.local_runner || {};
     const improvements = data.improvements || {};
     const retrievalCount = recentReadiness.reduce((total, item) => total + Number((item.vault_retrieval || {}).selected_count || 0), 0);
+    const readinessLabel = readinessAverage ? `${readinessAverage}% recent` : "Fast refresh";
+    const retrievalLabel = recentReadiness.length ? `${retrievalCount} source hits` : "On demand";
     els.commandCenter.innerHTML = `
-      ${commandCenterTile("Core Readiness", readinessAverage ? `${readinessAverage}% recent` : "No recent score", core.overall_target || "90%+ target")}
-      ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
-      ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
-      ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
-      ${commandCenterTile("Vault Retrieval", `${retrievalCount} source hits`, recentReadiness.length ? "ranked by mission context" : "waiting for missions")}
-      ${commandCenterTile("Owner Rules", `${(ownerPreferences.preferences || []).length} active`, "applied in stage prompts")}
-      ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
-      ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
-      ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
-      ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
-      ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
-      ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
-      ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
-      ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
-      ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
-      ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
-      ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      <section class="charlie-command-section">
+        <header><span>Project Truth</span><strong>CHARLIE CORE</strong></header>
+        ${commandCenterTile("Core Readiness", readinessLabel, core.readiness_detail || core.overall_target || "summary refresh")}
+        ${commandCenterTile("Vault", vault.version || "charlie_vault_v1", vault.storage || "metadata_json active")}
+        ${commandCenterTile("Source Truth", retrievalLabel, recentReadiness.length ? "ranked by mission context" : "deep source-map retrieval skipped for speed")}
+        ${commandCenterTile("Boundary", "Owner gated", data.execution_boundary || "Local runner executes builds")}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Review / Risk</span><strong>Owner Decisions</strong></header>
+        ${commandCenterTile("Queue", `${(queue.approved || []).length} approved`, queue.ordering || "priority order")}
+        ${commandCenterTile("Review", `${(review.ready || []).length} ready`, `${(review.blocked || []).length} blocked`)}
+        ${commandCenterTile("Improvements", `${(improvements.pending || []).length} pending`, improvements.status || "proposal store")}
+        ${commandCenterTile("Release", `${(release.waiting_final_bridge || []).length} waiting`, `${(release.in_progress || []).length} running`)}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Runtime</span><strong>Runner / Vault</strong></header>
+        ${commandCenterTile("Runner", runner.active ? "Active" : "Not active", runner.current_agent ? `${runner.current_agent}: ${runner.current_action || "running"}` : data.local_runner_scope || "local")}
+        ${commandCenterTile("Vault Tables", vaultHealth.status || "unknown", vaultMissing ? `${vaultMissing} missing` : "normalized tables ready")}
+        ${commandCenterTile("Models", `${Object.keys(modelRegistry.models || {}).length} registered`, modelRegistry.safety_note || "Manual routing")}
+        ${commandCenterTile("Tool Permissions", `${Object.keys(toolPermissions.agent_tool_allowlist || {}).length} agents`, `${(toolPermissions.red_zone_tools || []).length} red-zone tools`)}
+      </section>
+      <section class="charlie-command-section">
+        <header><span>Artifacts</span><strong>Release Proof</strong></header>
+        ${commandCenterTile("Live Verify", release.verify_url_configured ? "Configured" : "Missing URL", release.verify_url_configured ? "Can mark deployed" : "Merged only until URL set")}
+        ${commandCenterTile("Merged", `${release.merged_count || (release.merged_waiting_live_verify || []).length || 0} total`, "Needs live proof for deployed")}
+        ${commandCenterTile("Deployed", `${release.deployed_count || (release.deployed || []).length || 0} complete`, "Verified live")}
+        ${commandCenterTile("Autonomy", autonomy.percent != null ? `${autonomy.percent}%` : "Unknown", autonomy.safe_mode || "supervised")}
+      </section>
       ${recentReadiness.slice(0, 3).map((item) => commandCenterTile(
         shortId(item.mission_id || ""),
         `${Number((item.core_readiness || {}).overall_percent || 0)}% ready`,
@@ -375,7 +401,20 @@
       else state.openReviewDetails.delete(missionId);
     });
     if (!state.reviewMissions.length) {
-      els.reviewList.innerHTML = '<p class="charlie-empty">No missions are waiting at owner review.</p>';
+      els.reviewList.innerHTML = `
+        <div class="charlie-empty charlie-review-empty-state">
+          <strong>No live review-ready card is available.</strong>
+          <span>Owner release controls stay visible here, but final approval and send-back actions activate only on a real review-ready or blocked mission card.</span>
+          <div class="charlie-mission-actions charlie-review-actions" aria-label="Owner review controls unavailable">
+            <button type="button" disabled>Open Review</button>
+            <button type="button" disabled>Approve Final</button>
+            <button type="button" disabled>Send Back</button>
+            <button type="button" disabled>Pause</button>
+            <button type="button" disabled>Reject</button>
+            <button type="button" disabled>Mark Done</button>
+          </div>
+        </div>
+      `;
       return;
     }
     els.reviewList.innerHTML = "";
@@ -441,6 +480,36 @@
   function renderAliveDashboard() {
     renderWorkflowMap();
     renderActiveSummary();
+    renderBottomRail();
+  }
+
+  function renderBottomRail() {
+    if (!els.bottom || !els.bottom.health) return;
+    const data = state.commandCenter || {};
+    const runner = state.runnerStatus || {};
+    const vault = data.vault || {};
+    const vaultHealth = vault.health || {};
+    const review = data.review || {};
+    const local = runner.local_runner || data.local_runner || {};
+    const recentReadiness = Array.isArray(((data.charlie_core || {}).recent_readiness)) ? data.charlie_core.recent_readiness : [];
+    const readinessAverage = recentReadiness.length
+      ? Math.round(recentReadiness.reduce((total, item) => total + Number((item.core_readiness || {}).overall_percent || 0), 0) / recentReadiness.length)
+      : 0;
+    const readyCount = Array.isArray(review.ready) ? review.ready.length : state.reviewMissions.length;
+    const blockedCount = Array.isArray(review.blocked) ? review.blocked.length : 0;
+    const runnerLabel = runnerStateLabel(runner.status || (local.active ? "active_mission_in_progress" : "idle_no_approved_mission"));
+    const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
+    const systemLabel = vaultMissing ? "Attention" : "Operational";
+    if (els.headerSystemState) els.headerSystemState.textContent = systemLabel;
+    if (els.headerRunnerState) els.headerRunnerState.textContent = runnerLabel;
+    els.bottom.health.textContent = readinessAverage ? `${readinessAverage}%` : (vaultHealth.status || "Unknown");
+    els.bottom.healthDetail.textContent = vaultMissing ? `${vaultMissing} Vault table issue(s)` : "Vault/data readiness visible";
+    els.bottom.runner.textContent = runnerLabel;
+    els.bottom.runnerDetail.textContent = local.active ? `${local.current_agent || "Agent"} running` : (runner.local_runner_scope || "local boundary");
+    els.bottom.review.textContent = `${readyCount} ready / ${blockedCount} blocked`;
+    els.bottom.reviewDetail.textContent = "Evidence required before owner review";
+    els.bottom.truth.textContent = vault.version || "Vault Brain";
+    els.bottom.truthDetail.textContent = data.execution_boundary || "Dashboard records decisions only";
   }
 
   function renderWorkflowMap() {
@@ -454,6 +523,7 @@
     const blocked = activeMission && (activeMission.status === "blocked" || blockedPacket.review_status === "agent_blocked");
     const reviewReady = activeMission && activeMission.status === "pr_ready";
     const backflowEvents = backflowEventsForMission(activeMission);
+    const allAgents = workflowOrderedAgents(workflow);
     if (els.liveNotice) {
       const remoteBlind = runner.local_runner_scope === "render_cannot_see_laptop_runner";
       els.liveNotice.classList.toggle("is-warning", remoteBlind || Boolean(blocked));
@@ -462,9 +532,17 @@
         : runner.next_action || "Local runner heartbeat and mission ledger are feeding this live workflow.";
     }
     const displayAgents = workflowDisplayOrder(workflow);
+    const firstVisible = displayAgents.length && allAgents.length ? Math.max(0, allAgents.indexOf(displayAgents[0])) + 1 : 0;
+    const lastVisible = displayAgents.length ? firstVisible + displayAgents.length - 1 : 0;
+    const stageScope = allAgents.length && displayAgents.length
+      ? `Stages ${firstVisible}-${lastVisible} of ${allAgents.length}`
+      : "Workflow waiting";
     els.workflowMap.innerHTML = `
       <div class="charlie-flow-title">
-        <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
+        <div>
+          <strong>${escapeHtml(activeMission ? activeMission.title || activeMission.raw_text || "Active mission" : "No active mission selected")}</strong>
+          <small>${escapeHtml(stageScope)}</small>
+        </div>
         <span>${escapeHtml(activeMission ? activeMission.status || "unknown" : "waiting")}</span>
       </div>
       ${blocked ? blockedReviewBanner(blockedPacket) : ""}
@@ -483,6 +561,13 @@
           index,
         })).join("")}
         </div>
+      </div>
+      <div class="charlie-flow-legend" aria-label="Workflow status legend">
+        <span><i class="is-complete"></i>Completed</span>
+        <span><i class="is-active"></i>Active</span>
+        <span><i class="is-review-ready"></i>Review</span>
+        <span><i class="is-blocked"></i>Blocked</span>
+        <span><i class="is-send-back"></i>Send Back</span>
       </div>
       ${backflowEvents.length ? `<div class="charlie-flow-backflows">${backflowEvents.slice(0, 4).map(backflowLoopMarkup).join("")}</div>` : ""}
     `;
@@ -546,6 +631,15 @@
   }
 
   function workflowDisplayOrder(workflow) {
+    const ordered = workflowOrderedAgents(workflow);
+    const active = normalizeAgent((state.runnerStatus.local_runner || {}).current_agent || workflowActiveAgent(workflow));
+    if (!active || ordered.length <= 6) return ordered.slice(0, 6);
+    const activeIndex = Math.max(0, ordered.indexOf(active));
+    const start = Math.max(0, Math.min(activeIndex - 2, ordered.length - 6));
+    return ordered.slice(start, start + 6);
+  }
+
+  function workflowOrderedAgents(workflow) {
     const selected = (Array.isArray(workflow) ? workflow : [])
       .map((entry) => normalizeAgent(entry && entry.agent))
       .filter(Boolean);
@@ -635,6 +729,8 @@
     const contextPack = mission.mission_context_pack || {};
     const queuePriority = queuePriorityValue(mission);
     const missionQueueClass = queueClass(mission);
+    const activeFlowMission = currentMissionForFlow();
+    if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>

@@ -75,7 +75,11 @@ def charlie_build_relay_missions_route():
     result, status_code = list_missions(
         status=request.args.get("status", ""),
         limit=request.args.get("limit", 10),
+        compact=str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"},
     )
+    compact = str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"}
+    if compact and isinstance(result, dict) and isinstance(result.get("missions"), list):
+        result = {**result, "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])]}
     return jsonify(result), status_code
 
 
@@ -128,30 +132,27 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    approved, approved_status = _owner_work_missions_for_status("approved", limit=1)
-    approved_queue, approved_queue_status = _owner_work_missions_for_status("approved", limit=5)
-    in_progress, in_progress_status = _owner_work_missions_for_status("in_progress", limit=1)
-    pr_ready, pr_ready_status = _owner_work_missions_for_status("pr_ready", limit=20)
-    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=1)
-    release_in_progress, release_in_progress_status = _owner_work_missions_for_status("release_in_progress", limit=1)
-    if max(approved_status, approved_queue_status, in_progress_status, pr_ready_status, release_approved_status, release_in_progress_status) >= 400:
+    owner_queue, owner_queue_status = _dashboard_owner_queue(limit=8)
+    if owner_queue_status >= 400:
         return jsonify({
             "success": False,
             "status": "runner_handoff_unavailable",
-            "approved_status": approved.get("status"),
-            "approved_queue_status": approved_queue.get("status"),
-            "in_progress_status": in_progress.get("status"),
-            "pr_ready_status": pr_ready.get("status"),
-            "release_approved_status": release_approved.get("status"),
-            "release_in_progress_status": release_in_progress.get("status"),
+            "owner_queue_status": owner_queue.get("status"),
             "can_run_shell_from_web": False,
         }), 503
+    queue_missions = owner_queue.get("missions", [])
+    buckets = _mission_status_buckets(queue_missions)
+    approved_queue = buckets.get("approved", [])[:5]
+    in_progress = buckets.get("in_progress", [])[:1]
+    pr_ready = buckets.get("pr_ready", [])[:5]
+    release_approved = buckets.get("release_approved", [])[:1]
+    release_in_progress = buckets.get("release_in_progress", [])[:1]
 
     active_mission = _first_mission(in_progress) or _first_mission(release_in_progress)
-    review_backlog = pr_ready.get("missions", [])
-    next_approved = _first_mission(approved)
+    review_backlog = pr_ready
+    next_approved = _first_mission(approved_queue)
     next_release_approved = _first_mission(release_approved)
-    local_status = local_runner_status()
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -176,7 +177,7 @@ def charlie_build_relay_runner_status_route():
         "active_mission": active_mission,
         "review_backlog": review_backlog,
         "next_approved_mission": next_approved,
-        "approved_queue": approved_queue.get("missions", []),
+        "approved_queue": approved_queue,
         "next_release_approved_mission": next_release_approved,
         "next_action": next_action,
         "local_runner": local_status,
@@ -205,22 +206,21 @@ def charlie_build_relay_command_center_route():
     if denied:
         return denied
     summary, summary_status = mission_status_summary()
-    recent, recent_status = list_missions(status="owner_queue", limit=8)
-    approved_queue, approved_status = _owner_work_missions_for_status("approved", limit=20)
-    review_ready, review_status = _owner_work_missions_for_status("pr_ready", limit=5)
-    blocked, blocked_status = _owner_work_missions_for_status("blocked", limit=5)
-    release_approved, release_approved_status = _owner_work_missions_for_status("release_approved", limit=5)
-    release_in_progress, release_progress_status = _owner_work_missions_for_status("release_in_progress", limit=5)
-    merged, merged_status = list_missions(status="merged", limit=5)
-    deployed, deployed_status = list_missions(status="deployed", limit=5)
+    recent, recent_status = _dashboard_owner_queue(limit=8)
+    recent_missions = recent.get("missions", [])
+    buckets = _mission_status_buckets(recent_missions)
+    approved_queue = buckets.get("approved", [])[:20]
+    review_ready = buckets.get("pr_ready", [])[:5]
+    blocked = buckets.get("blocked", [])[:5]
+    release_approved = buckets.get("release_approved", [])[:5]
+    release_in_progress = buckets.get("release_in_progress", [])[:5]
+    merged = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
+    deployed = {"success": True, "status": "skipped_for_fast_dashboard_refresh", "missions": []}
+    merged_status = 200
+    deployed_status = 200
     statuses = [
         summary_status,
         recent_status,
-        approved_status,
-        review_status,
-        blocked_status,
-        release_approved_status,
-        release_progress_status,
         merged_status,
         deployed_status,
     ]
@@ -230,11 +230,27 @@ def charlie_build_relay_command_center_route():
             "status": "command_center_unavailable",
             "statuses": statuses,
         }), 503
-    local_status = local_runner_status()
-    vault_health, _vault_health_status = vault_tables_health()
-    improvements, _improvements_status = list_improvement_proposals(limit=8)
+    detailed = str(request.args.get("detail") or "").strip().lower() in {"1", "true", "yes", "full"}
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
+    if detailed:
+        vault_health, _vault_health_status = vault_tables_health()
+        improvements, _improvements_status = list_improvement_proposals(limit=8)
+    else:
+        vault_health = {
+            "success": True,
+            "status": "fast_refresh_not_checked",
+            "missing_tables": [],
+            "tables": {},
+        }
+        improvements = {
+            "success": True,
+            "status": "fast_refresh_not_checked",
+            "proposals": [],
+            "execution_boundary": "Improvement proposals are loaded in full detail mode.",
+        }
     readiness_items = []
-    for mission in recent.get("missions", []):
+    readiness_missions = recent.get("missions", [])[:3 if detailed else 0]
+    for mission in readiness_missions:
         retrieval = retrieve_vault_sources(mission, limit=8, excerpt_chars=0)
         readiness_items.append({
             "mission_id": mission.get("mission_id", ""),
@@ -257,9 +273,10 @@ def charlie_build_relay_command_center_route():
             "overall_target": "90%+ workflow readiness before deep income-stream missions",
             "templates": sorted(WORKFLOW_TEMPLATES.keys()),
             "recent_readiness": readiness_items,
-            "model_registry": model_registry_packet(),
-            "tool_permissions": tool_permission_registry(),
-            "owner_preferences": owner_preference_packet(),
+            "readiness_detail": "full" if detailed else "summary_only_fast_refresh",
+            "model_registry": _compact_model_registry_packet(),
+            "tool_permissions": _compact_tool_permission_registry(),
+            "owner_preferences": _compact_owner_preference_packet(),
         },
         "counts": summary.get("counts", {}),
         "vault": {
@@ -278,20 +295,20 @@ def charlie_build_relay_command_center_route():
             ],
         },
         "release": {
-            "waiting_final_bridge": release_approved.get("missions", []),
-            "in_progress": release_in_progress.get("missions", []),
+            "waiting_final_bridge": release_approved,
+            "in_progress": release_in_progress,
             "merged_waiting_live_verify": merged.get("missions", []),
             "deployed": deployed.get("missions", []),
             "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
         },
         "queue": {
-            "approved": approved_queue.get("missions", []),
+            "approved": approved_queue,
             "ordering": "queue.priority asc, urgency asc, created_at asc",
             "execution_boundary": "Local runner picks only one approved mission at a time and waits while a mission is active or in release.",
         },
         "review": {
-            "ready": review_ready.get("missions", []),
-            "blocked": blocked.get("missions", []),
+            "ready": review_ready,
+            "blocked": blocked,
         },
         "improvements": {
             "proposals": improvements.get("proposals", []),
@@ -299,7 +316,7 @@ def charlie_build_relay_command_center_route():
             "status": improvements.get("status", "unavailable"),
             "execution_boundary": improvements.get("execution_boundary", "Improvement proposals are advisory records only."),
         },
-        "recent_missions": recent.get("missions", []),
+        "recent_missions": recent_missions,
         "local_runner": local_status,
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
@@ -509,10 +526,271 @@ def _owner_work_missions_for_status(status, limit=1):
     return list_owner_work_missions(status, limit=parsed_limit)
 
 
+def _dashboard_owner_queue(limit=8):
+    result, status_code = list_missions(status="owner_queue", limit=limit, compact=True)
+    if status_code >= 400:
+        return result, status_code
+    return {
+        **result,
+        "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])],
+    }, status_code
+
+
+def _compact_model_registry_packet():
+    registry = model_registry_packet()
+    models = registry.get("models") if isinstance(registry.get("models"), dict) else {}
+    return {
+        "version": registry.get("version", ""),
+        "models": {key: {"registry_key": key} for key in models},
+        "safety_note": registry.get("safety_note", "Manual routing"),
+    }
+
+
+def _compact_tool_permission_registry():
+    registry = tool_permission_registry()
+    allowlist = registry.get("agent_tool_allowlist") if isinstance(registry.get("agent_tool_allowlist"), dict) else {}
+    red_zone = registry.get("red_zone_tools") if isinstance(registry.get("red_zone_tools"), list) else []
+    return {
+        "version": registry.get("version", ""),
+        "agent_tool_allowlist": {agent: [] for agent in allowlist},
+        "red_zone_tools": red_zone[:12],
+    }
+
+
+def _compact_owner_preference_packet():
+    packet = owner_preference_packet()
+    return {
+        "version": packet.get("version", ""),
+        "summary": _short_text(packet.get("summary"), 300),
+        "source": packet.get("source", ""),
+    }
+
+
 def _first_mission(result):
     missions = result.get("missions") if isinstance(result, dict) else result
     missions = missions or []
     return missions[0] if missions else None
+
+
+def _mission_status_buckets(missions):
+    buckets = {}
+    for mission in missions or []:
+        if not isinstance(mission, dict):
+            continue
+        status = str(mission.get("status") or "").strip()
+        if not status:
+            continue
+        buckets.setdefault(status, []).append(mission)
+    return buckets
+
+
+def _mission_dashboard_summary(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    compact_review_packet = {
+        key: review_packet.get(key)
+        for key in (
+            "summary",
+            "review_status",
+            "blocked_agent",
+            "blocked_reason",
+            "local_preview",
+            "links",
+            "test_evidence",
+            "visual_review",
+            "recommended_next_action",
+            "backflow_events",
+            "unresolved_blockers",
+        )
+        if key in review_packet
+    }
+    compact_review_packet = _compact_review_packet(compact_review_packet)
+    compact_metadata = {}
+    if compact_review_packet:
+        compact_metadata["review_packet"] = compact_review_packet
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    compact_vault = {
+        key: vault.get(key)
+        for key in (
+            "mission_stage",
+            "confidence_target",
+            "problem_statement",
+            "desired_outcome",
+            "current_agent",
+            "review_quality",
+            "vault_readiness",
+            "source_truth",
+        )
+        if key in vault
+    }
+    for key in ("problem_statement", "desired_outcome", "source_truth"):
+        if key in compact_vault:
+            compact_vault[key] = _short_text(compact_vault.get(key), 500)
+    return {
+        "mission_id": mission.get("mission_id", ""),
+        "status": mission.get("status", ""),
+        "source": mission.get("source", ""),
+        "raw_text": _short_text(mission.get("raw_text", ""), 700),
+        "title": _short_text(mission.get("title", ""), 180),
+        "urgency": mission.get("urgency", ""),
+        "mission_type": mission.get("mission_type", ""),
+        "approval_level": mission.get("approval_level", ""),
+        "selected_next_step": _short_text(mission.get("selected_next_step", ""), 300),
+        "owner_decision": _short_text(mission.get("owner_decision", ""), 300),
+        "created_at": mission.get("created_at", ""),
+        "updated_at": mission.get("updated_at", ""),
+        "queue_class": mission.get("queue_class", "owner_work"),
+        "queue_priority": mission.get("queue_priority"),
+        "vault": compact_vault,
+        "agent_workflow": _compact_workflow(mission.get("agent_workflow", [])),
+        "metadata": compact_metadata,
+    }
+
+
+def _compact_workflow(workflow):
+    items = workflow if isinstance(workflow, list) else []
+    compact = []
+    for item in items[:24]:
+        item = item if isinstance(item, dict) else {}
+        compact.append({
+            "agent": _short_text(item.get("agent", ""), 60),
+            "status": _short_text(item.get("status", "pending"), 40),
+            "findings": _short_text(item.get("findings", ""), 220),
+            "updated_at": _short_text(item.get("updated_at", ""), 60),
+        })
+    return compact
+
+
+def _compact_review_packet(packet):
+    packet = packet if isinstance(packet, dict) else {}
+    compact = dict(packet)
+    if "summary" in compact:
+        compact["summary"] = _short_text(compact.get("summary"), 900)
+    if "blocked_reason" in compact:
+        compact["blocked_reason"] = _short_text(compact.get("blocked_reason"), 500)
+    if "test_evidence" in compact:
+        compact["test_evidence"] = [_short_text(item, 350) for item in _as_list(compact.get("test_evidence"))[:4]]
+    if "backflow_events" in compact:
+        compact["backflow_events"] = _compact_event_list(compact.get("backflow_events"), limit=3)
+    if "unresolved_blockers" in compact:
+        compact["unresolved_blockers"] = _compact_event_list(compact.get("unresolved_blockers"), limit=5)
+    if "visual_review" in compact:
+        compact["visual_review"] = _compact_visual_review(compact.get("visual_review"))
+    return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
+
+
+def _compact_visual_review(visual_review):
+    review = visual_review if isinstance(visual_review, dict) else {}
+    media = []
+    for item in _as_list(review.get("media"))[:4]:
+        item = item if isinstance(item, dict) else {}
+        reference = str(item.get("reference") or item.get("url") or "").strip()
+        if reference.startswith("data:image/"):
+            reference = ""
+        media.append({
+            "label": _short_text(item.get("label") or item.get("filename") or "Review media", 90),
+            "reference": reference,
+            "media_type": item.get("media_type") or "image",
+        })
+    capture = review.get("capture") if isinstance(review.get("capture"), dict) else {}
+    return {
+        "status": review.get("status", ""),
+        "summary": _short_text(review.get("summary"), 600),
+        "capture_source": review.get("capture_source") or capture.get("capture_source", ""),
+        "local_preview": review.get("local_preview") if isinstance(review.get("local_preview"), dict) else {},
+        "media": [item for item in media if item.get("reference")],
+        "stage_evidence": _compact_event_list(review.get("stage_evidence"), limit=4),
+    }
+
+
+def _compact_runner_status(status):
+    status = status if isinstance(status, dict) else {}
+    compact = {
+        key: status.get(key)
+        for key in (
+            "success",
+            "status",
+            "active",
+            "pid",
+            "process_alive",
+            "heartbeat_fresh",
+            "last_seen",
+            "age_seconds",
+            "last_result_status",
+            "last_mission_id",
+            "elapsed_seconds",
+            "changed_files_count",
+            "final_artifact_present",
+            "execution_artifact",
+            "agent_runner_version",
+            "runner_source_commit",
+            "current_source_commit",
+            "runner_code_stale",
+            "current_agent",
+            "current_action",
+            "agent_ledger_path",
+            "log_path",
+            "heartbeat_path",
+            "command",
+            "next_action",
+            "can_start_from_web",
+            "can_stop_from_web",
+        )
+        if key in status
+    }
+    compact["stdout_tail"] = _short_text(status.get("stdout_tail"), 500)
+    compact["stderr_tail"] = _short_text(status.get("stderr_tail"), 500)
+    compact["orphan_processes"] = _compact_event_list(status.get("orphan_processes"), limit=3)
+    compact["agent_ledger"] = _compact_agent_ledger(status.get("agent_ledger"))
+    return compact
+
+
+def _compact_agent_ledger(ledger):
+    ledger = ledger if isinstance(ledger, dict) else {}
+    latest = ledger.get("latest_stage") if isinstance(ledger.get("latest_stage"), dict) else {}
+    return {
+        "version": ledger.get("version", ""),
+        "execution_id": ledger.get("execution_id", ""),
+        "status": ledger.get("status", ""),
+        "last_progress_at": ledger.get("last_progress_at", ""),
+        "blocked_agent": ledger.get("blocked_agent", ""),
+        "blocked_reason": _short_text(ledger.get("blocked_reason"), 400),
+        "backflow_events": _compact_event_list(ledger.get("backflow_events"), limit=3),
+        "latest_stage": {
+            "agent": latest.get("agent", ""),
+            "status": latest.get("status", ""),
+            "attempt": latest.get("attempt", 1),
+            "current_action": _short_text(latest.get("current_action"), 220),
+            "commands_run": [_short_text(item, 180) for item in _as_list(latest.get("commands_run"))[-3:]],
+            "files_inspected": [_short_text(item, 160) for item in _as_list(latest.get("files_inspected"))[-5:]],
+            "changed_files": [_short_text(item, 160) for item in _as_list(latest.get("changed_files"))[-5:]],
+            "stdout_tail": _short_text(latest.get("stdout_tail"), 500),
+            "stderr_tail": _short_text(latest.get("stderr_tail"), 500),
+            "quality_gate": latest.get("quality_gate") if isinstance(latest.get("quality_gate"), dict) else {},
+        },
+    }
+
+
+def _compact_event_list(items, limit=5):
+    compact = []
+    for item in _as_list(items)[:limit]:
+        if isinstance(item, dict):
+            compact.append({str(key): _short_text(value, 300) for key, value in item.items() if key not in {"reference", "image", "data_url"}})
+        else:
+            compact.append(_short_text(item, 300))
+    return compact
+
+
+def _as_list(value):
+    return value if isinstance(value, list) else ([] if value in (None, "") else [value])
+
+
+def _short_text(value, limit=500):
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 1]}..."
 
 
 @charlie_bp.route("/charlie/build-relay/missions/<mission_id>/review", methods=["POST"])

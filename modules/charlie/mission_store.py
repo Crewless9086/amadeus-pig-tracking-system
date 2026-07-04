@@ -285,7 +285,7 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     }, 201
 
 
-def list_missions(status="", limit=10, database_url=None, connect_factory=None):
+def list_missions(status="", limit=10, database_url=None, connect_factory=None, compact=False):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured", "missions": []}, 503
@@ -304,6 +304,7 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
     elif clean_status:
         where_clause = "where status = %(status)s"
     order_clause = _mission_order_clause(clean_status)
+    metadata_select = _mission_metadata_select(compact)
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -312,7 +313,7 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None):
                     select mission_id, status, source, telegram_user_id, telegram_chat_id,
                            raw_text, title, urgency, mission_type, approval_level,
                            selected_next_step, owner_decision, codex_chat_write_status,
-                           metadata_json, created_at, updated_at
+                           {metadata_select}, created_at, updated_at
                     from public.charlie_missions
                     {where_clause}
                     {order_clause}
@@ -1642,6 +1643,59 @@ def _mission_order_clause(status):
     return "order by created_at desc"
 
 
+def _mission_metadata_select(compact=False):
+    if not compact:
+        return "metadata_json"
+    workflow_summary = """
+        coalesce((
+            select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+                'agent', item->>'agent',
+                'status', item->>'status',
+                'findings', item->>'findings',
+                'updated_at', item->>'updated_at'
+            )))
+            from jsonb_array_elements(coalesce(metadata_json->'agent_workflow', '[]'::jsonb)) as item
+        ), '[]'::jsonb)
+    """
+    return f"""
+        jsonb_strip_nulls(jsonb_build_object(
+            'review_packet', jsonb_strip_nulls(jsonb_build_object(
+                'summary', metadata_json->'review_packet'->'summary',
+                'review_status', metadata_json->'review_packet'->'review_status',
+                'blocked_agent', metadata_json->'review_packet'->'blocked_agent',
+                'blocked_reason', metadata_json->'review_packet'->'blocked_reason',
+                'local_preview', metadata_json->'review_packet'->'local_preview',
+                'links', metadata_json->'review_packet'->'links',
+                'test_evidence', metadata_json->'review_packet'->'test_evidence',
+                'visual_review', metadata_json->'review_packet'->'visual_review',
+                'recommended_next_action', metadata_json->'review_packet'->'recommended_next_action',
+                'backflow_events', metadata_json->'review_packet'->'backflow_events',
+                'unresolved_blockers', metadata_json->'review_packet'->'unresolved_blockers'
+            )),
+            'mission_vault', jsonb_strip_nulls(jsonb_build_object(
+                'mission_stage', metadata_json->'mission_vault'->'mission_stage',
+                'confidence_target', metadata_json->'mission_vault'->'confidence_target',
+                'problem_statement', metadata_json->'mission_vault'->'problem_statement',
+                'desired_outcome', metadata_json->'mission_vault'->'desired_outcome',
+                'current_agent', metadata_json->'mission_vault'->'current_agent',
+                'review_quality', metadata_json->'mission_vault'->'review_quality',
+                'vault_readiness', metadata_json->'mission_vault'->'vault_readiness',
+                'source_truth', metadata_json->'mission_vault'->'source_truth'
+            )),
+            'agent_workflow', {workflow_summary},
+            'mission_context_pack', jsonb_strip_nulls(jsonb_build_object(
+                'version', metadata_json->'mission_context_pack'->'version'
+            )),
+            'intake_quality', metadata_json->'intake_quality',
+            'queue', metadata_json->'queue',
+            'media_references', jsonb_path_query_array(
+                coalesce(metadata_json->'media_references', '[]'::jsonb),
+                '$[*] ? (@.media_type != "image")'
+            )
+        ))
+    """
+
+
 def _mission_queue_filter(status):
     return "owner_queue" if _clean_text(status, 40).lower() in OWNER_QUEUE_FILTERS else ""
 
@@ -1825,7 +1879,7 @@ def _connect(database_url, connect_factory=None):
     if connect_factory:
         return connect_factory(database_url)
     import psycopg
-    return psycopg.connect(database_url, connect_timeout=10)
+    return psycopg.connect(database_url, connect_timeout=3)
 
 
 def _mission_id(raw_text, source_context, created_at):

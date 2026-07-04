@@ -28,7 +28,7 @@ RUNNER_COMMAND = [
 ]
 
 
-def runner_status(heartbeat_path=None, now=None, include_orphans=None):
+def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_git=True, include_ledger=True):
     heartbeat_path = Path(heartbeat_path or HEARTBEAT_PATH)
     if include_orphans is None:
         include_orphans = heartbeat_path == HEARTBEAT_PATH
@@ -39,7 +39,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
     process_alive = _pid_alive(payload.get("pid"))
     heartbeat_fresh = age_seconds is not None and age_seconds <= STALE_SECONDS
     runner_source_commit = str(payload.get("runner_source_commit") or "").strip()
-    current_source_commit = _current_git_commit()
+    current_source_commit = _current_git_commit() if include_git else ""
     code_stale = bool(runner_source_commit and current_source_commit and runner_source_commit != current_source_commit)
     active = process_alive and heartbeat_fresh and not code_stale
     final_artifact_present = bool(payload.get("final_artifact_present"))
@@ -87,7 +87,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None):
         "agent_ledger_path": payload.get("agent_ledger_path", ""),
         "stdout_tail": payload.get("stdout_tail", ""),
         "stderr_tail": payload.get("stderr_tail", ""),
-        "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")),
+        "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {},
         "orphan_processes": orphan_processes,
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
