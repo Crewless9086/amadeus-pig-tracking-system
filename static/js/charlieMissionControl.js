@@ -840,7 +840,7 @@
       </div>
       ${blocked ? blockedReviewBanner(reviewPacket) : ""}
       <dl class="charlie-mission-meta">
-        <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
+        <div><dt>Preview / visual proof</dt><dd>${localPreviewMarkup(localPreview, links, reviewPacket.visual_review || {})}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
@@ -961,7 +961,7 @@
         </section>
         <aside>
           <dl class="charlie-mission-meta">
-            <div><dt>Local view</dt><dd>${localPreviewMarkup(localPreview, links)}</dd></div>
+            <div><dt>Preview / visual proof</dt><dd>${localPreviewMarkup(localPreview, links, reviewPacket.visual_review || {})}</dd></div>
             <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
             <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
             <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
@@ -1206,7 +1206,7 @@
       <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
-      <strong>Local preview</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {})}
+      <strong>Preview / visual proof</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {}, packet.visual_review || {})}
       <strong>Visual Review</strong>${visualReviewMarkup(packet.visual_review || {}, packet.local_preview || {}, packet.links || {})}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
@@ -1647,11 +1647,20 @@
     return escapeHtml(text);
   }
 
-  function localPreviewMarkup(localPreview, links) {
+  function localPreviewMarkup(localPreview, links, visualReview) {
     const preview = localPreview || {};
     const linkMap = links || {};
     const url = safeText(preview.url || linkMap.local_preview).trim();
-    if (url) return reviewLink(url);
+    if (url) {
+      const classification = previewClassification(url, visualReview);
+      const label = classification === "generic_dashboard"
+        ? "General CHARLIE dashboard preview"
+        : "Mission-specific preview";
+      const note = classification === "generic_dashboard"
+        ? "Use as dashboard context only; not mission-specific proof."
+        : "Use with captured visual/test evidence below.";
+      return `<span class="charlie-preview-evidence is-${escapeHtml(classification)}">${reviewLink(url)}<small>${escapeHtml(label)}. ${escapeHtml(note)}</small></span>`;
+    }
     const path = safeText(preview.path).trim();
     if (path) return escapeHtml(path);
     const command = safeText(preview.command).trim();
@@ -1659,23 +1668,50 @@
     return '<span class="charlie-muted">Not captured</span>';
   }
 
-  function localPreviewDetailMarkup(localPreview, links) {
+  function localPreviewDetailMarkup(localPreview, links, visualReview) {
     const preview = localPreview || {};
     const linkMap = links || {};
     const url = safeText(preview.url || linkMap.local_preview).trim();
     const command = safeText(preview.command).trim();
     const path = safeText(preview.path).trim();
     const status = safeText(preview.status || (url ? "captured" : "not_captured"));
-    const message = safeText(preview.message || (url ? "Mission-specific local preview URL captured." : "No mission-specific local preview URL was captured."));
+    const classification = previewClassification(url, visualReview);
+    const defaultMessage = classification === "generic_dashboard"
+      ? "This is the shared CHARLIE dashboard preview. It can help open the review board, but it is not mission-specific visual proof."
+      : (url ? "Mission-specific local preview URL captured." : "No mission-specific local preview URL was captured.");
+    const message = safeText(preview.message || defaultMessage);
     return `
       <dl class="charlie-mission-meta">
         <div><dt>Status</dt><dd>${escapeHtml(status)}</dd></div>
+        <div><dt>Evidence type</dt><dd>${escapeHtml(classification === "generic_dashboard" ? "General dashboard preview" : (url ? "Mission-specific preview" : "Not captured"))}</dd></div>
         <div><dt>Open</dt><dd>${url ? reviewLink(url) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
         <div><dt>Command</dt><dd>${command ? escapeHtml(command) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
         <div><dt>Artifact</dt><dd>${path ? escapeHtml(path) : '<span class="charlie-muted">Not captured</span>'}</dd></div>
       </dl>
       <p class="charlie-muted">${escapeHtml(message)}</p>
     `;
+  }
+
+  function previewClassification(url, visualReview) {
+    const text = safeText(url).trim();
+    if (!text) return "missing";
+    const review = visualReview && typeof visualReview === "object" ? visualReview : {};
+    const capture = review.capture && typeof review.capture === "object" ? review.capture : {};
+    const captureSource = safeText(review.capture_source || capture.capture_source || "");
+    const summary = safeText(review.summary || "");
+    if (isGenericCharlieDashboardUrl(text) || captureSource === "generated_owner_review_packet" || /control dashboard preview not mission visual/i.test(summary)) {
+      return "generic_dashboard";
+    }
+    return "mission_specific";
+  }
+
+  function isGenericCharlieDashboardUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      return parsed.pathname.replace(/\/+$/, "") === "/charlie" || parsed.pathname === "";
+    } catch (error) {
+      return /(^https?:\/\/[^/]+\/charlie\/?$)|(^\/charlie\/?$)/i.test(safeText(url));
+    }
   }
 
   function firstReviewText(items, fallback) {
@@ -1711,7 +1747,7 @@
             <span>${escapeHtml(status.replace(/_/g, " "))}</span>
             <small>${escapeHtml(visualLabel)}</small>
           </div>
-          ${localPreviewMarkup(preview || {}, links || {})}
+          ${localPreviewMarkup(preview || {}, links || {}, review)}
         </div>
         ${media.length ? `<div class="charlie-visual-review-media">${media.map(visualReviewMediaMarkup).join("")}</div>` : `<p class="charlie-muted">${escapeHtml(summary)}</p>`}
         ${stageEvidence.length ? `<div class="charlie-visual-stage-evidence">${stageEvidence.slice(0, 4).map((item) => `<span>${escapeHtml(safeText(item.agent || "agent"))}: ${escapeHtml(safeText(item.summary || ""))}</span>`).join("")}</div>` : ""}
