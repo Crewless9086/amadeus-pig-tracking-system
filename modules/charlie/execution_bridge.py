@@ -2659,6 +2659,8 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if field == "visual_acceptance_decision" and not _artifact_is_ui_related(artifact):
             continue
         decision = str(artifact.get(field) or "").strip().lower()
+        if agent == "risk_agent" and field == "recommended_owner_decision" and decision == "pause":
+            continue
         if decision and decision not in passing_values:
             return {
                 "passed": False,

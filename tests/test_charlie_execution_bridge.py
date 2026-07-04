@@ -939,8 +939,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
 
         self.assertTrue(result["passed"], result)
-        self.assertTrue(result["deferred_blocker"])
-        self.assertIn("deferred_evidence", result["reason"])
+        self.assertNotIn("deferred_blocker", result)
+        self.assertIn("quality gate passed", result["reason"])
+
+    def test_risk_agent_pause_is_advisory_without_present_violation(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "summary": "Owner review packet readback must be proven by later final review before pr_ready.",
+            "recommended_owner_decision": "pause",
+            "changed_files": [],
+            "risks": ["Final reviewer must prove persisted review packet readback."],
+        })
+
+        result = execution_bridge._agent_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
 
     def test_parallel_read_only_risk_agent_still_blocks_present_red_zone_violation(self):
         artifact = _successful_stage_payload("risk_agent")
