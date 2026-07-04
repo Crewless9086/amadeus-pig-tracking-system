@@ -1187,6 +1187,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         packet = update_vault.call_args.args[1]["review_packet"]
         self.assertIn("no final artifact", packet["summary"].lower())
         self.assertIn("modules/charlie/routes.py", packet["changed_files"])
+        self.assertTrue(packet["partial_work"]["recoverable"])
+        self.assertEqual(packet["partial_work"]["changed_files_count"], 1)
+        self.assertIn("modules/charlie/routes.py", packet["partial_work"]["changed_files"])
+        self.assertIn("commit/push", packet["recommended_next_action"])
+        self.assertEqual(result["partial_work"]["changed_files_count"], 1)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "blocked")
 

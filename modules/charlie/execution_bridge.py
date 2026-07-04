@@ -681,6 +681,7 @@ def block_codex_execution_without_final_artifact(
     changed_files = _changed_files()
     stderr_text = _read_text(artifact["stderr_path"])
     stdout_text = _read_text(artifact["stdout_path"])
+    partial_work = _partial_work_recovery_packet(changed_files, stdout_text, stderr_text)
     summary = (
         "Codex execution was stopped by the CHARLIE supervisor because no final artifact was produced. "
         "Local file changes were detected and are preserved for owner/developer review."
@@ -703,6 +704,8 @@ def block_codex_execution_without_final_artifact(
             "test_evidence": [
                 "Automated mission tests were not completed because Codex did not produce a final artifact.",
             ],
+            "partial_work": partial_work,
+            "recommended_next_action": partial_work["recommended_next_action"],
             "local_preview": {
                 "url": "",
                 "command": "",
@@ -755,6 +758,7 @@ def block_codex_execution_without_final_artifact(
             "returncode": returncode,
             "changed_files": changed_files,
             "supervisor_status": "codex_no_final_artifact_timeout",
+            "partial_work": partial_work,
         },
         database_url=database_url,
         connect_factory=connect_factory,
@@ -772,7 +776,31 @@ def block_codex_execution_without_final_artifact(
         "stdout_path": str(artifact["stdout_path"]),
         "stderr_path": str(artifact["stderr_path"]),
         "final_message_path": str(artifact["final_path"]),
+        "partial_work": partial_work,
     }, 504
+
+
+def _partial_work_recovery_packet(changed_files, stdout_text="", stderr_text=""):
+    changed_files = [str(path) for path in (changed_files or []) if str(path or "").strip()]
+    combined = f"{stdout_text or ''}\n{stderr_text or ''}"
+    pr_links = sorted(set(re.findall(r"https://github\.com/[^\s)]+/pull/\d+", combined)))
+    commit_refs = sorted(set(re.findall(r"\b[0-9a-f]{7,40}\b", combined)))[:12]
+    recoverable = bool(changed_files or pr_links or commit_refs)
+    if changed_files:
+        next_action = "Review the preserved local diff, run focused tests, commit/push the recovery, then rerun or close the mission as training."
+    elif pr_links or commit_refs:
+        next_action = "Inspect the referenced PR/commit evidence, verify checks, then update the mission manually or rerun from a clean mission."
+    else:
+        next_action = "Treat as failed execution with no recoverable diff; rerun from a clean mission after checking stderr."
+    return {
+        "recoverable": recoverable,
+        "changed_files_count": len(changed_files),
+        "changed_files": changed_files[:40],
+        "pr_links": pr_links[:10],
+        "commit_refs": commit_refs,
+        "recommended_next_action": next_action,
+        "supervisor_note": "No-final-artifact timeout is a blocking quality gate; this packet preserves recovery evidence without approving the mission.",
+    }
 
 
 def prepare_release_execution(mission_id="", output_dir=None, database_url=None, connect_factory=None):
