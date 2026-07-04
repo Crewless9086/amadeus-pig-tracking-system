@@ -65,6 +65,27 @@ class CharlieReplayStressTests(unittest.TestCase):
         self.assertEqual(result["mission_count"], 2)
         self.assertIn("average_score", result)
 
+    def test_new_unexecuted_mission_is_not_scored_as_failed_replay(self):
+        result = stress_replay_mission({"mission_id": "NEW", "status": "new", "metadata": {}})
+
+        self.assertEqual(result["status"], "not_started")
+        self.assertIsNone(result["score"])
+
+        batch = stress_replay_missions([
+            {"mission_id": "NEW", "status": "new", "metadata": {}},
+            {
+                "mission_id": "READY",
+                "status": "pr_ready",
+                "metadata": {
+                    "mission_memory": {"events": [{"agent": "reviewer", "type": "agent_complete"}]},
+                    "review_packet": {"review_status": "ready_for_owner_review", "test_evidence": ["pass"]},
+                },
+            },
+        ])
+
+        self.assertEqual(batch["mission_count"], 2)
+        self.assertEqual(batch["scored_mission_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

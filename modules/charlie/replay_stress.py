@@ -6,9 +6,21 @@ REPLAY_STRESS_VERSION = "charlie_replay_stress_v1"
 
 def stress_replay_mission(mission):
     mission = mission if isinstance(mission, dict) else {}
+    mission_status = str(mission.get("status") or "").strip().lower()
     replay = replay_packet(mission)
     review = replay.get("review_packet") if isinstance(replay.get("review_packet"), dict) else {}
     memory = replay.get("mission_memory") if isinstance(replay.get("mission_memory"), dict) else {}
+    if mission_status in {"new", "triaged", "planned", "approved"} and not review and not (memory.get("events") or memory.get("latest_by_agent")):
+        return {
+            "version": REPLAY_STRESS_VERSION,
+            "mission_id": replay.get("mission_id", ""),
+            "status": "not_started",
+            "score": None,
+            "checks": [],
+            "issues": [],
+            "recommended_actions": ["Mission has not executed yet; replay stress starts after first runner artifact, block, or review packet."],
+            "replay": replay,
+        }
     issues = []
     checks = [
         _check("final_artifact_contract", bool(review.get("review_status") or review.get("blocked_reason")), "Review packet has no status or blocker reason."),
@@ -36,12 +48,14 @@ def stress_replay_mission(mission):
 def stress_replay_missions(missions):
     missions = [mission for mission in missions if isinstance(mission, dict)]
     results = [stress_replay_mission(mission) for mission in missions]
-    average = round(sum(item["score"] for item in results) / len(results), 1) if results else 0
+    scored = [item for item in results if isinstance(item.get("score"), (int, float))]
+    average = round(sum(item["score"] for item in scored) / len(scored), 1) if scored else 0
     return {
         "version": REPLAY_STRESS_VERSION,
         "mission_count": len(results),
+        "scored_mission_count": len(scored),
         "average_score": average,
-        "status": "pass" if results and average >= 82 else "needs_more_evidence",
+        "status": "pass" if scored and average >= 82 else "needs_more_evidence",
         "results": results,
     }
 
@@ -52,7 +66,7 @@ def golden_example_candidate(mission):
     replay = stress.get("replay", {})
     review = replay.get("review_packet") if isinstance(replay.get("review_packet"), dict) else {}
     qualifies = (
-        stress.get("score", 0) >= 90
+        (stress.get("score") or 0) >= 90
         and review.get("review_status") == "ready_for_owner_review"
         and bool(review.get("test_evidence"))
         and not review.get("blocked_reason")
