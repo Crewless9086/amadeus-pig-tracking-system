@@ -998,6 +998,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(quality["passed"])
         self.assertEqual(target, "frontend_design_implementer")
 
+    def test_non_ui_visual_notes_do_not_count_as_ui_evidence(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": ["Not a UI mission. No frontend, dashboard, screenshot, or visual evidence gate was required."],
+            "visual_reference_analysis": "Not applicable: mission is explicitly no-UI.",
+        })
+
+        self.assertFalse(execution_bridge._artifact_has_ui_evidence(artifact))
+
+    def test_backflow_target_resolves_ui_agent_to_builder_when_not_in_sequence(self):
+        target = execution_bridge._resolve_agent_backflow_target(
+            "frontend_design_implementer",
+            ["idea_expander", "source_mapper", "builder", "tester", "reviewer"],
+        )
+
+        self.assertEqual(target, "builder")
+
     def test_technical_architect_can_record_risks_without_judgement_block(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["risk_notes"] = [

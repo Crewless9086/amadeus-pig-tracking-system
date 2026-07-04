@@ -515,7 +515,10 @@ def run_agent_execution_bridge_v2(
             artifact = _auto_package_builder_changes(mission, artifact)
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
-            backflow_target = _agent_backflow_target(agent, artifact, quality)
+            backflow_target = _resolve_agent_backflow_target(
+                _agent_backflow_target(agent, artifact, quality),
+                agent_sequence,
+            )
             if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
                 backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
                 _append_backflow_event(
@@ -3048,7 +3051,19 @@ def _agent_backflow_target(agent, artifact, quality):
     return ""
 
 
+def _resolve_agent_backflow_target(target_agent, agent_sequence=None):
+    target_agent = str(target_agent or "").strip().lower()
+    agent_sequence = list(agent_sequence or AGENT_SEQUENCE)
+    if target_agent in agent_sequence:
+        return target_agent
+    if target_agent == "frontend_design_implementer" and "builder" in agent_sequence:
+        return "builder"
+    return ""
+
+
 def _artifact_has_ui_evidence(artifact):
+    if _artifact_explicitly_non_ui(artifact):
+        return False
     keys = (
         "visual_acceptance_decision",
         "visual_review_notes",
@@ -3064,6 +3079,29 @@ def _artifact_has_ui_evidence(artifact):
         for key in ("summary", "stdout_tail", "stderr_tail", "next_action")
     ).lower()
     return any(term in text for term in ("ui", "visual", "screenshot", "browser", "/charlie", "dashboard"))
+
+
+def _artifact_explicitly_non_ui(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    values = []
+    for key in (
+        "summary",
+        "stdout_tail",
+        "stderr_tail",
+        "next_action",
+        "visual_reference_analysis",
+        "reference_match_assessment",
+    ):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value)
+        elif value:
+            values.append(str(value))
+    for key in ("visual_review_notes", "media_references_used", "browser_checks", "screenshots_captured"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value)
+    return explicit_non_ui_requested(" ".join(values))
 
 
 def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifact=None, quality=None):
