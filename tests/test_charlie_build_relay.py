@@ -550,7 +550,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
         self.assertEqual(data["missions"][0]["mission_id"], "MISSION-1")
-        list_missions.assert_called_once_with(status="", limit="1")
+        list_missions.assert_called_once_with(status="", limit="1", compact=False)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_missions")
@@ -566,7 +566,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        list_missions.assert_called_once_with(status="owner_queue", limit="30")
+        list_missions.assert_called_once_with(status="owner_queue", limit="30", compact=False)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.vault_tables_health")
@@ -598,7 +598,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["review"]["ready"][0]["mission_id"], "CHARLIE-MISSION-DEEP-REVIEW")
         self.assertEqual(data["review"]["blocked"][0]["mission_id"], "CHARLIE-MISSION-DEEP-BLOCKED")
         self.assertEqual(data["release"]["waiting_final_bridge"][0]["mission_id"], "CHARLIE-MISSION-DEEP-RELEASE")
-        list_missions.assert_any_call(status="owner_queue", limit=8)
+        list_missions.assert_any_call(status="owner_queue", limit=8, compact=True)
         self.assertEqual(data["charlie_core"]["readiness_detail"], "summary_only_fast_refresh")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
@@ -1087,7 +1087,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(data["status"], "approved_waiting_for_local_runner")
         self.assertEqual(data["next_approved_mission"]["mission_id"], "CHARLIE-MISSION-DEEP-APPROVED")
-        list_missions.assert_called_once_with(status="owner_queue", limit=30)
+        list_missions.assert_called_once_with(status="owner_queue", limit=8, compact=True)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.local_runner_status")

@@ -75,6 +75,7 @@ def charlie_build_relay_missions_route():
     result, status_code = list_missions(
         status=request.args.get("status", ""),
         limit=request.args.get("limit", 10),
+        compact=str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"},
     )
     compact = str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"}
     if compact and isinstance(result, dict) and isinstance(result.get("missions"), list):
@@ -131,14 +132,7 @@ def charlie_build_relay_runner_status_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    owner_queue, owner_queue_status = list_missions(status="owner_queue", limit=30)
-    queue_missions = [_mission_dashboard_summary(mission) for mission in owner_queue.get("missions", [])]
-    buckets = _mission_status_buckets(queue_missions)
-    approved_queue = buckets.get("approved", [])[:5]
-    in_progress = buckets.get("in_progress", [])[:1]
-    pr_ready = buckets.get("pr_ready", [])[:5]
-    release_approved = buckets.get("release_approved", [])[:1]
-    release_in_progress = buckets.get("release_in_progress", [])[:1]
+    owner_queue, owner_queue_status = _dashboard_owner_queue(limit=8)
     if owner_queue_status >= 400:
         return jsonify({
             "success": False,
@@ -146,12 +140,19 @@ def charlie_build_relay_runner_status_route():
             "owner_queue_status": owner_queue.get("status"),
             "can_run_shell_from_web": False,
         }), 503
+    queue_missions = owner_queue.get("missions", [])
+    buckets = _mission_status_buckets(queue_missions)
+    approved_queue = buckets.get("approved", [])[:5]
+    in_progress = buckets.get("in_progress", [])[:1]
+    pr_ready = buckets.get("pr_ready", [])[:5]
+    release_approved = buckets.get("release_approved", [])[:1]
+    release_in_progress = buckets.get("release_in_progress", [])[:1]
 
     active_mission = _first_mission(in_progress) or _first_mission(release_in_progress)
     review_backlog = pr_ready
     next_approved = _first_mission(approved_queue)
     next_release_approved = _first_mission(release_approved)
-    local_status = _compact_runner_status(local_runner_status(include_orphans=False))
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -205,8 +206,8 @@ def charlie_build_relay_command_center_route():
     if denied:
         return denied
     summary, summary_status = mission_status_summary()
-    recent, recent_status = list_missions(status="owner_queue", limit=8)
-    recent_missions = [_mission_dashboard_summary(mission) for mission in recent.get("missions", [])]
+    recent, recent_status = _dashboard_owner_queue(limit=8)
+    recent_missions = recent.get("missions", [])
     buckets = _mission_status_buckets(recent_missions)
     approved_queue = buckets.get("approved", [])[:20]
     review_ready = buckets.get("pr_ready", [])[:5]
@@ -230,7 +231,7 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     detailed = str(request.args.get("detail") or "").strip().lower() in {"1", "true", "yes", "full"}
-    local_status = _compact_runner_status(local_runner_status(include_orphans=False))
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
     if detailed:
         vault_health, _vault_health_status = vault_tables_health()
         improvements, _improvements_status = list_improvement_proposals(limit=8)
@@ -273,9 +274,9 @@ def charlie_build_relay_command_center_route():
             "templates": sorted(WORKFLOW_TEMPLATES.keys()),
             "recent_readiness": readiness_items,
             "readiness_detail": "full" if detailed else "summary_only_fast_refresh",
-            "model_registry": model_registry_packet(),
-            "tool_permissions": tool_permission_registry(),
-            "owner_preferences": owner_preference_packet(),
+            "model_registry": _compact_model_registry_packet(),
+            "tool_permissions": _compact_tool_permission_registry(),
+            "owner_preferences": _compact_owner_preference_packet(),
         },
         "counts": summary.get("counts", {}),
         "vault": {
@@ -523,6 +524,46 @@ def charlie_build_relay_review_media_route(mission_id, filename):
 def _owner_work_missions_for_status(status, limit=1):
     parsed_limit = max(int(limit or 1), 1)
     return list_owner_work_missions(status, limit=parsed_limit)
+
+
+def _dashboard_owner_queue(limit=8):
+    result, status_code = list_missions(status="owner_queue", limit=limit, compact=True)
+    if status_code >= 400:
+        return result, status_code
+    return {
+        **result,
+        "missions": [_mission_dashboard_summary(mission) for mission in result.get("missions", [])],
+    }, status_code
+
+
+def _compact_model_registry_packet():
+    registry = model_registry_packet()
+    models = registry.get("models") if isinstance(registry.get("models"), dict) else {}
+    return {
+        "version": registry.get("version", ""),
+        "models": {key: {"registry_key": key} for key in models},
+        "safety_note": registry.get("safety_note", "Manual routing"),
+    }
+
+
+def _compact_tool_permission_registry():
+    registry = tool_permission_registry()
+    allowlist = registry.get("agent_tool_allowlist") if isinstance(registry.get("agent_tool_allowlist"), dict) else {}
+    red_zone = registry.get("red_zone_tools") if isinstance(registry.get("red_zone_tools"), list) else []
+    return {
+        "version": registry.get("version", ""),
+        "agent_tool_allowlist": {agent: [] for agent in allowlist},
+        "red_zone_tools": red_zone[:12],
+    }
+
+
+def _compact_owner_preference_packet():
+    packet = owner_preference_packet()
+    return {
+        "version": packet.get("version", ""),
+        "summary": _short_text(packet.get("summary"), 300),
+        "source": packet.get("source", ""),
+    }
 
 
 def _first_mission(result):

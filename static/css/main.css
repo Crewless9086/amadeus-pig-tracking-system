@@ -9249,6 +9249,8 @@ body.oom-farm-command-body {
 }
 
 .charlie-menu-rail .charlie-mission-list {
+    display: grid;
+    gap: 8px;
     max-height: min(52vh, 620px);
     overflow-y: auto;
     padding-right: 4px;
@@ -9256,11 +9258,63 @@ body.oom-farm-command-body {
 }
 
 .charlie-menu-rail .charlie-mission-card {
+    display: grid;
+    gap: 7px;
     min-height: 0;
+    overflow: hidden;
 }
 
+.charlie-menu-rail .charlie-mission-card-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.charlie-menu-rail .charlie-mission-card h3 {
+    display: -webkit-box;
+    margin: 6px 0 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 0.9rem;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+}
+
+.charlie-menu-rail .charlie-mission-card-header code,
+.charlie-menu-rail .charlie-mission-card.is-current::before,
 .charlie-menu-rail .charlie-workflow-actions {
+    display: none;
+}
+
+.charlie-menu-rail .charlie-mission-card p {
+    display: none;
+}
+
+.charlie-menu-rail .charlie-vault-summary,
+.charlie-menu-rail .charlie-agent-strip,
+.charlie-menu-rail .charlie-mission-card details {
+    display: none;
+}
+
+.charlie-menu-rail .charlie-card-tags,
+.charlie-menu-rail .charlie-mission-meta {
+    margin-top: 0;
+}
+
+.charlie-menu-rail .charlie-mission-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.charlie-menu-rail .charlie-mission-meta div {
+    min-height: 48px;
+    padding: 7px;
+}
+
+.charlie-menu-rail .charlie-mission-meta dt,
+.charlie-menu-rail .charlie-mission-meta dd {
+    font-size: 0.72rem;
 }
 
 .charlie-menu-rail .charlie-mission-actions {
@@ -9346,7 +9400,7 @@ body.oom-farm-command-body {
 }
 
 .charlie-command-center-grid {
-    grid-template-columns: repeat(4, minmax(210px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -9475,8 +9529,8 @@ body.oom-farm-command-body {
 .charlie-agent-ring {
     position: static;
     display: grid;
-    grid-template-columns: repeat(6, minmax(112px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(6, minmax(92px, 1fr));
+    gap: 8px;
     align-items: stretch;
 }
 
@@ -9484,7 +9538,7 @@ body.oom-farm-command-body {
     position: relative;
     inset: auto;
     width: auto;
-    min-height: 150px;
+    min-height: 144px;
     transform: none;
 }
 
@@ -9662,6 +9716,10 @@ body.oom-farm-command-body {
     line-height: 1.35;
 }
 
+.charlie-review-empty-state .charlie-review-actions {
+    margin-top: 2px;
+}
+
 .charlie-review-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -9711,11 +9769,11 @@ body.oom-farm-command-body {
         flex-direction: column;
     }
 
-    .charlie-mission-stage {
+    .charlie-side-rail {
         order: 1;
     }
 
-    .charlie-side-rail {
+    .charlie-mission-stage {
         order: 2;
     }
 
@@ -9727,6 +9785,16 @@ body.oom-farm-command-body {
 
     .charlie-menu-rail .charlie-mission-list {
         max-height: 520px;
+    }
+
+    .charlie-side-rail {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .charlie-side-rail .charlie-review-panel {
+        grid-column: 1 / -1;
     }
 
     .charlie-agent-ring,
@@ -9775,6 +9843,10 @@ body.oom-farm-command-body {
 
     .charlie-live-panel {
         min-height: 0;
+    }
+
+    .charlie-side-rail {
+        grid-template-columns: 1fr;
     }
 
     .charlie-menu-rail .charlie-mission-list {

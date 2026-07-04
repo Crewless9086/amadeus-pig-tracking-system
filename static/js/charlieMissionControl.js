@@ -165,7 +165,7 @@
     setMessage("", "info");
     const status = els.filter ? els.filter.value : "";
     state.activeFilter = status || "";
-    const query = status ? `?status=${encodeURIComponent(status)}&limit=30&compact=1` : "?limit=30&compact=1";
+    const query = status ? `?status=${encodeURIComponent(status)}&limit=12&compact=1` : "?limit=12&compact=1";
     try {
       const [summary, missions] = await Promise.all([
         fetchJson("/api/charlie/build-relay/missions/summary"),
@@ -403,8 +403,8 @@
     if (!state.reviewMissions.length) {
       els.reviewList.innerHTML = `
         <div class="charlie-empty charlie-review-empty-state">
-          <strong>No missions are waiting at owner review.</strong>
-          <span>Owner release controls activate only when a mission reaches review ready or blocked review.</span>
+          <strong>No live review-ready card is available.</strong>
+          <span>Owner release controls stay visible here, but final approval and send-back actions activate only on a real review-ready or blocked mission card.</span>
           <div class="charlie-mission-actions charlie-review-actions" aria-label="Owner review controls unavailable">
             <button type="button" disabled>Open Review</button>
             <button type="button" disabled>Approve Final</button>
