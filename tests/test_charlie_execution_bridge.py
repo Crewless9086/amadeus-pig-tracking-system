@@ -1704,6 +1704,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "No release-blocking runner reliability defect was proven by this QA stage.",
             "Owner review evidence must disclose the dirty worktree caveat.",
         ]
+        artifact["stdout_tail"] = (
+            "confidence 0.97 based on execution_bridge evidence; "
+            "git status shows unrelated dirty planning/CODEX_CHAT.md plus untracked test-results."
+        )
+        artifact["stderr_tail"] = ""
         artifact["confidence"] = "97%"
         artifact["confidence_reason"] = "Based on Vault Brain source docs, inspected repo files, QA evidence, and unit test evidence."
 

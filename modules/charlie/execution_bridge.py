@@ -2714,6 +2714,8 @@ def _negative_judgement_evidence(agent, artifact):
     for field in fields:
         if field == "qa_findings" and _qa_findings_are_advisory(agent, artifact):
             continue
+        if field in {"stdout_tail", "stderr_tail"} and _raw_judgement_tails_are_advisory(agent, artifact):
+            continue
         value = artifact.get(field)
         if isinstance(value, list):
             values.extend(value)
@@ -2723,6 +2725,14 @@ def _negative_judgement_evidence(agent, artifact):
 
 
 def _qa_findings_are_advisory(agent, artifact):
+    if agent != "qa_red_team":
+        return False
+    status = str((artifact or {}).get("red_team_status") or "").strip().lower()
+    risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
+    return status == "pass" and risk not in {"high", "critical"}
+
+
+def _raw_judgement_tails_are_advisory(agent, artifact):
     if agent != "qa_red_team":
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
