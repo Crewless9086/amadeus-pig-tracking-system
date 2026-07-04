@@ -3585,8 +3585,20 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     project_truth = vault.get("project_truth") if isinstance(vault.get("project_truth"), dict) else {}
     writes = []
+    vault_write_unavailable = False
 
-    def record(label, result_status):
+    def record(label, write_call):
+        nonlocal vault_write_unavailable
+        if vault_write_unavailable:
+            writes.append({
+                "label": label,
+                "status_code": 503,
+                "success": False,
+                "status": "skipped_after_vault_write_unavailable",
+                "error_type": "",
+            })
+            return
+        result_status = write_call() if callable(write_call) else write_call
         result, status_code = result_status
         writes.append({
             "label": label,
@@ -3595,8 +3607,10 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             "status": result.get("status", ""),
             "error_type": result.get("error_type", ""),
         })
+        if status_code >= 500 and not result.get("success") and result.get("configured") is not False:
+            vault_write_unavailable = True
 
-    record("project", vault_store.write_project({
+    record("project", lambda: vault_store.write_project({
         "project_id": project_truth.get("project_key") or mission.get("mission_type") or "charlie_core",
         "project_key": project_truth.get("project_key") or "charlie_core",
         "name": project_truth.get("workflow_label") or mission.get("title") or "CHARLIE mission",
@@ -3608,7 +3622,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
             continue
-        record(f"artifact:{agent}", vault_store.write_artifact(
+        record(f"artifact:{agent}", lambda agent=agent, artifact=artifact: vault_store.write_artifact(
             mission_id,
             f"agent_artifact_{agent}",
             artifact,
@@ -3619,7 +3633,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
             database_url=database_url,
             connect_factory=connect_factory,
         ))
-        record(f"agent_run:{agent}", vault_store.write_agent_run(
+        record(f"agent_run:{agent}", lambda agent=agent, artifact=artifact: vault_store.write_agent_run(
             mission_id,
             agent,
             {
@@ -3640,14 +3654,14 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
         ))
         handoff = artifact.get("handoff_report") if isinstance(artifact.get("handoff_report"), dict) else {}
         if handoff:
-            record(f"handoff:{agent}", vault_store.write_handoff_report(
+            record(f"handoff:{agent}", lambda handoff=handoff: vault_store.write_handoff_report(
                 handoff,
                 database_url=database_url,
                 connect_factory=connect_factory,
             ))
         quality = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
         if quality:
-            record(f"quality:{agent}", vault_store.write_quality_gate(
+            record(f"quality:{agent}", lambda agent=agent, quality=quality: vault_store.write_quality_gate(
                 mission_id,
                 f"{agent}_quality_gate",
                 "pass" if quality.get("passed") else "fail",
@@ -3658,7 +3672,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
                 connect_factory=connect_factory,
             ))
 
-    record("brain_guard", vault_store.write_quality_gate(
+    record("brain_guard", lambda: vault_store.write_quality_gate(
         mission_id,
         "brain_guard_review_gate",
         "pass" if brain_guard.get("passed") else "fail",
@@ -3668,7 +3682,7 @@ def _write_normalized_vault_records(mission, execution_id, ledger, artifacts, br
         database_url=database_url,
         connect_factory=connect_factory,
     ))
-    record("audit", vault_store.write_audit_event(
+    record("audit", lambda: vault_store.write_audit_event(
         "agent_runner_v2_completed_owner_review_packet",
         mission_id=mission_id,
         actor="charlie_core",
@@ -4957,6 +4971,7 @@ def _run_codex_process(
     finally:
         stdout_handle.close()
         stderr_handle.close()
+        _wait_for_file_handles_released([stdout_path, stderr_path])
     stdout = _read_text(stdout_path)
     stderr = _read_text(stderr_path)
     returncode = process.returncode
@@ -5006,6 +5021,26 @@ def _terminate_process_tree(pid):
             os.kill(pid, signal.SIGTERM)
         except OSError:
             return
+
+
+def _wait_for_file_handles_released(paths, timeout_seconds=2.0):
+    deadline = time.monotonic() + float(timeout_seconds or 0)
+    paths = [Path(path) for path in (paths or []) if path]
+    while paths and time.monotonic() < deadline:
+        locked = []
+        for path in paths:
+            if not path.exists():
+                continue
+            try:
+                with path.open("a", encoding="utf-8", errors="replace"):
+                    pass
+            except OSError:
+                locked.append(path)
+        if not locked:
+            return True
+        paths = locked
+        time.sleep(0.05)
+    return False
 
 
 def _resolve_execution_artifact(mission_id, execution_id="", prompt_path=None, stdout_path=None, stderr_path=None, final_path=None):

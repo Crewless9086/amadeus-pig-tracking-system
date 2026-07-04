@@ -879,6 +879,47 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("Vault-sensitive files", result["reason"])
 
+    @patch("modules.charlie.execution_bridge.vault_store.write_audit_event")
+    @patch("modules.charlie.execution_bridge.vault_store.write_quality_gate")
+    @patch("modules.charlie.execution_bridge.vault_store.write_agent_run")
+    @patch("modules.charlie.execution_bridge.vault_store.write_artifact")
+    @patch("modules.charlie.execution_bridge.vault_store.write_project")
+    def test_normalized_vault_write_short_circuits_after_db_unavailable(
+        self,
+        write_project,
+        write_artifact,
+        write_agent_run,
+        write_quality_gate,
+        write_audit_event,
+    ):
+        write_project.return_value = (
+            {
+                "success": False,
+                "configured": True,
+                "status": "project_written_failed",
+                "error_type": "OperationalError",
+            },
+            503,
+        )
+
+        result = execution_bridge._write_normalized_vault_records(
+            {"mission_id": "CHARLIE-MISSION-EXEC123", "vault": {}},
+            "EXEC123",
+            {"started_at": "2026-07-04T00:00:00+00:00"},
+            {"builder": _successful_stage_payload("builder")},
+            {"passed": True, "reason": "ok"},
+            database_url="postgres://offline",
+        )
+
+        self.assertEqual(result["failed_count"], len(result["writes"]))
+        self.assertEqual(result["writes"][0]["status"], "project_written_failed")
+        self.assertTrue(any(item["status"] == "skipped_after_vault_write_unavailable" for item in result["writes"][1:]))
+        write_project.assert_called_once()
+        write_artifact.assert_not_called()
+        write_agent_run.assert_not_called()
+        write_quality_gate.assert_not_called()
+        write_audit_event.assert_not_called()
+
     def test_brain_guard_blocks_owner_review_without_vault_citations(self):
         artifacts = {
             "planner": {
