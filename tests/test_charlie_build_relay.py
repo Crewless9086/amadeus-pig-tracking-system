@@ -788,6 +788,38 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_review_packet.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.get_mission")
+    def test_mission_replay_route_returns_memory_and_debug_contracts(self, get_mission, _owner_access):
+        get_mission.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "MISSION-1",
+                "title": "Replay test",
+                "status": "blocked",
+                "metadata": {
+                    "mission_memory": {
+                        "version": "charlie_mission_memory_v1",
+                        "events": [{"agent": "builder", "type": "agent_blocked", "summary": "Blocked."}],
+                    },
+                    "review_packet": {"blocked_agent": "builder", "blocked_reason": "Missing final artifact."},
+                },
+                "agent_workflow": [{"agent": "planner"}, {"agent": "builder"}, {"agent": "reviewer"}],
+            },
+        }, 200)
+
+        response = self.client.get("/api/charlie/build-relay/missions/MISSION-1/replay")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mission_memory"]["version"], "charlie_mission_memory_v1")
+        self.assertEqual(data["debug_focus"]["blocked_agent"], "builder")
+        self.assertEqual(data["final_artifact_contract"]["version"], "charlie_final_artifact_contract_v2")
+        self.assertIn("builder", data["parallel_planning"]["serialized_write_agents"])
+        get_mission.assert_called_once_with("MISSION-1")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     def test_core_templates_route_returns_vault_and_workflow_templates(self, _owner_access):
         response = self.client.get("/api/charlie/core/templates")
         data = response.get_json()

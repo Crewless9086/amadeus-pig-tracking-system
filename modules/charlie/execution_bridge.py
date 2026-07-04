@@ -31,6 +31,13 @@ from modules.charlie.core_workflow import (
     evaluate_core_readiness,
 )
 from modules.charlie.model_registry import choose_agent_model
+from modules.charlie.mission_memory import (
+    build_memory_event,
+    final_artifact_contract_packet,
+    memory_patch_from_event,
+    memory_prompt_context,
+    partial_recovery_contract_packet,
+)
 from modules.charlie.source_map import (
     implementation_source_packet,
     validate_implementation_inspection,
@@ -478,6 +485,19 @@ def run_agent_execution_bridge_v2(
                     artifact=artifact,
                     quality=quality,
                 )
+                _record_mission_memory_event(
+                    mission,
+                    build_memory_event(
+                        agent,
+                        "agent_backflow",
+                        summary=f"{agent} sent work back to {backflow_target}: {quality['reason']}",
+                        attempt=stage_attempts[agent],
+                        artifact=artifact,
+                        quality_gate=quality,
+                    ),
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
                 artifacts[agent] = artifact
                 artifacts = _discard_downstream_artifacts(artifacts, backflow_target, agent_sequence)
                 agent_queue = _agent_queue_from(backflow_target, agent_sequence)
@@ -510,6 +530,18 @@ def run_agent_execution_bridge_v2(
         artifact["quality_gate"] = quality
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
+        _record_mission_memory_event(
+            mission,
+            build_memory_event(
+                agent,
+                "agent_complete",
+                attempt=stage_attempts[agent],
+                artifact=artifact,
+                quality_gate=quality,
+            ),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
         _append_ledger_stage(
             ledger,
             agent,
@@ -1212,6 +1244,8 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     vault_context = build_vault_brain_context(mission, agent=agent)
     implementation_context = implementation_source_packet(mission)
     ui_contract = _ui_quality_contract_for_mission(mission)
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    mission_memory = memory_prompt_context(metadata)
     model_assignment = choose_agent_model(
         agent=agent,
         mission_type=mission.get("mission_type", ""),
@@ -1227,6 +1261,12 @@ Mission type: {mission.get("mission_type", "")}
 Agent doctrine file: {doctrine_path or "MISSING - Brain Guard must block this workflow until doctrine exists."}
 Model assignment:
 {json.dumps(model_assignment, indent=2)}
+
+Final artifact contract:
+{json.dumps(final_artifact_contract_packet(), indent=2)}
+
+Partial recovery contract:
+{json.dumps(partial_recovery_contract_packet(), indent=2)}
 
 Mission:
 {mission.get("raw_text", "")}
@@ -1250,6 +1290,9 @@ Desired outcome:
 
 Owner send-back comments:
 {owner_comments or "None"}
+
+Mission memory from previous attempts and handoffs:
+{json.dumps(mission_memory, indent=2)[:5000]}
 
 Mission media/reference attachments:
 {_format_media_references(_mission_media_references(mission))}
@@ -2711,6 +2754,25 @@ def _block_agent_stage(
     if artifact.get("qa_findings"):
         blocked_findings.extend([f"QA: {item}" for item in artifact.get("qa_findings", []) if item])
     blocked_findings.extend(_issue_lines(unresolved))
+    recovery_packet = _partial_work_recovery_packet(
+        artifact.get("changed_files") or _changed_files(),
+        stdout_text=getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]),
+        stderr_text=getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]),
+    )
+    _record_mission_memory_event(
+        {"mission_id": mission_id},
+        build_memory_event(
+            agent,
+            "agent_blocked",
+            summary=f"{agent} blocked: {blocked_reason}",
+            attempt=_stage_attempt_from_path(paths["final_path"]),
+            artifact={**artifact, "next_action": artifact.get("next_action") or recovery_packet.get("recommended_next_action", "")},
+            quality_gate=artifact.get("quality_gate", {}),
+            recovery=recovery_packet,
+        ),
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
     update_mission_vault(
         mission_id,
         {
@@ -2736,6 +2798,7 @@ def _block_agent_stage(
                 },
                 "quality_gates": ledger.get("quality_gates", []),
                 "backflow_events": ledger.get("backflow_events", []),
+                "partial_recovery": recovery_packet,
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
                 "recommended_next_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} with the unresolved blockers.",
@@ -2909,6 +2972,9 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 "completed_at": ledger["completed_at"],
             },
             "agent_execution": _agent_execution_summary(ledger),
+            "mission_memory": memory_prompt_context(mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}),
+            "final_artifact_contract": final_artifact_contract_packet(),
+            "partial_recovery_contract": partial_recovery_contract_packet(),
             "quality_gates": ledger.get("quality_gates", []),
             "backflow_events": ledger.get("backflow_events", []),
             "brain_guard": brain_guard,
@@ -3549,6 +3615,28 @@ def _record_execution_stage(mission_id, agent, step_status, findings, database_u
         agent,
         step_status=step_status,
         findings=findings,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def _record_mission_memory_event(mission, event, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    mission_id = mission.get("mission_id", "")
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required"}, 400
+    if not isinstance(mission.get("metadata"), dict):
+        loaded, status_code = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+        if status_code < 400:
+            mission = loaded.get("mission") or mission
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    patch = memory_patch_from_event(metadata, event)
+    if "mission_memory" in patch:
+        mission.setdefault("metadata", {})["mission_memory"] = patch["mission_memory"]
+    return update_mission_vault(
+        mission_id,
+        patch,
+        notes="CHARLIE Agent Runner v2 recorded mission memory.",
         database_url=database_url,
         connect_factory=connect_factory,
     )

@@ -869,12 +869,14 @@
       </div>
       <div class="charlie-mission-actions charlie-review-actions">
         <button type="button" data-open-owner-review>Open Review</button>
+        <button type="button" data-open-replay-debug>Replay Debug</button>
         <button type="button" data-review-decision="approve_final_release">Approve Final</button>
         <button type="button" data-review-decision="send_back">Send Back</button>
         <button type="button" data-review-decision="pause">Pause</button>
         <button type="button" data-review-decision="reject">Reject</button>
         <button type="button" data-review-decision="mark_done">Mark Done</button>
       </div>
+      <div class="charlie-replay-debug" data-replay-debug aria-live="polite"></div>
     `;
     card.querySelectorAll("[data-visual-review-open]").forEach((button) => {
       button.addEventListener("click", () => openVisualReviewOverlay(button));
@@ -889,6 +891,7 @@
     card.querySelectorAll("[data-review-decision]").forEach((button) => {
       button.addEventListener("click", () => recordReviewDecision(missionId, button.dataset.reviewDecision, card));
     });
+    card.querySelector("[data-open-replay-debug]").addEventListener("click", () => loadReplayDebug(missionId, card));
     card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
   }
@@ -1147,6 +1150,21 @@
     }
   }
 
+  async function loadReplayDebug(missionId, card) {
+    if (!missionId || !card) return;
+    const container = card.querySelector("[data-replay-debug]");
+    if (container) container.innerHTML = '<p class="charlie-muted">Loading replay debug...</p>';
+    setMessage("Loading mission replay debug...", "info");
+    try {
+      const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/replay`);
+      if (container) container.innerHTML = replayDebugMarkup(data);
+      setMessage("Replay debug loaded.", "success");
+    } catch (error) {
+      if (container) container.innerHTML = `<p class="charlie-muted">${escapeHtml(error.message || "Replay debug unavailable.")}</p>`;
+      setMessage(error.message || "Replay debug could not be loaded.", "error");
+    }
+  }
+
   async function recordReviewDecision(missionId, decision, card) {
     if (!missionId || !decision || !card) return;
     const comments = safeText(card.querySelector("[data-review-comments]") && card.querySelector("[data-review-comments]").value).trim();
@@ -1190,6 +1208,30 @@
       <strong>Release notes</strong>${listMarkup(packet.release_notes, "No release notes captured yet.")}
       <strong>Execution boundary</strong>
       <p>${escapeHtml(safeText(packet.execution_boundary || "Dashboard records review decisions only."))}</p>
+    `;
+  }
+
+  function replayDebugMarkup(packet) {
+    const memory = packet.mission_memory || {};
+    const debug = packet.debug_focus || {};
+    const latest = memory.latest_by_agent || {};
+    const latestItems = Object.keys(latest).map((agent) => {
+      const item = latest[agent] || {};
+      return `${agent}: ${item.summary || item.type || "recorded"}`;
+    });
+    return `
+      <details open>
+        <summary>Mission replay debug</summary>
+        <div class="charlie-replay-debug-grid">
+          <div><strong>Blocked agent</strong><span>${escapeHtml(safeText(debug.blocked_agent || "None"))}</span></div>
+          <div><strong>Blocked reason</strong><span>${escapeHtml(safeText(debug.blocked_reason || "No blocker captured"))}</span></div>
+          <div><strong>Memory</strong><span>${escapeHtml(safeText(memory.updated_at || "No mission memory timestamp"))}</span></div>
+          <div><strong>Parallel mode</strong><span>${escapeHtml(safeText((packet.parallel_planning || {}).mode || "Not captured"))}</span></div>
+        </div>
+        <strong>Latest agent memory</strong>${listMarkup(latestItems, "No agent memory captured yet.")}
+        <strong>Recovery notes</strong>${listMarkup((memory.recovery_notes || []).map((item) => `${item.agent || "agent"}: ${item.summary || item.type || ""}`), "No recovery notes captured yet.")}
+        <strong>Next debug actions</strong>${listMarkup(packet.next_debug_actions, "No debug actions captured.")}
+      </details>
     `;
   }
 

@@ -22,6 +22,7 @@ BASE_REQUIRED_DOCS = [
     "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
     "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md",
     "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
+    "docs/09-vault-brain/09-examples/README.md",
 ]
 
 TEMPLATE_REQUIRED_DOCS = {
@@ -89,6 +90,9 @@ KEYWORD_DOCS = {
     "ui": ["docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md", "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md"],
     "frontend": ["docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md", "docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md"],
     "screenshot": ["docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md", "docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md"],
+    "blocked": ["docs/09-vault-brain/09-examples/GOLD_STANDARD_RECOVERY_PACKET.md"],
+    "recovery": ["docs/09-vault-brain/09-examples/GOLD_STANDARD_RECOVERY_PACKET.md"],
+    "artifact": ["docs/09-vault-brain/09-examples/GOLD_STANDARD_REVIEW_PACKET.md", "docs/09-vault-brain/09-examples/GOLD_STANDARD_RECOVERY_PACKET.md"],
     "supabase": ["docs/09-vault-brain/06-data/SUPABASE_CONTRACTS.md", "docs/09-vault-brain/05-playbooks/DATA_MIGRATION.md"],
     "n8n": ["docs/09-vault-brain/04-workflows/N8N_WORKFLOW_SUITE.md"],
     "telegram": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],

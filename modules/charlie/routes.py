@@ -32,10 +32,18 @@ from modules.charlie.core_workflow import (
 )
 from modules.charlie.vault_store import vault_tables_health
 from modules.charlie.model_registry import choose_model, estimate_model_cost, model_registry_packet
+from modules.charlie.mission_memory import (
+    final_artifact_contract_packet,
+    mission_memory_from_metadata,
+    parallel_agent_planning_packet,
+    partial_recovery_contract_packet,
+    replay_packet,
+)
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
 from modules.charlie.source_map import IMPLEMENTATION_SOURCE_MAP, SOURCE_MAP_VERSION, implementation_source_packet
 from modules.charlie.improvement_analyst import (
+    analyze_mission_replay,
     generate_and_store_proposals,
     list_improvement_proposals,
     record_proposal_decision,
@@ -275,6 +283,8 @@ def charlie_build_relay_command_center_route():
             "recent_readiness": readiness_items,
             "readiness_detail": "full" if detailed else "summary_only_fast_refresh",
             "model_registry": _compact_model_registry_packet(),
+            "final_artifact_contract": final_artifact_contract_packet(),
+            "partial_recovery_contract": partial_recovery_contract_packet(),
             "tool_permissions": _compact_tool_permission_registry(),
             "owner_preferences": _compact_owner_preference_packet(),
         },
@@ -353,6 +363,18 @@ def charlie_core_improvements_analyze_route():
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = generate_and_store_proposals(limit=payload.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/improvements/analyze-mission/<mission_id>", methods=["POST"])
+def charlie_core_improvements_analyze_mission_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    loaded, load_status = get_mission(mission_id)
+    if load_status >= 400:
+        return jsonify(loaded), load_status
+    result, status_code = analyze_mission_replay(loaded.get("mission") or {})
     return jsonify(result), status_code
 
 
@@ -458,6 +480,11 @@ def charlie_core_mission_readiness_route(mission_id):
         "mission_id": mission.get("mission_id", mission_id),
         "core_plan": build_core_plan(mission),
         "core_readiness": evaluate_core_readiness(mission),
+        "parallel_planning": parallel_agent_planning_packet([
+            item.get("agent", "")
+            for item in mission.get("agent_workflow", [])
+            if isinstance(item, dict)
+        ]),
     }), 200
 
 
@@ -496,6 +523,30 @@ def charlie_build_relay_mission_review_packet_route(mission_id):
         return denied
     result, status_code = get_mission_review_packet(mission_id)
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/build-relay/missions/<mission_id>/replay", methods=["GET"])
+def charlie_build_relay_mission_replay_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_mission(mission_id)
+    if status_code >= 400:
+        return jsonify(result), status_code
+    mission = result.get("mission") or {}
+    packet = replay_packet(mission)
+    packet.update({
+        "success": True,
+        "status": "ok",
+        "final_artifact_contract": final_artifact_contract_packet(),
+        "partial_recovery_contract": partial_recovery_contract_packet(),
+        "parallel_planning": parallel_agent_planning_packet([
+            item.get("agent", "")
+            for item in mission.get("agent_workflow", [])
+            if isinstance(item, dict)
+        ]),
+    })
+    return jsonify(packet), 200
 
 
 @charlie_bp.route("/charlie/build-relay/review-media/<mission_id>/<filename>", methods=["GET"])
@@ -609,6 +660,23 @@ def _mission_dashboard_summary(mission):
     compact_metadata = {}
     if compact_review_packet:
         compact_metadata["review_packet"] = compact_review_packet
+    mission_memory = mission_memory_from_metadata(metadata)
+    if mission_memory.get("events") or mission_memory.get("updated_at"):
+        compact_metadata["mission_memory"] = {
+            "version": mission_memory.get("version", ""),
+            "updated_at": mission_memory.get("updated_at", ""),
+            "latest_by_agent": {
+                agent: {
+                    "type": item.get("type", ""),
+                    "attempt": item.get("attempt", 1),
+                    "summary": _short_text(item.get("summary", ""), 220),
+                    "quality_gate": item.get("quality_gate", {}),
+                }
+                for agent, item in mission_memory.get("latest_by_agent", {}).items()
+                if isinstance(item, dict)
+            },
+            "recent_recovery_notes": _compact_event_list(mission_memory.get("recovery_notes"), limit=3),
+        }
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     compact_vault = {
         key: vault.get(key)

@@ -492,19 +492,29 @@ def build_project_truth(mission):
 
 def build_core_plan(mission):
     from modules.charlie.model_registry import model_registry_packet
+    from modules.charlie.mission_memory import (
+        final_artifact_contract_packet,
+        parallel_agent_planning_packet,
+        partial_recovery_contract_packet,
+    )
     from modules.charlie.tool_permissions import tool_permission_registry
 
     project_truth = build_project_truth(mission)
     template_id = project_truth["workflow_template"]
+    agent_workflow = build_workflow(template_id)
+    agent_order = [item.get("agent", "") for item in agent_workflow if isinstance(item, dict)]
     return {
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
         "project_truth": project_truth,
         "workflow_template": workflow_template(template_id),
-        "agent_workflow": build_workflow(template_id),
+        "agent_workflow": agent_workflow,
         "review_board": build_review_board_packet({}),
         "model_registry": model_registry_packet(),
         "tool_permissions": tool_permission_registry(),
+        "final_artifact_contract": final_artifact_contract_packet(),
+        "partial_recovery_contract": partial_recovery_contract_packet(),
+        "parallel_agent_planning": parallel_agent_planning_packet(agent_order),
         "intelligence_loop": {
             "version": INTELLIGENCE_LOOP_VERSION,
             "lesson_records": [],

@@ -8669,6 +8669,45 @@ body.oom-farm-command-body {
     margin-top: 10px;
 }
 
+.charlie-replay-debug {
+    margin-top: 12px;
+}
+
+.charlie-replay-debug details {
+    padding: 10px;
+    border: 1px solid #cbd9d4;
+    border-radius: 8px;
+    background: #f7faf9;
+}
+
+.charlie-replay-debug-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.charlie-replay-debug-grid div {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #d8e1dd;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.charlie-replay-debug-grid strong {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: #5f6f69;
+}
+
+.charlie-replay-debug-grid span {
+    overflow-wrap: anywhere;
+}
+
 .charlie-visual-review {
     display: grid;
     gap: 10px;

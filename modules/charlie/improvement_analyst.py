@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from modules.charlie import mission_store, vault_store
+from modules.charlie.mission_memory import replay_packet
 
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
@@ -74,6 +75,52 @@ def analyze_improvement_opportunities(missions):
         proposals.append(_proposal(area, bucket, score))
     proposals.sort(key=lambda item: (-item["weakness_score"], item["target_area"]))
     return proposals
+
+
+def analyze_mission_replay(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    replay = replay_packet(mission)
+    review_packet = replay.get("review_packet") if isinstance(replay.get("review_packet"), dict) else {}
+    debug_focus = replay.get("debug_focus") if isinstance(replay.get("debug_focus"), dict) else {}
+    events = replay.get("timeline") if isinstance(replay.get("timeline"), list) else []
+    findings = []
+    proposals = []
+    if debug_focus.get("blocked_reason"):
+        findings.append(f"Mission blocked at {debug_focus.get('blocked_agent') or 'unknown agent'}: {debug_focus.get('blocked_reason')}")
+        proposals.append({
+            "target_area": "gates",
+            "problem_detected": "Blocked mission needs clearer recovery path.",
+            "recommendation": "Use mission replay, recovery notes, and final artifact contract to rerun from the smallest responsible stage.",
+            "applies_automatically": False,
+        })
+    if review_packet and not review_packet.get("test_evidence"):
+        findings.append("Review packet is missing test evidence.")
+        proposals.append({
+            "target_area": "tests",
+            "problem_detected": "Review packet missing test evidence.",
+            "recommendation": "Block owner review until tester/reviewer records focused verification evidence.",
+            "applies_automatically": False,
+        })
+    if len([event for event in events if event.get("type") == "backflow"]) >= 2:
+        findings.append("Mission had repeated backflow events.")
+        proposals.append({
+            "target_area": "prompts",
+            "problem_detected": "Repeated backflow suggests weak upstream acceptance criteria or incomplete implementation brief.",
+            "recommendation": "Strengthen planner/architect artifacts and require council synthesis before another write attempt.",
+            "applies_automatically": False,
+        })
+    if not findings:
+        findings.append("No critical replay weakness detected from current stored evidence.")
+    return {
+        "success": True,
+        "status": "ok",
+        "mode": "advisory_replay_analysis_only",
+        "mission_id": replay.get("mission_id", ""),
+        "findings": findings,
+        "proposals": proposals,
+        "replay": replay,
+        "execution_boundary": _execution_boundary(),
+    }, 200
 
 
 def generate_and_store_proposals(limit=50, database_url=None, connect_factory=None):
