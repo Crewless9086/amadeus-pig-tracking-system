@@ -2402,9 +2402,9 @@ def _agent_quality_gate(agent, artifact):
             return {"passed": False, "reason": "QA/red-team reported errors or bugs."}
     if agent == "builder":
         changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
-        pr_reference = _artifact_pr_reference(artifact)
-        if _has_release_relevant_changes(changed_files) and not pr_reference:
-            return {"passed": False, "reason": "Builder changed releaseable files but did not record a PR link or PR number."}
+        code_reference = _artifact_code_review_reference(artifact)
+        if _has_release_relevant_changes(changed_files) and not code_reference:
+            return {"passed": False, "reason": "Builder changed releaseable files but did not record a PR link, PR number, or local branch commit reference."}
     if agent == "reviewer":
         decision = str(artifact.get("recommended_owner_decision") or "").strip()
         if decision != "approve_final_release":
@@ -2412,9 +2412,9 @@ def _agent_quality_gate(agent, artifact):
         if errors or bugs:
             return {"passed": False, "reason": "Reviewer found errors or bugs."}
         changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
-        pr_reference = _artifact_pr_reference(artifact)
-        if _has_release_relevant_changes(changed_files) and not pr_reference:
-            return {"passed": False, "reason": "Reviewer did not record a PR link or PR number for changed code/docs."}
+        code_reference = _artifact_code_review_reference(artifact)
+        if _has_release_relevant_changes(changed_files) and not code_reference:
+            return {"passed": False, "reason": "Reviewer did not record a PR link, PR number, or local branch commit reference for changed code/docs."}
         qa_evidence = artifact.get("qa_evidence") or artifact.get("qa_findings") or artifact.get("test_evidence")
         if not qa_evidence:
             return {"passed": False, "reason": "Reviewer did not record QA/red-team evidence."}
@@ -2781,6 +2781,23 @@ def _artifact_pr_reference(artifact):
     return ""
 
 
+def _artifact_local_commit_reference(artifact):
+    branch_name = str((artifact or {}).get("branch_name") or "").strip()
+    commit_sha = str((artifact or {}).get("commit_sha") or "").strip()
+    if branch_name and commit_sha:
+        return f"{branch_name}@{commit_sha}"
+    packaging = artifact.get("git_packaging") if isinstance(artifact.get("git_packaging"), dict) else {}
+    branch_name = str(packaging.get("branch_name") or "").strip()
+    commit_sha = str(packaging.get("commit_sha") or "").strip()
+    if branch_name and commit_sha:
+        return f"{branch_name}@{commit_sha}"
+    return ""
+
+
+def _artifact_code_review_reference(artifact):
+    return _artifact_pr_reference(artifact) or _artifact_local_commit_reference(artifact)
+
+
 def _artifact_text(value):
     if isinstance(value, dict):
         return str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
@@ -2902,16 +2919,20 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     if added["returncode"] != 0:
         return _builder_packaging_failed(artifact, result, "git_add_failed")
     diff_check = run(["git", "diff", "--cached", "--quiet", "--", *add_files])
-    if diff_check["returncode"] == 0:
-        return _builder_packaging_failed(artifact, result, "no_staged_changes")
+    existing_commit = diff_check["returncode"] == 0
     if diff_check["returncode"] not in {0, 1}:
         return _builder_packaging_failed(artifact, result, "staged_diff_check_failed")
 
     commit_message = _builder_commit_message(mission)
-    committed = run(["git", "commit", "-m", commit_message])
-    if committed["returncode"] != 0:
-        return _builder_packaging_failed(artifact, result, "git_commit_failed")
+    if not existing_commit:
+        committed = run(["git", "commit", "-m", commit_message])
+        if committed["returncode"] != 0:
+            return _builder_packaging_failed(artifact, result, "git_commit_failed")
     sha = run(["git", "rev-parse", "--short", "HEAD"])
+    commit_sha = sha["stdout"].strip()
+    if sha["returncode"] != 0 or not commit_sha:
+        return _builder_packaging_failed(artifact, result, "commit_sha_failed")
+    result["commit_sha"] = commit_sha
     pushed = run(["git", "push", "-u", "origin", branch_name])
     if pushed["returncode"] != 0:
         return _builder_packaging_failed(artifact, result, "git_push_failed")
@@ -2940,7 +2961,7 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     packaged["errors"] = _remove_resolved_builder_packaging_errors(packaged.get("errors"))
     packaged.update({
         "branch_name": branch_name,
-        "commit_sha": sha["stdout"].strip(),
+        "commit_sha": commit_sha,
         "pr_url": pr_url,
         "links": links,
         "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
@@ -2965,7 +2986,20 @@ def _remove_resolved_builder_packaging_errors(errors):
 
 def _builder_packaging_failed(artifact, result, status):
     packaged = dict(artifact)
-    packaged["git_packaging"] = {**result, "status": status}
+    packaging = {**result, "status": status}
+    local_reviewable_statuses = {"git_push_failed", "gh_pr_create_failed", "pr_url_not_detected"}
+    if status in local_reviewable_statuses and packaging.get("branch_name") and packaging.get("commit_sha"):
+        packaged.update({
+            "branch_name": packaged.get("branch_name") or packaging.get("branch_name"),
+            "commit_sha": packaged.get("commit_sha") or packaging.get("commit_sha"),
+            "git_packaging": {**packaging, "status": "local_commit_ready", "remote_status": status},
+        })
+        warnings = packaged.get("warnings") if isinstance(packaged.get("warnings"), list) else []
+        warnings.append(f"Runner could not complete remote PR packaging ({status}); local branch commit is available for review.")
+        packaged["warnings"] = warnings[-10:]
+        packaged["errors"] = _remove_resolved_builder_packaging_errors(packaged.get("errors"))
+        return packaged
+    packaged["git_packaging"] = packaging
     errors = packaged.get("errors") if isinstance(packaged.get("errors"), list) else []
     if not any("runner git packaging failed" in str(item).lower() for item in errors):
         errors.append(f"Runner git packaging failed: {status}.")
