@@ -3409,6 +3409,21 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "agent_ledger_path": str(ledger_path),
             "next_action": "Do not mark pr_ready. Compact or repair review packet persistence, then rerun from reviewer.",
         }, max(int(vault_status or 500), 500)
+    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
+        mission["mission_id"],
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if not persisted_ok:
+        return {
+            "success": False,
+            "status": "owner_review_packet_persist_verify_failed",
+            "mission_id": mission["mission_id"],
+            "mission_status": mission.get("status", "in_progress"),
+            "error_status": persisted_status,
+            "agent_ledger_path": str(ledger_path),
+            "next_action": "Do not mark pr_ready. Review packet write returned success but did not read back from mission storage.",
+        }, 502
     reviewer_result, reviewer_status = update_mission_workflow_step(
         mission["mission_id"],
         "reviewer",
@@ -3445,6 +3460,22 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _verify_owner_review_packet_persisted(mission_id, *, database_url=None, connect_factory=None):
+    result, status_code = get_mission(
+        mission_id,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400 or not result.get("success"):
+        return False, str(result.get("status") or f"mission_read_failed_{status_code}")
+    mission = result.get("mission") if isinstance(result.get("mission"), dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    if review_packet.get("review_status") or review_packet.get("blocked_reason"):
+        return True, "review_packet_verified"
+    return False, "review_packet_missing_after_write"
 
 
 def _visual_review_blocks_owner_review(visual_review):

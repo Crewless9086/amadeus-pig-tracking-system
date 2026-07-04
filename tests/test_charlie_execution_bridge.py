@@ -32,6 +32,29 @@ MISSION = {
 }
 
 
+def _mission_with_persisted_review_packet(source=None):
+    mission = dict(source or MISSION)
+    metadata = dict(mission.get("metadata") or {})
+    metadata["review_packet"] = {
+        "review_status": "ready_for_owner_review",
+        "summary": "Persisted owner review packet.",
+        "test_evidence": ["unit tests passed"],
+    }
+    mission["metadata"] = metadata
+    return mission
+
+
+def _mission_readback_sequence(initial_mission, readback_mission):
+    calls = {"count": 0}
+
+    def _readback(*_args, **_kwargs):
+        calls["count"] += 1
+        mission = initial_mission if calls["count"] == 1 else readback_mission
+        return {"success": True, "status": "ok", "mission": mission}, 200
+
+    return _readback
+
+
 def _agent_from_prompt(prompt):
     match = re.search(r"You are the CHARLIE CORE ([A-Z_]+) agent", prompt)
     if match:
@@ -293,7 +316,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         write_heartbeat,
         _changed_files,
     ):
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        get_mission.side_effect = _mission_readback_sequence(
+            MISSION,
+            _mission_with_persisted_review_packet(),
+        )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
@@ -365,7 +391,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         _write_heartbeat,
         _changed_files,
     ):
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        get_mission.side_effect = _mission_readback_sequence(
+            MISSION,
+            _mission_with_persisted_review_packet(),
+        )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = (
@@ -401,6 +430,46 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         if compact_artifact.get("stderr_tail_excerpt"):
             self.assertLessEqual(len(compact_artifact["stderr_tail_excerpt"]), 500)
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_blocks_when_review_packet_does_not_read_back(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.side_effect = _mission_readback_sequence(MISSION, MISSION)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def fake_runner(*_args, **kwargs):
+            prompt = kwargs["input"]
+            agent = _agent_from_prompt(prompt)
+            payload = _successful_stage_payload(agent)
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 502)
+        self.assertEqual(result["status"], "owner_review_packet_persist_verify_failed")
+        self.assertEqual(result["mission_status"], "in_progress")
+        self.assertEqual(result["error_status"], "review_packet_missing_after_write")
+        self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
+
     @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_IDEA_EXPANDER": "reasoning-model-a"}, clear=False)
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
@@ -417,7 +486,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         write_heartbeat,
         _changed_files,
     ):
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        get_mission.side_effect = _mission_readback_sequence(
+            MISSION,
+            _mission_with_persisted_review_packet(),
+        )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
@@ -464,7 +536,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         write_heartbeat,
         _changed_files,
     ):
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        get_mission.side_effect = _mission_readback_sequence(
+            MISSION,
+            _mission_with_persisted_review_packet(),
+        )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
@@ -537,7 +612,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 },
             }
         }
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        get_mission.side_effect = _mission_readback_sequence(
+            mission,
+            _mission_with_persisted_review_packet(mission),
+        )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
