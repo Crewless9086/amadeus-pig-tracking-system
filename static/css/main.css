@@ -8613,6 +8613,23 @@ body.oom-farm-command-body {
     font-weight: 700;
 }
 
+.charlie-preview-evidence {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.charlie-preview-evidence a {
+    overflow-wrap: anywhere;
+}
+
+.charlie-preview-evidence small {
+    color: #5f6f69;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
 .charlie-mission-actions {
     display: flex;
     flex-wrap: wrap;
@@ -9169,6 +9186,10 @@ body.oom-farm-command-body {
 .charlie-command-strip strong {
     color: #f4fbff;
     font-size: 1.45rem;
+}
+
+.charlie-preview-evidence small {
+    color: #91a9bd;
 }
 
 .charlie-control-room {
