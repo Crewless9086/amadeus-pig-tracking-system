@@ -2,6 +2,7 @@ from modules.charlie.mission_memory import replay_packet
 
 
 REPLAY_STRESS_VERSION = "charlie_replay_stress_v1"
+REPLAY_STRESS_PASS_SCORE = 96
 
 
 def stress_replay_mission(mission):
@@ -36,7 +37,7 @@ def stress_replay_mission(mission):
     return {
         "version": REPLAY_STRESS_VERSION,
         "mission_id": replay.get("mission_id", ""),
-        "status": "pass" if score >= 82 else "needs_repair",
+        "status": "pass" if score >= REPLAY_STRESS_PASS_SCORE else "needs_repair",
         "score": score,
         "checks": checks,
         "issues": issues,
@@ -55,7 +56,7 @@ def stress_replay_missions(missions):
         "mission_count": len(results),
         "scored_mission_count": len(scored),
         "average_score": average,
-        "status": "pass" if scored and average >= 82 else "needs_more_evidence",
+        "status": "pass" if scored and average >= REPLAY_STRESS_PASS_SCORE else "needs_more_evidence",
         "results": results,
     }
 
@@ -66,7 +67,7 @@ def golden_example_candidate(mission):
     replay = stress.get("replay", {})
     review = replay.get("review_packet") if isinstance(replay.get("review_packet"), dict) else {}
     qualifies = (
-        (stress.get("score") or 0) >= 90
+        (stress.get("score") or 0) >= REPLAY_STRESS_PASS_SCORE
         and review.get("review_status") == "ready_for_owner_review"
         and bool(review.get("test_evidence"))
         and not review.get("blocked_reason")

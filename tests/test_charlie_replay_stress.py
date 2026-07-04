@@ -22,8 +22,25 @@ class CharlieReplayStressTests(unittest.TestCase):
 
         result = stress_replay_mission(mission)
 
-        self.assertGreaterEqual(result["score"], 82)
+        self.assertGreaterEqual(result["score"], 96)
         self.assertEqual(result["status"], "pass")
+
+    def test_replay_stress_score_below_ninety_six_needs_repair(self):
+        mission = {
+            "mission_id": "MISSION-PARTIAL",
+            "status": "pr_ready",
+            "metadata": {
+                "mission_memory": {"events": [{"agent": "reviewer", "type": "agent_complete"}]},
+                "review_packet": {
+                    "review_status": "ready_for_owner_review",
+                },
+            },
+        }
+
+        result = stress_replay_mission(mission)
+
+        self.assertEqual(result["score"], 82)
+        self.assertEqual(result["status"], "needs_repair")
 
     def test_replay_stress_flags_missing_memory_and_tests(self):
         mission = {"mission_id": "MISSION-WEAK", "metadata": {"review_packet": {"review_status": "ready_for_owner_review"}}}
@@ -85,6 +102,29 @@ class CharlieReplayStressTests(unittest.TestCase):
 
         self.assertEqual(batch["mission_count"], 2)
         self.assertEqual(batch["scored_mission_count"], 1)
+
+    def test_stress_replay_missions_requires_ninety_six_average(self):
+        result = stress_replay_missions([
+            {
+                "mission_id": "READY",
+                "status": "pr_ready",
+                "metadata": {
+                    "mission_memory": {"events": [{"agent": "reviewer", "type": "agent_complete"}]},
+                    "review_packet": {"review_status": "ready_for_owner_review", "test_evidence": ["pass"]},
+                },
+            },
+            {
+                "mission_id": "PARTIAL",
+                "status": "pr_ready",
+                "metadata": {
+                    "mission_memory": {"events": [{"agent": "reviewer", "type": "agent_complete"}]},
+                    "review_packet": {"review_status": "ready_for_owner_review"},
+                },
+            },
+        ])
+
+        self.assertEqual(result["average_score"], 91.0)
+        self.assertEqual(result["status"], "needs_more_evidence")
 
 
 if __name__ == "__main__":

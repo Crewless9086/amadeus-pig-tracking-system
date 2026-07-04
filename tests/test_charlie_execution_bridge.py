@@ -849,10 +849,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     def test_parallel_read_only_risk_agent_defers_downstream_evidence_warning(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
-            "recommended_owner_decision": "send_back",
+            "recommended_owner_decision": "pause",
             "changed_files": [],
             "risks": [
                 "Cannot certify persisted owner review packet because review packet persistence happens in a later stage.",
+                "Migration compatibility must be verified before any later owner-approved migration.",
             ],
             "next_action": "Require final reviewer to prove persisted review packet and test evidence before pr_ready.",
         })
