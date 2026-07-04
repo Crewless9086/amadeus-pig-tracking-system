@@ -670,7 +670,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("reviewer", artifact)
 
         self.assertFalse(result["passed"])
-        self.assertIn("PR link", result["reason"])
+        self.assertIn("local branch commit", result["reason"])
 
     def test_builder_quality_gate_requires_pr_for_changed_files(self):
         artifact = {
@@ -690,7 +690,41 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("builder", artifact)
 
         self.assertFalse(result["passed"])
-        self.assertIn("Builder changed releaseable files", result["reason"])
+        self.assertIn("local branch commit", result["reason"])
+
+    def test_builder_quality_gate_accepts_local_branch_commit_reference(self):
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = ["modules/charlie/mission_store.py"]
+        artifact["branch_name"] = "charlie/example"
+        artifact["commit_sha"] = "abc1234"
+
+        result = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertTrue(result["passed"])
+
+    def test_reviewer_quality_gate_accepts_local_branch_commit_reference(self):
+        artifact = {
+            "summary": "review complete",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "commands_run": ["git diff --stat"],
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": ["ready"],
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "test_evidence": ["unit tests passed"],
+            "branch_name": "charlie/example",
+            "commit_sha": "abc1234",
+            "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
+            "no_vault_update_required": "Runner behavior was unchanged.",
+            "qa_evidence": ["QA/red-team passed"],
+            "confidence": "98%",
+            "confidence_reason": "Based on Vault Brain source docs, inspected repo files, local branch commit evidence, and unit tests.",
+        }
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"])
 
     def test_auto_package_builder_changes_adds_pr_evidence(self):
         calls = []
@@ -758,6 +792,47 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(packaged["git_packaging"]["status"], "branch_create_or_switch_failed")
         self.assertFalse(execution_bridge._artifact_pr_reference(packaged))
+
+    def test_auto_package_builder_changes_accepts_local_commit_when_pr_create_fails(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="charlie/example\n", stderr="")
+            if command[:3] == ["git", "switch", "-c"]:
+                return SimpleNamespace(returncode=0, stdout="switched", stderr="")
+            if command[:2] == ["git", "add"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["git", "diff", "--cached", "--quiet"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:3] == ["git", "rev-parse", "--short"]:
+                return SimpleNamespace(returncode=0, stdout="abc1234\n", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            if command[:3] == ["gh", "pr", "create"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="offline")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact["changed_files"] = ["static/js/charlieMissionControl.js"]
+        artifact["branch_name"] = "charlie/example"
+        artifact["commit_sha"] = "abc1234"
+        artifact["pr_url"] = ""
+        artifact["links"] = {"pr": ""}
+
+        packaged = execution_bridge._auto_package_builder_changes(
+            {"mission_id": "CHARLIE-MISSION-EXEC123", "title": "Mission Control Dashboard"},
+            artifact,
+            runner=fake_runner,
+        )
+
+        self.assertEqual(packaged["git_packaging"]["status"], "local_commit_ready")
+        self.assertEqual(packaged["git_packaging"]["remote_status"], "gh_pr_create_failed")
+        self.assertEqual(packaged["commit_sha"], "abc1234")
+        self.assertTrue(execution_bridge._artifact_local_commit_reference(packaged))
+        self.assertFalse(execution_bridge._artifact_pr_reference(packaged))
+        self.assertTrue(any(call[:3] == ["gh", "pr", "create"] for call in calls))
 
     def test_reviewer_quality_gate_accepts_pr_for_changed_files(self):
         artifact = {
