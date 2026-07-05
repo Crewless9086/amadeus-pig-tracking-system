@@ -1107,6 +1107,7 @@ def get_litter_detail(litter_id, connect_factory=None):
             "tag_number": _text(pig.get("tag_number")),
             "sex": sex,
             "status": _text(pig.get("status")),
+            "exit_reason": _text(pig.get("exit_reason")),
             "on_farm": _yes_no(pig.get("on_farm")),
             "date_of_birth": _date_text(pig.get("date_of_birth")),
             "age_days": _age_days(pig.get("date_of_birth")),
