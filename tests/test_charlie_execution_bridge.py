@@ -1117,6 +1117,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("visual acceptance", result["reason"])
 
+    def test_reviewer_owner_approval_gate_instruction_is_not_send_back_blocker(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "next_action": "Owner should review PR #89 and choose Approve Final Release or Send Back. Do not merge or deploy until final owner approval is recorded.",
+            "release_notes": [
+                "Owner should review PR #89 and either approve final release or send back with comments. Do not merge or deploy until owner final approval is recorded."
+            ],
+            "qa_evidence": ["Focused tests, API checks, and browser screenshots passed."],
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": ["Desktop and mobile visual evidence passed."],
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_risk_agent_blocks_send_back_and_failed_browser_evidence(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

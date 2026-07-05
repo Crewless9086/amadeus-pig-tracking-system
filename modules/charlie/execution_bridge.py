@@ -2874,6 +2874,8 @@ def _is_blocking_judgement_text(agent, artifact, value):
         return False
     if _is_non_blocking_local_pytest_issue(agent, artifact, value):
         return False
+    if _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
+        return False
     blocking_phrases = (
         "send_back",
         "send back",
@@ -2903,6 +2905,26 @@ def _is_blocking_judgement_text(agent, artifact, value):
     if re.search(r"\b(fail|failed|failing|failure)\b", text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", text):
         return True
     return False
+
+
+def _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
+    if agent != "reviewer":
+        return False
+    decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
+    if decision != "approve_final_release":
+        return False
+    if (artifact or {}).get("errors") or (artifact or {}).get("bugs"):
+        return False
+    approval_gate_terms = (
+        "owner should review",
+        "owner/reviewer should review",
+        "choose approve final release",
+        "approve final release or send back",
+        "until owner final approval",
+        "until final owner approval",
+        "until owner approval",
+    )
+    return any(term in text for term in approval_gate_terms)
 
 
 def _vault_sensitive_changed_files(changed_files):
