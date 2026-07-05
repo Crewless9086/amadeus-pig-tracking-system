@@ -8652,9 +8652,14 @@ body.oom-farm-command-body {
     gap: 12px;
 }
 
+.charlie-mission-card-header > div {
+    min-width: 0;
+}
+
 .charlie-mission-card h3 {
     margin: 8px 0;
     font-size: 1.05rem;
+    overflow-wrap: anywhere;
 }
 
 .charlie-mission-card p {
@@ -8735,6 +8740,43 @@ body.oom-farm-command-body {
     padding: 4px 6px;
     border-radius: 4px;
     background: #edf3f1;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-id-stack {
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+    min-width: min(260px, 38%);
+}
+
+.charlie-mission-id-stack small {
+    max-width: 100%;
+    color: #5f6f69;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.charlie-owner-review-context {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid #d7e3df;
+    border-left: 4px solid #b86033;
+    border-radius: 8px;
+    background: #fffaf2;
+    color: #3f504a;
+}
+
+.charlie-owner-review-context strong {
+    color: #17241f;
+}
+
+.charlie-owner-review-context span {
+    line-height: 1.35;
 }
 
 .charlie-mission-meta {
@@ -9523,9 +9565,92 @@ body.oom-farm-command-body {
 }
 
 .charlie-menu-rail .charlie-mission-card-header code,
+.charlie-menu-rail .charlie-mission-id-stack small,
 .charlie-menu-rail .charlie-mission-card.is-current::before,
 .charlie-menu-rail .charlie-workflow-actions {
     display: none;
+}
+
+.charlie-new-review-panel {
+    border-color: rgba(184, 96, 51, 0.38);
+}
+
+.charlie-new-review-list {
+    display: grid;
+    gap: 14px;
+}
+
+.charlie-mission-card.is-review-board-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    overflow: visible;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-card-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+    align-items: start;
+}
+
+.charlie-mission-card.is-review-board-card h3 {
+    margin-bottom: 0;
+    font-size: 1.14rem;
+    line-height: 1.25;
+}
+
+.charlie-mission-card.is-review-board-card > p {
+    margin: 0;
+    color: #dcecff;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.35fr) minmax(170px, 1.35fr) minmax(104px, 0.8fr) minmax(104px, 0.8fr);
+    align-items: stretch;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button {
+    min-width: 0;
+    width: 100%;
+    white-space: normal;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="approved"] {
+    border-color: rgba(55, 231, 137, 0.58);
+    background: linear-gradient(180deg, #1ea463, #117247);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="paused"] {
+    border-color: rgba(255, 196, 67, 0.55);
+    background: linear-gradient(180deg, #a66f14, #70460a);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="rejected"] {
+    border-color: rgba(255, 79, 79, 0.58);
+    background: linear-gradient(180deg, #b83232, #7f1d1d);
+}
+
+.charlie-mission-detail-grid {
+    display: grid;
+    gap: 12px;
+    margin: 14px 0;
+}
+
+.charlie-mission-detail-grid > section {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(101, 151, 204, 0.28);
+    border-radius: 8px;
+    background: rgba(9, 22, 35, 0.72);
 }
 
 .charlie-menu-rail .charlie-mission-card p {
@@ -9567,6 +9692,123 @@ body.oom-farm-command-body {
     min-height: 34px;
     padding: 7px 8px;
     font-size: 0.76rem;
+}
+
+.charlie-new-review-panel {
+    border-color: rgba(255, 209, 64, 0.34);
+}
+
+.charlie-new-review-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.charlie-new-review-card,
+.charlie-mission-card.is-review-board-card {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-color: rgba(82, 191, 255, 0.42);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-card-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(170px, 0.44fr);
+    gap: 12px;
+}
+
+.charlie-mission-card.is-review-board-card h3 {
+    margin: 8px 0 0;
+    font-size: 1.1rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-card.is-review-board-card p {
+    margin: 0;
+    color: #d3e3f1;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-id-stack {
+    display: grid;
+    gap: 5px;
+    justify-items: end;
+    min-width: 0;
+}
+
+.charlie-mission-id-stack small {
+    max-width: 100%;
+    color: #91a9bd;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-meta {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions {
+    grid-template-columns: minmax(150px, 1.35fr) minmax(170px, 1.35fr) minmax(104px, 0.8fr) minmax(104px, 0.8fr);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button {
+    min-height: 42px;
+    width: 100%;
+    white-space: normal;
+}
+
+.charlie-owner-review-context {
+    border-color: rgba(255, 209, 64, 0.34);
+    background: rgba(60, 42, 10, 0.38);
+    color: #ffe5a6;
+}
+
+.charlie-owner-review-context strong {
+    color: #fff7d7;
+}
+
+.charlie-mission-detail-grid > section {
+    border-color: rgba(101, 151, 204, 0.28);
+    background: rgba(9, 22, 35, 0.72);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-open-mission-details],
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="approved"][data-level="LEVEL 3"],
+.charlie-primary-owner-actions button[data-action="approved"][data-level="LEVEL 3"] {
+    border-color: rgba(72, 240, 150, 0.62);
+    background: linear-gradient(180deg, #1ea463, #117247);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="paused"],
+.charlie-primary-owner-actions button[data-action="paused"] {
+    border-color: rgba(255, 196, 67, 0.55);
+    background: linear-gradient(180deg, #a66f14, #70460a);
+}
+
+.charlie-mission-card.is-review-board-card .charlie-mission-actions button[data-action="rejected"],
+.charlie-primary-owner-actions button[data-action="rejected"] {
+    border-color: rgba(255, 79, 79, 0.58);
+    background: linear-gradient(180deg, #b83232, #7f1d1d);
+}
+
+.charlie-mission-detail-focus pre {
+    max-height: 46vh;
+}
+
+.charlie-primary-owner-actions {
+    grid-template-columns: 1fr;
 }
 
 .charlie-mission-card.is-current {
@@ -10038,6 +10280,10 @@ body.oom-farm-command-body {
         grid-column: 1 / -1;
     }
 
+    .charlie-new-review-list {
+        grid-template-columns: 1fr;
+    }
+
     .charlie-agent-ring,
     .charlie-command-center-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10088,6 +10334,20 @@ body.oom-farm-command-body {
 
     .charlie-side-rail {
         grid-template-columns: 1fr;
+    }
+
+    .charlie-mission-card.is-review-board-card .charlie-mission-card-header,
+    .charlie-mission-card.is-review-board-card .charlie-mission-meta,
+    .charlie-mission-card.is-review-board-card .charlie-mission-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .charlie-mission-id-stack {
+        justify-items: start;
+    }
+
+    .charlie-mission-id-stack small {
+        text-align: left;
     }
 
     .charlie-menu-rail .charlie-mission-list {
