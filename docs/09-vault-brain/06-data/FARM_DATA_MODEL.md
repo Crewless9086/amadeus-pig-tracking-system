@@ -27,6 +27,13 @@ Farm record writes require approved backend paths and audit evidence.
 - Unknown purpose is a classification gap, not a sale/meat/slaughter decision.
 - Sale/slaughter/meat exits must link back to explicit order or sales transaction evidence where possible.
 
+## Litter Detail Read Contract
+
+- Litter detail reads should expose the operational detail state: active, weaned, or completed.
+- Active litter summaries may show estimated wean timing and current-weight rollups.
+- Weaned or completed litter summaries should close active wean timing, show actual wean date where known, and use wean-weight outcome fields for litter-level average weight.
+- Litter detail attention should include the reason and recommended action when the read model flags attention; if no attention reason exists, the UI should not reserve empty attention space.
+
 ## Agent Use
 
 - Herdmaster may recommend purpose/lifecycle actions.
