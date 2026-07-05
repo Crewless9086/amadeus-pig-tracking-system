@@ -3023,14 +3023,22 @@ def _is_blocking_judgement_text(agent, artifact, value):
 
 
 def _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
-    if agent != "reviewer":
+    review_handoff_agents = {
+        "product_reviewer",
+        "business_reviewer",
+        "security_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+    }
+    if agent not in review_handoff_agents:
         return False
     decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
-    if decision != "approve_final_release":
+    if decision not in {"approve_final_release", "approve", "mark_done"}:
         return False
     if (artifact or {}).get("errors") or (artifact or {}).get("bugs"):
         return False
     approval_gate_terms = (
+        "owner review pr",
         "owner should review",
         "owner/reviewer should review",
         "choose approve final release",
