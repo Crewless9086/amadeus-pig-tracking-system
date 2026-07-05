@@ -702,6 +702,7 @@ def _mission_status_buckets(missions):
 
 def _mission_dashboard_summary(mission):
     mission = mission if isinstance(mission, dict) else {}
+    mission_id = str(mission.get("mission_id") or "").strip()
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     compact_review_packet = {
@@ -721,7 +722,7 @@ def _mission_dashboard_summary(mission):
         )
         if key in review_packet
     }
-    compact_review_packet = _compact_review_packet(compact_review_packet)
+    compact_review_packet = _compact_review_packet(compact_review_packet, mission_id=mission_id)
     compact_metadata = {}
     if compact_review_packet:
         compact_metadata["review_packet"] = compact_review_packet
@@ -795,7 +796,7 @@ def _compact_workflow(workflow):
     return compact
 
 
-def _compact_review_packet(packet):
+def _compact_review_packet(packet, mission_id=""):
     packet = packet if isinstance(packet, dict) else {}
     compact = dict(packet)
     if "summary" in compact:
@@ -809,11 +810,11 @@ def _compact_review_packet(packet):
     if "unresolved_blockers" in compact:
         compact["unresolved_blockers"] = _compact_event_list(compact.get("unresolved_blockers"), limit=5)
     if "visual_review" in compact:
-        compact["visual_review"] = _compact_visual_review(compact.get("visual_review"))
+        compact["visual_review"] = _compact_visual_review(compact.get("visual_review"), mission_id=mission_id)
     return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
 
 
-def _compact_visual_review(visual_review):
+def _compact_visual_review(visual_review, mission_id=""):
     review = visual_review if isinstance(visual_review, dict) else {}
     media = []
     for item in _as_list(review.get("media"))[:4]:
@@ -821,6 +822,7 @@ def _compact_visual_review(visual_review):
         reference = str(item.get("reference") or item.get("url") or "").strip()
         if reference.startswith("data:image/"):
             reference = ""
+        reference = _dashboard_review_media_reference(mission_id, reference)
         media.append({
             "label": _short_text(item.get("label") or item.get("filename") or "Review media", 90),
             "reference": reference,
@@ -835,6 +837,24 @@ def _compact_visual_review(visual_review):
         "media": [item for item in media if item.get("reference")],
         "stage_evidence": _compact_event_list(review.get("stage_evidence"), limit=4),
     }
+
+
+def _dashboard_review_media_reference(mission_id, reference):
+    reference = str(reference or "").strip()
+    if not reference:
+        return ""
+    if reference.startswith(("/api/", "http://", "https://")):
+        return reference
+    if not mission_id:
+        return reference
+    safe_mission_id = "".join(char if char.isalnum() or char in "_.-" else "-" for char in str(mission_id or ""))[:120]
+    safe_filename = Path(reference).name
+    if not safe_mission_id or not safe_filename or Path(safe_filename).suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+        return reference
+    review_path = REVIEW_MEDIA_DIR / safe_mission_id / safe_filename
+    if review_path.exists() and review_path.is_file():
+        return f"/api/charlie/build-relay/review-media/{safe_mission_id}/{safe_filename}"
+    return reference
 
 
 def _compact_runner_status(status):

@@ -10,6 +10,7 @@ from modules.charlie.build_relay import (
     _reset_auth_rate_limit_for_tests,
     build_relay_action,
 )
+from modules.charlie import routes as charlie_routes
 from modules.charlie.mission_store import _clean_media_reference
 
 
@@ -551,6 +552,36 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["missions"][0]["mission_id"], "MISSION-1")
         list_missions.assert_called_once_with(status="", limit="1", compact=False)
+
+    def test_dashboard_summary_converts_existing_review_media_path_to_served_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            review_root = Path(tmp) / "review_media"
+            media_dir = review_root / "MISSION-1"
+            media_dir.mkdir(parents=True)
+            (media_dir / "desktop.png").write_bytes(b"fake-image")
+            with patch.object(charlie_routes, "REVIEW_MEDIA_DIR", review_root):
+                summary = charlie_routes._mission_dashboard_summary({
+                    "mission_id": "MISSION-1",
+                    "status": "pr_ready",
+                    "metadata": {
+                        "review_packet": {
+                            "visual_review": {
+                                "status": "captured",
+                                "media": [{
+                                    "filename": "desktop.png",
+                                    "reference": ".charlie_runner/review_media/MISSION-1/desktop.png",
+                                    "media_type": "image",
+                                }],
+                            },
+                        },
+                    },
+                })
+
+        media = summary["metadata"]["review_packet"]["visual_review"]["media"]
+        self.assertEqual(
+            media[0]["reference"],
+            "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
+        )
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_missions")
