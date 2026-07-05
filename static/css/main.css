@@ -1655,6 +1655,10 @@ button:disabled {
   background: var(--surface-muted);
 }
 
+.litter-inline-edit-toolbar.hidden {
+  display: none;
+}
+
 .inline-edit-controls {
   display: grid;
   grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 1.2fr) auto auto;
