@@ -249,6 +249,7 @@ WORKFLOW_TEMPLATES = {
             "builder",
             "tester",
             "qa_red_team",
+            "product_reviewer",
             "security_reviewer",
             "evidence_reviewer",
             "reviewer",
