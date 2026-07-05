@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from modules.charlie import mission_store, vault_store
 from modules.charlie.mission_memory import replay_packet
+from modules.charlie.mission_quality import classify_known_failures, score_mission_quality
 
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
@@ -83,6 +84,8 @@ def analyze_mission_replay(mission):
     review_packet = replay.get("review_packet") if isinstance(replay.get("review_packet"), dict) else {}
     debug_focus = replay.get("debug_focus") if isinstance(replay.get("debug_focus"), dict) else {}
     events = replay.get("timeline") if isinstance(replay.get("timeline"), list) else []
+    mission_quality = review_packet.get("mission_quality") if isinstance(review_packet.get("mission_quality"), dict) else score_mission_quality(mission, review_packet, review_packet.get("agent_execution", {}))
+    known_failures = classify_known_failures(str(review_packet), str(debug_focus), str(events))
     findings = []
     proposals = []
     if debug_focus.get("blocked_reason"):
@@ -109,6 +112,16 @@ def analyze_mission_replay(mission):
             "recommendation": "Strengthen planner/architect artifacts and require council synthesis before another write attempt.",
             "applies_automatically": False,
         })
+    for failure in known_failures:
+        findings.append(f"Known failure pattern detected: {failure.get('code')} - {failure.get('summary')}")
+        proposals.append({
+            "target_area": _target_area_for_failure(failure.get("code", "")),
+            "problem_detected": f"Known CHARLIE failure pattern: {failure.get('code', '')}",
+            "recommendation": " ".join(failure.get("recovery_steps", [])) or failure.get("summary", ""),
+            "applies_automatically": False,
+            "known_failure_code": failure.get("code", ""),
+            "severity": failure.get("severity", ""),
+        })
     if not findings:
         findings.append("No critical replay weakness detected from current stored evidence.")
     return {
@@ -118,6 +131,8 @@ def analyze_mission_replay(mission):
         "mission_id": replay.get("mission_id", ""),
         "findings": findings,
         "proposals": proposals,
+        "mission_quality": mission_quality,
+        "known_failures": known_failures,
         "replay": replay,
         "execution_boundary": _execution_boundary(),
     }, 200
@@ -407,6 +422,17 @@ def _proposal(area, bucket, score):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "applies_automatically": False,
     }
+
+
+def _target_area_for_failure(code):
+    code = str(code or "").strip().lower()
+    if code in {"pytest_missing", "windows_temp_lock"}:
+        return "tests"
+    if code in {"stale_review_packet", "review_media_missing"}:
+        return "gates"
+    if code in {"branch_mismatch", "powershell_redirect_conflict", "powershell_quoting"}:
+        return "runner_behavior"
+    return "templates"
 
 
 def _mission_evidence_texts(mission):

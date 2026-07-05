@@ -831,6 +831,7 @@
     const links = reviewPacket.links || {};
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const blocked = mission.status === "blocked" || reviewPacket.review_status === "agent_blocked";
+    const quality = reviewPacket.mission_quality || {};
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -844,6 +845,7 @@
         <div><dt>Preview / visual proof</dt><dd>${localPreviewMarkup(localPreview, links, reviewPacket.visual_review || {})}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
         <div><dt>Tests</dt><dd>${escapeHtml(firstReviewText(reviewPacket.test_evidence, "Not captured yet."))}</dd></div>
+        <div><dt>Quality</dt><dd>${missionQualityBadge(quality)}</dd></div>
         <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
       </dl>
       <div class="charlie-agent-strip" aria-label="Review workflow">${workflow.map(agentBadge).join("")}</div>
@@ -1079,6 +1081,9 @@
       <strong>Findings</strong>${listMarkup(packet.findings || workflowFindings(mission.agent_workflow), "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
       <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
+      <strong>Mission quality</strong>${missionQualityMarkup(packet.mission_quality)}
+      <strong>Recovery packet</strong>${recoveryPacketMarkup(packet.recovery_packet || packet.partial_recovery)}
+      <strong>Repo test command memory</strong>${repoTestCommandMemoryMarkup(packet.repo_test_command_memory || (packet.recovery_packet && packet.recovery_packet.preferred_test_commands))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Agent execution</strong>${agentExecutionSummaryMarkup(packet.agent_execution || {})}
       <strong>Quality gates</strong>${qualityGateMarkup(packet.quality_gates)}
@@ -1094,6 +1099,56 @@
     return (Array.isArray(workflow) ? workflow : [])
       .map((item) => item && item.findings ? `${item.agent || "agent"}: ${item.findings}` : "")
       .filter(Boolean);
+  }
+
+  function missionQualityBadge(quality) {
+    if (!quality || quality.score == null) return '<span class="status-pill status-pill-muted">Not scored</span>';
+    const score = Number(quality.score || 0);
+    const tone = score >= 96 ? "complete" : score >= 88 ? "active" : score >= 75 ? "pending" : "blocked";
+    return `<span class="status-pill is-${tone}">${escapeHtml(String(score))}% ${escapeHtml(safeText(quality.grade || ""))}</span>`;
+  }
+
+  function missionQualityMarkup(quality) {
+    if (!quality || quality.score == null) return '<p class="charlie-muted">No mission-quality score captured yet.</p>';
+    const components = quality.components || {};
+    const componentItems = Object.keys(components).map((key) => `${key.replace(/_/g, " ")}: ${components[key]}`);
+    return `
+      <div class="charlie-quality-summary">
+        ${missionQualityBadge(quality)}
+        ${listMarkup(componentItems, "No component score captured.")}
+        ${listMarkup(quality.blockers, "No quality blockers captured.")}
+      </div>
+    `;
+  }
+
+  function recoveryPacketMarkup(packet) {
+    if (!packet || typeof packet !== "object" || (!packet.recommended_recovery_steps && !packet.recommended_next_action)) {
+      return '<p class="charlie-muted">No recovery packet captured.</p>';
+    }
+    const known = Array.isArray(packet.known_failures) ? packet.known_failures.map((item) => `${item.code || "known"}: ${item.summary || ""}`) : [];
+    return `
+      <div class="charlie-recovery-packet">
+        <p>${escapeHtml(safeText(packet.blocked_reason || packet.recommended_next_action || "Recovery evidence captured."))}</p>
+        <dl class="charlie-mission-meta">
+          <div><dt>Agent</dt><dd>${escapeHtml(safeText(packet.agent || "--"))}</dd></div>
+          <div><dt>Rerun from</dt><dd>${escapeHtml(safeText(packet.rerun_from_stage || "--"))}</dd></div>
+          <div><dt>Owner safe</dt><dd>${escapeHtml(packet.owner_safe === false ? "No" : "Yes")}</dd></div>
+        </dl>
+        <strong>Known failure</strong>${listMarkup(known, "No known failure pattern matched.")}
+        <strong>Recovery steps</strong>${listMarkup(packet.recommended_recovery_steps, packet.recommended_next_action || "No recovery steps captured.")}
+      </div>
+    `;
+  }
+
+  function repoTestCommandMemoryMarkup(memory) {
+    if (!memory || typeof memory !== "object") return '<p class="charlie-muted">No repo test command memory captured.</p>';
+    const commands = Array.isArray(memory.commands) ? memory.commands.map((item) => `${item.command || item}: ${item.reason || ""}`) : [];
+    return `
+      <div class="charlie-test-memory">
+        ${listMarkup(commands, "No preferred commands captured.")}
+        ${listMarkup(memory.notes, "No test-memory notes captured.")}
+      </div>
+    `;
   }
 
   async function recordDecision(missionId, status, approvalLevel) {
@@ -1205,6 +1260,9 @@
       <strong>Findings</strong>${listMarkup(packet.findings, "No findings captured yet.")}
       <strong>Errors / bugs</strong>${listMarkup([...(packet.errors || []), ...(packet.bugs || [])], "No errors or bugs captured yet.")}
       <strong>Unresolved blockers</strong>${unresolvedBlockersMarkup(packet.unresolved_blockers || (packet.blocked_summary && packet.blocked_summary.unresolved_blockers))}
+      <strong>Mission quality</strong>${missionQualityMarkup(packet.mission_quality)}
+      <strong>Recovery packet</strong>${recoveryPacketMarkup(packet.recovery_packet || packet.partial_recovery)}
+      <strong>Repo test command memory</strong>${repoTestCommandMemoryMarkup(packet.repo_test_command_memory || (packet.recovery_packet && packet.recovery_packet.preferred_test_commands))}
       <strong>Changed files</strong>${listMarkup(packet.changed_files, "No changed files captured yet.")}
       <strong>Test evidence</strong>${listMarkup(packet.test_evidence, "No test evidence captured yet.")}
       <strong>Preview / visual proof</strong>${localPreviewDetailMarkup(packet.local_preview || {}, packet.links || {}, packet.visual_review || {})}
@@ -1228,6 +1286,8 @@
     const agentExecution = packet.agent_execution || {};
     const qualityGates = (packet.review_packet && packet.review_packet.quality_gates) || debug.quality_gates || [];
     const backflowEvents = debug.backflow_events || (packet.review_packet && packet.review_packet.backflow_events) || [];
+    const missionQuality = packet.mission_quality || (packet.review_packet && packet.review_packet.mission_quality) || {};
+    const recoveryPacket = packet.recovery_packet || (packet.review_packet && (packet.review_packet.recovery_packet || packet.review_packet.partial_recovery)) || {};
     const latestItems = Object.keys(latest).map((agent) => {
       const item = latest[agent] || {};
       return `${agent}: ${item.summary || item.type || "recorded"}`;
@@ -1240,7 +1300,10 @@
           <div><strong>Blocked reason</strong><span>${escapeHtml(safeText(debug.blocked_reason || "No blocker captured"))}</span></div>
           <div><strong>Memory</strong><span>${escapeHtml(safeText(memory.updated_at || "No mission memory timestamp"))}</span></div>
           <div><strong>Parallel mode</strong><span>${escapeHtml(safeText((packet.parallel_planning || {}).mode || "Not captured"))}</span></div>
+          <div><strong>Quality score</strong><span>${escapeHtml(safeText(missionQuality.score != null ? `${missionQuality.score}% ${missionQuality.grade || ""}` : "Not scored"))}</span></div>
         </div>
+        <strong>Mission quality</strong>${missionQualityMarkup(missionQuality)}
+        <strong>Recovery packet</strong>${recoveryPacketMarkup(recoveryPacket)}
         <strong>Latest agent memory</strong>${listMarkup(latestItems, "No agent memory captured yet.")}
         <strong>Execution timeline</strong>${replayTimelineMarkup(timeline)}
         <strong>Stage ledger</strong>${agentExecutionSummaryMarkup(agentExecution)}

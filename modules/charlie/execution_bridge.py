@@ -43,6 +43,11 @@ from modules.charlie.mission_memory import (
     memory_prompt_context,
     partial_recovery_contract_packet,
 )
+from modules.charlie.mission_quality import (
+    build_recovery_packet,
+    repo_test_command_memory,
+    score_mission_quality,
+)
 from modules.charlie.source_map import (
     implementation_source_packet,
     validate_implementation_inspection,
@@ -935,6 +940,14 @@ def _partial_work_recovery_packet(changed_files, stdout_text="", stderr_text="")
         "changed_files": changed_files[:40],
         "pr_links": pr_links[:10],
         "commit_refs": commit_refs,
+        "preferred_test_commands": repo_test_command_memory(changed_files),
+        "known_failure_recovery": build_recovery_packet(
+            agent="codex_supervisor",
+            blocked_reason="No final artifact or partial execution recovery required.",
+            changed_files=changed_files,
+            stdout_text=stdout_text,
+            stderr_text=stderr_text,
+        ),
         "recommended_next_action": next_action,
         "supervisor_note": "No-final-artifact timeout is a blocking quality gate; this packet preserves recovery evidence without approving the mission.",
     }
@@ -1351,6 +1364,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     ui_contract = _ui_quality_contract_for_mission(mission)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
+    test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
     model_assignment = choose_agent_model(
         agent=agent,
         mission_type=mission.get("mission_type", ""),
@@ -1372,6 +1386,9 @@ Final artifact contract:
 
 Partial recovery contract:
 {json.dumps(partial_recovery_contract_packet(), indent=2)}
+
+Repo test command memory:
+{json.dumps(test_command_memory, indent=2)}
 
 Mission:
 {mission.get("raw_text", "")}
@@ -1447,6 +1464,18 @@ Every final JSON object is normalized into a CHARLIE handoff report with:
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
+
+
+def _mission_changed_files_from_artifacts(artifacts):
+    files = []
+    for artifact in (artifacts or {}).values():
+        if not isinstance(artifact, dict):
+            continue
+        for value in artifact.get("changed_files") or []:
+            text = str(value or "").strip()
+            if text and text not in files:
+                files.append(text)
+    return files
 
 
 def build_vault_brain_context(mission, agent=""):
@@ -3524,6 +3553,15 @@ def _block_agent_stage(
         stdout_text=getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]),
         stderr_text=getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]),
     )
+    full_recovery_packet = build_recovery_packet(
+        agent=agent,
+        blocked_reason=blocked_reason,
+        artifact=artifact,
+        ledger=ledger,
+        changed_files=artifact.get("changed_files") or _changed_files(),
+        stdout_text=getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]),
+        stderr_text=getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]),
+    )
     _record_mission_memory_event(
         {"mission_id": mission_id},
         build_memory_event(
@@ -3564,6 +3602,7 @@ def _block_agent_stage(
                 "quality_gates": ledger.get("quality_gates", []),
                 "backflow_events": ledger.get("backflow_events", []),
                 "partial_recovery": recovery_packet,
+                "recovery_packet": full_recovery_packet,
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
                 "recommended_next_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} with the unresolved blockers.",
@@ -3713,6 +3752,25 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    mission_quality = score_mission_quality(
+        mission,
+        {
+            "review_status": "ready_for_owner_review",
+            "changed_files": changed_files,
+            "test_evidence": reviewer.get("test_evidence") or tester.get("tests_run") or [],
+            "local_preview": local_preview,
+            "visual_review": visual_review,
+            "links": review_links,
+            "pr_url": reviewer.get("pr_url") or review_links.get("pr") or review_links.get("pull_request") or "",
+            "quality_gates": ledger.get("quality_gates", []),
+            "backflow_events": ledger.get("backflow_events", []),
+            "brain_guard": brain_guard,
+            "normalized_vault_writes": normalized_vault_writes,
+            "review_board": review_board,
+            "agent_artifacts": artifacts,
+        },
+        ledger,
+    )
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -3744,6 +3802,8 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "backflow_events": ledger.get("backflow_events", []),
             "brain_guard": brain_guard,
             "normalized_vault_writes": normalized_vault_writes,
+            "mission_quality": mission_quality,
+            "repo_test_command_memory": repo_test_command_memory(changed_files),
             "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
@@ -4125,6 +4185,28 @@ def _block_completed_agent_review(
     if unresolved:
         ledger["unresolved_blockers"] = unresolved
     ledger_path = _write_agent_ledger(output_dir, execution_id, ledger)
+    recovery_packet = build_recovery_packet(
+        agent=agent,
+        blocked_reason=blocked_reason,
+        artifact=artifact,
+        ledger=ledger,
+        changed_files=artifact.get("changed_files") or _changed_files(),
+    )
+    mission_quality = score_mission_quality(
+        mission,
+        {
+            "review_status": "agent_blocked",
+            "blocked_agent": agent,
+            "blocked_reason": blocked_reason,
+            "unresolved_blockers": unresolved,
+            "changed_files": artifact.get("changed_files") or _changed_files(),
+            "test_evidence": artifact.get("test_evidence", []),
+            "quality_gates": ledger.get("quality_gates", []),
+            "backflow_events": ledger.get("backflow_events", []),
+            "recovery_packet": recovery_packet,
+        },
+        ledger,
+    )
     review_packet = {
         "summary": f"CHARLIE Agent Runner v2 blocked at {agent}: {blocked_reason}",
         "blocked_summary": _blocked_review_summary(agent, blocked_reason, ledger, artifact),
@@ -4155,6 +4237,8 @@ def _block_completed_agent_review(
         },
         "quality_gates": ledger.get("quality_gates", []),
         "backflow_events": ledger.get("backflow_events", []),
+        "recovery_packet": recovery_packet,
+        "mission_quality": mission_quality,
         "blocked_agent": agent,
         "blocked_reason": blocked_reason,
         "recommended_next_action": artifact.get("next_action", "Send back and require captured Visual Review media before owner approval."),

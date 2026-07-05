@@ -39,6 +39,7 @@ from modules.charlie.mission_memory import (
     partial_recovery_contract_packet,
     replay_packet,
 )
+from modules.charlie.mission_quality import score_mission_quality
 from modules.charlie.replay_stress import golden_example_candidate, stress_replay_mission
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
@@ -565,11 +566,16 @@ def charlie_build_relay_mission_replay_route(mission_id):
         return jsonify(result), status_code
     mission = result.get("mission") or {}
     packet = replay_packet(mission)
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    agent_execution = metadata.get("agent_execution") if isinstance(metadata.get("agent_execution"), dict) else review_packet.get("agent_execution", {})
     packet.update({
         "success": True,
         "status": "ok",
         "final_artifact_contract": final_artifact_contract_packet(),
         "partial_recovery_contract": partial_recovery_contract_packet(),
+        "mission_quality": review_packet.get("mission_quality") or score_mission_quality(mission, review_packet, agent_execution),
+        "recovery_packet": review_packet.get("recovery_packet") or review_packet.get("partial_recovery") or {},
         "parallel_planning": parallel_agent_planning_packet([
             item.get("agent", "")
             for item in mission.get("agent_workflow", [])
@@ -722,6 +728,9 @@ def _mission_dashboard_summary(mission):
             "recommended_next_action",
             "backflow_events",
             "unresolved_blockers",
+            "mission_quality",
+            "recovery_packet",
+            "repo_test_command_memory",
         )
         if key in review_packet
     }

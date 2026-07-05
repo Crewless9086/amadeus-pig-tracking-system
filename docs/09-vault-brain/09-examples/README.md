@@ -9,6 +9,7 @@ Required use:
 - Mission intake and planning work must inspect `GOLD_STANDARD_MISSION.md`.
 - Owner review work must inspect `GOLD_STANDARD_REVIEW_PACKET.md`.
 - Focused data-backed product improvements must inspect `GOLD_STANDARD_LITTER_SUMMARY_PR89.md`.
+- State-aware UI improvements and Brain Guard recovery work must inspect `GOLD_STANDARD_LITTER_DETAIL_PR90.md`.
 - Agent creation or agent upgrades must inspect `GOLD_STANDARD_AGENT_CHARTER.md`.
 - Business or income-stream work must inspect `GOLD_STANDARD_BUSINESS_PLAN.md`.
 - SAM Meat Sales work must inspect `SAM_MEAT_GOLD_STANDARD_REPLIES.md`.

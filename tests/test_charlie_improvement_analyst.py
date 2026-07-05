@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from modules.charlie.improvement_analyst import (
     PROPOSAL_LABEL,
+    analyze_mission_replay,
     analyze_improvement_opportunities,
     create_owner_gated_improvement_missions,
     generate_and_store_proposals,
@@ -48,6 +49,27 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         ])
 
         self.assertEqual(proposals, [])
+
+    def test_replay_analysis_turns_known_failure_into_owner_gated_proposal(self):
+        result, status = analyze_mission_replay({
+            "mission_id": "MISSION-KNOWN",
+            "status": "blocked",
+            "metadata": {
+                "review_packet": {
+                    "review_status": "agent_blocked",
+                    "blocked_agent": "reviewer",
+                    "blocked_reason": "Visual Review media was not captured.",
+                    "errors": ["python -m pytest failed: No module named pytest"],
+                }
+            },
+        })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["known_failures"])
+        codes = {item["known_failure_code"] for item in result["proposals"] if item.get("known_failure_code")}
+        self.assertIn("pytest_missing", codes)
+        self.assertIn("review_media_missing", codes)
+        self.assertTrue(all(proposal["applies_automatically"] is False for proposal in result["proposals"]))
 
     @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")

@@ -894,6 +894,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["mission_memory"]["version"], "charlie_mission_memory_v1")
         self.assertEqual(data["debug_focus"]["blocked_agent"], "builder")
         self.assertEqual(data["final_artifact_contract"]["version"], "charlie_final_artifact_contract_v2")
+        self.assertEqual(data["mission_quality"]["grade"], "blocked_or_incomplete")
+        self.assertIn("score", data["mission_quality"])
+        self.assertIn("recovery_packet", data)
         self.assertIn("builder", data["parallel_planning"]["serialized_write_agents"])
         get_mission.assert_called_once_with("MISSION-1")
 
