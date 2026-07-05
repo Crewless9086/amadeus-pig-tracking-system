@@ -451,6 +451,16 @@ function renderStillbornReclassifyPanel(litter) {
 }
 
 function manualActionAvailability(litter) {
+  if (detailState(litter) !== "active") {
+    return {
+      canRecordPigletDeath: false,
+      canRecordSexCounts: false,
+      canAssignTagNumbers: false,
+      activeUnsexedCount: 0,
+      activeUntaggedCount: 0,
+    };
+  }
+
   const hasActivePiglets = Number(litter.active_count || 0) > 0;
   const activeUnsexedPiglets = (litter.piglets || []).filter((piglet) => (
     piglet.status === "Active"
@@ -1190,9 +1200,10 @@ function pigletWeightText(piglet) {
 
 function buildPigletTable(piglets) {
   const litterId = getLitterIdFromUrl();
+  const litterIsActive = detailState(window.currentLitterDetail || {}) === "active";
   const rows = piglets.map((piglet) => {
     const profileHref = pigProfileHref(piglet.pig_id, litterId);
-    const canEditTag = piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
+    const canEditTag = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
     const tagCell = canEditTag
       ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Add tag" aria-label="Tag number for ${escapeHtml(piglet.pig_id || "piglet")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
