@@ -739,6 +739,8 @@ def _allocation_overview_row(row):
         "Current_Pen_Name": _text(row.get("current_pen_name")),
         "Current_Weight_Kg": _float_or_none(row.get("current_weight_kg")),
         "Last_Weight_Date": _date_text(row.get("last_weight_date")),
+        "Wean_Date": _date_text(row.get("wean_date")),
+        "Wean_Weight_Kg": _float_or_none(row.get("wean_weight_kg")),
         "Date_Of_Birth": _date_text(row.get("date_of_birth")),
         "Age_Days": _age_days(row.get("date_of_birth")),
         "Calculated_Stage": _calculated_stage(row),
