@@ -2089,6 +2089,7 @@ def mark_litter_weaned(
 
     pig_updates = {
         pig_id: {
+            "Animal_Type": "Weaner",
             "Litter_Size_Weaned": weaned_count,
             "Wean_Date": sheet_wean_date,
             "Updated_At": today,
@@ -3857,6 +3858,9 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
 
     if animal_type in {"Grower", "Finisher", "Weaner"}:
         return "Growing", "Pig is active/on farm but not in a current candidate range."
+
+    if animal_type == "Piglet" and growth.get("wean_date"):
+        return "Needs Data", "Pig has wean data but Animal Type is still Piglet. Update lifecycle stage to Weaner."
 
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 

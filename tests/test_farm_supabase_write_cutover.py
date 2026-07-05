@@ -199,6 +199,9 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         self.assertFalse(result["source"]["writes_to_sheets"])
         update_litter.assert_called_once()
         update_pigs.assert_called_once()
+        updates_by_pig_id = update_pigs.call_args.args[0]
+        self.assertEqual(updates_by_pig_id["PIG-1"]["Animal_Type"], "Weaner")
+        self.assertEqual(updates_by_pig_id["PIG-2"]["Animal_Type"], "Weaner")
         sheet_litter_update.assert_not_called()
         sheet_pig_update.assert_not_called()
 

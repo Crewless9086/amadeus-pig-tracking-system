@@ -1526,6 +1526,10 @@ class LitterNewbornHealthTests(unittest.TestCase):
         get_pigs.assert_called_once()
         update_litter.assert_called_once()
         update_pigs.assert_called_once()
+        updates_by_pig_id = update_pigs.call_args.args[0]
+        self.assertEqual(updates_by_pig_id["PIG-1"]["Animal_Type"], "Weaner")
+        self.assertEqual(updates_by_pig_id["PIG-2"]["Animal_Type"], "Weaner")
+        self.assertEqual(updates_by_pig_id["PIG-1"]["Wean_Weight_Kg"], 6.5)
         sheet_update.assert_not_called()
 
     def test_mark_pig_death_or_removal_prefers_supabase_pig_reads(self):

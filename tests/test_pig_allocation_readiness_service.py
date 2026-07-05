@@ -493,6 +493,41 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["days_since_wean"], 10)
         self.assertEqual(row["post_wean_daily_gain_kg"], 0.35)
 
+    def test_allocation_readiness_explains_weaned_piglet_stage_mismatch(self):
+        overview_rows = [{
+            "Pig_ID": "PIG-STAGE",
+            "Tag_Number": "82",
+            "Animal_Type": "Piglet",
+            "Sex": "Female",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Grow_Out",
+            "Current_Pen_ID": "PEN-1",
+            "Current_Weight_Kg": "12",
+            "Last_Weight_Date": "2026-06-15",
+            "Date_Of_Birth": "2026-04-01",
+            "Age_Days": "75",
+            "Wean_Date": "2026-05-01",
+            "Wean_Weight_Kg": "5",
+        }]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{"Pig_ID": "PIG-STAGE", "Weight_Date": "2026-06-15", "Weight_Kg": "12"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 15))
+
+        row = result["pigs"][0]
+        self.assertEqual(row["readiness_bucket"], "Needs Data")
+        self.assertEqual(
+            row["readiness_reason"],
+            "Pig has wean data but Animal Type is still Piglet. Update lifecycle stage to Weaner.",
+        )
+
     def test_purpose_review_queue_filters_unknown_purpose_and_keeps_litter_focus(self):
         allocation_result = {
             "success": True,

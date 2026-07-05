@@ -65,6 +65,7 @@ _PIG_UPDATE_FIELD_MAP = {
     "Status": "status",
     "On_Farm": "on_farm",
     "Sex": "sex",
+    "Animal_Type": "animal_type",
     "Tag_Number": "tag_number",
     "Purpose": "purpose",
     "Litter_Size_Born": "litter_size_born",
