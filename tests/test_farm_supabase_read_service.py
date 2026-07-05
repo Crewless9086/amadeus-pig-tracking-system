@@ -716,6 +716,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["average_weight_source"], "wean_weight")
         self.assertEqual(detail["average_weight_kg"], 9.0)
         self.assertEqual(detail["average_current_weight_kg"], 26.0)
+        self.assertEqual(detail["piglets"][1]["exit_reason"], "livestock_sale")
         self.assertEqual(detail["estimated_wean_date"], "")
         self.assertEqual(detail["wean_tag_attention_start_date"], "")
         self.assertIsNone(detail["days_until_estimated_wean"])

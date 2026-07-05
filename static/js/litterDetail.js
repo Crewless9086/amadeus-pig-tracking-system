@@ -1198,6 +1198,18 @@ function pigletWeightText(piglet) {
     : "No weight";
 }
 
+function pigletStatusText(piglet) {
+  const exitReason = String(piglet.exit_reason || "").toLowerCase().replace(/[-_]/g, " ");
+  if (exitReason === "stillborn") return "Stillborn";
+  return piglet.status || "-";
+}
+
+function pigletWeanWeightText(piglet) {
+  return piglet.wean_weight_kg !== null && piglet.wean_weight_kg !== undefined && piglet.wean_weight_kg !== ""
+    ? `${formatNumber(piglet.wean_weight_kg, 2)} kg`
+    : "-";
+}
+
 function buildPigletTable(piglets) {
   const litterId = getLitterIdFromUrl();
   const litterIsActive = detailState(window.currentLitterDetail || {}) === "active";
@@ -1216,7 +1228,9 @@ function buildPigletTable(piglets) {
         <td>${tagCell}</td>
         <td>${escapeHtml(piglet.sex || "-")}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
-        <td>${escapeHtml(piglet.status || "-")}</td>
+        <td>${escapeHtml(piglet.wean_date || "-")}</td>
+        <td>${escapeHtml(pigletWeanWeightText(piglet))}</td>
+        <td>${escapeHtml(pigletStatusText(piglet))}</td>
         <td>${escapeHtml(piglet.on_farm || "-")}</td>
         <td>${escapeHtml(piglet.age_days || "-")}</td>
         <td>${escapeHtml(piglet.current_pen_id || "-")}</td>
@@ -1234,6 +1248,8 @@ function buildPigletTable(piglets) {
             <th>Tag Number</th>
             <th>Sex</th>
             <th>Weight</th>
+            <th>Wean Date</th>
+            <th>Wean Weight</th>
             <th>Status</th>
             <th>On Farm</th>
             <th>Age</th>
