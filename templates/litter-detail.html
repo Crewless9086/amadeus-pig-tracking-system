@@ -21,11 +21,11 @@
 
       <div class="litter-workspace">
         <main class="litter-main-column">
-          <section class="litter-summary-panel">
+          <section id="litter_summary_panel" class="litter-summary-panel">
             <div class="section-title-row">
               <div>
                 <h2>Litter Summary</h2>
-                <p>Core records and current linked piglet counts.</p>
+                <p id="litter_summary_intro">Core records and current linked piglet counts.</p>
               </div>
             </div>
 
@@ -51,7 +51,7 @@
               </div>
 
               <div class="detail-card">
-                <span class="detail-label">Average Weight</span>
+                <span id="litter_average_weight_label" class="detail-label">Average Weight</span>
                 <span id="litter_average_weight_value" class="detail-value">-</span>
               </div>
 
@@ -60,19 +60,24 @@
                 <span id="litter_birth_date_value" class="detail-value">-</span>
               </div>
 
-              <div class="detail-card">
+              <div id="litter_estimated_wean_card" class="detail-card">
                 <span class="detail-label">Est. Wean Date</span>
                 <span id="litter_estimated_wean_date_value" class="detail-value">-</span>
               </div>
 
-              <div class="detail-card">
+              <div id="litter_wean_attention_card" class="detail-card">
                 <span class="detail-label">Attention Starts</span>
                 <span id="litter_wean_attention_start_value" class="detail-value">-</span>
               </div>
 
-              <div class="detail-card">
+              <div id="litter_days_until_wean_card" class="detail-card">
                 <span class="detail-label">Days to Wean</span>
                 <span id="litter_days_until_wean_value" class="detail-value">-</span>
+              </div>
+
+              <div id="litter_actual_wean_card" class="detail-card hidden">
+                <span class="detail-label">Wean Date</span>
+                <span id="litter_actual_wean_date_value" class="detail-value">-</span>
               </div>
 
               <div class="detail-card">

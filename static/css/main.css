@@ -1437,6 +1437,37 @@ button:disabled {
   background: #fffdf9;
 }
 
+.litter-summary-panel {
+  border-left: 5px solid var(--green-main);
+}
+
+.litter-summary-panel.litter-state-weaned,
+.litter-summary-panel.litter-state-completed {
+  border-color: #2f7d58;
+  background: #f7fbf8;
+}
+
+.litter-summary-panel.litter-state-weaned::before,
+.litter-summary-panel.litter-state-completed::before {
+  content: "Weaned and closed";
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 12px;
+  border: 1px solid #b7dcc7;
+  border-radius: 999px;
+  background: #e7f5ec;
+  color: #245f42;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.litter-summary-panel.litter-state-completed::before {
+  content: "Completed litter";
+}
+
 .litter-piglet-section {
   margin-top: 22px;
 }
