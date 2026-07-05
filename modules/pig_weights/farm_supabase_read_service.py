@@ -163,11 +163,11 @@ def _lifecycle_outcome_for_exit(row):
     exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
     if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
         return "dead"
-    if status == "removed" or exit_reason in {"removed", "other"}:
+    if status in {"removed", "disposed"} or exit_reason in {"removed", "disposed", "disposal", "other"}:
         return "removed"
     if status == "slaughtered" or exit_reason in {"slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir"}:
         return "slaughtered"
-    if status == "sold" or exit_reason in {"sold", "livestock", "livestock_sale", "live_sale", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
+    if status in {"sold", "completed_sale"} or exit_reason in {"sold", "livestock", "livestock_sale", "live_sale", "completed_sale", "sale_completed", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
         return "sold"
     if exit_reason:
         return "other"
@@ -929,19 +929,23 @@ def _litter_reconciliation(litter, pigs):
     live_linked = linked - non_live_history_count
     non_live_count = int(stillborn_count) + int(mummified_count)
     source_counts_total = int(born_alive) + non_live_count if born_alive is not None else None
+    accounted_birth_records = live_linked + non_live_count
     source_counts_consistent = bool(
         total_born is not None
         and source_counts_total is not None
         and int(total_born) == source_counts_total
     )
     live_count_mismatch = bool(born_alive is not None and int(born_alive) != live_linked)
-    total_record_mismatch = bool(total_born is not None and int(total_born) != linked)
-    mismatch = live_count_mismatch or total_record_mismatch
+    total_record_mismatch = bool(total_born is not None and int(total_born) != accounted_birth_records)
+    non_live_history_mismatch = bool(non_live_history_count > non_live_count)
+    mismatch = live_count_mismatch or total_record_mismatch or non_live_history_mismatch
     suggested_born_alive = live_linked
     if live_count_mismatch:
-        recommended_action = "Review litter live-born records before changing Born Alive."
+        recommended_action = "Review missing or extra live-born piglet records before changing Born Alive."
     elif total_record_mismatch:
-        recommended_action = "Review missing or extra litter piglet records before changing counts."
+        recommended_action = "Review litter source counts; Total Born should match Born Alive plus stillborn/mummified outcomes."
+    elif non_live_history_mismatch:
+        recommended_action = "Review stillborn/mummified piglet history against litter outcome counts."
     else:
         recommended_action = "No birth-count correction needed."
     return {
@@ -952,6 +956,7 @@ def _litter_reconciliation(litter, pigs):
         "non_live_count": non_live_count,
         "linked_pig_records": linked,
         "live_linked_pig_records": live_linked,
+        "accounted_birth_records": accounted_birth_records,
         "active_pig_records": active,
         "exited_pig_records": exited,
         "stillborn_history_count": stillborn_history_count,
