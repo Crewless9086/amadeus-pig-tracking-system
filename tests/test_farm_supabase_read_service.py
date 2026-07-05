@@ -379,6 +379,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             "purpose": "Grow_Out",
             "current_weight_kg": 61.5,
             "last_weight_date": date(2026, 6, 22),
+            "wean_date": date(2026, 5, 10),
+            "wean_weight_kg": 9.5,
             "current_pen_id": "PEN-1",
             "current_pen_name": "Grower Pen",
             "mother_pig_id": "SOW-1",
@@ -410,6 +412,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(inputs["source"], "supabase_canonical")
         self.assertEqual(inputs["overview_rows"][0]["Pig_ID"], "PIG-1")
         self.assertEqual(inputs["overview_rows"][0]["On_Farm"], "Yes")
+        self.assertEqual(inputs["overview_rows"][0]["Wean_Date"], "2026-05-10")
+        self.assertEqual(inputs["overview_rows"][0]["Wean_Weight_Kg"], 9.5)
         self.assertEqual(inputs["weight_rows"][0]["Weight_Kg"], 61.5)
         self.assertEqual(inputs["litter_rows"][0]["Born_Alive"], 10.0)
         self.assertEqual(inputs["pen_lookup"]["PEN-1"]["pen_name"], "Grower Pen")
