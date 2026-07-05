@@ -63,23 +63,70 @@ def write_project(project, database_url=None, connect_factory=None):
         "status": _clean(project.get("status") or "active", 80),
         "metadata_json": _json(project.get("metadata") or project),
     }
-    sql = """
-        insert into public.charlie_vault_projects (
-            project_id, project_key, name, purpose, owner_label, workflow_template, status, metadata_json, created_at, updated_at
-        ) values (
-            %(project_id)s, %(project_key)s, %(name)s, %(purpose)s, %(owner_label)s, %(workflow_template)s, %(status)s, %(metadata_json)s::jsonb, now(), now()
-        )
-        on conflict (project_id) do update set
-            project_key = excluded.project_key,
-            name = excluded.name,
-            purpose = excluded.purpose,
-            owner_label = excluded.owner_label,
-            workflow_template = excluded.workflow_template,
-            status = excluded.status,
-            metadata_json = excluded.metadata_json,
-            updated_at = now()
-    """
-    return _execute_write(sql, params, "project_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_vault_projects")
+            if _has_column(columns, "purpose"):
+                insert_columns = [
+                    "project_id", "project_key", "name", "purpose", "owner_label",
+                    "workflow_template", "status", "metadata_json", "created_at", "updated_at",
+                ]
+                value_sql = [
+                    "%(project_id)s", "%(project_key)s", "%(name)s", "%(purpose)s",
+                    "%(owner_label)s", "%(workflow_template)s", "%(status)s",
+                    "%(metadata_json)s::jsonb", "now()", "now()",
+                ]
+                update_sql = [
+                    "project_key = excluded.project_key",
+                    "name = excluded.name",
+                    "purpose = excluded.purpose",
+                    "owner_label = excluded.owner_label",
+                    "workflow_template = excluded.workflow_template",
+                    "status = excluded.status",
+                    "metadata_json = excluded.metadata_json",
+                    "updated_at = now()",
+                ]
+            else:
+                insert_columns = [
+                    "project_id", "project_key", "name", "status", "metadata_json",
+                    "created_at", "updated_at",
+                ]
+                value_sql = [
+                    "%(project_id)s", "%(project_key)s", "%(name)s", "%(status)s",
+                    "%(metadata_json)s::jsonb", "now()", "now()",
+                ]
+                update_sql = [
+                    "project_key = excluded.project_key",
+                    "name = excluded.name",
+                    "status = excluded.status",
+                    "metadata_json = excluded.metadata_json",
+                    "updated_at = now()",
+                ]
+                if _has_column(columns, "domain"):
+                    insert_columns.insert(3, "domain")
+                    value_sql.insert(3, "%(workflow_template)s")
+                    update_sql.insert(3, "domain = excluded.domain")
+                if _has_column(columns, "owner_notes"):
+                    insert_columns.insert(-2, "owner_notes")
+                    value_sql.insert(-2, "%(purpose)s")
+                    update_sql.insert(-2, "owner_notes = excluded.owner_notes")
+            sql = f"""
+                insert into public.charlie_vault_projects (
+                    {", ".join(insert_columns)}
+                ) values (
+                    {", ".join(value_sql)}
+                )
+                on conflict (project_id) do update set
+                    {", ".join(update_sql)}
+            """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return _write_error("project_written", exc), 503
+    return {"success": True, "configured": True, "status": "project_written"}, 200
 
 
 def write_artifact(mission_id, artifact_type, content, title="", summary="", project_id="", agent="",
@@ -304,24 +351,71 @@ def write_agent_run(mission_id, agent, run, stage="", database_url=None, connect
         "tool_calls_json": _json(run.get("tool_calls") if isinstance(run.get("tool_calls"), list) else []),
         "metadata_json": _json(run),
     }
-    sql = """
-        insert into public.charlie_agent_runs (
-            run_id, mission_id, agent, stage, status, model_provider, model_name, started_at, completed_at,
-            cost_estimate, token_usage_json, tool_calls_json, metadata_json
-        ) values (
-            %(run_id)s, %(mission_id)s, %(agent)s, %(stage)s, %(status)s, %(model_provider)s, %(model_name)s,
-            nullif(%(started_at)s, '')::timestamptz, nullif(%(completed_at)s, '')::timestamptz,
-            %(cost_estimate)s, %(token_usage_json)s::jsonb, %(tool_calls_json)s::jsonb, %(metadata_json)s::jsonb
-        )
-        on conflict (run_id) do update set
-            status = excluded.status,
-            completed_at = excluded.completed_at,
-            cost_estimate = excluded.cost_estimate,
-            token_usage_json = excluded.token_usage_json,
-            tool_calls_json = excluded.tool_calls_json,
-            metadata_json = excluded.metadata_json
-    """
-    return _execute_write(sql, params, "agent_run_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_agent_runs")
+            if _has_column(columns, "agent"):
+                sql = """
+                    insert into public.charlie_agent_runs (
+                        run_id, mission_id, agent, stage, status, model_provider, model_name, started_at, completed_at,
+                        cost_estimate, token_usage_json, tool_calls_json, metadata_json
+                    ) values (
+                        %(run_id)s, %(mission_id)s, %(agent)s, %(stage)s, %(status)s, %(model_provider)s, %(model_name)s,
+                        nullif(%(started_at)s, '')::timestamptz, nullif(%(completed_at)s, '')::timestamptz,
+                        %(cost_estimate)s, %(token_usage_json)s::jsonb, %(tool_calls_json)s::jsonb, %(metadata_json)s::jsonb
+                    )
+                    on conflict (run_id) do update set
+                        status = excluded.status,
+                        completed_at = excluded.completed_at,
+                        cost_estimate = excluded.cost_estimate,
+                        token_usage_json = excluded.token_usage_json,
+                        tool_calls_json = excluded.tool_calls_json,
+                        metadata_json = excluded.metadata_json
+                """
+            else:
+                legacy = {
+                    **params,
+                    "execution_id": _clean(run.get("execution_id") or "", 160),
+                    "attempt": int(run.get("attempt") or 1),
+                    "current_action": _clean(run.get("current_action") or run.get("summary") or "", 1200),
+                    "files_inspected": _json(run.get("files_inspected") if isinstance(run.get("files_inspected"), list) else []),
+                    "commands_run": _json(run.get("commands_run") if isinstance(run.get("commands_run"), list) else []),
+                    "stdout_tail": _clean(run.get("stdout_tail") or "", 2000),
+                    "stderr_tail": _clean(run.get("stderr_tail") or "", 2000),
+                    "changed_files": _json(run.get("changed_files") if isinstance(run.get("changed_files"), list) else []),
+                    "artifact_id": _clean(run.get("artifact_id") or "", 160),
+                }
+                params = legacy
+                sql = """
+                    insert into public.charlie_agent_runs (
+                        run_id, mission_id, execution_id, agent_name, status, attempt, current_action,
+                        files_inspected, commands_run, stdout_tail, stderr_tail, changed_files,
+                        artifact_id, started_at, completed_at, created_at
+                    ) values (
+                        %(run_id)s, %(mission_id)s, %(execution_id)s, %(agent)s, %(status)s, %(attempt)s,
+                        %(current_action)s, %(files_inspected)s::jsonb, %(commands_run)s::jsonb,
+                        %(stdout_tail)s, %(stderr_tail)s, %(changed_files)s::jsonb,
+                        nullif(%(artifact_id)s, ''), nullif(%(started_at)s, '')::timestamptz,
+                        nullif(%(completed_at)s, '')::timestamptz, now()
+                    )
+                    on conflict (run_id) do update set
+                        status = excluded.status,
+                        current_action = excluded.current_action,
+                        files_inspected = excluded.files_inspected,
+                        commands_run = excluded.commands_run,
+                        stdout_tail = excluded.stdout_tail,
+                        stderr_tail = excluded.stderr_tail,
+                        changed_files = excluded.changed_files,
+                        completed_at = excluded.completed_at
+                """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return _write_error("agent_run_written", exc), 503
+    return {"success": True, "configured": True, "status": "agent_run_written"}, 200
 
 
 def write_handoff_report(report, database_url=None, connect_factory=None):
@@ -340,18 +434,57 @@ def write_handoff_report(report, database_url=None, connect_factory=None):
         "report_json": _json(report),
         "validation_json": _json(report.get("validation") if isinstance(report.get("validation"), dict) else {}),
     }
-    sql = """
-        insert into public.charlie_handoff_reports (
-            handoff_id, mission_id, agent, stage, status, report_json, validation_json, created_at
-        ) values (
-            %(handoff_id)s, %(mission_id)s, %(agent)s, %(stage)s, %(status)s, %(report_json)s::jsonb, %(validation_json)s::jsonb, now()
-        )
-        on conflict (handoff_id) do update set
-            status = excluded.status,
-            report_json = excluded.report_json,
-            validation_json = excluded.validation_json
-    """
-    return _execute_write(sql, params, "handoff_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_handoff_reports")
+            if _has_column(columns, "agent"):
+                sql = """
+                    insert into public.charlie_handoff_reports (
+                        handoff_id, mission_id, agent, stage, status, report_json, validation_json, created_at
+                    ) values (
+                        %(handoff_id)s, %(mission_id)s, %(agent)s, %(stage)s, %(status)s, %(report_json)s::jsonb, %(validation_json)s::jsonb, now()
+                    )
+                    on conflict (handoff_id) do update set
+                        status = excluded.status,
+                        report_json = excluded.report_json,
+                        validation_json = excluded.validation_json
+                """
+            else:
+                params = {
+                    **params,
+                    "to_agent": _clean(report.get("handoff_to") or report.get("to_agent") or "", 120),
+                    "summary": _clean(report.get("summary") or report.get("findings") or "", 1600),
+                    "risks": _json(report.get("risks") if isinstance(report.get("risks"), list) else []),
+                    "tests": _json(report.get("tests") if isinstance(report.get("tests"), list) else report.get("test_evidence") if isinstance(report.get("test_evidence"), list) else []),
+                    "changed_files": _json(report.get("changed_files") if isinstance(report.get("changed_files"), list) else []),
+                    "quality_gate_json": _json(report.get("quality_gate") if isinstance(report.get("quality_gate"), dict) else {}),
+                }
+                sql = """
+                    insert into public.charlie_handoff_reports (
+                        handoff_id, mission_id, from_agent, to_agent, status, summary, risks,
+                        tests, changed_files, quality_gate_json, report_json, created_at
+                    ) values (
+                        %(handoff_id)s, %(mission_id)s, %(agent)s, %(to_agent)s, %(status)s,
+                        %(summary)s, %(risks)s::jsonb, %(tests)s::jsonb, %(changed_files)s::jsonb,
+                        %(quality_gate_json)s::jsonb, %(report_json)s::jsonb, now()
+                    )
+                    on conflict (handoff_id) do update set
+                        status = excluded.status,
+                        summary = excluded.summary,
+                        risks = excluded.risks,
+                        tests = excluded.tests,
+                        changed_files = excluded.changed_files,
+                        quality_gate_json = excluded.quality_gate_json,
+                        report_json = excluded.report_json
+                """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return _write_error("handoff_written", exc), 503
+    return {"success": True, "configured": True, "status": "handoff_written"}, 200
 
 
 def write_quality_gate(mission_id, gate_name, status, reason="", evidence=None, stage="",
@@ -369,18 +502,42 @@ def write_quality_gate(mission_id, gate_name, status, reason="", evidence=None, 
         "reason": _clean(reason, 1200),
         "evidence_json": _json(evidence if isinstance(evidence, dict) else {}),
     }
-    sql = """
-        insert into public.charlie_quality_gates (
-            gate_id, mission_id, gate_name, stage, status, reason, evidence_json, created_at
-        ) values (
-            %(gate_id)s, %(mission_id)s, %(gate_name)s, %(stage)s, %(status)s, %(reason)s, %(evidence_json)s::jsonb, now()
-        )
-        on conflict (gate_id) do update set
-            status = excluded.status,
-            reason = excluded.reason,
-            evidence_json = excluded.evidence_json
-    """
-    return _execute_write(sql, params, "quality_gate_written", database_url, connect_factory)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            columns = _table_columns(connection, "charlie_quality_gates")
+            if _has_column(columns, "stage"):
+                sql = """
+                    insert into public.charlie_quality_gates (
+                        gate_id, mission_id, gate_name, stage, status, reason, evidence_json, created_at
+                    ) values (
+                        %(gate_id)s, %(mission_id)s, %(gate_name)s, %(stage)s, %(status)s, %(reason)s, %(evidence_json)s::jsonb, now()
+                    )
+                    on conflict (gate_id) do update set
+                        status = excluded.status,
+                        reason = excluded.reason,
+                        evidence_json = excluded.evidence_json
+                """
+            else:
+                params = {**params, "agent": _clean(stage or gate_name, 120)}
+                sql = """
+                    insert into public.charlie_quality_gates (
+                        gate_id, mission_id, agent_name, gate_name, status, reason, evidence_json, checked_at
+                    ) values (
+                        %(gate_id)s, %(mission_id)s, %(agent)s, %(gate_name)s, %(status)s, %(reason)s, %(evidence_json)s::jsonb, now()
+                    )
+                    on conflict (gate_id) do update set
+                        status = excluded.status,
+                        reason = excluded.reason,
+                        evidence_json = excluded.evidence_json
+                """
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+    except Exception as exc:
+        return _write_error("quality_gate_written", exc), 503
+    return {"success": True, "configured": True, "status": "quality_gate_written"}, 200
 
 
 def write_owner_decision(mission_id, decision, approval_level="", comments="", metadata=None,
@@ -523,8 +680,18 @@ def _execute_write(sql, params, status, database_url=None, connect_factory=None)
             with connection.cursor() as cursor:
                 cursor.execute(sql, params)
     except Exception as exc:
-        return {"success": False, "configured": True, "status": f"{status}_failed", "error_type": exc.__class__.__name__}, 503
+        return _write_error(status, exc), 503
     return {"success": True, "configured": True, "status": status}, 200
+
+
+def _write_error(status, exc):
+    return {
+        "success": False,
+        "configured": True,
+        "status": f"{status}_failed",
+        "error_type": exc.__class__.__name__,
+        "error_message": _clean(str(exc), 500),
+    }
 
 
 def _database_url(database_url=None):
@@ -550,6 +717,12 @@ def _table_columns(connection, table_name):
             {"table_name": table_name},
         )
         return {row[0] for row in cursor.fetchall()}
+
+
+def _has_column(columns, name):
+    if not columns:
+        return True
+    return name in columns
 
 
 def _json(value):

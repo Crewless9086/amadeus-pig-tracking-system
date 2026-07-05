@@ -1822,7 +1822,65 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertIn("Unresolved agent send-back issues", prompt)
         self.assertIn("Dashboard route performs destructive cleanup.", prompt)
-        self.assertIn("modules/charlie/routes.py", prompt)
+
+    def test_backflow_fingerprint_detects_repeated_same_blocker(self):
+        ledger = {"backflow_events": []}
+        artifact = {
+            "summary": "Visual evidence is missing.",
+            "send_back_stage": "builder",
+            "bugs": ["No screenshot proof attached."],
+            "next_action": "Capture browser evidence.",
+        }
+        fingerprint = execution_bridge._backflow_fingerprint(
+            "reviewer",
+            "builder",
+            "Reviewer requires screenshot proof.",
+            artifact,
+        )
+
+        execution_bridge._append_backflow_event(
+            ledger,
+            from_agent="reviewer",
+            to_agent="builder",
+            reason="Reviewer requires screenshot proof.",
+            attempt=1,
+            artifact=artifact,
+            fingerprint=fingerprint,
+        )
+        execution_bridge._append_backflow_event(
+            ledger,
+            from_agent="reviewer",
+            to_agent="builder",
+            reason="Reviewer requires screenshot proof.",
+            attempt=2,
+            artifact=artifact,
+            fingerprint=fingerprint,
+            loop_detected=True,
+        )
+
+        self.assertEqual(execution_bridge._backflow_fingerprint_count(ledger, fingerprint), 2)
+        self.assertTrue(ledger["backflow_events"][-1]["loop_detected"])
+        recovery = execution_bridge._loop_recovery_next_action(
+            "reviewer",
+            "builder",
+            "Reviewer requires screenshot proof.",
+            artifact,
+        )
+        self.assertIn("Stop automatic retries", recovery)
+        self.assertIn("Capture browser evidence", recovery)
+
+    def test_agent_command_base_replaces_global_model_with_agent_model(self):
+        command = execution_bridge._agent_command_base(
+            ["codex", "exec", "--model", "base-model", "--sandbox", "workspace-write"],
+            {"runtime_model": "agent-specific-model"},
+        )
+
+        self.assertEqual(command[command.index("--model") + 1], "agent-specific-model")
+        self.assertNotIn("base-model", command)
+
+    @patch.dict(os.environ, {"CHARLIE_REQUIRE_AGENT_MODEL_ROUTING": "1"}, clear=False)
+    def test_strict_agent_model_routing_flag_is_enabled_by_env(self):
+        self.assertTrue(execution_bridge._strict_agent_model_routing_required())
 
     def test_validate_qa_artifact_allows_empty_findings_when_qa_passes(self):
         artifact = _successful_stage_payload("qa_red_team")

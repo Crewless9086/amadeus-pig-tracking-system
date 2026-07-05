@@ -16,6 +16,7 @@ from modules.charlie.mission_store import (
     update_mission_status,
     update_mission_vault,
 )
+from modules.charlie import vault_store
 
 
 class FakeConnection:
@@ -48,6 +49,13 @@ class FakeCursor:
 
     def fetchall(self):
         return list(self.rows)
+
+
+class FailingCursor(FakeCursor):
+    def execute(self, sql, params=None):
+        super().execute(sql, params)
+        if "insert into public.charlie_agent_runs" in sql:
+            raise RuntimeError("column agent does not exist")
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
@@ -422,6 +430,90 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(normalized[0]["target"], "agent_run")
         self.assertTrue(normalized[0]["success"])
         self.assertTrue(any("charlie_agent_runs" in sql for sql, _params in connection.cursor_instance.executed))
+
+    def test_update_mission_vault_reports_normalized_write_error_detail(self):
+        class FailingConnection(FakeConnection):
+            def __init__(self):
+                super().__init__([("MISSION-1",)])
+                self.cursor_instance = FailingCursor([("MISSION-1",)])
+
+        connection = FailingConnection()
+
+        result, status_code = update_mission_vault(
+            "MISSION-1",
+            {
+                "agent_execution": {
+                    "execution_id": "EXEC-1",
+                    "stages": [{"agent": "builder", "status": "complete", "attempt": 1}],
+                },
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        normalized = result["normalized_vault_writes"]
+        self.assertFalse(normalized[0]["success"])
+        self.assertEqual(normalized[0]["error_type"], "RuntimeError")
+        self.assertIn("column agent does not exist", normalized[0]["error_message"])
+
+    def test_vault_write_services_support_legacy_v1_columns(self):
+        handoff_connection = FakeConnection([
+            ("handoff_id",),
+            ("mission_id",),
+            ("from_agent",),
+            ("to_agent",),
+            ("status",),
+            ("summary",),
+            ("risks",),
+            ("tests",),
+            ("changed_files",),
+            ("quality_gate_json",),
+            ("report_json",),
+            ("created_at",),
+        ])
+        handoff_result, handoff_status = vault_store.write_handoff_report(
+            {
+                "mission_id": "MISSION-1",
+                "agent": "tester",
+                "handoff_to": "reviewer",
+                "summary": "Tests passed.",
+                "status": "pass",
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: handoff_connection,
+        )
+
+        self.assertEqual(handoff_status, 200)
+        self.assertTrue(handoff_result["success"])
+        handoff_sql = handoff_connection.cursor_instance.executed[-1][0]
+        self.assertIn("from_agent", handoff_sql)
+        self.assertNotIn(" agent,", handoff_sql)
+
+        gate_connection = FakeConnection([
+            ("gate_id",),
+            ("mission_id",),
+            ("agent_name",),
+            ("gate_name",),
+            ("status",),
+            ("reason",),
+            ("evidence_json",),
+            ("checked_at",),
+        ])
+        gate_result, gate_status = vault_store.write_quality_gate(
+            "MISSION-1",
+            "tester",
+            "passed",
+            reason="Tests passed.",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: gate_connection,
+        )
+
+        self.assertEqual(gate_status, 200)
+        self.assertTrue(gate_result["success"])
+        gate_sql = gate_connection.cursor_instance.executed[-1][0]
+        self.assertIn("agent_name", gate_sql)
+        self.assertIn("checked_at", gate_sql)
 
     def test_update_mission_vault_requires_metadata(self):
         result, status_code = update_mission_vault(

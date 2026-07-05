@@ -2409,6 +2409,13 @@ button:disabled {
   line-height: 1.2;
 }
 
+.charlie-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .ops-hero-metric {
   display: flex;
   align-items: baseline;
@@ -8786,6 +8793,40 @@ body.oom-farm-command-body {
 }
 
 .charlie-replay-debug-grid span {
+    overflow-wrap: anywhere;
+}
+
+.charlie-replay-timeline {
+    display: grid;
+    gap: 8px;
+    max-height: 320px;
+    overflow: auto;
+    margin: 8px 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.charlie-replay-timeline li {
+    display: grid;
+    grid-template-columns: minmax(72px, 0.8fr) minmax(90px, 1fr) minmax(0, 3fr) minmax(110px, 1fr);
+    gap: 8px;
+    align-items: start;
+    padding: 8px;
+    border: 1px solid #d8e1dd;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.charlie-replay-timeline span,
+.charlie-replay-timeline small {
+    color: #5f6f69;
+    font-size: 0.78rem;
+}
+
+.charlie-replay-timeline strong,
+.charlie-replay-timeline p {
+    min-width: 0;
+    margin: 0;
     overflow-wrap: anywhere;
 }
 

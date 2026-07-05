@@ -75,6 +75,7 @@
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
     improvementsList: document.getElementById("charlie_improvements_list"),
     improvementsAnalyze: document.getElementById("charlie_improvements_analyze"),
+    improvementsCreateOwnerGated: document.getElementById("charlie_improvements_create_owner_gated"),
     liveNotice: document.getElementById("charlie_live_notice"),
     workflowMap: document.getElementById("charlie_workflow_map"),
     activeSummary: document.getElementById("charlie_active_summary"),
@@ -1159,11 +1160,11 @@
   async function loadReplayDebug(missionId, card) {
     if (!missionId || !card) return;
     const container = card.querySelector("[data-replay-debug]");
+    state.openReplayDebug.add(missionId);
     if (container) container.innerHTML = '<p class="charlie-muted">Loading replay debug...</p>';
     setMessage("Loading mission replay debug...", "info");
     try {
       const data = await fetchJson(`/api/charlie/build-relay/missions/${encodeURIComponent(missionId)}/replay`);
-      state.openReplayDebug.add(missionId);
       state.replayDebugPackets[missionId] = data;
       if (container) container.innerHTML = replayDebugMarkup(data);
       setMessage("Replay debug loaded.", "success");
@@ -1223,6 +1224,10 @@
     const memory = packet.mission_memory || {};
     const debug = packet.debug_focus || {};
     const latest = memory.latest_by_agent || {};
+    const timeline = Array.isArray(packet.timeline) ? packet.timeline : [];
+    const agentExecution = packet.agent_execution || {};
+    const qualityGates = (packet.review_packet && packet.review_packet.quality_gates) || debug.quality_gates || [];
+    const backflowEvents = debug.backflow_events || (packet.review_packet && packet.review_packet.backflow_events) || [];
     const latestItems = Object.keys(latest).map((agent) => {
       const item = latest[agent] || {};
       return `${agent}: ${item.summary || item.type || "recorded"}`;
@@ -1237,10 +1242,26 @@
           <div><strong>Parallel mode</strong><span>${escapeHtml(safeText((packet.parallel_planning || {}).mode || "Not captured"))}</span></div>
         </div>
         <strong>Latest agent memory</strong>${listMarkup(latestItems, "No agent memory captured yet.")}
+        <strong>Execution timeline</strong>${replayTimelineMarkup(timeline)}
+        <strong>Stage ledger</strong>${agentExecutionSummaryMarkup(agentExecution)}
+        <strong>Quality gates</strong>${qualityGateMarkup(qualityGates)}
+        <strong>Backflow / retry trail</strong>${backflowMarkup(backflowEvents)}
         <strong>Recovery notes</strong>${listMarkup((memory.recovery_notes || []).map((item) => `${item.agent || "agent"}: ${item.summary || item.type || ""}`), "No recovery notes captured yet.")}
         <strong>Next debug actions</strong>${listMarkup(packet.next_debug_actions, "No debug actions captured.")}
       </details>
     `;
+  }
+
+  function replayTimelineMarkup(timeline) {
+    if (!Array.isArray(timeline) || !timeline.length) return '<p class="charlie-muted">No replay timeline captured yet.</p>';
+    return `<ol class="charlie-replay-timeline">${timeline.slice(-20).map((item) => `
+      <li>
+        <span>${escapeHtml(safeText(item.type || "event").replace(/_/g, " "))}</span>
+        <strong>${escapeHtml(safeText(item.agent || "system"))}</strong>
+        <p>${escapeHtml(safeText(item.summary || "No summary captured."))}</p>
+        <small>${escapeHtml(formatDate(item.time || ""))}</small>
+      </li>
+    `).join("")}</ol>`;
   }
 
   function agentExecutionMarkup(execution, packet) {
@@ -1323,6 +1344,21 @@
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Improvement analysis was not recorded.", "error");
+    }
+  }
+
+  async function createOwnerGatedImprovements() {
+    setMessage("Creating owner-gated CHARLIE improvement missions...", "info");
+    try {
+      const data = await fetchJson("/api/charlie/core/improvements/create-owner-gated", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({limit: 50, max_create: 3}),
+      });
+      setMessage(`Owner-gated improvement missions created: ${safeText(data.created_count || 0)}.`, "success");
+      await loadMissions();
+    } catch (error) {
+      setMessage(error.message || "Owner-gated improvement missions were not created.", "error");
     }
   }
 
@@ -1857,6 +1893,7 @@
     });
   }
   if (els.improvementsAnalyze) els.improvementsAnalyze.addEventListener("click", analyzeImprovements);
+  if (els.improvementsCreateOwnerGated) els.improvementsCreateOwnerGated.addEventListener("click", createOwnerGatedImprovements);
   if (els.filter) els.filter.addEventListener("change", loadMissions);
   if (els.createForm) els.createForm.addEventListener("submit", createMission);
   if (els.reviewModalClose) els.reviewModalClose.addEventListener("click", closeOwnerReviewModal);

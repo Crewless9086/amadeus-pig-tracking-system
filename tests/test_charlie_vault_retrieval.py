@@ -35,6 +35,17 @@ class CharlieVaultRetrievalTests(unittest.TestCase):
         self.assertIn("docs/09-vault-brain/02-agents/charlie-core/PRODUCT_ARCHITECT.md", paths)
         self.assertIn("docs/09-vault-brain/07-standards/UI_DASHBOARD_STANDARD.md", paths)
 
+    def test_retrieve_vault_sources_selects_litter_summary_golden_example(self):
+        packet = retrieve_vault_sources({
+            "title": "Show litter summary timing data",
+            "raw_text": "Improve the litter summary read-service output with focused tests.",
+            "mission_type": "feature build",
+        }, limit=20, excerpt_chars=40)
+
+        paths = [item["path"] for item in packet["sources"]]
+
+        self.assertIn("docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_SUMMARY_PR89.md", paths)
+
     def test_source_coverage_requires_active_agents_to_cite_vault(self):
         retrieval = retrieve_vault_sources({"title": "CHARLIE runner"}, limit=4, excerpt_chars=0)
         result = evaluate_vault_source_coverage(

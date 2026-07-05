@@ -549,6 +549,9 @@ def charlie_build_relay_mission_review_packet_route(mission_id):
     if denied:
         return denied
     result, status_code = get_mission_review_packet(mission_id)
+    if isinstance(result, dict) and isinstance(result.get("review_packet"), dict):
+        result = dict(result)
+        result["review_packet"] = _normalize_review_packet_media(result["review_packet"], mission_id)
     return jsonify(result), status_code
 
 
@@ -837,6 +840,25 @@ def _compact_visual_review(visual_review, mission_id=""):
         "media": [item for item in media if item.get("reference")],
         "stage_evidence": _compact_event_list(review.get("stage_evidence"), limit=4),
     }
+
+
+def _normalize_review_packet_media(packet, mission_id=""):
+    packet = dict(packet if isinstance(packet, dict) else {})
+    visual_review = packet.get("visual_review") if isinstance(packet.get("visual_review"), dict) else {}
+    if visual_review:
+        visual_review = dict(visual_review)
+        normalized_media = []
+        for item in _as_list(visual_review.get("media")):
+            item = dict(item if isinstance(item, dict) else {})
+            reference = str(item.get("reference") or item.get("url") or "").strip()
+            if reference.startswith("data:image/"):
+                reference = ""
+            item["reference"] = _dashboard_review_media_reference(mission_id, reference)
+            if item.get("reference"):
+                normalized_media.append(item)
+        visual_review["media"] = normalized_media
+        packet["visual_review"] = visual_review
+    return packet
 
 
 def _dashboard_review_media_reference(mission_id, reference):

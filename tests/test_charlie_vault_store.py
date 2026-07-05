@@ -91,7 +91,7 @@ class CharlieVaultStoreTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(result["success"])
-        sql, params = connection.cursor_obj.calls[0]
+        sql, params = connection.cursor_obj.calls[-1]
         self.assertIn("charlie_handoff_reports", sql)
         self.assertEqual(params["mission_id"], "MISSION-1")
         self.assertEqual(params["agent"], "builder")
@@ -117,7 +117,7 @@ class CharlieVaultStoreTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(result["success"])
-        sql, params = connection.cursor_obj.calls[0]
+        sql, params = connection.cursor_obj.calls[-1]
         self.assertIn("charlie_agent_runs", sql)
         self.assertEqual(params["mission_id"], "MISSION-1")
         self.assertEqual(params["agent"], "tester")

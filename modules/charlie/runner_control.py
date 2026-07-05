@@ -181,6 +181,42 @@ def stop_runner():
     return {"success": True, "status": "runner_stop_requested", "pids": stopped}, 200
 
 
+def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
+    status = runner_status()
+    actions = []
+    stop_result = {}
+    should_stop = (
+        bool(stop_stale)
+        and status.get("status") in {"runner_orphaned", "runner_code_stale", "runner_stale_or_stopped"}
+        and (status.get("process_alive") or status.get("orphan_processes"))
+    )
+    if status.get("active"):
+        actions.append({"action": "stop_runner", "status": "skipped_active_runner"})
+    elif should_stop:
+        stop_result, stop_status = stop_runner()
+        actions.append({"action": "stop_runner", "status_code": stop_status, "result": stop_result})
+    else:
+        actions.append({"action": "stop_runner", "status": "not_required"})
+
+    prune_result = {"status": "skipped"}
+    if prune_worktrees:
+        prune_result = _git_worktree_prune()
+        actions.append({"action": "git_worktree_prune", "result": prune_result})
+
+    prune_ok = prune_result.get("status") == "ok"
+    return {
+        "success": not any(
+            int(action.get("status_code") or 200) >= 400
+            for action in actions
+            if isinstance(action, dict)
+        ) and prune_ok,
+        "status": "cleanup_complete" if prune_ok else "cleanup_partial_failure",
+        "runner_before": status,
+        "actions": actions,
+        "execution_boundary": "Cleanup only stops stale/orphaned/code-stale runner processes and prunes git worktree metadata; it does not delete repo work or active review media.",
+    }, 200 if prune_ok else 500
+
+
 def _display_command(command=None):
     command = command or RUNNER_COMMAND
     return " ".join(command).replace(str(REPO_ROOT) + "\\", "")
@@ -218,6 +254,30 @@ def _current_git_branch():
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _git_worktree_prune():
+    try:
+        completed = subprocess.run(
+            ["git", "worktree", "prune"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "failed", "error_type": exc.__class__.__name__, "error": str(exc)[:500]}
+    stderr = completed.stderr or ""
+    partial_failure = "permission denied" in stderr.lower() or "failed to delete" in stderr.lower()
+    return {
+        "status": "partial_failure" if completed.returncode == 0 and partial_failure else "ok" if completed.returncode == 0 else "failed",
+        "returncode": completed.returncode,
+        "stdout_tail": (completed.stdout or "")[-1000:],
+        "stderr_tail": stderr[-1000:],
+    }
 
 
 def _read_json(path):

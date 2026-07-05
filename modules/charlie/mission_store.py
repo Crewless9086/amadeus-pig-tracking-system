@@ -1258,13 +1258,13 @@ def _write_normalized_vault_records(mission_id, vault_metadata, database_url=Non
             "workflow_template": project_truth.get("workflow_template", "software_build"),
             "metadata": project_truth,
         }, database_url=database_url, connect_factory=connect_factory)
-        writes.append({"target": "project", "status": result.get("status"), "success": result.get("success")})
+        writes.append(_normalized_write_result("project", result))
 
     handoff_reports = mission_vault.get("handoff_reports") if isinstance(mission_vault.get("handoff_reports"), list) else []
     for report in handoff_reports[-20:]:
         if isinstance(report, dict):
             result, _ = vault_store.write_handoff_report(report, database_url=database_url, connect_factory=connect_factory)
-            writes.append({"target": "handoff", "status": result.get("status"), "success": result.get("success")})
+            writes.append(_normalized_write_result("handoff", result))
 
     agent_execution = vault_metadata.get("agent_execution") if isinstance(vault_metadata.get("agent_execution"), dict) else {}
     execution_id = agent_execution.get("execution_id", "")
@@ -1281,7 +1281,7 @@ def _write_normalized_vault_records(mission_id, vault_metadata, database_url=Non
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
-            writes.append({"target": "agent_run", "agent": stage_run.get("agent", ""), "status": result.get("status"), "success": result.get("success")})
+            writes.append(_normalized_write_result("agent_run", result, agent=stage_run.get("agent", "")))
 
     artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
     for agent, artifact in artifacts.items():
@@ -1298,12 +1298,12 @@ def _write_normalized_vault_records(mission_id, vault_metadata, database_url=Non
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        writes.append({"target": "artifact", "agent": agent, "status": result.get("status"), "success": result.get("success")})
+        writes.append(_normalized_write_result("artifact", result, agent=agent))
         handoff = artifact.get("handoff_report") if isinstance(artifact.get("handoff_report"), dict) else {}
         canonical = handoff.get("canonical") if isinstance(handoff.get("canonical"), dict) else handoff
         if canonical:
             result, _ = vault_store.write_handoff_report(canonical, database_url=database_url, connect_factory=connect_factory)
-            writes.append({"target": "handoff", "agent": agent, "status": result.get("status"), "success": result.get("success")})
+            writes.append(_normalized_write_result("handoff", result, agent=agent))
 
     for gate in review_packet.get("quality_gates", []) if isinstance(review_packet.get("quality_gates"), list) else []:
         if isinstance(gate, dict):
@@ -1317,18 +1317,18 @@ def _write_normalized_vault_records(mission_id, vault_metadata, database_url=Non
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
-            writes.append({"target": "quality_gate", "status": result.get("status"), "success": result.get("success")})
+            writes.append(_normalized_write_result("quality_gate", result))
 
     deployment = vault_metadata.get("deployment_record") if isinstance(vault_metadata.get("deployment_record"), dict) else {}
     if deployment:
         result, _ = vault_store.write_deployment_record(deployment, database_url=database_url, connect_factory=connect_factory)
-        writes.append({"target": "deployment", "status": result.get("status"), "success": result.get("success")})
+        writes.append(_normalized_write_result("deployment", result))
 
     intelligence = vault_metadata.get("intelligence_loop") if isinstance(vault_metadata.get("intelligence_loop"), dict) else {}
     for lesson in intelligence.get("lesson_records", []) if isinstance(intelligence.get("lesson_records"), list) else []:
         if isinstance(lesson, dict):
             result, _ = vault_store.write_lesson(lesson, database_url=database_url, connect_factory=connect_factory)
-            writes.append({"target": "lesson", "status": result.get("status"), "success": result.get("success")})
+            writes.append(_normalized_write_result("lesson", result))
 
     income = vault_metadata.get("income_stream_readiness") if isinstance(vault_metadata.get("income_stream_readiness"), dict) else {}
     if income:
@@ -1341,9 +1341,24 @@ def _write_normalized_vault_records(mission_id, vault_metadata, database_url=Non
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        writes.append({"target": "income_stream_review", "status": result.get("status"), "success": result.get("success")})
+        writes.append(_normalized_write_result("income_stream_review", result))
 
     return writes
+
+
+def _normalized_write_result(target, result, agent=""):
+    item = {
+        "target": target,
+        "status": result.get("status"),
+        "success": bool(result.get("success")),
+    }
+    if agent:
+        item["agent"] = agent
+    if result.get("error_type"):
+        item["error_type"] = result.get("error_type")
+    if result.get("error_message"):
+        item["error_message"] = result.get("error_message")
+    return item
 
 
 def _mission_params(mission, source_context):

@@ -835,6 +835,37 @@ class CharlieBuildRelayTests(unittest.TestCase):
         get_review_packet.assert_called_once_with("MISSION-1")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.get_mission_review_packet")
+    def test_mission_review_packet_route_normalizes_review_media_urls(self, get_review_packet, _owner_access):
+        with tempfile.TemporaryDirectory() as tmp:
+            review_root = Path(tmp) / "review_media"
+            media_dir = review_root / "MISSION-1"
+            media_dir.mkdir(parents=True)
+            (media_dir / "desktop.png").write_bytes(b"fake-image")
+            with patch.object(charlie_routes, "REVIEW_MEDIA_DIR", review_root):
+                get_review_packet.return_value = ({
+                    "success": True,
+                    "status": "ok",
+                    "mission_id": "MISSION-1",
+                    "review_packet": {
+                        "summary": "Ready for owner review.",
+                        "visual_review": {
+                            "media": [{"filename": "desktop.png", "reference": "desktop.png", "media_type": "image"}],
+                        },
+                    },
+                }, 200)
+
+                response = self.client.get("/api/charlie/build-relay/missions/MISSION-1/review")
+                data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        media = data["review_packet"]["visual_review"]["media"]
+        self.assertEqual(
+            media[0]["reference"],
+            "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
+        )
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_mission_replay_route_returns_memory_and_debug_contracts(self, get_mission, _owner_access):
         get_mission.return_value = ({
@@ -1070,6 +1101,29 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["proposal_count"], 1)
         generate_and_store.assert_called_once_with(limit=30)
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes.create_owner_gated_improvement_missions")
+    def test_improvements_create_owner_gated_route_creates_missions_without_approval(self, create_owner_gated, _owner_access):
+        create_owner_gated.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "created": [{"mission_id": "CHARLIE-MISSION-IMPROVE", "created": True}],
+            "execution_boundary": "Analyst may create owner-gated improvement missions only.",
+        }, 200)
+
+        response = self.client.post(
+            "/api/charlie/core/improvements/create-owner-gated",
+            json={"limit": 25, "max_create": 2},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created_count"], 1)
+        self.assertIn("owner-gated", data["execution_boundary"])
+        create_owner_gated.assert_called_once_with(limit=25, max_create=2)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.record_proposal_decision")

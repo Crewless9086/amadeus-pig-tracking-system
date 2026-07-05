@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import time
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib import request as url_request
 from urllib.parse import urlparse
@@ -112,6 +113,7 @@ AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 3
+HARD_LOOP_REPEAT_LIMIT = 2
 AGENT_RELEASE_VERIFY_ATTEMPTS = 12
 AGENT_RELEASE_VERIFY_INTERVAL_SECONDS = 10
 VAULT_BRAIN_ROOT = REPO_ROOT / "docs" / "09-vault-brain"
@@ -424,6 +426,26 @@ def run_agent_execution_bridge_v2(
             mission_type=mission.get("mission_type", ""),
             risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
         )
+        if _strict_agent_model_routing_required() and not model_assignment.get("runtime_model"):
+            return _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                stage_paths,
+                SimpleNamespace(returncode=78, stdout="", stderr="Per-agent runtime model is not configured."),
+                stage_started,
+                blocked_reason=f"Strict per-agent model routing is enabled, but {agent} has no runtime model configured.",
+                artifact={
+                    "summary": "Per-agent model routing is required before this agent can run.",
+                    "errors": [f"Missing CHARLIE_AGENT_MODEL_{agent.upper().replace('-', '_')} or CHARLIE_MODEL_<REGISTRY_KEY> env."],
+                    "model_assignment": model_assignment,
+                    "next_action": "Configure the per-agent or registry model env var, then rerun the mission from this stage.",
+                },
+                artifacts=artifacts,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
         command = [
             *_agent_command_base(command_base, model_assignment),
             "--output-last-message",
@@ -524,6 +546,39 @@ def run_agent_execution_bridge_v2(
                 agent_sequence,
             )
             if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
+                blocker_fingerprint = _backflow_fingerprint(agent, backflow_target, quality["reason"], artifact)
+                if _backflow_fingerprint_count(ledger, blocker_fingerprint) >= HARD_LOOP_REPEAT_LIMIT - 1:
+                    backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
+                    _append_backflow_event(
+                        ledger,
+                        from_agent=agent,
+                        to_agent=backflow_target,
+                        reason=quality["reason"],
+                        attempt=backflow_counts[backflow_target],
+                        artifact=artifact,
+                        quality=quality,
+                        fingerprint=blocker_fingerprint,
+                        loop_detected=True,
+                    )
+                    return _block_agent_stage(
+                        mission["mission_id"],
+                        execution_id,
+                        ledger,
+                        agent,
+                        stage_paths,
+                        completed,
+                        stage_started,
+                        blocked_reason=f"Repeated same blocker loop detected for {agent} -> {backflow_target}: {quality['reason']}",
+                        artifact={
+                            **artifact,
+                            "quality_gate": quality,
+                            "loop_fingerprint": blocker_fingerprint,
+                            "next_action": _loop_recovery_next_action(agent, backflow_target, quality["reason"], artifact),
+                        },
+                        artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
+                        database_url=database_url,
+                        connect_factory=connect_factory,
+                    )
                 backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
                 _append_backflow_event(
                     ledger,
@@ -533,6 +588,7 @@ def run_agent_execution_bridge_v2(
                     attempt=backflow_counts[backflow_target],
                     artifact=artifact,
                     quality=quality,
+                    fingerprint=blocker_fingerprint,
                 )
                 _record_mission_memory_event(
                     mission,
@@ -1941,6 +1997,27 @@ def _run_parallel_read_only_agents(
                 mission_type=mission.get("mission_type", ""),
                 risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
             )
+            if _strict_agent_model_routing_required() and not model_assignment.get("runtime_model"):
+                result, status_code = _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    SimpleNamespace(returncode=78, stdout="", stderr="Per-agent runtime model is not configured."),
+                    datetime.now(timezone.utc).isoformat(),
+                    blocked_reason=f"Strict per-agent model routing is enabled, but {agent} has no runtime model configured.",
+                    artifact={
+                        "summary": "Per-agent model routing is required before this read-only agent can run.",
+                        "errors": [f"Missing CHARLIE_AGENT_MODEL_{agent.upper().replace('-', '_')} or CHARLIE_MODEL_<REGISTRY_KEY> env."],
+                        "model_assignment": model_assignment,
+                        "next_action": "Configure the per-agent or registry model env var, then rerun the mission from this stage.",
+                    },
+                    artifacts=artifacts,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+                return {"blocked": True, "result": result, "status_code": status_code}
             command = [
                 *_readonly_command_base(_agent_command_base(command_base, model_assignment)),
                 "--output-last-message",
@@ -2250,8 +2327,17 @@ def _agent_command_base(command_base, model_assignment):
         return command
     for flag in ("--model", "-m"):
         if flag in command:
-            return command
+            index = command.index(flag)
+            if index + 1 < len(command):
+                updated = list(command)
+                updated[index + 1] = runtime_model
+                return updated
+            return [*command, runtime_model]
     return [*command, "--model", runtime_model]
+
+
+def _strict_agent_model_routing_required():
+    return str(os.getenv("CHARLIE_REQUIRE_AGENT_MODEL_ROUTING", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=None):
@@ -3309,13 +3395,16 @@ def _artifact_explicitly_non_ui(artifact):
     return explicit_non_ui_requested(" ".join(values))
 
 
-def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifact=None, quality=None):
+def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifact=None, quality=None, fingerprint="", loop_detected=False):
     unresolved = _artifact_issue_items(from_agent, artifact, quality)
+    fingerprint = fingerprint or _backflow_fingerprint(from_agent, to_agent, reason, artifact)
     event = {
         "from_agent": from_agent,
         "to_agent": to_agent,
         "reason": reason,
         "attempt": int(attempt or 1),
+        "fingerprint": fingerprint,
+        "loop_detected": bool(loop_detected),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "unresolved_blockers": unresolved,
         "next_action": str((artifact or {}).get("next_action") or "").strip() if isinstance(artifact, dict) else "",
@@ -3326,6 +3415,42 @@ def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifa
     ledger["last_backflow"] = event
     ledger["last_progress_at"] = event["recorded_at"]
     return event
+
+
+def _backflow_fingerprint(from_agent, to_agent, reason, artifact=None):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    issue_text = " ".join(
+        str(item.get("finding") or item.get("summary") or item)
+        for item in _artifact_issue_items(str(from_agent or ""), artifact)
+    )
+    raw = "|".join([
+        str(from_agent or "").strip().lower(),
+        str(to_agent or "").strip().lower(),
+        " ".join(str(reason or "").strip().lower().split()),
+        " ".join(issue_text.lower().split()),
+        " ".join(str(artifact.get("send_back_stage") or "").strip().lower().split()),
+    ])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _backflow_fingerprint_count(ledger, fingerprint):
+    if not fingerprint or not isinstance(ledger, dict):
+        return 0
+    events = ledger.get("backflow_events") if isinstance(ledger.get("backflow_events"), list) else []
+    return sum(1 for event in events if isinstance(event, dict) and event.get("fingerprint") == fingerprint)
+
+
+def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    base = str(artifact.get("next_action") or "").strip()
+    details = [
+        f"Stop automatic retries for the repeated {agent} -> {backflow_target} blocker.",
+        f"Blocker: {reason}",
+        "Create a precise recovery mission or owner send-back with the unresolved blocker, affected files, tests run, and expected proof before rerunning.",
+    ]
+    if base:
+        details.append(f"Agent requested action: {base}")
+    return " ".join(details)
 
 
 def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):

@@ -192,6 +192,51 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["pids"], [1234, 5678])
         self.assertEqual(kill.call_count, 2)
 
+    @patch("modules.charlie.runner_control._git_worktree_prune", return_value={"status": "ok", "returncode": 0})
+    @patch("modules.charlie.runner_control.stop_runner")
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_cleanup_runner_environment_skips_active_runner(self, status, stop_runner, prune):
+        status.return_value = {"active": True, "status": "runner_active", "orphan_processes": []}
+
+        result, status_code = runner_control.cleanup_runner_environment()
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["actions"][0]["status"], "skipped_active_runner")
+        stop_runner.assert_not_called()
+        prune.assert_called_once()
+
+    @patch("modules.charlie.runner_control._git_worktree_prune", return_value={"status": "ok", "returncode": 0})
+    @patch("modules.charlie.runner_control.stop_runner")
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_cleanup_runner_environment_stops_stale_runner(self, status, stop_runner, prune):
+        status.return_value = {
+            "active": False,
+            "status": "runner_code_stale",
+            "process_alive": True,
+            "orphan_processes": [],
+        }
+        stop_runner.return_value = ({"success": True, "status": "runner_stop_requested", "pids": [1234]}, 200)
+
+        result, status_code = runner_control.cleanup_runner_environment()
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["actions"][0]["result"]["status"], "runner_stop_requested")
+        stop_runner.assert_called_once()
+        prune.assert_called_once()
+
+    @patch("modules.charlie.runner_control.subprocess.run")
+    def test_git_worktree_prune_reports_permission_denied_as_partial_failure(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = ""
+        run.return_value.stderr = "error: failed to delete '.git/worktrees/example': Permission denied"
+
+        result = runner_control._git_worktree_prune()
+
+        self.assertEqual(result["status"], "partial_failure")
+        self.assertIn("Permission denied", result["stderr_tail"])
+
 
 if __name__ == "__main__":
     unittest.main()

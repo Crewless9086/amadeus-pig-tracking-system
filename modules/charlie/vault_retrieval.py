@@ -66,6 +66,9 @@ TEMPLATE_REQUIRED_DOCS = {
 KEYWORD_DOCS = {
     "bulk": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md"],
     "weight": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/FARM_RULES.md"],
+    "litter": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_SUMMARY_PR89.md"],
+    "summary": ["docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_SUMMARY_PR89.md"],
+    "read-service": ["docs/09-vault-brain/09-examples/GOLD_STANDARD_LITTER_SUMMARY_PR89.md"],
     "pig": ["docs/09-vault-brain/06-data/FARM_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md"],
     "order": ["docs/09-vault-brain/06-data/ORDER_DATA_MODEL.md", "docs/09-vault-brain/08-business-rules/PAYMENT_RULES.md"],
     "sam": [
