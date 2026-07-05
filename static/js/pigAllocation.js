@@ -11,12 +11,31 @@ const sexFilter = document.getElementById("sex_filter");
 const purposeFilter = document.getElementById("purpose_filter");
 const searchFilter = document.getElementById("search_filter");
 const resetFiltersButton = document.getElementById("reset_allocation_filters");
+const reviewPanel = document.getElementById("allocation_review_panel");
 const reviewStatus = document.getElementById("allocation_review_status");
 const reviewDetail = document.getElementById("allocation_review_detail");
 
 let allocationRows = [];
 let allocationSummary = {};
 let selectedReviewPigId = "";
+let latestAllocationPurposePreview = null;
+
+const ALLOCATION_PURPOSE_OPTIONS = [
+  ["Grow_Out", "Grow out / meat pipeline"],
+  ["Sale", "Livestock sale"],
+  ["Breeding", "Breeding"],
+  ["Replacement", "Replacement"],
+  ["House_Use", "House use"],
+  ["Unknown", "Needs more data"],
+];
+
+const SUGGESTED_PURPOSE_MAP = {
+  "Grow Out": "Grow_Out",
+  "Livestock Sale": "Sale",
+  Meat: "Grow_Out",
+  "Abattoir Slaughter": "Grow_Out",
+  "Breeding Review": "Breeding",
+};
 
 const BUCKET_ORDER = [
   "Needs Data",
@@ -78,9 +97,9 @@ function formatPen(item) {
   return item.current_pen_name || item.current_pen_id || "-";
 }
 
-function showMessage(message) {
+function showMessage(message, type = "error") {
   messageBox.classList.remove("hidden", "message-success", "message-error");
-  messageBox.classList.add("message-error");
+  messageBox.classList.add(type === "success" ? "message-success" : "message-error");
   messageBox.textContent = message;
 }
 
@@ -207,17 +226,155 @@ function filteredRows() {
   });
 }
 
+function storedPurposeForSuggestion(row) {
+  const suggested = row && row.suggested_purpose ? String(row.suggested_purpose).trim() : "";
+  return SUGGESTED_PURPOSE_MAP[suggested] || "";
+}
+
+function selectedReviewRow() {
+  return allocationRows.find((item) => item.pig_id === selectedReviewPigId) || null;
+}
+
+function currentReviewPurpose() {
+  const select = document.getElementById("allocation_review_purpose_choice");
+  return select ? select.value : "";
+}
+
+function allocationReviewNote() {
+  const note = document.getElementById("allocation_review_note");
+  return note ? note.value.trim() : "";
+}
+
+function allocationReviewChangedBy() {
+  const changedBy = document.getElementById("allocation_review_changed_by");
+  return changedBy && changedBy.value.trim() ? changedBy.value.trim() : "web_app";
+}
+
+function resetAllocationReviewPreview() {
+  latestAllocationPurposePreview = null;
+  const preview = document.getElementById("allocation_review_preview");
+  const applyButton = document.querySelector("[data-allocation-review-apply]");
+  if (preview) {
+    preview.innerHTML = '<p class="form-helper">Preview the purpose update before applying it.</p>';
+  }
+  if (applyButton) {
+    applyButton.disabled = true;
+  }
+}
+
+function allocationPurposeDecisionPayload(dryRun) {
+  const row = selectedReviewRow();
+  const purpose = currentReviewPurpose();
+  if (!row || !row.pig_id) {
+    throw new Error("Select a pig before previewing a purpose update.");
+  }
+  if (!purpose) {
+    throw new Error("Choose a purpose before previewing the update.");
+  }
+  return {
+    decisions: [{
+      pig_id: row.pig_id,
+      purpose,
+      reason: row.suggested_purpose_reason || row.readiness_reason || "Pig Allocation owner purpose review.",
+      note: allocationReviewNote(),
+    }],
+    changed_by: allocationReviewChangedBy(),
+    dry_run: dryRun,
+    allow_reclassify: true,
+  };
+}
+
+function renderAllocationPurposePreview(data) {
+  const preview = document.getElementById("allocation_review_preview");
+  const applyButton = document.querySelector("[data-allocation-review-apply]");
+  if (!preview) return;
+  const approved = Array.isArray(data.approved) ? data.approved : [];
+  const planned = data.planned_updates || {};
+  const items = approved.map((item) => {
+    const update = planned[item.pig_id] || {};
+    return `
+      <div class="allocation-review-preview-item">
+        <strong>${escapeHtml(item.tag_number || item.pig_id || "-")}</strong>
+        <span>${escapeHtml(item.old_purpose || "Unknown")} -> ${escapeHtml(item.new_purpose || "-")}</span>
+        <small>${escapeHtml(update.General_Notes || item.reason || "No audit note returned.")}</small>
+      </div>
+    `;
+  }).join("");
+
+  preview.innerHTML = `
+    <div class="allocation-review-preview-success">
+      <strong>${escapeHtml(data.message || "Purpose review preview ready.")}</strong>
+      ${items || '<p class="form-helper">No update row returned by the preview.</p>'}
+    </div>
+  `;
+  if (applyButton) {
+    applyButton.disabled = !data.success;
+  }
+}
+
+async function submitAllocationPurposeDecision(dryRun) {
+  clearMessage();
+  const preview = document.getElementById("allocation_review_preview");
+  const previewButton = document.querySelector("[data-allocation-review-preview]");
+  const applyButton = document.querySelector("[data-allocation-review-apply]");
+  if (!dryRun && !latestAllocationPurposePreview) {
+    showMessage("Preview the purpose update before applying it.");
+    return;
+  }
+  if (!dryRun && !window.confirm("Apply this purpose update to the selected pig?")) {
+    return;
+  }
+  try {
+    if (previewButton) previewButton.disabled = true;
+    if (applyButton) applyButton.disabled = true;
+    if (preview) {
+      preview.innerHTML = `<p class="form-helper">${dryRun ? "Previewing" : "Applying"} purpose update...</p>`;
+    }
+    const response = await fetch("/api/pig-weights/purpose-review/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(allocationPurposeDecisionPayload(dryRun)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.message || "Purpose review failed."]).join(" "));
+    }
+    if (dryRun) {
+      latestAllocationPurposePreview = data;
+      renderAllocationPurposePreview(data);
+      showMessage("Purpose update preview is ready. Review it, then apply if correct.", "success");
+      return;
+    }
+    latestAllocationPurposePreview = null;
+    showMessage(data.message || "Purpose review saved.", "success");
+    const pigId = selectedReviewPigId;
+    await loadAllocationReadiness();
+    selectedReviewPigId = pigId;
+    renderPurposeReview(selectedReviewRow());
+  } catch (error) {
+    console.error("Allocation purpose review submit error:", error);
+    latestAllocationPurposePreview = null;
+    if (preview) {
+      preview.innerHTML = `<p class="form-helper">${escapeHtml(error.message || "Could not submit purpose review.")}</p>`;
+    }
+    showMessage(error.message || "Could not submit purpose review.");
+  } finally {
+    if (previewButton) previewButton.disabled = false;
+    if (applyButton) applyButton.disabled = !latestAllocationPurposePreview;
+  }
+}
 
 function renderPurposeReview(row) {
   if (!reviewDetail || !reviewStatus) return;
+  latestAllocationPurposePreview = null;
   if (!row) {
     reviewStatus.textContent = "Select a pig from the table to inspect the recommendation before any purpose decision.";
-    reviewDetail.innerHTML = '<div class="table-empty">No pig selected. Use Review on a table row to open a read-only recommendation packet.</div>';
+    reviewDetail.innerHTML = '<div class="table-empty">No pig selected. Use Review on a table row to open a recommendation packet.</div>';
     return;
   }
 
-  reviewStatus.textContent = `${pigLabel(row)} selected for read-only purpose review. No record is changed from this panel.`;
-  const purposeOptions = ["Keep Current", "Breeding", "Meat", "Slaughter", "Livestock Sale", "Hold / Grow Longer", "Needs Data"];
+  reviewStatus.textContent = `${pigLabel(row)} selected for purpose review. Preview the exact write before applying any change.`;
+  const mappedPurpose = storedPurposeForSuggestion(row) || row.purpose || "Unknown";
   reviewDetail.innerHTML = `
     <div class="allocation-review-grid">
       <div class="allocation-review-primary">
@@ -240,6 +397,26 @@ function renderPurposeReview(row) {
         <strong>${escapeHtml(row.purpose || "Unknown")}</strong>
         <small>${escapeHtml(row.readiness_bucket || "-")}</small>
       </div>
+      <div>
+        <span>Weaning</span>
+        <strong>${escapeHtml(formatKg(row.wean_weight_kg))}</strong>
+        <small>${row.wean_date ? `${escapeHtml(row.wean_date)} / ${escapeHtml(row.days_since_wean ?? "-")} days` : "No wean date"}</small>
+      </div>
+      <div>
+        <span>Growth</span>
+        <strong>${escapeHtml(row.growth_class || "Unknown")}</strong>
+        <small>${escapeHtml(row.growth_reason || "No growth reason supplied.")}</small>
+      </div>
+      <div>
+        <span>Timing</span>
+        <strong>${escapeHtml(row.meat_window_status || "-")}</strong>
+        <small>Meat ${escapeHtml(row.estimated_meat_ready_date || "-")} / Abattoir ${escapeHtml(row.estimated_abattoir_ready_date || "-")}</small>
+      </div>
+      <div>
+        <span>Pen / Litter</span>
+        <strong>${escapeHtml(formatPen(row))}</strong>
+        <small>${escapeHtml(row.litter_id || "No litter")} / ${escapeHtml(row.litter_quality || "Unknown")}</small>
+      </div>
     </div>
     <div class="allocation-review-reason">
       <span>Why this recommendation</span>
@@ -247,10 +424,21 @@ function renderPurposeReview(row) {
     </div>
     <div class="allocation-review-options">
       <label for="allocation_review_purpose_choice">Draft purpose option</label>
-      <select id="allocation_review_purpose_choice" disabled>
-        ${purposeOptions.map((option) => `<option${option === (row.suggested_purpose || "") ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+      <select id="allocation_review_purpose_choice">
+        ${ALLOCATION_PURPOSE_OPTIONS.map(([value, label]) => `<option value="${escapeHtml(value)}"${value === mappedPurpose ? " selected" : ""}>${escapeHtml(label)} (${escapeHtml(value)})</option>`).join("")}
       </select>
-      <p class="form-helper">Draft-only in this build. Purpose/lifecycle changes still require a separately approved audit and owner-confirmation rail.</p>
+      <label for="allocation_review_note">Owner note</label>
+      <textarea id="allocation_review_note" rows="3" placeholder="Optional note for why you accepted or changed this purpose."></textarea>
+      <label for="allocation_review_changed_by">Changed by</label>
+      <input id="allocation_review_changed_by" type="text" value="web_app" />
+      <div class="allocation-review-actions">
+        <button type="button" class="btn-secondary" data-allocation-review-preview>Preview update</button>
+        <button type="button" class="btn-primary" data-allocation-review-apply disabled>Apply purpose</button>
+        <a class="button-link" href="/purpose-review">Open full queue</a>
+      </div>
+      <div id="allocation_review_preview" class="allocation-review-preview">
+        <p class="form-helper">Preview the purpose update before applying it. This writes only the pig Purpose, Updated At, and audit note.</p>
+      </div>
     </div>
   `;
 }
@@ -343,7 +531,7 @@ async function loadAllocationReadiness() {
     }
     allocationRows = data.pigs || [];
     allocationSummary = data.summary || {};
-    subtitle.textContent = `Read-only planning view generated ${data.generated_date || "today"}. No writes are made from this page.`;
+    subtitle.textContent = `Planning view generated ${data.generated_date || "today"}. Purpose changes require preview and confirmation.`;
     populateFilters(allocationRows);
     renderSummary(allocationSummary);
     renderRules(data.business_rules || {});
@@ -378,4 +566,31 @@ bodyEl.addEventListener("click", (event) => {
   selectedReviewPigId = button.dataset.reviewPigId || "";
   const row = allocationRows.find((item) => item.pig_id === selectedReviewPigId);
   renderPurposeReview(row || null);
+  if (reviewPanel && typeof reviewPanel.scrollIntoView === "function") {
+    reviewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 });
+
+if (reviewDetail) {
+  reviewDetail.addEventListener("click", (event) => {
+    if (event.target.closest("[data-allocation-review-preview]")) {
+      submitAllocationPurposeDecision(true);
+      return;
+    }
+    if (event.target.closest("[data-allocation-review-apply]")) {
+      submitAllocationPurposeDecision(false);
+    }
+  });
+
+  reviewDetail.addEventListener("input", (event) => {
+    if (event.target.closest("#allocation_review_purpose_choice, #allocation_review_note, #allocation_review_changed_by")) {
+      resetAllocationReviewPreview();
+    }
+  });
+
+  reviewDetail.addEventListener("change", (event) => {
+    if (event.target.closest("#allocation_review_purpose_choice, #allocation_review_note, #allocation_review_changed_by")) {
+      resetAllocationReviewPreview();
+    }
+  });
+}

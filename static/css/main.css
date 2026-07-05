@@ -7665,7 +7665,7 @@ body.oom-farm-command-body {
   }
 }
 
-/* OP-004/006 operational layout polish: read-only allocation review and full-width pig profile. */
+/* OP-004/006 operational layout polish: allocation review and full-width pig profile. */
 .allocation-review-panel {
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -7712,6 +7712,47 @@ body.oom-farm-command-body {
 .allocation-review-reason p {
   margin: 6px 0 0;
   line-height: 1.45;
+}
+
+.allocation-review-options {
+  display: grid;
+  gap: 10px;
+}
+
+.allocation-review-options label {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.allocation-review-options select,
+.allocation-review-options input,
+.allocation-review-options textarea {
+  width: 100%;
+}
+
+.allocation-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.allocation-review-preview {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fbfaf6;
+}
+
+.allocation-review-preview-item {
+  display: grid;
+  gap: 3px;
+}
+
+.allocation-review-preview-item small {
+  color: var(--text-soft);
+  line-height: 1.4;
 }
 
 .allocation-review-button {
