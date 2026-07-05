@@ -81,6 +81,23 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertLess(agents.index("creative_ui_designer"), agents.index("frontend_design_implementer"))
         self.assertLess(agents.index("frontend_design_implementer"), agents.index("visual_qa_reviewer"))
 
+    def test_software_build_routes_through_product_reviewer(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-FEATURE",
+            "title": "Litter Detail View",
+            "raw_text": "Update the litter detail view so closed and active litter states are clear.",
+            "mission_type": "feature build",
+        }
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertIn("product_architect", agents)
+        self.assertIn("product_reviewer", agents)
+        self.assertIn("evidence_reviewer", agents)
+        self.assertLess(agents.index("product_architect"), agents.index("builder"))
+        self.assertLess(agents.index("tester"), agents.index("product_reviewer"))
+        self.assertLess(agents.index("product_reviewer"), agents.index("reviewer"))
+
     def test_design_agents_have_specific_model_assignments(self):
         visual = choose_agent_model("creative_ui_designer", mission_type="dashboard ui")
         implementer = choose_agent_model("frontend_design_implementer", mission_type="dashboard ui")
