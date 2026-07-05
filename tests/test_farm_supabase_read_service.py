@@ -821,6 +821,136 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertTrue(reconciliation["source_counts_consistent"])
         self.assertEqual(reconciliation["recommended_action"], "No birth-count correction needed.")
 
+    def test_litter_attention_does_not_flag_accounted_sold_piglets_or_litter_level_stillborns(self):
+        litters = [{
+            "litter_id": "LIT-SOLD-CLOSED",
+            "farrowing_date": date(2026, 5, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 4,
+            "total_born": 6,
+            "stillborn_count": 2,
+            "mummified_count": 0,
+            "litter_status": "Unknown",
+        }]
+        pigs_by_litter = {
+            "LIT-SOLD-CLOSED": [
+                {
+                    "pig_id": "PIG-SOLD",
+                    "tag_number": "101",
+                    "status": "Sold",
+                    "on_farm": False,
+                    "animal_type": "Weaner",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-SOLD-CLOSED",
+                    "exit_reason": "livestock_sale",
+                },
+                {
+                    "pig_id": "PIG-COMPLETED",
+                    "tag_number": "102",
+                    "status": "completed_sale",
+                    "on_farm": False,
+                    "animal_type": "Weaner",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-SOLD-CLOSED",
+                    "exit_reason": "completed_sale",
+                },
+                {
+                    "pig_id": "PIG-DISPOSED",
+                    "tag_number": "103",
+                    "status": "Disposed",
+                    "on_farm": False,
+                    "animal_type": "Weaner",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-SOLD-CLOSED",
+                    "exit_reason": "disposed",
+                },
+                {
+                    "pig_id": "PIG-ACTIVE",
+                    "tag_number": "104",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Weaner",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-SOLD-CLOSED",
+                    "current_pen_id": "PEN-1",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+            detail = farm_supabase_read_service.get_litter_detail("LIT-SOLD-CLOSED")
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+
+        self.assertEqual(overview["attention_count"], 0)
+        self.assertEqual(summary["count"], 0)
+        litter = overview["litters"][0]
+        self.assertEqual(litter["needs_attention"], "")
+        self.assertEqual(litter["attention_reason"], "")
+        reconciliation = litter["reconciliation"]
+        self.assertFalse(reconciliation["mismatch"])
+        self.assertEqual(reconciliation["live_linked_pig_records"], 4)
+        self.assertEqual(reconciliation["accounted_birth_records"], 6)
+        self.assertTrue(reconciliation["source_counts_consistent"])
+        self.assertEqual(reconciliation["recommended_action"], "No birth-count correction needed.")
+        self.assertIsNone(detail["attention"])
+        self.assertEqual(detail["lifecycle_outcomes"]["sold"], 2)
+        self.assertEqual(detail["lifecycle_outcomes"]["removed"], 1)
+
+    def test_litter_attention_still_flags_missing_live_born_piglet_record(self):
+        litters = [{
+            "litter_id": "LIT-MISSING-LIVE",
+            "farrowing_date": date(2026, 5, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 4,
+            "total_born": 6,
+            "stillborn_count": 2,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-MISSING-LIVE": [
+                {
+                    "pig_id": f"PIG-LIVE-{index}",
+                    "tag_number": str(100 + index),
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-MISSING-LIVE",
+                    "current_pen_id": "PEN-1",
+                }
+                for index in range(3)
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+            detail = farm_supabase_read_service.get_litter_detail("LIT-MISSING-LIVE")
+
+        self.assertEqual(overview["attention_count"], 1)
+        litter = overview["litters"][0]
+        self.assertEqual(litter["needs_attention"], "Yes")
+        self.assertEqual(
+            litter["attention_reason"],
+            "Review missing or extra live-born piglet records before changing Born Alive.",
+        )
+        reconciliation = litter["reconciliation"]
+        self.assertTrue(reconciliation["mismatch"])
+        self.assertEqual(reconciliation["live_linked_pig_records"], 3)
+        self.assertEqual(reconciliation["accounted_birth_records"], 5)
+        self.assertEqual(detail["attention"]["action_type"], "review_litter_counts")
+        self.assertIn("live-born piglet records", detail["attention"]["recommended_action"])
+
     def test_litter_attention_summary_maps_supabase_count_review(self):
         overview = {
             "success": True,

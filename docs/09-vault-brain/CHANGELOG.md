@@ -3,6 +3,7 @@
 ## 2026-07-05
 
 - Added the litter detail read-contract rule: active, weaned, and completed litter detail summaries must expose state-appropriate timing, attention, and weight fields.
+- Clarified litter attention reconciliation: sold, disposed/removed, slaughtered, and completed-sale piglets remain accounted terminal outcomes, and source-consistent litter-level stillborn/mummified outcomes should not create missing-piglet attention.
 
 ## 2026-07-02
 

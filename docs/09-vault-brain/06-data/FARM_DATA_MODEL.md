@@ -33,6 +33,7 @@ Farm record writes require approved backend paths and audit evidence.
 - Active litter summaries may show estimated wean timing and current-weight rollups.
 - Weaned or completed litter summaries should close active wean timing, show actual wean date where known, and use wean-weight outcome fields for litter-level average weight.
 - Litter detail attention should include the reason and recommended action when the read model flags attention; if no attention reason exists, the UI should not reserve empty attention space.
+- Litter attention reconciliation should treat linked sold, disposed/removed, slaughtered, and completed-sale piglets as accounted terminal outcomes. Source-consistent stillborn or mummified litter-level outcomes should not create missing-piglet attention when the live-born linked records match `born_alive`.
 
 ## Agent Use
 
