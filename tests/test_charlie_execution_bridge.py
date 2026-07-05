@@ -470,6 +470,18 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["error_status"], "review_packet_missing_after_write")
         self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
 
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_review_packet_persist_verify_rejects_stale_send_back_packet(self, get_mission):
+        mission = _mission_with_persisted_review_packet()
+        mission["metadata"]["review_packet"]["review_status"] = "send_back"
+        mission["metadata"]["review_packet"]["return_to_stage"] = "builder"
+        get_mission.return_value = {"success": True, "status": "ok", "mission": mission}, 200
+
+        persisted, status = execution_bridge._verify_owner_review_packet_persisted("CHARLIE-MISSION-EXEC123")
+
+        self.assertFalse(persisted)
+        self.assertEqual(status, "stale_review_packet_status_send_back")
+
     @patch.dict(os.environ, {"CHARLIE_AGENT_MODEL_IDEA_EXPANDER": "reasoning-model-a"}, clear=False)
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")

@@ -3844,8 +3844,15 @@ def _verify_owner_review_packet_persisted(mission_id, *, database_url=None, conn
     mission = result.get("mission") if isinstance(result.get("mission"), dict) else {}
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
-    if review_packet.get("review_status") or review_packet.get("blocked_reason"):
+    review_status = str(review_packet.get("review_status") or "").strip()
+    if review_status == "ready_for_owner_review":
         return True, "review_packet_verified"
+    if review_packet.get("blocked_reason") or review_packet.get("blocked_agent"):
+        if mission.get("status") == "blocked":
+            return True, "blocked_review_packet_verified"
+        return False, "stale_blocked_review_packet_after_write"
+    if review_status:
+        return False, f"stale_review_packet_status_{review_status}"
     return False, "review_packet_missing_after_write"
 
 
