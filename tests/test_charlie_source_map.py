@@ -110,6 +110,24 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md", packet["required_inspection_paths"])
         self.assertIn("modules/sales/sales_transaction_read.py", packet["required_inspection_paths"])
 
+    def test_litter_attention_maps_farm_reconciliation_sources(self):
+        mission = {
+            "mission_type": "farm data quality / backend logic",
+            "title": "Fix litter attention false flags for sold piglets",
+            "raw_text": (
+                "Litter Attention is showing 6 litters need attention. Detailed view has the correct piglets. "
+                "Sold piglets should not create false litter attention flags."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("pig_litter_attention", keys)
+        self.assertIn("modules/pig_weights/farm_supabase_read_service.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_farm_supabase_read_service.py", packet["required_inspection_paths"])
+        self.assertIn("/api/reports/farm-attention-summary", packet["required_routes"])
+
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {
             "mission_type": "income stream",
