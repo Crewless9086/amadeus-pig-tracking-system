@@ -69,6 +69,8 @@
     statusLine: document.getElementById("charlie_status_line"),
     message: document.getElementById("charlie_message"),
     list: document.getElementById("charlie_mission_list"),
+    newReviewList: document.getElementById("charlie_new_review_list"),
+    newReviewCount: document.getElementById("charlie_new_review_count"),
     reviewList: document.getElementById("charlie_review_list"),
     reviewLoadedAt: document.getElementById("charlie_review_loaded_at"),
     commandCenter: document.getElementById("charlie_command_center"),
@@ -293,6 +295,7 @@
     if (els.loadedAt) els.loadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
     renderCommandCenter();
     renderAliveDashboard();
+    renderNewMissionReviewBoard();
     if (!els.list) return;
     if (!state.missions.length) {
       els.list.innerHTML = '<p class="charlie-empty">No missions found for this filter.</p>';
@@ -322,6 +325,29 @@
       els.list.appendChild(details);
     }
     renderReview();
+  }
+
+  function renderNewMissionReviewBoard() {
+    if (!els.newReviewList) return;
+    const newMissions = state.missions.filter((mission) => mission.status === "new" && queueClass(mission) === "owner_work");
+    if (els.newReviewCount) {
+      els.newReviewCount.textContent = `${newMissions.length} new`;
+    }
+    if (!newMissions.length) {
+      els.newReviewList.innerHTML = `
+        <div class="charlie-review-empty-state">
+          <strong>No new missions waiting</strong>
+          <span>Use the status filter or create a mission when owner review is needed.</span>
+        </div>
+      `;
+      return;
+    }
+    els.newReviewList.innerHTML = "";
+    newMissions.forEach((mission) => {
+      const card = missionCard(mission, {reviewBoard: true});
+      card.classList.add("charlie-new-review-card");
+      els.newReviewList.appendChild(card);
+    });
   }
 
   function renderCommandCenter() {
@@ -721,9 +747,11 @@
     `;
   }
 
-  function missionCard(mission) {
+  function missionCard(mission, options) {
+    const opts = options || {};
     const card = document.createElement("article");
     card.className = "charlie-mission-card";
+    if (opts.reviewBoard) card.classList.add("is-review-board-card");
     const missionId = safeText(mission.mission_id);
     const title = safeText(mission.title || mission.raw_text || "Untitled mission");
     const vault = mission.vault || {};
@@ -734,24 +762,7 @@
     const missionQueueClass = queueClass(mission);
     const activeFlowMission = currentMissionForFlow();
     if (activeFlowMission && activeFlowMission.mission_id === missionId) card.classList.add("is-current");
-    card.innerHTML = `
-      <div class="charlie-mission-card-header">
-        <div>
-          <span class="status-pill">${safeText(mission.status || "unknown")}</span>
-          <h3>${escapeHtml(title)}</h3>
-        </div>
-        <code>${escapeHtml(shortId(missionId))}</code>
-      </div>
-      <div class="charlie-card-tags">
-        <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
-      </div>
-      <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
-      <div class="charlie-vault-summary">
-        <strong>Mission Vault</strong>
-        <span>Stage: ${escapeHtml(safeText(vault.mission_stage || "intake"))}</span>
-        <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
-      </div>
-      <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
+    const workflowActions = opts.reviewBoard ? "" : `
       <div class="charlie-workflow-actions" aria-label="Mission workflow actions">
         <button type="button" data-agent-step="idea_expander">Idea Done</button>
         <button type="button" data-agent-step="product_architect">Product Done</button>
@@ -762,25 +773,67 @@
         <button type="button" data-agent-step="qa_red_team">QA Done</button>
         <button type="button" data-agent-step="reviewer">Reviewer Done</button>
       </div>
-      <dl class="charlie-mission-meta">
-        <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
-        <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
-        <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
-        <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
-        <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
-      </dl>
-      <div class="charlie-mission-actions">
+    `;
+    const ownerActionButtons = opts.reviewBoard ? `
+        <button type="button" data-open-mission-details>Open Details</button>
+        <button type="button" data-action="approved" data-level="LEVEL 3">Approve Level 3</button>
+        <button type="button" data-action="paused">Pause</button>
+        <button type="button" data-action="rejected">Reject</button>
+    ` : `
+        <button type="button" data-open-mission-details>Open Details</button>
+        <button type="button" data-action="approved" data-level="LEVEL 3">Approve Level 3</button>
+        <button type="button" data-action="paused">Pause</button>
+        <button type="button" data-action="rejected">Reject</button>
         <button type="button" data-queue-priority="${Math.max(1, queuePriority - 10)}">Earlier</button>
         <button type="button" data-queue-priority="${Math.min(999, queuePriority + 10)}">Later</button>
         <button type="button" data-vault-stage="planned">Mark Planned</button>
         <button type="button" data-vault-stage="review_ready">Review Ready</button>
         <button type="button" data-action="approved" data-level="LEVEL 1">Approve L1</button>
-        <button type="button" data-action="approved" data-level="LEVEL 3">Approve L3</button>
         <button type="button" data-action="approved" data-level="LEVEL 4">Approve L4</button>
-        <button type="button" data-action="paused">Pause</button>
-        <button type="button" data-action="rejected">Reject</button>
         <button type="button" data-action="blocked">Block</button>
         <button type="button" data-action="done">Done</button>
+    `;
+    const boardIntro = opts.reviewBoard ? `
+      <div class="charlie-owner-review-context">
+        <strong>Owner review needed</strong>
+        <span>Open the full mission packet, then approve Level 3 only when this is the correct mission for code/test/PR work.</span>
+      </div>
+    ` : "";
+    card.innerHTML = `
+      <div class="charlie-mission-card-header">
+        <div>
+          <span class="status-pill">${safeText(mission.status || "unknown")}</span>
+          <h3>${escapeHtml(title)}</h3>
+        </div>
+        <div class="charlie-mission-id-stack">
+          <code>${escapeHtml(shortId(missionId))}</code>
+          <small>${escapeHtml(missionId || "no-id")}</small>
+        </div>
+      </div>
+      ${boardIntro}
+      <div class="charlie-card-tags">
+        <span>${escapeHtml(queueClassLabel(missionQueueClass))}</span>
+        <span>${escapeHtml(safeText(mission.urgency || "No urgency"))}</span>
+        <span>${escapeHtml(safeText(mission.mission_type || "No type"))}</span>
+      </div>
+      <p>${escapeHtml(safeText(mission.raw_text || title)).slice(0, 280)}</p>
+      <div class="charlie-vault-summary">
+        <strong>Mission Vault</strong>
+        <span>Stage: ${escapeHtml(safeText(vault.mission_stage || "intake"))}</span>
+        <span>Confidence target: ${escapeHtml(safeText(vault.confidence_target || "98% before release review"))}</span>
+      </div>
+      <div class="charlie-agent-strip" aria-label="Agent workflow">${workflow.map(agentBadge).join("")}</div>
+      ${workflowActions}
+      <dl class="charlie-mission-meta">
+        <div><dt>Queue</dt><dd>${escapeHtml(String(queuePriority))}</dd></div>
+        <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
+        <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
+        <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
+        <div><dt>Created</dt><dd>${escapeHtml(formatDate(mission.created_at))}</dd></div>
+        <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
+      </dl>
+      <div class="charlie-mission-actions">
+        ${ownerActionButtons}
       </div>
       <details>
         <summary>Mission vault details</summary>
@@ -804,6 +857,8 @@
     card.querySelectorAll("[data-queue-priority]").forEach((button) => {
       button.addEventListener("click", () => updateQueuePriority(missionId, button.dataset.queuePriority || queuePriority));
     });
+    const detailButton = card.querySelector("[data-open-mission-details]");
+    if (detailButton) detailButton.addEventListener("click", () => openMissionDetailsModal(mission));
     const editForm = card.querySelector("[data-new-mission-edit-form]");
     if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
     return card;
@@ -1099,6 +1154,83 @@
     return (Array.isArray(workflow) ? workflow : [])
       .map((item) => item && item.findings ? `${item.agent || "agent"}: ${item.findings}` : "")
       .filter(Boolean);
+  }
+
+  function openMissionDetailsModal(mission) {
+    if (!els.reviewModal || !els.reviewModalBody) return;
+    const missionId = safeText(mission.mission_id);
+    const title = safeText(mission.title || mission.raw_text || "Mission Details");
+    state.activeReviewMissionId = missionId;
+    if (els.reviewModalTitle) els.reviewModalTitle.textContent = title;
+    els.reviewModalBody.innerHTML = focusedMissionDetailsMarkup(mission);
+    els.reviewModal.classList.remove("hidden");
+    document.body.classList.add("charlie-modal-open");
+    els.reviewModalBody.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", () => recordDecision(missionId, button.dataset.action, button.dataset.level || ""));
+    });
+    const editForm = els.reviewModalBody.querySelector("[data-new-mission-edit-form]");
+    if (editForm) editForm.addEventListener("submit", (event) => updateNewMission(event, missionId, editForm));
+    if (els.reviewModalClose) els.reviewModalClose.focus();
+  }
+
+  function focusedMissionDetailsMarkup(mission) {
+    const vault = mission.vault || {};
+    const media = Array.isArray(mission.media_references) ? mission.media_references : [];
+    const contextPack = mission.mission_context_pack || {};
+    const criteria = listMarkup(vault.acceptance_criteria, "No acceptance criteria captured yet.");
+    const tests = listMarkup(vault.test_plan, "No test plan captured yet.");
+    const mediaItems = mediaMarkup(media, "No media/reference links captured yet.");
+    return `
+      <div class="charlie-review-focus-grid charlie-mission-detail-focus">
+        <section>
+          <strong>Raw mission text</strong>
+          <p>${escapeHtml(safeText(mission.raw_text || "No raw mission text captured."))}</p>
+          <strong>Desired outcome</strong>
+          <p>${escapeHtml(safeText(vault.desired_outcome || "No desired outcome captured yet."))}</p>
+          <div class="charlie-mission-detail-grid">
+            <section>
+              <strong>Acceptance criteria</strong>
+              ${criteria}
+            </section>
+            <section>
+              <strong>Test plan</strong>
+              ${tests}
+            </section>
+            <section>
+              <strong>Media references</strong>
+              ${mediaItems}
+            </section>
+          </div>
+          <details open>
+            <summary>Mission vault</summary>
+            ${vaultDetails(vault, media, contextPack)}
+          </details>
+          ${mission.status === "new" ? newMissionEditMarkup(mission, vault) : ""}
+          <details>
+            <summary>Technical JSON</summary>
+            <pre>${escapeHtml(JSON.stringify(mission, null, 2))}</pre>
+          </details>
+        </section>
+        <aside>
+          <dl class="charlie-mission-meta">
+            <div><dt>Short ID</dt><dd>${escapeHtml(shortId(mission.mission_id))}</dd></div>
+            <div><dt>Full ID</dt><dd>${escapeHtml(safeText(mission.mission_id || "--"))}</dd></div>
+            <div><dt>Status</dt><dd>${escapeHtml(safeText(mission.status || "--"))}</dd></div>
+            <div><dt>Urgency</dt><dd>${escapeHtml(safeText(mission.urgency || "--"))}</dd></div>
+            <div><dt>Type</dt><dd>${escapeHtml(safeText(mission.mission_type || "--"))}</dd></div>
+            <div><dt>Approval</dt><dd>${escapeHtml(safeText(mission.approval_level || "--"))}</dd></div>
+            <div><dt>Created</dt><dd>${escapeHtml(formatDate(mission.created_at))}</dd></div>
+            <div><dt>Updated</dt><dd>${escapeHtml(formatDate(mission.updated_at))}</dd></div>
+          </dl>
+          <p class="charlie-safety-boundary">These buttons record mission state only. The web UI cannot run shell commands, merge, deploy, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.</p>
+          <div class="charlie-mission-actions charlie-primary-owner-actions">
+            <button type="button" data-action="approved" data-level="LEVEL 3">Approve Level 3</button>
+            <button type="button" data-action="paused">Pause</button>
+            <button type="button" data-action="rejected">Reject</button>
+          </div>
+        </aside>
+      </div>
+    `;
   }
 
   function missionQualityBadge(quality) {
