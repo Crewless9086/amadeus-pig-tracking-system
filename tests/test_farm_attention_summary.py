@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import patch
 
 from app import app
+from modules.pig_weights import pig_weights_service
 from modules.reports import report_service
 
 
@@ -105,6 +106,54 @@ class FarmAttentionSummaryTests(unittest.TestCase):
             result = report_service.get_farm_attention_summary(report_date="2026-05-30")
 
         self.assertEqual(result["counts"]["attention_total"], 0)
+        self.assertEqual(result["digest_lines"], ["No current farm attention items."])
+
+    def test_summary_fallback_does_not_count_sold_litter_piglets_as_attention(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        order_summary = {
+            "success": True,
+            "rules": {},
+            "sections": {
+                "orders_needing_attention": [],
+            },
+        }
+        overview_rows = [{
+            "Litter_ID": "LIT-SOLD",
+            "Total_Born": "7",
+            "Born_Alive": "6",
+            "Stillborn_Count": "1",
+            "Mummified_Count": "0",
+            "Pig_Master_Row_Count": "3",
+            "Active_Pig_Count": "3",
+            "Exited_Pig_Count": "3",
+            "Litter_Status": "Active",
+            "Needs_Attention": "Yes",
+            "Attention_Reason": "Linked pig records do not match born alive count",
+        }]
+        pig_master_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-SOLD", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(3)
+        ] + [
+            {"Pig_ID": "PIG-SOLD", "Litter_ID": "LIT-SOLD", "Status": "Sold", "On_Farm": "No", "Exit_Reason": "Livestock Sale"},
+            {"Pig_ID": "PIG-DISPOSED", "Litter_ID": "LIT-SOLD", "Status": "Disposed", "On_Farm": "No", "Exit_Reason": "Disposed"},
+            {"Pig_ID": "PIG-COMPLETED", "Litter_ID": "LIT-SOLD", "Status": "Completed Sale", "On_Farm": "No", "Exit_Reason": "Completed Sale"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_master_rows
+            return []
+
+        with patch.object(report_service, "get_daily_order_summary", return_value=order_summary), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
+             patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = report_service.get_farm_attention_summary(report_date="2026-05-30")
+
+        self.assertEqual(result["counts"]["attention_total"], 0)
+        self.assertEqual(result["counts"]["litter_attention"], 0)
+        self.assertEqual(result["sections"]["litter_attention"], [])
         self.assertEqual(result["digest_lines"], ["No current farm attention items."])
 
     def test_summary_rejects_invalid_limit(self):

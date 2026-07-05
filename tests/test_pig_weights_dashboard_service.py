@@ -17,6 +17,24 @@ class LitterAttentionSummaryTests(unittest.TestCase):
     def tearDown(self):
         self.supabase_availability_patch.stop()
 
+    def _sheet_records(
+        self,
+        overview_rows=None,
+        pig_rows=None,
+        pig_master_rows=None,
+        medical_rows=None,
+        product_rows=None,
+    ):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        rows_by_sheet = {
+            sheet_names["litter_overview"]: overview_rows or [],
+            sheet_names["pig_overview"]: pig_rows or [],
+            sheet_names["pig_master"]: pig_master_rows or [],
+            sheet_names["medical_log"]: medical_rows or [],
+            sheet_names["product_register"]: product_rows or [],
+        }
+        return lambda sheet_name: rows_by_sheet.get(sheet_name, [])
+
     def test_litter_attention_includes_sheet_attention_and_due_purpose_review(self):
         overview_rows = [
             {
@@ -79,7 +97,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             },
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows, pig_rows, pig_master_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 5))
 
         self.assertEqual(result["count"], 2)
@@ -114,7 +136,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             "Wean_Weight_Kg": "6.2",
         }]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows, pig_rows, pig_master_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 15))
 
         self.assertEqual(result["count"], 0)
@@ -144,7 +170,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             "Wean_Weight_Kg": "6.2",
         }]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows, pig_rows, pig_master_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 16))
 
         self.assertEqual(result["count"], 1)
@@ -165,7 +195,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
@@ -187,7 +221,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["count"], 0)
@@ -270,7 +308,15 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             },
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], pig_master_rows, [], product_rows]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(
+                overview_rows=overview_rows,
+                pig_master_rows=pig_master_rows,
+                product_rows=product_rows,
+            ),
+        ):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["items"][0]["reason"], "Piglets need newborn health records")
@@ -316,7 +362,16 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             },
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], pig_master_rows, medical_rows, product_rows]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(
+                overview_rows=overview_rows,
+                pig_master_rows=pig_master_rows,
+                medical_rows=medical_rows,
+                product_rows=product_rows,
+            ),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 5, 2))
 
         self.assertEqual(result["count"], 0)
@@ -333,7 +388,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 5, 20))
 
         self.assertEqual(result["count"], 0)
@@ -350,7 +409,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 2))
 
         self.assertEqual(result["count"], 1)
@@ -391,7 +454,11 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             for i in range(7)
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+        with patch.object(
+            pig_weights_service,
+            "get_all_records",
+            side_effect=self._sheet_records(overview_rows),
+        ):
             result = pig_weights_service.get_litter_attention_summary(limit=3)
 
         self.assertEqual(result["count"], 7)
