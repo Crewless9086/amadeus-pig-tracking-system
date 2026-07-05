@@ -909,6 +909,42 @@ def _litter_attention_from_reconciliation(reconciliation):
     }
 
 
+def _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing):
+    status = _text(litter_status).lower()
+    if status in {"weaned", "completed"}:
+        return None
+    if _date_or_none(litter.get("wean_date")):
+        return None
+    if int(lifecycle_outcomes.get("active") or 0) <= 0:
+        return None
+    if not wean_timing.get("wean_tag_attention_due"):
+        return None
+
+    days_until = wean_timing.get("days_until_estimated_wean")
+    estimated_wean_date = wean_timing.get("estimated_wean_date", "")
+    if isinstance(days_until, int) and days_until < 0:
+        reason = f"Litter is {abs(days_until)} day(s) past the estimated wean date."
+        recommended_action = "Confirm the litter status and mark it as weaned if this has already happened."
+    elif isinstance(days_until, int) and days_until == 0:
+        reason = "Litter reaches the estimated wean date today."
+        recommended_action = "Confirm the litter status and mark it as weaned when the weaning is done."
+    else:
+        reason = f"Litter is {days_until} day(s) from the estimated wean date."
+        recommended_action = "Prepare for weaning and confirm the litter status when the weaning is done."
+
+    return {
+        "action_type": "mark_weaned",
+        "reason": reason,
+        "recommended_action": recommended_action,
+        "wean_date": estimated_wean_date,
+        "estimated_wean_date": estimated_wean_date,
+        "wean_tag_attention_start_date": wean_timing.get("wean_tag_attention_start_date", ""),
+        "wean_planning_monday": wean_timing.get("wean_planning_monday", ""),
+        "days_until_estimated_wean": days_until,
+        "active_pig_count": int(lifecycle_outcomes.get("active") or 0),
+    }
+
+
 def _litter_reconciliation(litter, pigs):
     born_alive = _float_or_none(litter.get("born_alive"))
     total_born = _float_or_none(litter.get("total_born"))
@@ -1011,6 +1047,9 @@ def list_litter_overview(connect_factory=None):
         pigs = pigs_by_litter.get(litter_id, [])
         reconciliation = _litter_reconciliation(litter, pigs)
         lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
+        litter_status = _derive_litter_status(litter, reconciliation, lifecycle_outcomes)
+        wean_timing = _litter_wean_timing(litter, pigs)
+        wean_attention = _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
         weights = [
             _float_or_none(pig.get("current_weight_kg"))
             for pig in pigs
@@ -1020,7 +1059,10 @@ def list_litter_overview(connect_factory=None):
         male_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Male"])
         female_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Female"])
         active_count = reconciliation["active_pig_records"]
-        needs_attention = "Yes" if reconciliation["mismatch"] else ""
+        needs_attention = "Yes" if reconciliation["mismatch"] or wean_attention else ""
+        attention_reason = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("reason", "")
+        recommended_action = reconciliation["recommended_action"] if reconciliation["mismatch"] else (wean_attention or {}).get("recommended_action", "")
+        action_type = "review_litter_counts" if reconciliation["mismatch"] else (wean_attention or {}).get("action_type", "")
         result_rows.append({
             "litter_id": litter_id,
             "sow_pig_id": _text(litter.get("sow_pig_id")),
@@ -1030,10 +1072,12 @@ def list_litter_overview(connect_factory=None):
             "current_pen_id": "",
             "farrowing_date": _date_text(litter.get("farrowing_date")),
             "wean_date": _date_text(litter.get("wean_date")),
-            "litter_status": _derive_litter_status(litter, reconciliation, lifecycle_outcomes),
+            "litter_status": litter_status,
             "needs_attention": needs_attention,
             "sheet_needs_attention": "",
-            "attention_reason": reconciliation["recommended_action"] if needs_attention == "Yes" else "",
+            "attention_reason": attention_reason if needs_attention == "Yes" else "",
+            "action_type": action_type,
+            "recommended_action": recommended_action,
             "born_alive": reconciliation["born_alive"],
             "total_born": reconciliation["total_born"],
             "weaned_count": _float_or_none(litter.get("weaned_count")),
@@ -1047,6 +1091,7 @@ def list_litter_overview(connect_factory=None):
             "average_current_weight_kg": _average(weights),
             "lifecycle_outcomes": lifecycle_outcomes,
             "reconciliation": reconciliation,
+            **wean_timing,
         })
 
     result_rows.sort(key=lambda item: (
@@ -1083,6 +1128,10 @@ def get_litter_detail(litter_id, connect_factory=None):
         _blank_litter_wean_timing(litter, pigs)
         if detail_state in {"weaned", "completed"}
         else _litter_wean_timing(litter, pigs)
+    )
+    attention = (
+        _litter_attention_from_reconciliation(reconciliation)
+        or _litter_wean_attention(litter, pigs, litter_status, lifecycle_outcomes, wean_timing)
     )
     piglets = []
     current_weights = []
@@ -1141,7 +1190,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "average_wean_weight_kg": average_wean_weight,
         "average_weight_source": "wean_weight" if detail_state in {"weaned", "completed"} else "current_weight",
         "piglets": piglets,
-        "attention": _litter_attention_from_reconciliation(reconciliation),
+        "attention": attention,
         "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
         **wean_timing,
@@ -1165,16 +1214,20 @@ def get_litter_attention_summary(limit=5, connect_factory=None):
             "litter_status": litter.get("litter_status", ""),
             "needs_attention": litter.get("needs_attention", ""),
             "reason": litter.get("attention_reason") or "Review litter counts.",
-            "action_type": "review_litter_counts",
-            "recommended_action": litter.get("reconciliation", {}).get("recommended_action") or "Review litter counts.",
+            "action_type": litter.get("action_type") or "review_litter_counts",
+            "recommended_action": (
+                litter.get("recommended_action")
+                or litter.get("reconciliation", {}).get("recommended_action")
+                or "Review litter counts."
+            ),
             "active_pig_count": litter.get("active_pig_records", 0),
             "weaned_count": None,
             "youngest_age_days": "",
             "oldest_age_days": "",
-            "estimated_wean_date": "",
-            "wean_tag_attention_start_date": "",
-            "wean_planning_monday": "",
-            "days_until_estimated_wean": None,
+            "estimated_wean_date": litter.get("estimated_wean_date", ""),
+            "wean_tag_attention_start_date": litter.get("wean_tag_attention_start_date", ""),
+            "wean_planning_monday": litter.get("wean_planning_monday", ""),
+            "days_until_estimated_wean": litter.get("days_until_estimated_wean"),
         })
 
     return {

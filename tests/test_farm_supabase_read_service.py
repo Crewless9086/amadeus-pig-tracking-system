@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import unittest
 from unittest.mock import patch
 
@@ -482,6 +482,108 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["attention_window_days"], 3)
         self.assertEqual(detail["source"], "supabase_canonical")
 
+    def test_active_litter_inside_wean_window_becomes_attention_item(self):
+        birth_date = date.today() - timedelta(days=32)
+        estimated_wean_date = birth_date + timedelta(days=35)
+        litters = [{
+            "litter_id": "LIT-WEAN-DUE",
+            "farrowing_date": birth_date,
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 2,
+            "total_born": 2,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+            "wean_date": None,
+            "weaned_count": None,
+        }]
+        pigs_by_litter = {
+            "LIT-WEAN-DUE": [
+                {
+                    "pig_id": "PIG-1",
+                    "tag_number": "101",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": birth_date,
+                    "litter_id": "LIT-WEAN-DUE",
+                },
+                {
+                    "pig_id": "PIG-2",
+                    "tag_number": "102",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": birth_date,
+                    "litter_id": "LIT-WEAN-DUE",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+            detail = farm_supabase_read_service.get_litter_detail("LIT-WEAN-DUE")
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+
+        litter = overview["litters"][0]
+        self.assertEqual(overview["attention_count"], 1)
+        self.assertEqual(litter["needs_attention"], "Yes")
+        self.assertEqual(litter["action_type"], "mark_weaned")
+        self.assertEqual(litter["estimated_wean_date"], estimated_wean_date.isoformat())
+        self.assertEqual(litter["wean_tag_attention_start_date"], date.today().isoformat())
+        self.assertEqual(litter["days_until_estimated_wean"], 3)
+        self.assertEqual(detail["attention"]["action_type"], "mark_weaned")
+        self.assertIn("3 day(s) from the estimated wean date", detail["attention"]["reason"])
+        self.assertEqual(summary["count"], 1)
+        self.assertEqual(summary["items"][0]["action_type"], "mark_weaned")
+
+    def test_active_litter_past_estimated_wean_date_becomes_attention_item(self):
+        birth_date = date.today() - timedelta(days=40)
+        estimated_wean_date = birth_date + timedelta(days=35)
+        litters = [{
+            "litter_id": "LIT-WEAN-OVERDUE",
+            "farrowing_date": birth_date,
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 1,
+            "total_born": 1,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+            "wean_date": None,
+            "weaned_count": None,
+        }]
+        pigs_by_litter = {
+            "LIT-WEAN-OVERDUE": [{
+                "pig_id": "PIG-1",
+                "tag_number": "101",
+                "status": "Active",
+                "on_farm": True,
+                "animal_type": "Piglet",
+                "sex": "Female",
+                "date_of_birth": birth_date,
+                "litter_id": "LIT-WEAN-OVERDUE",
+            }],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-WEAN-OVERDUE")
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+
+        self.assertEqual(detail["estimated_wean_date"], estimated_wean_date.isoformat())
+        self.assertEqual(detail["days_until_estimated_wean"], -5)
+        self.assertEqual(detail["attention"]["action_type"], "mark_weaned")
+        self.assertIn("5 day(s) past the estimated wean date", detail["attention"]["reason"])
+        self.assertEqual(summary["count"], 1)
+        self.assertEqual(summary["items"][0]["days_until_estimated_wean"], -5)
+
     def test_litter_detail_uses_piglet_birth_date_when_litter_farrowing_date_missing(self):
         litters = [{
             "litter_id": "LIT-FALLBACK",
@@ -762,9 +864,10 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertIn("Review", detail["attention"]["recommended_action"])
 
     def test_litter_overview_does_not_flag_sold_disposed_or_completed_sale_piglets_as_missing(self):
+        birth_date = date.today() - timedelta(days=10)
         litters = [{
             "litter_id": "LIT-SOLD",
-            "farrowing_date": date(2026, 6, 1),
+            "farrowing_date": birth_date,
             "sow_pig_id": "SOW-1",
             "boar_pig_id": "BOAR-1",
             "born_alive": 6,
@@ -782,7 +885,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": True,
                     "animal_type": "Piglet",
                     "sex": "Female",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-SOLD",
                     "current_weight_kg": 5.0,
                     "current_pen_id": "PEN-1",
@@ -796,7 +899,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": False,
                     "animal_type": "Piglet",
                     "sex": "Male",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-SOLD",
                     "exit_reason": "livestock_sale",
                 },
@@ -807,7 +910,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": False,
                     "animal_type": "Piglet",
                     "sex": "Female",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-SOLD",
                     "exit_reason": "disposed",
                 },
@@ -818,7 +921,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": False,
                     "animal_type": "Piglet",
                     "sex": "Male",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-SOLD",
                     "exit_reason": "completed sale",
                 },
@@ -903,9 +1006,10 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertIn("missing or extra live-born piglet history", detail["attention"]["recommended_action"])
 
     def test_litter_overview_does_not_flag_stillborn_rows_as_born_alive_mismatch(self):
+        birth_date = date.today() - timedelta(days=10)
         litters = [{
             "litter_id": "LIT-2026-1025",
-            "farrowing_date": date(2026, 6, 1),
+            "farrowing_date": birth_date,
             "sow_pig_id": "SOW-1",
             "boar_pig_id": "BOAR-1",
             "sow_tag_number": "M1",
@@ -925,7 +1029,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": True,
                     "animal_type": "Piglet",
                     "sex": "Female",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-2026-1025",
                     "current_weight_kg": 5.0,
                     "current_pen_id": "PEN-1",
@@ -939,7 +1043,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                     "on_farm": False,
                     "animal_type": "Piglet",
                     "sex": "",
-                    "date_of_birth": date(2026, 6, 1),
+                    "date_of_birth": birth_date,
                     "litter_id": "LIT-2026-1025",
                     "current_weight_kg": None,
                     "current_pen_id": "",
