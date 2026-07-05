@@ -1,7 +1,10 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from services.database_service import DATABASE_URL_ENV
+
+DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 
 
 def _database_url():
@@ -51,6 +54,58 @@ def _date_text(value):
     if isinstance(value, (date, datetime)):
         return value.isoformat()[:10]
     return _text(value)
+
+
+def _date_or_none(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = _text(value)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _litter_birth_date(litter, pigs):
+    litter_birth_date = _date_or_none(litter.get("farrowing_date"))
+    if litter_birth_date:
+        return litter_birth_date
+    pig_birth_dates = [
+        pig_birth_date
+        for pig_birth_date in (_date_or_none(pig.get("date_of_birth")) for pig in pigs)
+        if pig_birth_date
+    ]
+    return min(pig_birth_dates) if pig_birth_dates else None
+
+
+def _litter_wean_timing(litter, pigs, today=None):
+    today = today or date.today()
+    birth_date = _litter_birth_date(litter, pigs)
+    estimated_wean_date = birth_date + timedelta(days=DEFAULT_LITTER_WEAN_AGE_DAYS) if birth_date else None
+    attention_start_date = (
+        estimated_wean_date - timedelta(days=WEAN_TAG_ATTENTION_WINDOW_DAYS)
+        if estimated_wean_date
+        else None
+    )
+    planning_monday = (
+        estimated_wean_date - timedelta(days=estimated_wean_date.weekday())
+        if estimated_wean_date
+        else None
+    )
+    return {
+        "birth_date": _date_text(birth_date),
+        "estimated_wean_date": _date_text(estimated_wean_date),
+        "wean_tag_attention_start_date": _date_text(attention_start_date),
+        "wean_planning_monday": _date_text(planning_monday),
+        "wean_tag_attention_due": bool(attention_start_date and today >= attention_start_date),
+        "days_until_estimated_wean": (estimated_wean_date - today).days if estimated_wean_date else None,
+        "default_wean_age_days": DEFAULT_LITTER_WEAN_AGE_DAYS,
+        "attention_window_days": WEAN_TAG_ATTENTION_WINDOW_DAYS,
+    }
 
 
 def _float_or_none(value):
@@ -940,6 +995,7 @@ def get_litter_detail(litter_id, connect_factory=None):
     pigs = pigs_by_litter.get(_text(litter_id), [])
     reconciliation = _litter_reconciliation(litter, pigs)
     lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
+    wean_timing = _litter_wean_timing(litter, pigs)
     piglets = []
     weights = []
     male_count = 0
@@ -985,6 +1041,7 @@ def get_litter_detail(litter_id, connect_factory=None):
         "attention": None,
         "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
+        **wean_timing,
         "wean_status": "",
         "wean_date": "",
         "source": "supabase_canonical",
