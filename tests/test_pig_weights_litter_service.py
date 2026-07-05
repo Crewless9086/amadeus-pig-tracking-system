@@ -328,6 +328,53 @@ class LitterAttentionActionTests(unittest.TestCase):
         self.assertEqual(litter["lifecycle_outcomes"]["removed"], 1)
         self.assertEqual(litter["lifecycle_outcomes"]["other"], 0)
 
+    def test_list_litter_overview_accounts_sold_disposed_and_completed_sale_terminal_piglets(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Total_Born": "7",
+                "Born_Alive": "6",
+                "Stillborn_Count": "1",
+                "Mummified_Count": "0",
+                "Pig_Master_Row_Count": "3",
+                "Active_Pig_Count": "3",
+                "Exited_Pig_Count": "3",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Linked pig records do not match born alive count",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(3)
+        ] + [
+            {"Pig_ID": "PIG-SOLD", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Exit_Reason": "Livestock Sale"},
+            {"Pig_ID": "PIG-DISPOSED", "Litter_ID": "LIT-1", "Status": "Disposed", "On_Farm": "No", "Exit_Reason": "Disposed"},
+            {"Pig_ID": "PIG-COMPLETED", "Litter_ID": "LIT-1", "Status": "Completed Sale", "On_Farm": "No", "Exit_Reason": "Completed Sale"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.list_litter_overview()
+
+        litter = result["litters"][0]
+        self.assertEqual(result["attention_count"], 0)
+        self.assertEqual(result["mismatch_count"], 0)
+        self.assertEqual(litter["needs_attention"], "")
+        self.assertEqual(litter["sheet_needs_attention"], "Yes")
+        self.assertEqual(litter["lifecycle_outcomes"]["sold"], 2)
+        self.assertEqual(litter["lifecycle_outcomes"]["removed"], 1)
+        self.assertEqual(litter["reconciliation"]["live_linked_pig_records"], 6)
+        self.assertEqual(litter["reconciliation"]["accounted_terminal_live_pig_records"], 3)
+        self.assertTrue(litter["reconciliation"]["non_live_source_accounted"])
+
     def test_reconcile_litter_birth_counts_dry_run_updates_litters_only_in_preview(self):
         sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
         overview_rows = [

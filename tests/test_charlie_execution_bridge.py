@@ -1147,6 +1147,34 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_review_board_owner_approval_gate_instruction_is_not_send_back_blocker(self):
+        for agent in ["product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer"]:
+            with self.subTest(agent=agent):
+                artifact = _successful_stage_payload(agent)
+                artifact.update({
+                    "recommended_owner_decision": "approve_final_release",
+                    "next_action": "Owner review PR #93 and either approve final release or send back with comments. Do not merge or deploy until owner final approval is recorded.",
+                    "release_notes": [
+                        "Fixed owner-visible behavior; owner should review before final release."
+                    ],
+                })
+
+                result = execution_bridge._agent_quality_gate(agent, artifact)
+
+                self.assertTrue(result["passed"], result)
+
+    def test_review_board_send_back_decision_still_blocks(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "send_back",
+            "next_action": "Owner review PR #93 and send back because accepted behavior is still wrong.",
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("recommended_owner_decision=send_back", result["reason"])
+
     def test_risk_agent_blocks_send_back_and_failed_browser_evidence(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

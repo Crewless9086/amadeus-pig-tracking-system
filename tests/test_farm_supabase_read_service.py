@@ -604,13 +604,13 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                 {
                     "pig_id": "PIG-DEAD",
                     "tag_number": "103",
-                    "status": "Dead",
+                    "status": "Died",
                     "on_farm": False,
                     "animal_type": "Piglet",
                     "sex": "Female",
                     "date_of_birth": date(2026, 6, 1),
                     "litter_id": "LIT-DONE",
-                    "exit_reason": "died_after_birth",
+                    "exit_reason": None,
                 },
                 {
                     "pig_id": "PIG-REMOVED",
@@ -752,9 +752,150 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             detail = farm_supabase_read_service.get_litter_detail("LIT-ATTENTION")
 
         self.assertEqual(detail["attention"]["action_type"], "review_litter_counts")
-        self.assertEqual(detail["attention"]["reason"], "Needs attention: litter counts do not match.")
+        self.assertEqual(detail["attention"]["reason"], detail["attention"]["recommended_action"])
         self.assertEqual(detail["attention"]["linked_pig_records"], 1)
         self.assertIn("Review", detail["attention"]["recommended_action"])
+
+    def test_litter_overview_does_not_flag_sold_disposed_or_completed_sale_piglets_as_missing(self):
+        litters = [{
+            "litter_id": "LIT-SOLD",
+            "farrowing_date": date(2026, 6, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 6,
+            "total_born": 7,
+            "stillborn_count": 1,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-SOLD": [
+                {
+                    "pig_id": f"PIG-ACTIVE-{index}",
+                    "tag_number": str(100 + index),
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-SOLD",
+                    "current_weight_kg": 5.0,
+                    "current_pen_id": "PEN-1",
+                }
+                for index in range(3)
+            ] + [
+                {
+                    "pig_id": "PIG-SOLD",
+                    "tag_number": "201",
+                    "status": "Sold",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-SOLD",
+                    "exit_reason": "livestock_sale",
+                },
+                {
+                    "pig_id": "PIG-DISPOSED",
+                    "tag_number": "202",
+                    "status": "Disposed",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-SOLD",
+                    "exit_reason": "disposed",
+                },
+                {
+                    "pig_id": "PIG-COMPLETED",
+                    "tag_number": "203",
+                    "status": "Completed Sale",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-SOLD",
+                    "exit_reason": "completed sale",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+            detail = farm_supabase_read_service.get_litter_detail("LIT-SOLD")
+
+        self.assertEqual(overview["attention_count"], 0)
+        self.assertEqual(overview["mismatch_count"], 0)
+        reconciliation = overview["litters"][0]["reconciliation"]
+        self.assertFalse(reconciliation["mismatch"])
+        self.assertEqual(reconciliation["live_linked_pig_records"], 6)
+        self.assertEqual(reconciliation["accounted_terminal_live_pig_records"], 3)
+        self.assertTrue(reconciliation["non_live_source_accounted"])
+        self.assertIsNone(detail["attention"])
+        self.assertEqual(detail["lifecycle_outcomes"]["sold"], 2)
+        self.assertEqual(detail["lifecycle_outcomes"]["removed"], 1)
+
+    def test_litter_overview_keeps_attention_for_true_missing_live_born_history(self):
+        litters = [{
+            "litter_id": "LIT-MISSING",
+            "farrowing_date": date(2026, 6, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 6,
+            "total_born": 6,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-MISSING": [
+                {
+                    "pig_id": f"PIG-ACTIVE-{index}",
+                    "tag_number": str(100 + index),
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-MISSING",
+                    "current_weight_kg": 5.0,
+                    "current_pen_id": "PEN-1",
+                }
+                for index in range(3)
+            ] + [
+                {
+                    "pig_id": "PIG-SOLD",
+                    "tag_number": "201",
+                    "status": "Sold",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-MISSING",
+                    "exit_reason": "livestock_sale",
+                },
+                {
+                    "pig_id": "PIG-DISPOSED",
+                    "tag_number": "202",
+                    "status": "Disposed",
+                    "on_farm": False,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-MISSING",
+                    "exit_reason": "disposed",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-MISSING")
+
+        self.assertEqual(detail["attention"]["action_type"], "review_litter_counts")
+        self.assertEqual(detail["reconciliation"]["live_linked_pig_records"], 5)
+        self.assertEqual(detail["reconciliation"]["accounted_terminal_live_pig_records"], 2)
+        self.assertTrue(detail["reconciliation"]["mismatch"])
+        self.assertIn("missing or extra live-born piglet history", detail["attention"]["recommended_action"])
 
     def test_litter_overview_does_not_flag_stillborn_rows_as_born_alive_mismatch(self):
         litters = [{

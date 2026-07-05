@@ -147,7 +147,7 @@ def _weight_band(weight_kg):
 
 
 def _sale_stream_for_exit(row):
-    status = _text(row.get("status")).lower()
+    status = _text(row.get("status")).lower().replace("-", "_").replace(" ", "_")
     exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
     if exit_reason in {"meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
         return "meat"
@@ -159,15 +159,15 @@ def _sale_stream_for_exit(row):
 
 
 def _lifecycle_outcome_for_exit(row):
-    status = _text(row.get("status")).lower()
+    status = _text(row.get("status")).lower().replace("-", "_").replace(" ", "_")
     exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
-    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
+    if status in {"dead", "died", "deceased"} or exit_reason in {"died", "dead", "deceased", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
         return "dead"
-    if status == "removed" or exit_reason in {"removed", "other"}:
+    if status in {"removed", "disposed"} or exit_reason in {"removed", "disposed", "disposal", "other"}:
         return "removed"
     if status == "slaughtered" or exit_reason in {"slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir"}:
         return "slaughtered"
-    if status == "sold" or exit_reason in {"sold", "livestock", "livestock_sale", "live_sale", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
+    if status in {"sold", "completed_sale"} or exit_reason in {"sold", "completed_sale", "sale_completed", "livestock", "livestock_sale", "live_sale", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
         return "sold"
     if exit_reason:
         return "other"
@@ -896,13 +896,14 @@ def _litter_attention_from_reconciliation(reconciliation):
     recommended_action = reconciliation.get("recommended_action") or "Review litter counts."
     return {
         "action_type": "review_litter_counts",
-        "reason": "Needs attention: litter counts do not match.",
+        "reason": recommended_action,
         "recommended_action": recommended_action,
         "rule": reconciliation.get("rule", ""),
         "born_alive": reconciliation.get("born_alive"),
         "total_born": reconciliation.get("total_born"),
         "linked_pig_records": reconciliation.get("linked_pig_records"),
         "live_linked_pig_records": reconciliation.get("live_linked_pig_records"),
+        "accounted_terminal_live_pig_records": reconciliation.get("accounted_terminal_live_pig_records"),
     }
 
 
@@ -926,6 +927,11 @@ def _litter_reconciliation(litter, pigs):
         pig for pig in pigs
         if _text(pig.get("exit_reason")).lower().replace("-", "_").replace(" ", "_") == "stillborn"
     ])
+    lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
+    accounted_terminal_live = sum(
+        int(lifecycle_outcomes.get(key) or 0)
+        for key in ("sold", "slaughtered", "removed")
+    )
     live_linked = linked - non_live_history_count
     non_live_count = int(stillborn_count) + int(mummified_count)
     source_counts_total = int(born_alive) + non_live_count if born_alive is not None else None
@@ -934,12 +940,37 @@ def _litter_reconciliation(litter, pigs):
         and source_counts_total is not None
         and int(total_born) == source_counts_total
     )
+    source_count_conflict = bool(
+        total_born is not None
+        and source_counts_total is not None
+        and int(total_born) != source_counts_total
+    )
     live_count_mismatch = bool(born_alive is not None and int(born_alive) != live_linked)
-    total_record_mismatch = bool(total_born is not None and int(total_born) != linked)
+    non_live_source_accounted = bool(
+        source_counts_consistent
+        and born_alive is not None
+        and int(born_alive) == live_linked
+        and non_live_count > non_live_history_count
+    )
+    total_record_mismatch = bool(
+        total_born is not None
+        and int(total_born) != linked
+        and not non_live_source_accounted
+    )
     mismatch = live_count_mismatch or total_record_mismatch
     suggested_born_alive = live_linked
     if live_count_mismatch:
-        recommended_action = "Review litter live-born records before changing Born Alive."
+        recommended_action = (
+            "Review missing or extra live-born piglet history before changing Born Alive. "
+            "Sold, slaughtered, disposed, removed, and completed-sale piglets with terminal rows are already counted as accounted outcomes."
+        )
+    elif (
+        total_record_mismatch
+        and total_born is not None
+        and source_counts_total is not None
+        and int(total_born) != source_counts_total
+    ):
+        recommended_action = "Review litter source counts: Total Born must equal Born Alive plus Stillborn/Mummified."
     elif total_record_mismatch:
         recommended_action = "Review missing or extra litter piglet records before changing counts."
     else:
@@ -952,6 +983,7 @@ def _litter_reconciliation(litter, pigs):
         "non_live_count": non_live_count,
         "linked_pig_records": linked,
         "live_linked_pig_records": live_linked,
+        "accounted_terminal_live_pig_records": accounted_terminal_live,
         "active_pig_records": active,
         "exited_pig_records": exited,
         "stillborn_history_count": stillborn_history_count,
@@ -960,6 +992,8 @@ def _litter_reconciliation(litter, pigs):
         "mismatch": mismatch,
         "formula_conflict": False,
         "source_counts_consistent": source_counts_consistent,
+        "source_count_conflict": source_count_conflict,
+        "non_live_source_accounted": non_live_source_accounted,
         "can_reconcile_birth_count": False,
         "delta": (suggested_born_alive - born_alive) if live_count_mismatch and born_alive is not None else 0,
         "rule": "Supabase canonical litter count comparison.",
