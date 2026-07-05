@@ -108,6 +108,19 @@ def _litter_wean_timing(litter, pigs, today=None):
     }
 
 
+def _blank_litter_wean_timing(litter, pigs):
+    return {
+        "birth_date": _date_text(_litter_birth_date(litter, pigs)),
+        "estimated_wean_date": "",
+        "wean_tag_attention_start_date": "",
+        "wean_planning_monday": "",
+        "wean_tag_attention_due": False,
+        "days_until_estimated_wean": None,
+        "default_wean_age_days": DEFAULT_LITTER_WEAN_AGE_DAYS,
+        "attention_window_days": WEAN_TAG_ATTENTION_WINDOW_DAYS,
+    }
+
+
 def _float_or_none(value):
     if value is None or value == "":
         return None
@@ -251,6 +264,8 @@ def _current_state_rows(connect_factory=None):
             state.current_pen_name,
             pig.mother_pig_id,
             pig.father_pig_id,
+            pig.wean_date,
+            pig.wean_weight_kg,
             pig.exit_reason,
             pig.notes
         from public.pig_current_state state
@@ -844,20 +859,51 @@ def _litter_lifecycle_outcomes(pigs):
 
 def _derive_litter_status(litter, reconciliation, lifecycle_outcomes):
     explicit_status = _text(litter.get("litter_status"))
+    terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
+    total_count = int(lifecycle_outcomes.get("total") or 0)
+    active_count = int(lifecycle_outcomes.get("active") or 0)
+    if total_count > 0 and active_count <= 0 and terminal_count >= total_count:
+        return "Completed"
     if explicit_status and explicit_status.lower() != "unknown":
+        if explicit_status.lower() == "active" and (_float_or_none(litter.get("weaned_count")) or 0) > 0:
+            return "Weaned"
         return explicit_status
     if int(lifecycle_outcomes.get("total") or 0) <= 0:
         return "No piglets recorded"
-    if int(lifecycle_outcomes.get("active") or 0) > 0:
-        return "Active"
     if (_float_or_none(litter.get("weaned_count")) or 0) > 0:
         return "Weaned"
-    terminal_count = sum(int(lifecycle_outcomes.get(key) or 0) for key in ("sold", "slaughtered", "dead", "removed"))
-    if terminal_count >= int(lifecycle_outcomes.get("total") or 0):
-        return "Completed"
+    if int(lifecycle_outcomes.get("active") or 0) > 0:
+        return "Active"
     if int(reconciliation.get("linked_pig_records") or 0) > 0:
         return "Review"
     return "Unknown"
+
+
+def _litter_detail_state(litter_status, lifecycle_outcomes):
+    status = _text(litter_status).lower()
+    if status == "completed":
+        return "completed"
+    if status == "weaned":
+        return "weaned"
+    if int(lifecycle_outcomes.get("active") or 0) <= 0 and int(lifecycle_outcomes.get("total") or 0) > 0:
+        return "completed"
+    return "active"
+
+
+def _litter_attention_from_reconciliation(reconciliation):
+    if not reconciliation.get("mismatch"):
+        return None
+    recommended_action = reconciliation.get("recommended_action") or "Review litter counts."
+    return {
+        "action_type": "review_litter_counts",
+        "reason": "Needs attention: litter counts do not match.",
+        "recommended_action": recommended_action,
+        "rule": reconciliation.get("rule", ""),
+        "born_alive": reconciliation.get("born_alive"),
+        "total_born": reconciliation.get("total_born"),
+        "linked_pig_records": reconciliation.get("linked_pig_records"),
+        "live_linked_pig_records": reconciliation.get("live_linked_pig_records"),
+    }
 
 
 def _litter_reconciliation(litter, pigs):
@@ -947,7 +993,7 @@ def list_litter_overview(connect_factory=None):
             "boar_tag_number": _text(litter.get("boar_tag_number")),
             "current_pen_id": "",
             "farrowing_date": _date_text(litter.get("farrowing_date")),
-            "wean_date": "",
+            "wean_date": _date_text(litter.get("wean_date")),
             "litter_status": _derive_litter_status(litter, reconciliation, lifecycle_outcomes),
             "needs_attention": needs_attention,
             "sheet_needs_attention": "",
@@ -995,9 +1041,16 @@ def get_litter_detail(litter_id, connect_factory=None):
     pigs = pigs_by_litter.get(_text(litter_id), [])
     reconciliation = _litter_reconciliation(litter, pigs)
     lifecycle_outcomes = _litter_lifecycle_outcomes(pigs)
-    wean_timing = _litter_wean_timing(litter, pigs)
+    litter_status = _derive_litter_status(litter, reconciliation, lifecycle_outcomes)
+    detail_state = _litter_detail_state(litter_status, lifecycle_outcomes)
+    wean_timing = (
+        _blank_litter_wean_timing(litter, pigs)
+        if detail_state in {"weaned", "completed"}
+        else _litter_wean_timing(litter, pigs)
+    )
     piglets = []
-    weights = []
+    current_weights = []
+    wean_weights = []
     male_count = 0
     female_count = 0
     active_count = 0
@@ -1011,7 +1064,10 @@ def get_litter_detail(litter_id, connect_factory=None):
             active_count += 1
         weight = _float_or_none(pig.get("current_weight_kg"))
         if weight is not None:
-            weights.append(weight)
+            current_weights.append(weight)
+        wean_weight = _float_or_none(pig.get("wean_weight_kg"))
+        if wean_weight is not None:
+            wean_weights.append(wean_weight)
         piglets.append({
             "pig_id": _text(pig.get("pig_id")),
             "tag_number": _text(pig.get("tag_number")),
@@ -1021,29 +1077,39 @@ def get_litter_detail(litter_id, connect_factory=None):
             "date_of_birth": _date_text(pig.get("date_of_birth")),
             "age_days": _age_days(pig.get("date_of_birth")),
             "current_weight_kg": weight,
+            "wean_weight_kg": wean_weight,
+            "wean_date": _date_text(pig.get("wean_date")),
             "calculated_stage": _calculated_stage(pig),
             "current_pen_id": _text(pig.get("current_pen_id")),
         })
     piglets.sort(key=lambda item: (item["tag_number"] or item["pig_id"]).lower())
+    average_current_weight = _average(current_weights)
+    average_wean_weight = _average(wean_weights)
+    average_weight = average_wean_weight if detail_state in {"weaned", "completed"} else average_current_weight
+    wean_date = _date_text(litter.get("wean_date")) or next((piglet["wean_date"] for piglet in piglets if piglet["wean_date"]), "")
     return {
         "litter_id": _text(litter_id),
         "mother_pig_id": _text(litter.get("sow_pig_id")),
         "mother_tag_number": _text(litter.get("sow_tag_number")),
         "father_pig_id": _text(litter.get("boar_pig_id")),
         "father_tag_number": _text(litter.get("boar_tag_number")),
-        "litter_status": _derive_litter_status(litter, reconciliation, lifecycle_outcomes),
+        "litter_status": litter_status,
+        "detail_state": detail_state,
         "count": len(piglets),
         "male_count": male_count,
         "female_count": female_count,
         "active_count": active_count,
-        "average_weight_kg": _average(weights),
+        "average_weight_kg": average_weight,
+        "average_current_weight_kg": average_current_weight,
+        "average_wean_weight_kg": average_wean_weight,
+        "average_weight_source": "wean_weight" if detail_state in {"weaned", "completed"} else "current_weight",
         "piglets": piglets,
-        "attention": None,
+        "attention": _litter_attention_from_reconciliation(reconciliation),
         "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
         **wean_timing,
-        "wean_status": "",
-        "wean_date": "",
+        "wean_status": "Complete" if detail_state in {"weaned", "completed"} else "",
+        "wean_date": wean_date,
         "source": "supabase_canonical",
     }
 

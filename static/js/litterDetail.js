@@ -139,6 +139,53 @@ function setText(id, value, suffix = "") {
     : "-";
 }
 
+function setVisible(id, isVisible) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.classList.toggle("hidden", !isVisible);
+}
+
+function detailState(litter) {
+  const state = String(litter.detail_state || "").toLowerCase();
+  if (state) return state;
+  const status = String(litter.litter_status || "").toLowerCase();
+  if (status === "completed") return "completed";
+  if (status === "weaned") return "weaned";
+  return "active";
+}
+
+function renderStateSummary(litter) {
+  const state = detailState(litter);
+  const summaryPanel = document.getElementById("litter_summary_panel");
+  const intro = document.getElementById("litter_summary_intro");
+  const averageLabel = document.getElementById("litter_average_weight_label");
+
+  if (summaryPanel) {
+    summaryPanel.classList.remove("litter-state-active", "litter-state-weaned", "litter-state-completed");
+    summaryPanel.classList.add(`litter-state-${state}`);
+  }
+
+  if (intro) {
+    if (state === "completed") {
+      intro.textContent = "Completed litter outcome summary. Active wean countdowns are closed.";
+    } else if (state === "weaned") {
+      intro.textContent = "Weaned litter summary. Growth now continues on each individual pig profile.";
+    } else {
+      intro.textContent = "Active litter records and current linked piglet counts.";
+    }
+  }
+
+  if (averageLabel) {
+    averageLabel.textContent = state === "active" ? "Average Current Weight" : "Average Wean Weight";
+  }
+
+  setVisible("litter_estimated_wean_card", state === "active");
+  setVisible("litter_wean_attention_card", state === "active");
+  setVisible("litter_days_until_wean_card", state === "active");
+  setVisible("litter_actual_wean_card", state !== "active");
+  setText("litter_actual_wean_date_value", litter.wean_date);
+}
+
 function setLinkedValue(id, label, href) {
   const element = document.getElementById(id);
   if (!element) return;
@@ -404,6 +451,16 @@ function renderStillbornReclassifyPanel(litter) {
 }
 
 function manualActionAvailability(litter) {
+  if (detailState(litter) !== "active") {
+    return {
+      canRecordPigletDeath: false,
+      canRecordSexCounts: false,
+      canAssignTagNumbers: false,
+      activeUnsexedCount: 0,
+      activeUntaggedCount: 0,
+    };
+  }
+
   const hasActivePiglets = Number(litter.active_count || 0) > 0;
   const activeUnsexedPiglets = (litter.piglets || []).filter((piglet) => (
     piglet.status === "Active"
@@ -1134,16 +1191,19 @@ async function submitMarkWeaned(event) {
 }
 
 function pigletWeightText(piglet) {
-  return piglet.current_weight_kg !== null && piglet.current_weight_kg !== ""
-    ? `${formatNumber(piglet.current_weight_kg, 2)} kg`
+  const state = detailState(window.currentLitterDetail || {});
+  const weight = state === "active" ? piglet.current_weight_kg : piglet.wean_weight_kg;
+  return weight !== null && weight !== undefined && weight !== ""
+    ? `${formatNumber(weight, 2)} kg`
     : "No weight";
 }
 
 function buildPigletTable(piglets) {
   const litterId = getLitterIdFromUrl();
+  const litterIsActive = detailState(window.currentLitterDetail || {}) === "active";
   const rows = piglets.map((piglet) => {
     const profileHref = pigProfileHref(piglet.pig_id, litterId);
-    const canEditTag = piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
+    const canEditTag = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
     const tagCell = canEditTag
       ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Add tag" aria-label="Tag number for ${escapeHtml(piglet.pig_id || "piglet")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
@@ -1231,7 +1291,9 @@ async function loadLitterDetail(options = {}) {
     window.currentLitterDetail = litter;
 
     document.getElementById("litter_title").textContent = `Litter - ${litter.litter_id}`;
-    document.getElementById("litter_subtitle").textContent = `${litter.litter_status || "Unknown"} - ${litter.count} piglet(s) linked to this litter`;
+    const state = detailState(litter);
+    const stateLabel = state === "completed" ? "Completed litter" : state === "weaned" ? "Weaned litter" : "Active litter";
+    document.getElementById("litter_subtitle").textContent = `${stateLabel} - ${litter.count} piglet(s) linked to this litter`;
 
     setText("litter_id_value", litter.litter_id);
     setText("litter_status_value", litter.litter_status || "Unknown");
@@ -1248,6 +1310,7 @@ async function loadLitterDetail(options = {}) {
       litter.days_until_estimated_wean,
       litter.days_until_estimated_wean !== null && litter.days_until_estimated_wean !== undefined ? " days" : ""
     );
+    renderStateSummary(litter);
 
     setLinkedValue(
       "litter_mother_value",

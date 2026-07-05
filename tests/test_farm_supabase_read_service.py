@@ -640,6 +640,121 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(outcomes["dead"], 1)
         self.assertEqual(outcomes["removed"], 1)
         self.assertEqual(outcomes["other"], 0)
+        self.assertEqual(detail["detail_state"], "completed")
+        self.assertEqual(detail["estimated_wean_date"], "")
+        self.assertIsNone(detail["days_until_estimated_wean"])
+
+    def test_weaned_litter_detail_uses_wean_weight_and_closes_wean_countdown(self):
+        litters = [{
+            "litter_id": "LIT-WEANED",
+            "farrowing_date": date(2026, 5, 1),
+            "wean_date": date(2026, 6, 5),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 3,
+            "total_born": 3,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "weaned_count": 3,
+            "litter_status": "Weaned",
+        }]
+        pigs_by_litter = {
+            "LIT-WEANED": [
+                {
+                    "pig_id": "PIG-1",
+                    "tag_number": "101",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Weaner",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-WEANED",
+                    "current_weight_kg": 24.0,
+                    "wean_weight_kg": 8.0,
+                    "wean_date": date(2026, 6, 5),
+                    "current_pen_id": "PEN-1",
+                },
+                {
+                    "pig_id": "PIG-2",
+                    "tag_number": "102",
+                    "status": "Sold",
+                    "on_farm": False,
+                    "animal_type": "Weaner",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-WEANED",
+                    "current_weight_kg": 28.0,
+                    "wean_weight_kg": 10.0,
+                    "wean_date": date(2026, 6, 5),
+                    "exit_reason": "livestock_sale",
+                    "current_pen_id": "",
+                },
+                {
+                    "pig_id": "PIG-3",
+                    "tag_number": "103",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Weaner",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 5, 1),
+                    "litter_id": "LIT-WEANED",
+                    "current_weight_kg": 26.0,
+                    "wean_weight_kg": 9.0,
+                    "wean_date": date(2026, 6, 5),
+                    "current_pen_id": "PEN-1",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-WEANED")
+
+        self.assertEqual(detail["litter_status"], "Weaned")
+        self.assertEqual(detail["detail_state"], "weaned")
+        self.assertEqual(detail["wean_status"], "Complete")
+        self.assertEqual(detail["wean_date"], "2026-06-05")
+        self.assertEqual(detail["average_weight_source"], "wean_weight")
+        self.assertEqual(detail["average_weight_kg"], 9.0)
+        self.assertEqual(detail["average_current_weight_kg"], 26.0)
+        self.assertEqual(detail["estimated_wean_date"], "")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "")
+        self.assertIsNone(detail["days_until_estimated_wean"])
+        self.assertIsNone(detail["attention"])
+
+    def test_litter_detail_returns_attention_reason_when_counts_need_review(self):
+        litters = [{
+            "litter_id": "LIT-ATTENTION",
+            "farrowing_date": date(2026, 6, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "born_alive": 4,
+            "total_born": 4,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-ATTENTION": [{
+                "pig_id": "PIG-1",
+                "tag_number": "101",
+                "status": "Active",
+                "on_farm": True,
+                "animal_type": "Piglet",
+                "sex": "Female",
+                "date_of_birth": date(2026, 6, 1),
+                "litter_id": "LIT-ATTENTION",
+                "current_weight_kg": 5.0,
+                "current_pen_id": "PEN-1",
+            }],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-ATTENTION")
+
+        self.assertEqual(detail["attention"]["action_type"], "review_litter_counts")
+        self.assertEqual(detail["attention"]["reason"], "Needs attention: litter counts do not match.")
+        self.assertEqual(detail["attention"]["linked_pig_records"], 1)
+        self.assertIn("Review", detail["attention"]["recommended_action"])
 
     def test_litter_overview_does_not_flag_stillborn_rows_as_born_alive_mismatch(self):
         litters = [{

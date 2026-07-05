@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-05
+
+- Added the litter detail read-contract rule: active, weaned, and completed litter detail summaries must expose state-appropriate timing, attention, and weight fields.
+
 ## 2026-07-02
 
 - Created first structured Vault Brain tree.
