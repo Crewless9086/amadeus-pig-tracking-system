@@ -1739,6 +1739,12 @@ def _default_forbidden_actions():
 def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
     known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
     sequence = _workflow_sequence(workflow)
+    agent = _clean_text(agent, 80).strip().lower()
+    next_agent = _clean_text(next_agent, 80).strip().lower()
+    if agent in all_agent_names() and agent not in sequence:
+        sequence.append(agent)
+    if next_agent in all_agent_names() and next_agent not in sequence:
+        sequence.append(next_agent)
     for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
     if next_agent and next_agent in known:
