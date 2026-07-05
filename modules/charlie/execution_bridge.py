@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import html
 import os
@@ -54,7 +56,9 @@ from modules.charlie.vault_retrieval import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
 REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+MISSION_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "mission_media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
+INLINE_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 3600
 FINAL_ARTIFACT_GRACE_SECONDS = 20
 NO_FINAL_ARTIFACT_TIMEOUT_SECONDS = 1200
@@ -1426,6 +1430,7 @@ def _mission_media_references(mission):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     direct = mission.get("media_references") if isinstance(mission.get("media_references"), list) else []
     stored = metadata.get("media_references") if isinstance(metadata.get("media_references"), list) else []
+    mission_id = str(mission.get("mission_id") or "mission").strip() or "mission"
     media = []
     seen = set()
     for item in [*direct, *stored]:
@@ -1435,12 +1440,69 @@ def _mission_media_references(mission):
         if not reference or reference in seen:
             continue
         seen.add(reference)
+        compact_reference = _compact_media_reference_for_prompt(mission_id, reference)
         media.append({
             "label": str(item.get("label") or reference).strip()[:120],
-            "reference": reference,
+            "reference": compact_reference["reference"],
             "media_type": str(item.get("media_type") or "reference").strip()[:40],
+            "reference_kind": compact_reference["kind"],
+            "original_reference_length": compact_reference["original_length"],
+            "materialized": compact_reference.get("materialized", False),
         })
     return media[:12]
+
+
+def _compact_media_reference_for_prompt(mission_id, reference):
+    reference = str(reference or "").strip()
+    compact = {
+        "reference": reference,
+        "kind": "path_or_url",
+        "original_length": len(reference),
+        "materialized": False,
+    }
+    if not reference:
+        return compact
+    materialized = _materialize_inline_image_reference(mission_id, reference)
+    if materialized:
+        compact.update({
+            "reference": materialized,
+            "kind": "inline_image_materialized_to_local_file",
+            "materialized": True,
+        })
+        return compact
+    if len(reference) > 1000:
+        digest = hashlib.sha256(reference.encode("utf-8", errors="replace")).hexdigest()[:16]
+        compact.update({
+            "reference": f"{reference[:240]}... [truncated {len(reference)} chars, sha256:{digest}]",
+            "kind": "long_reference_truncated",
+        })
+    return compact
+
+
+def _materialize_inline_image_reference(mission_id, reference):
+    match = INLINE_IMAGE_DATA_URL_RE.match(str(reference or "").strip())
+    if not match:
+        return ""
+    image_kind = match.group("kind").lower()
+    extension = ".jpg" if image_kind in {"jpg", "jpeg"} else f".{image_kind}"
+    encoded = re.sub(r"\s+", "", match.group("data") or "")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError):
+        return ""
+    if not raw:
+        return ""
+    digest = hashlib.sha256(raw).hexdigest()[:20]
+    mission_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(mission_id or "mission")).strip("-") or "mission"
+    media_dir = MISSION_MEDIA_DIR / mission_slug
+    media_dir.mkdir(parents=True, exist_ok=True)
+    target = media_dir / f"{digest}{extension}"
+    if not target.exists():
+        target.write_bytes(raw)
+    try:
+        return target.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(target)
 
 
 def _format_media_references(items):

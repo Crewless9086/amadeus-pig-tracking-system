@@ -1052,6 +1052,32 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("charlie_ui_quality_contract_v1", prompt)
         self.assertIn("CHARLIE_CORE_UI_MISSION_STANDARD.md", prompt)
 
+    def test_prompt_materializes_inline_image_data_urls_instead_of_embedding_base64(self):
+        mission = dict(MISSION)
+        mission["mission_type"] = "ui dashboard"
+        mission["raw_text"] = "Use the pasted screenshot."
+        mission["media_references"] = [
+            {
+                "label": "Pasted screenshot",
+                "reference": "data:image/png;base64,ZmFrZQ==",
+                "media_type": "image",
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(execution_bridge, "MISSION_MEDIA_DIR", Path(tmp)):
+                media = execution_bridge._mission_media_references(mission)
+                prompt = execution_bridge.build_agent_stage_prompt(mission, "builder", artifacts={}, ledger={})
+
+            materialized_path = Path(media[0]["reference"])
+            self.assertTrue(materialized_path.exists())
+
+        self.assertEqual(media[0]["reference_kind"], "inline_image_materialized_to_local_file")
+        self.assertTrue(media[0]["materialized"])
+        self.assertIn("Pasted screenshot (image):", prompt)
+        self.assertNotIn("data:image/png;base64", prompt)
+        self.assertNotIn("ZmFrZQ==", prompt)
+
     def test_ui_builder_gate_requires_reference_media_and_preview(self):
         artifact = _successful_stage_payload("builder")
         artifact["ui_quality_contract"] = {
