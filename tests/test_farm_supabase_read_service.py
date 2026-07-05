@@ -469,7 +469,65 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["male_count"], 1)
         self.assertEqual(detail["female_count"], 1)
         self.assertEqual(detail["average_weight_kg"], 5.5)
+        self.assertEqual(detail["birth_date"], "2026-06-01")
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
+        self.assertEqual(detail["wean_planning_monday"], "2026-07-06")
+        self.assertEqual(detail["days_until_estimated_wean"], (date(2026, 7, 6) - date.today()).days)
+        self.assertEqual(detail["default_wean_age_days"], 35)
+        self.assertEqual(detail["attention_window_days"], 3)
         self.assertEqual(detail["source"], "supabase_canonical")
+
+    def test_litter_detail_uses_piglet_birth_date_when_litter_farrowing_date_missing(self):
+        litters = [{
+            "litter_id": "LIT-FALLBACK",
+            "farrowing_date": None,
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 2,
+            "total_born": 2,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-FALLBACK": [
+                {
+                    "pig_id": "PIG-1",
+                    "tag_number": "101",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 2),
+                    "litter_id": "LIT-FALLBACK",
+                    "current_weight_kg": None,
+                    "current_pen_id": "PEN-1",
+                },
+                {
+                    "pig_id": "PIG-2",
+                    "tag_number": "102",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-FALLBACK",
+                    "current_weight_kg": None,
+                    "current_pen_id": "PEN-1",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            detail = farm_supabase_read_service.get_litter_detail("LIT-FALLBACK")
+
+        self.assertEqual(detail["birth_date"], "2026-06-01")
+        self.assertEqual(detail["estimated_wean_date"], "2026-07-06")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-07-03")
+        self.assertEqual(detail["average_weight_kg"], None)
 
     def test_litter_overview_derives_status_when_supabase_status_is_unknown(self):
         litters = [{
