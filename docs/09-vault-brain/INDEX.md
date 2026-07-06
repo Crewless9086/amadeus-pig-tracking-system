@@ -80,6 +80,7 @@
 ## Data, Standards, Rules, Examples
 
 - `06-data/*.md`
+- `06-data/BRAIN_AND_MEMORY_V2.md`
 - `07-standards/*.md`
 - `08-business-rules/*.md`
 - `09-examples/*.md`
