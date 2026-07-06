@@ -19,6 +19,7 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 
 - `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
 - `docs/01-architecture/COMPONENT_OWNERSHIP.md`
+- `docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md`
 - `docs/02-backend/DATA_MODELS.md`
 - `docs/02-backend/SUPABASE_FOUNDATION_PLAN.md`
 - `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`
