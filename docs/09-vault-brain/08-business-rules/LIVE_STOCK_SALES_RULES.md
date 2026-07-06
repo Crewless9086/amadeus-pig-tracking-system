@@ -1,6 +1,6 @@
 # Live Stock Sales Rules
 
-Status: Stage 1 authority. These rules block unsafe behavior until backend runtime and owner gates are built.
+Status: Current authority for SAM Live Stock Sales.
 
 ## Non-Negotiables
 
@@ -9,11 +9,13 @@ Status: Stage 1 authority. These rules block unsafe behavior until backend runti
 - SAM must classify the sales lane before any draft reply, order, or reservation path.
 - Meat sales and live-stock sales must stay separate.
 - No stock may be invented.
-- No animal may be reserved automatically in the first version.
+- SAM may auto-create a draft order only after the live-stock lane is confirmed, required facts are present, backend availability can fully satisfy the request, and active pricing is resolved.
 - No customer may be told an animal is held unless backend reservation succeeds.
 - No payment may be confirmed from POP alone.
-- No breeding-quality animals may be sold without owner approval.
+- Breeding/replacement animals are not part of the normal live-stock sale lane.
+- Only pigs with purpose `Sale` and source-truth sale availability may be sold through SAM Live Stock.
 - No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
+- The farm's exact live location must not be shared. Live-stock handover is arranged in Riversdale or Albertinia after the order path is confirmed.
 
 ## Product Categories
 
@@ -24,18 +26,19 @@ Live-stock requests may refer to:
 - growers;
 - finishers;
 - ready-for-slaughter live pigs;
-- gilts;
-- boars;
-- sows;
-- breeding animals.
-
-Breeding animals are high-risk and require owner approval.
+Breeding terms such as gilts, boars, sows, or breeding animals are owner-handoff terms unless the same animal is explicitly marked for sale by source truth.
 
 ## Pricing
 
-Initial price-band references exist in `docs/03-google-sheets/sheets/SALES_PRICING.md`, but owner confirmation is required before live launch.
+Live-stock pricing uses the active effective-dated `public.sales_pricing` rows migrated from `SALES_PRICING`.
 
-SAM must not present old price-band values as final current pricing until the active backend price source is approved.
+Current inherited price source:
+
+- `docs/03-google-sheets/sheets/SALES_PRICING.md`
+- Supabase table `public.sales_pricing`
+- owner UI `/sales/sam-pricing`
+
+When the owner changes a price, a new effective-dated row is appended. Older prices remain as history. SAM resolves the latest active row whose effective date applies to the quote/order date.
 
 ## Availability Matching
 
@@ -51,7 +54,7 @@ SAM may offer adjacent stock only as an option, not as a confirmed substitute.
 
 ## Draft Order Gate
 
-Draft order creation is a future stage and must require:
+Draft order creation is allowed when all of these are true:
 
 - confirmed live-stock lane;
 - customer identity;
@@ -62,8 +65,10 @@ Draft order creation is a future stage and must require:
 - location/transport expectation;
 - backend availability;
 - active order conflict check.
+- active price resolved from `public.sales_pricing`;
+- complete fulfillment, not partial match.
 
-Reservation and quote/send remain owner-gated.
+Reservation, payment confirmation, quote/send, and customer-visible promises remain owner/backend-gated.
 
 ## Source References
 

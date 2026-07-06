@@ -175,6 +175,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(),
+            environ={},
             intake_context_loader=intake_loader,
             availability_loader=availability_loader,
         )
@@ -362,6 +363,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(packet["owner_review_required"])
         self.assertEqual(packet["order_payload"]["requested_category"], "Weaner")
         self.assertEqual(packet["order_payload"]["requested_weight_range"], "10_to_14_Kg")
+        self.assertEqual(packet["order_payload"]["quoted_total"], 1500.0)
+        self.assertTrue(packet["pricing"]["found"], packet["pricing"])
+        self.assertEqual(packet["pricing"]["sale_category"], "Weaner Piglets")
+        self.assertEqual(packet["pricing"]["unit_price"], 500.0)
         self.assertEqual(packet["sync_payload"]["requested_items"][0]["request_item_key"], "live_stock_primary")
         self.assertEqual(packet["sync_payload"]["requested_items"][0]["quantity"], 3)
 

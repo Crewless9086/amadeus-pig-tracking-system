@@ -73,6 +73,10 @@ from modules.sales.sam_meat_runtime import (
 )
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
+from modules.sales.sam_pricing import (
+    list_live_stock_price_entries,
+    record_live_stock_price_entry,
+)
 from modules.sales.conversation_learning import (
     build_owner_review_learning_event,
     list_sales_conversation_learning_events,
@@ -501,6 +505,25 @@ def meat_price_book_list():
 def meat_price_book_create():
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_price_book_entry(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/live-stock-pricing", methods=["GET"])
+def live_stock_price_book_list():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = list_live_stock_price_entries(limit=request.args.get("limit", 100))
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/live-stock-pricing", methods=["POST"])
+def live_stock_price_book_create():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_live_stock_price_entry(payload)
     return jsonify(result), status_code
 
 

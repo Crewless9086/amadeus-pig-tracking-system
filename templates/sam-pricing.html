@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAM Pricing</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/samPricing.css') }}">
+</head>
+<body>
+  <div class="page-shell sam-pricing-shell">
+    <div class="page-card sam-pricing-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>SAM Pricing</h1>
+          <p>Effective-dated prices for SAM Live Stock and SAM Meat. New entries are logged; old prices stay visible for audit.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/sales/meat-leads">SAM Meat</a>
+          <a href="/sales-availability">Availability</a>
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="sam_pricing_message" class="message-box hidden"></div>
+
+      <section class="pricing-grid">
+        <article class="pricing-panel">
+          <div class="section-header-compact">
+            <div>
+              <h2>Live Stock Prices</h2>
+              <p id="live_pricing_status">Loading SALES_PRICING...</p>
+            </div>
+          </div>
+          <form id="live_price_form" class="pricing-form">
+            <label>Sale category
+              <select id="live_sale_category" required>
+                <option value="Young Piglets">Young Piglets</option>
+                <option value="Weaner Piglets">Weaner Piglets</option>
+                <option value="Grower Pigs">Grower Pigs</option>
+                <option value="Finisher Pigs">Finisher Pigs</option>
+                <option value="Ready for Slaughter">Ready for Slaughter</option>
+              </select>
+            </label>
+            <label>Weight band
+              <input id="live_weight_band" type="text" required placeholder="10_to_14_Kg" />
+            </label>
+            <label>Price
+              <input id="live_unit_price" type="number" min="0" step="0.01" required placeholder="500" />
+            </label>
+            <label>Effective from
+              <input id="live_effective_from" type="date" />
+            </label>
+            <label>Reason
+              <input id="live_change_reason" type="text" placeholder="Owner price update" />
+            </label>
+            <button type="submit">Add Live Price</button>
+          </form>
+          <div id="live_price_entries" class="pricing-table-wrap"></div>
+        </article>
+
+        <article class="pricing-panel">
+          <div class="section-header-compact">
+            <div>
+              <h2>Meat Prices</h2>
+              <p id="meat_pricing_status">Loading meat price book...</p>
+            </div>
+          </div>
+          <form id="meat_price_form" class="pricing-form">
+            <label>Product
+              <select id="meat_product_type" required>
+                <option value="half_carcass">Half carcass</option>
+                <option value="full_carcass">Full carcass</option>
+                <option value="custom_cut">Custom cut</option>
+                <option value="assisted_slaughter">Assisted slaughter</option>
+              </select>
+            </label>
+            <label>Cut set
+              <input id="meat_cut_set" type="text" placeholder="Set A" />
+            </label>
+            <label>Price
+              <input id="meat_price_amount" type="number" min="0" step="0.01" required placeholder="130" />
+            </label>
+            <label>Unit
+              <select id="meat_price_unit">
+                <option value="per_kg">Per kg</option>
+                <option value="per_pig_fee">Per pig fee</option>
+              </select>
+            </label>
+            <button type="submit">Add Meat Price</button>
+          </form>
+          <div id="meat_price_entries" class="pricing-table-wrap"></div>
+        </article>
+      </section>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='js/samPricing.js') }}"></script>
+</body>
+</html>

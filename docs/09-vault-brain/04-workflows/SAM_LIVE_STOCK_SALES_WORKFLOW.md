@@ -1,6 +1,6 @@
 # SAM Live Stock Sales Workflow
 
-Status: Stage 1 authority. This workflow is approved for planning, routing, and owner review only. It does not approve live customer automation, order creation, reservation, payment confirmation, or sales transaction writes.
+Status: Current authority. SAM Live Stock may create backend draft orders when source truth, fact completeness, availability, and pricing gates pass. It does not reserve stock, confirm payment, send quotes, or make final customer promises without the relevant backend/owner gates.
 
 ## Purpose
 
@@ -28,8 +28,9 @@ Mixed meat/live-stock language must clarify before proceeding. Example: `I want 
 5. Load existing conversation/order-intake memory when the backend runtime exists.
 6. Read current availability from backend source truth.
 7. Prepare advisory next action, owner packet, or safe draft reply.
-8. Backend/owner gates decide whether draft order, reservation, quote, or customer send may happen.
-9. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
+8. If all facts, full availability, and active pricing are present, SAM may create a draft order through the backend order rail.
+9. Backend/owner gates decide whether reservation, quote, customer send, or payment-dependent actions may happen.
+10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 
 ## Required Facts
 
@@ -41,31 +42,38 @@ Before a live-stock draft order can be prepared:
 - quantity;
 - sex preference or no preference;
 - timing;
-- customer location and collection/delivery expectation;
+- handover location: Riversdale, Albertinia, or owner-reviewed exception;
 - payment preference if discussed;
 - availability check;
 - active order/intake conflict check.
 
 ## Hard Gates
 
-- No automatic stock reservation in the first version.
+- Draft order auto-create is allowed only when the draft gate passes.
+- No automatic stock reservation.
 - No customer may be told a pig is held unless backend reservation succeeds.
-- No price is final until the active price source and owner rules agree.
+- Price source is `public.sales_pricing`, inherited from `SALES_PRICING`, edited through `/sales/sam-pricing`, and resolved by effective date.
 - No payment is confirmed from POP alone.
-- No breeding candidate, sow, boar, or replacement-quality gilt may be offered without owner approval.
+- No breeding candidate, sow, boar, or replacement-quality gilt may be offered through the normal live-stock sale lane.
+- Only source-truth `Purpose = Sale` pigs may be offered.
 - No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
 - No old n8n or Google Sheet value may override app/Supabase truth.
+- Do not share the exact farm location. Live-stock handover is Riversdale or Albertinia after the order path is confirmed.
 
 ## Current Build Stage
 
-Stage 1/2 delivers:
+Current build delivers:
 
 - Vault authority;
 - source-map authority;
-- deterministic no-write router/classifier;
-- unit tests proving lane separation.
-
-Future stages add backend runtime, intake writes, availability matching, draft order gates, Chatwoot smoke tests, and owner command-room visibility.
+- deterministic router/classifier;
+- backend read context;
+- intake write rail;
+- availability matching;
+- pricing evidence;
+- draft order gate;
+- owner action packet;
+- unit tests proving lane separation, pricing, draft order, and no-reservation authority.
 
 ## Source References
 
@@ -74,5 +82,6 @@ Future stages add backend runtime, intake writes, availability matching, draft o
 - `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`
 - `docs/09-vault-brain/03-business/LIVE_PIG_SALES.md`
 - `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
+- `docs/09-vault-brain/08-business-rules/AMADEUS_FARM_PUBLIC_KNOWLEDGE.md`
 - `docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md`
 - `modules/sales/sam_sales_router.py`
