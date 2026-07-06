@@ -448,6 +448,49 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(result["status"], "sam_live_stock_draft_order_not_ready")
         self.assertEqual(calls, [])
 
+    def test_draft_order_not_ready_when_stock_is_only_partial_match(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I need 3 female weaners around 10 to 15kg next week in Riversdale.",
+        ))
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(
+            [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+            ],
+            facts,
+        )
+        match = sam_live_stock_runtime.build_live_stock_match_packet(facts, availability)
+        packet = sam_live_stock_runtime.build_live_stock_draft_order_packet(inbound, facts, match)
+
+        self.assertEqual(match["match_status"], "partial_match_available")
+        self.assertFalse(match["complete_fulfillment"])
+        self.assertTrue(match["partial_fulfillment"])
+        self.assertFalse(packet["draft_ready"], packet)
+        self.assertEqual(packet["stock_gate"], "partial_matching_stock")
+
+    def test_reservation_followup_detects_keep_those_and_weekday(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Can you keep those 2 weaners for me until Friday?",
+        ))
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+
+        self.assertEqual(facts["quantity"], 2)
+        self.assertEqual(facts["category"], "weaner")
+        self.assertEqual(facts["timing"], "friday")
+        self.assertTrue(facts["reservation_requested"])
+
+    def test_live_pig_weight_range_infers_grower_category(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Not meat, I want live pigs to raise, 2 males around 30kg in Albertinia.",
+        ))
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+
+        self.assertEqual(facts["category"], "grower")
+        self.assertEqual(facts["quantity"], 2)
+        self.assertEqual(facts["sex"], "male")
+        self.assertEqual(facts["location"], "Albertinia")
+
     def test_owner_action_packet_exposes_routes_without_auto_authority(self):
         packet = sam_live_stock_runtime.build_live_stock_owner_action_packet(
             order_id="ORD-1",
