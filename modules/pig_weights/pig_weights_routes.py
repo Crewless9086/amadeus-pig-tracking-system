@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
@@ -235,8 +235,18 @@ def mark_litter_weaned_route(litter_id):
 @pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
 def litter_weaning_day_route(litter_id):
     payload = request.get_json(silent=True) or {}
-    result, status_code = process_litter_profile_weaning_day(litter_id, payload)
-    return jsonify(result), status_code
+    try:
+        result, status_code = process_litter_profile_weaning_day(litter_id, payload)
+        return jsonify(result), status_code
+    except Exception as exc:
+        current_app.logger.exception("Weaning day workflow failed for litter %s", litter_id)
+        return jsonify({
+            "success": False,
+            "errors": [f"Weaning day workflow failed: {exc}"],
+            "litter_id": litter_id,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }), 500
 
 
 @pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])

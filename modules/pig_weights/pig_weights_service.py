@@ -2323,7 +2323,7 @@ def _weaning_day_tag_plan(assignments):
             continue
         pig_id = to_clean_string(assignment.get("pig_id", ""))
         tag_number = to_clean_string(assignment.get("tag_number", ""))
-        if pig_id or tag_number:
+        if tag_number:
             cleaned.append({"pig_id": pig_id, "tag_number": tag_number})
     return {"assignments": cleaned}
 
