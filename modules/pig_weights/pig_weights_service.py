@@ -3371,7 +3371,7 @@ def _sales_availability_from_supabase_allocation():
             "last_weight_date": pig.get("latest_weight_date", ""),
             "average_daily_gain_kg": pig.get("average_daily_gain_kg"),
             "calculated_stage": pig.get("calculated_stage", ""),
-            "weight_band": pig.get("weight_band", ""),
+            "weight_band": eligibility.get("weight_band") or pig.get("weight_band", ""),
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
@@ -3402,7 +3402,6 @@ def _live_stock_sale_eligibility(pig):
     animal_type = to_clean_string(pig.get("animal_type", ""))
     calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
     latest_weight_kg = to_float(pig.get("latest_weight_kg"))
-    weight_band = to_clean_string(pig.get("weight_band", ""))
     wean_date = to_clean_string(pig.get("wean_date", ""))
 
     if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
@@ -3425,13 +3424,13 @@ def _live_stock_sale_eligibility(pig):
     category, derived_band = _live_stock_sale_category_for_weight(latest_weight_kg)
     if not category:
         return _live_stock_sale_block("price_band_missing", "No live-stock price band matched the latest weight.")
-    effective_band = weight_band or derived_band
     return {
         "eligible": True,
         "reason": "Purpose = Sale, active/on-farm, not reserved, weaned or sale-stage, and current weight maps to a live-stock price band.",
         "status": "SAM Live sale-ready",
         "sale_category": category,
-        "suggested_price_category": f"{category}|{effective_band}",
+        "weight_band": derived_band,
+        "suggested_price_category": f"{category}|{derived_band}",
     }
 
 
@@ -3441,6 +3440,7 @@ def _live_stock_sale_block(code, reason):
         "reason": reason,
         "status": f"Not SAM Live sale-ready: {code}",
         "sale_category": "Not SAM Live Sale Ready",
+        "weight_band": "",
         "suggested_price_category": code,
     }
 
