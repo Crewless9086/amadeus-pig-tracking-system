@@ -36,6 +36,11 @@ class SamSalesRouterTests(unittest.TestCase):
 
         self.assertGreaterEqual(result["confidence"], 0.86)
 
+    def test_routes_pigs_for_sale_to_live_stock_sales(self):
+        result = self.assert_lane("Do you have pigs for sale?", LANE_LIVE_STOCK)
+
+        self.assertGreaterEqual(result["confidence"], 0.86)
+
     def test_routes_slaughter_or_abattoir_intent_separately(self):
         result = self.assert_lane("I need an 80kg pig for slaughter and abattoir help.", LANE_SLAUGHTER)
 

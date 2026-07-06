@@ -246,6 +246,11 @@ LIVE_STOCK_TERMS = (
     "buy pigs",
     "buy a pig",
     "buy live",
+    "pigs for sale",
+    "pig for sale",
+    "pigs available",
+    "raise pigs",
+    "raise a pig",
     "male pig",
     "female pig",
 )

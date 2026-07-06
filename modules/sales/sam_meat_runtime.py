@@ -681,6 +681,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts, knowledge)
     set_recommendation_reply = _set_recommendation_reply(inbound.get("content"), facts, prior_context, knowledge)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
+    live_stock_handoff_reply = _live_stock_handoff_reply(inbound.get("content"), facts)
+    collection_policy_reply = _collection_policy_reply(inbound.get("content"), facts)
     deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts, knowledge)
     payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context, knowledge)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
@@ -700,6 +702,14 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif set_recommendation_reply:
         reply = set_recommendation_reply
         reply_source = "hard_product_knowledge"
+        should_reply = True
+    elif live_stock_handoff_reply:
+        reply = live_stock_handoff_reply
+        reply_source = "code_guard"
+        should_reply = True
+    elif collection_policy_reply:
+        reply = collection_policy_reply
+        reply_source = "code_guard"
         should_reply = True
     elif agent_is_v3 and agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
@@ -1649,7 +1659,7 @@ def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None
     ))
     if not asks_recommendation:
         return ""
-    if not (_is_established_meat_context(facts, prior_context) or _meat_interest_detected(normalized)):
+    if not (_is_established_meat_context(facts, prior_context) or _meat_interest_detected(normalized) or re.search(r"\bfamily\s+of\s+\d+\b", normalized)):
         return ""
     if re.search(r"\b(braai|chop|rib|belly|rashers?)\b", normalized):
         suggestion = "Set B is the better fit if your family will braai often or wants chops, ribs, rashers and belly-style cuts."
@@ -1769,6 +1779,30 @@ def _sam_intro_options_reply(knowledge=None):
     )
 
 
+def _live_stock_handoff_reply(message, facts):
+    normalized = _normalized_customer_text(message)
+    if not re.search(r"\b(live\s+pigs?|piglets?|weaners?|growers?|finishers?|gilts?|boars?|sows?)\b", normalized):
+        return ""
+    if _meat_interest_detected(normalized):
+        return ""
+    return (
+        "That sounds like live-pig interest rather than pork meat. "
+        "I can keep this out of the meat order lane and pass it to SAM Live Stock so the farm checks the actual animals before anything is promised."
+    )
+
+
+def _collection_policy_reply(message, facts):
+    normalized = _normalized_customer_text(message)
+    if not re.search(r"\b(can i collect|collect|collection|pickup|pick up|afhaal|haal)\b", normalized):
+        return ""
+    if facts.get("product_type") not in {"unknown", "half_carcass", "full_carcass", "custom_cut"}:
+        return ""
+    return (
+        "For the public meat run we should plan delivery first because there is no fixed collection point yet. "
+        "Please send the street address or farm name, plus any directions, and the farm can review whether an exception makes sense."
+    )
+
+
 def _vague_meat_interest_reply(message, facts, knowledge=None):
     if facts.get("product_type") != "unknown":
         return ""
@@ -1873,13 +1907,17 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
     ))
     if not asks_payment_state:
         return ""
+    pop_explanation = meat_sales_knowledge(knowledge or {}).get("pop_explanation") or "POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account."
     if latest_event in {"deposit_followup_needed", "pop_received_unverified", "customer_followup_sent", "estimated_quote_chatwoot_accepted"} or facts.get("product_type") != "unknown":
-        pop_explanation = meat_sales_knowledge(knowledge or {}).get("pop_explanation") or "POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account."
         return (
             f"Thanks for checking. {pop_explanation} "
             "Once the farm confirms the bank receipt, the booking can move to the carcass and delivery planning steps."
         )
-    return ""
+    return (
+        f"Thanks, I can note the payment message. {pop_explanation} "
+        "Before I connect it to a booking, I still need the pork option: half carcass, full carcass, custom cuts, or assisted slaughter."
+    )
+
 
 
 def _next_fact_question(facts):

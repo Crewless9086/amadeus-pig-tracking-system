@@ -196,12 +196,16 @@ def parse_chatwoot_inbound(payload):
 def extract_live_stock_facts(message, inbound=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     text = _normal_text(message)
+    weight_range = _extract_weight_range(text)
+    category = _extract_category(text)
+    if category == "live_pig":
+        category = _category_from_weight_range(weight_range) or category
     facts = {
         "sales_lane": "",
-        "category": _extract_category(text),
+        "category": category,
         "quantity": _extract_quantity(text),
         "sex": _extract_sex(text),
-        "weight_range": _extract_weight_range(text),
+        "weight_range": weight_range,
         "timing": _extract_timing(text),
         "location": _extract_location(text),
         "transport_expectation": _extract_transport(text),
@@ -493,7 +497,7 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
     order_validation = validate_new_order_payload(order_payload)
     sync_validation = validate_sync_order_lines_payload(sync_payload)
     errors = list(order_validation.get("errors") or []) + list(sync_validation.get("errors") or [])
-    enough_stock = bool(match_packet.get("can_create_draft_order"))
+    enough_stock = bool(match_packet.get("complete_fulfillment"))
     return {
         "version": "sam_live_stock_draft_order_packet_v1",
         "draft_ready": not errors and enough_stock,
@@ -501,7 +505,9 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
         "order_payload": order_payload,
         "sync_payload": sync_payload,
         "validation_errors": errors,
-        "stock_gate": "passed" if enough_stock else "no_matching_stock",
+        "stock_gate": "passed" if enough_stock else (
+            "partial_matching_stock" if match_packet.get("partial_fulfillment") else "no_matching_stock"
+        ),
         "warnings": [
             "Creates draft order only when explicit env gate is enabled.",
             "Does not reserve pigs.",
@@ -698,6 +704,11 @@ def build_sam_live_stock_go_live_checklist(environ=None):
 
 def _safe_reply_draft(facts, route, missing, availability, blockers):
     if route["lane"] != LANE_LIVE_STOCK:
+        if route["lane"] == "owner_handoff" and _payment_or_pop_interest(facts):
+            return (
+                "Thanks, I can note the payment message, but POP does not make live animals yours until the farm confirms the bank receipt "
+                "and the owner approves the animals on the system."
+            )
         return "Just so I help you correctly: are you looking for live pigs, pork for the freezer, or slaughter help?"
     if facts.get("breeding_interest"):
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
@@ -760,13 +771,17 @@ def _extract_category(text):
         return "finisher"
     if _has_any(text, ("ready for slaughter", "slaughter pig", "80kg", "85kg", "90kg")):
         return "ready_for_slaughter"
-    if _has_any(text, ("live pig", "live pigs", "pigs to raise", "buy pigs")):
+    if _has_any(text, ("live pig", "live pigs", "pigs to raise", "buy pigs", "pigs for sale", "pig for sale", "pigs available")):
         return "live_pig"
     return ""
 
 
 def _extract_quantity(text):
-    match = re.search(r"\b(\d{1,3})\s+(?:x\s+)?(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b", text)
+    match = re.search(
+        r"\b(\d{1,3})\s+(?:x\s+)?(?:(?:live|breeding)\s+)?"
+        r"(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b",
+        text,
+    )
     if match:
         return int(match.group(1))
     number_words = {
@@ -782,7 +797,11 @@ def _extract_quantity(text):
         "ten": 10,
     }
     for word, value in number_words.items():
-        if re.search(rf"\b{word}\s+(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b", text):
+        if re.search(
+            rf"\b{word}\s+(?:(?:live|breeding)\s+)?"
+            r"(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b",
+            text,
+        ):
             return value
     return ""
 
@@ -819,6 +838,9 @@ def _extract_timing(text):
     for phrase in ("today", "tomorrow", "next week", "this week", "month end", "weekend"):
         if phrase in text:
             return phrase
+    weekday = re.search(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", text)
+    if weekday:
+        return weekday.group(1)
     return ""
 
 
@@ -851,7 +873,48 @@ def _asks_quote(text):
 
 
 def _asks_reservation(text):
-    return _has_any(text, ("reserve", "hold", "keep them", "book them", "hou hulle"))
+    return _has_any(text, (
+        "reserve",
+        "hold",
+        "hold them",
+        "hold those",
+        "hold the",
+        "keep them",
+        "keep those",
+        "keep the",
+        "book them",
+        "hou hulle",
+    ))
+
+
+def _payment_or_pop_interest(facts):
+    text = _normal_text(" ".join(str(value or "") for value in (facts or {}).values()))
+    return _has_any(text, ("pop", "proof of payment", "paid", "payment", "eft"))
+
+
+def _category_from_weight_range(weight_range):
+    weight = _representative_weight(weight_range)
+    if not weight:
+        return ""
+    if weight < 10:
+        return "piglet"
+    if weight < 25:
+        return "weaner"
+    if weight < 50:
+        return "grower"
+    if weight < 75:
+        return "finisher"
+    return "ready_for_slaughter"
+
+
+def _representative_weight(weight_range):
+    text = str(weight_range or "")
+    numbers = [int(value) for value in re.findall(r"\d{1,3}", text)]
+    if not numbers:
+        return 0
+    if len(numbers) >= 2:
+        return int(round((numbers[0] + numbers[1]) / 2))
+    return numbers[0]
 
 
 def _row_available_for_live_stock(row):
