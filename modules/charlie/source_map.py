@@ -251,8 +251,8 @@ IMPLEMENTATION_SOURCE_MAP = {
     },
     "sam_live_stock_sales": {
         "label": "SAM Live Stock Sales",
-        "status": "stage_1_2_vault_and_router",
-        "summary": "SAM live pig sales lane authority, no-write lane router, future backend-native live-stock runtime, order-intake memory, stock matching, and owner-gated draft/reservation flow.",
+        "status": "stage_4_env_gated_intake_write",
+        "summary": "SAM live pig sales lane authority, router, backend-native runtime, env-gated order-intake write rail, future stock matching, and owner-gated draft/reservation flow.",
         "keywords": [
             "sam live stock",
             "sam livestock",

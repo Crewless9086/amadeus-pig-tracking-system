@@ -2,7 +2,11 @@ import hmac
 import os
 import re
 
-from modules.orders.order_intake_service import get_intake_context
+from modules.orders.order_intake_service import (
+    get_intake_context,
+    update_intake_state,
+    validate_intake_update_payload,
+)
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
 
@@ -14,6 +18,7 @@ LLM_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"
 AGENT_V3_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
 AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
+INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 MIN_TOKEN_CHARS = 32
 
@@ -43,6 +48,8 @@ def sam_live_stock_webhook_policy(environ=None):
         "agent_v3_enabled_env": AGENT_V3_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
         "agent_v3_model_env": AGENT_V3_MODEL_ENV,
+        "intake_write_enabled": _truthy(source.get(INTAKE_WRITE_ENABLED_ENV)),
+        "intake_write_env": INTAKE_WRITE_ENABLED_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "read_only": True,
         "writes_allowed": False,
@@ -71,6 +78,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     environ=None,
     intake_context_loader=None,
     availability_loader=None,
+    intake_writer=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -95,6 +103,18 @@ def handle_sam_live_stock_chatwoot_inbound(
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
     decision = build_sam_live_stock_decision(inbound, facts, context_packet, source)
+    intake_write = write_live_stock_intake_if_enabled(
+        inbound,
+        facts,
+        decision,
+        source,
+        intake_writer=intake_writer,
+    )
+    if intake_write.get("attempted"):
+        decision["intake_write"] = intake_write
+        if not intake_write.get("success"):
+            decision.setdefault("blockers", []).append(intake_write.get("status") or "intake_write_failed")
+            decision["owner_gate_required"] = True
     return {
         "success": True,
         "status": "sam_live_stock_read_only_processed",
@@ -102,7 +122,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         "sent": False,
         "sam_decision": decision,
         "policy": policy,
-        **_authority_flags(),
+        **_authority_flags(writes_order_intake=bool(intake_write.get("success"))),
     }, 200
 
 
@@ -303,10 +323,89 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "reply_source": "deterministic_read_only_guard",
         "should_reply": False,
         "writes_allowed": False,
+        "intake_write_allowed": _truthy((environ or {}).get(INTAKE_WRITE_ENABLED_ENV)) and route["lane"] == LANE_LIVE_STOCK,
         "customer_send_allowed": False,
         "owner_gate_required": bool(blockers or route["lane"] != LANE_LIVE_STOCK or route["confidence"] < 0.96),
         **_authority_flags(),
     }
+
+
+def build_live_stock_intake_payload(inbound, facts, decision=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    notes = _intake_notes(facts, decision)
+    item = _live_stock_intake_item(facts)
+    patch = {
+        "collection_location": _normal_intake_location(facts.get("location")),
+        "collection_time_text": _clean(facts.get("timing"), 120),
+        "last_customer_message": _clean(inbound.get("content"), 600),
+        "notes": notes,
+        "quote_requested": bool(facts.get("quote_requested")),
+        "order_commitment": False,
+    }
+    payment_method = _normal_intake_payment(facts.get("payment_method"))
+    if payment_method:
+        patch["payment_method"] = payment_method
+    return {
+        "conversation_id": _clean(inbound.get("conversation_id"), 100),
+        "account_id": _clean(inbound.get("account_id"), 100),
+        "contact_id": _clean(inbound.get("contact_id"), 100),
+        "customer_name": _clean(inbound.get("customer_name"), 120),
+        "customer_phone": _clean(inbound.get("customer_phone"), 80),
+        "customer_channel": _clean(inbound.get("channel"), 80),
+        "customer_language": "",
+        "updated_by": "Sam Live Stock",
+        "patch": {key: value for key, value in patch.items() if value not in ("", None)},
+        "items": [item] if item else [],
+    }
+
+
+def validate_live_stock_intake_payload(payload):
+    validation = validate_intake_update_payload(payload)
+    return {
+        "is_valid": bool(validation.get("is_valid")),
+        "errors": list(validation.get("errors") or []),
+        "cleaned_data": validation.get("cleaned_data") if isinstance(validation.get("cleaned_data"), dict) else {},
+    }
+
+
+def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, intake_writer=None):
+    source = environ if environ is not None else os.environ
+    if not _truthy(source.get(INTAKE_WRITE_ENABLED_ENV)):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_intake_write_disabled"}
+    if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_intake_wrong_lane"}
+    if facts.get("breeding_interest"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_intake_owner_gate_breeding"}
+    payload = build_live_stock_intake_payload(inbound, facts, decision)
+    validation = validate_live_stock_intake_payload(payload)
+    if not validation["is_valid"]:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_intake_validation_failed",
+            "errors": validation["errors"],
+            "payload": payload,
+        }
+    try:
+        writer = intake_writer or update_intake_state
+        result = writer(validation["cleaned_data"])
+        return {
+            "attempted": True,
+            "success": bool((result or {}).get("success")),
+            "status": "sam_live_stock_intake_written" if (result or {}).get("success") else "sam_live_stock_intake_write_failed",
+            "result": result,
+            "payload": payload,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_intake_write_exception",
+            "error": _clean(str(exc), 240),
+            "payload": payload,
+        }
 
 
 def _safe_reply_draft(facts, route, missing, availability, blockers):
@@ -607,7 +706,7 @@ def _denied(status, source):
     }
 
 
-def _authority_flags():
+def _authority_flags(writes_order_intake=False):
     return {
         "sends_customer_message": False,
         "calls_chatwoot": False,
@@ -617,11 +716,127 @@ def _authority_flags():
         "reserves_stock": False,
         "changes_stock": False,
         "writes_farm_data": False,
-        "writes_order_intake": False,
+        "writes_order_intake": bool(writes_order_intake),
         "writes_sales_transaction": False,
         "dispatch_enabled": False,
         "customer_public_output_enabled": False,
     }
+
+
+def _live_stock_intake_item(facts):
+    category = _normal_intake_category(facts.get("category"))
+    quantity = facts.get("quantity")
+    sex = _normal_intake_sex(facts.get("sex"))
+    weight_range = _normal_intake_weight_range(facts.get("weight_range"), category)
+    if not any([category, quantity, sex, weight_range]):
+        return {}
+    return {
+        "item_key": "live_stock_primary",
+        "quantity": quantity or "",
+        "category": category,
+        "weight_range": weight_range,
+        "sex": sex,
+        "intent_type": "primary",
+        "status": "active",
+        "last_match_status": "not_matched_stage_4",
+        "notes": _clean(f"source=sam_live_stock_stage_4; original_weight_range={facts.get('weight_range') or ''}; transport={facts.get('transport_expectation') or ''}", 600),
+    }
+
+
+def _normal_intake_category(value):
+    category = _normal_category(value)
+    return {
+        "piglet": "Piglet",
+        "weaner": "Weaner",
+        "grower": "Grower",
+        "finisher": "Finisher",
+        "ready_for_slaughter": "Slaughter",
+        "live_pig": "",
+    }.get(category, "")
+
+
+def _normal_intake_sex(value):
+    sex = _normal_sex(value)
+    return {
+        "male": "Male",
+        "female": "Female",
+        "any": "Any",
+        "split": "Any",
+    }.get(sex, "Any")
+
+
+def _normal_intake_location(value):
+    text = _normal_text(value)
+    if text == "riversdale":
+        return "Riversdale"
+    if text == "albertinia":
+        return "Albertinia"
+    return "Any"
+
+
+def _normal_intake_payment(value):
+    text = _normal_text(value)
+    if text == "eft":
+        return "EFT"
+    if text == "cash_requested" or text == "cash":
+        return "Cash"
+    return ""
+
+
+def _normal_intake_weight_range(value, category):
+    text = _normal_text(value)
+    numbers = [int(number) for number in re.findall(r"\b\d{1,3}\b", text)]
+    if numbers:
+        weight = min(numbers)
+        return _weight_band_for_kg(weight)
+    defaults = {
+        "Piglet": "5_to_6_Kg",
+        "Weaner": "10_to_14_Kg",
+        "Grower": "30_to_34_Kg",
+        "Finisher": "60_to_64_Kg",
+        "Slaughter": "80_to_84_Kg",
+    }
+    return defaults.get(category, "")
+
+
+def _weight_band_for_kg(weight):
+    bands = [
+        (2, 4, "2_to_4_Kg"),
+        (5, 6, "5_to_6_Kg"),
+        (7, 9, "7_to_9_Kg"),
+        (10, 14, "10_to_14_Kg"),
+        (15, 19, "15_to_19_Kg"),
+        (20, 24, "20_to_24_Kg"),
+        (25, 29, "25_to_29_Kg"),
+        (30, 34, "30_to_34_Kg"),
+        (35, 39, "35_to_39_Kg"),
+        (40, 44, "40_to_44_Kg"),
+        (45, 49, "45_to_49_Kg"),
+        (50, 54, "50_to_54_Kg"),
+        (55, 59, "55_to_59_Kg"),
+        (60, 64, "60_to_64_Kg"),
+        (65, 69, "65_to_69_Kg"),
+        (70, 74, "70_to_74_Kg"),
+        (75, 79, "75_to_79_Kg"),
+        (80, 84, "80_to_84_Kg"),
+        (85, 89, "85_to_89_Kg"),
+        (90, 94, "90_to_94_Kg"),
+    ]
+    for low, high, label in bands:
+        if low <= weight <= high:
+            return label
+    return ""
+
+
+def _intake_notes(facts, decision):
+    pieces = [
+        "source=sam_live_stock_stage_4",
+        f"lane_confidence={facts.get('lane_confidence', '')}",
+        f"original_location={facts.get('location') or ''}",
+        f"transport={facts.get('transport_expectation') or ''}",
+        f"missing={','.join(decision.get('missing_fields') or []) if isinstance(decision.get('missing_fields'), list) else ''}",
+    ]
+    return _clean("; ".join(piece for piece in pieces if piece), 600)
 
 
 def _integration_failure(status, exc):

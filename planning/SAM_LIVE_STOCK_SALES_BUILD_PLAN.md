@@ -557,3 +557,45 @@ Result:
 - Even if autoreply/LLM envs are enabled, Stage 3 policy keeps customer sends and LLM/agent execution off.
 - Decision packets can classify, extract facts, read existing intake/availability context, summarize safe matching evidence, and draft a suggested reply for review only.
 - Stage 3 does not add a public route, write intake, write orders, reserve stock, send customer messages, or create sales transactions.
+
+## Stage 4 Completion Evidence
+
+Status: implemented for owner review on 2026-07-06.
+
+Approved Stage 4 scope:
+
+- connect live-stock facts to existing `order_intake_service`;
+- write only through backend intake validation/update rails;
+- preserve Chatwoot/customer context fields;
+- normalize SAM facts to backend enums;
+- remain env-gated;
+- no customer sends;
+- no order creation;
+- no stock reservation;
+- no quote/document send;
+- no sales transaction writes.
+
+Delivered:
+
+- `SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED` env gate.
+- `build_live_stock_intake_payload(...)`.
+- `validate_live_stock_intake_payload(...)`.
+- `write_live_stock_intake_if_enabled(...)`.
+- Runtime integration that reports intake-write evidence in the decision packet.
+- Tests for disabled/default mode, enabled write mode, wrong-lane block, breeding-stock owner gate, backend validation normalization, and no order/reservation/customer-send authority.
+
+Verification passed:
+
+- `.\venv\Scripts\python.exe -m unittest tests.test_sam_live_stock_runtime tests.test_sam_sales_router tests.test_charlie_source_map`
+- `.\venv\Scripts\python.exe -m unittest tests.test_order_intake_service tests.test_order_routes tests.test_order_service_reservation tests.test_sales_transaction_read tests.test_pig_allocation_readiness_service`
+- `.\venv\Scripts\python.exe -m py_compile modules\sales\sam_live_stock_runtime.py modules\sales\sam_sales_router.py modules\charlie\source_map.py modules\charlie\vault_retrieval.py`
+- `node --check static\js\salesDashboard.js`
+
+Result:
+
+- Stage 4 is ready for owner review at 98% confidence for the approved controlled intake-write scope.
+- Intake writes are off unless `SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED=1`.
+- Writes are limited to existing order-intake state/items via `update_intake_state`.
+- Invalid facts fail closed before write.
+- Wrong lane and breeding/replacement-stock cases do not write.
+- This stage still does not make SAM Live Stock live-ready; Stage 5 matching/draft order gate is still required.

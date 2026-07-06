@@ -60,6 +60,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED": "1",
             "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
             "OPENAI_API_KEY": "test-key",
+            "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1",
         })
 
         self.assertTrue(policy["enabled"])
@@ -70,6 +71,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(policy["read_only"])
         self.assertFalse(policy["writes_allowed"])
         self.assertFalse(policy["customer_send_allowed"])
+        self.assertTrue(policy["intake_write_enabled"])
 
     def test_parse_chatwoot_inbound_ignores_outbound_messages(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(message_type="outgoing"))
@@ -188,6 +190,129 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["availability"]["matched_count"], 1)
         self.assertFalse(decision["customer_send_allowed"])
         self.assertFalse(decision["writes_allowed"])
+
+    def test_build_live_stock_intake_payload_normalizes_to_backend_contract(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {"missing_fields": []}
+
+        payload = sam_live_stock_runtime.build_live_stock_intake_payload(inbound, facts, decision)
+        validation = sam_live_stock_runtime.validate_live_stock_intake_payload(payload)
+
+        self.assertTrue(validation["is_valid"], validation)
+        self.assertEqual(payload["conversation_id"], "2401")
+        self.assertEqual(payload["patch"]["collection_location"], "Riversdale")
+        self.assertEqual(payload["patch"]["collection_time_text"], "next week")
+        self.assertEqual(payload["items"][0]["item_key"], "live_stock_primary")
+        self.assertEqual(payload["items"][0]["quantity"], 3)
+        self.assertEqual(payload["items"][0]["category"], "Weaner")
+        self.assertEqual(payload["items"][0]["weight_range"], "10_to_14_Kg")
+        self.assertEqual(payload["items"][0]["sex"], "Female")
+
+    def test_intake_write_is_disabled_by_default(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {"sales_lane": "live_stock_sales", "missing_fields": []}
+        calls = []
+
+        result = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            inbound,
+            facts,
+            decision,
+            environ={},
+            intake_writer=lambda cleaned: calls.append(cleaned),
+        )
+
+        self.assertFalse(result["attempted"])
+        self.assertEqual(result["status"], "sam_live_stock_intake_write_disabled")
+        self.assertEqual(calls, [])
+
+    def test_intake_write_enabled_uses_backend_service_cleaned_payload_only(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {"sales_lane": "live_stock_sales", "missing_fields": []}
+        calls = []
+
+        def writer(cleaned):
+            calls.append(cleaned)
+            return {
+                "success": True,
+                "lookup_status": "updated",
+                "intake_id": "INTAKE-1",
+                "items": [{"item_key": "live_stock_primary"}],
+            }
+
+        result = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            inbound,
+            facts,
+            decision,
+            environ={"SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1"},
+            intake_writer=writer,
+        )
+
+        self.assertTrue(result["attempted"])
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "sam_live_stock_intake_written")
+        self.assertEqual(len(calls), 1)
+        cleaned = calls[0]
+        self.assertEqual(cleaned["conversation_id"], "2401")
+        self.assertEqual(cleaned["patch"]["collection_location"], "Riversdale")
+        self.assertEqual(cleaned["items"][0]["category"], "Weaner")
+        self.assertEqual(cleaned["items"][0]["weight_range"], "10_to_14_Kg")
+        self.assertEqual(cleaned["items"][0]["sex"], "Female")
+
+    def test_handle_inbound_with_intake_write_enabled_reports_intake_write_only(self):
+        writes = []
+
+        def writer(cleaned):
+            writes.append(cleaned)
+            return {"success": True, "intake_id": "INTAKE-1", "items": []}
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(),
+            environ={"SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            availability_loader=lambda: [],
+            intake_writer=writer,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["writes_order_intake"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["writes_sales_transaction"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(result["sam_decision"]["intake_write"]["status"], "sam_live_stock_intake_written")
+
+    def test_intake_write_blocks_wrong_lane_and_breeding_stock(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="I want pork chops."))
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        calls = []
+
+        wrong_lane = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            inbound,
+            facts,
+            {"sales_lane": "meat_sales"},
+            environ={"SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1"},
+            intake_writer=lambda cleaned: calls.append(cleaned),
+        )
+
+        self.assertFalse(wrong_lane["attempted"])
+        self.assertEqual(wrong_lane["status"], "sam_live_stock_intake_wrong_lane")
+
+        breeding_facts = sam_live_stock_runtime.extract_live_stock_facts("I want two breeding gilts", inbound)
+        breeding = sam_live_stock_runtime.write_live_stock_intake_if_enabled(
+            inbound,
+            breeding_facts,
+            {"sales_lane": "live_stock_sales"},
+            environ={"SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1"},
+            intake_writer=lambda cleaned: calls.append(cleaned),
+        )
+
+        self.assertFalse(breeding["attempted"])
+        self.assertEqual(breeding["status"], "sam_live_stock_intake_owner_gate_breeding")
+        self.assertEqual(calls, [])
 
     def test_non_live_lane_returns_clarification_and_owner_gate(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
