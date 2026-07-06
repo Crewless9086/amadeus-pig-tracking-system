@@ -19,6 +19,7 @@ from pathlib import Path
 from modules.charlie import vault_store
 from modules.charlie.mission_store import (
     AGENT_SEQUENCE,
+    AGENT_STAGE_MAP,
     agent_sequence_for_mission,
     all_agent_names,
     get_mission,
@@ -109,12 +110,17 @@ AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
 AGENT_CONFIDENCE_MINIMUM = 0.96
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
     "source_mapper": {"legacy_sources"},
+    "visual_reference_interpreter": {"media_references_used"},
+    "creative_ui_designer": {"media_references_used"},
+    "ux_interaction_designer": {"media_references_used"},
     "technical_architect": {"files_to_inspect", "implementation_plan"},
     "architect": {"files_to_inspect", "implementation_plan"},
     "builder": {"changed_files"},
-    "frontend_design_implementer": {"changed_files"},
+    "frontend_design_implementer": {"changed_files", "media_references_used"},
+    "tester": {"media_references_used"},
     "qa_red_team": {"qa_findings"},
-    "reviewer": {"changed_files"},
+    "visual_qa_reviewer": {"media_references_used"},
+    "reviewer": {"changed_files", "media_references_used"},
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800
 AGENT_BACKFLOW_LIMIT = 3
@@ -424,6 +430,15 @@ def run_agent_execution_bridge_v2(
             connect_factory=connect_factory,
         )
         stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
+        write_runner_heartbeat({
+            "status": "agent_stage_preparing",
+            "mission_id": mission["mission_id"],
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "current_agent": agent,
+            "current_action": f"Preparing {agent} prompt for attempt {stage_attempts[agent]}",
+            "execution_artifact": str(stage_paths["final_path"]),
+            "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+        })
         prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
         stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
         model_assignment = choose_agent_model(
@@ -1749,7 +1764,11 @@ def _agent_stage_instruction(agent):
     if agent == "council_synthesis":
         return "Read upstream agent artifacts, resolve conflicts, preserve owner intent, and produce one council-approved build brief before Planner and Builder proceed."
     if agent == "planner":
-        return "Read mission context and define scope, acceptance criteria, test plan, risks, and exact next handoff."
+        return (
+            "Read mission context and define scope, acceptance criteria, test plan, risks, and exact next handoff. "
+            "When the implementation source map matches this mission, include exact matched implementation source-map paths in files_inspected or implementation_sources_used; "
+            "Vault docs alone do not satisfy the source-truth gate."
+        )
     if agent == "architect":
         return "Inspect implementation boundaries, source files, route/data contracts, risks, and the safest build approach."
     if agent == "builder":
@@ -1793,7 +1812,14 @@ def _agent_required_schema(agent):
         "next_action": "next handoff",
     }
     if agent == "planner":
-        base.update({"acceptance_criteria": [], "test_plan": [], "scope": "scoped work"})
+        base.update({
+            "acceptance_criteria": [],
+            "test_plan": [],
+            "scope": "scoped work",
+            "implementation_sources_used": [
+                "Include exact matched implementation source-map paths inspected when this mission matches implementation sources."
+            ],
+        })
     elif agent == "idea_expander":
         base.update({"opportunity": "clear owner opportunity", "owner_value": "why this matters", "non_goals": []})
     elif agent == "visual_reference_interpreter":
@@ -1966,7 +1992,24 @@ def _execution_start_agent(mission, agent_sequence=None):
         target = stage.replace("returned_to_", "", 1)
         if target in agent_sequence:
             return target
+    resume_agent = _resume_agent_after_completed_stage(stage, agent_sequence)
+    if resume_agent:
+        return resume_agent
     return agent_sequence[0]
+
+
+def _resume_agent_after_completed_stage(stage, agent_sequence):
+    stage = str(stage or "").strip().lower()
+    if not stage or stage in {"intake", "blocked"}:
+        return ""
+    for index, agent in enumerate(agent_sequence or []):
+        if str(AGENT_STAGE_MAP.get(agent) or "").strip().lower() != stage:
+            continue
+        next_index = index + 1
+        if next_index < len(agent_sequence):
+            return agent_sequence[next_index]
+        return agent
+    return ""
 
 
 def _parallel_read_only_prefix(agent_queue):
@@ -2197,9 +2240,20 @@ def _run_parallel_read_only_agents(
             database_url=database_url,
             connect_factory=connect_factory,
         )
+        _write_agent_ledger(output_dir, execution_id, ledger)
+        write_runner_heartbeat({
+            "status": "parallel_agent_complete",
+            "mission_id": mission["mission_id"],
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "current_agent": agent,
+            "current_action": f"{agent} completed read-only parallel handoff.",
+            "execution_artifact": str(paths["final_path"]),
+            "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+        })
     completed_at = datetime.now(timezone.utc).isoformat()
     ledger["parallel_planning_execution"]["completed_at"] = completed_at
     ledger["parallel_planning_execution"]["status"] = "complete"
+    _write_agent_ledger(output_dir, execution_id, ledger)
     write_runner_heartbeat({
         "status": "parallel_read_only_agents_complete",
         "mission_id": mission["mission_id"],
@@ -2377,13 +2431,37 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
     if start_agent not in agent_sequence:
         return {}
     start_index = agent_sequence.index(start_agent)
-    return {
+    preserved = {
         agent: artifact
         for agent, artifact in existing.items()
         if agent in agent_sequence
         and agent_sequence.index(agent) < start_index
         and isinstance(artifact, dict)
     }
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    for report in vault.get("handoff_reports") or []:
+        if not isinstance(report, dict):
+            continue
+        agent = str(report.get("agent") or "").strip().lower()
+        if (
+            not agent
+            or agent in preserved
+            or agent not in agent_sequence
+            or agent_sequence.index(agent) >= start_index
+        ):
+            continue
+        preserved[agent] = {
+            "summary": report.get("summary") or report.get("task") or f"{agent} completed in earlier runner pass.",
+            "status": report.get("pass_fail_status") or report.get("status") or "complete",
+            "handoff_report": report,
+            "vault_sources_used": report.get("inputs_used") or ["mission_vault"],
+            "files_inspected": report.get("files_changed") or [],
+            "commands_run": report.get("tests_run") or [],
+            "changed_files": report.get("files_changed") or [],
+            "confidence": report.get("confidence") or "96%",
+            "confidence_reason": "Recovered from mission vault handoff report during runner resume.",
+        }
+    return preserved
 
 
 def _agent_stage_paths(output_dir, execution_id, agent, attempt=1):
@@ -2892,7 +2970,6 @@ def _judgement_evidence_quality_gate(agent, artifact):
     }
     if agent not in judgement_agents:
         return {"passed": True, "reason": "judgement_gate_not_required"}
-
     decision_fields = {
         "recommended_owner_decision": {"approve_final_release", "approve", "mark_done"},
         "visual_acceptance_decision": {"approve"},
@@ -3038,6 +3115,8 @@ def _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
     if (artifact or {}).get("errors") or (artifact or {}).get("bugs"):
         return False
     approval_gate_terms = (
+        "stop at owner review",
+        "stops at owner review",
         "owner review pr",
         "owner should review",
         "owner/reviewer should review",
@@ -3492,6 +3571,9 @@ def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
 
 def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):
     agent_sequence = agent_sequence or list(AGENT_SEQUENCE)
+    target_agent = _resolve_agent_backflow_target(target_agent, agent_sequence) or (agent_sequence[0] if agent_sequence else "")
+    if not target_agent:
+        return artifacts
     target_index = agent_sequence.index(target_agent)
     return {
         agent: artifact
@@ -3502,6 +3584,9 @@ def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):
 
 def _agent_queue_from(target_agent, agent_sequence=None):
     agent_sequence = agent_sequence or list(AGENT_SEQUENCE)
+    target_agent = _resolve_agent_backflow_target(target_agent, agent_sequence) or (agent_sequence[0] if agent_sequence else "")
+    if not target_agent:
+        return []
     target_index = agent_sequence.index(target_agent)
     return list(agent_sequence[target_index:])
 

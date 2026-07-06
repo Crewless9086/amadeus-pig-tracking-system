@@ -164,6 +164,17 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(validation["valid"], validation)
 
+    def test_visual_reference_interpreter_allows_empty_media_when_no_reference_attached(self):
+        artifact = _successful_stage_payload("visual_reference_interpreter")
+        artifact["media_references_used"] = []
+        artifact["layout_requirements"] = ["Show new missions as first-class owner review cards."]
+        artifact["visual_hierarchy"] = ["Approval context before technical debug detail."]
+        artifact["reference_match_checklist"] = ["No attached screenshot; use owner text and Vault UI standard."]
+
+        validation = execution_bridge._validate_agent_artifact("visual_reference_interpreter", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+
     def test_agent_quality_gate_blocks_below_ninety_six_confidence(self):
         artifact = _successful_stage_payload("planner")
         artifact["confidence"] = "95%"
@@ -663,6 +674,63 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
         self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
 
+    def test_runner_resume_uses_completed_mission_stage_next_agent(self):
+        sequence = [
+            "idea_expander",
+            "source_mapper",
+            "visual_reference_interpreter",
+            "creative_ui_designer",
+            "ux_interaction_designer",
+            "product_architect",
+            "technical_architect",
+        ]
+        mission = {
+            **MISSION,
+            "vault": {"mission_stage": "ui_concept_ready"},
+            "mission_context_pack": {"agent_order": sequence},
+        }
+
+        self.assertEqual(
+            execution_bridge._execution_start_agent(mission, sequence),
+            "ux_interaction_designer",
+        )
+
+    def test_runner_resume_recovers_upstream_handoff_reports_as_context(self):
+        sequence = ["idea_expander", "source_mapper", "ux_interaction_designer"]
+        mission = {
+            **MISSION,
+            "vault": {
+                "mission_stage": "implementation_mapped",
+                "handoff_reports": [
+                    {
+                        "agent": "idea_expander",
+                        "summary": "Owner needs visible mission approval cards.",
+                        "pass_fail_status": "complete",
+                        "tests_run": [],
+                        "files_changed": [],
+                    },
+                    {
+                        "agent": "source_mapper",
+                        "summary": "Mapped /charlie JS and CSS.",
+                        "pass_fail_status": "complete",
+                        "tests_run": ["node --check static/js/charlieMissionControl.js"],
+                        "files_changed": ["static/js/charlieMissionControl.js"],
+                    },
+                ],
+            },
+            "mission_context_pack": {"agent_order": sequence},
+        }
+
+        artifacts = execution_bridge._existing_agent_artifacts_for_rerun(
+            mission,
+            "ux_interaction_designer",
+            sequence,
+        )
+
+        self.assertEqual(artifacts["idea_expander"]["summary"], "Owner needs visible mission approval cards.")
+        self.assertEqual(artifacts["source_mapper"]["summary"], "Mapped /charlie JS and CSS.")
+        self.assertIn("node --check static/js/charlieMissionControl.js", artifacts["source_mapper"]["commands_run"])
+
     def test_reviewer_quality_gate_requires_pr_for_changed_files(self):
         artifact = {
             "summary": "review complete",
@@ -1119,6 +1187,64 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("desktop/laptop and mobile", result["reason"])
 
+    def test_tester_gate_blocks_packaging_workspace_warning_even_when_checks_pass(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["errors"] = [
+            "Recovered Playwright selector issues caused by non-exact text matches and modal click interception during test harness development.",
+            "One PowerShell file discovery command failed because Get-ChildItem was given multiple positional paths incorrectly.",
+        ]
+        artifact["bugs"] = [
+            "Workspace is still not clean for owner-review packaging: git status shows unrelated deleted screenshot/media files and untracked test-results/."
+        ]
+        artifact["tests_run"] = [
+            {"command": "node --check static/js/charlieMissionControl.js", "status": "pass"},
+            {"command": "python -m unittest tests.test_frontend_route_contracts", "status": "pass"},
+        ]
+        artifact["browser_checks"] = [
+            {"viewport": "desktop-1440x1000", "status": "pass"},
+            {"viewport": "mobile-390x844", "status": "pass"},
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+        self.assertIn("test_status=fail", result["reason"])
+
+    def test_planner_source_gate_accepts_exact_pig_allocation_source_map_paths(self):
+        artifact = _successful_stage_payload("planner")
+        artifact["implementation_source_map"] = {
+            "matched_sections": [
+                {
+                    "key": "pig_allocation_herdmaster",
+                    "must_inspect_before_advice": True,
+                    "vault_docs": ["docs/09-vault-brain/02-agents/farm/HERDMASTER.md"],
+                    "code_paths": ["modules/pig_weights/pig_weights_service.py"],
+                    "tests": ["tests/test_pig_allocation_readiness_service.py"],
+                    "legacy_sources": ["docs/03-google-sheets/sheets/FARM.md"],
+                }
+            ],
+            "required_inspection_paths": [
+                "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+                "modules/pig_weights/pig_weights_service.py",
+                "tests/test_pig_allocation_readiness_service.py",
+                "docs/03-google-sheets/sheets/FARM.md",
+            ],
+        }
+        artifact["files_inspected"] = [
+            "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+            "modules/pig_weights/pig_weights_service.py",
+            "tests/test_pig_allocation_readiness_service.py",
+        ]
+        artifact["implementation_sources_used"] = [
+            "modules/pig_weights/pig_weights_service.py",
+            "tests/test_pig_allocation_readiness_service.py",
+        ]
+
+        result = execution_bridge._agent_quality_gate("planner", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
         artifact = _successful_stage_payload("reviewer")
         artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
@@ -1275,6 +1401,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         })
 
         result = execution_bridge._agent_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_security_reviewer_owner_review_stop_is_not_a_send_back_block(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "summary": "Security review passed for owner review.",
+            "next_action": "Stop at owner review. Owner may approve this docs/design pack or send back comments.",
+            "test_evidence": ["Focused tests passed."],
+            "risk_notes": ["No production writes are authorized by this docs pack."],
+            "changed_files": ["docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md"],
+        })
+
+        result = execution_bridge._agent_quality_gate("security_reviewer", artifact)
 
         self.assertTrue(result["passed"], result)
 
