@@ -2135,6 +2135,294 @@ def mark_litter_weaned(
     }, 200
 
 
+def process_litter_weaning_day(
+    litter_id: str,
+    payload=None,
+):
+    payload = payload or {}
+    dry_run = payload.get("dry_run", True) is True
+    action_date_value = payload.get("wean_date") or payload.get("action_date")
+    action_date = parse_sheet_date(action_date_value)
+    changed_by = to_clean_string(payload.get("changed_by", "web_app")) or "web_app"
+    assignments = payload.get("assignments", [])
+    target_pen_id = to_clean_string(payload.get("target_pen_id", ""))
+    notes = to_clean_string(payload.get("notes", ""))
+    medicine = payload.get("medicine", {}) if isinstance(payload.get("medicine", {}), dict) else {}
+
+    if not to_clean_string(litter_id):
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+    if not action_date:
+        return {"success": False, "errors": ["A valid wean date is required."]}, 400
+
+    active_rows = _active_on_farm_litter_piglet_rows(litter_id)
+    if not active_rows:
+        return {"success": False, "errors": ["No active on-farm piglets were found for this litter."]}, 409
+
+    validation_errors = []
+    tag_plan = _weaning_day_tag_plan(assignments)
+    health_requested = any(to_clean_string(medicine.get(key, "")) for key in (
+        "antiparasitic_product_id",
+        "deworming_product_id",
+        "vaccination_product_id",
+    ))
+    movement_plan = _weaning_day_movement_plan(active_rows, target_pen_id, action_date, changed_by, notes)
+    wean_preview, wean_status = _weaning_day_wean_preview(litter_id, action_date, active_rows)
+    if wean_status != 200:
+        validation_errors.extend(wean_preview.get("errors", ["Could not preview wean action."]))
+
+    tag_preview = {"success": True, "skipped": True, "selected_piglets": [], "planned_updates": {}}
+    if tag_plan["assignments"]:
+        tag_preview, tag_status = assign_litter_piglet_tag_numbers(
+            litter_id=litter_id,
+            assignments=tag_plan["assignments"],
+            action_date_value=action_date,
+            changed_by=changed_by,
+            notes=notes,
+            dry_run=True,
+        )
+        if tag_status != 200 or not tag_preview.get("success"):
+            validation_errors.extend(tag_preview.get("errors", ["Could not preview tag numbers."]))
+
+    health_preview = {"success": True, "skipped": True, "treatment_rows_planned": 0, "planned_treatment_rows": []}
+    if health_requested:
+        health_preview, health_status = record_litter_newborn_health(
+            litter_id=litter_id,
+            action_date_value=action_date,
+            changed_by=changed_by,
+            antiparasitic_product_id=medicine.get("antiparasitic_product_id", ""),
+            deworming_product_id=medicine.get("deworming_product_id", ""),
+            vaccination_product_id=medicine.get("vaccination_product_id", ""),
+            dose=medicine.get("dose", None),
+            route=medicine.get("route", ""),
+            batch_lot_number=medicine.get("batch_lot_number", ""),
+            notes=notes or medicine.get("notes", "Weaning day treatment."),
+            dry_run=True,
+        )
+        if health_status != 200 or not health_preview.get("success"):
+            validation_errors.extend(health_preview.get("errors", ["Could not preview medicine."]))
+
+    if movement_plan["errors"]:
+        validation_errors.extend(movement_plan["errors"])
+
+    if validation_errors:
+        return {
+            "success": False,
+            "errors": validation_errors,
+            "dry_run": dry_run,
+            "litter_id": litter_id,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }, 409
+
+    if dry_run:
+        return _weaning_day_result(
+            litter_id=litter_id,
+            dry_run=True,
+            action_date=action_date,
+            active_count=len(active_rows),
+            tag_result=tag_preview,
+            health_result=health_preview,
+            movement_result=movement_plan,
+            wean_result=wean_preview,
+            changed_by=changed_by,
+        ), 200
+
+    applied = {}
+    if tag_plan["assignments"]:
+        applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
+            litter_id=litter_id,
+            assignments=tag_plan["assignments"],
+            action_date_value=action_date,
+            changed_by=changed_by,
+            notes=notes,
+            dry_run=False,
+        )
+        if tag_status != 200 or not applied["tags"].get("success"):
+            return {"success": False, "errors": applied["tags"].get("errors", ["Could not save tag numbers."])}, tag_status
+    else:
+        applied["tags"] = tag_preview
+
+    if health_requested:
+        applied["medicine"], health_status = record_litter_newborn_health(
+            litter_id=litter_id,
+            action_date_value=action_date,
+            changed_by=changed_by,
+            antiparasitic_product_id=medicine.get("antiparasitic_product_id", ""),
+            deworming_product_id=medicine.get("deworming_product_id", ""),
+            vaccination_product_id=medicine.get("vaccination_product_id", ""),
+            dose=medicine.get("dose", None),
+            route=medicine.get("route", ""),
+            batch_lot_number=medicine.get("batch_lot_number", ""),
+            notes=notes or medicine.get("notes", "Weaning day treatment."),
+            dry_run=False,
+        )
+        if health_status != 200 or not applied["medicine"].get("success"):
+            return {"success": False, "errors": applied["medicine"].get("errors", ["Could not save medicine."])}, health_status
+    else:
+        applied["medicine"] = health_preview
+
+    applied["movements"] = _apply_weaning_day_movements(movement_plan)
+    if applied["movements"].get("errors"):
+        return {"success": False, "errors": applied["movements"]["errors"]}, 409
+
+    applied["wean"], wean_apply_status = mark_litter_weaned(
+        litter_id=litter_id,
+        wean_date_value=action_date,
+        changed_by=changed_by,
+        use_latest_weights_as_wean_weights=True,
+    )
+    if wean_apply_status != 200 or not applied["wean"].get("success"):
+        return {"success": False, "errors": applied["wean"].get("errors", ["Could not mark litter as weaned."])}, wean_apply_status
+
+    return _weaning_day_result(
+        litter_id=litter_id,
+        dry_run=False,
+        action_date=action_date,
+        active_count=len(active_rows),
+        tag_result=applied["tags"],
+        health_result=applied["medicine"],
+        movement_result=applied["movements"],
+        wean_result=applied["wean"],
+        changed_by=changed_by,
+    ), 200
+
+
+def _active_on_farm_litter_piglet_rows(litter_id):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    return [
+        row for row in _get_pig_master_rows()
+        if to_clean_string(row.get("Litter_ID", "")) == to_clean_string(litter_id)
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+
+
+def _weaning_day_tag_plan(assignments):
+    cleaned = []
+    for assignment in assignments if isinstance(assignments, list) else []:
+        if not isinstance(assignment, dict):
+            continue
+        pig_id = to_clean_string(assignment.get("pig_id", ""))
+        tag_number = to_clean_string(assignment.get("tag_number", ""))
+        if pig_id or tag_number:
+            cleaned.append({"pig_id": pig_id, "tag_number": tag_number})
+    return {"assignments": cleaned}
+
+
+def _weaning_day_wean_preview(litter_id, action_date, active_rows):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    latest_weights = {
+        to_clean_string(row.get(columns["pig_id"], "")): {
+            "weight_kg": to_float(row.get(columns["current_weight"], "")),
+            "weight_date": parse_sheet_date(row.get(columns["last_weight_date"], "")),
+        }
+        for row in active_rows
+        if to_clean_string(row.get(columns["pig_id"], ""))
+    }
+    if any(not latest.get("weight_kg") for latest in latest_weights.values()):
+        latest_weights = _latest_weights_by_pig(get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]), columns)
+    updates, selected, missing = _wean_weight_updates_for_piglets(active_rows, latest_weights)
+    if missing:
+        return {
+            "success": False,
+            "errors": ["Missing latest weights for: " + ", ".join(missing)],
+            "missing_wean_weight_pig_ids": missing,
+        }, 409
+    return {
+        "success": True,
+        "action": "preview_mark_litter_weaned",
+        "litter_id": litter_id,
+        "wean_date": action_date.isoformat(),
+        "weaned_count": len(active_rows),
+        "wean_weights_captured": len(updates),
+        "wean_weight_rows": selected,
+    }, 200
+
+
+def _weaning_day_movement_plan(active_rows, target_pen_id, action_date, changed_by, notes):
+    if not target_pen_id:
+        return {"success": True, "skipped": True, "movement_count": 0, "planned_movements": [], "errors": []}
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    planned = []
+    errors = []
+    for row in active_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        from_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+        if not pig_id:
+            continue
+        if from_pen_id == target_pen_id:
+            continue
+        planned.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "move_date": action_date.isoformat(),
+            "from_pen_id": from_pen_id,
+            "to_pen_id": target_pen_id,
+            "reason_for_move": "Weaning day move",
+            "moved_by": changed_by,
+            "move_notes": notes or "Moved during litter weaning day workflow.",
+        })
+    return {
+        "success": not errors,
+        "skipped": False,
+        "movement_count": len(planned),
+        "planned_movements": planned,
+        "errors": errors,
+    }
+
+
+def _apply_weaning_day_movements(movement_plan):
+    if movement_plan.get("skipped"):
+        return movement_plan
+    saved = []
+    errors = []
+    for movement in movement_plan.get("planned_movements", []):
+        result = save_movement_entry(movement)
+        if not result.get("success"):
+            errors.append(f"Could not save movement for {movement.get('pig_id')}.")
+        else:
+            saved.append(result.get("saved", {}))
+    return {
+        "success": not errors,
+        "skipped": False,
+        "movement_count": len(saved),
+        "saved_movements": saved,
+        "errors": errors,
+    }
+
+
+def _weaning_day_result(litter_id, dry_run, action_date, active_count, tag_result, health_result, movement_result, wean_result, changed_by):
+    treatment_count = int(health_result.get("treatment_rows_planned") or health_result.get("treatment_rows_created") or 0)
+    movement_count = int(movement_result.get("movement_count") or 0)
+    tag_count = len(tag_result.get("selected_piglets", []) or [])
+    return {
+        "success": True,
+        "action": "litter_weaning_day",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "wean_date": action_date.isoformat(),
+        "active_piglet_count": active_count,
+        "tag_count": tag_count,
+        "treatment_count": treatment_count,
+        "movement_count": movement_count,
+        "wean_weights_captured": wean_result.get("wean_weights_captured", 0),
+        "tag_result": tag_result,
+        "medicine_result": health_result,
+        "movement_result": movement_result,
+        "wean_result": wean_result,
+        "changed_by": changed_by,
+        "message": (
+            f"Weaning day preview ready for {active_count} active piglet(s)."
+            if dry_run
+            else f"Weaning day saved for {active_count} active piglet(s)."
+        ),
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": not dry_run and farm_supabase_write_service.farm_supabase_writes_available(),
+        },
+    }
+
+
 def _append_lifecycle_note(existing_notes, event_date, reason, changed_by, notes):
     clean_existing = to_clean_string(existing_notes)
     clean_notes = to_clean_string(notes)

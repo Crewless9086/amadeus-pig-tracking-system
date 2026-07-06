@@ -23,6 +23,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_family_tree_profile,
     get_litter_profile,
     mark_litter_profile_weaned,
+    process_litter_profile_weaning_day,
     record_litter_profile_newborn_health,
     mark_litter_profile_piglets_dead,
     record_litter_profile_piglet_sex_counts,
@@ -228,6 +229,13 @@ def litter_profile(litter_id):
 def mark_litter_weaned_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_litter_profile_weaned(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/weaning-day", methods=["POST"])
+def litter_weaning_day_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = process_litter_profile_weaning_day(litter_id, payload)
     return jsonify(result), status_code
 
 

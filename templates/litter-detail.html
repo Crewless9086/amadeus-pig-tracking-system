@@ -138,6 +138,56 @@
         </main>
 
         <aside class="litter-side-column">
+          <section id="weaning_day_panel" class="litter-side-panel">
+            <div class="section-subtitle">Weaning Day</div>
+            <p class="form-helper">One workflow for tag numbers, latest weights, pen move, medicine, and marking this litter as weaned.</p>
+            <form id="weaning_day_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="weaning_day_date">Wean Date</label>
+                  <input type="date" id="weaning_day_date" required />
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_target_pen">Move To Pen</label>
+                  <select id="weaning_day_target_pen">
+                    <option value="">No pen move</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_antiparasitic">Antiparasitic</label>
+                  <select id="weaning_day_antiparasitic">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_deworming">Deworming</label>
+                  <select id="weaning_day_deworming">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_vaccination">Vaccination</label>
+                  <select id="weaning_day_vaccination">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="weaning_day_recorded_by">Recorded By</label>
+                  <input type="text" id="weaning_day_recorded_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="weaning_day_notes">Notes</label>
+                  <textarea id="weaning_day_notes" rows="3" placeholder="Optional notes for tags, movement, and treatment"></textarea>
+                </div>
+              </div>
+              <div id="weaning_day_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="weaning_day_preview_button" class="button-link button-link-secondary">Preview Weaning Day</button>
+                <button type="submit" id="weaning_day_apply_button" disabled>Save Weaning Day</button>
+              </div>
+            </form>
+          </section>
+
           <section class="litter-side-panel">
             <div class="section-subtitle">Lifecycle Outcomes</div>
             <div class="detail-grid litter-outcome-grid">
