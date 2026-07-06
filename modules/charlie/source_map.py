@@ -273,6 +273,7 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md",
             "docs/09-vault-brain/03-business/LIVE_PIG_SALES.md",
             "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+            "docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
             "docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md",
             "docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md",
             "docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md",
