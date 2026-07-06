@@ -128,6 +128,35 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("tests/test_farm_supabase_read_service.py", packet["required_inspection_paths"])
         self.assertIn("/api/reports/farm-attention-summary", packet["required_routes"])
 
+    def test_herdmaster_pig_allocation_maps_current_allocation_sources(self):
+        mission = {
+            "mission_type": "planning/docs",
+            "title": "Herdmaster Vault Rules and Alert Design Pack",
+            "raw_text": (
+                "Create Herdmaster Pig Allocation alerts for purpose review, meat window, "
+                "slaughter candidate, slow grower, breeding candidate, stale weight, and sow replacement."
+            ),
+            "vault": {
+                "desired_outcome": (
+                    "Owner-reviewable Vault/design pack that CHARLIE CORE and Herdmaster can use "
+                    "as the authority for future alert builds."
+                )
+            },
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("pig_allocation_herdmaster", keys)
+        self.assertNotIn("charlie_core_dashboard", keys)
+        self.assertIn("modules/pig_weights/pig_weights_service.py", packet["required_inspection_paths"])
+        self.assertIn(
+            "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn("tests/test_pig_allocation_readiness_service.py", packet["required_inspection_paths"])
+        self.assertIn("/api/pig-weights/purpose-review", packet["required_routes"])
+
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {
             "mission_type": "income stream",

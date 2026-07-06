@@ -249,6 +249,54 @@ IMPLEMENTATION_SOURCE_MAP = {
         ],
         "must_inspect_before_advice": True,
     },
+    "pig_allocation_herdmaster": {
+        "label": "Pig Allocation And Herdmaster Purpose Intelligence",
+        "status": "built_readiness_surface_to_expand",
+        "summary": "Pig Allocation readiness, purpose review queue, meat/slaughter windows, stale weights, slow-grower risk, breeding candidates, and future Herdmaster alert logic.",
+        "keywords": [
+            "pig allocation",
+            "allocation alert",
+            "purpose review",
+            "suggested purpose",
+            "keep for breeding",
+            "breeding candidate",
+            "meat window",
+            "slaughter candidate",
+            "slow grower",
+            "stale weight",
+            "sow replacement",
+            "herdmaster",
+        ],
+        "vault_docs": [
+            "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+            "docs/09-vault-brain/04-workflows/HERDMASTER_PURPOSE_REVIEW_WORKFLOW.md",
+            "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
+            "docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md",
+            "docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md",
+            "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+        ],
+        "app_routes": [
+            "/pig-allocation",
+            "/api/pig-weights/pig-allocation-readiness",
+            "/api/pig-weights/purpose-review",
+            "/api/pig-weights/purpose-review/apply",
+            "/api/pig-weights/purpose-review/recheck",
+        ],
+        "code_paths": [
+            "modules/pig_weights/pig_weights_service.py",
+            "templates/pig-allocation.html",
+            "static/js/pigAllocation.js",
+        ],
+        "tests": [
+            "tests/test_pig_allocation_readiness_service.py",
+            "tests/test_frontend_route_contracts.py",
+        ],
+        "migrations": [],
+        "legacy_sources": [
+            "docs/03-google-sheets/sheets/FARM.md",
+        ],
+        "must_inspect_before_advice": True,
+    },
     "pig_litter_attention": {
         "label": "Pig Litter Attention And Reconciliation",
         "status": "built_supabase_backed",
@@ -355,10 +403,11 @@ def implementation_source_packet(mission=None, limit_sections=6):
     query = _mission_query(mission)
     matched = []
     for key, entry in IMPLEMENTATION_SOURCE_MAP.items():
-        score, reasons = _score_entry(query, entry)
+        score, reasons = _score_entry(key, query, entry)
         if score:
             matched.append(_entry_packet(key, entry, score, reasons))
-    matched = sorted(matched, key=lambda item: (-item["score"], item["key"]))[: max(1, int(limit_sections or 6))]
+    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])))
+    matched = matched[: max(1, int(limit_sections or 6))]
     return {
         "version": SOURCE_MAP_VERSION,
         "query": query,
@@ -372,6 +421,12 @@ def implementation_source_packet(mission=None, limit_sections=6):
         "required_routes": _unique(route for section in matched for route in section.get("app_routes", [])),
         "rule": "Before advising or building, inspect the matched implementation sources; Vault strategy alone is insufficient.",
     }
+
+
+def _filter_matched_sections(matched):
+    if not matched:
+        return []
+    return [section for section in matched if int(section.get("score") or 0) >= 30]
 
 
 def validate_implementation_inspection(artifact, source_packet):
@@ -428,16 +483,34 @@ def _required_groups(source_packet):
     return {group: _unique(paths) for group, paths in groups.items() if paths}
 
 
-def _score_entry(query, entry):
+def _score_entry(key, query, entry):
     lower = query.lower()
+    if key == "charlie_core_dashboard" and not _charlie_dashboard_context(lower):
+        return 0, []
     score = 0
     reasons = []
     for keyword in entry.get("keywords", []):
         keyword = str(keyword or "").lower()
         if keyword and keyword in lower and not _keyword_is_negated(lower, keyword):
-            score += 30 if " " in keyword else 18
+            score += 30 if " " in keyword or keyword in {"sam", "beacon", "herdmaster"} else 18
             reasons.append(f"keyword:{keyword}")
     return score, reasons
+
+
+def _charlie_dashboard_context(lower):
+    dashboard_terms = (
+        "/charlie",
+        "charlie dashboard",
+        "dashboard ui",
+        "mission control",
+        "command center",
+        "runner status",
+        "mission queue",
+        "owner review button",
+        "owner review ui",
+        "workflow ui",
+    )
+    return any(term in lower for term in dashboard_terms)
 
 
 def _keyword_is_negated(lower, keyword):
