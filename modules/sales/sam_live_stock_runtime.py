@@ -11,6 +11,7 @@ from modules.orders.order_intake_service import (
 from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
 from modules.pig_weights.pig_weights_service import get_sales_availability
+from modules.sales.sam_pricing import resolve_live_stock_price_rule
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
 
 
@@ -471,6 +472,13 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
     facts = facts if isinstance(facts, dict) else {}
     match_packet = match_packet if isinstance(match_packet, dict) else {}
     item = _live_stock_sync_requested_item(facts)
+    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
+    quoted_total = (
+        round(float(price_rule["unit_price"]) * quantity, 2)
+        if price_rule.get("found") and price_rule.get("unit_price") is not None and quantity > 0
+        else ""
+    )
     order_payload = {
         "order_date": datetime.now().date().isoformat(),
         "customer_name": _clean(inbound.get("customer_name"), 120),
@@ -482,7 +490,7 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
         "requested_weight_range": _normal_intake_weight_range(facts.get("weight_range"), _normal_intake_category(facts.get("category"))),
         "requested_sex": _normal_intake_sex(facts.get("sex")),
         "requested_quantity": facts.get("quantity") or "",
-        "quoted_total": "",
+        "quoted_total": quoted_total,
         "collection_location": _normal_intake_location(facts.get("location")),
         "payment_method": _normal_intake_payment(facts.get("payment_method")),
         "notes": _clean("source=sam_live_stock_stage_5; owner_review_required=true", 600),
@@ -504,6 +512,7 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
         "owner_review_required": True,
         "order_payload": order_payload,
         "sync_payload": sync_payload,
+        "pricing": price_rule,
         "validation_errors": errors,
         "stock_gate": "passed" if enough_stock else (
             "partial_matching_stock" if match_packet.get("partial_fulfillment") else "no_matching_stock"
@@ -719,6 +728,20 @@ def _safe_reply_draft(facts, route, missing, availability, blockers):
     if availability.get("success") and int(availability.get("matched_count") or 0) <= 0:
         return "I do not want to over-promise that exact group. I can check nearby suitable options for farm review."
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _live_stock_price_rule_for_packet(facts, match_packet):
+    facts = facts if isinstance(facts, dict) else {}
+    match_packet = match_packet if isinstance(match_packet, dict) else {}
+    sample = match_packet.get("matched_sample") if isinstance(match_packet.get("matched_sample"), list) else []
+    first = sample[0] if sample and isinstance(sample[0], dict) else {}
+    category = first.get("sale_category") or facts.get("category")
+    weight_band = first.get("weight_band") or _normal_intake_weight_range(
+        facts.get("weight_range"),
+        _normal_intake_category(facts.get("category")),
+    )
+    sex = first.get("sex") or facts.get("sex")
+    return resolve_live_stock_price_rule(category, weight_band, sex)
 
 
 def _question_for_missing(field):

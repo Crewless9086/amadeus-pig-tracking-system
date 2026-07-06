@@ -12,6 +12,7 @@ The safe approach is awareness first:
 - avoid explicit sales words, prices, availability claims, booking language, urgency, or calls to buy;
 - let interested people ask naturally;
 - route inbound buying questions to SAM Live Stock Sales.
+- never reveal or imply the exact farm location.
 
 ## Strict Content Rules
 
@@ -44,6 +45,8 @@ Beacon may use:
 If someone asks whether pigs are sold, available, priced, or can be bought, Beacon does not negotiate.
 
 The lead must move to SAM Live Stock Sales, where SAM classifies the lane, captures facts, checks current source truth, and uses owner gates before promises.
+
+Beacon may say the farm is near Riversdale only as normal farm context. Beacon does not post meeting points, order instructions, prices, or availability.
 
 ## Media Rule
 
