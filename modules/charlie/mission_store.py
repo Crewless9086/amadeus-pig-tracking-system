@@ -1747,6 +1747,10 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         sequence.append(next_agent)
     for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
+    if agent in all_agent_names():
+        known.setdefault(agent, _workflow_default_item(agent, next_agent or "owner"))
+    if next_agent in all_agent_names():
+        known.setdefault(next_agent, _workflow_default_item(next_agent, "owner"))
     if next_agent and next_agent in known:
         known[agent]["handoff_to"] = next_agent
     known[agent]["status"] = step_status
@@ -1797,16 +1801,21 @@ def _workflow_defaults_for_sequence(sequence):
     for index, agent in enumerate(sequence):
         definition = AGENT_DEFINITIONS.get(agent, {})
         next_agent = sequence[index + 1] if index + 1 < len(sequence) else definition.get("handoff_to", "owner")
-        defaults.append({
-            "agent": agent,
-            "status": "pending",
-            "purpose": definition.get("purpose", ""),
-            "handoff_to": next_agent,
-            "required_output": HANDOFF_VERSION,
-            "instruction_pack": agent_instruction_pack(agent),
-            "findings": "",
-        })
+        defaults.append(_workflow_default_item(agent, next_agent))
     return defaults
+
+
+def _workflow_default_item(agent, next_agent="owner"):
+    definition = AGENT_DEFINITIONS.get(agent, {})
+    return {
+        "agent": agent,
+        "status": "pending",
+        "purpose": definition.get("purpose", ""),
+        "handoff_to": next_agent or definition.get("handoff_to", "owner"),
+        "required_output": HANDOFF_VERSION,
+        "instruction_pack": agent_instruction_pack(agent),
+        "findings": "",
+    }
 
 
 def _review_owner_decision_text(decision, comments, target_stage):
