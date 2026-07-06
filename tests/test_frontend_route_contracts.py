@@ -1946,6 +1946,22 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('href="/sales/meat-leads"', template)
         self.assertIn('href="/sales/meat-leads"', dashboard)
 
+    def test_litter_detail_has_weaning_day_workflow_panel(self):
+        routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
+        controller = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
+        template = Path("templates/litter-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/litterDetail.js").read_text(encoding="utf-8")
+
+        self.assertIn('"/litter/<litter_id>/weaning-day"', routes)
+        self.assertIn("process_litter_profile_weaning_day", controller)
+        self.assertIn('id="weaning_day_panel"', template)
+        self.assertIn('id="weaning_day_target_pen"', template)
+        self.assertIn('id="weaning_day_antiparasitic"', template)
+        self.assertIn("weaningDayPayload", js)
+        self.assertIn("/weaning-day", js)
+        self.assertIn("previewWeaningDay", js)
+        self.assertIn("submitWeaningDay", js)
+
     def test_meat_sales_leads_page_is_farm_app_operator_workflow(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         routes = Path("modules/sales/sales_transaction_routes.py").read_text(encoding="utf-8")

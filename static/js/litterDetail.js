@@ -76,13 +76,28 @@ const stillbornReclassifyApplyButton = document.getElementById("stillborn_reclas
 const manualActionsPanel = document.getElementById("litter_manual_actions_panel");
 const manualActionsText = document.getElementById("litter_manual_actions_text");
 const manualActionsToggle = document.getElementById("litter_manual_actions_toggle");
+const weaningDayPanel = document.getElementById("weaning_day_panel");
+const weaningDayForm = document.getElementById("weaning_day_form");
+const weaningDayDate = document.getElementById("weaning_day_date");
+const weaningDayTargetPen = document.getElementById("weaning_day_target_pen");
+const weaningDayAntiparasitic = document.getElementById("weaning_day_antiparasitic");
+const weaningDayDeworming = document.getElementById("weaning_day_deworming");
+const weaningDayVaccination = document.getElementById("weaning_day_vaccination");
+const weaningDayRecordedBy = document.getElementById("weaning_day_recorded_by");
+const weaningDayNotes = document.getElementById("weaning_day_notes");
+const weaningDayPreview = document.getElementById("weaning_day_preview");
+const weaningDayPreviewButton = document.getElementById("weaning_day_preview_button");
+const weaningDayApplyButton = document.getElementById("weaning_day_apply_button");
 let latestNewbornHealthPreview = null;
 let latestPigletDeathPreview = null;
 let latestSexCountPreview = null;
 let latestTagNumbersPreview = null;
 let latestReconcilePreview = null;
 let latestStillbornReclassifyPreview = null;
+let latestWeaningDayPreview = null;
 let productsLoaded = false;
+let weaningProductsLoaded = false;
+let pensLoaded = false;
 let manualActionsExpanded = false;
 
 function getLitterIdFromUrl() {
@@ -254,6 +269,39 @@ async function loadProductsForNewbornHealth() {
   setSelectOptions(newbornHealthDeworming, products, ["deworm", "panacur"], "panacur");
   setSelectOptions(newbornHealthVaccination, products, ["vacc"], "");
   productsLoaded = true;
+}
+
+async function loadProductsForWeaningDay() {
+  if (weaningProductsLoaded) return;
+  const response = await fetch("/api/pig-weights/products");
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error("Could not load products.");
+  }
+  const products = data.products || [];
+  setSelectOptions(weaningDayAntiparasitic, products, ["antiparasitic", "parasite", "ecomectin"], "ecomectin");
+  setSelectOptions(weaningDayDeworming, products, ["deworm", "panacur"], "panacur");
+  setSelectOptions(weaningDayVaccination, products, ["vacc"], "");
+  weaningProductsLoaded = true;
+}
+
+async function loadPensForWeaningDay() {
+  if (pensLoaded || !weaningDayTargetPen) return;
+  const response = await fetch("/api/pig-weights/pens");
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error("Could not load pens.");
+  }
+  const currentValue = weaningDayTargetPen.value;
+  weaningDayTargetPen.innerHTML = '<option value="">No pen move</option>';
+  (data.pens || []).forEach((pen) => {
+    const option = document.createElement("option");
+    option.value = pen.pen_id || pen.Pen_ID || "";
+    option.textContent = `${pen.pen_name || pen.Pen_Name || option.value}${option.value ? ` (${option.value})` : ""}`;
+    if (option.value) weaningDayTargetPen.appendChild(option);
+  });
+  weaningDayTargetPen.value = currentValue;
+  pensLoaded = true;
 }
 
 function renderAttention(litter) {
@@ -495,6 +543,142 @@ function renderManualActionsPanel(litter) {
   if (availability.canAssignTagNumbers) labels.push("tag numbers");
   manualActionsText.textContent = `Available: ${labels.join(", ")}. Keep hidden unless you need to record one now.`;
   manualActionsToggle.textContent = manualActionsExpanded ? "Hide Manual Actions" : "Show Manual Actions";
+}
+
+function renderWeaningDayPanel(litter) {
+  const isActive = detailState(litter) === "active";
+  if (weaningDayPanel) {
+    weaningDayPanel.classList.toggle("hidden", !isActive);
+  }
+  if (!isActive) {
+    resetWeaningDayPreview();
+    return;
+  }
+  if (weaningDayDate && !weaningDayDate.value) {
+    weaningDayDate.value = todayIsoDate();
+  }
+  loadProductsForWeaningDay().catch(() => {
+    showLitterMessage("Could not load products for weaning day.", "error");
+  });
+  loadPensForWeaningDay().catch(() => {
+    showLitterMessage("Could not load pens for weaning day.", "error");
+  });
+}
+
+function weaningDayPayload(dryRun) {
+  const assignments = Array.from(document.querySelectorAll(".piglet-tag-input"))
+    .map((input) => ({
+      pig_id: input.dataset.pigId || "",
+      tag_number: input.value.trim(),
+    }))
+    .filter((assignment) => assignment.pig_id || assignment.tag_number);
+  return {
+    wean_date: weaningDayDate.value,
+    assignments,
+    target_pen_id: weaningDayTargetPen.value,
+    changed_by: weaningDayRecordedBy.value || "web_app",
+    notes: weaningDayNotes.value,
+    medicine: {
+      antiparasitic_product_id: weaningDayAntiparasitic.value,
+      deworming_product_id: weaningDayDeworming.value,
+      vaccination_product_id: weaningDayVaccination.value,
+      notes: weaningDayNotes.value,
+    },
+    dry_run: dryRun,
+  };
+}
+
+function resetWeaningDayPreview() {
+  latestWeaningDayPreview = null;
+  if (weaningDayApplyButton) weaningDayApplyButton.disabled = true;
+  if (weaningDayPreview) weaningDayPreview.classList.add("hidden");
+}
+
+function setWeaningDaySubmitting(isSubmitting, mode = "preview") {
+  weaningDayPreviewButton.disabled = isSubmitting;
+  weaningDayApplyButton.disabled = isSubmitting || !latestWeaningDayPreview;
+  weaningDayPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview Weaning Day";
+  weaningDayApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Weaning Day";
+}
+
+function renderWeaningDayPreview(preview) {
+  if (!weaningDayPreview) return;
+  weaningDayPreview.classList.remove("hidden");
+  weaningDayPreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>${preview.dry_run ? "Preview ready" : "Saved"}</strong>
+      <span>${preview.active_piglet_count || 0} piglet${preview.active_piglet_count === 1 ? "" : "s"}</span>
+    </div>
+    <div class="sales-meta-grid">
+      <div><span class="history-label">Tags</span><span class="history-value">${preview.tag_count || 0}</span></div>
+      <div><span class="history-label">Wean Weights</span><span class="history-value">${preview.wean_weights_captured || 0}</span></div>
+      <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
+      <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
+    </div>
+    <p class="form-helper">${escapeHtml(preview.message || "Review the packet before saving.")}</p>
+  `;
+}
+
+async function previewWeaningDay() {
+  clearLitterMessage();
+  latestWeaningDayPreview = null;
+  if (weaningDayApplyButton) weaningDayApplyButton.disabled = true;
+  if (!weaningDayDate.value) {
+    showLitterMessage("Choose a wean date before previewing.", "error");
+    return;
+  }
+  setWeaningDaySubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/weaning-day`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(weaningDayPayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview weaning day."]).join(" "));
+    }
+    latestWeaningDayPreview = data;
+    renderWeaningDayPreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview weaning day.", "error");
+  } finally {
+    setWeaningDaySubmitting(false, "preview");
+  }
+}
+
+async function submitWeaningDay(event) {
+  event.preventDefault();
+  clearLitterMessage();
+  if (!latestWeaningDayPreview) {
+    showLitterMessage("Preview the weaning day packet before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Save this full weaning day packet?")) {
+    return;
+  }
+  setWeaningDaySubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/weaning-day`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(weaningDayPayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save weaning day."]).join(" "));
+    }
+    resetWeaningDayPreview();
+    renderWeaningDayPreview(data);
+    showLitterMessage(data.message || "Weaning day saved.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save weaning day.", "error");
+  } finally {
+    setWeaningDaySubmitting(false, "apply");
+  }
 }
 
 async function previewStillbornReclassify() {
@@ -1279,6 +1463,8 @@ function wirePigletTableRows() {
   document.querySelectorAll(".piglet-tag-input").forEach((input) => {
     input.addEventListener("input", resetTagNumbersPreview);
     input.addEventListener("change", resetTagNumbersPreview);
+    input.addEventListener("input", resetWeaningDayPreview);
+    input.addEventListener("change", resetWeaningDayPreview);
   });
 }
 
@@ -1345,6 +1531,7 @@ async function loadLitterDetail(options = {}) {
     renderReconcilePanel(litter);
     renderStillbornReclassifyPanel(litter);
     renderManualActionsPanel(litter);
+    renderWeaningDayPanel(litter);
     renderPigletDeathPanel(litter);
     renderSexCountPanel(litter);
     renderTagNumbersPanel(litter);
@@ -1376,6 +1563,8 @@ sexCountPreviewButton.addEventListener("click", previewSexCount);
 sexCountForm.addEventListener("submit", submitSexCount);
 tagNumbersPreviewButton.addEventListener("click", previewTagNumbers);
 tagNumbersForm.addEventListener("submit", submitTagNumbers);
+weaningDayPreviewButton.addEventListener("click", previewWeaningDay);
+weaningDayForm.addEventListener("submit", submitWeaningDay);
 reconcilePreviewButton.addEventListener("click", previewReconcileBirthCounts);
 reconcileForm.addEventListener("submit", submitReconcileBirthCounts);
 stillbornReclassifyPreviewButton.addEventListener("click", previewStillbornReclassify);
@@ -1383,9 +1572,20 @@ stillbornReclassifyForm.addEventListener("submit", submitStillbornReclassify);
 manualActionsToggle.addEventListener("click", () => {
   manualActionsExpanded = !manualActionsExpanded;
   renderManualActionsPanel(window.currentLitterDetail || {});
+  renderWeaningDayPanel(window.currentLitterDetail || {});
   renderPigletDeathPanel(window.currentLitterDetail || {});
   renderSexCountPanel(window.currentLitterDetail || {});
   renderTagNumbersPanel(window.currentLitterDetail || {});
+});
+[
+  weaningDayDate,
+  weaningDayTargetPen,
+  weaningDayAntiparasitic,
+  weaningDayDeworming,
+  weaningDayVaccination,
+  weaningDayNotes,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetWeaningDayPreview);
 });
 [
   newbornHealthDate,
