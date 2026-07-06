@@ -314,6 +314,171 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(breeding["status"], "sam_live_stock_intake_owner_gate_breeding")
         self.assertEqual(calls, [])
 
+    def test_match_and_draft_order_packet_are_owner_reviewable(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(
+            [
+                {
+                    "pig_id": "PIG-1",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "reserved_status": "",
+                    "available_for_sale": "Yes",
+                    "sale_category": "Weaner",
+                    "current_weight_kg": 12,
+                },
+                {
+                    "pig_id": "PIG-2",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "reserved_status": "",
+                    "available_for_sale": "Yes",
+                    "sale_category": "Weaner",
+                    "current_weight_kg": 13,
+                },
+                {
+                    "pig_id": "PIG-3",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "reserved_status": "",
+                    "available_for_sale": "Yes",
+                    "sale_category": "Weaner",
+                    "current_weight_kg": 14,
+                },
+            ],
+            facts,
+        )
+
+        match = sam_live_stock_runtime.build_live_stock_match_packet(facts, availability)
+        packet = sam_live_stock_runtime.build_live_stock_draft_order_packet(inbound, facts, match)
+
+        self.assertEqual(match["match_status"], "exact_match_available")
+        self.assertTrue(match["complete_fulfillment"])
+        self.assertTrue(packet["draft_ready"], packet)
+        self.assertTrue(packet["owner_review_required"])
+        self.assertEqual(packet["order_payload"]["requested_category"], "Weaner")
+        self.assertEqual(packet["order_payload"]["requested_weight_range"], "10_to_14_Kg")
+        self.assertEqual(packet["sync_payload"]["requested_items"][0]["request_item_key"], "live_stock_primary")
+        self.assertEqual(packet["sync_payload"]["requested_items"][0]["quantity"], 3)
+
+    def test_draft_order_creation_is_disabled_by_default(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        calls = []
+
+        result = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            inbound,
+            facts,
+            {"sales_lane": "live_stock_sales"},
+            environ={},
+            draft_order_creator=lambda order_data, sync_data: calls.append((order_data, sync_data)),
+        )
+
+        self.assertFalse(result["attempted"])
+        self.assertEqual(result["status"], "sam_live_stock_draft_order_create_disabled")
+        self.assertEqual(calls, [])
+
+    def test_draft_order_creation_enabled_uses_existing_create_with_lines_contract(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(
+            [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+            ],
+            facts,
+        )
+        match = sam_live_stock_runtime.build_live_stock_match_packet(facts, availability)
+        packet = sam_live_stock_runtime.build_live_stock_draft_order_packet(inbound, facts, match)
+        calls = []
+
+        def creator(order_data, sync_data):
+            calls.append((order_data, sync_data))
+            return {
+                "success": True,
+                "action": "create_order_with_lines",
+                "order_id": "ORD-1",
+                "complete_fulfillment": True,
+            }
+
+        result = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            inbound,
+            facts,
+            {"sales_lane": "live_stock_sales", "draft_order_packet": packet, "match_packet": match},
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            draft_order_creator=creator,
+        )
+
+        self.assertTrue(result["attempted"])
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "sam_live_stock_draft_order_created")
+        self.assertEqual(len(calls), 1)
+        order_data, sync_data = calls[0]
+        self.assertEqual(order_data["customer_name"], "Charl N")
+        self.assertEqual(order_data["requested_category"], "Weaner")
+        self.assertEqual(sync_data["requested_items"][0]["category"], "Weaner")
+        self.assertEqual(sync_data["requested_items"][0]["quantity"], 3)
+
+    def test_draft_order_not_ready_when_stock_does_not_match(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        match = sam_live_stock_runtime.build_live_stock_match_packet(
+            facts,
+            {"success": True, "matched_count": 0, "matched_sample": []},
+        )
+        packet = sam_live_stock_runtime.build_live_stock_draft_order_packet(inbound, facts, match)
+        calls = []
+
+        result = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            inbound,
+            facts,
+            {"sales_lane": "live_stock_sales", "draft_order_packet": packet, "match_packet": match},
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            draft_order_creator=lambda order_data, sync_data: calls.append((order_data, sync_data)),
+        )
+
+        self.assertFalse(packet["draft_ready"])
+        self.assertTrue(result["attempted"])
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "sam_live_stock_draft_order_not_ready")
+        self.assertEqual(calls, [])
+
+    def test_owner_action_packet_exposes_routes_without_auto_authority(self):
+        packet = sam_live_stock_runtime.build_live_stock_owner_action_packet(
+            order_id="ORD-1",
+            conversation_id="1774",
+            document_id="DOC-1",
+        )
+
+        self.assertTrue(packet["owner_gate_required"])
+        self.assertFalse(packet["reservation"]["allowed_for_sam_auto"])
+        self.assertEqual(packet["reservation"]["route"], "/api/orders/ORD-1/reserve")
+        self.assertFalse(packet["quote_send_confirmed"]["allowed_for_sam_auto"])
+        self.assertIn("quote/send-latest-confirmed", packet["quote_send_confirmed"]["route"])
+
+    def test_smoke_pack_and_go_live_checklist_expose_launch_gates(self):
+        smoke = sam_live_stock_runtime.build_sam_live_stock_smoke_pack()
+        checklist = sam_live_stock_runtime.build_sam_live_stock_go_live_checklist(environ={
+            "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN": "test-sam-live-stock-token-32-chars",
+            "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "0",
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "0",
+            "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "0",
+        })
+
+        self.assertEqual(smoke["required_pass_rate"], "100%")
+        self.assertGreaterEqual(smoke["scenario_count"], 6)
+        self.assertIn("no reservation without owner action", smoke["must_verify"])
+        self.assertEqual(checklist["blockers"], [])
+        self.assertTrue(checklist["ready_for_controlled_smoke"])
+        self.assertFalse(checklist["ready_for_public_launch"])
+
     def test_non_live_lane_returns_clarification_and_owner_gate(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="I want pork chops and a freezer pack."),

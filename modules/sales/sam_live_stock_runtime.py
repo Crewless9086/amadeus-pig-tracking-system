@@ -1,12 +1,15 @@
 import hmac
 import os
 import re
+from datetime import datetime
 
 from modules.orders.order_intake_service import (
     get_intake_context,
     update_intake_state,
     validate_intake_update_payload,
 )
+from modules.orders.order_service import create_order_with_lines
+from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
 
@@ -19,6 +22,7 @@ AGENT_V3_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
 AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
+DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 MIN_TOKEN_CHARS = 32
 
@@ -50,6 +54,8 @@ def sam_live_stock_webhook_policy(environ=None):
         "agent_v3_model_env": AGENT_V3_MODEL_ENV,
         "intake_write_enabled": _truthy(source.get(INTAKE_WRITE_ENABLED_ENV)),
         "intake_write_env": INTAKE_WRITE_ENABLED_ENV,
+        "draft_order_create_enabled": _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)),
+        "draft_order_create_env": DRAFT_ORDER_CREATE_ENABLED_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "read_only": True,
         "writes_allowed": False,
@@ -79,6 +85,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     intake_context_loader=None,
     availability_loader=None,
     intake_writer=None,
+    draft_order_creator=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -115,6 +122,18 @@ def handle_sam_live_stock_chatwoot_inbound(
         if not intake_write.get("success"):
             decision.setdefault("blockers", []).append(intake_write.get("status") or "intake_write_failed")
             decision["owner_gate_required"] = True
+    draft_order = create_live_stock_draft_order_if_enabled(
+        inbound,
+        facts,
+        decision,
+        source,
+        draft_order_creator=draft_order_creator,
+    )
+    if draft_order.get("attempted"):
+        decision["draft_order"] = draft_order
+        if not draft_order.get("success"):
+            decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
+            decision["owner_gate_required"] = True
     return {
         "success": True,
         "status": "sam_live_stock_read_only_processed",
@@ -122,7 +141,10 @@ def handle_sam_live_stock_chatwoot_inbound(
         "sent": False,
         "sam_decision": decision,
         "policy": policy,
-        **_authority_flags(writes_order_intake=bool(intake_write.get("success"))),
+        **_authority_flags(
+            writes_order_intake=bool(intake_write.get("success")),
+            creates_order=bool(draft_order.get("success")),
+        ),
     }, 200
 
 
@@ -307,6 +329,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         blockers.append("read_context_error")
 
     ready_for_runtime_next_step = route["lane"] == LANE_LIVE_STOCK and not missing and not blockers
+    match_packet = build_live_stock_match_packet(facts, availability)
+    draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     reply = _safe_reply_draft(facts, route, missing, availability, blockers)
     return {
         "version": RUNTIME_VERSION,
@@ -317,6 +341,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "facts": facts,
         "missing_fields": missing,
         "availability": availability,
+        "match_packet": match_packet,
+        "draft_order_packet": draft_packet,
         "blockers": blockers,
         "ready_for_runtime_next_step": ready_for_runtime_next_step,
         "suggested_reply_text": reply,
@@ -324,6 +350,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "should_reply": False,
         "writes_allowed": False,
         "intake_write_allowed": _truthy((environ or {}).get(INTAKE_WRITE_ENABLED_ENV)) and route["lane"] == LANE_LIVE_STOCK,
+        "draft_order_create_allowed": _truthy((environ or {}).get(DRAFT_ORDER_CREATE_ENABLED_ENV)) and ready_for_runtime_next_step and draft_packet.get("draft_ready"),
         "customer_send_allowed": False,
         "owner_gate_required": bool(blockers or route["lane"] != LANE_LIVE_STOCK or route["confidence"] < 0.96),
         **_authority_flags(),
@@ -388,6 +415,267 @@ def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, i
             "errors": validation["errors"],
             "payload": payload,
         }
+    try:
+        writer = intake_writer or update_intake_state
+        result = writer(validation["cleaned_data"])
+        return {
+            "attempted": True,
+            "success": bool((result or {}).get("success")),
+            "status": "sam_live_stock_intake_written" if (result or {}).get("success") else "sam_live_stock_intake_write_failed",
+            "result": result,
+            "payload": payload,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_intake_write_exception",
+            "error": _clean(str(exc), 240),
+            "payload": payload,
+        }
+
+
+def build_live_stock_match_packet(facts, availability):
+    facts = facts if isinstance(facts, dict) else {}
+    availability = availability if isinstance(availability, dict) else {}
+    quantity = facts.get("quantity") if isinstance(facts.get("quantity"), int) else 0
+    matched = availability.get("matched_sample") if isinstance(availability.get("matched_sample"), list) else []
+    exact_count = int(availability.get("matched_count") or len(matched) or 0)
+    status = "not_ready"
+    if quantity > 0 and exact_count >= quantity:
+        status = "exact_match_available"
+    elif quantity > 0 and exact_count > 0:
+        status = "partial_match_available"
+    elif quantity > 0 and availability.get("success"):
+        status = "no_exact_match"
+    return {
+        "version": "sam_live_stock_match_packet_v1",
+        "read_only": True,
+        "requested_quantity": quantity,
+        "exact_match_count": exact_count,
+        "match_status": status,
+        "complete_fulfillment": quantity > 0 and exact_count >= quantity,
+        "partial_fulfillment": quantity > 0 and 0 < exact_count < quantity,
+        "matched_sample": matched[:quantity or 10],
+        "owner_review_required": True,
+        "can_create_draft_order": quantity > 0 and exact_count > 0,
+    }
+
+
+def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    match_packet = match_packet if isinstance(match_packet, dict) else {}
+    item = _live_stock_sync_requested_item(facts)
+    order_payload = {
+        "order_date": datetime.now().date().isoformat(),
+        "customer_name": _clean(inbound.get("customer_name"), 120),
+        "customer_phone": _clean(inbound.get("customer_phone"), 80),
+        "customer_channel": _clean(inbound.get("channel"), 80) or "chatwoot",
+        "customer_language": "unknown",
+        "order_source": "SAM Live Stock",
+        "requested_category": _normal_intake_category(facts.get("category")),
+        "requested_weight_range": _normal_intake_weight_range(facts.get("weight_range"), _normal_intake_category(facts.get("category"))),
+        "requested_sex": _normal_intake_sex(facts.get("sex")),
+        "requested_quantity": facts.get("quantity") or "",
+        "quoted_total": "",
+        "collection_location": _normal_intake_location(facts.get("location")),
+        "payment_method": _normal_intake_payment(facts.get("payment_method")),
+        "notes": _clean("source=sam_live_stock_stage_5; owner_review_required=true", 600),
+        "created_by": "Sam Live Stock",
+        "conversation_id": _clean(inbound.get("conversation_id"), 100),
+    }
+    sync_payload = {
+        "changed_by": "Sam Live Stock",
+        "cancel_order_if_no_matches": True,
+        "requested_items": [item] if item else [],
+    }
+    order_validation = validate_new_order_payload(order_payload)
+    sync_validation = validate_sync_order_lines_payload(sync_payload)
+    errors = list(order_validation.get("errors") or []) + list(sync_validation.get("errors") or [])
+    enough_stock = bool(match_packet.get("can_create_draft_order"))
+    return {
+        "version": "sam_live_stock_draft_order_packet_v1",
+        "draft_ready": not errors and enough_stock,
+        "owner_review_required": True,
+        "order_payload": order_payload,
+        "sync_payload": sync_payload,
+        "validation_errors": errors,
+        "stock_gate": "passed" if enough_stock else "no_matching_stock",
+        "warnings": [
+            "Creates draft order only when explicit env gate is enabled.",
+            "Does not reserve pigs.",
+            "Does not send quote/customer message.",
+        ],
+    }
+
+
+def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=None, draft_order_creator=None):
+    source = environ if environ is not None else os.environ
+    if not _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_draft_order_create_disabled"}
+    if (decision or {}).get("sales_lane") != LANE_LIVE_STOCK:
+        return {"attempted": False, "success": False, "status": "sam_live_stock_draft_order_wrong_lane"}
+    if facts.get("breeding_interest"):
+        return {"attempted": False, "success": False, "status": "sam_live_stock_draft_order_owner_gate_breeding"}
+    packet = (decision or {}).get("draft_order_packet") or build_live_stock_draft_order_packet(
+        inbound,
+        facts,
+        (decision or {}).get("match_packet") or {},
+    )
+    if not packet.get("draft_ready"):
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_not_ready",
+            "packet": packet,
+        }
+    order_validation = validate_new_order_payload(packet["order_payload"])
+    sync_validation = validate_sync_order_lines_payload(packet["sync_payload"])
+    if not order_validation.get("is_valid") or not sync_validation.get("is_valid"):
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_validation_failed",
+            "errors": list(order_validation.get("errors") or []) + list(sync_validation.get("errors") or []),
+            "packet": packet,
+        }
+    try:
+        creator = draft_order_creator or create_order_with_lines
+        result = creator(order_validation["cleaned_data"], sync_validation["cleaned_data"])
+        return {
+            "attempted": True,
+            "success": bool((result or {}).get("success")),
+            "status": "sam_live_stock_draft_order_created" if (result or {}).get("success") else "sam_live_stock_draft_order_create_failed",
+            "result": result,
+            "packet": packet,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_exception",
+            "error": _clean(str(exc), 240),
+            "packet": packet,
+        }
+
+
+def build_live_stock_owner_action_packet(order_id="", conversation_id="", document_id=""):
+    order_id = _clean(order_id, 100)
+    conversation_id = _clean(conversation_id, 100)
+    document_id = _clean(document_id, 100)
+    return {
+        "version": "sam_live_stock_owner_action_packet_v1",
+        "owner_gate_required": True,
+        "reservation": {
+            "allowed_for_sam_auto": False,
+            "route": f"/api/orders/{order_id}/reserve" if order_id else "",
+            "method": "POST",
+            "rule": "Owner/operator must approve. SAM must not reserve automatically.",
+        },
+        "send_for_approval": {
+            "allowed_for_sam_auto": False,
+            "route": f"/api/orders/{order_id}/send-for-approval" if order_id else "",
+            "method": "POST",
+        },
+        "quote_prepare": {
+            "allowed_for_sam_auto": False,
+            "route": f"/api/orders/{order_id}/quote/prepare-send" if order_id else "",
+            "method": "POST",
+            "conversation_id": conversation_id,
+        },
+        "quote_send_confirmed": {
+            "allowed_for_sam_auto": False,
+            "route": f"/api/orders/{order_id}/quote/send-latest-confirmed" if order_id else "",
+            "method": "POST",
+            "document_id": document_id,
+            "conversation_id": conversation_id,
+            "rule": "Only after owner confirms the latest sendable quote.",
+        },
+    }
+
+
+def build_sam_live_stock_smoke_pack():
+    scenarios = [
+        {
+            "name": "vague_live_pig_interest",
+            "message": "Do you have pigs for sale?",
+            "expected_lane": LANE_LIVE_STOCK,
+            "expected_guard": "ask_category_or_confirm_live_stock",
+        },
+        {
+            "name": "clear_weaner_request",
+            "message": "I need 3 female weaners around 10 to 15kg next week in Riversdale.",
+            "expected_lane": LANE_LIVE_STOCK,
+            "expected_guard": "facts_and_availability_check",
+        },
+        {
+            "name": "mixed_meat_and_live",
+            "message": "I want pork for the freezer and maybe two piglets.",
+            "expected_lane": "unclear",
+            "expected_guard": "clarify_before_write",
+        },
+        {
+            "name": "breeding_stock_gate",
+            "message": "I want two breeding gilts.",
+            "expected_lane": LANE_LIVE_STOCK,
+            "expected_guard": "owner_gate_breeding",
+        },
+        {
+            "name": "reservation_request_gate",
+            "message": "Keep those 3 weaners for me.",
+            "expected_lane": LANE_LIVE_STOCK,
+            "expected_guard": "owner_gate_reservation",
+        },
+        {
+            "name": "meat_wrong_lane",
+            "message": "I want pork chops and a freezer pack.",
+            "expected_lane": "meat_sales",
+            "expected_guard": "wrong_lane_no_live_stock_write",
+        },
+    ]
+    return {
+        "version": "sam_live_stock_smoke_pack_v1",
+        "scenario_count": len(scenarios),
+        "scenarios": scenarios,
+        "required_pass_rate": "100%",
+        "must_verify": [
+            "no customer sends unless explicitly approved in a future stage",
+            "no wrong lane writes",
+            "no reservation without owner action",
+            "no breeding stock automation",
+            "draft order creation only when env gate is enabled and packet validates",
+        ],
+    }
+
+
+def build_sam_live_stock_go_live_checklist(environ=None):
+    source = environ if environ is not None else os.environ
+    checks = {
+        "webhook_enabled": _truthy(source.get(WEBHOOK_ENABLED_ENV)),
+        "webhook_token_configured": len(str(source.get(WEBHOOK_TOKEN_ENV, "") or "").strip()) >= MIN_TOKEN_CHARS,
+        "intake_write_enabled": _truthy(source.get(INTAKE_WRITE_ENABLED_ENV)),
+        "draft_order_create_enabled": _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)),
+        "autoreply_disabled": not _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
+        "llm_disabled_for_launch": not _truthy(source.get(LLM_ENABLED_ENV)),
+    }
+    blockers = []
+    if not checks["webhook_enabled"]:
+        blockers.append("webhook_disabled")
+    if not checks["webhook_token_configured"]:
+        blockers.append("webhook_token_missing_or_short")
+    if checks["draft_order_create_enabled"]:
+        blockers.append("draft_order_create_enabled_requires_owner_same-day_confirmation")
+    if not checks["autoreply_disabled"]:
+        blockers.append("autoreply_must_remain_disabled_for_first_live_stock_launch")
+    return {
+        "version": "sam_live_stock_go_live_checklist_v1",
+        "checks": checks,
+        "blockers": blockers,
+        "ready_for_controlled_smoke": not blockers or blockers == ["webhook_disabled"],
+        "ready_for_public_launch": False,
+        "launch_rule": "Public launch needs owner-confirmed pricing, Beacon compliant post, controlled Chatwoot smoke, and owner command visibility.",
+    }
     try:
         writer = intake_writer or update_intake_state
         result = writer(validation["cleaned_data"])
@@ -706,13 +994,13 @@ def _denied(status, source):
     }
 
 
-def _authority_flags(writes_order_intake=False):
+def _authority_flags(writes_order_intake=False, creates_order=False):
     return {
         "sends_customer_message": False,
         "calls_chatwoot": False,
         "calls_n8n": False,
         "creates_quote": False,
-        "creates_order": False,
+        "creates_order": bool(creates_order),
         "reserves_stock": False,
         "changes_stock": False,
         "writes_farm_data": False,
@@ -740,6 +1028,24 @@ def _live_stock_intake_item(facts):
         "status": "active",
         "last_match_status": "not_matched_stage_4",
         "notes": _clean(f"source=sam_live_stock_stage_4; original_weight_range={facts.get('weight_range') or ''}; transport={facts.get('transport_expectation') or ''}", 600),
+    }
+
+
+def _live_stock_sync_requested_item(facts):
+    category = _normal_intake_category(facts.get("category"))
+    weight_range = _normal_intake_weight_range(facts.get("weight_range"), category)
+    quantity = facts.get("quantity")
+    if not category or not weight_range or not quantity:
+        return {}
+    return {
+        "request_item_key": "live_stock_primary",
+        "category": category,
+        "weight_range": weight_range,
+        "sex": _normal_intake_sex(facts.get("sex")),
+        "quantity": quantity,
+        "intent_type": "primary",
+        "status": "active",
+        "notes": _clean("source=sam_live_stock_stage_5; owner_review_required=true", 600),
     }
 
 

@@ -136,6 +136,10 @@ class CharlieSourceMapTests(unittest.TestCase):
             packet["required_inspection_paths"],
         )
         self.assertIn(
+            "docs/09-vault-brain/04-workflows/BEACON_LIVE_STOCK_AWARENESS_WORKFLOW.md",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
             "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
             packet["required_inspection_paths"],
         )
