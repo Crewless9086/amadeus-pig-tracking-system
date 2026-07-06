@@ -73,11 +73,13 @@ function buildSalesCard(pig) {
   salesInfo.className = "sales-meta-grid";
   salesInfo.innerHTML = `
     <div><span class="history-label">Stage</span><span class="history-value">${pig.calculated_stage || "—"}</span></div>
+    <div><span class="history-label">Purpose</span><span class="history-value">${pig.purpose || "—"}</span></div>
     <div><span class="history-label">Available</span><span class="history-value">${pig.available_for_sale || "—"}</span></div>
     <div><span class="history-label">Reserved</span><span class="history-value">${pig.reserved_status || "—"}</span></div>
     <div><span class="history-label">Withdrawal Clear</span><span class="history-value">${pig.withdrawal_clear || "—"}</span></div>
     <div><span class="history-label">Price Category</span><span class="history-value">${pig.suggested_price_category || "—"}</span></div>
     <div><span class="history-label">Pen</span><span class="history-value">${pig.current_pen_id || "—"}</span></div>
+    <div class="sales-meta-wide"><span class="history-label">SAM Live Rule</span><span class="history-value">${pig.live_stock_sale_reason || pig.sales_notes || "—"}</span></div>
   `;
 
   card.appendChild(topRow);
@@ -212,8 +214,8 @@ async function loadSalesAvailability() {
 
     allSalesPigs = data.pigs || [];
     populateFilters();
-    updateSummary(allSalesPigs);
-    renderSalesList(allSalesPigs);
+    availableFilter.value = "Yes";
+    filterSales();
   } catch (error) {
     showSalesMessage("Could not load sales availability.", "error");
   }
