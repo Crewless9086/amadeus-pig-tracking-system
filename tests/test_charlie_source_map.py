@@ -126,7 +126,9 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("sam_live_stock_sales", keys)
         self.assertIn("orders_sales_transactions", keys)
         self.assertIn("modules/sales/sam_sales_router.py", packet["required_inspection_paths"])
+        self.assertIn("modules/sales/sam_live_stock_runtime.py", packet["required_inspection_paths"])
         self.assertIn("tests/test_sam_sales_router.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_live_stock_runtime.py", packet["required_inspection_paths"])
         self.assertIn(
             "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
             packet["required_inspection_paths"],
