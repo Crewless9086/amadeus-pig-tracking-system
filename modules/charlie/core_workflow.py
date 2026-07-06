@@ -260,7 +260,19 @@ WORKFLOW_TEMPLATES = {
     },
     "system_improvement": {
         "label": "System Improvement",
-        "mission_type_aliases": ["system", "workflow", "governance", "dashboard", "runner"],
+        "mission_type_aliases": [
+            "system",
+            "workflow",
+            "governance",
+            "dashboard",
+            "runner",
+            "vault",
+            "vault brain",
+            "brain",
+            "memory",
+            "doctrine",
+            "architecture",
+        ],
         "agent_order": [
             "idea_expander",
             "source_mapper",

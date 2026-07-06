@@ -58,6 +58,24 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
             "system_improvement",
         )
 
+    def test_vault_brain_memory_architecture_routes_through_builder(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-MEMORY",
+            "title": "CHARLIE Brain & Memory v2",
+            "raw_text": "Design the typed memory doctrine and add it to the Vault Brain.",
+            "mission_type": "vault brain memory architecture",
+        }
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "system_improvement")
+        self.assertIn("planner", agents)
+        self.assertIn("architect", agents)
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertLess(agents.index("planner"), agents.index("builder"))
+        self.assertLess(agents.index("builder"), agents.index("tester"))
+
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
