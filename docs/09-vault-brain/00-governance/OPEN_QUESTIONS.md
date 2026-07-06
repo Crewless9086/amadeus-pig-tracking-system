@@ -91,6 +91,32 @@ Still needs owner approval:
 - exact label wording and layout;
 - exact minimum profit/pig and delivery-margin thresholds.
 
+## SAM Live Stock Sales Launch Settings
+
+Question: which live-stock sales settings are approved before SAM Live Stock can move beyond routing/planning into runtime, customer replies, draft orders, reservations, or quotes?
+
+Current working position:
+
+- SAM Live Stock Stage 1/2 is allowed to define Vault authority and classify sales lane only.
+- Backend writes, customer sends, draft orders, reservations, payment confirmation, and sales transaction writes are not approved yet.
+- Current source truth must come from app/Supabase backend rails, not old n8n or Google Sheet truth.
+
+Owner decisions still needed:
+
+- confirm current live-stock price bands or approve a new active backend price source;
+- confirm which categories are available for public sale first: piglets, weaners, growers, finishers, ready-for-slaughter live pigs;
+- confirm whether SAM may create draft orders automatically later, or only owner-reviewed draft packets;
+- confirm whether any live-stock reservation can ever be automatic, or must always be owner-gated;
+- confirm first customer transport rule: buyer collection, farm delivery, or owner-arranged case by case;
+- confirm rules for selling gilts, boars, sows, or any breeding/replacement-quality stock;
+- confirm which WhatsApp/Chatwoot number/lane Live Stock Sales will use so it does not conflict with Meat Sales.
+
+Source references:
+
+- `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
+- `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
+
 ## Quartermaster / Farm Stock And Feed Control
 
 Question: what exact farm stock, feed, natural resource, purchasing, expense, receipt, and stock-adjustment workflows should Quartermaster own?

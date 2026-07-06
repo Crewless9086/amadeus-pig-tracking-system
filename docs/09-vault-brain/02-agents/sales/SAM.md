@@ -66,6 +66,16 @@ SAM's meat-sales public voice is controlled by:
 - `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`
 - `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`
 
+SAM's planned live-stock sales voice and gates are controlled by:
+
+- `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
+- `docs/09-vault-brain/05-playbooks/SAM_LIVE_STOCK_HUMAN_SALES_PLAYBOOK.md`
+- `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
+- `docs/09-vault-brain/09-examples/SAM_LIVE_STOCK_GOLD_STANDARD_REPLIES.md`
+
+Until the live-stock backend runtime is built and owner-approved, SAM may classify and plan live-stock conversations but must not automate customer sends, order writes, stock reservations, or sales transaction writes for this lane.
+
 ## Source References
 
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
@@ -75,5 +85,7 @@ SAM's meat-sales public voice is controlled by:
 - `docs/09-vault-brain/02-agents/sales/SAM_MEAT_PERSONALITY.md`
 - `docs/09-vault-brain/05-playbooks/SAM_MEAT_HUMAN_SALES_PLAYBOOK.md`
 - `docs/09-vault-brain/09-examples/SAM_MEAT_GOLD_STANDARD_REPLIES.md`
+- `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
+- `docs/09-vault-brain/08-business-rules/LIVE_STOCK_SALES_RULES.md`
 - `docs/05-ai/AGENT_ROLES.md`
 - `docs/05-ai/RESPONSE_RULES.md`

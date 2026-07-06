@@ -110,6 +110,39 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("docs/03-google-sheets/sheets/SALES_STOCK_TOTALS.md", packet["required_inspection_paths"])
         self.assertIn("modules/sales/sales_transaction_read.py", packet["required_inspection_paths"])
 
+    def test_sam_live_stock_sales_maps_stage_1_2_authority_and_router(self):
+        mission = {
+            "mission_type": "income stream",
+            "title": "SAM Live Stock Sales",
+            "raw_text": (
+                "Build SAM livestock sales for piglets, weaners, growers, and finishers "
+                "using current Supabase app truth, not the old n8n workflow."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("sam_live_stock_sales", keys)
+        self.assertIn("orders_sales_transactions", keys)
+        self.assertIn("modules/sales/sam_sales_router.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_sales_router.py", packet["required_inspection_paths"])
+        self.assertIn(
+            "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn("/api/order-intake/context", packet["required_routes"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
+
     def test_litter_attention_maps_farm_reconciliation_sources(self):
         mission = {
             "mission_type": "farm data quality / backend logic",
