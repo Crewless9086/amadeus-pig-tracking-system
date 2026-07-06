@@ -67,7 +67,7 @@ Current built read-only readiness surface to expand:
 - UI: `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
 - tests: `tests/test_pig_allocation_readiness_service.py`;
 - migrations: none for the first read-only alert build;
-- legacy references: `docs/03-google-sheets/sheets/FARM.md`;
+- legacy references: `docs/03-google-sheets/sheets/PIG_MASTER.md`, `docs/03-google-sheets/sheets/PIG_OVERVIEW.md`, `docs/03-google-sheets/sheets/WEIGHT_LOG.md`;
 - rule: Herdmaster Pig Allocation alert missions must inspect this section and the alert rules doc before advising or building. Alerts are advisory until owner-approved backend rails create any write, lifecycle, purpose, sales, slaughter, reservation, or customer-facing action.
 
 ### Live Pig Sales Legacy

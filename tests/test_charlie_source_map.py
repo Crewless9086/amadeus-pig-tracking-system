@@ -1,6 +1,8 @@
 import unittest
+from pathlib import Path
 
 from modules.charlie.source_map import (
+    REPO_ROOT,
     implementation_source_packet,
     validate_implementation_inspection,
 )
@@ -155,7 +157,17 @@ class CharlieSourceMapTests(unittest.TestCase):
             packet["required_inspection_paths"],
         )
         self.assertIn("tests/test_pig_allocation_readiness_service.py", packet["required_inspection_paths"])
+        self.assertIn("docs/03-google-sheets/sheets/PIG_MASTER.md", packet["required_inspection_paths"])
+        self.assertIn("docs/03-google-sheets/sheets/PIG_OVERVIEW.md", packet["required_inspection_paths"])
+        self.assertIn("docs/03-google-sheets/sheets/WEIGHT_LOG.md", packet["required_inspection_paths"])
+        self.assertNotIn("docs/03-google-sheets/sheets/FARM.md", packet["required_inspection_paths"])
         self.assertIn("/api/pig-weights/purpose-review", packet["required_routes"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
 
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {
