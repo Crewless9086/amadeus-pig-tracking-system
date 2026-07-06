@@ -517,3 +517,43 @@ Result:
 - The approved scope is Vault authority plus no-write lane classification only.
 - This does not make SAM Live Stock live-ready yet.
 - Backend runtime, intake writes, stock matching, draft order gate, reservation gate, Chatwoot smoke, and command-room visibility remain future stages requiring owner approval.
+
+## Stage 3 Completion Evidence
+
+Status: implemented for owner review on 2026-07-06.
+
+Approved Stage 3 scope:
+
+- create backend-native read-only runtime;
+- add auth policy;
+- parse Chatwoot inbound payloads;
+- extract live-stock facts deterministically;
+- merge prior order-intake context without writing;
+- read current sales availability without writing;
+- produce a safe decision packet;
+- remain disabled/default-off and read-only;
+- no customer sends;
+- no order writes;
+- no stock reservations;
+- no sales transaction writes.
+
+Delivered:
+
+- `modules/sales/sam_live_stock_runtime.py`
+- `tests/test_sam_live_stock_runtime.py`
+- source-map updates to include the Stage 3 runtime and tests.
+
+Verification passed:
+
+- `.\venv\Scripts\python.exe -m unittest tests.test_sam_live_stock_runtime tests.test_sam_sales_router tests.test_charlie_source_map`
+- `.\venv\Scripts\python.exe -m unittest tests.test_order_intake_service tests.test_order_routes tests.test_order_service_reservation tests.test_sales_transaction_read tests.test_pig_allocation_readiness_service`
+- `.\venv\Scripts\python.exe -m py_compile modules\sales\sam_live_stock_runtime.py modules\sales\sam_sales_router.py modules\charlie\source_map.py modules\charlie\vault_retrieval.py`
+- `node --check static\js\salesDashboard.js`
+
+Result:
+
+- Stage 3 is ready for owner review at 98% confidence for the approved read-only scope.
+- Runtime remains disabled/default-off unless `SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED=1` and a valid token are configured.
+- Even if autoreply/LLM envs are enabled, Stage 3 policy keeps customer sends and LLM/agent execution off.
+- Decision packets can classify, extract facts, read existing intake/availability context, summarize safe matching evidence, and draft a suggested reply for review only.
+- Stage 3 does not add a public route, write intake, write orders, reserve stock, send customer messages, or create sales transactions.
