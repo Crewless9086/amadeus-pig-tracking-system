@@ -60,6 +60,8 @@ MEAT_TARGET_MAX_KG = 80
 SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = None
 STALE_WEIGHT_DAYS = 30
+LIVE_STOCK_SALE_PURPOSE = "sale"
+LIVE_STOCK_MIN_SALE_WEIGHT_KG = 2
 BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
 BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
 BULK_WEIGHT_BATCH_AUDIT_HEADERS = [
@@ -3358,14 +3360,7 @@ def _sales_availability_from_supabase_allocation():
 
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        classification = _meat_ready_classification(pig)
-        sale_category, category_code, status = _sales_category_for_meat_ready(classification)
-        available = "Yes" if category_code in {
-            "meat_window_candidate",
-            "abattoir_cull_candidate",
-            "live_sale_candidate",
-            "slow_grower_review",
-        } else "No"
+        eligibility = _live_stock_sale_eligibility(pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3383,14 +3378,128 @@ def _sales_availability_from_supabase_allocation():
             "withdrawal_clear": "",
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
-            "available_for_sale": available,
-            "sale_category": sale_category,
-            "suggested_price_category": category_code,
-            "sales_notes": status,
+            "purpose": pig.get("purpose", ""),
+            "available_for_sale": "Yes" if eligibility["eligible"] else "No",
+            "live_stock_sale_eligible": eligibility["eligible"],
+            "live_stock_sale_reason": eligibility["reason"],
+            "sale_category": eligibility["sale_category"],
+            "suggested_price_category": eligibility["suggested_price_category"],
+            "sales_notes": eligibility["status"],
             "source": "supabase_allocation_readiness",
         })
 
     return sales_rows
+
+
+def _live_stock_sale_eligibility(pig):
+    status = to_clean_string(pig.get("status", ""))
+    normalized_status = status.lower()
+    on_farm = to_clean_string(pig.get("on_farm", "")).lower()
+    purpose = to_clean_string(pig.get("purpose", ""))
+    normalized_purpose = purpose.lower().replace("-", "_").replace(" ", "_")
+    reserved_status = to_clean_string(pig.get("reserved_status", "")).lower()
+    reserved_for_order_id = to_clean_string(pig.get("reserved_for_order_id", ""))
+    animal_type = to_clean_string(pig.get("animal_type", ""))
+    calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
+    latest_weight_kg = to_float(pig.get("latest_weight_kg"))
+    weight_band = to_clean_string(pig.get("weight_band", ""))
+    wean_date = to_clean_string(pig.get("wean_date", ""))
+
+    if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
+        return _live_stock_sale_block("not_active", "Pig is not active.")
+    if on_farm not in {"yes", "true", "1", "on farm"}:
+        return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
+    if reserved_status == "reserved" or reserved_for_order_id:
+        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
+    if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
+        return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
+    if _is_breeding_or_retained_stage(animal_type, calculated_stage):
+        return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
+    if latest_weight_kg is None:
+        return _live_stock_sale_block("missing_weight", "Latest weight is required before SAM can quote live stock.")
+    if latest_weight_kg < LIVE_STOCK_MIN_SALE_WEIGHT_KG:
+        return _live_stock_sale_block("below_sale_weight", "Newborn or very light piglets are not sold while still with the sow.")
+    if _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
+        return _live_stock_sale_block("not_weaned", "Piglets still with the sow are not sold through SAM Live.")
+
+    category, derived_band = _live_stock_sale_category_for_weight(latest_weight_kg)
+    if not category:
+        return _live_stock_sale_block("price_band_missing", "No live-stock price band matched the latest weight.")
+    effective_band = weight_band or derived_band
+    return {
+        "eligible": True,
+        "reason": "Purpose = Sale, active/on-farm, not reserved, weaned or sale-stage, and current weight maps to a live-stock price band.",
+        "status": "SAM Live sale-ready",
+        "sale_category": category,
+        "suggested_price_category": f"{category}|{effective_band}",
+    }
+
+
+def _live_stock_sale_block(code, reason):
+    return {
+        "eligible": False,
+        "reason": reason,
+        "status": f"Not SAM Live sale-ready: {code}",
+        "sale_category": "Not SAM Live Sale Ready",
+        "suggested_price_category": code,
+    }
+
+
+def _is_breeding_or_retained_stage(animal_type, calculated_stage):
+    text = f"{animal_type} {calculated_stage}".lower()
+    return any(token in text for token in ("sow", "boar", "breeding", "replacement", "retained"))
+
+
+def _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
+    text = f"{animal_type} {calculated_stage}".lower()
+    return not wean_date and any(token in text for token in ("newborn", "suckling", "lactating"))
+
+
+def _live_stock_sale_category_for_weight(weight_kg):
+    weight = to_float(weight_kg)
+    if weight is None:
+        return "", ""
+    if 2 <= weight < 5:
+        return "Young Piglets", "2_to_4_Kg"
+    if 5 <= weight < 7:
+        return "Young Piglets", "5_to_6_Kg"
+    if 7 <= weight < 10:
+        return "Weaner Piglets", "7_to_9_Kg"
+    if 10 <= weight < 15:
+        return "Weaner Piglets", "10_to_14_Kg"
+    if 15 <= weight < 20:
+        return "Weaner Piglets", "15_to_19_Kg"
+    if 20 <= weight < 25:
+        return "Grower Pigs", "20_to_24_Kg"
+    if 25 <= weight < 30:
+        return "Grower Pigs", "25_to_29_Kg"
+    if 30 <= weight < 35:
+        return "Grower Pigs", "30_to_34_Kg"
+    if 35 <= weight < 40:
+        return "Grower Pigs", "35_to_39_Kg"
+    if 40 <= weight < 45:
+        return "Grower Pigs", "40_to_44_Kg"
+    if 45 <= weight < 50:
+        return "Grower Pigs", "45_to_49_Kg"
+    if 50 <= weight < 55:
+        return "Finisher Pigs", "50_to_54_Kg"
+    if 55 <= weight < 60:
+        return "Finisher Pigs", "55_to_59_Kg"
+    if 60 <= weight < 65:
+        return "Finisher Pigs", "60_to_64_Kg"
+    if 65 <= weight < 70:
+        return "Finisher Pigs", "65_to_69_Kg"
+    if 70 <= weight < 75:
+        return "Finisher Pigs", "70_to_74_Kg"
+    if 75 <= weight < 80:
+        return "Finisher Pigs", "75_to_79_Kg"
+    if 80 <= weight < 85:
+        return "Ready for Slaughter", "80_to_84_Kg"
+    if 85 <= weight < 90:
+        return "Ready for Slaughter", "85_to_89_Kg"
+    if 90 <= weight < 95:
+        return "Ready for Slaughter", "90_to_94_Kg"
+    return "", ""
 
 
 def _latest_weights_by_pig(weight_rows, columns):

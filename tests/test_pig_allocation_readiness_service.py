@@ -237,6 +237,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "sex": "Female",
                     "status": "Active",
                     "on_farm": "Yes",
+                    "purpose": "Grow_Out",
                     "readiness_bucket": "Meat Candidate",
                     "meat_window_status": "In meat window",
                     "abattoir_window_status": "Before abattoir window",
@@ -251,6 +252,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "sex": "Male",
                     "status": "Active",
                     "on_farm": "Yes",
+                    "purpose": "Sale",
                     "readiness_bucket": "Slaughter Candidate",
                     "meat_window_status": "Past meat window",
                     "abattoir_window_status": "In abattoir window",
@@ -265,6 +267,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "sex": "Female",
                     "status": "Sold",
                     "on_farm": "No",
+                    "purpose": "Sale",
                     "readiness_bucket": "Exited",
                     "latest_weight_kg": 80,
                     "weight_band": "80 kg+",
@@ -281,9 +284,77 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual({row["sale_category"] for row in summary}, {"Meat Window Candidate", "Ready for Slaughter"})
         self.assertEqual(sum(row["qty_available"] for row in totals), 2)
         by_id = {row["pig_id"]: row for row in availability}
-        self.assertEqual(by_id["PIG-MEAT"]["available_for_sale"], "Yes")
-        self.assertEqual(by_id["PIG-CULL"]["sale_category"], "Ready for Slaughter")
+        self.assertEqual(by_id["PIG-MEAT"]["available_for_sale"], "No")
+        self.assertIn("Purpose = Sale", by_id["PIG-MEAT"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-CULL"]["sale_category"], "Not SAM Live Sale Ready")
+        self.assertEqual(by_id["PIG-CULL"]["available_for_sale"], "No")
         self.assertEqual(by_id["PIG-SOLD"]["available_for_sale"], "No")
+
+    def test_sales_availability_only_marks_purpose_sale_weaned_price_band_rows_ready_for_sam_live(self):
+        allocation = {
+            "source": "supabase_canonical",
+            "pigs": [
+                {
+                    "pig_id": "PIG-WEANER",
+                    "tag_number": "4",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Growing",
+                    "calculated_stage": "Weaner",
+                    "latest_weight_kg": 12,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "10_to_14_Kg",
+                    "wean_date": "2026-06-01",
+                },
+                {
+                    "pig_id": "PIG-NEWBORN",
+                    "tag_number": "",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Growing",
+                    "calculated_stage": "Newborn",
+                    "animal_type": "Newborn",
+                    "latest_weight_kg": 3,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "2_to_4_Kg",
+                    "wean_date": "",
+                },
+                {
+                    "pig_id": "PIG-BREEDING",
+                    "tag_number": "9",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Breeding",
+                    "readiness_bucket": "Retain / Breeding Candidate",
+                    "calculated_stage": "Sow",
+                    "animal_type": "Sow",
+                    "latest_weight_kg": 120,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "90_to_94_Kg",
+                    "wean_date": "2026-03-01",
+                },
+            ],
+        }
+
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation):
+            availability = pig_weights_service.get_sales_availability()
+
+        by_id = {row["pig_id"]: row for row in availability}
+        self.assertEqual(by_id["PIG-WEANER"]["available_for_sale"], "Yes")
+        self.assertTrue(by_id["PIG-WEANER"]["live_stock_sale_eligible"])
+        self.assertEqual(by_id["PIG-WEANER"]["sale_category"], "Weaner Piglets")
+        self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
+        self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
+        self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
 
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{

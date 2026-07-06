@@ -941,10 +941,13 @@ def _representative_weight(weight_range):
 
 
 def _row_available_for_live_stock(row):
+    if "live_stock_sale_eligible" in row and row.get("live_stock_sale_eligible") is not True:
+        return False
     status = _normal_text(row.get("status"))
     on_farm = _normal_text(row.get("on_farm"))
     reserved = _normal_text(row.get("reserved_status"))
     available = _normal_text(row.get("available_for_sale"))
+    purpose = _normal_text(row.get("purpose"))
     if status in {"sold", "exited", "dead", "terminal"}:
         return False
     if on_farm and on_farm not in {"yes", "true", "1", "on farm"}:
@@ -952,6 +955,8 @@ def _row_available_for_live_stock(row):
     if reserved and reserved not in {"", "available", "no", "not reserved"}:
         return False
     if available and available not in {"yes", "true", "1"}:
+        return False
+    if purpose and purpose != "sale":
         return False
     return True
 
