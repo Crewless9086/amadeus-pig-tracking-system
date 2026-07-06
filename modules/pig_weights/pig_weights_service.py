@@ -2167,7 +2167,8 @@ def process_litter_weaning_day(
         "vaccination_product_id",
     ))
     movement_plan = _weaning_day_movement_plan(active_rows, target_pen_id, action_date, changed_by, notes)
-    wean_preview, wean_status = _weaning_day_wean_preview(litter_id, action_date, active_rows)
+    wean_weights = _weaning_day_weight_map(assignments)
+    wean_preview, wean_status = _weaning_day_wean_preview(litter_id, action_date, active_rows, wean_weights)
     if wean_status != 200:
         validation_errors.extend(wean_preview.get("errors", ["Could not preview wean action."]))
 
@@ -2216,6 +2217,16 @@ def process_litter_weaning_day(
         }, 409
 
     if dry_run:
+        weight_preview = _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes)
+        if weight_preview["errors"]:
+            return {
+                "success": False,
+                "errors": weight_preview["errors"],
+                "dry_run": dry_run,
+                "litter_id": litter_id,
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            }, 409
         return _weaning_day_result(
             litter_id=litter_id,
             dry_run=True,
@@ -2225,6 +2236,7 @@ def process_litter_weaning_day(
             health_result=health_preview,
             movement_result=movement_plan,
             wean_result=wean_preview,
+            weight_result=weight_preview,
             changed_by=changed_by,
         ), 200
 
@@ -2262,6 +2274,10 @@ def process_litter_weaning_day(
     else:
         applied["medicine"] = health_preview
 
+    applied["weights"] = _apply_weaning_day_weights(active_rows, action_date, wean_weights, changed_by, notes)
+    if applied["weights"].get("errors"):
+        return {"success": False, "errors": applied["weights"]["errors"]}, 409
+
     applied["movements"] = _apply_weaning_day_movements(movement_plan)
     if applied["movements"].get("errors"):
         return {"success": False, "errors": applied["movements"]["errors"]}, 409
@@ -2270,7 +2286,8 @@ def process_litter_weaning_day(
         litter_id=litter_id,
         wean_date_value=action_date,
         changed_by=changed_by,
-        use_latest_weights_as_wean_weights=True,
+        use_latest_weights_as_wean_weights=False,
+        wean_weights=wean_weights,
     )
     if wean_apply_status != 200 or not applied["wean"].get("success"):
         return {"success": False, "errors": applied["wean"].get("errors", ["Could not mark litter as weaned."])}, wean_apply_status
@@ -2284,6 +2301,7 @@ def process_litter_weaning_day(
         health_result=applied["medicine"],
         movement_result=applied["movements"],
         wean_result=applied["wean"],
+        weight_result=applied["weights"],
         changed_by=changed_by,
     ), 200
 
@@ -2310,23 +2328,87 @@ def _weaning_day_tag_plan(assignments):
     return {"assignments": cleaned}
 
 
-def _weaning_day_wean_preview(litter_id, action_date, active_rows):
+def _weaning_day_weight_map(assignments):
+    weights = {}
+    for assignment in assignments if isinstance(assignments, list) else []:
+        if not isinstance(assignment, dict):
+            continue
+        pig_id = to_clean_string(assignment.get("pig_id", ""))
+        weight = to_float(assignment.get("wean_weight_kg"))
+        if pig_id and weight is not None:
+            weights[pig_id] = weight
+    return weights
+
+
+def _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    planned = []
+    errors = []
+    for row in active_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+        weight = to_float((wean_weights or {}).get(pig_id))
+        if weight is None:
+            errors.append(f"Missing wean weight for {pig_id}.")
+            continue
+        if weight <= 0:
+            errors.append(f"Wean weight for {pig_id} must be greater than 0.")
+            continue
+        planned.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "weight_date": action_date.isoformat(),
+            "weight_kg": weight,
+            "condition_notes": notes or "Weaning day weight.",
+            "weighed_by": changed_by,
+        })
+    return {
+        "success": not errors,
+        "weight_count": len(planned),
+        "planned_weights": planned,
+        "errors": errors,
+    }
+
+
+def _apply_weaning_day_weights(active_rows, action_date, wean_weights, changed_by, notes):
+    plan = _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes)
+    if plan["errors"]:
+        return plan
+    saved = []
+    errors = []
+    for weight in plan["planned_weights"]:
+        result = save_weight_entry({
+            "pig_id": weight["pig_id"],
+            "weight_date": action_date,
+            "weight_kg": weight["weight_kg"],
+            "condition_notes": weight["condition_notes"],
+            "weighed_by": weight["weighed_by"],
+            "allow_duplicate": False,
+        })
+        if not result.get("success"):
+            errors.append(f"Could not save weight for {weight['pig_id']}: {result.get('message', 'unknown error')}")
+        else:
+            saved.append(result.get("saved", {}))
+    return {
+        "success": not errors,
+        "weight_count": len(saved),
+        "saved_weights": saved,
+        "errors": errors,
+    }
+
+
+def _weaning_day_wean_preview(litter_id, action_date, active_rows, wean_weights):
     columns = PIG_WEIGHTS_CONFIG["columns"]
     latest_weights = {
-        to_clean_string(row.get(columns["pig_id"], "")): {
-            "weight_kg": to_float(row.get(columns["current_weight"], "")),
-            "weight_date": parse_sheet_date(row.get(columns["last_weight_date"], "")),
-        }
-        for row in active_rows
-        if to_clean_string(row.get(columns["pig_id"], ""))
+        pig_id: {"weight_kg": weight, "weight_date": action_date, "source": "weaning_day_inline"}
+        for pig_id, weight in (wean_weights or {}).items()
     }
-    if any(not latest.get("weight_kg") for latest in latest_weights.values()):
-        latest_weights = _latest_weights_by_pig(get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]), columns)
-    updates, selected, missing = _wean_weight_updates_for_piglets(active_rows, latest_weights)
+    updates, selected, missing = _wean_weight_updates_for_piglets(active_rows, latest_weights, explicit_wean_weights=wean_weights)
     if missing:
         return {
             "success": False,
-            "errors": ["Missing latest weights for: " + ", ".join(missing)],
+            "errors": ["Enter wean weights for: " + ", ".join(missing)],
             "missing_wean_weight_pig_ids": missing,
         }, 409
     return {
@@ -2392,10 +2474,11 @@ def _apply_weaning_day_movements(movement_plan):
     }
 
 
-def _weaning_day_result(litter_id, dry_run, action_date, active_count, tag_result, health_result, movement_result, wean_result, changed_by):
+def _weaning_day_result(litter_id, dry_run, action_date, active_count, tag_result, health_result, movement_result, wean_result, weight_result, changed_by):
     treatment_count = int(health_result.get("treatment_rows_planned") or health_result.get("treatment_rows_created") or 0)
     movement_count = int(movement_result.get("movement_count") or 0)
     tag_count = len(tag_result.get("selected_piglets", []) or [])
+    weight_count = int(weight_result.get("weight_count") or len(weight_result.get("saved_weights", []) or []))
     return {
         "success": True,
         "action": "litter_weaning_day",
@@ -2406,10 +2489,12 @@ def _weaning_day_result(litter_id, dry_run, action_date, active_count, tag_resul
         "tag_count": tag_count,
         "treatment_count": treatment_count,
         "movement_count": movement_count,
+        "weight_count": weight_count,
         "wean_weights_captured": wean_result.get("wean_weights_captured", 0),
         "tag_result": tag_result,
         "medicine_result": health_result,
         "movement_result": movement_result,
+        "weight_result": weight_result,
         "wean_result": wean_result,
         "changed_by": changed_by,
         "message": (

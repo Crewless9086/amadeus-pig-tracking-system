@@ -566,12 +566,23 @@ function renderWeaningDayPanel(litter) {
 }
 
 function weaningDayPayload(dryRun) {
-  const assignments = Array.from(document.querySelectorAll(".piglet-tag-input"))
-    .map((input) => ({
-      pig_id: input.dataset.pigId || "",
-      tag_number: input.value.trim(),
-    }))
-    .filter((assignment) => assignment.pig_id || assignment.tag_number);
+  const assignmentByPigId = new Map();
+  document.querySelectorAll(".piglet-tag-input").forEach((input) => {
+    const pigId = input.dataset.pigId || "";
+    if (!assignmentByPigId.has(pigId)) {
+      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "" });
+    }
+    assignmentByPigId.get(pigId).tag_number = input.value.trim();
+  });
+  document.querySelectorAll(".piglet-wean-weight-input").forEach((input) => {
+    const pigId = input.dataset.pigId || "";
+    if (!assignmentByPigId.has(pigId)) {
+      assignmentByPigId.set(pigId, { pig_id: pigId, tag_number: "", wean_weight_kg: "" });
+    }
+    assignmentByPigId.get(pigId).wean_weight_kg = input.value.trim();
+  });
+  const assignments = Array.from(assignmentByPigId.values())
+    .filter((assignment) => assignment.pig_id || assignment.tag_number || assignment.wean_weight_kg);
   return {
     wean_date: weaningDayDate.value,
     assignments,
@@ -611,6 +622,7 @@ function renderWeaningDayPreview(preview) {
     </div>
     <div class="sales-meta-grid">
       <div><span class="history-label">Tags</span><span class="history-value">${preview.tag_count || 0}</span></div>
+      <div><span class="history-label">Weight Log</span><span class="history-value">${preview.weight_count || 0}</span></div>
       <div><span class="history-label">Wean Weights</span><span class="history-value">${preview.wean_weights_captured || 0}</span></div>
       <div><span class="history-label">Treatments</span><span class="history-value">${preview.treatment_count || 0}</span></div>
       <div><span class="history-label">Pen Moves</span><span class="history-value">${preview.movement_count || 0}</span></div>
@@ -1400,9 +1412,13 @@ function buildPigletTable(piglets) {
   const rows = piglets.map((piglet) => {
     const profileHref = pigProfileHref(piglet.pig_id, litterId);
     const canEditTag = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
+    const canEditWeanWeight = litterIsActive && piglet.status === "Active" && piglet.on_farm === "Yes";
     const tagCell = canEditTag
       ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Add tag" aria-label="Tag number for ${escapeHtml(piglet.pig_id || "piglet")}" />`
       : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
+    const weanWeightCell = canEditWeanWeight
+      ? `<input class="piglet-wean-weight-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="number" min="0.1" step="0.1" placeholder="kg" aria-label="Wean weight for ${escapeHtml(piglet.pig_id || "piglet")}" />`
+      : escapeHtml(pigletWeanWeightText(piglet));
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
         <td>
@@ -1413,7 +1429,7 @@ function buildPigletTable(piglets) {
         <td>${escapeHtml(piglet.sex || "-")}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
         <td>${escapeHtml(piglet.wean_date || "-")}</td>
-        <td>${escapeHtml(pigletWeanWeightText(piglet))}</td>
+        <td>${weanWeightCell}</td>
         <td>${escapeHtml(pigletStatusText(piglet))}</td>
         <td>${escapeHtml(piglet.on_farm || "-")}</td>
         <td>${escapeHtml(piglet.age_days || "-")}</td>
@@ -1463,6 +1479,10 @@ function wirePigletTableRows() {
   document.querySelectorAll(".piglet-tag-input").forEach((input) => {
     input.addEventListener("input", resetTagNumbersPreview);
     input.addEventListener("change", resetTagNumbersPreview);
+    input.addEventListener("input", resetWeaningDayPreview);
+    input.addEventListener("change", resetWeaningDayPreview);
+  });
+  document.querySelectorAll(".piglet-wean-weight-input").forEach((input) => {
     input.addEventListener("input", resetWeaningDayPreview);
     input.addEventListener("change", resetWeaningDayPreview);
   });
