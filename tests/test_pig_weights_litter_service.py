@@ -178,8 +178,8 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
                 "wean_date": "2026-07-06",
                 "target_pen_id": "PEN-WEAN",
                 "assignments": [
-                    {"pig_id": "PIG-1", "tag_number": "101"},
-                    {"pig_id": "PIG-2", "tag_number": "102"},
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102", "wean_weight_kg": "9.1"},
                 ],
                 "medicine": {
                     "antiparasitic_product_id": "PRD-ANT",
@@ -193,6 +193,7 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
         self.assertTrue(result["dry_run"])
         self.assertEqual(result["active_piglet_count"], 2)
         self.assertEqual(result["tag_count"], 2)
+        self.assertEqual(result["weight_count"], 2)
         self.assertEqual(result["treatment_count"], 4)
         self.assertEqual(result["movement_count"], 2)
         self.assertEqual(result["wean_weights_captured"], 2)
@@ -216,6 +217,10 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
                  "success": True,
                  "saved": {"to_pen_id": "PEN-WEAN"},
              }) as save_movement, \
+             patch.object(pig_weights_service, "save_weight_entry", return_value={
+                 "success": True,
+                 "saved": {"weight_kg": 8.5},
+             }) as save_weight, \
              patch.object(pig_weights_service, "mark_litter_weaned", return_value=({
                  "success": True,
                  "wean_weights_captured": 2,
@@ -225,8 +230,8 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
                 "wean_date": "2026-07-06",
                 "target_pen_id": "PEN-WEAN",
                 "assignments": [
-                    {"pig_id": "PIG-1", "tag_number": "101"},
-                    {"pig_id": "PIG-2", "tag_number": "102"},
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102", "wean_weight_kg": "9.1"},
                 ],
                 "medicine": {
                     "antiparasitic_product_id": "PRD-ANT",
@@ -241,8 +246,25 @@ class LitterWeaningDayWorkflowTests(unittest.TestCase):
         self.assertEqual(result["movement_count"], 2)
         self.assertEqual(assign_tags.call_count, 2)
         self.assertEqual(record_health.call_count, 2)
+        self.assertEqual(save_weight.call_count, 2)
         self.assertEqual(save_movement.call_count, 2)
         mark_weaned.assert_called_once()
+        self.assertEqual(mark_weaned.call_args.kwargs["wean_weights"], {"PIG-1": 8.5, "PIG-2": 9.1})
+
+    def test_weaning_day_requires_inline_wean_weights_for_all_active_piglets(self):
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=self._active_rows()):
+            result, status_code = pig_weights_service.process_litter_weaning_day("LIT-1", {
+                "wean_date": "2026-07-06",
+                "assignments": [
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102"},
+                ],
+                "dry_run": True,
+            })
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("PIG-2", " ".join(result["errors"]))
 
     def test_save_new_litter_prefers_supabase_transaction(self):
         cleaned_data = {
