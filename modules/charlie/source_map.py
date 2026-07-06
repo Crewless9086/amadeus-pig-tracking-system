@@ -293,7 +293,9 @@ IMPLEMENTATION_SOURCE_MAP = {
         ],
         "migrations": [],
         "legacy_sources": [
-            "docs/03-google-sheets/sheets/FARM.md",
+            "docs/03-google-sheets/sheets/PIG_MASTER.md",
+            "docs/03-google-sheets/sheets/PIG_OVERVIEW.md",
+            "docs/03-google-sheets/sheets/WEIGHT_LOG.md",
         ],
         "must_inspect_before_advice": True,
     },
@@ -349,7 +351,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606290003_add_litter_lifecycle_fields.sql",
         ],
         "legacy_sources": [
-            "docs/03-google-sheets/sheets/FARM.md",
+            "docs/03-google-sheets/sheets/PIG_MASTER.md",
+            "docs/03-google-sheets/sheets/PIG_OVERVIEW.md",
+            "docs/03-google-sheets/sheets/WEIGHT_LOG.md",
         ],
         "must_inspect_before_advice": True,
     },
