@@ -253,6 +253,10 @@ def merge_prior_live_stock_context(facts, prior_context):
     facts = dict(facts or {})
     prior_context = prior_context if isinstance(prior_context, dict) else {}
     interest = prior_context.get("interest") if isinstance(prior_context.get("interest"), dict) else prior_context
+    prior_has_live_stock_item = any(
+        not _blank(interest.get(key))
+        for key in ("category", "quantity", "sex", "weight_range")
+    )
     for key in (
         "category",
         "quantity",
@@ -267,6 +271,11 @@ def merge_prior_live_stock_context(facts, prior_context):
             facts[key] = interest.get(key)
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
+    if str(facts.get("sales_lane") or "").strip().lower() in ("", "unclear") and prior_has_live_stock_item:
+        facts["sales_lane"] = LANE_LIVE_STOCK
+        facts["lane_confidence"] = max(float(facts.get("lane_confidence") or 0), 0.9)
+        reasons = facts.get("lane_reasons") if isinstance(facts.get("lane_reasons"), list) else []
+        facts["lane_reasons"] = [*reasons, "live_stock_context:active_order_intake"]
     return facts
 
 
@@ -292,7 +301,8 @@ def load_live_stock_read_context(
     try:
         loader = availability_loader or get_sales_availability
         availability_rows = loader()
-        availability = summarize_live_stock_availability(availability_rows, facts)
+        availability_facts = merge_prior_live_stock_context(facts, prior_context)
+        availability = summarize_live_stock_availability(availability_rows, availability_facts)
     except Exception as exc:
         context_errors.append(_integration_failure("sales_availability_read_failed", exc))
         availability = {"success": False, "status": "read_failed", "rows": [], "matched_count": 0, "summary": {}}
@@ -345,6 +355,16 @@ def summarize_live_stock_availability(rows, facts=None):
 
 def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
     route = classify_sam_sales_lane(inbound.get("content"), prior_context={"lane": facts.get("sales_lane")})
+    if facts.get("sales_lane") == LANE_LIVE_STOCK and route["lane"] != LANE_LIVE_STOCK:
+        route = {
+            **route,
+            "lane": LANE_LIVE_STOCK,
+            "confidence": max(float(route.get("confidence") or 0), float(facts.get("lane_confidence") or 0), 0.9),
+            "reasons": [
+                *(route.get("reasons") if isinstance(route.get("reasons"), list) else []),
+                "live_stock_context:merged_prior_intake",
+            ],
+        }
     missing = _missing_live_stock_fields(facts)
     availability = context_packet.get("availability") if isinstance(context_packet, dict) else {}
     blockers = []

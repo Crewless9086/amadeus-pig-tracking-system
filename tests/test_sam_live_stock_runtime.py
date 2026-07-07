@@ -521,6 +521,48 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["timing"], "friday")
         self.assertTrue(facts["reservation_requested"])
 
+    def test_reservation_followup_inherits_live_stock_lane_from_active_intake(self):
+        def intake_loader(_conversation_id):
+            return {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "collection_time_text": "",
+                    "payment_method": "",
+                },
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            }
+
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you keep them for me until Friday?"),
+            intake_context_loader=intake_loader,
+            availability_loader=lambda: [{
+                "pig_id": "PIG-1",
+                "sex": "Female",
+                "status": "Active",
+                "on_farm": "Yes",
+                "available_for_sale": "Yes",
+                "sale_category": "Weaner",
+                "current_weight_kg": 12,
+            }],
+        )
+
+        decision = result["sam_decision"]
+
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertNotIn("lane_not_live_stock:unclear", decision["blockers"])
+        self.assertIn("reservation_request_owner_gate", decision["blockers"])
+        self.assertEqual(decision["facts"]["quantity"], 2)
+        self.assertEqual(decision["facts"]["sex"], "Female")
+        self.assertEqual(decision["facts"]["location"], "Riversdale")
+        self.assertIn("cannot say animals are held", decision["suggested_reply_text"])
+
     def test_live_pig_weight_range_infers_grower_category(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Not meat, I want live pigs to raise, 2 males around 30kg in Albertinia.",
