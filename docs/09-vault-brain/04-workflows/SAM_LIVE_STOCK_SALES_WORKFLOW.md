@@ -31,6 +31,7 @@ Mixed meat/live-stock language must clarify before proceeding. Example: `I want 
 8. If all facts, full availability, and active pricing are present, SAM may create a draft order through the backend order rail.
 9. Backend/owner gates decide whether reservation, quote, customer send, or payment-dependent actions may happen.
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
+11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
 
 ## Required Facts
 
@@ -59,6 +60,8 @@ Before a live-stock draft order can be prepared:
 - No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
 - No old n8n or Google Sheet value may override app/Supabase truth.
 - Do not share the exact farm location. Live-stock handover is Riversdale or Albertinia after the order path is confirmed.
+- Do not argue about scam accusations, exact location, or pricing. Close politely and escalate/log when the buyer is rude, aggressive, or already negative.
+- Do not send repeated closing replies after the customer has naturally ended the conversation.
 
 ## Current Build Stage
 
@@ -74,6 +77,20 @@ Current build delivers:
 - draft order gate;
 - owner action packet;
 - unit tests proving lane separation, pricing, draft order, and no-reservation authority.
+
+## Supervision And Intervention Target
+
+Live launch should be monitored through Chatwoot and the app dashboards. If SAM produces a risky draft, hostile conversation, pricing challenge, location challenge, or low-confidence result, the conversation should be owner-handoff.
+
+The target escalation flow is:
+
+1. SAM detects escalation reason.
+2. Oom Sakkie/Telegram sends the owner a short summary and suggested response.
+3. Owner approves, edits, or closes the escalation.
+4. The response and resolution are logged.
+5. The Telegram notification is deleted or marked resolved so the chat stays clean.
+
+Until that full escalation rail is live, first public launch must remain closely supervised by the owner in Chatwoot.
 
 ## Source References
 
