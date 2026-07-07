@@ -3,6 +3,16 @@ from datetime import datetime, timezone
 
 
 MODEL_REGISTRY_VERSION = "charlie_model_registry_v1"
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-5"
+CLAUDE_REVIEW_AGENTS = {
+    "council_synthesis",
+    "risk_agent",
+    "qa_red_team",
+    "product_reviewer",
+    "business_reviewer",
+    "security_reviewer",
+    "evidence_reviewer",
+}
 
 
 MODEL_REGISTRY = {
@@ -147,23 +157,35 @@ def choose_agent_model(agent="", mission_type="", risk_level="medium"):
 def _runtime_model_config(agent, registry_key):
     agent_key = str(agent or "").strip().upper().replace("-", "_")
     registry_env_key = str(registry_key or "").strip().upper().replace("-", "_")
+    explicit_provider = (
+        os.getenv(f"CHARLIE_AGENT_PROVIDER_{agent_key}")
+        or os.getenv(f"CHARLIE_PROVIDER_{registry_env_key}")
+        or ""
+    ).strip()
     model_name = (
         os.getenv(f"CHARLIE_AGENT_MODEL_{agent_key}")
         or os.getenv(f"CHARLIE_MODEL_{registry_env_key}")
         or ""
     ).strip()
-    provider = (
-        os.getenv(f"CHARLIE_AGENT_PROVIDER_{agent_key}")
-        or os.getenv(f"CHARLIE_PROVIDER_{registry_env_key}")
-        or "codex_cli"
-    ).strip()
+    provider = explicit_provider or "codex_cli"
+    anthropic_key_present = _anthropic_api_key_present()
+    if not explicit_provider and not model_name and _claude_default_enabled(agent, registry_key):
+        provider = "anthropic"
+        model_name = os.getenv("CHARLIE_CLAUDE_MODEL", DEFAULT_CLAUDE_MODEL).strip() or DEFAULT_CLAUDE_MODEL
     input_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_INPUT_COST_PER_1K")
     output_cost = os.getenv(f"CHARLIE_MODEL_{registry_env_key}_OUTPUT_COST_PER_1K")
     return {
         "runtime_provider": provider,
         "runtime_model": model_name,
-        "runtime_configured": bool(model_name),
+        "runtime_configured": bool(model_name) and (provider != "anthropic" or anthropic_key_present),
+        "provider_ready": provider != "anthropic" or anthropic_key_present,
+        "api_key_env": _anthropic_api_key_env_name() if provider == "anthropic" else "",
         "runtime_note": (
+            "Runner will call the Anthropic Messages API for this review/specialist agent."
+            if provider == "anthropic" and anthropic_key_present
+            else "Anthropic provider selected but ANTHROPIC_API_KEY is missing; ANTROPIC_API_KEY is accepted as a temporary typo alias."
+            if provider == "anthropic"
+            else
             "Runner will request this per-agent model from the Codex CLI."
             if model_name
             else "No per-agent runtime model env configured; runner uses the Codex CLI default while recording advisory routing."
@@ -173,6 +195,28 @@ def _runtime_model_config(agent, registry_key):
             "output_cost_per_1k": _float_or_none(output_cost),
         },
     }
+
+
+def _claude_default_enabled(agent, registry_key):
+    if str(os.getenv("CHARLIE_CLAUDE_REVIEW_ENABLED") or "1").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return str(agent or "").strip().lower() in CLAUDE_REVIEW_AGENTS and registry_key in {
+        "default_reasoning",
+        "security_review",
+        "business_review",
+    }
+
+
+def _anthropic_api_key_present():
+    return bool(_anthropic_api_key_env_name())
+
+
+def _anthropic_api_key_env_name():
+    if str(os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        return "ANTHROPIC_API_KEY"
+    if str(os.getenv("ANTROPIC_API_KEY") or "").strip():
+        return "ANTROPIC_API_KEY"
+    return ""
 
 
 def estimate_model_cost(model_key, input_tokens=0, output_tokens=0):
@@ -203,12 +247,17 @@ def model_registry_packet():
         "runtime_env": {
             "agent_model_pattern": "CHARLIE_AGENT_MODEL_<AGENT_NAME>",
             "registry_model_pattern": "CHARLIE_MODEL_<REGISTRY_KEY>",
+            "claude_enabled_pattern": "CHARLIE_CLAUDE_REVIEW_ENABLED=1",
+            "claude_model_pattern": "CHARLIE_CLAUDE_MODEL",
+            "anthropic_api_key": "ANTHROPIC_API_KEY",
+            "anthropic_typo_alias_supported": "ANTROPIC_API_KEY",
+            "claude_default_review_agents": sorted(CLAUDE_REVIEW_AGENTS),
             "cost_patterns": [
                 "CHARLIE_MODEL_<REGISTRY_KEY>_INPUT_COST_PER_1K",
                 "CHARLIE_MODEL_<REGISTRY_KEY>_OUTPUT_COST_PER_1K",
             ],
         },
-        "safety_note": "Model routing is advisory until live provider/model prices are explicitly configured and benchmarked.",
+        "safety_note": "Claude routing is active for configured review/specialist stages only; Builder/Test execution stays local until tool-execution authority is separately reviewed.",
     }
 
 

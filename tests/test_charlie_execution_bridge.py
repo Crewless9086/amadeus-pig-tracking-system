@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -393,6 +394,49 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_blocks_cleanly_when_stage_runner_times_out(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "blocked"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def timeout_runner(command, *_args, **_kwargs):
+            raise subprocess.TimeoutExpired(command, 11)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=timeout_runner,
+            )
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(result["mission_status"], "blocked")
+        update_status.assert_called()
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+        vault_metadata = update_vault.call_args.args[1]
+        self.assertEqual(vault_metadata["review_packet"]["review_status"], "agent_blocked")
+        self.assertIn(
+            "agent_stage_runner_exception",
+            json.dumps(vault_metadata["review_packet"]).lower(),
+        )
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_blocks_when_review_packet_persist_fails(
         self,
         get_mission,
@@ -543,6 +587,43 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],
             "reasoning-model-a",
         )
+
+    @patch("modules.charlie.execution_bridge.run_anthropic_prompt")
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    def test_agent_model_process_routes_anthropic_provider_to_claude_api(
+        self,
+        _changed_files,
+        write_heartbeat,
+        run_anthropic_prompt,
+    ):
+        run_anthropic_prompt.return_value = ({
+            "success": True,
+            "status": "anthropic_completed",
+            "text": "{\"summary\":\"review ok\"}",
+            "model": "claude-test",
+        }, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            completed = execution_bridge._run_agent_model_process(
+                ["codex", "exec"],
+                input="review prompt",
+                stdout_path=tmp_path / "stdout.txt",
+                stderr_path=tmp_path / "stderr.txt",
+                final_path=tmp_path / "final.md",
+                mission_id="CHARLIE-MISSION-EXEC123",
+                model_assignment={
+                    "runtime_provider": "anthropic",
+                    "runtime_model": "claude-test",
+                },
+            )
+
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual((tmp_path / "final.md").read_text(encoding="utf-8"), "{\"summary\":\"review ok\"}")
+
+        run_anthropic_prompt.assert_called_once()
+        self.assertTrue(any(call.args[0].get("status") == "anthropic_agent_final_artifact_seen" for call in write_heartbeat.call_args_list))
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")

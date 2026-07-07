@@ -49,6 +49,12 @@ Each stage must produce structured evidence:
 
 Missing artifacts block progress. Tester failure returns to Builder. Reviewer send-back returns to the named stage and preserves prior artifacts.
 
+## Provider Routing
+
+CHARLIE CORE may route selected specialist/review stages through Claude/Anthropic when `ANTHROPIC_API_KEY` is configured. The temporary typo alias `ANTROPIC_API_KEY` is also accepted so a configured owner environment does not fail closed for spelling alone.
+
+Claude routing is active only for review/specialist reasoning stages such as Council Synthesis, Risk Agent, QA Red Team, Product Reviewer, Business Reviewer, Security Reviewer, and Evidence Reviewer. Builder and Tester remain local runner stages until Claude tool execution has a separate owner-reviewed safety design.
+
 ## Vault Enforcement
 
 CHARLIE CORE missions are not allowed to be treated as review-ready unless the active stage artifacts prove Vault Brain usage.
@@ -81,6 +87,10 @@ The target is to outperform a single assistant on repeatability, memory, evidenc
 ## Runner Truth
 
 Telegram and `/charlie` record mission authority, but they do not execute shell commands directly. A local runner/Codex process must pick up and execute approved work.
+
+If an agent subprocess times out or crashes, CHARLIE must convert the failure into a blocked review packet with stdout/stderr excerpts, return code, changed files, and recovery guidance. A timed-out runner must not leave a mission silently stuck in `in_progress`.
+
+When a runner result moves a mission to `pr_ready`, the review-ready notification must key off the mission status rather than a narrow internal status string.
 
 `planning/CODEX_CHAT.md` is the laptop-friendly active scratchpad. Supabase mission records are the durable queue. The Vault Brain is the doctrine layer that tells agents what rules and context to follow.
 

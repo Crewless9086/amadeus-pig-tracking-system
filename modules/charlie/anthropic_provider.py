@@ -1,0 +1,121 @@
+import json
+import os
+from urllib import request as url_request
+from urllib.error import HTTPError, URLError
+
+
+ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+DEFAULT_MAX_TOKENS = 4096
+
+
+def anthropic_api_key():
+    return (
+        str(os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        or str(os.getenv("ANTROPIC_API_KEY") or "").strip()
+    )
+
+
+def anthropic_api_key_env_name():
+    if str(os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        return "ANTHROPIC_API_KEY"
+    if str(os.getenv("ANTROPIC_API_KEY") or "").strip():
+        return "ANTROPIC_API_KEY"
+    return ""
+
+
+def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAULT_MAX_TOKENS, opener=None):
+    api_key = anthropic_api_key()
+    if not api_key:
+        return {
+            "success": False,
+            "status": "anthropic_api_key_missing",
+            "error": "Set ANTHROPIC_API_KEY. ANTROPIC_API_KEY is accepted as a temporary typo alias.",
+        }, 503
+    model = str(model or os.getenv("CHARLIE_CLAUDE_MODEL") or "claude-sonnet-5").strip()
+    payload = {
+        "model": model,
+        "max_tokens": int(max_tokens or DEFAULT_MAX_TOKENS),
+        "messages": [
+            {
+                "role": "user",
+                "content": str(prompt or ""),
+            }
+        ],
+    }
+    body = json.dumps(payload).encode("utf-8")
+    request = url_request.Request(
+        ANTHROPIC_MESSAGES_URL,
+        data=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": ANTHROPIC_VERSION,
+        },
+        method="POST",
+    )
+    open_fn = opener or url_request.urlopen
+    try:
+        with open_fn(request, timeout=max(30, int(timeout_seconds or 600))) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            parsed = json.loads(response_body)
+    except HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+        return {
+            "success": False,
+            "status": "anthropic_api_rejected",
+            "http_status": exc.code,
+            "error": error_body[:1000],
+        }, 502
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "status": "anthropic_api_unreachable",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:1000],
+        }, 502
+
+    text = _extract_text(parsed)
+    if not text:
+        return {
+            "success": False,
+            "status": "anthropic_empty_response",
+            "raw_response": _compact_response(parsed),
+        }, 502
+    return {
+        "success": True,
+        "status": "anthropic_completed",
+        "provider": "anthropic",
+        "model": model,
+        "text": text,
+        "usage": parsed.get("usage") if isinstance(parsed.get("usage"), dict) else {},
+        "stop_reason": parsed.get("stop_reason", ""),
+    }, 200
+
+
+def _extract_text(parsed):
+    if not isinstance(parsed, dict):
+        return ""
+    chunks = []
+    for item in parsed.get("content") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            text = str(item.get("text") or "").strip()
+            if text:
+                chunks.append(text)
+    return "\n\n".join(chunks).strip()
+
+
+def _compact_response(parsed):
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        "id": parsed.get("id", ""),
+        "type": parsed.get("type", ""),
+        "role": parsed.get("role", ""),
+        "model": parsed.get("model", ""),
+        "stop_reason": parsed.get("stop_reason", ""),
+        "usage": parsed.get("usage", {}),
+        "content_count": len(parsed.get("content") or []),
+    }
