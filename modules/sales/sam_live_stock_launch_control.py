@@ -95,7 +95,7 @@ def build_sam_live_stock_review_event(inbound, facts, decision, review=None, *, 
         "source_agent": "sam_live_stock_backend",
         "event_source": _clean(event_source, 80),
         "customer_message_excerpt": _clean(inbound.get("content"), 500),
-        "sam_reply_excerpt": _clean(decision.get("suggested_reply_text"), 500),
+        "sam_reply_excerpt": _clean_multiline(decision.get("suggested_reply_text"), 500),
         "score": int(review.get("score") or 0),
         "confidence_target": int(review.get("confidence_target") or 96),
         "safe_to_send": bool(review.get("safe_to_send")),
@@ -250,7 +250,7 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
         "Captured: " + _lead_fact_summary(facts),
         f"Action: {_clean(event.get('recommended_action') or review.get('recommended_action'), 80)}",
     ]
-    reply = _clean(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 400)
+    reply = _clean_multiline(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 400)
     if reply:
         parts.append(f"Draft: {reply}")
     if links.get("availability_url"):
@@ -536,7 +536,10 @@ def _review_event_params(event):
         "conversation_mode_recommendation",
         "recommended_action",
     ):
-        params[key] = _clean(event.get(key), 500 if key.endswith("excerpt") else 120)
+        if key == "sam_reply_excerpt":
+            params[key] = _clean_multiline(event.get(key), 500)
+        else:
+            params[key] = _clean(event.get(key), 500 if key.endswith("excerpt") else 120)
     for key in ("score", "confidence_target"):
         params[key] = int(event.get(key) or 0)
     for key in (
@@ -715,3 +718,10 @@ def _truthy(value):
 
 def _clean(value, limit):
     return " ".join(str(value or "").split())[:limit]
+
+
+def _clean_multiline(value, limit):
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [" ".join(line.split()) for line in text.split("\n")]
+    cleaned = "\n".join(line for line in lines if line)
+    return cleaned[:limit]

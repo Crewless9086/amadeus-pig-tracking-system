@@ -45,6 +45,25 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertFalse(event["reserves_stock"])
         self.assertFalse(event["writes_farm_data"])
 
+    def test_review_event_preserves_multiline_reply_excerpt(self):
+        inbound, facts, decision = review_inputs()
+        decision["suggested_reply_text"] = (
+            "Current SAM Live price estimate:\n"
+            "- 2 x Female Weaner, 10-14 kg: R500 each\n"
+            "- Estimated total: R1,000\n"
+            "- This is not a reservation."
+        )
+
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 100, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        self.assertIn("\n- 2 x Female", event["sam_reply_excerpt"])
+        self.assertIn("\n- Estimated total", event["sam_reply_excerpt"])
+
     def test_record_review_event_requires_database_url(self):
         inbound, facts, decision = review_inputs()
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
