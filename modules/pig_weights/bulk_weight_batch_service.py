@@ -176,7 +176,7 @@ def _memory_get(batch_id):
     return batch, rows
 
 
-def _memory_save(batch, rows):
+def _memory_save(batch, rows, changed_rows=None):
     _MEMORY_BATCHES[batch["batch_id"]] = deepcopy(batch)
     _MEMORY_ROWS[batch["batch_id"]] = deepcopy(rows)
 
@@ -245,8 +245,9 @@ def _pg_get(batch_id):
             return batch, rows
 
 
-def _pg_save(batch, rows):
+def _pg_save(batch, rows, changed_rows=None):
     counts = _counts_from_records(rows)
+    rows_to_update = rows if changed_rows is None else changed_rows
     with _connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -261,7 +262,7 @@ def _pg_save(batch, rows):
                 """,
                 {**batch, **counts, "payload_summary_json": _jsonb(batch.get("payload_summary_json", {})), "completed": batch.get("status") in {"complete", "failed", "partial"}},
             )
-            for row in rows:
+            for row in rows_to_update:
                 cursor.execute(
                     """
                     update public.bulk_weight_batch_rows set status=%(status)s, status_reason=%(status_reason)s,
@@ -285,11 +286,11 @@ def _get_store(batch_id):
     return _pg_get(batch_id)
 
 
-def _save_store(batch, rows):
+def _save_store(batch, rows, changed_rows=None):
     if _store_mode() == "memory":
-        _memory_save(batch, rows)
+        _memory_save(batch, rows, changed_rows=changed_rows)
     else:
-        _pg_save(batch, rows)
+        _pg_save(batch, rows, changed_rows=changed_rows)
 
 
 def stage_bulk_weight_batch(payload: dict):
@@ -359,22 +360,27 @@ def process_bulk_weight_batch(batch_id: str, chunk_size: int = DEFAULT_CHUNK_SIZ
     if not chunk:
         counts = _counts_from_records(rows)
         batch["status"] = _batch_status_from_counts(counts)
-        _save_store(batch, rows)
+        _save_store(batch, rows, changed_rows=[])
         return _batch_response(batch, rows, ok=True, next_action="complete" if batch["status"] == "complete" else "review"), 200
 
     batch["status"] = "processing"
     for row in chunk:
         row["status"] = "processing"
         row["updated_at"] = _now_iso()
-    _save_store(batch, rows)
+    _save_store(batch, rows, changed_rows=chunk)
 
-    for row in chunk:
-        _process_one_row(row)
+    if _store_mode() != "memory" and farm_supabase_write_service.farm_supabase_writes_available():
+        with _connect() as connection:
+            for row in chunk:
+                _process_one_row(row, connection=connection)
+    else:
+        for row in chunk:
+            _process_one_row(row)
     counts = _counts_from_records(rows)
     batch["status"] = "processing" if counts["staged_count"] else _batch_status_from_counts(counts)
     batch["error_summary"] = "" if counts["failed_count"] == 0 else f"{counts['failed_count']} row(s) need retry or review."
     batch["payload_summary_json"] = {**(batch.get("payload_summary_json") or {}), "last_processed_at": _now_iso(), "last_chunk_size": len(chunk)}
-    _save_store(batch, rows)
+    _save_store(batch, rows, changed_rows=chunk)
     next_action = "process" if _counts_from_records(rows)["staged_count"] else "review" if _counts_from_records(rows)["failed_count"] else "complete"
     return _batch_response(batch, rows, ok=True, next_action=next_action), 200
 
@@ -383,12 +389,12 @@ def retry_failed_bulk_weight_batch(batch_id: str, chunk_size: int = DEFAULT_CHUN
     return process_bulk_weight_batch(batch_id, chunk_size=chunk_size, retry_failed=True)
 
 
-def _process_one_row(row):
+def _process_one_row(row, connection=None):
     result_json = row.get("result_json") or {}
     action_type = result_json.get("action_type", "weight")
     preflight = result_json.get("preflight") or {}
     try:
-        fast_result = _process_one_row_supabase(row, action_type, preflight)
+        fast_result = _process_one_row_supabase(row, action_type, preflight, connection=connection)
         if fast_result is not None:
             row["status"] = "success"
             row["status_reason"] = fast_result["status_reason"]
@@ -434,9 +440,12 @@ def _process_one_row(row):
     row["updated_at"] = _now_iso()
 
 
-def _process_one_row_supabase(row, action_type, preflight):
+def _process_one_row_supabase(row, action_type, preflight, connection=None):
     if _store_mode() == "memory" or not farm_supabase_write_service.farm_supabase_writes_available():
         return None
+    if connection is None:
+        with _connect() as owned_connection:
+            return _process_one_row_supabase(row, action_type, preflight, connection=owned_connection)
 
     weight_date = parse_sheet_date(preflight.get("weight_date", "") or row.get("original_row_json", {}).get("weight_date", ""))
     pig_id = row.get("pig_id", "")
@@ -447,79 +456,78 @@ def _process_one_row_supabase(row, action_type, preflight):
     existing_weight = False
     existing_movement = False
 
-    with _connect() as connection:
-        with connection.cursor() as cursor:
-            if action_type not in {"movement_only", "duplicate_weight_movement"}:
+    with connection.cursor() as cursor:
+        if action_type not in {"movement_only", "duplicate_weight_movement"}:
+            cursor.execute(
+                """
+                select 1 from public.pig_weight_events
+                where pig_id = %s and weight_date = %s
+                limit 1
+                """,
+                (pig_id, weight_date),
+            )
+            existing_weight = cursor.fetchone() is not None
+            if not existing_weight:
                 cursor.execute(
                     """
-                    select 1 from public.pig_weight_events
-                    where pig_id = %s and weight_date = %s
-                    limit 1
-                    """,
-                    (pig_id, weight_date),
-                )
-                existing_weight = cursor.fetchone() is not None
-                if not existing_weight:
-                    cursor.execute(
-                        """
-                        insert into public.pig_weight_events (
-                            weight_event_id, pig_id, weight_date, weight_kg, weighed_by,
-                            condition_notes, source, bulk_batch_id, bulk_row_id, created_at
-                        ) values (
-                            %(weight_event_id)s, %(pig_id)s, %(weight_date)s, %(weight_kg)s, %(weighed_by)s,
-                            %(condition_notes)s, 'app_bulk_weight', %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
-                        )
-                        """,
-                        {
-                            "weight_event_id": generate_weight_log_id(),
-                            "pig_id": pig_id,
-                            "weight_date": weight_date,
-                            "weight_kg": row.get("weight_kg"),
-                            "weighed_by": preflight.get("weighed_by", "WebApp"),
-                            "condition_notes": preflight.get("condition_notes", ""),
-                            "bulk_batch_id": row.get("batch_id"),
-                            "bulk_row_id": row.get("row_id"),
-                        },
+                    insert into public.pig_weight_events (
+                        weight_event_id, pig_id, weight_date, weight_kg, weighed_by,
+                        condition_notes, source, bulk_batch_id, bulk_row_id, created_at
+                    ) values (
+                        %(weight_event_id)s, %(pig_id)s, %(weight_date)s, %(weight_kg)s, %(weighed_by)s,
+                        %(condition_notes)s, 'app_bulk_weight', %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
                     )
-                    wrote_weight = True
+                    """,
+                    {
+                        "weight_event_id": generate_weight_log_id(),
+                        "pig_id": pig_id,
+                        "weight_date": weight_date,
+                        "weight_kg": row.get("weight_kg"),
+                        "weighed_by": preflight.get("weighed_by", "WebApp"),
+                        "condition_notes": preflight.get("condition_notes", ""),
+                        "bulk_batch_id": row.get("batch_id"),
+                        "bulk_row_id": row.get("row_id"),
+                    },
+                )
+                wrote_weight = True
 
-            if to_pen_id and to_pen_id != from_pen_id:
+        if to_pen_id and to_pen_id != from_pen_id:
+            cursor.execute(
+                """
+                select 1 from public.pig_location_events
+                where pig_id = %s and move_date = %s
+                    and coalesce(from_pen_id, '') = coalesce(%s, '')
+                    and coalesce(to_pen_id, '') = coalesce(%s, '')
+                limit 1
+                """,
+                (pig_id, weight_date, from_pen_id, to_pen_id),
+            )
+            existing_movement = cursor.fetchone() is not None
+            if not existing_movement:
                 cursor.execute(
                     """
-                    select 1 from public.pig_location_events
-                    where pig_id = %s and move_date = %s
-                        and coalesce(from_pen_id, '') = coalesce(%s, '')
-                        and coalesce(to_pen_id, '') = coalesce(%s, '')
-                    limit 1
-                    """,
-                    (pig_id, weight_date, from_pen_id, to_pen_id),
-                )
-                existing_movement = cursor.fetchone() is not None
-                if not existing_movement:
-                    cursor.execute(
-                        """
-                        insert into public.pig_location_events (
-                            location_event_id, pig_id, move_date, from_pen_id, to_pen_id,
-                            reason_for_move, moved_by, move_notes, source, bulk_batch_id, bulk_row_id, created_at
-                        ) values (
-                            %(location_event_id)s, %(pig_id)s, %(move_date)s, %(from_pen_id)s, %(to_pen_id)s,
-                            %(reason_for_move)s, 'WebApp', %(move_notes)s, 'app_bulk_weight',
-                            %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
-                        )
-                        """,
-                        {
-                            "location_event_id": generate_move_log_id(),
-                            "pig_id": pig_id,
-                            "move_date": weight_date,
-                            "from_pen_id": from_pen_id or None,
-                            "to_pen_id": to_pen_id or None,
-                            "reason_for_move": "Moved during durable bulk capture" if action_type == "movement_only" else "Moved during durable duplicate weight review" if action_type == "duplicate_weight_movement" else "Moved during weight capture",
-                            "move_notes": preflight.get("condition_notes", ""),
-                            "bulk_batch_id": row.get("batch_id"),
-                            "bulk_row_id": row.get("row_id"),
-                        },
+                    insert into public.pig_location_events (
+                        location_event_id, pig_id, move_date, from_pen_id, to_pen_id,
+                        reason_for_move, moved_by, move_notes, source, bulk_batch_id, bulk_row_id, created_at
+                    ) values (
+                        %(location_event_id)s, %(pig_id)s, %(move_date)s, %(from_pen_id)s, %(to_pen_id)s,
+                        %(reason_for_move)s, 'WebApp', %(move_notes)s, 'app_bulk_weight',
+                        %(bulk_batch_id)s::uuid, %(bulk_row_id)s::uuid, now()
                     )
-                    wrote_movement = True
+                    """,
+                    {
+                        "location_event_id": generate_move_log_id(),
+                        "pig_id": pig_id,
+                        "move_date": weight_date,
+                        "from_pen_id": from_pen_id or None,
+                        "to_pen_id": to_pen_id or None,
+                        "reason_for_move": "Moved during durable bulk capture" if action_type == "movement_only" else "Moved during durable duplicate weight review" if action_type == "duplicate_weight_movement" else "Moved during weight capture",
+                        "move_notes": preflight.get("condition_notes", ""),
+                        "bulk_batch_id": row.get("batch_id"),
+                        "bulk_row_id": row.get("row_id"),
+                    },
+                )
+                wrote_movement = True
 
     return {
         "success": True,
