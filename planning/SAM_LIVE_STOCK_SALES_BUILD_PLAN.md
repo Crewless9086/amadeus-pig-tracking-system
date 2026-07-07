@@ -631,13 +631,13 @@ Safety result:
 
 Status: active smoke testing on 2026-07-07.
 
-Known launch bug:
+Resolved smoke-test bug:
 
-- `quote_requested` can be overwritten from `true` to `false` on later follow-up messages that do not repeat price/quote wording. Example: a customer asks "What is the price for them?" and the intake correctly sets `quote_requested = true`; a later reservation follow-up can update the same intake with `quote_requested = false`. This must preserve prior quote intent unless the customer explicitly cancels or changes the intent.
+- `quote_requested` could be overwritten from `true` to `false` on later follow-up messages that do not repeat price/quote wording. Example: a customer asks "What is the price for them?" and the intake correctly sets `quote_requested = true`; a later reservation follow-up could update the same intake with `quote_requested = false`.
 
-Required fix before public launch:
+Fix:
 
-- Update SAM Live Stock intake patching so boolean intent fields are cumulative for the active intake:
-  - preserve prior `quote_requested = true` when a later message has no explicit quote signal;
-  - preserve prior positive order/reservation review signals unless explicitly cancelled;
-  - add regression coverage using the clean Chatwoot smoke sequence: availability request -> price request -> reservation request.
+- SAM Live Stock intake patching now treats positive intent flags as sticky for the active intake:
+  - prior `quote_requested = true` is preserved when a later message has no explicit quote signal;
+  - false boolean intent values are not written by default on neutral follow-up messages;
+  - regression coverage now checks the price request -> reservation request sequence through the runtime writer path.

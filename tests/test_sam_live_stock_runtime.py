@@ -112,6 +112,28 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(merged["timing"], "next week")
         self.assertEqual(merged["location"], "Riversdale")
 
+    def test_merge_prior_context_preserves_positive_quote_intent(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "Can you keep them for me until Friday?",
+            {"conversation_id": "2401"},
+        )
+        merged = sam_live_stock_runtime.merge_prior_live_stock_context(
+            facts,
+            {
+                "interest": {
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "location": "Riversdale",
+                    "quote_requested": True,
+                }
+            },
+        )
+
+        self.assertTrue(merged["quote_requested"])
+        self.assertEqual(merged["sales_lane"], "live_stock_sales")
+
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
         rows = [
             {
@@ -321,6 +343,41 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sends_customer_message"])
         self.assertEqual(len(writes), 1)
         self.assertEqual(result["sam_decision"]["intake_write"]["status"], "sam_live_stock_intake_written")
+
+    def test_intake_write_preserves_prior_quote_request_on_followup(self):
+        writes = []
+
+        def writer(cleaned):
+            writes.append(cleaned)
+            return {"success": True, "intake_id": "INTAKE-1", "items": []}
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you keep them for me until Friday?"),
+            environ={"SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "quote_requested": True,
+                    "order_commitment": False,
+                },
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            availability_loader=lambda: [],
+            intake_writer=writer,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["writes_order_intake"])
+        self.assertEqual(len(writes), 1)
+        self.assertTrue(writes[0]["patch"]["quote_requested"])
+        self.assertNotIn("order_commitment", writes[0]["patch"])
 
     def test_intake_write_blocks_wrong_lane_and_breeding_stock(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="I want pork chops."))

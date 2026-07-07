@@ -271,11 +271,17 @@ def merge_prior_live_stock_context(facts, prior_context):
         "location",
         "transport_expectation",
         "payment_method",
+        "quote_requested",
+        "order_commitment",
     ):
         if _blank(facts.get(key)) and not _blank(interest.get(key)):
             facts[key] = interest.get(key)
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
+    if interest.get("quote_requested") and not facts.get("quote_requested"):
+        facts["quote_requested"] = True
+    if interest.get("order_commitment") and not facts.get("order_commitment"):
+        facts["order_commitment"] = True
     if str(facts.get("sales_lane") or "").strip().lower() in ("", "unclear", "farm_general_question", "owner_handoff") and prior_has_live_stock_item:
         facts["sales_lane"] = LANE_LIVE_STOCK
         facts["lane_confidence"] = max(float(facts.get("lane_confidence") or 0), 0.9)
@@ -430,9 +436,11 @@ def build_live_stock_intake_payload(inbound, facts, decision=None):
         "collection_time_text": _clean(facts.get("timing"), 120),
         "last_customer_message": _clean(inbound.get("content"), 600),
         "notes": notes,
-        "quote_requested": bool(facts.get("quote_requested")),
-        "order_commitment": False,
     }
+    if facts.get("quote_requested"):
+        patch["quote_requested"] = True
+    if facts.get("order_commitment"):
+        patch["order_commitment"] = True
     payment_method = _normal_intake_payment(facts.get("payment_method"))
     if payment_method:
         patch["payment_method"] = payment_method
@@ -1042,6 +1050,8 @@ def _prior_context_from_intake(intake):
         "location": known.get("collection_location") or "",
         "timing": known.get("collection_time_text") or known.get("collection_date") or "",
         "payment_method": known.get("payment_method") or "",
+        "quote_requested": bool(known.get("quote_requested")),
+        "order_commitment": bool(known.get("order_commitment")),
     }
     active_items = [item for item in items if isinstance(item, dict) and str(item.get("status") or "").lower() == "active"]
     if active_items:
