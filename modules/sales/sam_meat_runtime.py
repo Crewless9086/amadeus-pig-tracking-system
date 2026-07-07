@@ -45,6 +45,7 @@ from modules.sales.sam_farm_knowledge import (
     public_profile,
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
+from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -166,6 +167,45 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    lane_route = classify_sam_sales_lane(inbound["content"])
+    if lane_route.get("lane") == LANE_LIVE_STOCK:
+        decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route)
+        return {
+            "success": True,
+            "status": "sam_meat_live_stock_handoff",
+            "processed": True,
+            "inbound": inbound,
+            "facts": facts,
+            "lane_route": lane_route,
+            "lead_payload": {},
+            "lead_result": {
+                "success": False,
+                "status": "not_recorded_wrong_lane_live_stock",
+            },
+            "lead_status_code": 200,
+            "sam_decision": decision,
+            "response_review": {
+                "safe_to_send": False,
+                "reason": "wrong_lane_live_stock",
+            },
+            "sent": False,
+            "send_status": "wrong_lane_live_stock_no_meat_reply",
+            "chatwoot_send": {},
+            "document_sent": False,
+            "document_send_status": "not_requested",
+            "document_send": {},
+            "policy": sam_meat_webhook_policy(source),
+            "conversation_learning": {
+                "status_code": 200,
+                "status": "skipped_wrong_lane_live_stock",
+                "success": False,
+                "learning_event_id": "",
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+            },
+            **_authority_flags(False, False),
+        }, 200
     context_errors = []
     try:
         lead_context = _conversation_lead_context(inbound.get("conversation_id"))
@@ -1456,6 +1496,33 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
         "blocked_reasons": sorted(set(blocked)),
         "confidence_target": 96,
         "agent_decision": _agent_decision_summary(agent_decision),
+    }
+
+
+def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None):
+    return {
+        "version": "sam_meat_wrong_lane_live_stock_guard_v1",
+        "agent": "sam_meat_backend",
+        "sales_lane": LANE_LIVE_STOCK,
+        "lane_route": lane_route if isinstance(lane_route, dict) else {},
+        "lead_id": "",
+        "reply_text": "",
+        "reply_source": "wrong_lane_live_stock_guard",
+        "should_reply": False,
+        "owner_gate_required": False,
+        "blocked_actions": [
+            "do_not_record_meat_lead",
+            "do_not_send_meat_reply",
+            "route_to_sam_live_stock",
+        ],
+        "handoff": {
+            "target": "sam_live_stock_backend",
+            "reason": "Customer intent is live pigs/piglets/weaners, not pork meat.",
+            "conversation_id": inbound.get("conversation_id") if isinstance(inbound, dict) else "",
+            "message_id": inbound.get("message_id") if isinstance(inbound, dict) else "",
+        },
+        "facts": facts if isinstance(facts, dict) else {},
+        **_authority_flags(False, False),
     }
 
 

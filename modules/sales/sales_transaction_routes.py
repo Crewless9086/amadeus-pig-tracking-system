@@ -311,6 +311,18 @@ def sam_meat_chatwoot_inbound():
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+        if result.get("status") == "sam_meat_live_stock_handoff":
+            live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)
+            _attach_sam_live_stock_review_event(live_result, payload)
+            result["sam_live_stock_handoff"] = {
+                "status_code": live_status_code,
+                "status": live_result.get("status"),
+                "processed": live_result.get("processed") is True,
+                "sent": live_result.get("sent") is True,
+                "sam_decision": live_result.get("sam_decision") if isinstance(live_result.get("sam_decision"), dict) else {},
+                "conversation_review_event": live_result.get("conversation_review_event") if isinstance(live_result.get("conversation_review_event"), dict) else {},
+                "policy": live_result.get("policy") if isinstance(live_result.get("policy"), dict) else {},
+            }
     except Exception as exc:
         result, status_code = {
             "success": False,
@@ -326,6 +338,27 @@ def sam_meat_chatwoot_inbound():
             "changes_stock": False,
         }, 500
     return jsonify(result), status_code
+
+
+def _attach_sam_live_stock_review_event(result, raw_payload):
+    if not result.get("processed") or not isinstance(result.get("sam_decision"), dict):
+        return
+    decision = result["sam_decision"]
+    review = decision.get("conversation_review") if isinstance(decision.get("conversation_review"), dict) else {}
+    event = build_sam_live_stock_review_event(
+        decision.get("inbound") if isinstance(decision.get("inbound"), dict) else raw_payload,
+        decision.get("facts") if isinstance(decision.get("facts"), dict) else {},
+        decision,
+        review,
+        event_source="sam_meat_internal_live_stock_handoff",
+    )
+    learning_result, learning_status = record_sam_live_stock_review_event(event)
+    result["conversation_review_event"] = {
+        "status": learning_result.get("status"),
+        "status_code": learning_status,
+        "review_event_id": learning_result.get("review_event_id") or event.get("review_event_id"),
+        "recorded": learning_result.get("success") is True,
+    }
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/policy", methods=["GET"])
@@ -361,21 +394,7 @@ def sam_live_stock_chatwoot_inbound():
             "reserves_stock": False,
         }, 500
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
-        decision = result["sam_decision"]
-        review = decision.get("conversation_review") if isinstance(decision.get("conversation_review"), dict) else {}
-        event = build_sam_live_stock_review_event(
-            decision.get("inbound") if isinstance(decision.get("inbound"), dict) else payload,
-            decision.get("facts") if isinstance(decision.get("facts"), dict) else {},
-            decision,
-            review,
-        )
-        learning_result, learning_status = record_sam_live_stock_review_event(event)
-        result["conversation_review_event"] = {
-            "status": learning_result.get("status"),
-            "status_code": learning_status,
-            "review_event_id": learning_result.get("review_event_id") or event.get("review_event_id"),
-            "recorded": learning_result.get("success") is True,
-        }
+        _attach_sam_live_stock_review_event(result, payload)
     return jsonify(result), status_code
 
 

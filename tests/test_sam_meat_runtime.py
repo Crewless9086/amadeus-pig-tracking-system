@@ -574,16 +574,42 @@ class SamMeatRuntimeTests(unittest.TestCase):
             content="I want 3 female weaners around 10kg.",
         ))
         facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
-        decision = sam_meat_runtime.build_sam_meat_decision(
+        decision = sam_meat_runtime.build_sam_meat_live_stock_handoff_decision(
             inbound,
             facts,
-            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
-            201,
+            {"lane": "live_stock_sales", "confidence": 0.98},
         )
 
-        self.assertIn("live-pig interest", decision["reply_text"])
-        self.assertIn("SAM Live Stock", decision["reply_text"])
-        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertEqual(decision["reply_text"], "")
+        self.assertFalse(decision["should_reply"])
+        self.assertIn("do_not_record_meat_lead", decision["blocked_actions"])
+        self.assertIn("route_to_sam_live_stock", decision["blocked_actions"])
+
+    def test_handle_live_pig_interest_does_not_record_or_send_from_meat_runtime(self):
+        calls = {"record": 0, "send": 0}
+
+        def record(_payload):
+            calls["record"] += 1
+            return {"success": True, "lead_id": "BAD-MEAT-LEAD"}, 201
+
+        def sender(_conversation_id, _message):
+            calls["send"] += 1
+            return {"ok": True}
+
+        with patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", side_effect=record):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Hi, do you have piglets or weaners available?"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
+        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["lead_payload"], {})
+        self.assertEqual(calls, {"record": 0, "send": 0})
 
     def test_family_set_recommendation_without_prior_context_is_specific(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
