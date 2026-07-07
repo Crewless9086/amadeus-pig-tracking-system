@@ -556,6 +556,103 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(decision["writes_allowed"])
         self.assertFalse(decision["customer_send_allowed"])
 
+    def test_hostile_location_challenge_creates_escalation_packet(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="This sounds like a scam. Send the exact farm location now."),
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        review = decision["conversation_review"]
+
+        self.assertTrue(review["escalation_required"])
+        self.assertEqual(review["conversation_mode_recommendation"], "HUMAN")
+        self.assertIn("hostile_or_scam_location_challenge", review["escalation_reasons"])
+        self.assertIn("escalation_packet", decision)
+        self.assertIn("waste your time", decision["escalation_packet"]["suggested_response"])
+        self.assertIn("sam_live_approve_send:", decision["escalation_packet"]["telegram_packet"]["reply_markup"]["inline_keyboard"][0][0]["callback_data"])
+
+    def test_price_challenge_escalates_without_discount_posture(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(content="That price is too expensive. I can get cheaper pigs elsewhere.")
+        )
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "missing_fields": [],
+            "blockers": [],
+            "suggested_reply_text": "I understand that our animals and pricing will not fit everyone's budget. Thanks for showing interest.",
+        }
+
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(inbound, facts, decision)
+
+        self.assertTrue(review["escalation_required"])
+        self.assertIn("pricing_challenge_or_negotiation", review["escalation_reasons"])
+        self.assertFalse(review["safe_to_send"])
+
+    def test_natural_close_recommends_no_reply(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="Thanks, have a good day."))
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {"sales_lane": "live_stock_sales", "missing_fields": [], "blockers": [], "suggested_reply_text": "Pleasure."}
+
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(inbound, facts, decision)
+
+        self.assertTrue(review["no_reply_recommended"])
+        self.assertEqual(review["recommended_action"], "no_reply_natural_close")
+        self.assertFalse(review["safe_to_send"])
+
+    def test_owner_approved_send_is_env_gated(self):
+        calls = []
+
+        def sender(conversation_id, message, source):
+            calls.append((conversation_id, message, source))
+            return {"status_code": 200, "body": {"id": 1}}
+
+        blocked, blocked_status = sam_live_stock_runtime.send_owner_approved_live_stock_reply(
+            "2401",
+            "Owner approved reply.",
+            environ={},
+            chatwoot_sender=sender,
+        )
+
+        self.assertEqual(blocked_status, 409)
+        self.assertEqual(blocked["status"], "sam_live_stock_owner_send_disabled")
+        self.assertEqual(calls, [])
+
+        sent, sent_status = sam_live_stock_runtime.send_owner_approved_live_stock_reply(
+            "2401",
+            "Owner approved reply.",
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            chatwoot_sender=sender,
+            owner="Charl",
+            escalation_id="SAM-LIVE-ESC-1",
+        )
+
+        self.assertEqual(sent_status, 200)
+        self.assertTrue(sent["success"])
+        self.assertTrue(sent["sends_customer_message"])
+        self.assertTrue(sent["calls_chatwoot"])
+        self.assertEqual(calls[0][0], "2401")
+
+    def test_takeover_and_cleanup_packets_are_auditable(self):
+        takeover = sam_live_stock_runtime.build_sam_live_stock_chatwoot_takeover_payload(
+            "2401",
+            mode="HUMAN",
+            reason="hostile_or_scam_location_challenge",
+        )
+        cleanup = sam_live_stock_runtime.build_sam_live_stock_resolved_cleanup_packet(
+            "SAM-LIVE-ESC-1",
+            telegram_chat_id="5721652188",
+            telegram_message_id="77",
+            conversation_id="2401",
+        )
+
+        self.assertEqual(takeover["custom_attributes"]["conversation_mode"], "HUMAN")
+        self.assertIn("owner_handoff", takeover["labels"])
+        self.assertEqual(cleanup["recommended_action"], "delete_telegram_notification")
+        self.assertTrue(cleanup["delete_allowed"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -82,6 +82,14 @@ Current build delivers:
 
 Live launch should be monitored through Chatwoot and the app dashboards. If SAM produces a risky draft, hostile conversation, pricing challenge, location challenge, or low-confidence result, the conversation should be owner-handoff.
 
+The old n8n live-sales workflow had useful safeguards that remain required in the backend-native version:
+
+- `conversation_mode` must support `AUTO` versus `HUMAN`;
+- human escalation must carry enough context for the owner to reply safely;
+- approved owner replies may be sent back to Chatwoot only through an explicit owner-approved send gate;
+- Telegram escalation notifications should be cleaned up after resolution so the owner chat does not become noisy;
+- stock tools may advise and match, but reservation/release remains a separate owner/backend gate.
+
 The target escalation flow is:
 
 1. SAM detects escalation reason.
@@ -91,6 +99,20 @@ The target escalation flow is:
 5. The Telegram notification is deleted or marked resolved so the chat stays clean.
 
 Until that full escalation rail is live, first public launch must remain closely supervised by the owner in Chatwoot.
+
+## Controlled Launch Backend Surface
+
+The backend-native controlled launch surface should expose:
+
+- policy route for current env gates;
+- inbound route for Chatwoot live-stock messages;
+- conversation review/scoring packet;
+- escalation packet for Telegram/Oom Sakkie;
+- owner-approved send route, disabled unless the owner-send env gate is enabled;
+- resolved cleanup packet for deleting or marking the specific Telegram escalation notification;
+- Chatwoot takeover payload that sets `conversation_mode = HUMAN` without overwriting unrelated conversation attributes.
+
+Autoreply and LLM/Agent V3 remain disabled until live-stock reply quality has been tested in the owner's own chat and reviewed.
 
 ## Source References
 
