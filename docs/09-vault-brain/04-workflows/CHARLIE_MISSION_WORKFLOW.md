@@ -75,6 +75,14 @@ CHARLIE CORE can run supervised missions with stronger memory, retrieval, tests,
 
 The target is to outperform a single assistant on repeatability, memory, evidence, queue discipline, and overnight throughput. It is not allowed to outperform the owner gate by bypassing it.
 
+## Owner Approval Inbox
+
+CHARLIE may show a unified Owner Approval Inbox for exact agent-prepared operational suggestions from Beacon, SAM Live Stock, SAM Meat, Butcher, and Herdmaster.
+
+The inbox is an owner-review surface only. It may record `approve`, `edit`, `reject`, `pause`, and `send_back` decisions against a normalized item attached to the Mission Vault, but that recorded decision does not itself send a customer message, post publicly, create an order, quote, invoice, payment confirmation, stock reservation, butcher/slaughter booking, migration, or farm lifecycle write.
+
+Every inbox item must identify its source agent, source type, exact proposed action or text, next gate, forbidden actions or risk flags when known, owning mission id, and current decision state. Domain-specific execution remains with the existing approved send/post/money/stock/butcher/farm gates after exact owner approval is recorded.
+
 ## Approval Levels
 
 - `LEVEL 0`: report only.
