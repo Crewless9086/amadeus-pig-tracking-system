@@ -2326,6 +2326,10 @@ def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
         "cannot certify",
         "cannot be certified",
         "not yet",
+        "timeout",
+        "timed out",
+        "no pass/fail claim",
+        "no pass fail claim",
     )
     present_violation_terms = (
         "red-zone",
@@ -2352,7 +2356,21 @@ def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
         "out-of-scope change",
         "unauthorized",
     )
-    return any(term in text for term in future_terms) and not any(term in text for term in present_violation_terms)
+    present_text = text
+    for safe_phrase in (
+        "no present red-zone action",
+        "no present red zone action",
+        "no present red-zone violation",
+        "no present red zone violation",
+        "no red-zone action",
+        "no red zone action",
+        "no red-zone violation",
+        "no red zone violation",
+        "no present scope/safety violation",
+        "no present violation",
+    ):
+        present_text = present_text.replace(safe_phrase, "")
+    return any(term in text for term in future_terms) and not any(term in present_text for term in present_violation_terms)
 
 
 def _read_only_errors_are_environment_only(agent, artifact, errors):

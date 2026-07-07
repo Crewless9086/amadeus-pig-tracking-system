@@ -1375,6 +1375,50 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertTrue(result["deferred_blocker"])
 
+    def test_parallel_read_only_risk_agent_defers_advisory_broad_test_timeout(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "status": "pass_with_required_mitigations",
+            "summary": "Risk review found no present red-zone action. Builder must add authority matrix tests before owner review.",
+            "recommended_owner_decision": "approve_final_release",
+            "changed_files": [],
+            "test_evidence": [
+                {
+                    "command": ".\\venv\\Scripts\\python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow",
+                    "result": "pass",
+                    "summary": "108 tests passed.",
+                },
+                {
+                    "command": ".\\venv\\Scripts\\python.exe -m unittest broad CHARLIE/SAM/Oom Sakkie suite",
+                    "result": "timeout",
+                    "summary": "Timed out after 124 seconds; no pass/fail claim made.",
+                },
+            ],
+            "quality_gate": {
+                "risk_stage_ready": True,
+                "send_back_required": False,
+                "required_mitigations_for_later_agents": [
+                    "Tests must prove no authority unlock without owner approval and runtime gate.",
+                ],
+            },
+            "next_action": "Handoff to later Builder/Tester stages for focused implementation tests before pr_ready.",
+        })
+
+        low_level_quality = {
+            "passed": False,
+            "reason": (
+                "risk_agent recorded blocking evidence: "
+                '"result": "timeout", "summary": "Timed out after 124 seconds; no pass/fail claim made."'
+            ),
+        }
+        deferred = execution_bridge._read_only_block_is_downstream_evidence_only(
+            "risk_agent",
+            artifact,
+            low_level_quality,
+        )
+
+        self.assertTrue(deferred)
+
     def test_parallel_read_only_risk_agent_still_blocks_present_red_zone_violation(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
