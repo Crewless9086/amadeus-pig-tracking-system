@@ -1,7 +1,11 @@
 import hmac
+import hashlib
+import json
 import os
 import re
 from datetime import datetime
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from modules.orders.order_intake_service import (
     get_intake_context,
@@ -24,6 +28,11 @@ LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
 AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
+OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
+CHATWOOT_BASE_URL_ENV = "CHATWOOT_BASE_URL"
+CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
+CHATWOOT_TOKEN_ENV = "CHATWOOT_API_ACCESS_TOKEN"
+CHATWOOT_TOKEN_FALLBACK_ENV = "CHATWOOT_API_TOKEN"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 MIN_TOKEN_CHARS = 32
 
@@ -57,6 +66,8 @@ def sam_live_stock_webhook_policy(environ=None):
         "intake_write_env": INTAKE_WRITE_ENABLED_ENV,
         "draft_order_create_enabled": _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)),
         "draft_order_create_env": DRAFT_ORDER_CREATE_ENABLED_ENV,
+        "owner_approved_send_enabled": _truthy(source.get(OWNER_SEND_ENABLED_ENV)),
+        "owner_approved_send_env": OWNER_SEND_ENABLED_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "read_only": True,
         "writes_allowed": False,
@@ -111,6 +122,16 @@ def handle_sam_live_stock_chatwoot_inbound(
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
     decision = build_sam_live_stock_decision(inbound, facts, context_packet, source)
+    conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
+    decision["conversation_review"] = conversation_review
+    if conversation_review.get("escalation_required"):
+        decision["owner_gate_required"] = True
+        decision["escalation_packet"] = build_sam_live_stock_escalation_packet(
+            inbound,
+            facts,
+            decision,
+            conversation_review,
+        )
     intake_write = write_live_stock_intake_if_enabled(
         inbound,
         facts,
@@ -607,6 +628,221 @@ def build_live_stock_owner_action_packet(order_id="", conversation_id="", docume
             "conversation_id": conversation_id,
             "rule": "Only after owner confirms the latest sendable quote.",
         },
+    }
+
+
+def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    text = _normal_text(inbound.get("content"))
+    reply = _clean(decision.get("suggested_reply_text"), 1800)
+    missing = decision.get("missing_fields") if isinstance(decision.get("missing_fields"), list) else []
+    blockers = decision.get("blockers") if isinstance(decision.get("blockers"), list) else []
+    issues = []
+    blocked = []
+    escalation_reasons = []
+    score = 100
+
+    if _hostile_or_scam_signal(text):
+        escalation_reasons.append("hostile_or_scam_location_challenge")
+        issues.append("close_conversation_recommended")
+        score -= 35
+    if _price_challenge_signal(text):
+        escalation_reasons.append("pricing_challenge_or_negotiation")
+        issues.append("no_negotiation_posture")
+        score -= 25
+    if _natural_close_signal(text):
+        issues.append("natural_close_no_reply_needed")
+        score -= 5
+    if facts.get("breeding_interest"):
+        escalation_reasons.append("breeding_or_replacement_interest")
+        score -= 30
+    if facts.get("reservation_requested"):
+        escalation_reasons.append("reservation_request")
+        score -= 20
+    if blockers:
+        escalation_reasons.extend(str(item) for item in blockers)
+        score -= min(40, 10 * len(blockers))
+    if decision.get("sales_lane") != LANE_LIVE_STOCK:
+        escalation_reasons.append("wrong_or_unclear_lane")
+        score -= 20
+    if missing:
+        issues.append("missing_fields:" + ",".join(missing[:5]))
+        score -= min(20, 5 * len(missing))
+    if reply:
+        lowered = reply.lower()
+        unsafe_reply_patterns = [
+            (r"\breserved\b|\bheld\b|\bbooked\b", "implies_reservation"),
+            (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
+            (r"\b(for sale|available|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
+            (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
+        ]
+        for pattern, label in unsafe_reply_patterns:
+            if re.search(pattern, lowered):
+                blocked.append(label)
+                score -= 35
+        if reply.count("?") > 1:
+            issues.append("asks_more_than_one_question")
+            score -= 10
+        if len(reply) > 700:
+            issues.append("too_long_for_whatsapp")
+            score -= 8
+
+    score = max(0, min(100, score))
+    safe_to_send = not blocked and score >= 96 and not escalation_reasons and not _natural_close_signal(text)
+    if _natural_close_signal(text):
+        safe_to_send = False
+    return {
+        "version": "sam_live_stock_conversation_review_v1",
+        "score": score,
+        "confidence_target": 96,
+        "safe_to_send": safe_to_send,
+        "owner_send_required": not safe_to_send and bool(reply),
+        "no_reply_recommended": _natural_close_signal(text),
+        "escalation_required": bool(escalation_reasons or blocked),
+        "escalation_reasons": sorted(set(escalation_reasons)),
+        "issues": sorted(set(issues)),
+        "blocked_reasons": sorted(set(blocked)),
+        "conversation_mode_recommendation": "HUMAN" if escalation_reasons or blocked else "AUTO",
+        "recommended_action": _conversation_review_action(text, missing, escalation_reasons, blocked, reply),
+    }
+
+
+def build_sam_live_stock_escalation_packet(inbound, facts, decision, review=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    review = review if isinstance(review, dict) else review_sam_live_stock_conversation(inbound, facts, decision)
+    conversation_id = _clean(inbound.get("conversation_id"), 100)
+    suggested = _owner_escalation_reply(inbound, facts, decision, review)
+    escalation_id = _escalation_id(conversation_id, inbound.get("message_id"), inbound.get("content"))
+    return {
+        "version": "sam_live_stock_escalation_packet_v1",
+        "escalation_id": escalation_id,
+        "source_agent": "sam_live_stock",
+        "conversation_id": conversation_id,
+        "message_id": _clean(inbound.get("message_id"), 100),
+        "customer_name": _clean(inbound.get("customer_name"), 120),
+        "customer_phone": _clean(inbound.get("customer_phone"), 80),
+        "channel": _clean(inbound.get("channel"), 80),
+        "customer_message_excerpt": _clean(inbound.get("content"), 500),
+        "summary": _live_stock_escalation_summary(facts, review),
+        "risk_reasons": review.get("escalation_reasons") or review.get("blocked_reasons") or [],
+        "score": review.get("score"),
+        "suggested_response": suggested,
+        "recommended_mode": review.get("conversation_mode_recommendation") or "HUMAN",
+        "owner_actions": [
+            "approve_send",
+            "edit_send",
+            "close_without_reply",
+            "keep_human_mode",
+            "return_to_auto",
+        ],
+        "telegram_packet": {
+            "text": _telegram_escalation_text(escalation_id, inbound, facts, review, suggested),
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {"text": "Approve Send", "callback_data": f"sam_live_approve_send:{escalation_id}"},
+                        {"text": "Close", "callback_data": f"sam_live_close:{escalation_id}"},
+                    ],
+                    [
+                        {"text": "Keep Human", "callback_data": f"sam_live_human:{escalation_id}"},
+                        {"text": "Resolved", "callback_data": f"sam_live_resolved:{escalation_id}"},
+                    ],
+                ],
+            },
+        },
+        "chatwoot_takeover": build_sam_live_stock_chatwoot_takeover_payload(conversation_id, mode="HUMAN", reason="sam_live_stock_escalation"),
+        **_authority_flags(),
+    }
+
+
+def build_sam_live_stock_chatwoot_takeover_payload(conversation_id, mode="HUMAN", reason=""):
+    mode = "HUMAN" if str(mode or "").strip().upper() == "HUMAN" else "AUTO"
+    reason = _clean(reason or ("owner_takeover" if mode == "HUMAN" else "owner_resolved"), 120)
+    labels = ["sam_live_stock", "owner_handoff"] if mode == "HUMAN" else ["sam_live_stock", "owner_resolved"]
+    return {
+        "version": "sam_live_stock_chatwoot_takeover_v1",
+        "conversation_id": _clean(conversation_id, 100),
+        "mode": mode,
+        "custom_attributes": {
+            "conversation_mode": mode,
+            "sales_lane": "live_stock_sales",
+            "sam_live_stock_gate": reason,
+        },
+        "labels": labels,
+        "calls_chatwoot": False,
+        "rule": "Preserve existing Chatwoot attributes before writing this payload.",
+    }
+
+
+def build_sam_live_stock_owner_send_packet(conversation_id, message, escalation_id="", owner=""):
+    return {
+        "version": "sam_live_stock_owner_send_packet_v1",
+        "conversation_id": _clean(conversation_id, 100),
+        "message": _clean(message, 1800),
+        "escalation_id": _clean(escalation_id, 120),
+        "owner": _clean(owner or "owner", 120),
+        "requires_owner_approval": True,
+        "send_env": OWNER_SEND_ENABLED_ENV,
+        "authority": {
+            **_authority_flags(),
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+        },
+    }
+
+
+def send_owner_approved_live_stock_reply(conversation_id, message, *, environ=None, chatwoot_sender=None, owner="owner", escalation_id=""):
+    source = environ if environ is not None else os.environ
+    packet = build_sam_live_stock_owner_send_packet(conversation_id, message, escalation_id=escalation_id, owner=owner)
+    if not _truthy(source.get(OWNER_SEND_ENABLED_ENV)):
+        return {
+            "success": False,
+            "status": "sam_live_stock_owner_send_disabled",
+            "packet": packet,
+            **_authority_flags(),
+        }, 409
+    if not packet["conversation_id"]:
+        return {"success": False, "status": "conversation_id_required", "packet": packet, **_authority_flags()}, 400
+    if not packet["message"]:
+        return {"success": False, "status": "message_required", "packet": packet, **_authority_flags()}, 400
+    try:
+        sender = chatwoot_sender or _send_chatwoot_message
+        sent = sender(packet["conversation_id"], packet["message"], source)
+        return {
+            "success": True,
+            "status": "sam_live_stock_owner_reply_sent",
+            "packet": packet,
+            "chatwoot": sent,
+            **_authority_flags(),
+            "sends_customer_message": True,
+            "calls_chatwoot": True,
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "sam_live_stock_owner_reply_send_failed",
+            "error_type": exc.__class__.__name__,
+            "error": _clean(str(exc), 240),
+            "packet": packet,
+            **_authority_flags(),
+        }, 502
+
+
+def build_sam_live_stock_resolved_cleanup_packet(escalation_id, telegram_chat_id="", telegram_message_id="", conversation_id=""):
+    return {
+        "version": "sam_live_stock_resolved_cleanup_packet_v1",
+        "escalation_id": _clean(escalation_id, 120),
+        "conversation_id": _clean(conversation_id, 100),
+        "telegram_chat_id": _clean(telegram_chat_id, 100),
+        "telegram_message_id": _clean(telegram_message_id, 100),
+        "recommended_action": "delete_telegram_notification" if telegram_chat_id and telegram_message_id else "mark_resolved_no_telegram_delete",
+        "delete_allowed": bool(telegram_chat_id and telegram_message_id),
+        "rule": "Delete only the escalation notification message that belongs to this escalation. Never delete unrelated Telegram messages.",
+        **_authority_flags(),
     }
 
 
@@ -1238,6 +1474,148 @@ def _intake_notes(facts, decision):
 
 def _integration_failure(status, exc):
     return {"status": status, "error": _clean(str(exc), 240)}
+
+
+def _hostile_or_scam_signal(text):
+    text = _normal_text(text)
+    return _has_any(text, (
+        "scam",
+        "scammer",
+        "fake",
+        "not real",
+        "send location now",
+        "exact location",
+        "farm pin",
+        "drop pin",
+        "waar is julle plaas",
+        "stuur location",
+    ))
+
+
+def _price_challenge_signal(text):
+    text = _normal_text(text)
+    return _has_any(text, (
+        "too expensive",
+        "te duur",
+        "cheaper",
+        "discount",
+        "best price",
+        "negotiate",
+        "your price is too high",
+        "i can get cheaper",
+    ))
+
+
+def _natural_close_signal(text):
+    text = _normal_text(text)
+    if not text:
+        return False
+    text = re.sub(r"[,.;:!]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return bool(re.fullmatch(
+        r"(thanks|thank you|thanks have a good day|thank you have a good day|thx|ok|okay|great|cool|bye|goodbye|have a good day|will let you know|sal laat weet|dankie|reg dankie|goed dankie)[.! ]*",
+        text,
+    ))
+
+
+def _conversation_review_action(text, missing, escalation_reasons, blocked, reply):
+    if _natural_close_signal(text):
+        return "no_reply_natural_close"
+    if escalation_reasons or blocked:
+        return "owner_handoff"
+    if missing:
+        return "ask_one_missing_fact"
+    if reply:
+        return "owner_review_send_candidate"
+    return "monitor"
+
+
+def _owner_escalation_reply(inbound, facts, decision, review):
+    text = _normal_text((inbound or {}).get("content"))
+    reasons = set(review.get("escalation_reasons") or [])
+    if "hostile_or_scam_location_challenge" in reasons or _hostile_or_scam_signal(text):
+        return (
+            "I understand your concern. In that case it is better that we leave it here. "
+            "I do not want to waste your time or mine trying to convince you after you have already made up your mind. "
+            "Thanks for showing interest, and have a good day."
+        )
+    if "pricing_challenge_or_negotiation" in reasons or _price_challenge_signal(text):
+        return "I understand that our animals and pricing will not fit everyone's budget. Thanks for showing interest."
+    return _clean((decision or {}).get("suggested_reply_text"), 1800)
+
+
+def _live_stock_escalation_summary(facts, review):
+    facts = facts if isinstance(facts, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    pieces = [
+        "SAM Live Stock owner review needed",
+        f"score={review.get('score', '')}",
+        f"category={facts.get('category') or '-'}",
+        f"quantity={facts.get('quantity') or '-'}",
+        f"sex={facts.get('sex') or '-'}",
+        f"location={facts.get('location') or '-'}",
+    ]
+    reasons = review.get("escalation_reasons") or review.get("blocked_reasons") or []
+    if reasons:
+        pieces.append("reasons=" + ",".join(str(item) for item in reasons[:5]))
+    return _clean("; ".join(pieces), 500)
+
+
+def _telegram_escalation_text(escalation_id, inbound, facts, review, suggested):
+    return _clean(
+        "\n".join([
+            "SAM Live Stock escalation",
+            f"ID: {escalation_id}",
+            f"Conversation: {(inbound or {}).get('conversation_id') or '-'}",
+            f"Customer: {(inbound or {}).get('customer_name') or '-'}",
+            f"Score: {(review or {}).get('score', '-')}",
+            f"Reason: {', '.join((review or {}).get('escalation_reasons') or (review or {}).get('blocked_reasons') or []) or '-'}",
+            "",
+            f"Customer: {_clean((inbound or {}).get('content'), 350)}",
+            "",
+            f"Suggested: {suggested}",
+        ]),
+        3500,
+    )
+
+
+def _escalation_id(conversation_id, message_id, content):
+    raw = f"{conversation_id}|{message_id}|{content}"
+    return "SAM-LIVE-ESC-" + hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:10].upper()
+
+
+def _send_chatwoot_message(conversation_id, message, source):
+    conversation_id = _clean(conversation_id, 100)
+    message = _clean(message, 1800)
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    if not conversation_id:
+        raise RuntimeError("conversation_id is required")
+    if not message:
+        raise RuntimeError("message is required")
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is required")
+    if not account_id:
+        raise RuntimeError("CHATWOOT_ACCOUNT_ID is required")
+    if not token:
+        raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
+    body = {"content": message, "message_type": "outgoing", "private": False}
+    request = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+        data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+        headers={"Content-Type": "application/json", "api_access_token": token},
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=10) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return {
+                "status_code": getattr(response, "status", 200),
+                "body": json.loads(raw or "{}"),
+            }
+    except urllib_error.HTTPError as exc:
+        raise RuntimeError(f"chatwoot_http_{exc.code}") from exc
 
 
 def _configured_model(source):

@@ -71,6 +71,14 @@ from modules.sales.sam_meat_runtime import (
     handle_sam_meat_chatwoot_inbound,
     sam_meat_webhook_policy,
 )
+from modules.sales.sam_live_stock_runtime import (
+    authorize_sam_live_stock_webhook,
+    build_sam_live_stock_resolved_cleanup_packet,
+    handle_sam_live_stock_chatwoot_inbound,
+    review_sam_live_stock_conversation,
+    sam_live_stock_webhook_policy,
+    send_owner_approved_live_stock_reply,
+)
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_pricing import (
@@ -307,6 +315,78 @@ def sam_meat_chatwoot_inbound():
             "changes_stock": False,
         }, 500
     return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/policy", methods=["GET"])
+def sam_live_stock_chatwoot_policy():
+    return jsonify({
+        "success": True,
+        "policy": sam_live_stock_webhook_policy(),
+    }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/inbound", methods=["POST"])
+def sam_live_stock_chatwoot_inbound():
+    allowed, denied = authorize_sam_live_stock_webhook(request.headers, request.args)
+    if not allowed:
+        status_code = 403 if denied.get("status") == "sam_live_stock_backend_webhook_auth_denied" else 503
+        return jsonify(denied), status_code
+    payload = request.get_json(silent=True) or {}
+    try:
+        result, status_code = handle_sam_live_stock_chatwoot_inbound(payload)
+    except Exception as exc:
+        result, status_code = {
+            "success": False,
+            "status": "sam_live_stock_inbound_unhandled_exception",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "processed": False,
+            "sent": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "reserves_stock": False,
+        }, 500
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/review", methods=["POST"])
+def sam_live_stock_conversation_review():
+    payload = request.get_json(silent=True) or {}
+    result = review_sam_live_stock_conversation(
+        payload.get("inbound") if isinstance(payload.get("inbound"), dict) else payload,
+        payload.get("facts") if isinstance(payload.get("facts"), dict) else {},
+        payload.get("decision") if isinstance(payload.get("decision"), dict) else {},
+        payload.get("context_packet") if isinstance(payload.get("context_packet"), dict) else {},
+    )
+    return jsonify({"success": True, "review": result}), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/owner-send", methods=["POST"])
+def sam_live_stock_owner_send():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_owner_approved_live_stock_reply(
+        payload.get("conversation_id"),
+        payload.get("message"),
+        owner=payload.get("owner") or "owner",
+        escalation_id=payload.get("escalation_id") or "",
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/escalations/<escalation_id>/cleanup-packet", methods=["POST"])
+def sam_live_stock_escalation_cleanup_packet(escalation_id):
+    payload = request.get_json(silent=True) or {}
+    return jsonify({
+        "success": True,
+        "cleanup_packet": build_sam_live_stock_resolved_cleanup_packet(
+            escalation_id,
+            telegram_chat_id=payload.get("telegram_chat_id") or "",
+            telegram_message_id=payload.get("telegram_message_id") or "",
+            conversation_id=payload.get("conversation_id") or "",
+        ),
+    }), 200
 
 
 @sales_bp.route("/sales/channels/chatwoot/meat-documents/delivery-status", methods=["POST"])
