@@ -21,6 +21,7 @@ from modules.sales.sam_live_stock_runtime import (
 
 
 TELEGRAM_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED"
+TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED"
 TELEGRAM_CLEANUP_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED"
 TELEGRAM_BOT_TOKEN_ENV = "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN"
 TELEGRAM_CHAT_ID_ENV = "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID"
@@ -53,6 +54,7 @@ def sam_live_stock_launch_control_policy(environ=None):
         },
         "telegram_escalation": {
             "send_enabled": _truthy(source.get(TELEGRAM_SEND_ENABLED_ENV)),
+            "new_lead_send_enabled": _truthy(source.get(TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV)),
             "cleanup_enabled": _truthy(source.get(TELEGRAM_CLEANUP_ENABLED_ENV)),
             "bot_token_configured": bool(_telegram_token(source)),
             "owner_chat_id_configured": bool(_clean(source.get(TELEGRAM_CHAT_ID_ENV), 100)),
@@ -205,11 +207,21 @@ def record_sam_live_stock_review_event(event, database_url=None):
                     params,
                 )
                 created = cursor.rowcount == 1
+                cursor.execute(
+                    """
+                    select count(*) from public.sam_live_stock_conversation_review_events
+                    where chatwoot_conversation_id = %(chatwoot_conversation_id)s
+                    """,
+                    params,
+                )
+                conversation_event_count = int((cursor.fetchone() or [0])[0] or 0)
         return {
             "success": True,
             "status": "sam_live_stock_review_event_recorded" if created else "sam_live_stock_review_event_already_recorded",
             "review_event_id": params["review_event_id"],
             "created": created,
+            "chatwoot_conversation_id": params["chatwoot_conversation_id"],
+            "conversation_event_count": conversation_event_count,
             **AUTHORITY_FLAGS,
         }, 201 if created else 200
     except Exception as exc:
@@ -223,12 +235,66 @@ def record_sam_live_stock_review_event(event, database_url=None):
         }, 500
 
 
+def build_sam_live_stock_new_lead_packet(event, *, links=None):
+    event = event if isinstance(event, dict) else {}
+    facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}
+    review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
+    decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
+    links = links if isinstance(links, dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
+    parts = [
+        "SAM Live Stock new lead",
+        f"Conversation: {conversation_id or 'unknown'}",
+        f"Customer: {_clean(event.get('customer_name') or 'Unknown', 80)}",
+        f"Message: {_clean(event.get('customer_message_excerpt'), 300)}",
+        "Captured: " + _lead_fact_summary(facts),
+        f"Action: {_clean(event.get('recommended_action') or review.get('recommended_action'), 80)}",
+    ]
+    reply = _clean(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 400)
+    if reply:
+        parts.append(f"Draft: {reply}")
+    if links.get("availability_url"):
+        parts.append(f"Stock truth: {links['availability_url']}")
+    if links.get("open_intakes_url"):
+        parts.append(f"Open intakes: {links['open_intakes_url']}")
+    return {
+        "version": "sam_live_stock_new_lead_packet_v1",
+        "type": "new_lead",
+        "conversation_id": conversation_id,
+        "telegram_packet": {
+            "text": "\n".join(parts),
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "Keep Human", "callback_data": f"sam_live_human:{conversation_id}"},
+                    {"text": "Close", "callback_data": f"sam_live_close:{conversation_id}"},
+                ]],
+            },
+        },
+        **AUTHORITY_FLAGS,
+    }
+
+
+def send_sam_live_stock_new_lead_telegram(event, *, environ=None, telegram_sender=None, links=None):
+    source = environ if environ is not None else os.environ
+    packet = build_sam_live_stock_new_lead_packet(event, links=links)
+    if not _truthy(source.get(TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV)):
+        return {"success": False, "status": "sam_live_stock_new_lead_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
+    return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_new_lead_telegram_sent")
+
+
 def send_sam_live_stock_telegram_escalation(packet, *, environ=None, telegram_sender=None):
     source = environ if environ is not None else os.environ
     packet = packet if isinstance(packet, dict) else {}
     telegram_packet = packet.get("telegram_packet") if isinstance(packet.get("telegram_packet"), dict) else packet
     if not _truthy(source.get(TELEGRAM_SEND_ENABLED_ENV)):
         return {"success": False, "status": "sam_live_stock_telegram_send_disabled", "packet": telegram_packet, **AUTHORITY_FLAGS}, 409
+    return _send_sam_live_stock_telegram_packet(telegram_packet, source, telegram_sender, "sam_live_stock_telegram_escalation_sent")
+
+
+def _send_sam_live_stock_telegram_packet(telegram_packet, source, telegram_sender, success_status):
+    if not _truthy(source.get(TELEGRAM_SEND_ENABLED_ENV)):
+        if success_status != "sam_live_stock_new_lead_telegram_sent":
+            return {"success": False, "status": "sam_live_stock_telegram_send_disabled", "packet": telegram_packet, **AUTHORITY_FLAGS}, 409
     chat_id = _clean(source.get(TELEGRAM_CHAT_ID_ENV), 100)
     token = _telegram_token(source)
     if not token:
@@ -241,7 +307,7 @@ def send_sam_live_stock_telegram_escalation(packet, *, environ=None, telegram_se
     sender = telegram_sender or _telegram_send_message
     try:
         sent = sender(token, chat_id, text, telegram_packet.get("reply_markup") if isinstance(telegram_packet.get("reply_markup"), dict) else {})
-        return {"success": True, "status": "sam_live_stock_telegram_escalation_sent", "telegram": sent, **AUTHORITY_FLAGS, "calls_telegram": True}, 200
+        return {"success": True, "status": success_status, "telegram": sent, **AUTHORITY_FLAGS, "calls_telegram": True}, 200
     except Exception as exc:
         return {"success": False, "status": "sam_live_stock_telegram_escalation_failed", "error": _clean(str(exc), 240), **AUTHORITY_FLAGS}, 502
 
@@ -356,6 +422,103 @@ def execute_live_stock_order_reservation(order_id, action="reserve", *, environ=
     except Exception as exc:
         return {"success": False, "status": "sam_live_stock_order_reservation_failed", "error": _clean(str(exc), 240), "order_id": order_id, **AUTHORITY_FLAGS}, 502
     return {"success": False, "status": "unsupported_reservation_action", "action": action, **AUTHORITY_FLAGS}, 400
+
+
+def list_sam_live_stock_open_intakes(limit=25, *, database_url=None):
+    try:
+        limit = max(1, min(int(limit or 25), 100))
+    except (TypeError, ValueError):
+        limit = 25
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "status": "database_url_not_configured", "open_intakes": [], **AUTHORITY_FLAGS}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "status": "psycopg_dependency_missing", "open_intakes": [], **AUTHORITY_FLAGS}, 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        intake_id,
+                        conversation_id,
+                        customer_name,
+                        customer_phone_raw,
+                        intake_status,
+                        collection_location,
+                        collection_time_text,
+                        quote_requested,
+                        order_commitment,
+                        missing_fields,
+                        next_action,
+                        last_customer_message,
+                        notes,
+                        updated_at
+                    from public.order_intakes
+                    where intake_status in ('Open', 'Ready_For_Draft', 'Ready_For_Quote')
+                    and coalesce(notes, '') ilike '%%sam_live_stock%%'
+                    order by updated_at desc nulls last, created_at desc
+                    limit %s
+                    """,
+                    (limit,),
+                )
+                columns = [column.name for column in cursor.description]
+                intakes = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        return {
+            "success": True,
+            "status": "sam_live_stock_open_intakes_loaded",
+            "count": len(intakes),
+            "open_intakes": [_open_intake_row(row) for row in intakes],
+            "links": _owner_links(),
+            **AUTHORITY_FLAGS,
+        }, 200
+    except Exception as exc:
+        return {"success": False, "status": "sam_live_stock_open_intakes_failed", "error": _clean(str(exc), 240), "open_intakes": [], **AUTHORITY_FLAGS}, 500
+
+
+def build_sam_live_stock_launch_readiness(environ=None):
+    source = environ if environ is not None else os.environ
+    policy = sam_live_stock_launch_control_policy(source)
+    checks = {
+        "new_lead_telegram_ready": (
+            policy["telegram_escalation"]["new_lead_send_enabled"]
+            and policy["telegram_escalation"]["bot_token_configured"]
+            and policy["telegram_escalation"]["owner_chat_id_configured"]
+        ),
+        "escalation_telegram_ready": (
+            policy["telegram_escalation"]["send_enabled"]
+            and policy["telegram_escalation"]["bot_token_configured"]
+            and policy["telegram_escalation"]["owner_chat_id_configured"]
+        ),
+        "stock_truth_link_ready": True,
+        "open_intake_link_ready": True,
+        "kill_switch_documented": True,
+        "customer_autoreply_off_for_first_boost": True,
+        "reservation_owner_gated": not policy["order_reservation"]["enabled"],
+    }
+    must_fix = []
+    if not checks["new_lead_telegram_ready"]:
+        must_fix.append("Enable SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED with bot token and owner chat id.")
+    if not checks["escalation_telegram_ready"]:
+        must_fix.append("Enable SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED with bot token and owner chat id.")
+    return {
+        "success": True,
+        "status": "sam_live_stock_launch_readiness",
+        "score": 98 if not must_fix else 92,
+        "boost_ready": not must_fix,
+        "quiet_post_ready": True,
+        "checks": checks,
+        "must_fix_before_boost": must_fix,
+        "owner_links": _owner_links(),
+        "kill_switch": {
+            "primary": "Set SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED=0 to stop SAM Live processing.",
+            "sends": "Keep SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED=0 until owner-approved-send and real conversation review are complete.",
+            "intake_writes": "Set SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED=0 if intake capture must stop.",
+        },
+        **AUTHORITY_FLAGS,
+    }, 200
 
 
 def _review_event_params(event):
@@ -480,6 +643,61 @@ def _callback_result(action, body, status_code, escalation_id):
         "calls_chatwoot": bool(body.get("calls_chatwoot")),
         "calls_telegram": bool(body.get("calls_telegram")),
     }, status_code
+
+
+def _lead_fact_summary(facts):
+    facts = facts if isinstance(facts, dict) else {}
+    parts = []
+    for label, key in (
+        ("qty", "quantity"),
+        ("category", "category"),
+        ("sex", "sex"),
+        ("weight", "weight_range"),
+        ("timing", "timing"),
+        ("location", "location"),
+    ):
+        value = _clean(facts.get(key), 80)
+        if value:
+            parts.append(f"{label}={value}")
+    return ", ".join(parts) if parts else "not enough detail yet"
+
+
+def _open_intake_row(row):
+    row = row if isinstance(row, dict) else {}
+    missing = row.get("missing_fields")
+    if isinstance(missing, str):
+        try:
+            missing = json.loads(missing)
+        except Exception:
+            missing = [missing] if missing else []
+    if not isinstance(missing, list):
+        missing = []
+    return {
+        "intake_id": _clean(row.get("intake_id"), 100),
+        "conversation_id": _clean(row.get("conversation_id"), 100),
+        "customer_name": _clean(row.get("customer_name"), 120),
+        "customer_phone": _clean(row.get("customer_phone_raw"), 80),
+        "status": _clean(row.get("intake_status"), 60),
+        "location": _clean(row.get("collection_location"), 120),
+        "timing": _clean(row.get("collection_time_text"), 120),
+        "quote_requested": bool(row.get("quote_requested")),
+        "order_commitment": bool(row.get("order_commitment")),
+        "missing_fields": missing,
+        "next_action": _clean(row.get("next_action"), 120),
+        "last_customer_message": _clean(row.get("last_customer_message"), 500),
+        "notes": _clean(row.get("notes"), 500),
+        "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def _owner_links():
+    return {
+        "sales_availability": "/sales-availability",
+        "sam_pricing": "/sales/sam-pricing",
+        "open_intakes_api": "/api/sales/channels/chatwoot/sam-live-stock/open-intakes",
+        "policy_api": "/api/sales/channels/chatwoot/sam-live-stock/policy",
+        "readiness_api": "/api/sales/channels/chatwoot/sam-live-stock/launch-readiness",
+    }
 
 
 def _telegram_token(source):

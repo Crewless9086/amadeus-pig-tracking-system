@@ -91,6 +91,43 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(result["calls_telegram"])
         self.assertEqual(calls[0][1], "555")
 
+    def test_new_lead_telegram_send_has_separate_gate(self):
+        inbound, facts, decision = review_inputs()
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 90, "recommended_action": "ask_one_missing_fact"},
+        )
+        calls = []
+
+        disabled, disabled_status = launch.send_sam_live_stock_new_lead_telegram(
+            event,
+            environ={},
+            telegram_sender=lambda *args: calls.append(args),
+        )
+
+        self.assertEqual(disabled_status, 409)
+        self.assertEqual(disabled["status"], "sam_live_stock_new_lead_telegram_send_disabled")
+        self.assertEqual(calls, [])
+
+        sent, sent_status = launch.send_sam_live_stock_new_lead_telegram(
+            event,
+            environ={
+                "SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED": "1",
+                "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
+                "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
+            },
+            telegram_sender=lambda token, chat_id, text, reply_markup: calls.append((token, chat_id, text, reply_markup)) or {"ok": True},
+        )
+
+        self.assertEqual(sent_status, 200)
+        self.assertTrue(sent["success"])
+        self.assertEqual(sent["status"], "sam_live_stock_new_lead_telegram_sent")
+        self.assertEqual(calls[0][1], "555")
+        self.assertIn("SAM Live Stock new lead", calls[0][2])
+        self.assertIn("Conversation: 2401", calls[0][2])
+
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
             "SAM-LIVE-ESC-1",
@@ -208,6 +245,26 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["reserves_stock"])
         self.assertTrue(result["changes_stock"])
+
+    def test_launch_readiness_requires_owner_telegram_notifications_for_boost(self):
+        result, status = launch.build_sam_live_stock_launch_readiness(environ={})
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["boost_ready"])
+        self.assertTrue(result["quiet_post_ready"])
+        self.assertIn("SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED", " ".join(result["must_fix_before_boost"]))
+
+        ready, ready_status = launch.build_sam_live_stock_launch_readiness(environ={
+            "SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED": "1",
+            "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED": "1",
+            "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
+            "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
+        })
+
+        self.assertEqual(ready_status, 200)
+        self.assertTrue(ready["boost_ready"])
+        self.assertEqual(ready["score"], 98)
+        self.assertEqual(ready["must_fix_before_boost"], [])
 
 
 if __name__ == "__main__":

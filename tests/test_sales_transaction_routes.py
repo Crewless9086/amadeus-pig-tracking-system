@@ -1649,7 +1649,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         ) as live_runtime, patch.object(
             sales_transaction_routes,
             "record_sam_live_stock_review_event",
-            return_value=({"success": True, "status": "recorded", "review_event_id": "REV-1"}, 201),
+            return_value=({"success": True, "status": "recorded", "review_event_id": "REV-1", "conversation_event_count": 1}, 201),
+        ), patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+            return_value=({"success": False, "status": "sam_live_stock_new_lead_telegram_send_disabled"}, 409),
         ):
             response = self.client.post(
                 "/api/sales/channels/chatwoot/sam-meat/inbound",
@@ -1662,6 +1666,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(payload["sent"])
         self.assertEqual(payload["sam_live_stock_handoff"]["status"], "sam_live_stock_read_only_processed")
         self.assertTrue(payload["sam_live_stock_handoff"]["conversation_review_event"]["recorded"])
+        self.assertEqual(payload["sam_live_stock_handoff"]["conversation_review_event"]["owner_notification"]["type"], "new_lead")
         live_runtime.assert_called_once_with({"content": "weaners", "event": "message_created"})
 
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
@@ -1826,6 +1831,28 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.get_json()["status"], "sam_live_stock_telegram_cleanup_disabled")
         delete_telegram.assert_called_once_with("SAM-LIVE-ESC-1", "555", "123")
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_sam_live_stock_open_intakes",
+            return_value=({"success": True, "open_intakes": [{"intake_id": "INTAKE-1"}]}, 200),
+        ) as open_intakes:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-live-stock/open-intakes?limit=10")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["open_intakes"][0]["intake_id"], "INTAKE-1")
+        open_intakes.assert_called_once_with(limit="10")
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_sam_live_stock_launch_readiness",
+            return_value=({"success": True, "boost_ready": False, "score": 92}, 200),
+        ) as readiness:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-live-stock/launch-readiness")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["boost_ready"])
+        readiness.assert_called_once()
 
     def test_sam_live_stock_takeover_and_reservation_routes_call_services(self):
         with patch.object(
