@@ -107,12 +107,33 @@ The backend-native controlled launch surface should expose:
 - policy route for current env gates;
 - inbound route for Chatwoot live-stock messages;
 - conversation review/scoring packet;
+- append-only conversation review event logging in `sam_live_stock_conversation_review_events`;
 - escalation packet for Telegram/Oom Sakkie;
 - owner-approved send route, disabled unless the owner-send env gate is enabled;
-- resolved cleanup packet for deleting or marking the specific Telegram escalation notification;
-- Chatwoot takeover payload that sets `conversation_mode = HUMAN` without overwriting unrelated conversation attributes.
+- Telegram escalation send route, disabled unless the Telegram escalation send env gate is enabled;
+- Telegram callback route for approve-send, close, keep-human, and resolved actions;
+- resolved cleanup packet and delete route for deleting or marking the specific Telegram escalation notification;
+- Chatwoot takeover payload and write route that sets `conversation_mode = HUMAN` without overwriting unrelated conversation attributes;
+- advisory reservation plan route for matched candidates;
+- owner-gated order-line reserve/release route that may operate only after an order exists with assigned `Pig_ID` lines.
+
+These env gates must stay explicit:
+
+- `SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED`
+- `SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED`
+- `SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED`
+- `SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED`
+- `SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED`
 
 Autoreply and LLM/Agent V3 remain disabled until live-stock reply quality has been tested in the owner's own chat and reviewed.
+
+Reservation rule:
+
+- Before draft order: SAM may recommend candidate pigs from `Purpose = Sale` availability only.
+- Draft order: backend may create draft order only when facts, price, and stock gates pass.
+- Reservation: owner/operator may reserve assigned order lines only through the explicit reservation gate.
+- Release: owner/operator may release assigned order-line reservations through the explicit release action.
+- SAM must never say an animal is held/reserved before the backend reservation action succeeds.
 
 ## Source References
 

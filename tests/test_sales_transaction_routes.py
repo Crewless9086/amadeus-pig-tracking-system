@@ -1734,6 +1734,88 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(packet["recommended_action"], "delete_telegram_notification")
         self.assertFalse(packet["calls_chatwoot"])
 
+    def test_sam_live_stock_launch_control_routes_call_services(self):
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_telegram_escalation",
+            return_value=({"success": False, "status": "sam_live_stock_telegram_send_disabled"}, 409),
+        ) as send_telegram:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/send-telegram",
+                json={"telegram_packet": {"text": "Escalation"}},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_telegram_send_disabled")
+        send_telegram.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "process_sam_live_stock_owner_callback",
+            return_value=({"success": True, "status": "sam_live_stock_escalation_closed_without_reply"}, 200),
+        ) as callback:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/callback",
+                json={"callback_data": "sam_live_close:SAM-LIVE-ESC-1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_escalation_closed_without_reply")
+        callback.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "delete_sam_live_stock_telegram_escalation",
+            return_value=({"success": False, "status": "sam_live_stock_telegram_cleanup_disabled"}, 409),
+        ) as delete_telegram:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/SAM-LIVE-ESC-1/delete-telegram",
+                json={"telegram_chat_id": "555", "telegram_message_id": "123"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_telegram_cleanup_disabled")
+        delete_telegram.assert_called_once_with("SAM-LIVE-ESC-1", "555", "123")
+
+    def test_sam_live_stock_takeover_and_reservation_routes_call_services(self):
+        with patch.object(
+            sales_transaction_routes,
+            "apply_sam_live_stock_chatwoot_takeover",
+            return_value=({"success": False, "status": "sam_live_stock_chatwoot_takeover_write_disabled"}, 409),
+        ) as takeover:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/takeover",
+                json={"conversation_id": "2401", "mode": "HUMAN", "reason": "test"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_chatwoot_takeover_write_disabled")
+        takeover.assert_called_once_with("2401", mode="HUMAN", reason="test")
+
+        response = self.client.post(
+            "/api/sales/channels/chatwoot/sam-live-stock/reservation-plan",
+            json={"order_id": "ORD-1", "match_packet": {"matched_sample": [{"pig_id": "PIG-1"}]}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        plan = response.get_json()["reservation_plan"]
+        self.assertTrue(plan["owner_gate_required"])
+        self.assertFalse(plan["reserves_stock"])
+
+        with patch.object(
+            sales_transaction_routes,
+            "execute_live_stock_order_reservation",
+            return_value=({"success": False, "status": "sam_live_stock_order_reservation_disabled"}, 409),
+        ) as reserve:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/order-reservation",
+                json={"order_id": "ORD-1", "action": "reserve"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_order_reservation_disabled")
+        reserve.assert_called_once_with("ORD-1", action="reserve")
+
 
 if __name__ == "__main__":
     unittest.main()
