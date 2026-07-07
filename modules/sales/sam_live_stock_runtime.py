@@ -317,11 +317,14 @@ def summarize_live_stock_availability(rows, facts=None):
 
     category = _normal_category(facts.get("category"))
     sex = _normal_sex(facts.get("sex"))
+    requested_weight_range = facts.get("weight_range") or ""
     matched = []
     for row in safe_rows:
         if category and category not in _row_category_tokens(row):
             continue
         if sex and sex != "any" and sex not in _normal_text(row.get("sex")):
+            continue
+        if requested_weight_range and not _row_matches_requested_weight(row, requested_weight_range):
             continue
         matched.append(row)
 
@@ -1211,7 +1214,6 @@ def _row_category_tokens(row):
         "suggested_price_category",
         "calculated_stage",
         "weight_band",
-        "sales_notes",
     )))
     tokens = set()
     if "piglet" in text:
@@ -1227,6 +1229,35 @@ def _row_category_tokens(row):
     if not tokens:
         tokens.add("live_pig")
     return tokens
+
+
+def _row_matches_requested_weight(row, requested_weight_range):
+    requested = _weight_bounds_from_text(requested_weight_range)
+    if not requested:
+        return True
+    low, high = requested
+    row_weight = row.get("current_weight_kg")
+    try:
+        if row_weight not in ("", None):
+            weight = float(row_weight)
+            return low <= weight <= high
+    except (TypeError, ValueError):
+        pass
+    row_band = _weight_bounds_from_text(row.get("weight_band") or row.get("suggested_price_category") or "")
+    if not row_band:
+        return True
+    row_low, row_high = row_band
+    return row_low <= high and row_high >= low
+
+
+def _weight_bounds_from_text(value):
+    text = _normal_text(value).replace("_", " ")
+    numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", text)]
+    if len(numbers) >= 2:
+        return min(numbers[0], numbers[1]), max(numbers[0], numbers[1])
+    if len(numbers) == 1:
+        return numbers[0], numbers[0]
+    return None
 
 
 def _availability_public_row(row):

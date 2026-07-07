@@ -116,6 +116,21 @@ class OrderIntakeServiceTests(unittest.TestCase):
         update_intakes.assert_called_once()
         batch_update.assert_not_called()
 
+    def test_supabase_json_fields_are_adapted_as_json_values(self):
+        from psycopg.types.json import Json
+
+        missing = order_intake_supabase_store._normalize_update_value(
+            "missing_fields",
+            "quantity, timing",
+        )
+        linked = order_intake_supabase_store._normalize_update_value(
+            "linked_order_line_ids",
+            "LINE-1, LINE-2",
+        )
+
+        self.assertIsInstance(missing, Json)
+        self.assertIsInstance(linked, Json)
+
 
 if __name__ == "__main__":
     unittest.main()

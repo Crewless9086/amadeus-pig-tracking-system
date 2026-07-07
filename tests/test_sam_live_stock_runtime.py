@@ -150,6 +150,42 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(summary["matched_count"], 1)
         self.assertEqual(summary["matched_sample"][0]["pig_id"], "PIG-1")
 
+    def test_availability_summary_respects_requested_weight_range(self):
+        rows = [
+            {
+                "pig_id": "PIG-10KG",
+                "sex": "Female",
+                "status": "Active",
+                "on_farm": "Yes",
+                "reserved_status": "",
+                "available_for_sale": "Yes",
+                "purpose": "Sale",
+                "sale_category": "Weaner Piglets",
+                "weight_band": "10_to_14_Kg",
+                "current_weight_kg": 12,
+            },
+            {
+                "pig_id": "PIG-44KG",
+                "sex": "Female",
+                "status": "Active",
+                "on_farm": "Yes",
+                "reserved_status": "",
+                "available_for_sale": "Yes",
+                "purpose": "Sale",
+                "sale_category": "Grower Pigs",
+                "weight_band": "40_to_44_Kg",
+                "current_weight_kg": 44,
+            },
+        ]
+
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(
+            rows,
+            {"category": "weaner", "sex": "female", "weight_range": "10-15 kg"},
+        )
+
+        self.assertEqual(summary["matched_count"], 1)
+        self.assertEqual(summary["matched_sample"][0]["pig_id"], "PIG-10KG")
+
     def test_handle_inbound_builds_read_only_decision_without_writes_or_sends(self):
         def intake_loader(_conversation_id):
             return {
