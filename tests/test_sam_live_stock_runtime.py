@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from modules.sales import sam_live_stock_runtime
 
@@ -378,6 +379,60 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertTrue(writes[0]["patch"]["quote_requested"])
         self.assertNotIn("order_commitment", writes[0]["patch"])
+
+    def test_price_followup_drafts_readable_estimate_without_quote_or_reservation(self):
+        def intake_loader(_conversation_id):
+            return {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "quote_requested": False,
+                    "order_commitment": False,
+                },
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            }
+
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "status": "ok",
+                "sale_category": "Weaner Piglets",
+                "weight_band": "10_to_14_Kg",
+                "unit_price": 500,
+                "currency": "ZAR",
+                "source": "test",
+            },
+        ):
+            result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="What is the price for them?"),
+                intake_context_loader=intake_loader,
+                availability_loader=lambda: [],
+            )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertTrue(decision["facts"]["quote_requested"])
+        self.assertTrue(decision["price_answer_packet"]["can_answer_price"])
+        self.assertFalse(decision["price_answer_packet"]["formal_quote_created"])
+        self.assertFalse(decision["price_answer_packet"]["reservation_created"])
+        self.assertIn("Current SAM Live price estimate:", reply)
+        self.assertIn("- 2 x Female Weaner, 10-14 kg: R500 each", reply)
+        self.assertIn("- Estimated total: R1,000", reply)
+        self.assertIn("- This is not a reservation.", reply)
+        self.assertFalse(decision["sends_customer_message"])
+        self.assertFalse(decision["creates_order"])
+        self.assertFalse(decision["reserves_stock"])
 
     def test_intake_write_blocks_wrong_lane_and_breeding_stock(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="I want pork chops."))

@@ -391,7 +391,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
     ready_for_runtime_next_step = route["lane"] == LANE_LIVE_STOCK and not missing and not blockers
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
-    reply = _safe_reply_draft(facts, route, missing, availability, blockers)
+    price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet)
     return {
         "version": RUNTIME_VERSION,
         "agent": "sam_live_stock_backend",
@@ -410,6 +411,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "missing_fields": missing,
         "availability": availability,
         "match_packet": match_packet,
+        "price_answer_packet": price_answer_packet,
         "draft_order_packet": draft_packet,
         "blockers": blockers,
         "ready_for_runtime_next_step": ready_for_runtime_next_step,
@@ -587,6 +589,35 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
             "Does not reserve pigs.",
             "Does not send quote/customer message.",
         ],
+    }
+
+
+def build_live_stock_price_answer_packet(facts, match_packet=None):
+    facts = facts if isinstance(facts, dict) else {}
+    match_packet = match_packet if isinstance(match_packet, dict) else {}
+    price_rule = _live_stock_price_rule_for_packet(facts, match_packet)
+    quantity = _quantity_number(facts.get("quantity"))
+    unit_price = price_rule.get("unit_price") if price_rule.get("found") else None
+    estimated_total = round(float(unit_price) * quantity, 2) if unit_price is not None and quantity > 0 else ""
+    return {
+        "version": "sam_live_stock_price_answer_packet_v1",
+        "requested_quantity": quantity or "",
+        "requested_category": _normal_intake_category(facts.get("category")),
+        "requested_weight_range": _normal_intake_weight_range(
+            facts.get("weight_range"),
+            _normal_intake_category(facts.get("category")),
+        ),
+        "requested_sex": _normal_intake_sex(facts.get("sex")),
+        "pricing": price_rule,
+        "unit_price": unit_price if unit_price is not None else "",
+        "estimated_total": estimated_total,
+        "can_answer_price": bool(price_rule.get("found") and unit_price is not None),
+        "owner_review_required": True,
+        "customer_send_allowed": False,
+        "formal_quote_created": False,
+        "reservation_created": False,
+        "safety_note": "Price answer is an estimate only. Farm must confirm animals before any promise, reservation, or formal quote.",
+        **_authority_flags(),
     }
 
 
@@ -991,7 +1022,7 @@ def build_sam_live_stock_go_live_checklist(environ=None):
         }
 
 
-def _safe_reply_draft(facts, route, missing, availability, blockers):
+def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None):
     if route["lane"] != LANE_LIVE_STOCK:
         if route["lane"] == "owner_handoff" and _payment_or_pop_interest(facts):
             return (
@@ -1003,11 +1034,42 @@ def _safe_reply_draft(facts, route, missing, availability, blockers):
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
+    if facts.get("quote_requested"):
+        price_reply = _price_answer_reply(facts, price_answer_packet)
+        if price_reply:
+            return price_reply
     if missing:
         return _question_for_missing(missing[0])
     if availability.get("success") and int(availability.get("matched_count") or 0) <= 0:
         return "I do not want to over-promise that exact group. I can check nearby suitable options for farm review."
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _price_answer_reply(facts, packet):
+    facts = facts if isinstance(facts, dict) else {}
+    packet = packet if isinstance(packet, dict) else {}
+    if not packet.get("can_answer_price"):
+        if _blank(facts.get("category")):
+            return "What size or type are you asking about: piglets, weaners, growers, finishers, or ready-for-slaughter pigs?"
+        if _blank(facts.get("weight_range")):
+            return "What weight band should I price for you?"
+        return "I do not want to guess the price. I can check the current SAM price list for farm review."
+    quantity = _quantity_number(packet.get("requested_quantity"))
+    quantity_label = f"{_quantity_label(quantity)} x " if quantity > 0 else ""
+    sex = packet.get("requested_sex")
+    sex_label = "" if str(sex or "").lower() == "any" else f"{sex} "
+    category = packet.get("requested_category") or (packet.get("pricing") or {}).get("sale_category") or "live pig"
+    weight_band = _human_weight_band(packet.get("requested_weight_range") or (packet.get("pricing") or {}).get("weight_band"))
+    unit = _money_label(packet.get("unit_price"))
+    lines = [
+        "Current SAM Live price estimate:",
+        f"- {quantity_label}{sex_label}{category}, {weight_band}: {unit} each",
+    ]
+    if quantity > 1 and packet.get("estimated_total") not in ("", None):
+        lines.append(f"- Estimated total: {_money_label(packet.get('estimated_total'))}")
+    lines.append("- This is not a reservation.")
+    lines.append("- The farm must confirm the actual animals before anything is promised.")
+    return "\n".join(lines)
 
 
 def _live_stock_price_rule_for_packet(facts, match_packet):
@@ -1022,6 +1084,36 @@ def _live_stock_price_rule_for_packet(facts, match_packet):
     )
     sex = first.get("sex") or facts.get("sex")
     return resolve_live_stock_price_rule(category, weight_band, sex)
+
+
+def _quantity_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0
+    return int(number) if number.is_integer() else number
+
+
+def _quantity_label(value):
+    number = _quantity_number(value)
+    return str(int(number)) if isinstance(number, int) or float(number).is_integer() else str(number)
+
+
+def _money_label(value):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "price unavailable"
+    if amount.is_integer():
+        return f"R{int(amount):,}"
+    return f"R{amount:,.2f}"
+
+
+def _human_weight_band(value):
+    text = _clean(value, 80)
+    if not text:
+        return "weight band not confirmed"
+    return text.replace("_to_", "-").replace("_Kg", " kg").replace("_kg", " kg")
 
 
 def _question_for_missing(field):
