@@ -147,6 +147,51 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("SAM Live Stock new lead", calls[0][2])
         self.assertIn("Conversation: 2401", calls[0][2])
 
+    def test_owner_review_telegram_send_has_approve_button_and_multiline_draft(self):
+        inbound, facts, decision = review_inputs()
+        decision["suggested_reply_text"] = (
+            "Current SAM Live price estimate:\n"
+            "- 2 x Female Weaner, 10-14 kg: R500 each\n"
+            "- Estimated total: R1,000\n"
+            "- This is not a reservation."
+        )
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+        calls = []
+
+        disabled, disabled_status = launch.send_sam_live_stock_owner_review_telegram(
+            event,
+            environ={},
+            telegram_sender=lambda *args: calls.append(args),
+        )
+
+        self.assertEqual(disabled_status, 409)
+        self.assertEqual(disabled["status"], "sam_live_stock_owner_review_telegram_send_disabled")
+        self.assertEqual(calls, [])
+
+        sent, sent_status = launch.send_sam_live_stock_owner_review_telegram(
+            event,
+            environ={
+                "SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED": "1",
+                "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
+                "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
+            },
+            telegram_sender=lambda token, chat_id, text, reply_markup: calls.append((token, chat_id, text, reply_markup)) or {"ok": True},
+        )
+
+        self.assertEqual(sent_status, 200)
+        self.assertTrue(sent["success"])
+        self.assertEqual(sent["status"], "sam_live_stock_owner_review_telegram_sent")
+        self.assertIn("SAM Live Stock owner review", calls[0][2])
+        self.assertIn("\n- 2 x Female Weaner", calls[0][2])
+        buttons = calls[0][3]["inline_keyboard"]
+        self.assertEqual(buttons[0][0]["text"], "Approve Send")
+        self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_review_approve:SAM-LIVE-REVIEW-"))
+
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
             "SAM-LIVE-ESC-1",
@@ -232,6 +277,46 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["action"], "close")
 
+    def test_owner_review_callback_loads_saved_event_before_sending(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-ABC123",
+            "chatwoot_conversation_id": "2401",
+            "sam_reply_excerpt": "Current SAM Live price estimate:\n- 2 x Weaner: R500 each",
+            "decision_json": {},
+        }
+        send_calls = []
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
+            chatwoot_sender=lambda conversation_id, message, source: send_calls.append((conversation_id, message)) or {"ok": True},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "review_approve_send")
+        self.assertTrue(result["sends_customer_message"])
+        self.assertEqual(send_calls, [("2401", "Current SAM Live price estimate:\n- 2 x Weaner: R500 each")])
+
+    def test_owner_review_callback_edit_returns_safe_manual_instruction(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-ABC123",
+            "chatwoot_conversation_id": "2401",
+            "sam_reply_excerpt": "Suggested reply",
+            "decision_json": {},
+        }
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_review_edit:SAM-LIVE-REVIEW-ABC123"},
+            review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "review_edit")
+        self.assertEqual(result["conversation_id"], "2401")
+        self.assertEqual(result["suggested_reply"], "Suggested reply")
+        self.assertFalse(result["sends_customer_message"])
+
     def test_live_stock_reservation_plan_is_advisory(self):
         plan = launch.build_live_stock_reservation_plan(
             order_id="ORD-1",
@@ -276,6 +361,8 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         ready, ready_status = launch.build_sam_live_stock_launch_readiness(environ={
             "SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED": "1",
             "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED": "1",
+            "SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED": "1",
+            "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1",
             "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
             "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
         })

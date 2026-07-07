@@ -7,6 +7,7 @@ from urllib import error as urllib_error
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.sales_campaign_store import approve_first_waiting_sales_campaign
+from modules.sales.sam_live_stock_launch_control import process_sam_live_stock_owner_callback
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -120,7 +121,7 @@ def telegram_direct_parity_report(environ=None):
         "carried_over_backend_capabilities": _carried_over_capabilities(),
         "telegram_commands": _telegram_command_catalog(),
         "not_carried_over_yet": [
-            "Telegram inline buttons and callback actions",
+            "Generic Telegram inline buttons and callback actions outside the SAM Live owner-review path",
             "Telegram voice-note transcription",
             "Persistent task/reminder/project memory",
             "Write actions, dispatch, runtime changes, physical controls, or financial actions",
@@ -157,6 +158,41 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     if not _secret_matches(headers or {}, environ=environ):
         _record_auth_failure()
         return _direct_result(False, "telegram_direct_auth_denied", policy, 403)
+
+    callback = _parse_telegram_callback_payload(payload)
+    if callback["callback_data"].startswith("sam_live_"):
+        allowed_ids = _allowed_user_ids(environ if environ is not None else os.environ)
+        if callback["telegram_user_id"] not in allowed_ids:
+            body, status_code = _direct_result(False, "telegram_user_not_allowed", policy, 403)
+            body["telegram_user_id"] = callback["telegram_user_id"]
+            return body, status_code
+        action_result, action_status = process_sam_live_stock_owner_callback({
+            "callback_data": callback["callback_data"],
+            "telegram_chat_id": callback["telegram_chat_id"],
+            "telegram_message_id": callback["telegram_message_id"],
+            "owner": "telegram_owner",
+        }, environ=environ)
+        telegram_text = _format_sam_live_callback_owner_reply(action_result)
+        send_result, send_status = send_owner_telegram_reply(
+            chat_id=callback["telegram_chat_id"],
+            text=telegram_text,
+            environ=environ,
+        )
+        status_label = send_result.get("status", "telegram_send_failed") if action_result.get("success") else action_result.get("status", "sam_live_callback_failed")
+        body, _ = _direct_result(action_result.get("success") is True and send_result.get("success") is True, status_label, policy, 200 if send_status < 400 else send_status)
+        body.update({
+            "telegram_user_id": callback["telegram_user_id"],
+            "telegram_chat_id": callback["telegram_chat_id"],
+            "callback_data": callback["callback_data"],
+            "sam_live_callback": action_result,
+            "sam_live_callback_status_code": action_status,
+            "telegram_text": telegram_text,
+            "telegram_send": send_result,
+            "sends_telegram": bool(send_result.get("sends_telegram")),
+            "sends_customer_message": bool(action_result.get("sends_customer_message")),
+            "calls_chatwoot": bool(action_result.get("calls_chatwoot")),
+        })
+        return body, send_status if send_status >= 400 else 200
 
     parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
@@ -212,6 +248,46 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         "telegram_send": send_result,
     })
     return body, send_status
+
+
+def _parse_telegram_callback_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    callback = payload.get("callback_query") if isinstance(payload.get("callback_query"), dict) else {}
+    message = callback.get("message") if isinstance(callback.get("message"), dict) else {}
+    from_user = callback.get("from") if isinstance(callback.get("from"), dict) else {}
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    return {
+        "callback_data": str(callback.get("data") or payload.get("callback_data") or "").strip()[:240],
+        "telegram_user_id": str(payload.get("telegram_user_id") or from_user.get("id") or "").strip()[:80],
+        "telegram_chat_id": str(payload.get("telegram_chat_id") or chat.get("id") or "").strip()[:80],
+        "telegram_message_id": str(payload.get("telegram_message_id") or message.get("message_id") or "").strip()[:80],
+    }
+
+
+def _format_sam_live_callback_owner_reply(action_result):
+    action_result = action_result if isinstance(action_result, dict) else {}
+    lines = ["SAM Live Stock", ""]
+    if action_result.get("success"):
+        if action_result.get("sends_customer_message"):
+            lines.append("Approved reply sent to WhatsApp.")
+        elif action_result.get("action") == "review_edit":
+            lines.append("Edit required. Nothing was sent to the customer.")
+        elif action_result.get("action") in {"human", "review_human"}:
+            lines.append("Conversation marked for human handling where the Chatwoot gate is enabled.")
+        else:
+            lines.append("Action recorded. Nothing was sent to the customer.")
+    else:
+        lines.append("Action failed or is blocked by a safety gate.")
+    lines.extend([
+        f"Status: {action_result.get('status') or 'unknown'}",
+    ])
+    conversation_id = action_result.get("conversation_id") or ((action_result.get("result") or {}).get("packet") or {}).get("conversation_id")
+    if conversation_id:
+        lines.append(f"Conversation: {conversation_id}")
+    if action_result.get("recommended_next"):
+        lines.extend(["", str(action_result.get("recommended_next"))[:600]])
+    lines.extend(["", "Safety: customer sends only happen through the owner-approved SAM Live gate."])
+    return "\n".join(lines).strip()[:MAX_REPLY_CHARS]
 
 
 def send_daily_brief_to_allowed_owners(environ=None):

@@ -1013,6 +1013,109 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_routes_sam_live_owner_review_callback(self, mock_handle, mock_callback, mock_send):
+        mock_callback.return_value = ({
+            "success": True,
+            "status": "sam_live_stock_owner_reply_sent",
+            "action": "review_approve_send",
+            "sends_customer_message": True,
+            "calls_chatwoot": True,
+            "result": {"packet": {"conversation_id": "1826"}},
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "callback_query": {
+                    "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
+                    "from": {"id": 12345},
+                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["sends_customer_message"])
+        self.assertTrue(result["calls_chatwoot"])
+        self.assertIn("Approved reply sent to WhatsApp", result["telegram_text"])
+        mock_handle.assert_not_called()
+        mock_callback.assert_called_once()
+        mock_send.assert_called_once()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    def test_telegram_direct_sam_live_callback_acknowledges_blocked_action_without_retry(self, mock_callback, mock_send):
+        mock_callback.return_value = ({
+            "success": False,
+            "status": "sam_live_stock_owner_send_disabled",
+            "action": "review_approve_send",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+        }, 409)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "callback_query": {
+                    "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
+                    "from": {"id": 12345},
+                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["sends_telegram"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertEqual(result["status"], "sam_live_stock_owner_send_disabled")
+        self.assertIn("blocked by a safety gate", result["telegram_text"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    def test_telegram_direct_rejects_sam_live_callback_from_non_owner(self, mock_callback):
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "callback_query": {
+                    "data": "sam_live_review_approve:SAM-LIVE-REVIEW-ABC123",
+                    "from": {"id": 99999},
+                    "message": {"message_id": 99, "chat": {"id": 67890}},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 403)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_user_not_allowed")
+        mock_callback.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
     @patch("modules.oom_sakkie.telegram_direct.handle_message")
     def test_telegram_direct_command_alias_routes_to_backend_tool_prompt(self, mock_handle, mock_send):
         mock_handle.return_value = ({

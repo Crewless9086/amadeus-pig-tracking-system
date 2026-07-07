@@ -91,6 +91,7 @@ from modules.sales.sam_live_stock_launch_control import (
     record_sam_live_stock_review_event,
     sam_live_stock_launch_control_policy,
     send_sam_live_stock_new_lead_telegram,
+    send_sam_live_stock_owner_review_telegram,
     send_sam_live_stock_telegram_escalation,
 )
 from modules.sales.sam_command_state import get_sam_command_state
@@ -379,7 +380,20 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if int(learning_result.get("conversation_event_count") or 0) == 1:
         sent, status_code = send_sam_live_stock_new_lead_telegram(event)
         return {"attempted": True, "type": "new_lead", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
+    if _sam_live_stock_owner_review_notification_needed(event):
+        sent, status_code = send_sam_live_stock_owner_review_telegram(event)
+        return {"attempted": True, "type": "owner_review", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     return {"attempted": False, "status": "not_new_or_escalation"}
+
+
+def _sam_live_stock_owner_review_notification_needed(event):
+    if not isinstance(event, dict):
+        return False
+    if event.get("no_reply_recommended") or event.get("escalation_required"):
+        return False
+    reply = str(event.get("sam_reply_excerpt") or "").strip()
+    action = str(event.get("recommended_action") or "").strip()
+    return bool(reply and action == "owner_review_send_candidate")
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/policy", methods=["GET"])

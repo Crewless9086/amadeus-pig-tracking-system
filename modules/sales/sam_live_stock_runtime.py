@@ -857,7 +857,7 @@ def build_sam_live_stock_owner_send_packet(conversation_id, message, escalation_
     return {
         "version": "sam_live_stock_owner_send_packet_v1",
         "conversation_id": _clean(conversation_id, 100),
-        "message": _clean(message, 1800),
+        "message": _clean_multiline(message, 1800),
         "escalation_id": _clean(escalation_id, 120),
         "owner": _clean(owner or "owner", 120),
         "requires_owner_approval": True,
@@ -1752,7 +1752,7 @@ def _escalation_id(conversation_id, message_id, content):
 
 def _send_chatwoot_message(conversation_id, message, source):
     conversation_id = _clean(conversation_id, 100)
-    message = _clean(message, 1800)
+    message = _clean_multiline(message, 1800)
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
     account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
     token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
@@ -1818,3 +1818,9 @@ def _truthy(value):
 
 def _clean(value, limit):
     return " ".join(str(value or "").split())[:limit]
+
+
+def _clean_multiline(value, limit):
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [" ".join(line.split()) for line in text.split("\n")]
+    return "\n".join(line for line in lines if line)[:limit]

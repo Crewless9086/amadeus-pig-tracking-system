@@ -22,6 +22,7 @@ from modules.sales.sam_live_stock_runtime import (
 
 TELEGRAM_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED"
 TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED"
+TELEGRAM_OWNER_REVIEW_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED"
 TELEGRAM_CLEANUP_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED"
 TELEGRAM_BOT_TOKEN_ENV = "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN"
 TELEGRAM_CHAT_ID_ENV = "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID"
@@ -55,6 +56,7 @@ def sam_live_stock_launch_control_policy(environ=None):
         "telegram_escalation": {
             "send_enabled": _truthy(source.get(TELEGRAM_SEND_ENABLED_ENV)),
             "new_lead_send_enabled": _truthy(source.get(TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV)),
+            "owner_review_send_enabled": _truthy(source.get(TELEGRAM_OWNER_REVIEW_SEND_ENABLED_ENV)),
             "cleanup_enabled": _truthy(source.get(TELEGRAM_CLEANUP_ENABLED_ENV)),
             "bot_token_configured": bool(_telegram_token(source)),
             "owner_chat_id_configured": bool(_clean(source.get(TELEGRAM_CHAT_ID_ENV), 100)),
@@ -235,6 +237,67 @@ def record_sam_live_stock_review_event(event, database_url=None):
         }, 500
 
 
+def get_sam_live_stock_review_event(review_event_id, database_url=None):
+    review_event_id = _clean(review_event_id, 120)
+    if not review_event_id:
+        return {"success": False, "status": "review_event_id_required", **AUTHORITY_FLAGS}, 400
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "status": "database_url_not_configured", **AUTHORITY_FLAGS}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "status": "psycopg_dependency_missing", **AUTHORITY_FLAGS}, 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        review_event_id,
+                        chatwoot_conversation_id,
+                        chatwoot_message_id,
+                        customer_name,
+                        channel,
+                        event_source,
+                        customer_message_excerpt,
+                        sam_reply_excerpt,
+                        score,
+                        confidence_target,
+                        safe_to_send,
+                        owner_send_required,
+                        no_reply_recommended,
+                        escalation_required,
+                        conversation_mode_recommendation,
+                        recommended_action,
+                        review_json,
+                        facts_json,
+                        decision_json
+                    from public.sam_live_stock_conversation_review_events
+                    where review_event_id = %s
+                    limit 1
+                    """,
+                    (review_event_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "sam_live_stock_review_event_not_found", "review_event_id": review_event_id, **AUTHORITY_FLAGS}, 404
+                columns = [column.name for column in cursor.description]
+        event = dict(zip(columns, row))
+        for key in ("review_json", "facts_json", "decision_json"):
+            event[key] = _json_value(event.get(key))
+        return {"success": True, "status": "sam_live_stock_review_event_loaded", "review_event_id": review_event_id, "event": event, **AUTHORITY_FLAGS}, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "sam_live_stock_review_event_load_failed",
+            "error_type": exc.__class__.__name__,
+            "error": _clean(str(exc), 240),
+            "review_event_id": review_event_id,
+            **AUTHORITY_FLAGS,
+        }, 500
+
+
 def build_sam_live_stock_new_lead_packet(event, *, links=None):
     event = event if isinstance(event, dict) else {}
     facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}
@@ -274,12 +337,70 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
     }
 
 
+def build_sam_live_stock_owner_review_packet(event, *, links=None):
+    event = event if isinstance(event, dict) else {}
+    decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
+    links = links if isinstance(links, dict) else {}
+    review_event_id = _clean(event.get("review_event_id"), 120)
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
+    reply = _clean_multiline(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 900)
+    parts = [
+        "SAM Live Stock owner review",
+        f"Review: {review_event_id or 'unknown'}",
+        f"Conversation: {conversation_id or 'unknown'}",
+        f"Customer: {_clean(event.get('customer_name') or 'Unknown', 80)}",
+        f"Score: {int(event.get('score') or 0)}/{int(event.get('confidence_target') or 96)}",
+        f"Action: {_clean(event.get('recommended_action'), 100)}",
+        "",
+        "Customer message:",
+        _clean_multiline(event.get("customer_message_excerpt"), 500) or "No customer message captured.",
+        "",
+        "SAM suggested reply:",
+        reply or "No reply recommended.",
+        "",
+        "Safety:",
+        "- Nothing has been sent to WhatsApp yet.",
+        "- Approve only if the reply is correct for the current stock and conversation.",
+    ]
+    if links.get("sales_availability"):
+        parts.append(f"Stock truth: {links['sales_availability']}")
+    if links.get("open_intakes_api"):
+        parts.append(f"Open intakes: {links['open_intakes_api']}")
+    keyboard = []
+    if review_event_id and reply:
+        keyboard.append([{"text": "Approve Send", "callback_data": f"sam_live_review_approve:{review_event_id}"}])
+    keyboard.append([
+        {"text": "Edit in Chatwoot", "callback_data": f"sam_live_review_edit:{review_event_id or conversation_id}"},
+        {"text": "Keep Human", "callback_data": f"sam_live_review_human:{review_event_id or conversation_id}"},
+    ])
+    keyboard.append([{"text": "Close", "callback_data": f"sam_live_review_close:{review_event_id or conversation_id}"}])
+    return {
+        "version": "sam_live_stock_owner_review_packet_v1",
+        "type": "owner_review_send_candidate",
+        "review_event_id": review_event_id,
+        "conversation_id": conversation_id,
+        "telegram_packet": {
+            "text": "\n".join(parts),
+            "reply_markup": {"inline_keyboard": keyboard},
+        },
+        **AUTHORITY_FLAGS,
+    }
+
+
 def send_sam_live_stock_new_lead_telegram(event, *, environ=None, telegram_sender=None, links=None):
     source = environ if environ is not None else os.environ
     packet = build_sam_live_stock_new_lead_packet(event, links=links)
     if not _truthy(source.get(TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV)):
         return {"success": False, "status": "sam_live_stock_new_lead_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
     return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_new_lead_telegram_sent")
+
+
+def send_sam_live_stock_owner_review_telegram(event, *, environ=None, telegram_sender=None, links=None):
+    source = environ if environ is not None else os.environ
+    packet = build_sam_live_stock_owner_review_packet(event, links=links)
+    if not _truthy(source.get(TELEGRAM_OWNER_REVIEW_SEND_ENABLED_ENV)):
+        return {"success": False, "status": "sam_live_stock_owner_review_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
+    return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_owner_review_telegram_sent")
 
 
 def send_sam_live_stock_telegram_escalation(packet, *, environ=None, telegram_sender=None):
@@ -293,7 +414,7 @@ def send_sam_live_stock_telegram_escalation(packet, *, environ=None, telegram_se
 
 def _send_sam_live_stock_telegram_packet(telegram_packet, source, telegram_sender, success_status):
     if not _truthy(source.get(TELEGRAM_SEND_ENABLED_ENV)):
-        if success_status != "sam_live_stock_new_lead_telegram_sent":
+        if success_status not in {"sam_live_stock_new_lead_telegram_sent", "sam_live_stock_owner_review_telegram_sent"}:
             return {"success": False, "status": "sam_live_stock_telegram_send_disabled", "packet": telegram_packet, **AUTHORITY_FLAGS}, 409
     chat_id = _clean(source.get(TELEGRAM_CHAT_ID_ENV), 100)
     token = _telegram_token(source)
@@ -301,7 +422,7 @@ def _send_sam_live_stock_telegram_packet(telegram_packet, source, telegram_sende
         return {"success": False, "status": "sam_live_stock_telegram_token_required", **AUTHORITY_FLAGS}, 503
     if not chat_id:
         return {"success": False, "status": "sam_live_stock_telegram_owner_chat_required", **AUTHORITY_FLAGS}, 503
-    text = _clean(telegram_packet.get("text"), 3500)
+    text = _clean_multiline(telegram_packet.get("text"), 3500)
     if not text:
         return {"success": False, "status": "telegram_text_required", **AUTHORITY_FLAGS}, 400
     sender = telegram_sender or _telegram_send_message
@@ -345,10 +466,57 @@ def apply_sam_live_stock_chatwoot_takeover(conversation_id, mode="HUMAN", reason
         return {"success": False, "status": "sam_live_stock_chatwoot_takeover_failed", "error": _clean(str(exc), 240), "packet": packet, **AUTHORITY_FLAGS}, 502
 
 
-def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, chatwoot_writer=None):
+def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, chatwoot_writer=None, review_event_loader=None):
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
+    if action["action"] in {"review_approve_send", "review_edit", "review_human", "review_close"}:
+        loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
+        if load_status >= 400 or not loaded.get("success"):
+            return _callback_result(action["action"], loaded, load_status, escalation_id)
+        event = loaded.get("event") if isinstance(loaded.get("event"), dict) else {}
+        conversation_id = event.get("chatwoot_conversation_id")
+        message = _clean_multiline(event.get("sam_reply_excerpt") or _json_value(event.get("decision_json")).get("suggested_reply_text"), 1800)
+        if action["action"] == "review_approve_send":
+            send_result, status = send_owner_approved_live_stock_reply(
+                conversation_id,
+                message,
+                environ=environ,
+                chatwoot_sender=chatwoot_sender,
+                owner=payload.get("owner") or "telegram_owner",
+                escalation_id=escalation_id,
+            )
+            return _callback_result("review_approve_send", send_result, status, escalation_id)
+        if action["action"] == "review_edit":
+            return {
+                "success": True,
+                "status": "sam_live_stock_review_edit_required",
+                "action": "review_edit",
+                "review_event_id": escalation_id,
+                "conversation_id": _clean(conversation_id, 100),
+                "suggested_reply": message,
+                "recommended_next": "Edit/send the reply in Chatwoot, or keep this conversation in HUMAN mode.",
+                **AUTHORITY_FLAGS,
+            }, 200
+        if action["action"] == "review_human":
+            takeover, status = apply_sam_live_stock_chatwoot_takeover(
+                conversation_id,
+                mode="HUMAN",
+                reason="telegram_owner_review_handoff",
+                environ=environ,
+                chatwoot_writer=chatwoot_writer,
+            )
+            return _callback_result("review_human", takeover, status, escalation_id)
+        if action["action"] == "review_close":
+            return {
+                "success": True,
+                "status": "sam_live_stock_review_closed_without_reply",
+                "action": "review_close",
+                "review_event_id": escalation_id,
+                "conversation_id": _clean(conversation_id, 100),
+                "recommended_next": "No customer message was sent. Close or continue manually in Chatwoot.",
+                **AUTHORITY_FLAGS,
+            }, 200
     if action["action"] == "approve_send":
         send_result, status = send_owner_approved_live_stock_reply(
             payload.get("conversation_id"),
@@ -487,6 +655,12 @@ def build_sam_live_stock_launch_readiness(environ=None):
             and policy["telegram_escalation"]["bot_token_configured"]
             and policy["telegram_escalation"]["owner_chat_id_configured"]
         ),
+        "owner_review_telegram_ready": (
+            policy["telegram_escalation"]["owner_review_send_enabled"]
+            and policy["telegram_escalation"]["bot_token_configured"]
+            and policy["telegram_escalation"]["owner_chat_id_configured"]
+        ),
+        "owner_approved_send_ready": policy["owner_send"]["enabled"],
         "escalation_telegram_ready": (
             policy["telegram_escalation"]["send_enabled"]
             and policy["telegram_escalation"]["bot_token_configured"]
@@ -503,6 +677,10 @@ def build_sam_live_stock_launch_readiness(environ=None):
         must_fix.append("Enable SAM_LIVE_STOCK_TELEGRAM_NEW_LEAD_SEND_ENABLED with bot token and owner chat id.")
     if not checks["escalation_telegram_ready"]:
         must_fix.append("Enable SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED with bot token and owner chat id.")
+    if not checks["owner_review_telegram_ready"]:
+        must_fix.append("Enable SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED with bot token and owner chat id.")
+    if not checks["owner_approved_send_ready"]:
+        must_fix.append("Enable SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED before approving Telegram replies into WhatsApp.")
     return {
         "success": True,
         "status": "sam_live_stock_launch_readiness",
@@ -625,6 +803,10 @@ def _callback_action(callback_data):
         "sam_live_close": "close",
         "sam_live_human": "human",
         "sam_live_resolved": "resolved",
+        "sam_live_review_approve": "review_approve_send",
+        "sam_live_review_edit": "review_edit",
+        "sam_live_review_human": "review_human",
+        "sam_live_review_close": "review_close",
         "approve_send": "approve_send",
         "close": "close",
         "human": "human",
@@ -646,6 +828,18 @@ def _callback_result(action, body, status_code, escalation_id):
         "calls_chatwoot": bool(body.get("calls_chatwoot")),
         "calls_telegram": bool(body.get("calls_telegram")),
     }, status_code
+
+
+def _json_value(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
 
 
 def _lead_fact_summary(facts):
