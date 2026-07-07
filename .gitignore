@@ -15,3 +15,4 @@ node_modules/
 venv/
 /.tools/
 .charlie_runner/
+test-results/

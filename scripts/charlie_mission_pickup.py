@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+load_dotenv(REPO_ROOT / ".env", override=False)
 
 from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status
 from modules.charlie.runner_control import write_runner_heartbeat
@@ -313,6 +315,21 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "would_mark_status": "in_progress",
         }, 200
 
+    clean, dirty_files, dirty_error = _git_worktree_clean()
+    if not clean:
+        return {
+            "success": False,
+            "status": "dirty_worktree_blocks_mission_pickup",
+            "mission_count": len(missions),
+            "mission_id": mission_id,
+            "title": mission.get("title"),
+            "dirty_files": dirty_files,
+            "error": dirty_error,
+            "next_action": "Clean, commit, or deliberately quarantine the working tree before CHARLIE CORE starts another mission.",
+            "codex_chat_written": False,
+            "mission_status": mission.get("status"),
+        }, 409
+
     _write_codex_chat(codex_chat_preview)
     updated, update_status = update_mission_status(
         mission_id,
@@ -343,6 +360,27 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "codex_chat_written": True,
         "mission_status": "in_progress",
     }, 200
+
+
+def _git_worktree_clean():
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=20,
+            check=False,
+        )
+    except Exception as exc:
+        return False, [], exc.__class__.__name__
+    output = completed.stdout or ""
+    dirty_files = [line.strip() for line in output.splitlines() if line.strip()]
+    if completed.returncode != 0:
+        return False, dirty_files, (completed.stderr or "git status failed").strip()
+    return not dirty_files, dirty_files[:80], ""
 
 
 def _codex_chat_content(mission):

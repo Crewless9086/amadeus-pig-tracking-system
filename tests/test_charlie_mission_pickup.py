@@ -115,7 +115,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, list_owner_work_missions):
+    @patch("scripts.charlie_mission_pickup._git_worktree_clean")
+    def test_pickup_writes_codex_chat_and_marks_in_progress(self, git_clean, update_status, list_owner_work_missions):
+        git_clean.return_value = (True, [], "")
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "in_progress"}, 200)
 
@@ -142,6 +144,29 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("LEVEL 3: code and tests may be changed", content)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
+
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    @patch("scripts.charlie_mission_pickup._git_worktree_clean")
+    def test_dirty_worktree_blocks_pickup_before_writes(self, git_clean, update_status, list_owner_work_missions):
+        git_clean.return_value = (
+            False,
+            ["M planning/CODEX_CHAT.md", "?? test-results/"],
+            "",
+        )
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "CODEX_CHAT.md"
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target):
+                result, status_code = charlie_mission_pickup.pick_up_next_mission()
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "dirty_worktree_blocks_mission_pickup")
+        self.assertFalse(result["codex_chat_written"])
+        self.assertFalse(target.exists())
+        update_status.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_pickup_content_includes_level_four_merge_guidance(self, list_owner_work_missions):

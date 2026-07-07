@@ -25,4 +25,18 @@ Agents must not invent source-of-truth facts. If data is missing, stale, unavail
 
 Agents must not treat raw customer transcripts, private media, secrets, stale mission notes, or unsourced learning as memory authority.
 
+## Working Tree Discipline
+
+CHARLIE CORE must not start, package, or send a mission to owner review from a dirty working tree.
+
+Before a mission is picked up, the runner must confirm `git status --porcelain --untracked-files=all` is empty. If it is not empty, mission pickup must stop with a clear recovery packet listing the dirty files.
+
+Every mission must use one clean branch or clean worktree. Mission artifacts must be committed, pushed, or deliberately parked in a named recovery packet before another mission starts.
+
+Unrelated owner files, screenshots, generated test artifacts, or scratchpad changes must never be silently mixed into mission review. They must be restored, committed as explicit source material, ignored as generated output, or quarantined with owner-visible notes.
+
+`planning/CODEX_CHAT.md` is runner scratch state. It must not remain dirty after a mission unless the active mission is still running and the runner owns that state.
+
+If this rule blocks a mission, that is a correct safety stop, not a workflow failure.
+
 Detailed Brain & Memory v2 doctrine: `../06-data/BRAIN_AND_MEMORY_V2.md`.
