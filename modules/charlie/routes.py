@@ -51,6 +51,10 @@ from modules.charlie.improvement_analyst import (
     list_improvement_proposals,
     record_proposal_decision,
 )
+from modules.charlie.owner_approval_inbox import (
+    list_owner_approval_inbox,
+    record_owner_approval_decision,
+)
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -441,6 +445,31 @@ def charlie_core_model_registry_route():
         "selected_model": model,
         "cost_estimate": cost,
     }), 200
+
+
+@charlie_bp.route("/charlie/owner-approval-inbox", methods=["GET"])
+def charlie_owner_approval_inbox_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = list_owner_approval_inbox(limit_per_status=request.args.get("limit_per_status", 12))
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/owner-approval-inbox/<mission_id>/<approval_id>/decision", methods=["POST"])
+def charlie_owner_approval_inbox_decision_route(mission_id, approval_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_owner_approval_decision(
+        mission_id,
+        approval_id,
+        decision=str(payload.get("decision") or "").strip(),
+        comments=str(payload.get("comments") or "").strip(),
+        edited_text=str(payload.get("edited_text") or "").strip(),
+    )
+    return jsonify(result), status_code
 
 
 @charlie_bp.route("/charlie/core/tool-permissions", methods=["GET"])

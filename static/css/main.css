@@ -9991,6 +9991,120 @@ body.oom-farm-command-body {
     background: linear-gradient(180deg, #a66f14, #70460a);
 }
 
+.charlie-owner-inbox-panel {
+    border-color: rgba(199, 164, 69, 0.64);
+}
+
+.charlie-owner-inbox-summary {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.charlie-owner-inbox-summary p,
+.charlie-owner-inbox-empty span {
+    margin: 0;
+    color: #7c8c9d;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.charlie-owner-inbox-counts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.charlie-owner-inbox-counts span {
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid rgba(101, 151, 204, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #93a9bd;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.charlie-owner-inbox-counts strong {
+    display: block;
+    color: #f1f6fb;
+    font-size: 18px;
+    line-height: 1.1;
+}
+
+.charlie-owner-inbox-list {
+    display: grid;
+    gap: 12px;
+}
+
+.charlie-owner-inbox-card,
+.charlie-owner-inbox-empty {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(101, 151, 204, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.charlie-owner-inbox-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.charlie-owner-inbox-card-header h3 {
+    margin: 6px 0 0;
+    font-size: 16px;
+    line-height: 1.2;
+}
+
+.charlie-owner-inbox-card code {
+    max-width: 110px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.charlie-owner-inbox-exact {
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid rgba(101, 151, 204, 0.22);
+    border-radius: 8px;
+    background: rgba(4, 12, 22, 0.62);
+    color: #dfeaf5;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.charlie-owner-inbox-card textarea {
+    min-height: 74px;
+}
+
+.charlie-owner-inbox-actions {
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+}
+
+.charlie-owner-inbox-actions button[data-owner-inbox-decision="approve"] {
+    background: linear-gradient(180deg, #1f8f54, #116c3e);
+}
+
+.charlie-owner-inbox-actions button[data-owner-inbox-decision="edit"] {
+    background: linear-gradient(180deg, #356a9d, #214768);
+}
+
+.charlie-owner-inbox-actions button[data-owner-inbox-decision="reject"],
+.charlie-owner-inbox-actions button[data-owner-inbox-decision="send_back"] {
+    border-color: rgba(255, 79, 79, 0.58);
+    background: linear-gradient(180deg, #b83232, #7f1d1d);
+}
+
+.charlie-owner-inbox-actions button[data-owner-inbox-decision="pause"] {
+    background: linear-gradient(180deg, #a66f14, #70460a);
+}
+
 .charlie-review-modal-panel,
 .charlie-visual-overlay-panel {
     border: 1px solid rgba(101, 151, 204, 0.34);

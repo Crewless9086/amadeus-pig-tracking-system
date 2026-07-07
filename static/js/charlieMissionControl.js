@@ -3,6 +3,7 @@
     missions: [],
     reviewMissions: [],
     improvements: [],
+    ownerInbox: {items: [], counts: {}},
     commandCenter: {},
     runnerStatus: {},
     counts: {},
@@ -74,6 +75,9 @@
     commandCenter: document.getElementById("charlie_command_center"),
     commandCenterLoadedAt: document.getElementById("charlie_command_center_loaded_at"),
     improvementsList: document.getElementById("charlie_improvements_list"),
+    ownerInboxList: document.getElementById("charlie_owner_inbox_list"),
+    ownerInboxSummary: document.getElementById("charlie_owner_inbox_summary"),
+    ownerInboxLoadedAt: document.getElementById("charlie_owner_inbox_loaded_at"),
     improvementsAnalyze: document.getElementById("charlie_improvements_analyze"),
     improvementsCreateOwnerGated: document.getElementById("charlie_improvements_create_owner_gated"),
     liveNotice: document.getElementById("charlie_live_notice"),
@@ -180,6 +184,7 @@
       render();
       loadRunnerStatus();
       loadCommandCenter();
+      loadOwnerInbox();
     } catch (error) {
       setMessage(error.message || "Could not load CHARLIE missions.", "error");
       if (els.statusLine) els.statusLine.textContent = "Mission queue unavailable.";
@@ -255,6 +260,29 @@
       if (els.commandCenter) {
         els.commandCenter.innerHTML = `<p class="charlie-muted">${escapeHtml(error.message || "Command center unavailable.")}</p>`;
       }
+    }
+  }
+
+  async function loadOwnerInbox() {
+    if (!els.ownerInboxList) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 4000);
+    try {
+      const data = await fetchJson("/api/charlie/owner-approval-inbox?limit_per_status=12", {signal: controller.signal});
+      state.ownerInbox = data || {items: [], counts: {}};
+      renderOwnerInbox();
+      renderAliveDashboard();
+    } catch (error) {
+      const timedOut = error && error.name === "AbortError";
+      state.ownerInbox = {
+        items: [],
+        counts: {},
+        status: "unavailable",
+        error: timedOut ? "Owner approval inbox source is unavailable or slow." : (error.message || "Owner approval inbox unavailable."),
+      };
+      renderOwnerInbox();
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
@@ -426,6 +454,106 @@
     });
   }
 
+  function renderOwnerInbox() {
+    if (els.ownerInboxLoadedAt) els.ownerInboxLoadedAt.textContent = `Loaded ${new Date().toLocaleTimeString()}`;
+    if (!els.ownerInboxList) return;
+    const inbox = state.ownerInbox || {};
+    const items = Array.isArray(inbox.items) ? inbox.items : [];
+    const counts = inbox.counts || {};
+    if (els.ownerInboxSummary) {
+      const pending = Number(inbox.pending_count || counts.pending || 0);
+      els.ownerInboxSummary.innerHTML = `
+        <div class="charlie-owner-inbox-counts">
+          <span><strong>${escapeHtml(String(pending))}</strong> Pending</span>
+          <span><strong>${escapeHtml(String(counts.approved || 0))}</strong> Approved</span>
+          <span><strong>${escapeHtml(String(counts.edited || 0))}</strong> Edited</span>
+          <span><strong>${escapeHtml(String(counts.send_back || 0))}</strong> Send-back</span>
+        </div>
+        <p>${escapeHtml(safeText(inbox.execution_boundary || "Owner approval records decisions only. Domain gates execute separately."))}</p>
+      `;
+    }
+    if (!items.length) {
+      const unavailable = inbox.status === "unavailable" || inbox.status === "not_configured";
+      els.ownerInboxList.innerHTML = `
+        <div class="charlie-empty charlie-owner-inbox-empty">
+          <strong>${unavailable ? "Owner approval inbox unavailable." : "No agent suggestions are waiting."}</strong>
+          <span>${escapeHtml(safeText(inbox.error || "Beacon, SAM, Butcher, and Herdmaster packets appear here when an agent attaches exact owner-review items to a mission."))}</span>
+          <div class="charlie-mission-actions charlie-owner-inbox-actions" aria-label="Owner approval controls unavailable">
+            <button type="button" disabled>Approve</button>
+            <button type="button" disabled>Edit</button>
+            <button type="button" disabled>Reject</button>
+            <button type="button" disabled>Pause</button>
+            <button type="button" disabled>Send Back</button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    els.ownerInboxList.innerHTML = "";
+    items.slice(0, 12).forEach((item) => {
+      els.ownerInboxList.appendChild(ownerInboxCard(item));
+    });
+  }
+
+  function ownerInboxCard(item) {
+    const card = document.createElement("article");
+    card.className = "charlie-owner-inbox-card";
+    const missionId = safeText(item.mission_id);
+    const approvalId = safeText(item.approval_id);
+    const editable = safeText(item.editable_text || item.exact_text);
+    const risks = Array.isArray(item.risk_flags) ? item.risk_flags : [];
+    const forbidden = Array.isArray(item.forbidden_actions) ? item.forbidden_actions : [];
+    card.innerHTML = `
+      <div class="charlie-owner-inbox-card-header">
+        <div>
+          <span class="status-pill">${escapeHtml(safeText(item.status || "pending"))}</span>
+          <h3>${escapeHtml(safeText(item.title || "Agent suggestion"))}</h3>
+        </div>
+        <code>${escapeHtml(shortId(approvalId))}</code>
+      </div>
+      <dl class="charlie-mission-meta">
+        <div><dt>Agent</dt><dd>${escapeHtml(safeText(item.source_agent || "--"))}</dd></div>
+        <div><dt>Lane</dt><dd>${escapeHtml(safeText(item.lane || "--"))}</dd></div>
+        <div><dt>Target</dt><dd>${escapeHtml(safeText(item.target_label || item.source_ref || "--"))}</dd></div>
+        <div><dt>Gate</dt><dd>${escapeHtml(safeText(item.next_gate || "--"))}</dd></div>
+      </dl>
+      <p>${escapeHtml(safeText(item.exact_action || item.action_label || "Review exact proposed action."))}</p>
+      <div class="charlie-owner-inbox-exact">${escapeHtml(safeText(item.exact_text || "No exact text captured."))}</div>
+      <details>
+        <summary>Risk and source detail</summary>
+        <strong>Risk flags</strong>${listMarkup(risks, "No risk flags captured.")}
+        <strong>Forbidden actions</strong>${listMarkup(forbidden, "No forbidden actions captured.")}
+        <pre>${escapeHtml(JSON.stringify({
+          approval_id: approvalId,
+          mission_id: missionId,
+          mission_title: item.mission_title,
+          source_type: item.source_type,
+          source_ref: item.source_ref,
+          authority: item.authority,
+        }, null, 2))}</pre>
+      </details>
+      <label>
+        Owner comments
+        <textarea rows="2" data-owner-inbox-comments placeholder="Optional comment for approval, rejection, pause, or send-back"></textarea>
+      </label>
+      <label>
+        Edited exact text
+        <textarea rows="4" data-owner-inbox-edit>${escapeHtml(editable)}</textarea>
+      </label>
+      <div class="charlie-mission-actions charlie-owner-inbox-actions">
+        <button type="button" data-owner-inbox-decision="approve">Approve</button>
+        <button type="button" data-owner-inbox-decision="edit">Edit</button>
+        <button type="button" data-owner-inbox-decision="reject">Reject</button>
+        <button type="button" data-owner-inbox-decision="pause">Pause</button>
+        <button type="button" data-owner-inbox-decision="send_back">Send Back</button>
+      </div>
+    `;
+    card.querySelectorAll("[data-owner-inbox-decision]").forEach((button) => {
+      button.addEventListener("click", () => recordOwnerInboxDecision(missionId, approvalId, button.dataset.ownerInboxDecision, card));
+    });
+    return card;
+  }
+
   function renderImprovements() {
     if (!els.improvementsList) return;
     const proposals = Array.isArray(state.improvements) ? state.improvements : [];
@@ -500,6 +628,7 @@
       : 0;
     const readyCount = Array.isArray(review.ready) ? review.ready.length : state.reviewMissions.length;
     const blockedCount = Array.isArray(review.blocked) ? review.blocked.length : 0;
+    const inboxPending = Number(((state.ownerInbox || {}).pending_count) || (((state.ownerInbox || {}).counts || {}).pending) || 0);
     const runnerLabel = runnerStateLabel(runner.status || (local.active ? "active_mission_in_progress" : "idle_no_approved_mission"));
     const vaultMissing = Array.isArray(vaultHealth.missing_tables) ? vaultHealth.missing_tables.length : 0;
     const systemLabel = vaultMissing ? "Attention" : "Operational";
@@ -510,7 +639,7 @@
     els.bottom.runner.textContent = runnerLabel;
     els.bottom.runnerDetail.textContent = local.active ? `${local.current_agent || "Agent"} running` : (runner.local_runner_scope || "local boundary");
     els.bottom.review.textContent = `${readyCount} ready / ${blockedCount} blocked`;
-    els.bottom.reviewDetail.textContent = "Evidence required before owner review";
+    els.bottom.reviewDetail.textContent = inboxPending ? `${inboxPending} agent suggestion(s) need owner action` : "Evidence required before owner review";
     els.bottom.truth.textContent = vault.version || "Vault Brain";
     els.bottom.truthDetail.textContent = data.execution_boundary || "Dashboard records decisions only";
   }
@@ -1251,6 +1380,28 @@
     }
   }
 
+  async function recordOwnerInboxDecision(missionId, approvalId, decision, card) {
+    if (!missionId || !approvalId || !decision || !card) return;
+    const comments = safeText(card.querySelector("[data-owner-inbox-comments]") && card.querySelector("[data-owner-inbox-comments]").value).trim();
+    const editedText = safeText(card.querySelector("[data-owner-inbox-edit]") && card.querySelector("[data-owner-inbox-edit]").value).trim();
+    setMessage(`Recording owner inbox decision ${decision}...`, "info");
+    try {
+      await fetchJson(`/api/charlie/owner-approval-inbox/${encodeURIComponent(missionId)}/${encodeURIComponent(approvalId)}/decision`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          decision,
+          comments,
+          edited_text: editedText,
+        }),
+      });
+      setMessage("Owner inbox decision recorded. No send, post, booking, payment, stock, or farm write was executed.", "success");
+      await loadOwnerInbox();
+    } catch (error) {
+      setMessage(error.message || "Owner inbox decision was not recorded.", "error");
+    }
+  }
+
   function reviewPacketDetailMarkup(packet) {
     const mission = packet.mission || {};
     return `
@@ -1972,6 +2123,8 @@
     }
   });
   setupMediaCapture();
+  loadOwnerInbox();
   loadMissions();
   window.setInterval(loadMissions, AUTO_REFRESH_MS);
+  window.setInterval(loadOwnerInbox, AUTO_REFRESH_MS);
 })();
