@@ -437,7 +437,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "supabase/migrations/202606290003_add_litter_lifecycle_fields.sql",
         ],
         "legacy_sources": [
-            "docs/03-google-sheets/sheets/FARM.md",
+            "docs/03-google-sheets/sheets/PIG_MASTER.md",
+            "docs/03-google-sheets/sheets/PIG_OVERVIEW.md",
+            "docs/03-google-sheets/sheets/WEIGHT_LOG.md",
         ],
         "must_inspect_before_advice": True,
     },
@@ -491,10 +493,11 @@ def implementation_source_packet(mission=None, limit_sections=6):
     query = _mission_query(mission)
     matched = []
     for key, entry in IMPLEMENTATION_SOURCE_MAP.items():
-        score, reasons = _score_entry(query, entry)
+        score, reasons = _score_entry(key, query, entry)
         if score:
             matched.append(_entry_packet(key, entry, score, reasons))
-    matched = sorted(matched, key=lambda item: (-item["score"], item["key"]))[: max(1, int(limit_sections or 6))]
+    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])))
+    matched = matched[: max(1, int(limit_sections or 6))]
     return {
         "version": SOURCE_MAP_VERSION,
         "query": query,
@@ -508,6 +511,12 @@ def implementation_source_packet(mission=None, limit_sections=6):
         "required_routes": _unique(route for section in matched for route in section.get("app_routes", [])),
         "rule": "Before advising or building, inspect the matched implementation sources; Vault strategy alone is insufficient.",
     }
+
+
+def _filter_matched_sections(matched):
+    if not matched:
+        return []
+    return [section for section in matched if int(section.get("score") or 0) >= 30]
 
 
 def validate_implementation_inspection(artifact, source_packet):
@@ -564,16 +573,34 @@ def _required_groups(source_packet):
     return {group: _unique(paths) for group, paths in groups.items() if paths}
 
 
-def _score_entry(query, entry):
+def _score_entry(key, query, entry):
     lower = query.lower()
+    if key == "charlie_core_dashboard" and not _charlie_dashboard_context(lower):
+        return 0, []
     score = 0
     reasons = []
     for keyword in entry.get("keywords", []):
         keyword = str(keyword or "").lower()
         if keyword and keyword in lower and not _keyword_is_negated(lower, keyword):
-            score += 30 if " " in keyword else 18
+            score += 30 if " " in keyword or keyword in {"sam", "beacon", "herdmaster"} else 18
             reasons.append(f"keyword:{keyword}")
     return score, reasons
+
+
+def _charlie_dashboard_context(lower):
+    dashboard_terms = (
+        "/charlie",
+        "charlie dashboard",
+        "dashboard ui",
+        "mission control",
+        "command center",
+        "runner status",
+        "mission queue",
+        "owner review button",
+        "owner review ui",
+        "workflow ui",
+    )
+    return any(term in lower for term in dashboard_terms)
 
 
 def _keyword_is_negated(lower, keyword):

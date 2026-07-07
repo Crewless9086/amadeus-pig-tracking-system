@@ -48,6 +48,7 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`
 - `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`
 - `config/sam_farm_knowledge.json`
+- `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`
 
 ## Operations And Evidence
 
