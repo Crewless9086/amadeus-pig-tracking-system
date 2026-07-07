@@ -620,10 +620,10 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             return_value=(assets_result, 200),
         ) as list_assets, patch.object(
             sales_transaction_routes,
-            "build_meat_launch_campaign_selection",
+            "build_beacon_campaign_selection",
             return_value=selection_result,
         ) as build_selection:
-            response = self.client.get("/api/beacon/campaign-draft-selection?limit=9&media_type=image&area=Riversdale")
+            response = self.client.get("/api/beacon/campaign-draft-selection?limit=9&media_type=image&area=Riversdale&campaign_lane=meat_launch")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), selection_result)
@@ -631,6 +631,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         build_selection.assert_called_once()
         self.assertEqual(build_selection.call_args.kwargs["approved_assets"], assets_result["assets"])
         self.assertEqual(build_selection.call_args.args[0]["area"], "Riversdale")
+        self.assertEqual(build_selection.call_args.args[0]["campaign_lane"], "meat_launch")
 
     def test_beacon_campaign_publish_packet_route_validates_against_approved_media(self):
         assets_result = {
@@ -649,10 +650,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             return_value=(assets_result, 200),
         ) as list_assets, patch.object(
             sales_transaction_routes,
-            "build_meat_launch_campaign_publish_packet",
+            "build_beacon_campaign_publish_packet",
             return_value=publish_result,
         ) as build_packet:
             response = self.client.post("/api/beacon/campaign-publish-packet", json={
+                "campaign_lane": "meat_launch",
                 "draft_id": "facebook_post",
                 "asset_id": "BEACON-ASSET-APPROVED",
                 "media_type": "image",
@@ -663,6 +665,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         list_assets.assert_called_once_with(limit=25, approval_status="approved", media_type="image")
         build_packet.assert_called_once()
         self.assertEqual(build_packet.call_args.kwargs["approved_assets"], assets_result["assets"])
+        self.assertEqual(build_packet.call_args.args[0]["campaign_lane"], "meat_launch")
 
     def test_beacon_manual_post_evidence_routes_record_owner_post_history_only(self):
         list_result = {

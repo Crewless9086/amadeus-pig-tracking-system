@@ -13,6 +13,7 @@
     refresh: byId("beacon_media_refresh"),
     policyStatus: byId("beacon_media_policy_status"),
     policyFlags: byId("beacon_media_policy_flags"),
+    campaignLane: byId("beacon_campaign_lane"),
     campaignSelectionStatus: byId("beacon_campaign_selection_status"),
     campaignSelectionRefresh: byId("beacon_campaign_selection_refresh"),
     campaignSelectionList: byId("beacon_campaign_selection_list"),
@@ -75,6 +76,7 @@
     uploadFile: byId("beacon_media_upload_file"),
     uploadTitle: byId("beacon_media_upload_title"),
     uploadTags: byId("beacon_media_upload_tags"),
+    uploadRelevance: byId("beacon_media_upload_relevance"),
     uploadNotes: byId("beacon_media_upload_notes"),
     uploadButton: byId("beacon_media_upload_button"),
     detailTitle: byId("beacon_media_detail_title"),
@@ -160,8 +162,13 @@
   }
 
   async function loadCampaignSelection() {
-    const selection = await fetchJson("/api/beacon/campaign-draft-selection?limit=25");
-    elements.campaignSelectionStatus.textContent = `${selection.approved_media_count || 0} approved media asset${selection.approved_media_count === 1 ? "" : "s"} available for draft pairing. Public posting remains locked.`;
+    const params = new URLSearchParams({
+      limit: "25",
+      campaign_lane: elements.campaignLane?.value || "live_stock_awareness",
+    });
+    const selection = await fetchJson(`/api/beacon/campaign-draft-selection?${params.toString()}`);
+    const laneLabel = selection.campaign_lane === "meat_launch" ? "meat launch" : "live-stock awareness";
+    elements.campaignSelectionStatus.textContent = `${selection.approved_media_count || 0} approved media asset${selection.approved_media_count === 1 ? "" : "s"} available for ${laneLabel} draft pairing. Public posting remains locked.`;
     renderCampaignSelection(selection);
     renderPublishPacketOptions(selection);
   }
@@ -200,6 +207,7 @@
   async function preparePublishPacket() {
     clearMessage();
     const payload = {
+      campaign_lane: elements.campaignLane?.value || "live_stock_awareness",
       draft_id: elements.publishDraftId.value,
       asset_id: elements.publishAssetId.value,
       channel: elements.publishChannel.value,
@@ -238,7 +246,7 @@
     elements.performancePublishPacketId.value = packet.publish_packet_id || "";
     elements.performanceChannel.value = packet.selected_draft?.channel || elements.publishChannel.value || "Facebook";
     if (!elements.manualPostCampaignLabel.value) {
-      elements.manualPostCampaignLabel.value = packet.campaign?.name || "";
+    elements.manualPostCampaignLabel.value = packet.campaign?.name || "";
     }
   }
 
@@ -606,7 +614,7 @@
     formData.append("uploader_label", "Farm App");
     formData.append("title", elements.uploadTitle.value);
     formData.append("subject_tags", elements.uploadTags.value);
-    formData.append("sale_stream_relevance", "meat");
+    formData.append("sale_stream_relevance", elements.uploadRelevance?.value || elements.campaignLane?.value || "live_stock_awareness");
     formData.append("notes", elements.uploadNotes.value);
     elements.uploadButton.disabled = true;
     try {
@@ -627,6 +635,7 @@
   document.addEventListener("DOMContentLoaded", async () => {
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
+    elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
     elements.facebookPostRefresh.addEventListener("click", () => Promise.all([loadFacebookPostingPolicy(), loadFacebookPostExecutions()]).catch((error) => showMessage(error.message)));
     elements.facebookPostExecute.addEventListener("click", () => executeFacebookPost().catch((error) => showMessage(error.message)));

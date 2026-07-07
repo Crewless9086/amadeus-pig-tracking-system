@@ -60,6 +60,15 @@ Do not show:
 - license plates or private customer locations;
 - misleading old photos as current stock.
 
+## Implementation Rule
+
+Beacon campaign draft selection, publish packets, and media upload/review must carry an explicit campaign lane.
+
+- `live_stock_awareness` is for farm-life, piglet, litter, weaner, sow-care, and awareness content only.
+- `meat_launch` is for meat-sales campaign drafts only.
+- Missing or invalid campaign lane must block packet generation instead of defaulting into meat-sales copy.
+- Piglet, litter, weaner, and farm-life media must not produce meat-launch copy unless the owner explicitly selects the meat lane.
+
 ## Owner Approval
 
 Every first live-stock awareness post requires owner review before publishing.

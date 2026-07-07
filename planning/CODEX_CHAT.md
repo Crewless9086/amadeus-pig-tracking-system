@@ -17,7 +17,7 @@ Codex must follow:
 ### Concept / Problem / Idea
 
 ```text
-Formalize the agent authority matrix for CHARLIE CORE and define where Claude is used as a reviewer. Map Beacon, SAM Live Stock, SAM Meat, Butcher, Herdmaster, Oom Sakkie, Gatekeeper, Ledger, Atlas, Sentinel, and Forge to their source modules, allowed actions, blocked actions, approval gates, required tests, and Claude-review triggers.
+Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
 ```
 
 ### Desired Outcome
@@ -29,13 +29,13 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 ### Urgency
 
 ```text
-P1
+P0
 ```
 
 ### Mission Type
 
 ```text
-system improvement
+content engine
 ```
 
 ### Approval Level
@@ -49,11 +49,11 @@ LEVEL 3
 ## CHARLIE MISSION RECORD
 
 ```text
-Mission ID: CHARLIE-MISSION-ABDA6E4ED53D1838
-Mission title: Agent Authority Matrix And Claude Review Integration
+Mission ID: CHARLIE-MISSION-D2F2EE1B0230469D
+Mission title: Beacon Live Stock Awareness Packet Split
 Mission status at pickup: in_progress
 Runner mode: code_test_pr
-Vault stage: blocked
+Vault stage: intake
 ```
 
 ---
@@ -63,22 +63,23 @@ Vault stage: blocked
 ### Problem Statement
 
 ```text
-Formalize the agent authority matrix for CHARLIE CORE and define where Claude is used as a reviewer. Map Beacon, SAM Live Stock, SAM Meat, Butcher, Herdmaster, Oom Sakkie, Gatekeeper, Ledger, Atlas, Sentinel, and Forge to their source modules, allowed actions, blocked actions, approval gates, required tests, and Claude-review triggers.
+Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
 ```
 
 ### Desired Outcome
 
 ```text
-CHARLIE knows which modules and tests belong to each agent and when Claude review is required before authority increases.
+Beacon can prepare correct live-stock awareness post packets from approved farm media without drifting into meat sales.
 ```
 
 ### Acceptance Criteria
 
 ```text
-- Agent-to-module/test/source map exists and matches current repo paths.
-- Claude review is required/recommended for authority increases, customer/public automation, payment/meat/slaughter, and agent runtime changes.
-- CHARLIE source map can route these future missions to the right implementation areas.
-- No new autonomous execution authority is granted by this mission.
+- Beacon has an explicit live_stock_awareness campaign/packet mode.
+- Piglet/litter/weaner approved media routes to live-stock awareness drafts, not meat launch drafts.
+- Live-stock awareness packet validates no direct sales terms such as for sale, price, reserve, book, available, or DM to buy.
+- Owner packet includes selected media, exact caption, platform, SAM Live Stock handoff path, and pause/rollback instruction.
+- Existing meat launch tests still pass.
 ```
 
 ### Test Plan
@@ -88,7 +89,7 @@ CHARLIE knows which modules and tests belong to each agent and when Claude revie
 - Run route/frontend contract tests when routes or UI are touched.
 - Prove unsafe actions remain blocked by policy/authority flags.
 - Prepare owner review packet with changed files, tests, risks, rollback, and next gate.
-- Run CHARLIE source map, mission workflow, and Oom Sakkie agent runtime tests.
+- Add Beacon tests proving live-stock media does not produce meat packet output.
 ```
 
 ### Forbidden Actions
@@ -110,19 +111,13 @@ CHARLIE knows which modules and tests belong to each agent and when Claude revie
 ### Agent Workflow
 
 ```text
-- idea_expander: complete - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
-- source_mapper: complete - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
-- product_architect: complete - Shape product flow, owner value, user behavior, and acceptance boundaries.
-- technical_architect: complete - Design implementation structure, file/API/data impacts, integration risk, and test strategy.
-- risk_agent: blocked - Create risk register across technical, legal, financial, operational, brand, and data risks.
+- idea_expander: active - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
+- source_mapper: pending - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
+- concept_strategist: pending - Turn the idea into a clear concept, strategic thesis, options, and decision memo.
+- product_architect: pending - Shape product flow, owner value, user behavior, and acceptance boundaries.
+- risk_agent: pending - Create risk register across technical, legal, financial, operational, brand, and data risks.
 - council_synthesis: pending - Reconcile upstream agent thinking into one council-approved brief before planning or building.
-- planner: pending - Turn owner concept into scoped mission plan.
-- architect: pending - Identify files, data sources, risks, and implementation approach.
-- builder: pending - Implement scoped changes under approval level.
-- tester: pending - Run tests and pressure checks.
-- qa_red_team: pending - Challenge the work for regressions, unsafe actions, weak evidence, and owner-risk before review.
-- product_reviewer: pending - Check that the result matches owner intent, user value, and acceptance criteria.
-- security_reviewer: pending - Review permissions, secrets, data exposure, injection, and dangerous actions.
+- business_reviewer: pending - Check commercial logic, income-stream readiness, and owner decision clarity.
 - evidence_reviewer: pending - Check claims, tests, citations, artifacts, and proof against the Vault.
 - reviewer: pending - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
 - publisher: pending - Prepare deployment/publishing packet after owner approval and verification.
