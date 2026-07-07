@@ -56,6 +56,60 @@ class CharlieSourceMapTests(unittest.TestCase):
         ]
         self.assertEqual([], missing_paths)
 
+    def test_agent_authority_matrix_maps_claude_review_sources(self):
+        mission = {
+            "mission_type": "system improvement",
+            "title": "Agent Authority Matrix And Claude Review Integration",
+            "raw_text": (
+                "Formalize the agent authority matrix for CHARLIE CORE and define where Claude is used "
+                "as a reviewer. Map Beacon, SAM Live Stock, SAM Meat, Butcher, Herdmaster, Oom Sakkie, "
+                "Gatekeeper, Ledger, Atlas, Sentinel, and Forge to their source modules, allowed actions, "
+                "blocked actions, approval gates, required tests, and Claude-review triggers."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("agent_authority_matrix", keys)
+        self.assertIn(
+            "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn("modules/charlie/source_map.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/agent_runtime.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_charlie_execution_bridge.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_live_stock_runtime.py", packet["required_inspection_paths"])
+        self.assertIn("/api/charlie/build-relay/source-map", packet["required_routes"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
+
+    def test_agent_authority_matrix_doc_blocks_claude_from_unlocking_authority(self):
+        doc_path = REPO_ROOT / "docs/09-vault-brain/07-standards/AGENT_AUTHORITY_MATRIX.md"
+        text = doc_path.read_text(encoding="utf-8")
+
+        for term in (
+            "Claude review is advisory evidence only",
+            "This matrix does not grant new runtime authority",
+            "Owner approval remains the final gate",
+            "Beacon",
+            "SAM Live Stock",
+            "SAM Meat",
+            "Butcher",
+            "Herdmaster",
+            "Oom Sakkie",
+            "Gatekeeper",
+            "Ledger",
+            "Atlas",
+            "Sentinel",
+            "Forge",
+        ):
+            self.assertIn(term, text)
+
     def test_forbidden_sam_beacon_mentions_do_not_map_sales_sources(self):
         mission = {
             "mission_type": "dashboard ui",

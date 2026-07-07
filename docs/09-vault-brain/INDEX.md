@@ -82,6 +82,7 @@
 - `06-data/*.md`
 - `06-data/BRAIN_AND_MEMORY_V2.md`
 - `07-standards/*.md`
+- `07-standards/AGENT_AUTHORITY_MATRIX.md`
 - `08-business-rules/*.md`
 - `09-examples/*.md`
 - `10-source-map/*.md`

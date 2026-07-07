@@ -2,6 +2,8 @@
 
 ## 2026-07-07
 
+- Added the active Agent Authority Matrix standard defining current authority boundaries, owner gates, required tests, and Claude-review triggers for Beacon, SAM Live Stock, SAM Meat, Butcher, Herdmaster, Oom Sakkie, Gatekeeper, Ledger, Atlas, Sentinel, and Forge.
+- Added the Agent Authority Matrix And Claude Review implementation source-map section so future authority, runtime, public/customer automation, payment, meat, slaughter, butcher, stock reservation, farm lifecycle, specialist-dispatch, or agent-registration missions route through the correct Vault, code, and test sources.
 - Added CHARLIE CORE Memory And Mission Recall to the implementation source map so memory-runtime, mission-recall, recovery-packet, send-back, blocked-state, resumed-mission, handoff, and agent-ledger missions select the existing runtime, replay, and test sources before advising or building.
 
 ## 2026-07-06
