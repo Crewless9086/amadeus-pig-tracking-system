@@ -80,6 +80,15 @@
           </div>
           <button type="button" id="beacon_campaign_selection_refresh" class="button-link button-link-secondary">Refresh Selection</button>
         </div>
+        <div class="beacon-media-review-grid">
+          <div class="form-group">
+            <label for="beacon_campaign_lane">Campaign Lane</label>
+            <select id="beacon_campaign_lane">
+              <option value="live_stock_awareness">Live Stock Awareness</option>
+              <option value="meat_launch">Meat Launch</option>
+            </select>
+          </div>
+        </div>
         <div id="beacon_campaign_selection_list" class="beacon-campaign-selection-list"></div>
         <div class="beacon-publish-packet-panel" aria-label="Beacon campaign publish packet">
           <div class="page-header section-header-compact">
@@ -335,6 +344,15 @@
               <div class="form-group">
                 <label for="beacon_media_upload_tags">Tags</label>
                 <input type="text" id="beacon_media_upload_tags" placeholder="pork, riversdale, test" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_media_upload_relevance">Campaign Relevance</label>
+                <select id="beacon_media_upload_relevance">
+                  <option value="live_stock_awareness">Live Stock Awareness</option>
+                  <option value="meat">Meat</option>
+                  <option value="farm_life">Farm Life</option>
+                  <option value="butcher">Butcher</option>
+                </select>
               </div>
             </div>
             <div class="form-group">

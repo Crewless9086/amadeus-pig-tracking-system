@@ -106,9 +106,9 @@ from modules.sales.conversation_learning import (
     record_sales_conversation_learning_event,
 )
 from modules.sales.beacon_campaign import (
+    build_beacon_campaign_publish_packet,
+    build_beacon_campaign_selection,
     build_beacon_facebook_image_launch_packet,
-    build_meat_launch_campaign_publish_packet,
-    build_meat_launch_campaign_selection,
     execute_beacon_facebook_page_post,
     facebook_posting_policy,
     list_beacon_campaign_performance_events,
@@ -638,12 +638,13 @@ def beacon_campaign_draft_selection():
     )
     if assets_status >= 400:
         return jsonify(assets_result), assets_status
-    result = build_meat_launch_campaign_selection({
+    result = build_beacon_campaign_selection({
+        "campaign_lane": request.args.get("campaign_lane", ""),
         "pilot_name": request.args.get("pilot_name", ""),
         "area": request.args.get("area", ""),
         "product_focus": request.args.get("product_focus", ""),
     }, approved_assets=assets_result.get("assets", []))
-    return jsonify(result), 200
+    return jsonify(result), 200 if result.get("success") else 400
 
 
 @sales_bp.route("/beacon/campaign-publish-packet", methods=["POST"])
@@ -656,7 +657,7 @@ def beacon_campaign_publish_packet():
     )
     if assets_status >= 400:
         return jsonify(assets_result), assets_status
-    result = build_meat_launch_campaign_publish_packet(payload, approved_assets=assets_result.get("assets", []))
+    result = build_beacon_campaign_publish_packet(payload, approved_assets=assets_result.get("assets", []))
     return jsonify(result), 200 if result.get("success") else 400
 
 

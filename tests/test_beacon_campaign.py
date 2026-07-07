@@ -2,7 +2,13 @@ import unittest
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
+    BEACON_LIVE_STOCK_AWARENESS_MODE,
+    build_beacon_campaign_publish_packet,
+    build_beacon_campaign_selection,
     build_beacon_boost_recommendation_packet,
+    build_live_stock_awareness_campaign_packet,
+    build_live_stock_awareness_campaign_publish_packet,
+    build_live_stock_awareness_campaign_selection,
     build_meat_launch_campaign_packet,
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
@@ -117,6 +123,90 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(selection["authority"]["posts_publicly"])
         self.assertFalse(selection["authority"]["calls_meta"])
         self.assertEqual(selection["next_gate"], "owner_selects_media_and_campaign_draft_before_any_public_post")
+
+    def test_campaign_selection_requires_explicit_lane(self):
+        selection = build_beacon_campaign_selection(approved_assets=[])
+
+        self.assertFalse(selection["success"])
+        self.assertEqual(selection["status"], "campaign_lane_required")
+        self.assertIn("live_stock_awareness", selection["allowed_campaign_lanes"])
+        self.assertIn("meat_launch", selection["allowed_campaign_lanes"])
+
+    def test_live_stock_awareness_packet_is_not_meat_sales_copy(self):
+        packet = build_live_stock_awareness_campaign_packet({
+            "farm_name": "Amadeus Farm",
+            "subject_focus": "12 piglets and their mom",
+        })
+
+        self.assertTrue(packet["success"], packet)
+        self.assertEqual(packet["mode"], BEACON_LIVE_STOCK_AWARENESS_MODE)
+        self.assertEqual(packet["campaign_lane"], "live_stock_awareness")
+        self.assertTrue(packet["validation"]["success"], packet["validation"])
+        all_text = " ".join(draft["text"] for draft in packet["channel_drafts"] + packet["story_updates"]).lower()
+        for forbidden in ("available now", "order", "reserve", "price", "limited stock", "dm to buy"):
+            self.assertNotIn(forbidden, all_text)
+        self.assertIn("new life", all_text)
+        self.assertFalse(packet["authority"]["posts_publicly"])
+        self.assertFalse(packet["authority"]["creates_order"])
+
+    def test_live_stock_awareness_selection_ranks_piglet_media(self):
+        selection = build_live_stock_awareness_campaign_selection({
+            "campaign_lane": "live_stock_awareness",
+        }, approved_assets=[
+            {
+                "asset_id": "BEACON-PIGLETS",
+                "title": "New litter of piglets",
+                "media_type": "image",
+                "subject_tags": ["piglets", "litter", "new life"],
+                "sale_stream_relevance": ["live_stock_awareness"],
+                "quality_score": 86,
+                "privacy_risk": "low",
+                "effective_approval_status": "approved",
+                "effective_public_use_approved": True,
+            },
+            {
+                "asset_id": "BEACON-MEAT",
+                "title": "Freezer pork pack",
+                "media_type": "image",
+                "subject_tags": ["pork", "freezer"],
+                "sale_stream_relevance": ["meat"],
+                "quality_score": 90,
+                "privacy_risk": "low",
+                "effective_approval_status": "approved",
+                "effective_public_use_approved": True,
+            },
+        ])
+
+        self.assertTrue(selection["success"], selection)
+        self.assertEqual(selection["campaign_lane"], "live_stock_awareness")
+        self.assertEqual(selection["ranked_media_assets"][0]["asset_id"], "BEACON-PIGLETS")
+        self.assertEqual(selection["mode"], "beacon_live_stock_awareness_campaign_media_selection_review_only")
+
+    def test_live_stock_awareness_publish_packet_blocks_direct_sales_wording(self):
+        packet = build_live_stock_awareness_campaign_publish_packet({
+            "draft_id": "facebook_awareness_post",
+            "channel": "Facebook",
+        }, approved_assets=[])
+
+        self.assertTrue(packet["success"], packet)
+        self.assertTrue(packet["safety_checks"]["draft_has_no_direct_sales_wording"])
+        self.assertEqual(packet["campaign_lane"], "live_stock_awareness")
+        self.assertFalse(packet["approval_sends_or_posts"])
+        self.assertFalse(packet["authority"]["posts_publicly"])
+
+    def test_dispatcher_preserves_meat_launch_when_lane_is_explicit(self):
+        selection = build_beacon_campaign_selection({
+            "campaign_lane": "meat_launch",
+        }, approved_assets=[])
+        publish = build_beacon_campaign_publish_packet({
+            "campaign_lane": "meat_launch",
+            "draft_id": "facebook_post",
+        }, approved_assets=[])
+
+        self.assertTrue(selection["success"], selection)
+        self.assertEqual(selection["mode"], "beacon_meat_launch_campaign_media_selection_review_only")
+        self.assertTrue(publish["success"], publish)
+        self.assertIn("limited", publish["selected_draft"]["exact_text"].lower())
 
     def test_publish_packet_binds_exact_draft_and_approved_asset_without_posting(self):
         packet = build_meat_launch_campaign_publish_packet({

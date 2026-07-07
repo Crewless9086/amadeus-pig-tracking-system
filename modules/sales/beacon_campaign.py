@@ -11,6 +11,21 @@ from services.database_service import DATABASE_URL_ENV
 
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
+BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
+CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness"}
+LIVE_STOCK_DIRECT_SALES_TERMS = (
+    "buy",
+    "order",
+    "available now",
+    "reserve",
+    "price",
+    "special",
+    "discount",
+    "limited stock",
+    "dm to buy",
+    "message to buy",
+    "for sale",
+)
 
 AUTHORITY_FLAGS = {
     "draft_only": True,
@@ -83,6 +98,54 @@ OWNER_REVIEW_CHECKLIST = [
     "Confirm who handles delivery-day customer updates for the first pilot run.",
 ]
 
+LIVE_STOCK_OWNER_REVIEW_CHECKLIST = [
+    "Confirm the chosen media is farm-life/live-stock awareness, not meat product sales.",
+    "Confirm whether the post may mention animal categories such as piglets, weaners, growers, or sows.",
+    "Confirm there is no price, reserve, order, delivery, or direct sales wording.",
+    "Confirm this is an awareness/story post only before any public channel action.",
+]
+
+
+def normalize_campaign_lane(value):
+    lane = _clean_text(value).lower().replace("-", "_").replace(" ", "_")
+    if lane in {"meat", "meat_sales", "pork", "pork_launch"}:
+        return "meat_launch"
+    if lane in {"live", "livestock", "live_stock", "live_pig", "live_pigs", "piglets", "farm_life"}:
+        return "live_stock_awareness"
+    return lane
+
+
+def invalid_campaign_lane_response(lane):
+    return {
+        "success": False,
+        "status": "campaign_lane_required" if not lane else "invalid_campaign_lane",
+        "campaign_lane": lane,
+        "allowed_campaign_lanes": sorted(CAMPAIGN_LANES),
+        "message": "Choose meat_launch or live_stock_awareness before Beacon builds a draft or publish packet.",
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+    }
+
+
+def build_beacon_campaign_selection(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if lane == "meat_launch":
+        return build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
+    if lane == "live_stock_awareness":
+        return build_live_stock_awareness_campaign_selection(payload, approved_assets=approved_assets)
+    return invalid_campaign_lane_response(lane)
+
+
+def build_beacon_campaign_publish_packet(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if lane == "meat_launch":
+        return build_meat_launch_campaign_publish_packet(payload, approved_assets=approved_assets)
+    if lane == "live_stock_awareness":
+        return build_live_stock_awareness_campaign_publish_packet(payload, approved_assets=approved_assets)
+    return invalid_campaign_lane_response(lane)
+
 
 def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
     """Return campaign draft/media pairing recommendations without doing any external action."""
@@ -96,6 +159,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
         "mode": "beacon_meat_launch_campaign_media_selection_review_only",
         "agent": "Beacon",
         "alias": "Prisma/Beacon",
+        "campaign_lane": "meat_launch",
         "campaign": packet.get("campaign", {}),
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
@@ -139,6 +203,7 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         "mode": "beacon_campaign_publish_packet_owner_review_only",
         "agent": "Beacon",
         "alias": "Prisma/Beacon",
+        "campaign_lane": "meat_launch",
         "publish_packet_id": packet_id,
         "campaign": campaign_packet.get("campaign", {}),
         "selected_draft": {
@@ -175,6 +240,96 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
             "Use this packet as review evidence only; no post is sent from this step.",
         ],
         "next_gate": "owner_approves_exact_publish_packet_before_manual_or_gated_public_post",
+    }
+
+
+def build_live_stock_awareness_campaign_selection(payload=None, approved_assets=None):
+    """Return live-stock awareness draft/media recommendations without sales authority."""
+    packet = build_live_stock_awareness_campaign_packet(payload)
+    approved_assets = approved_assets if isinstance(approved_assets, list) else []
+    ranked_assets = _rank_approved_assets(approved_assets, campaign_lane="live_stock_awareness")
+    channel_pairings = _channel_asset_pairings(packet.get("channel_drafts", []), ranked_assets)
+    story_pairings = _channel_asset_pairings(packet.get("story_updates", []), ranked_assets, fallback_channel="story")
+    return {
+        "success": True,
+        "mode": "beacon_live_stock_awareness_campaign_media_selection_review_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "campaign_lane": "live_stock_awareness",
+        "campaign": packet.get("campaign", {}),
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "approved_media_count": len(ranked_assets),
+        "ranked_media_assets": ranked_assets,
+        "channel_draft_pairings": channel_pairings,
+        "story_update_pairings": story_pairings,
+        "owner_review_checklist": [
+            "Choose the exact awareness media before any public post is prepared.",
+            "Confirm this is farm-life/live-stock awareness and not a sales post.",
+            "Confirm no price, order, reserve, available-now, or DM-to-buy wording appears.",
+            "Public posting still happens only through a later owner-approved posting gate.",
+        ],
+        "next_gate": "owner_selects_live_stock_awareness_media_and_draft_before_any_public_post",
+    }
+
+
+def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_assets=None):
+    """Build owner-review live-stock awareness packet without posting or sales authority."""
+    payload = payload if isinstance(payload, dict) else {}
+    campaign_packet = build_live_stock_awareness_campaign_packet(payload)
+    approved_assets = approved_assets if isinstance(approved_assets, list) else []
+    ranked_assets = _rank_approved_assets(approved_assets, campaign_lane="live_stock_awareness")
+    draft_id = _clean_text(payload.get("draft_id"))
+    selected_asset_id = _clean_text(payload.get("asset_id"))
+    selected_channel = _clean_text(payload.get("channel"))
+    owner_notes = _clean_text(payload.get("owner_notes"))
+    draft = _find_draft(campaign_packet, draft_id)
+    asset = _find_asset(ranked_assets, selected_asset_id)
+    errors = []
+    if not draft:
+        errors.append("selected_draft_not_found")
+    if selected_asset_id and not asset:
+        errors.append("selected_asset_not_approved_or_not_found")
+    exact_text = draft.get("text", "") if draft else ""
+    if _has_live_stock_direct_sales_wording(exact_text):
+        errors.append("live_stock_awareness_direct_sales_wording_blocked")
+    channel = selected_channel or (draft.get("channel") if draft else "")
+    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, "live_stock_awareness")
+    return {
+        "success": not errors,
+        "mode": "beacon_live_stock_awareness_publish_packet_owner_review_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "campaign_lane": "live_stock_awareness",
+        "publish_packet_id": packet_id,
+        "campaign": campaign_packet.get("campaign", {}),
+        "selected_draft": {
+            "draft_id": draft.get("id", "") if draft else draft_id,
+            "label": draft.get("label", "") if draft else "",
+            "channel": channel,
+            "intent": draft.get("intent", "") if draft else "",
+            "exact_text": exact_text,
+        },
+        "selected_asset": asset,
+        "owner_notes": owner_notes,
+        "approval_status": "owner_review_required",
+        "approval_records_publish": False,
+        "approval_sends_or_posts": False,
+        "requires_owner_exact_text_confirmation": True,
+        "requires_owner_exact_media_confirmation": bool(asset),
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "safety_checks": {
+            "draft_is_awareness_only": not _has_live_stock_direct_sales_wording(exact_text),
+            "draft_has_no_direct_sales_wording": not _has_live_stock_direct_sales_wording(exact_text),
+            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "no_public_send_or_post": True,
+            "no_meta_call": True,
+            "no_signed_url_created": True,
+        },
+        "errors": errors,
+        "owner_review_checklist": list(LIVE_STOCK_OWNER_REVIEW_CHECKLIST),
+        "next_gate": "owner_approves_exact_live_stock_awareness_packet_before_manual_or_gated_public_post",
     }
 
 
@@ -728,6 +883,76 @@ def build_meat_launch_campaign_packet(payload=None):
     return packet
 
 
+def build_live_stock_awareness_campaign_packet(payload=None):
+    """Return Beacon live-stock awareness drafts without direct sales authority."""
+    payload = payload if isinstance(payload, dict) else {}
+    campaign_name = _clean_text(payload.get("campaign_name") or payload.get("pilot_name")) or "Live-stock awareness story"
+    farm_name = _clean_text(payload.get("farm_name")) or "Amadeus Farm"
+    area = _clean_text(payload.get("area")) or "Riversdale farm community"
+    subject_focus = _clean_text(payload.get("subject_focus") or payload.get("product_focus")) or "piglets, litters, weaners, and daily farm life"
+
+    packet = {
+        "success": True,
+        "mode": BEACON_LIVE_STOCK_AWARENESS_MODE,
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "campaign_lane": "live_stock_awareness",
+        "campaign": {
+            "name": campaign_name,
+            "status": "draft_only_owner_review_required",
+            "farm_name": farm_name,
+            "area": area,
+            "subject_focus": subject_focus,
+            "primary_goal": "Create warm farm-life awareness and audience trust without selling animals, meat, prices, reservations, or availability.",
+        },
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "campaign_angles": _live_stock_awareness_angles(farm_name, area, subject_focus),
+        "channel_drafts": _live_stock_awareness_channel_drafts(farm_name, area, subject_focus),
+        "story_updates": _live_stock_awareness_story_updates(farm_name),
+        "owner_review_checklist": list(LIVE_STOCK_OWNER_REVIEW_CHECKLIST),
+        "handoff_to_sam": {
+            "inbound_prompt": "If someone asks a buying question, Sam must treat it as an owner-review sales enquiry, not as proof of stock availability.",
+            "must_not_say": [
+                "Piglets are available now.",
+                "You can reserve one.",
+                "The price is final.",
+                "Delivery is confirmed.",
+                "Your order is confirmed.",
+            ],
+        },
+        "next_gate": "owner_reviews_live_stock_awareness_campaign_before_any_public_or_customer_send",
+    }
+    validation = validate_live_stock_awareness_campaign_packet(packet)
+    packet["validation"] = validation
+    return packet
+
+
+def validate_live_stock_awareness_campaign_packet(packet):
+    drafts = _all_draft_texts(packet)
+    unsafe = []
+    missing_awareness_signal = []
+    for draft in drafts:
+        text = draft["text"].lower()
+        if _has_live_stock_direct_sales_wording(text):
+            unsafe.append(draft["id"])
+        if not any(term in text for term in ("farm", "life", "journey", "grow", "story", "awareness", "new life", "piglet", "litter")):
+            missing_awareness_signal.append(draft["id"])
+
+    authority = packet.get("authority") if isinstance(packet.get("authority"), dict) else {}
+    unsafe_flags = [
+        name for name, value in authority.items()
+        if name != "draft_only" and value is True
+    ]
+    return {
+        "success": not unsafe and not missing_awareness_signal and not unsafe_flags,
+        "checked_draft_count": len(drafts),
+        "direct_sales_wording_drafts": unsafe,
+        "missing_awareness_signal": missing_awareness_signal,
+        "unsafe_authority_flags": unsafe_flags,
+    }
+
+
 def validate_meat_launch_campaign_packet(packet):
     drafts = _all_draft_texts(packet)
     unsafe = []
@@ -953,7 +1178,87 @@ def _story_updates(farm_name, area):
     ]
 
 
-def _rank_approved_assets(assets):
+def _live_stock_awareness_angles(farm_name, area, subject_focus):
+    return [
+        {
+            "id": "new_life_on_farm",
+            "title": "New Life On The Farm",
+            "summary": f"Use {subject_focus} to show the quiet daily moments behind {farm_name}, with no sales promise.",
+            "best_channel": "Facebook and Instagram",
+            "sam_handoff": "If a buying question arrives, route to owner-review sales handling instead of answering availability.",
+        },
+        {
+            "id": "animal_care_story",
+            "title": "Animal Care Story",
+            "summary": "Show healthy feeding, growth, and farm care as an awareness story.",
+            "best_channel": "Facebook",
+            "sam_handoff": "Keep replies warm and factual; do not offer stock, price, delivery, or reservation.",
+        },
+        {
+            "id": "farm_personality",
+            "title": "Farm Personality",
+            "summary": "Invite comments, names, and engagement around the animals' personalities.",
+            "best_channel": "Facebook comments and stories",
+            "sam_handoff": "Community engagement can continue, but sales questions need owner review.",
+        },
+    ]
+
+
+def _live_stock_awareness_channel_drafts(farm_name, area, subject_focus):
+    return [
+        {
+            "id": "facebook_awareness_post",
+            "label": "Facebook Awareness Post",
+            "channel": "Facebook",
+            "intent": "Warm farm-life awareness",
+            "text": f"There is always something beautiful about new life on the farm. At {farm_name}, moments with {subject_focus} remind us why the daily care, patience, and quiet work matter. We will share more of their journey as they grow and explore.",
+        },
+        {
+            "id": "facebook_name_prompt",
+            "label": "Facebook Name Prompt",
+            "channel": "Facebook",
+            "intent": "Community engagement without selling",
+            "text": f"The newest little characters at {farm_name} are starting to show their personalities. For now it is warm naps, full bellies, and mom doing her work beautifully. What should we call this little group?",
+        },
+        {
+            "id": "instagram_awareness_caption",
+            "label": "Instagram Awareness Caption",
+            "channel": "Instagram",
+            "intent": "Visual farm story",
+            "text": f"A small farm-life moment from {area}: healthy little ones staying close, feeding strong, and growing into their own personalities. This is the kind of everyday story we love sharing from {farm_name}.",
+        },
+        {
+            "id": "whatsapp_status_awareness",
+            "label": "WhatsApp Status Awareness",
+            "channel": "WhatsApp status",
+            "intent": "Owner community update",
+            "text": f"New life on the farm today. The little ones are feeding well, staying close, and giving us another reason to smile at {farm_name}.",
+        },
+    ]
+
+
+def _live_stock_awareness_story_updates(farm_name):
+    return [
+        {
+            "id": "story_new_life_1",
+            "label": "Story Slide 1",
+            "text": f"New life at {farm_name}: tiny feet, warm naps, and a strong mom doing her job.",
+        },
+        {
+            "id": "story_new_life_2",
+            "label": "Story Slide 2",
+            "text": "The little ones are staying close and feeding well. These quiet moments are what farm life is built on.",
+        },
+        {
+            "id": "story_new_life_3",
+            "label": "Story Slide 3",
+            "text": "We will share more of their journey as they grow, explore, and start showing their personalities.",
+        },
+    ]
+
+
+def _rank_approved_assets(assets, campaign_lane="meat_launch"):
+    campaign_lane = normalize_campaign_lane(campaign_lane) or "meat_launch"
     ranked = []
     for asset in assets:
         if _asset_status(asset) != "approved":
@@ -968,10 +1273,14 @@ def _rank_approved_assets(assets):
             score += 20
         if media_type == "video":
             score += 15
-        if "meat" in relevance:
+        if campaign_lane == "meat_launch" and "meat" in relevance:
             score += 25
-        if any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
+        if campaign_lane == "live_stock_awareness" and any(item in relevance for item in ("live", "live_stock", "livestock", "farm_life")):
+            score += 30
+        if campaign_lane == "meat_launch" and any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
             score += 15
+        if campaign_lane == "live_stock_awareness" and any(tag in tags for tag in ("piglet", "piglets", "litter", "weaner", "weaners", "sow", "farm life", "new life")):
+            score += 25
         if privacy_risk in ("high", "medium"):
             score -= 40 if privacy_risk == "high" else 20
         ranked.append({
@@ -1797,6 +2106,11 @@ def _has_forbidden_promise(text):
         "fixed delivery date",
     ]
     return any(term in text for term in forbidden)
+
+
+def _has_live_stock_direct_sales_wording(text):
+    clean = str(text or "").lower()
+    return any(term in clean for term in LIVE_STOCK_DIRECT_SALES_TERMS)
 
 
 def _clean_text(value):
