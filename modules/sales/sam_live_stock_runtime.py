@@ -124,6 +124,9 @@ def handle_sam_live_stock_chatwoot_inbound(
     decision = build_sam_live_stock_decision(inbound, facts, context_packet, source)
     conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     decision["conversation_review"] = conversation_review
+    if conversation_review.get("no_reply_recommended"):
+        decision["suggested_reply_text"] = ""
+        decision["reply_source"] = "natural_close_no_reply_guard"
     if conversation_review.get("escalation_required"):
         decision["owner_gate_required"] = True
         decision["escalation_packet"] = build_sam_live_stock_escalation_packet(

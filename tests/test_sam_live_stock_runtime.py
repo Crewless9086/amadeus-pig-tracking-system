@@ -711,6 +711,31 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(review["recommended_action"], "no_reply_natural_close")
         self.assertFalse(review["safe_to_send"])
 
+    def test_natural_close_handler_clears_visible_suggested_reply(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Thanks, have a good day."),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {"collection_location": "Riversdale"},
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        review = decision["conversation_review"]
+
+        self.assertTrue(review["no_reply_recommended"])
+        self.assertEqual(review["recommended_action"], "no_reply_natural_close")
+        self.assertEqual(decision["suggested_reply_text"], "")
+        self.assertEqual(decision["reply_source"], "natural_close_no_reply_guard")
+
     def test_owner_approved_send_is_env_gated(self):
         calls = []
 
