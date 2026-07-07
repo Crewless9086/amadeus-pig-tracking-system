@@ -17,6 +17,7 @@ from modules.pig_weights.pig_weights_service import (
     get_litter_detail,
     reconcile_litter_birth_counts,
     reclassify_litter_dead_piglets_as_stillborn,
+    process_litter_weaning_day,
     mark_litter_weaned,
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
@@ -175,6 +176,10 @@ def mark_litter_profile_weaned(litter_id: str, payload: dict):
         use_latest_weights_as_wean_weights=payload.get("use_latest_weights_as_wean_weights", False) is True,
         wean_weights=payload.get("wean_weights", {}),
     )
+
+
+def process_litter_profile_weaning_day(litter_id: str, payload: dict):
+    return process_litter_weaning_day(litter_id, payload or {})
 
 
 def record_litter_profile_newborn_health(litter_id: str, payload: dict):

@@ -1,0 +1,79 @@
+.sam-pricing-shell {
+  max-width: 1440px;
+}
+
+.sam-pricing-card {
+  width: 100%;
+}
+
+.pricing-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pricing-panel {
+  border: 1px solid var(--border-color, #d7dde5);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.pricing-form {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0 16px;
+}
+
+.pricing-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.pricing-form input,
+.pricing-form select {
+  min-height: 38px;
+}
+
+.pricing-form button {
+  align-self: end;
+  min-height: 38px;
+}
+
+.pricing-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--border-color, #d7dde5);
+  border-radius: 6px;
+}
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.pricing-table th,
+.pricing-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color, #d7dde5);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pricing-table th {
+  position: sticky;
+  top: 0;
+  background: #f7f9fb;
+  z-index: 1;
+}
+
+@media (max-width: 980px) {
+  .pricing-grid,
+  .pricing-form {
+    grid-template-columns: 1fr;
+  }
+}

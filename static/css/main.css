@@ -1737,6 +1737,10 @@ button:disabled {
   gap: 12px;
 }
 
+.sales-meta-wide {
+  grid-column: 1 / -1;
+}
+
 .orders-status-tabs {
   display: grid;
   grid-template-columns: repeat(7, minmax(120px, 1fr));

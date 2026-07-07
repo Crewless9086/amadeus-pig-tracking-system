@@ -14,6 +14,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
 )
+from modules.orders.order_intake_service import get_intake_context
 from modules.sales.meat_ops import get_meat_ops_status, record_meat_deposit_event
 from modules.sales.meat_documents import (
     BANK_ACCOUNT_NAME_ENV,
@@ -45,6 +46,7 @@ from modules.sales.sam_farm_knowledge import (
     public_profile,
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
+from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -166,6 +168,47 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    lane_route = classify_sam_sales_lane(inbound["content"])
+    live_stock_context = _conversation_live_stock_context(inbound.get("conversation_id"))
+    if lane_route.get("lane") == LANE_LIVE_STOCK or live_stock_context.get("active"):
+        decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route, live_stock_context)
+        return {
+            "success": True,
+            "status": "sam_meat_live_stock_handoff",
+            "processed": True,
+            "inbound": inbound,
+            "facts": facts,
+            "lane_route": lane_route,
+            "live_stock_context": live_stock_context,
+            "lead_payload": {},
+            "lead_result": {
+                "success": False,
+                "status": "not_recorded_wrong_lane_live_stock",
+            },
+            "lead_status_code": 200,
+            "sam_decision": decision,
+            "response_review": {
+                "safe_to_send": False,
+                "reason": "wrong_lane_live_stock",
+            },
+            "sent": False,
+            "send_status": "wrong_lane_live_stock_no_meat_reply",
+            "chatwoot_send": {},
+            "document_sent": False,
+            "document_send_status": "not_requested",
+            "document_send": {},
+            "policy": sam_meat_webhook_policy(source),
+            "conversation_learning": {
+                "status_code": 200,
+                "status": "skipped_wrong_lane_live_stock",
+                "success": False,
+                "learning_event_id": "",
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+            },
+            **_authority_flags(False, False),
+        }, 200
     context_errors = []
     try:
         lead_context = _conversation_lead_context(inbound.get("conversation_id"))
@@ -681,6 +724,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts, knowledge)
     set_recommendation_reply = _set_recommendation_reply(inbound.get("content"), facts, prior_context, knowledge)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
+    live_stock_handoff_reply = _live_stock_handoff_reply(inbound.get("content"), facts)
+    collection_policy_reply = _collection_policy_reply(inbound.get("content"), facts)
     deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts, knowledge)
     payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context, knowledge)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
@@ -700,6 +745,14 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif set_recommendation_reply:
         reply = set_recommendation_reply
         reply_source = "hard_product_knowledge"
+        should_reply = True
+    elif live_stock_handoff_reply:
+        reply = live_stock_handoff_reply
+        reply_source = "code_guard"
+        should_reply = True
+    elif collection_policy_reply:
+        reply = collection_policy_reply
+        reply_source = "code_guard"
         should_reply = True
     elif agent_is_v3 and agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
@@ -1449,6 +1502,62 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
     }
 
 
+def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None, live_stock_context=None):
+    live_stock_context = live_stock_context if isinstance(live_stock_context, dict) else {}
+    return {
+        "version": "sam_meat_wrong_lane_live_stock_guard_v1",
+        "agent": "sam_meat_backend",
+        "sales_lane": LANE_LIVE_STOCK,
+        "lane_route": lane_route if isinstance(lane_route, dict) else {},
+        "lead_id": "",
+        "reply_text": "",
+        "reply_source": "wrong_lane_live_stock_guard",
+        "should_reply": False,
+        "owner_gate_required": False,
+        "blocked_actions": [
+            "do_not_record_meat_lead",
+            "do_not_send_meat_reply",
+            "route_to_sam_live_stock",
+        ],
+        "handoff": {
+            "target": "sam_live_stock_backend",
+            "reason": "Customer intent or active conversation context is live pigs/piglets/weaners, not pork meat.",
+            "conversation_id": inbound.get("conversation_id") if isinstance(inbound, dict) else "",
+            "message_id": inbound.get("message_id") if isinstance(inbound, dict) else "",
+        },
+        "live_stock_context": live_stock_context,
+        "facts": facts if isinstance(facts, dict) else {},
+        **_authority_flags(False, False),
+    }
+
+
+def _conversation_live_stock_context(conversation_id):
+    conversation_id = _clean(conversation_id, 100)
+    if not conversation_id:
+        return {"active": False, "status": "conversation_id_required"}
+    try:
+        context = get_intake_context(conversation_id)
+    except Exception as exc:
+        return {"active": False, "status": "live_stock_context_read_failed", "error": str(exc)[:180]}
+    if not isinstance(context, dict) or context.get("lookup_status") == "no_match":
+        return {"active": False, "status": "no_live_stock_intake"}
+    notes = _clean((context.get("intake") or {}).get("Notes") if isinstance(context.get("intake"), dict) else context.get("notes"), 600).lower()
+    items = context.get("items") if isinstance(context.get("items"), list) else []
+    live_item = any(
+        isinstance(item, dict)
+        and _clean(item.get("Status") or item.get("status"), 40).lower() == "active"
+        and _clean(item.get("Category") or item.get("category"), 80) in {"Piglet", "Weaner", "Grower", "Finisher", "Slaughter"}
+        for item in items
+    )
+    active = "sam_live_stock" in notes or "live_stock" in notes or live_item
+    return {
+        "active": active,
+        "status": "active_live_stock_intake" if active else "intake_not_live_stock",
+        "intake_id": _clean(context.get("intake_id"), 100),
+        "item_count": len(items),
+    }
+
+
 def _conversation_stage(facts, prior_context=None, inbound=None):
     facts = facts if isinstance(facts, dict) else {}
     text = _normalized_customer_text((inbound or {}).get("content") if isinstance(inbound, dict) else "")
@@ -1649,7 +1758,7 @@ def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None
     ))
     if not asks_recommendation:
         return ""
-    if not (_is_established_meat_context(facts, prior_context) or _meat_interest_detected(normalized)):
+    if not (_is_established_meat_context(facts, prior_context) or _meat_interest_detected(normalized) or re.search(r"\bfamily\s+of\s+\d+\b", normalized)):
         return ""
     if re.search(r"\b(braai|chop|rib|belly|rashers?)\b", normalized):
         suggestion = "Set B is the better fit if your family will braai often or wants chops, ribs, rashers and belly-style cuts."
@@ -1769,6 +1878,30 @@ def _sam_intro_options_reply(knowledge=None):
     )
 
 
+def _live_stock_handoff_reply(message, facts):
+    normalized = _normalized_customer_text(message)
+    if not re.search(r"\b(live\s+pigs?|piglets?|weaners?|growers?|finishers?|gilts?|boars?|sows?)\b", normalized):
+        return ""
+    if _meat_interest_detected(normalized):
+        return ""
+    return (
+        "That sounds like live-pig interest rather than pork meat. "
+        "I can keep this out of the meat order lane and pass it to SAM Live Stock so the farm checks the actual animals before anything is promised."
+    )
+
+
+def _collection_policy_reply(message, facts):
+    normalized = _normalized_customer_text(message)
+    if not re.search(r"\b(can i collect|collect|collection|pickup|pick up|afhaal|haal)\b", normalized):
+        return ""
+    if facts.get("product_type") not in {"unknown", "half_carcass", "full_carcass", "custom_cut"}:
+        return ""
+    return (
+        "For the public meat run we should plan delivery first because there is no fixed collection point yet. "
+        "Please send the street address or farm name, plus any directions, and the farm can review whether an exception makes sense."
+    )
+
+
 def _vague_meat_interest_reply(message, facts, knowledge=None):
     if facts.get("product_type") != "unknown":
         return ""
@@ -1873,13 +2006,17 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
     ))
     if not asks_payment_state:
         return ""
+    pop_explanation = meat_sales_knowledge(knowledge or {}).get("pop_explanation") or "POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account."
     if latest_event in {"deposit_followup_needed", "pop_received_unverified", "customer_followup_sent", "estimated_quote_chatwoot_accepted"} or facts.get("product_type") != "unknown":
-        pop_explanation = meat_sales_knowledge(knowledge or {}).get("pop_explanation") or "POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account."
         return (
             f"Thanks for checking. {pop_explanation} "
             "Once the farm confirms the bank receipt, the booking can move to the carcass and delivery planning steps."
         )
-    return ""
+    return (
+        f"Thanks, I can note the payment message. {pop_explanation} "
+        "Before I connect it to a booking, I still need the pork option: half carcass, full carcass, custom cuts, or assisted slaughter."
+    )
+
 
 
 def _next_fact_question(facts):

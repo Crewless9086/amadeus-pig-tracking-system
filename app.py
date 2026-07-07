@@ -80,6 +80,14 @@ def meat_sales_reference_page():
     return render_template("meat-sales-reference.html")
 
 
+@app.route("/sales/sam-pricing")
+def sam_pricing_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("sam-pricing.html")
+
+
 @app.route("/owner/login", methods=["GET"])
 def owner_login_page():
     return owner_login_get()

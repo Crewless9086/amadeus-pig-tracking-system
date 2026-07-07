@@ -1614,6 +1614,119 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         handle_inbound.assert_called_once_with({"event": "message_created"})
 
+    def test_sam_meat_backend_routes_live_stock_handoff_to_live_runtime(self):
+        meat_result = {
+            "success": True,
+            "status": "sam_meat_live_stock_handoff",
+            "processed": True,
+            "sent": False,
+        }
+        live_result = {
+            "success": True,
+            "status": "sam_live_stock_read_only_processed",
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "inbound": {"conversation_id": "1822", "message_id": "1", "content": "weaners"},
+                "facts": {"sales_lane": "live_stock_sales"},
+                "conversation_review": {"score": 96, "safe_to_send": False},
+            },
+            "policy": {"customer_send_allowed": False},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_meat_chatwoot_inbound",
+            return_value=(meat_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(live_result, 200),
+        ) as live_runtime, patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({"success": True, "status": "recorded", "review_event_id": "REV-1", "conversation_event_count": 1}, 201),
+        ), patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+            return_value=({"success": False, "status": "sam_live_stock_new_lead_telegram_send_disabled"}, 409),
+        ):
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-meat/inbound",
+                json={"event": "message_created", "content": "weaners"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "sam_meat_live_stock_handoff")
+        self.assertFalse(payload["sent"])
+        self.assertEqual(payload["sam_live_stock_handoff"]["status"], "sam_live_stock_read_only_processed")
+        self.assertTrue(payload["sam_live_stock_handoff"]["conversation_review_event"]["recorded"])
+        self.assertEqual(payload["sam_live_stock_handoff"]["conversation_review_event"]["owner_notification"]["type"], "new_lead")
+        live_runtime.assert_called_once_with({"content": "weaners", "event": "message_created"})
+
+    def test_sam_meat_backend_routes_live_stock_owner_review_notification_after_first_event(self):
+        meat_result = {
+            "success": True,
+            "status": "sam_meat_live_stock_handoff",
+            "processed": True,
+            "sent": False,
+        }
+        live_result = {
+            "success": True,
+            "status": "sam_live_stock_read_only_processed",
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "inbound": {"conversation_id": "1822", "message_id": "2", "content": "What is the price?"},
+                "facts": {"sales_lane": "live_stock_sales", "quote_requested": True},
+                "suggested_reply_text": "Current SAM Live price estimate:\n- 2 x Weaner: R500 each",
+                "conversation_review": {
+                    "score": 99,
+                    "safe_to_send": True,
+                    "recommended_action": "owner_review_send_candidate",
+                },
+            },
+            "policy": {"customer_send_allowed": False},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_meat_chatwoot_inbound",
+            return_value=(meat_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(live_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({"success": True, "status": "recorded", "review_event_id": "REV-2", "conversation_event_count": 2}, 201),
+        ), patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+            return_value=({"success": True, "status": "sam_live_stock_owner_review_telegram_sent"}, 200),
+        ) as owner_review:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-meat/inbound",
+                json={"event": "message_created", "content": "What is the price?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        notification = payload["sam_live_stock_handoff"]["conversation_review_event"]["owner_notification"]
+        self.assertEqual(notification["type"], "owner_review")
+        self.assertTrue(notification["sent"])
+        owner_review.assert_called_once()
+
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
         with patch.object(
             sales_transaction_routes,
@@ -1637,6 +1750,206 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(payload["sent"])
         self.assertFalse(payload["sends_customer_message"])
         self.assertFalse(payload["calls_chatwoot"])
+
+    def test_sam_live_stock_policy_route_reports_controlled_launch_gates(self):
+        with patch.object(
+            sales_transaction_routes,
+            "sam_live_stock_webhook_policy",
+            return_value={
+                "enabled": True,
+                "mode": "backend_native_sam_live_stock_chatwoot_read_only",
+                "owner_approved_send_enabled": False,
+            },
+        ):
+            response = self.client.get("/api/sales/channels/chatwoot/sam-live-stock/policy")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["policy"]["mode"], "backend_native_sam_live_stock_chatwoot_read_only")
+        self.assertFalse(payload["policy"]["owner_approved_send_enabled"])
+
+    def test_sam_live_stock_inbound_route_requires_auth(self):
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_live_stock_webhook",
+            return_value=(False, {"success": False, "status": "sam_live_stock_backend_webhook_auth_denied"}),
+        ):
+            response = self.client.post("/api/sales/channels/chatwoot/sam-live-stock/inbound", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_backend_webhook_auth_denied")
+
+    def test_sam_live_stock_inbound_route_calls_runtime_after_auth(self):
+        service_result = {
+            "success": True,
+            "status": "sam_live_stock_read_only_processed",
+            "processed": True,
+            "sent": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_live_stock_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(service_result, 200),
+        ) as handle_inbound:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/inbound",
+                json={"event": "message_created"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        handle_inbound.assert_called_once_with({"event": "message_created"})
+
+    def test_sam_live_stock_review_and_owner_send_routes_are_gated(self):
+        with patch.object(
+            sales_transaction_routes,
+            "review_sam_live_stock_conversation",
+            return_value={"score": 88, "escalation_required": True},
+        ) as review:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/review",
+                json={"inbound": {"content": "scam"}, "facts": {}, "decision": {}},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["review"]["escalation_required"])
+        review.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "send_owner_approved_live_stock_reply",
+            return_value=({"success": False, "status": "sam_live_stock_owner_send_disabled"}, 409),
+        ) as send_reply:
+            send_response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/owner-send",
+                json={"conversation_id": "2401", "message": "Owner approved"},
+            )
+
+        self.assertEqual(send_response.status_code, 409)
+        self.assertEqual(send_response.get_json()["status"], "sam_live_stock_owner_send_disabled")
+        send_reply.assert_called_once()
+
+    def test_sam_live_stock_cleanup_packet_route_is_non_destructive(self):
+        response = self.client.post(
+            "/api/sales/channels/chatwoot/sam-live-stock/escalations/SAM-LIVE-ESC-1/cleanup-packet",
+            json={"telegram_chat_id": "5721652188", "telegram_message_id": "99", "conversation_id": "2401"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        packet = response.get_json()["cleanup_packet"]
+        self.assertTrue(packet["delete_allowed"])
+        self.assertEqual(packet["recommended_action"], "delete_telegram_notification")
+        self.assertFalse(packet["calls_chatwoot"])
+
+    def test_sam_live_stock_launch_control_routes_call_services(self):
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_telegram_escalation",
+            return_value=({"success": False, "status": "sam_live_stock_telegram_send_disabled"}, 409),
+        ) as send_telegram:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/send-telegram",
+                json={"telegram_packet": {"text": "Escalation"}},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_telegram_send_disabled")
+        send_telegram.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "process_sam_live_stock_owner_callback",
+            return_value=({"success": True, "status": "sam_live_stock_escalation_closed_without_reply"}, 200),
+        ) as callback:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/callback",
+                json={"callback_data": "sam_live_close:SAM-LIVE-ESC-1"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_escalation_closed_without_reply")
+        callback.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "delete_sam_live_stock_telegram_escalation",
+            return_value=({"success": False, "status": "sam_live_stock_telegram_cleanup_disabled"}, 409),
+        ) as delete_telegram:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/escalations/SAM-LIVE-ESC-1/delete-telegram",
+                json={"telegram_chat_id": "555", "telegram_message_id": "123"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_telegram_cleanup_disabled")
+        delete_telegram.assert_called_once_with("SAM-LIVE-ESC-1", "555", "123")
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_sam_live_stock_open_intakes",
+            return_value=({"success": True, "open_intakes": [{"intake_id": "INTAKE-1"}]}, 200),
+        ) as open_intakes:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-live-stock/open-intakes?limit=10")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["open_intakes"][0]["intake_id"], "INTAKE-1")
+        open_intakes.assert_called_once_with(limit="10")
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_sam_live_stock_launch_readiness",
+            return_value=({"success": True, "boost_ready": False, "score": 92}, 200),
+        ) as readiness:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-live-stock/launch-readiness")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["boost_ready"])
+        readiness.assert_called_once()
+
+    def test_sam_live_stock_takeover_and_reservation_routes_call_services(self):
+        with patch.object(
+            sales_transaction_routes,
+            "apply_sam_live_stock_chatwoot_takeover",
+            return_value=({"success": False, "status": "sam_live_stock_chatwoot_takeover_write_disabled"}, 409),
+        ) as takeover:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/takeover",
+                json={"conversation_id": "2401", "mode": "HUMAN", "reason": "test"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_chatwoot_takeover_write_disabled")
+        takeover.assert_called_once_with("2401", mode="HUMAN", reason="test")
+
+        response = self.client.post(
+            "/api/sales/channels/chatwoot/sam-live-stock/reservation-plan",
+            json={"order_id": "ORD-1", "match_packet": {"matched_sample": [{"pig_id": "PIG-1"}]}},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        plan = response.get_json()["reservation_plan"]
+        self.assertTrue(plan["owner_gate_required"])
+        self.assertFalse(plan["reserves_stock"])
+
+        with patch.object(
+            sales_transaction_routes,
+            "execute_live_stock_order_reservation",
+            return_value=({"success": False, "status": "sam_live_stock_order_reservation_disabled"}, 409),
+        ) as reserve:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/order-reservation",
+                json={"order_id": "ORD-1", "action": "reserve"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_order_reservation_disabled")
+        reserve.assert_called_once_with("ORD-1", action="reserve")
 
 
 if __name__ == "__main__":

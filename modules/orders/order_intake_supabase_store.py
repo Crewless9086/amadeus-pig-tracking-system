@@ -1,5 +1,6 @@
 import json
 from datetime import date, datetime
+from psycopg.types.json import Json
 
 from modules.orders import order_supabase_write
 from modules.pig_weights.pig_weights_utils import to_clean_string, to_float
@@ -159,7 +160,7 @@ def insert_intake(row, connect_factory=None):
         "payment_method": row["Payment_Method"],
         "quote_requested": _sheet_bool(row["Quote_Requested"]),
         "order_commitment": _sheet_bool(row["Order_Commitment"]),
-        "missing_fields": _split_list(row["Missing_Fields"]),
+        "missing_fields": Json(_split_list(row["Missing_Fields"])),
         "next_action": row["Next_Action"],
         "ready_for_draft": _sheet_bool(row["Ready_For_Draft"]),
         "ready_for_quote": _sheet_bool(row["Ready_For_Quote"]),
@@ -192,7 +193,7 @@ def insert_item(row, connect_factory=None):
         "sex": row["Sex"],
         "intent_type": row["Intent_Type"],
         "status": row["Status"],
-        "linked_order_line_ids": _split_list(row["Linked_Order_Line_IDs"]),
+        "linked_order_line_ids": Json(_split_list(row["Linked_Order_Line_IDs"])),
         "last_match_status": row["Last_Match_Status"],
         "matched_quantity": int(to_float(row["Matched_Quantity"]) or 0) if row["Matched_Quantity"] not in ("", None) else None,
         "replaced_by_item_key": row["Replaced_By_Item_Key"],
@@ -268,7 +269,7 @@ def _normalize_update_value(column, value):
     if column in {"quote_requested", "order_commitment", "ready_for_draft", "ready_for_quote"}:
         return _sheet_bool(value)
     if column in {"missing_fields", "linked_order_line_ids"}:
-        return _split_list(value)
+        return Json(_split_list(value))
     if column in {"quantity", "matched_quantity"}:
         return int(to_float(value) or 0) if value not in ("", None) else None
     if column in {"updated_at", "closed_at", "removed_at"}:

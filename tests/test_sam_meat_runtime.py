@@ -537,6 +537,132 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertIn("half carcass", decision["reply_text"].lower())
         self.assertNotIn("live pig sales", decision["reply_text"].lower())
 
+    def test_collection_question_without_product_context_uses_delivery_first_guard(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Can I collect?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("delivery first", decision["reply_text"])
+        self.assertIn("no fixed collection point", decision["reply_text"])
+        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
+
+    def test_pop_without_product_context_uses_payment_gate_not_generic_intro(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I paid and sent POP.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("money reflects", decision["reply_text"])
+        self.assertIn("pork option", decision["reply_text"])
+        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
+
+    def test_live_pig_interest_is_handed_to_live_stock_lane(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I want 3 female weaners around 10kg.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_live_stock_handoff_decision(
+            inbound,
+            facts,
+            {"lane": "live_stock_sales", "confidence": 0.98},
+        )
+
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertEqual(decision["reply_text"], "")
+        self.assertFalse(decision["should_reply"])
+        self.assertIn("do_not_record_meat_lead", decision["blocked_actions"])
+        self.assertIn("route_to_sam_live_stock", decision["blocked_actions"])
+
+    def test_handle_live_pig_interest_does_not_record_or_send_from_meat_runtime(self):
+        calls = {"record": 0, "send": 0}
+
+        def record(_payload):
+            calls["record"] += 1
+            return {"success": True, "lead_id": "BAD-MEAT-LEAD"}, 201
+
+        def sender(_conversation_id, _message):
+            calls["send"] += 1
+            return {"ok": True}
+
+        with patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", side_effect=record):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Hi, do you have piglets or weaners available?"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
+        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["lead_payload"], {})
+        self.assertEqual(calls, {"record": 0, "send": 0})
+
+    def test_existing_live_stock_intake_blocks_ambiguous_meat_autoreply(self):
+        calls = {"record": 0, "send": 0}
+
+        def record(_payload):
+            calls["record"] += 1
+            return {"success": True, "lead_id": "BAD-MEAT-LEAD"}, 201
+
+        def sender(_conversation_id, _message):
+            calls["send"] += 1
+            return {"ok": True}
+
+        with patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", side_effect=record), \
+             patch.object(sam_meat_runtime, "get_intake_context", return_value={
+                 "success": True,
+                 "lookup_status": "single_match",
+                 "intake_id": "INTAKE-1",
+                 "intake": {"Notes": "source=sam_live_stock_stage_4"},
+                 "items": [{
+                     "Status": "active",
+                     "Category": "Weaner",
+                     "Quantity": 2,
+                 }],
+             }):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Can you keep them for me until Friday?"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
+        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertTrue(result["live_stock_context"]["active"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(calls, {"record": 0, "send": 0})
+
+    def test_family_set_recommendation_without_prior_context_is_specific(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Which set is best for a family of 3?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("Set A", decision["reply_text"])
+        self.assertIn("family of 3", decision["reply_text"])
+        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
+
     def test_frustrated_customer_gets_human_acknowledgement_and_next_step(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="This system is shit, where is the human factor? I want Half Carcass with Set A, in Riversdale for Delivery",

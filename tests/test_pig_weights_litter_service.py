@@ -133,6 +133,165 @@ class LitterPigletCreationTests(unittest.TestCase):
         self.assertEqual(created_count, 0)
         append_row.assert_not_called()
 
+
+class LitterWeaningDayWorkflowTests(unittest.TestCase):
+    def _active_rows(self):
+        return [
+            {
+                "Pig_ID": "PIG-1",
+                "Tag_Number": "",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Litter_ID": "LIT-1",
+                "Sex": "Female",
+                "Current_Pen_ID": "PEN-FARROW",
+                "Current_Weight_Kg": "8.5",
+                "Last_Weight_Date": "06 Jul 2026",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Tag_Number": "",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Litter_ID": "LIT-1",
+                "Sex": "Male",
+                "Current_Pen_ID": "PEN-FARROW",
+                "Current_Weight_Kg": "9.1",
+                "Last_Weight_Date": "06 Jul 2026",
+            },
+        ]
+
+    def test_weaning_day_preview_combines_tags_medicine_movements_and_wean_weights_without_writes(self):
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=self._active_rows()), \
+             patch.object(pig_weights_service, "assign_litter_piglet_tag_numbers", return_value=({
+                 "success": True,
+                 "selected_piglets": [{"pig_id": "PIG-1"}, {"pig_id": "PIG-2"}],
+             }, 200)) as assign_tags, \
+             patch.object(pig_weights_service, "record_litter_newborn_health", return_value=({
+                 "success": True,
+                 "treatment_rows_planned": 4,
+             }, 200)) as record_health, \
+             patch.object(pig_weights_service, "save_movement_entry") as save_movement, \
+             patch.object(pig_weights_service, "mark_litter_weaned") as mark_weaned:
+
+            result, status_code = pig_weights_service.process_litter_weaning_day("LIT-1", {
+                "wean_date": "2026-07-06",
+                "target_pen_id": "PEN-WEAN",
+                "assignments": [
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102", "wean_weight_kg": "9.1"},
+                ],
+                "medicine": {
+                    "antiparasitic_product_id": "PRD-ANT",
+                    "deworming_product_id": "PRD-DEWORM",
+                },
+                "dry_run": True,
+            })
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["active_piglet_count"], 2)
+        self.assertEqual(result["tag_count"], 2)
+        self.assertEqual(result["weight_count"], 2)
+        self.assertEqual(result["treatment_count"], 4)
+        self.assertEqual(result["movement_count"], 2)
+        self.assertEqual(result["wean_weights_captured"], 2)
+        assign_tags.assert_called_once()
+        record_health.assert_called_once()
+        save_movement.assert_not_called()
+        mark_weaned.assert_not_called()
+
+    def test_weaning_day_apply_validates_first_then_applies_substeps(self):
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=self._active_rows()), \
+             patch.object(pig_weights_service, "assign_litter_piglet_tag_numbers", return_value=({
+                 "success": True,
+                 "selected_piglets": [{"pig_id": "PIG-1"}, {"pig_id": "PIG-2"}],
+             }, 200)) as assign_tags, \
+             patch.object(pig_weights_service, "record_litter_newborn_health", return_value=({
+                 "success": True,
+                 "treatment_rows_planned": 4,
+                 "treatment_rows_created": 4,
+             }, 200)) as record_health, \
+             patch.object(pig_weights_service, "save_movement_entry", return_value={
+                 "success": True,
+                 "saved": {"to_pen_id": "PEN-WEAN"},
+             }) as save_movement, \
+             patch.object(pig_weights_service, "save_weight_entry", return_value={
+                 "success": True,
+                 "saved": {"weight_kg": 8.5},
+             }) as save_weight, \
+             patch.object(pig_weights_service, "mark_litter_weaned", return_value=({
+                 "success": True,
+                 "wean_weights_captured": 2,
+             }, 200)) as mark_weaned:
+
+            result, status_code = pig_weights_service.process_litter_weaning_day("LIT-1", {
+                "wean_date": "2026-07-06",
+                "target_pen_id": "PEN-WEAN",
+                "assignments": [
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102", "wean_weight_kg": "9.1"},
+                ],
+                "medicine": {
+                    "antiparasitic_product_id": "PRD-ANT",
+                    "deworming_product_id": "PRD-DEWORM",
+                },
+                "dry_run": False,
+            })
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["movement_count"], 2)
+        self.assertEqual(assign_tags.call_count, 2)
+        self.assertEqual(record_health.call_count, 2)
+        self.assertEqual(save_weight.call_count, 2)
+        self.assertEqual(save_movement.call_count, 2)
+        mark_weaned.assert_called_once()
+        self.assertEqual(mark_weaned.call_args.kwargs["wean_weights"], {"PIG-1": 8.5, "PIG-2": 9.1})
+
+    def test_weaning_day_requires_inline_wean_weights_for_all_active_piglets(self):
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=self._active_rows()):
+            result, status_code = pig_weights_service.process_litter_weaning_day("LIT-1", {
+                "wean_date": "2026-07-06",
+                "assignments": [
+                    {"pig_id": "PIG-1", "tag_number": "101", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "102"},
+                ],
+                "dry_run": True,
+            })
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("PIG-2", " ".join(result["errors"]))
+
+    def test_weaning_day_weight_only_rows_do_not_trigger_tag_assignment(self):
+        with patch.object(pig_weights_service, "_get_pig_master_rows", return_value=self._active_rows()), \
+             patch.object(pig_weights_service, "assign_litter_piglet_tag_numbers") as assign_tags, \
+             patch.object(pig_weights_service, "record_litter_newborn_health") as record_health, \
+             patch.object(pig_weights_service, "save_movement_entry") as save_movement, \
+             patch.object(pig_weights_service, "mark_litter_weaned") as mark_weaned:
+
+            result, status_code = pig_weights_service.process_litter_weaning_day("LIT-1", {
+                "wean_date": "2026-07-06",
+                "assignments": [
+                    {"pig_id": "PIG-1", "tag_number": "", "wean_weight_kg": "8.5"},
+                    {"pig_id": "PIG-2", "tag_number": "", "wean_weight_kg": "9.1"},
+                ],
+                "dry_run": True,
+            })
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tag_count"], 0)
+        self.assertEqual(result["weight_count"], 2)
+        self.assertEqual(result["wean_weights_captured"], 2)
+        assign_tags.assert_not_called()
+        record_health.assert_not_called()
+        save_movement.assert_not_called()
+        mark_weaned.assert_not_called()
+
     def test_save_new_litter_prefers_supabase_transaction(self):
         cleaned_data = {
             "mating_id": "",

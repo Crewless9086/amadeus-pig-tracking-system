@@ -60,6 +60,8 @@ MEAT_TARGET_MAX_KG = 80
 SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = None
 STALE_WEIGHT_DAYS = 30
+LIVE_STOCK_SALE_PURPOSE = "sale"
+LIVE_STOCK_MIN_SALE_WEIGHT_KG = 2
 BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
 BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
 BULK_WEIGHT_BATCH_AUDIT_HEADERS = [
@@ -2134,6 +2136,379 @@ def mark_litter_weaned(
     }, 200
 
 
+def process_litter_weaning_day(
+    litter_id: str,
+    payload=None,
+):
+    payload = payload or {}
+    dry_run = payload.get("dry_run", True) is True
+    action_date_value = payload.get("wean_date") or payload.get("action_date")
+    action_date = parse_sheet_date(action_date_value)
+    changed_by = to_clean_string(payload.get("changed_by", "web_app")) or "web_app"
+    assignments = payload.get("assignments", [])
+    target_pen_id = to_clean_string(payload.get("target_pen_id", ""))
+    notes = to_clean_string(payload.get("notes", ""))
+    medicine = payload.get("medicine", {}) if isinstance(payload.get("medicine", {}), dict) else {}
+
+    if not to_clean_string(litter_id):
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+    if not action_date:
+        return {"success": False, "errors": ["A valid wean date is required."]}, 400
+
+    active_rows = _active_on_farm_litter_piglet_rows(litter_id)
+    if not active_rows:
+        return {"success": False, "errors": ["No active on-farm piglets were found for this litter."]}, 409
+
+    validation_errors = []
+    tag_plan = _weaning_day_tag_plan(assignments)
+    health_requested = any(to_clean_string(medicine.get(key, "")) for key in (
+        "antiparasitic_product_id",
+        "deworming_product_id",
+        "vaccination_product_id",
+    ))
+    movement_plan = _weaning_day_movement_plan(active_rows, target_pen_id, action_date, changed_by, notes)
+    wean_weights = _weaning_day_weight_map(assignments)
+    wean_preview, wean_status = _weaning_day_wean_preview(litter_id, action_date, active_rows, wean_weights)
+    if wean_status != 200:
+        validation_errors.extend(wean_preview.get("errors", ["Could not preview wean action."]))
+
+    tag_preview = {"success": True, "skipped": True, "selected_piglets": [], "planned_updates": {}}
+    if tag_plan["assignments"]:
+        tag_preview, tag_status = assign_litter_piglet_tag_numbers(
+            litter_id=litter_id,
+            assignments=tag_plan["assignments"],
+            action_date_value=action_date,
+            changed_by=changed_by,
+            notes=notes,
+            dry_run=True,
+        )
+        if tag_status != 200 or not tag_preview.get("success"):
+            validation_errors.extend(tag_preview.get("errors", ["Could not preview tag numbers."]))
+
+    health_preview = {"success": True, "skipped": True, "treatment_rows_planned": 0, "planned_treatment_rows": []}
+    if health_requested:
+        health_preview, health_status = record_litter_newborn_health(
+            litter_id=litter_id,
+            action_date_value=action_date,
+            changed_by=changed_by,
+            antiparasitic_product_id=medicine.get("antiparasitic_product_id", ""),
+            deworming_product_id=medicine.get("deworming_product_id", ""),
+            vaccination_product_id=medicine.get("vaccination_product_id", ""),
+            dose=medicine.get("dose", None),
+            route=medicine.get("route", ""),
+            batch_lot_number=medicine.get("batch_lot_number", ""),
+            notes=notes or medicine.get("notes", "Weaning day treatment."),
+            dry_run=True,
+        )
+        if health_status != 200 or not health_preview.get("success"):
+            validation_errors.extend(health_preview.get("errors", ["Could not preview medicine."]))
+
+    if movement_plan["errors"]:
+        validation_errors.extend(movement_plan["errors"])
+
+    if validation_errors:
+        return {
+            "success": False,
+            "errors": validation_errors,
+            "dry_run": dry_run,
+            "litter_id": litter_id,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }, 409
+
+    if dry_run:
+        weight_preview = _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes)
+        if weight_preview["errors"]:
+            return {
+                "success": False,
+                "errors": weight_preview["errors"],
+                "dry_run": dry_run,
+                "litter_id": litter_id,
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            }, 409
+        return _weaning_day_result(
+            litter_id=litter_id,
+            dry_run=True,
+            action_date=action_date,
+            active_count=len(active_rows),
+            tag_result=tag_preview,
+            health_result=health_preview,
+            movement_result=movement_plan,
+            wean_result=wean_preview,
+            weight_result=weight_preview,
+            changed_by=changed_by,
+        ), 200
+
+    applied = {}
+    if tag_plan["assignments"]:
+        applied["tags"], tag_status = assign_litter_piglet_tag_numbers(
+            litter_id=litter_id,
+            assignments=tag_plan["assignments"],
+            action_date_value=action_date,
+            changed_by=changed_by,
+            notes=notes,
+            dry_run=False,
+        )
+        if tag_status != 200 or not applied["tags"].get("success"):
+            return {"success": False, "errors": applied["tags"].get("errors", ["Could not save tag numbers."])}, tag_status
+    else:
+        applied["tags"] = tag_preview
+
+    if health_requested:
+        applied["medicine"], health_status = record_litter_newborn_health(
+            litter_id=litter_id,
+            action_date_value=action_date,
+            changed_by=changed_by,
+            antiparasitic_product_id=medicine.get("antiparasitic_product_id", ""),
+            deworming_product_id=medicine.get("deworming_product_id", ""),
+            vaccination_product_id=medicine.get("vaccination_product_id", ""),
+            dose=medicine.get("dose", None),
+            route=medicine.get("route", ""),
+            batch_lot_number=medicine.get("batch_lot_number", ""),
+            notes=notes or medicine.get("notes", "Weaning day treatment."),
+            dry_run=False,
+        )
+        if health_status != 200 or not applied["medicine"].get("success"):
+            return {"success": False, "errors": applied["medicine"].get("errors", ["Could not save medicine."])}, health_status
+    else:
+        applied["medicine"] = health_preview
+
+    applied["weights"] = _apply_weaning_day_weights(active_rows, action_date, wean_weights, changed_by, notes)
+    if applied["weights"].get("errors"):
+        return {"success": False, "errors": applied["weights"]["errors"]}, 409
+
+    applied["movements"] = _apply_weaning_day_movements(movement_plan)
+    if applied["movements"].get("errors"):
+        return {"success": False, "errors": applied["movements"]["errors"]}, 409
+
+    applied["wean"], wean_apply_status = mark_litter_weaned(
+        litter_id=litter_id,
+        wean_date_value=action_date,
+        changed_by=changed_by,
+        use_latest_weights_as_wean_weights=False,
+        wean_weights=wean_weights,
+    )
+    if wean_apply_status != 200 or not applied["wean"].get("success"):
+        return {"success": False, "errors": applied["wean"].get("errors", ["Could not mark litter as weaned."])}, wean_apply_status
+
+    return _weaning_day_result(
+        litter_id=litter_id,
+        dry_run=False,
+        action_date=action_date,
+        active_count=len(active_rows),
+        tag_result=applied["tags"],
+        health_result=applied["medicine"],
+        movement_result=applied["movements"],
+        wean_result=applied["wean"],
+        weight_result=applied["weights"],
+        changed_by=changed_by,
+    ), 200
+
+
+def _active_on_farm_litter_piglet_rows(litter_id):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    return [
+        row for row in _get_pig_master_rows()
+        if to_clean_string(row.get("Litter_ID", "")) == to_clean_string(litter_id)
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+
+
+def _weaning_day_tag_plan(assignments):
+    cleaned = []
+    for assignment in assignments if isinstance(assignments, list) else []:
+        if not isinstance(assignment, dict):
+            continue
+        pig_id = to_clean_string(assignment.get("pig_id", ""))
+        tag_number = to_clean_string(assignment.get("tag_number", ""))
+        if tag_number:
+            cleaned.append({"pig_id": pig_id, "tag_number": tag_number})
+    return {"assignments": cleaned}
+
+
+def _weaning_day_weight_map(assignments):
+    weights = {}
+    for assignment in assignments if isinstance(assignments, list) else []:
+        if not isinstance(assignment, dict):
+            continue
+        pig_id = to_clean_string(assignment.get("pig_id", ""))
+        weight = to_float(assignment.get("wean_weight_kg"))
+        if pig_id and weight is not None:
+            weights[pig_id] = weight
+    return weights
+
+
+def _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    planned = []
+    errors = []
+    for row in active_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+        weight = to_float((wean_weights or {}).get(pig_id))
+        if weight is None:
+            errors.append(f"Missing wean weight for {pig_id}.")
+            continue
+        if weight <= 0:
+            errors.append(f"Wean weight for {pig_id} must be greater than 0.")
+            continue
+        planned.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "weight_date": action_date.isoformat(),
+            "weight_kg": weight,
+            "condition_notes": notes or "Weaning day weight.",
+            "weighed_by": changed_by,
+        })
+    return {
+        "success": not errors,
+        "weight_count": len(planned),
+        "planned_weights": planned,
+        "errors": errors,
+    }
+
+
+def _apply_weaning_day_weights(active_rows, action_date, wean_weights, changed_by, notes):
+    plan = _weaning_day_weight_log_plan(active_rows, action_date, wean_weights, changed_by, notes)
+    if plan["errors"]:
+        return plan
+    saved = []
+    errors = []
+    for weight in plan["planned_weights"]:
+        result = save_weight_entry({
+            "pig_id": weight["pig_id"],
+            "weight_date": action_date,
+            "weight_kg": weight["weight_kg"],
+            "condition_notes": weight["condition_notes"],
+            "weighed_by": weight["weighed_by"],
+            "allow_duplicate": False,
+        })
+        if not result.get("success"):
+            errors.append(f"Could not save weight for {weight['pig_id']}: {result.get('message', 'unknown error')}")
+        else:
+            saved.append(result.get("saved", {}))
+    return {
+        "success": not errors,
+        "weight_count": len(saved),
+        "saved_weights": saved,
+        "errors": errors,
+    }
+
+
+def _weaning_day_wean_preview(litter_id, action_date, active_rows, wean_weights):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    latest_weights = {
+        pig_id: {"weight_kg": weight, "weight_date": action_date, "source": "weaning_day_inline"}
+        for pig_id, weight in (wean_weights or {}).items()
+    }
+    updates, selected, missing = _wean_weight_updates_for_piglets(active_rows, latest_weights, explicit_wean_weights=wean_weights)
+    if missing:
+        return {
+            "success": False,
+            "errors": ["Enter wean weights for: " + ", ".join(missing)],
+            "missing_wean_weight_pig_ids": missing,
+        }, 409
+    return {
+        "success": True,
+        "action": "preview_mark_litter_weaned",
+        "litter_id": litter_id,
+        "wean_date": action_date.isoformat(),
+        "weaned_count": len(active_rows),
+        "wean_weights_captured": len(updates),
+        "wean_weight_rows": selected,
+    }, 200
+
+
+def _weaning_day_movement_plan(active_rows, target_pen_id, action_date, changed_by, notes):
+    if not target_pen_id:
+        return {"success": True, "skipped": True, "movement_count": 0, "planned_movements": [], "errors": []}
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    planned = []
+    errors = []
+    for row in active_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        from_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+        if not pig_id:
+            continue
+        if from_pen_id == target_pen_id:
+            continue
+        planned.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "move_date": action_date.isoformat(),
+            "from_pen_id": from_pen_id,
+            "to_pen_id": target_pen_id,
+            "reason_for_move": "Weaning day move",
+            "moved_by": changed_by,
+            "move_notes": notes or "Moved during litter weaning day workflow.",
+        })
+    return {
+        "success": not errors,
+        "skipped": False,
+        "movement_count": len(planned),
+        "planned_movements": planned,
+        "errors": errors,
+    }
+
+
+def _apply_weaning_day_movements(movement_plan):
+    if movement_plan.get("skipped"):
+        return movement_plan
+    saved = []
+    errors = []
+    for movement in movement_plan.get("planned_movements", []):
+        result = save_movement_entry(movement)
+        if not result.get("success"):
+            errors.append(f"Could not save movement for {movement.get('pig_id')}.")
+        else:
+            saved.append(result.get("saved", {}))
+    return {
+        "success": not errors,
+        "skipped": False,
+        "movement_count": len(saved),
+        "saved_movements": saved,
+        "errors": errors,
+    }
+
+
+def _weaning_day_result(litter_id, dry_run, action_date, active_count, tag_result, health_result, movement_result, wean_result, weight_result, changed_by):
+    treatment_count = int(health_result.get("treatment_rows_planned") or health_result.get("treatment_rows_created") or 0)
+    movement_count = int(movement_result.get("movement_count") or 0)
+    tag_count = len(tag_result.get("selected_piglets", []) or [])
+    weight_count = int(weight_result.get("weight_count") or len(weight_result.get("saved_weights", []) or []))
+    return {
+        "success": True,
+        "action": "litter_weaning_day",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "wean_date": action_date.isoformat(),
+        "active_piglet_count": active_count,
+        "tag_count": tag_count,
+        "treatment_count": treatment_count,
+        "movement_count": movement_count,
+        "weight_count": weight_count,
+        "wean_weights_captured": wean_result.get("wean_weights_captured", 0),
+        "tag_result": tag_result,
+        "medicine_result": health_result,
+        "movement_result": movement_result,
+        "weight_result": weight_result,
+        "wean_result": wean_result,
+        "changed_by": changed_by,
+        "message": (
+            f"Weaning day preview ready for {active_count} active piglet(s)."
+            if dry_run
+            else f"Weaning day saved for {active_count} active piglet(s)."
+        ),
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": not dry_run and farm_supabase_write_service.farm_supabase_writes_available(),
+        },
+    }
+
+
 def _append_lifecycle_note(existing_notes, event_date, reason, changed_by, notes):
     clean_existing = to_clean_string(existing_notes)
     clean_notes = to_clean_string(notes)
@@ -3359,14 +3734,7 @@ def _sales_availability_from_supabase_allocation():
 
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        classification = _meat_ready_classification(pig)
-        sale_category, category_code, status = _sales_category_for_meat_ready(classification)
-        available = "Yes" if category_code in {
-            "meat_window_candidate",
-            "abattoir_cull_candidate",
-            "live_sale_candidate",
-            "slow_grower_review",
-        } else "No"
+        eligibility = _live_stock_sale_eligibility(pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3377,21 +3745,135 @@ def _sales_availability_from_supabase_allocation():
             "last_weight_date": pig.get("latest_weight_date", ""),
             "average_daily_gain_kg": pig.get("average_daily_gain_kg"),
             "calculated_stage": pig.get("calculated_stage", ""),
-            "weight_band": pig.get("weight_band", ""),
+            "weight_band": eligibility.get("weight_band") or pig.get("weight_band", ""),
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
             "withdrawal_clear": "",
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
-            "available_for_sale": available,
-            "sale_category": sale_category,
-            "suggested_price_category": category_code,
-            "sales_notes": status,
+            "purpose": pig.get("purpose", ""),
+            "available_for_sale": "Yes" if eligibility["eligible"] else "No",
+            "live_stock_sale_eligible": eligibility["eligible"],
+            "live_stock_sale_reason": eligibility["reason"],
+            "sale_category": eligibility["sale_category"],
+            "suggested_price_category": eligibility["suggested_price_category"],
+            "sales_notes": eligibility["status"],
             "source": "supabase_allocation_readiness",
         })
 
     return sales_rows
+
+
+def _live_stock_sale_eligibility(pig):
+    status = to_clean_string(pig.get("status", ""))
+    normalized_status = status.lower()
+    on_farm = to_clean_string(pig.get("on_farm", "")).lower()
+    purpose = to_clean_string(pig.get("purpose", ""))
+    normalized_purpose = purpose.lower().replace("-", "_").replace(" ", "_")
+    reserved_status = to_clean_string(pig.get("reserved_status", "")).lower()
+    reserved_for_order_id = to_clean_string(pig.get("reserved_for_order_id", ""))
+    animal_type = to_clean_string(pig.get("animal_type", ""))
+    calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
+    latest_weight_kg = to_float(pig.get("latest_weight_kg"))
+    wean_date = to_clean_string(pig.get("wean_date", ""))
+
+    if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
+        return _live_stock_sale_block("not_active", "Pig is not active.")
+    if on_farm not in {"yes", "true", "1", "on farm"}:
+        return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
+    if reserved_status == "reserved" or reserved_for_order_id:
+        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
+    if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
+        return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
+    if _is_breeding_or_retained_stage(animal_type, calculated_stage):
+        return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
+    if latest_weight_kg is None:
+        return _live_stock_sale_block("missing_weight", "Latest weight is required before SAM can quote live stock.")
+    if latest_weight_kg < LIVE_STOCK_MIN_SALE_WEIGHT_KG:
+        return _live_stock_sale_block("below_sale_weight", "Newborn or very light piglets are not sold while still with the sow.")
+    if _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
+        return _live_stock_sale_block("not_weaned", "Piglets still with the sow are not sold through SAM Live.")
+
+    category, derived_band = _live_stock_sale_category_for_weight(latest_weight_kg)
+    if not category:
+        return _live_stock_sale_block("price_band_missing", "No live-stock price band matched the latest weight.")
+    return {
+        "eligible": True,
+        "reason": "Purpose = Sale, active/on-farm, not reserved, weaned or sale-stage, and current weight maps to a live-stock price band.",
+        "status": "SAM Live sale-ready",
+        "sale_category": category,
+        "weight_band": derived_band,
+        "suggested_price_category": f"{category}|{derived_band}",
+    }
+
+
+def _live_stock_sale_block(code, reason):
+    return {
+        "eligible": False,
+        "reason": reason,
+        "status": f"Not SAM Live sale-ready: {code}",
+        "sale_category": "Not SAM Live Sale Ready",
+        "weight_band": "",
+        "suggested_price_category": code,
+    }
+
+
+def _is_breeding_or_retained_stage(animal_type, calculated_stage):
+    text = f"{animal_type} {calculated_stage}".lower()
+    return any(token in text for token in ("sow", "boar", "breeding", "replacement", "retained"))
+
+
+def _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
+    text = f"{animal_type} {calculated_stage}".lower()
+    return not wean_date and any(token in text for token in ("newborn", "suckling", "lactating"))
+
+
+def _live_stock_sale_category_for_weight(weight_kg):
+    weight = to_float(weight_kg)
+    if weight is None:
+        return "", ""
+    if 2 <= weight < 5:
+        return "Young Piglets", "2_to_4_Kg"
+    if 5 <= weight < 7:
+        return "Young Piglets", "5_to_6_Kg"
+    if 7 <= weight < 10:
+        return "Weaner Piglets", "7_to_9_Kg"
+    if 10 <= weight < 15:
+        return "Weaner Piglets", "10_to_14_Kg"
+    if 15 <= weight < 20:
+        return "Weaner Piglets", "15_to_19_Kg"
+    if 20 <= weight < 25:
+        return "Grower Pigs", "20_to_24_Kg"
+    if 25 <= weight < 30:
+        return "Grower Pigs", "25_to_29_Kg"
+    if 30 <= weight < 35:
+        return "Grower Pigs", "30_to_34_Kg"
+    if 35 <= weight < 40:
+        return "Grower Pigs", "35_to_39_Kg"
+    if 40 <= weight < 45:
+        return "Grower Pigs", "40_to_44_Kg"
+    if 45 <= weight < 50:
+        return "Grower Pigs", "45_to_49_Kg"
+    if 50 <= weight < 55:
+        return "Finisher Pigs", "50_to_54_Kg"
+    if 55 <= weight < 60:
+        return "Finisher Pigs", "55_to_59_Kg"
+    if 60 <= weight < 65:
+        return "Finisher Pigs", "60_to_64_Kg"
+    if 65 <= weight < 70:
+        return "Finisher Pigs", "65_to_69_Kg"
+    if 70 <= weight < 75:
+        return "Finisher Pigs", "70_to_74_Kg"
+    if 75 <= weight < 80:
+        return "Finisher Pigs", "75_to_79_Kg"
+    if 80 <= weight < 85:
+        return "Ready for Slaughter", "80_to_84_Kg"
+    if 85 <= weight < 90:
+        return "Ready for Slaughter", "85_to_89_Kg"
+    if 90 <= weight < 95:
+        return "Ready for Slaughter", "90_to_94_Kg"
+    return "", ""
 
 
 def _latest_weights_by_pig(weight_rows, columns):
