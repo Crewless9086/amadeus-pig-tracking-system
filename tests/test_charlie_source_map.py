@@ -25,6 +25,37 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("tests/test_frontend_route_contracts.py", packet["required_inspection_paths"])
         self.assertIn("/api/charlie/build-relay/runner/status", packet["required_routes"])
 
+    def test_charlie_core_memory_runtime_maps_recall_sources(self):
+        mission = {
+            "mission_type": "charlie core memory runtime",
+            "title": "CHARLIE Brain & Memory v2 - Stage 2: Working Memory and Mission Recall",
+            "raw_text": (
+                "Build the working memory and mission recall layer for CHARLIE CORE so agents preserve "
+                "context between retries, send-backs, blocked states, and resumed missions. "
+                "Recovery packets should guide the next attempt."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("charlie_core_memory_recall", keys)
+        self.assertIn("modules/charlie/mission_memory.py", packet["required_inspection_paths"])
+        self.assertIn("modules/charlie/execution_bridge.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_charlie_mission_memory.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_charlie_replay_stress.py", packet["required_inspection_paths"])
+        self.assertIn(
+            "docs/09-vault-brain/06-data/BRAIN_AND_MEMORY_V2.md",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn("/api/charlie/build-relay/missions/<mission_id>/replay", packet["required_routes"])
+
+        missing_paths = [
+            path for path in packet["required_inspection_paths"]
+            if not (REPO_ROOT / Path(path)).exists()
+        ]
+        self.assertEqual([], missing_paths)
+
     def test_forbidden_sam_beacon_mentions_do_not_map_sales_sources(self):
         mission = {
             "mission_type": "dashboard ui",
