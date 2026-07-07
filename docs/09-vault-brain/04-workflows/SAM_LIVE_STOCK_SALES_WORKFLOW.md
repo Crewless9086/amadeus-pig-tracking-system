@@ -109,9 +109,10 @@ The backend-native controlled launch surface should expose:
 - conversation review/scoring packet;
 - append-only conversation review event logging in `sam_live_stock_conversation_review_events`;
 - escalation packet for Telegram/Oom Sakkie;
+- owner-review Telegram packet for normal safe drafts, with customer message, SAM draft, risk score, and approve/edit/human/close actions;
 - owner-approved send route, disabled unless the owner-send env gate is enabled;
 - Telegram escalation send route, disabled unless the Telegram escalation send env gate is enabled;
-- Telegram callback route for approve-send, close, keep-human, and resolved actions;
+- Telegram callback route for approve-send, edit-in-Chatwoot, close, keep-human, and resolved actions;
 - resolved cleanup packet and delete route for deleting or marking the specific Telegram escalation notification;
 - Chatwoot takeover payload and write route that sets `conversation_mode = HUMAN` without overwriting unrelated conversation attributes;
 - advisory reservation plan route for matched candidates;
@@ -120,6 +121,7 @@ The backend-native controlled launch surface should expose:
 These env gates must stay explicit:
 
 - `SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED`
+- `SAM_LIVE_STOCK_TELEGRAM_OWNER_REVIEW_SEND_ENABLED`
 - `SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED`
 - `SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED`
 - `SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED`
