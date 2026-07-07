@@ -132,6 +132,8 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision,
             conversation_review,
         )
+        if decision["escalation_packet"].get("suggested_response"):
+            decision["suggested_reply_text"] = decision["escalation_packet"]["suggested_response"]
     intake_write = write_live_stock_intake_if_enabled(
         inbound,
         facts,
@@ -271,7 +273,7 @@ def merge_prior_live_stock_context(facts, prior_context):
             facts[key] = interest.get(key)
     if _blank(facts.get("sales_lane")) and not _blank(interest.get("sales_lane")):
         facts["sales_lane"] = interest.get("sales_lane")
-    if str(facts.get("sales_lane") or "").strip().lower() in ("", "unclear") and prior_has_live_stock_item:
+    if str(facts.get("sales_lane") or "").strip().lower() in ("", "unclear", "farm_general_question", "owner_handoff") and prior_has_live_stock_item:
         facts["sales_lane"] = LANE_LIVE_STOCK
         facts["lane_confidence"] = max(float(facts.get("lane_confidence") or 0), 0.9)
         reasons = facts.get("lane_reasons") if isinstance(facts.get("lane_reasons"), list) else []

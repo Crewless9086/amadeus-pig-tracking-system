@@ -651,6 +651,37 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("waste your time", decision["escalation_packet"]["suggested_response"])
         self.assertIn("sam_live_approve_send:", decision["escalation_packet"]["telegram_packet"]["reply_markup"]["inline_keyboard"][0][0]["callback_data"])
 
+    def test_hostile_location_followup_inherits_live_stock_lane_and_visible_reply(self):
+        def intake_loader(_conversation_id):
+            return {
+                "success": True,
+                "known_fields": {"collection_location": "Riversdale"},
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            }
+
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Why won't you send me your farm location? This sounds like a scam."),
+            intake_context_loader=intake_loader,
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        review = decision["conversation_review"]
+
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertNotIn("lane_not_live_stock:farm_general_question", decision["blockers"])
+        self.assertTrue(review["escalation_required"])
+        self.assertEqual(review["conversation_mode_recommendation"], "HUMAN")
+        self.assertIn("hostile_or_scam_location_challenge", review["escalation_reasons"])
+        self.assertIn("waste your time", decision["suggested_reply_text"])
+        self.assertEqual(decision["suggested_reply_text"], decision["escalation_packet"]["suggested_response"])
+
     def test_price_challenge_escalates_without_discount_posture(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
             inbound_payload(content="That price is too expensive. I can get cheaper pigs elsewhere.")
