@@ -1614,6 +1614,56 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         handle_inbound.assert_called_once_with({"event": "message_created"})
 
+    def test_sam_meat_backend_routes_live_stock_handoff_to_live_runtime(self):
+        meat_result = {
+            "success": True,
+            "status": "sam_meat_live_stock_handoff",
+            "processed": True,
+            "sent": False,
+        }
+        live_result = {
+            "success": True,
+            "status": "sam_live_stock_read_only_processed",
+            "processed": True,
+            "sent": False,
+            "sam_decision": {
+                "inbound": {"conversation_id": "1822", "message_id": "1", "content": "weaners"},
+                "facts": {"sales_lane": "live_stock_sales"},
+                "conversation_review": {"score": 96, "safe_to_send": False},
+            },
+            "policy": {"customer_send_allowed": False},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_meat_chatwoot_inbound",
+            return_value=(meat_result, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+            return_value=(live_result, 200),
+        ) as live_runtime, patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({"success": True, "status": "recorded", "review_event_id": "REV-1"}, 201),
+        ):
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-meat/inbound",
+                json={"event": "message_created", "content": "weaners"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "sam_meat_live_stock_handoff")
+        self.assertFalse(payload["sent"])
+        self.assertEqual(payload["sam_live_stock_handoff"]["status"], "sam_live_stock_read_only_processed")
+        self.assertTrue(payload["sam_live_stock_handoff"]["conversation_review_event"]["recorded"])
+        live_runtime.assert_called_once_with({"content": "weaners", "event": "message_created"})
+
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
         with patch.object(
             sales_transaction_routes,
