@@ -238,7 +238,9 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
         timeout_seconds=timeout_seconds,
     )
     if notify:
-        if status_code < 400 and result.get("status") in {"codex_execution_completed", "agent_execution_completed"}:
+        if status_code < 400 and result.get("mission_status") == "pr_ready":
+            _send_review_ready_notification(result)
+        elif status_code < 400 and result.get("status") in {"codex_execution_completed", "agent_execution_completed"}:
             _send_review_ready_notification(result)
         else:
             _send_blocked_notification(

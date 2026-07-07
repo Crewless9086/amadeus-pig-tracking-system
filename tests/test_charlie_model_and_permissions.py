@@ -40,6 +40,21 @@ class CharlieModelAndPermissionTests(unittest.TestCase):
         self.assertTrue(model["runtime_configured"])
         self.assertEqual(model["runtime_model"], "security-model-live")
 
+    @patch.dict("os.environ", {"ANTROPIC_API_KEY": "typo-key"}, clear=True)
+    def test_agent_model_assignment_activates_claude_review_provider_with_typo_alias(self):
+        model = choose_agent_model("security_reviewer", mission_type="system improvement", risk_level="high")
+
+        self.assertEqual(model["runtime_provider"], "anthropic")
+        self.assertEqual(model["runtime_model"], "claude-sonnet-5")
+        self.assertTrue(model["runtime_configured"])
+        self.assertEqual(model["api_key_env"], "ANTROPIC_API_KEY")
+
+    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "real-key"}, clear=True)
+    def test_agent_model_assignment_keeps_builder_on_codex(self):
+        model = choose_agent_model("builder", mission_type="system improvement", risk_level="medium")
+
+        self.assertEqual(model["runtime_provider"], "codex_cli")
+
     def test_tool_permission_blocks_red_zone_without_owner_approval(self):
         result = check_tool_permission("builder", "migration", owner_approved=False)
 

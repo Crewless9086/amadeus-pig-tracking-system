@@ -241,6 +241,28 @@ class CharlieMissionPickupTests(unittest.TestCase):
         write_heartbeat.assert_called()
         sleep.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup._send_blocked_notification")
+    @patch("scripts.charlie_mission_pickup._send_review_ready_notification")
+    @patch("scripts.charlie_mission_pickup.run_agent_execution_bridge_v2")
+    def test_execute_codex_notifies_review_ready_for_any_pr_ready_result(self, run_bridge, send_review, send_blocked):
+        run_bridge.return_value = ({
+            "success": True,
+            "status": "custom_completed_status",
+            "mission_id": "CHARLIE-MISSION-ACTIVE",
+            "mission_status": "pr_ready",
+        }, 200)
+
+        result, status_code = charlie_mission_pickup.execute_codex_for_mission(
+            "CHARLIE-MISSION-ACTIVE",
+            notify=True,
+            timeout_seconds=30,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["mission_status"], "pr_ready")
+        send_review.assert_called_once_with(result)
+        send_blocked.assert_not_called()
+
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")

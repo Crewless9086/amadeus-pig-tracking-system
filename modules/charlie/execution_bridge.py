@@ -37,6 +37,7 @@ from modules.charlie.core_workflow import (
     explicit_non_ui_requested,
 )
 from modules.charlie.model_registry import choose_agent_model
+from modules.charlie.anthropic_provider import run_anthropic_prompt
 from modules.charlie.mission_memory import (
     build_memory_event,
     final_artifact_contract_packet,
@@ -271,7 +272,7 @@ def run_codex_execution_bridge(
         "-",
     ]
     started_at = datetime.now(timezone.utc).isoformat()
-    runner = run_subprocess or _run_codex_process
+    runner = run_subprocess or _run_agent_model_process
     completed = runner(
         command,
         input=prompt_path.read_text(encoding="utf-8"),
@@ -447,6 +448,7 @@ def run_agent_execution_bridge_v2(
             risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
         )
         if _strict_agent_model_routing_required() and not model_assignment.get("runtime_model"):
+            stage_started = datetime.now(timezone.utc).isoformat()
             return _block_agent_stage(
                 mission["mission_id"],
                 execution_id,
@@ -493,16 +495,20 @@ def run_agent_execution_bridge_v2(
             "execution_artifact": str(stage_paths["final_path"]),
             "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
         })
-        completed = runner(
-            command,
-            input=prompt,
-            cwd=str(REPO_ROOT),
-            timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
-            stdout_path=stage_paths["stdout_path"],
-            stderr_path=stage_paths["stderr_path"],
-            final_path=stage_paths["final_path"],
-            mission_id=mission["mission_id"],
-        )
+        try:
+            completed = runner(
+                command,
+                input=prompt,
+                cwd=str(REPO_ROOT),
+                timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
+                stdout_path=stage_paths["stdout_path"],
+                stderr_path=stage_paths["stderr_path"],
+                final_path=stage_paths["final_path"],
+                mission_id=mission["mission_id"],
+                model_assignment=model_assignment,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            completed = _completed_process_from_stage_exception(command, exc, stage_paths)
         _write_process_text(stage_paths["stdout_path"], completed.stdout or "")
         _write_process_text(stage_paths["stderr_path"], completed.stderr or "")
         final_message = _read_text(stage_paths["final_path"]) or (completed.stdout or "").strip()
@@ -2117,6 +2123,7 @@ def _run_parallel_read_only_agents(
                 stderr_path=stage_paths["stderr_path"],
                 final_path=stage_paths["final_path"],
                 mission_id=mission["mission_id"],
+                model_assignment=model_assignment,
             )] = {
                 "agent": agent,
                 "paths": stage_paths,
@@ -2137,7 +2144,11 @@ def _run_parallel_read_only_agents(
         completed_by_agent = {}
         for future in as_completed(futures):
             context = futures[future]
-            completed_by_agent[context["agent"]] = (context, future.result())
+            try:
+                completed = future.result()
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                completed = _completed_process_from_stage_exception(context["command"], exc, context["paths"])
+            completed_by_agent[context["agent"]] = (context, completed)
 
     for agent in agents:
         context, completed = completed_by_agent[agent]
@@ -3701,7 +3712,15 @@ def _block_agent_stage(
                 "test_evidence": ["Agent workflow stopped before final tester/reviewer evidence."],
                 "qa_evidence": qa_artifact.get("qa_findings") or artifact.get("qa_findings") or [],
                 "links": {},
-                "execution_artifacts": {"execution_id": execution_id, "agent_ledger_path": str(ledger_path), "blocked_agent": agent, "blocked_artifact_path": str(paths["final_path"])},
+                "execution_artifacts": {
+                    "execution_id": execution_id,
+                    "agent_ledger_path": str(ledger_path),
+                    "blocked_agent": agent,
+                    "blocked_artifact_path": str(paths["final_path"]),
+                    "stdout_excerpt": blocked_artifact.get("stdout_excerpt", ""),
+                    "stderr_excerpt": blocked_artifact.get("stderr_excerpt", ""),
+                    "returncode": blocked_artifact.get("returncode"),
+                },
                 "agent_execution": _agent_execution_summary(ledger),
                 "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
                 "unresolved_blockers": unresolved,
@@ -5388,6 +5407,142 @@ def _reconcile_merged_pr(pr_reference, runner):
         "merged": state == "MERGED" or bool(parsed.get("mergedAt")),
     })
     return result
+
+
+def _run_agent_model_process(
+    command,
+    input="",
+    cwd=None,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    stdout_path=None,
+    stderr_path=None,
+    final_path=None,
+    mission_id="",
+    model_assignment=None,
+    **kwargs,
+):
+    model_assignment = model_assignment if isinstance(model_assignment, dict) else {}
+    provider = str(model_assignment.get("runtime_provider") or "").strip().lower()
+    if provider == "anthropic":
+        return _run_anthropic_agent_process(
+            command,
+            input=input,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            final_path=final_path,
+            mission_id=mission_id,
+            model_assignment=model_assignment,
+            **kwargs,
+        )
+    return _run_codex_process(
+        command,
+        input=input,
+        cwd=cwd,
+        timeout_seconds=timeout_seconds,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        final_path=final_path,
+        mission_id=mission_id,
+        **kwargs,
+    )
+
+
+def _completed_process_from_stage_exception(command, exc, paths):
+    returncode = 124 if isinstance(exc, subprocess.TimeoutExpired) else 78
+    error_type = exc.__class__.__name__
+    error_text = str(exc)[:2000]
+    if isinstance(exc, subprocess.TimeoutExpired):
+        error_text = f"Stage runner timed out after {getattr(exc, 'timeout', '')} seconds."
+    stderr = json.dumps({
+        "status": "agent_stage_runner_exception",
+        "error_type": error_type,
+        "error": error_text,
+        "recovery": "CHARLIE converted the runner exception into a blocked review packet instead of leaving the mission in progress.",
+    }, indent=2)
+    try:
+        _write_process_text(paths["stderr_path"], stderr)
+        if not _read_text(paths["stdout_path"]):
+            _write_process_text(paths["stdout_path"], "")
+    except Exception:
+        pass
+    return subprocess.CompletedProcess(command, returncode, "", stderr)
+
+
+def _run_anthropic_agent_process(
+    command,
+    input="",
+    cwd=None,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    stdout_path=None,
+    stderr_path=None,
+    final_path=None,
+    mission_id="",
+    model_assignment=None,
+    **_kwargs,
+):
+    stdout_path = Path(stdout_path)
+    stderr_path = Path(stderr_path)
+    final_path = Path(final_path)
+    started = time.monotonic()
+    model_assignment = model_assignment if isinstance(model_assignment, dict) else {}
+    write_runner_heartbeat({
+        "status": "anthropic_agent_running",
+        "mission_id": mission_id,
+        "execution_artifact": str(final_path),
+        "elapsed_seconds": 0,
+        "changed_files_count": len(_changed_files()),
+        "final_artifact_present": False,
+        "model_provider": "anthropic",
+        "model": model_assignment.get("runtime_model", ""),
+    })
+    result, status_code = run_anthropic_prompt(
+        input,
+        model=model_assignment.get("runtime_model", ""),
+        timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
+    )
+    elapsed = int(time.monotonic() - started)
+    if status_code < 400 and result.get("success"):
+        text = str(result.get("text") or "").strip()
+        _write_process_text(final_path, text)
+        _write_process_text(stdout_path, text)
+        _write_process_text(stderr_path, "")
+        write_runner_heartbeat({
+            "status": "anthropic_agent_final_artifact_seen",
+            "mission_id": mission_id,
+            "execution_artifact": str(final_path),
+            "elapsed_seconds": elapsed,
+            "changed_files_count": len(_changed_files()),
+            "final_artifact_present": bool(text),
+            "model_provider": "anthropic",
+            "model": result.get("model", model_assignment.get("runtime_model", "")),
+            "stdout_tail": _tail_text(text, 1200),
+            "stderr_tail": "",
+        })
+        return subprocess.CompletedProcess(command, 0, text, "")
+
+    stderr = json.dumps({
+        "status": result.get("status", "anthropic_failed"),
+        "status_code": status_code,
+        "error": result.get("error", ""),
+        "error_type": result.get("error_type", ""),
+    }, indent=2)
+    _write_process_text(stdout_path, "")
+    _write_process_text(stderr_path, stderr)
+    write_runner_heartbeat({
+        "status": "anthropic_agent_failed",
+        "mission_id": mission_id,
+        "execution_artifact": str(final_path),
+        "elapsed_seconds": elapsed,
+        "changed_files_count": len(_changed_files()),
+        "final_artifact_present": False,
+        "model_provider": "anthropic",
+        "model": model_assignment.get("runtime_model", ""),
+        "stdout_tail": "",
+        "stderr_tail": _tail_text(stderr, 1200),
+    })
+    return subprocess.CompletedProcess(command, 78, "", stderr)
 
 
 def _run_codex_process(
