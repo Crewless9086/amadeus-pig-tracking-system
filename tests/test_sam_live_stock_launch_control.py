@@ -1,0 +1,214 @@
+import unittest
+
+from modules.sales import sam_live_stock_launch_control as launch
+
+
+def review_inputs(message="I need 2 weaners in Riversdale next week."):
+    inbound = {
+        "conversation_id": "2401",
+        "message_id": "901",
+        "customer_name": "Charl N",
+        "customer_phone": "+27820000000",
+        "channel": "chatwoot_whatsapp",
+        "content": message,
+    }
+    facts = {
+        "sales_lane": "live_stock_sales",
+        "category": "weaner",
+        "quantity": 2,
+        "sex": "any",
+        "location": "Riversdale",
+        "timing": "next week",
+    }
+    decision = {
+        "sales_lane": "live_stock_sales",
+        "missing_fields": [],
+        "blockers": [],
+        "suggested_reply_text": "I can check the current weaner list for Riversdale handover next week.",
+    }
+    return inbound, facts, decision
+
+
+class SamLiveStockLaunchControlTests(unittest.TestCase):
+    def test_review_event_is_append_only_no_authority_shape(self):
+        inbound, facts, decision = review_inputs()
+        review = {"score": 98, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"}
+
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision, review)
+
+        self.assertTrue(event["review_event_id"].startswith("SAM-LIVE-REVIEW-"))
+        self.assertEqual(event["chatwoot_conversation_id"], "2401")
+        self.assertEqual(event["score"], 98)
+        self.assertFalse(event["sends_customer_message"])
+        self.assertFalse(event["calls_chatwoot"])
+        self.assertFalse(event["calls_telegram"])
+        self.assertFalse(event["reserves_stock"])
+        self.assertFalse(event["writes_farm_data"])
+
+    def test_record_review_event_requires_database_url(self):
+        inbound, facts, decision = review_inputs()
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+
+        result, status = launch.record_sam_live_stock_review_event(event, database_url="")
+
+        self.assertEqual(status, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "database_url_not_configured")
+
+    def test_telegram_escalation_send_is_env_gated(self):
+        calls = []
+        packet = {"telegram_packet": {"text": "Escalation", "reply_markup": {"inline_keyboard": []}}}
+
+        result, status = launch.send_sam_live_stock_telegram_escalation(
+            packet,
+            environ={},
+            telegram_sender=lambda *args: calls.append(args),
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_stock_telegram_send_disabled")
+        self.assertEqual(calls, [])
+
+    def test_telegram_escalation_send_uses_owner_chat_when_enabled(self):
+        calls = []
+
+        def sender(token, chat_id, text, reply_markup):
+            calls.append((token, chat_id, text, reply_markup))
+            return {"ok": True, "result": {"message_id": 123}}
+
+        result, status = launch.send_sam_live_stock_telegram_escalation(
+            {"telegram_packet": {"text": "Escalation", "reply_markup": {"inline_keyboard": []}}},
+            environ={
+                "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED": "1",
+                "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
+                "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
+            },
+            telegram_sender=sender,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["calls_telegram"])
+        self.assertEqual(calls[0][1], "555")
+
+    def test_telegram_cleanup_is_env_gated_and_targeted(self):
+        result, status = launch.delete_sam_live_stock_telegram_escalation(
+            "SAM-LIVE-ESC-1",
+            "555",
+            "123",
+            environ={},
+            telegram_deleter=lambda *args: {"ok": True},
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_stock_telegram_cleanup_disabled")
+        self.assertTrue(result["cleanup_packet"]["delete_allowed"])
+
+    def test_chatwoot_takeover_is_env_gated_and_writes_only_when_enabled(self):
+        calls = []
+
+        result, status = launch.apply_sam_live_stock_chatwoot_takeover(
+            "2401",
+            mode="HUMAN",
+            environ={},
+            chatwoot_writer=lambda *args: calls.append(args),
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_stock_chatwoot_takeover_write_disabled")
+        self.assertEqual(calls, [])
+
+        result, status = launch.apply_sam_live_stock_chatwoot_takeover(
+            "2401",
+            mode="HUMAN",
+            reason="owner_test",
+            environ={"SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1"},
+            chatwoot_writer=lambda conversation_id, attrs, source: calls.append((conversation_id, attrs)) or {"ok": True},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(calls[0][0], "2401")
+        self.assertEqual(calls[0][1]["conversation_mode"], "HUMAN")
+        self.assertTrue(result["calls_chatwoot"])
+
+    def test_owner_callback_routes_approve_human_resolved_and_close(self):
+        send_calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": "sam_live_approve_send:SAM-LIVE-ESC-1",
+                "conversation_id": "2401",
+                "message": "Approved reply",
+            },
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            chatwoot_sender=lambda conversation_id, message, source: send_calls.append((conversation_id, message)) or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "approve_send")
+        self.assertTrue(result["sends_customer_message"])
+        self.assertEqual(send_calls, [("2401", "Approved reply")])
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_human:SAM-LIVE-ESC-1", "conversation_id": "2401"},
+            environ={"SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1"},
+            chatwoot_writer=lambda conversation_id, attrs, source: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "human")
+        self.assertTrue(result["calls_chatwoot"])
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": "sam_live_resolved:SAM-LIVE-ESC-1",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "123",
+            },
+            environ={
+                "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1",
+                "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token",
+            },
+            telegram_deleter=lambda token, chat_id, message_id: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "resolved")
+        self.assertTrue(result["calls_telegram"])
+
+        result, status = launch.process_sam_live_stock_owner_callback({"callback_data": "sam_live_close:SAM-LIVE-ESC-1"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["action"], "close")
+
+    def test_live_stock_reservation_plan_is_advisory(self):
+        plan = launch.build_live_stock_reservation_plan(
+            order_id="ORD-1",
+            match_packet={"matched_sample": [{"pig_id": "PIG-1"}]},
+        )
+
+        self.assertTrue(plan["owner_gate_required"])
+        self.assertTrue(plan["can_execute_order_line_reservation"])
+        self.assertFalse(plan["reserves_stock"])
+
+    def test_order_reservation_execution_is_env_gated(self):
+        result, status = launch.execute_live_stock_order_reservation(
+            "ORD-1",
+            action="reserve",
+            environ={},
+            reserve_fn=lambda order_id: {"success": True},
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_stock_order_reservation_disabled")
+
+        result, status = launch.execute_live_stock_order_reservation(
+            "ORD-1",
+            action="reserve",
+            environ={"SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED": "1"},
+            reserve_fn=lambda order_id: {"success": True, "changed_count": 2},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["reserves_stock"])
+        self.assertTrue(result["changes_stock"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -79,6 +79,17 @@ from modules.sales.sam_live_stock_runtime import (
     sam_live_stock_webhook_policy,
     send_owner_approved_live_stock_reply,
 )
+from modules.sales.sam_live_stock_launch_control import (
+    apply_sam_live_stock_chatwoot_takeover,
+    build_live_stock_reservation_plan,
+    build_sam_live_stock_review_event,
+    delete_sam_live_stock_telegram_escalation,
+    execute_live_stock_order_reservation,
+    process_sam_live_stock_owner_callback,
+    record_sam_live_stock_review_event,
+    sam_live_stock_launch_control_policy,
+    send_sam_live_stock_telegram_escalation,
+)
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_pricing import (
@@ -322,6 +333,7 @@ def sam_live_stock_chatwoot_policy():
     return jsonify({
         "success": True,
         "policy": sam_live_stock_webhook_policy(),
+        "launch_control": sam_live_stock_launch_control_policy(),
     }), 200
 
 
@@ -348,6 +360,22 @@ def sam_live_stock_chatwoot_inbound():
             "changes_stock": False,
             "reserves_stock": False,
         }, 500
+    if result.get("processed") and isinstance(result.get("sam_decision"), dict):
+        decision = result["sam_decision"]
+        review = decision.get("conversation_review") if isinstance(decision.get("conversation_review"), dict) else {}
+        event = build_sam_live_stock_review_event(
+            decision.get("inbound") if isinstance(decision.get("inbound"), dict) else payload,
+            decision.get("facts") if isinstance(decision.get("facts"), dict) else {},
+            decision,
+            review,
+        )
+        learning_result, learning_status = record_sam_live_stock_review_event(event)
+        result["conversation_review_event"] = {
+            "status": learning_result.get("status"),
+            "status_code": learning_status,
+            "review_event_id": learning_result.get("review_event_id") or event.get("review_event_id"),
+            "recorded": learning_result.get("success") is True,
+        }
     return jsonify(result), status_code
 
 
@@ -360,11 +388,31 @@ def sam_live_stock_conversation_review():
         payload.get("decision") if isinstance(payload.get("decision"), dict) else {},
         payload.get("context_packet") if isinstance(payload.get("context_packet"), dict) else {},
     )
-    return jsonify({"success": True, "review": result}), 200
+    event = build_sam_live_stock_review_event(
+        payload.get("inbound") if isinstance(payload.get("inbound"), dict) else payload,
+        payload.get("facts") if isinstance(payload.get("facts"), dict) else {},
+        payload.get("decision") if isinstance(payload.get("decision"), dict) else {},
+        result,
+        event_source="manual_review_route",
+    )
+    learning_result, learning_status = record_sam_live_stock_review_event(event)
+    return jsonify({
+        "success": True,
+        "review": result,
+        "conversation_review_event": {
+            "status": learning_result.get("status"),
+            "status_code": learning_status,
+            "review_event_id": learning_result.get("review_event_id") or event.get("review_event_id"),
+            "recorded": learning_result.get("success") is True,
+        },
+    }), 200
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/owner-send", methods=["POST"])
 def sam_live_stock_owner_send():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
     payload = request.get_json(silent=True) or {}
     result, status_code = send_owner_approved_live_stock_reply(
         payload.get("conversation_id"),
@@ -372,6 +420,26 @@ def sam_live_stock_owner_send():
         owner=payload.get("owner") or "owner",
         escalation_id=payload.get("escalation_id") or "",
     )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/escalations/send-telegram", methods=["POST"])
+def sam_live_stock_send_escalation_telegram():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_sam_live_stock_telegram_escalation(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/escalations/callback", methods=["POST"])
+def sam_live_stock_escalation_callback():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = process_sam_live_stock_owner_callback(payload)
     return jsonify(result), status_code
 
 
@@ -387,6 +455,62 @@ def sam_live_stock_escalation_cleanup_packet(escalation_id):
             conversation_id=payload.get("conversation_id") or "",
         ),
     }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/escalations/<escalation_id>/delete-telegram", methods=["POST"])
+def sam_live_stock_escalation_delete_telegram(escalation_id):
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = delete_sam_live_stock_telegram_escalation(
+        escalation_id,
+        payload.get("telegram_chat_id") or "",
+        payload.get("telegram_message_id") or "",
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/takeover", methods=["POST"])
+def sam_live_stock_chatwoot_takeover():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = apply_sam_live_stock_chatwoot_takeover(
+        payload.get("conversation_id"),
+        mode=payload.get("mode") or "HUMAN",
+        reason=payload.get("reason") or "owner_takeover",
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/reservation-plan", methods=["POST"])
+def sam_live_stock_reservation_plan():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    return jsonify({
+        "success": True,
+        "reservation_plan": build_live_stock_reservation_plan(
+            order_id=payload.get("order_id") or "",
+            match_packet=payload.get("match_packet") if isinstance(payload.get("match_packet"), dict) else {},
+        ),
+    }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/order-reservation", methods=["POST"])
+def sam_live_stock_order_reservation():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = execute_live_stock_order_reservation(
+        payload.get("order_id"),
+        action=payload.get("action") or "reserve",
+    )
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/channels/chatwoot/meat-documents/delivery-status", methods=["POST"])
