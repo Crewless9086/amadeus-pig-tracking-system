@@ -626,3 +626,18 @@ Safety result:
 - quote send remains owner/operator action only;
 - customer sends remain disabled;
 - public launch remains blocked until owner confirms price, Beacon post, smoke test, and command visibility.
+
+## Controlled Launch Smoke Notes
+
+Status: active smoke testing on 2026-07-07.
+
+Known launch bug:
+
+- `quote_requested` can be overwritten from `true` to `false` on later follow-up messages that do not repeat price/quote wording. Example: a customer asks "What is the price for them?" and the intake correctly sets `quote_requested = true`; a later reservation follow-up can update the same intake with `quote_requested = false`. This must preserve prior quote intent unless the customer explicitly cancels or changes the intent.
+
+Required fix before public launch:
+
+- Update SAM Live Stock intake patching so boolean intent fields are cumulative for the active intake:
+  - preserve prior `quote_requested = true` when a later message has no explicit quote signal;
+  - preserve prior positive order/reservation review signals unless explicitly cancelled;
+  - add regression coverage using the clean Chatwoot smoke sequence: availability request -> price request -> reservation request.

@@ -561,7 +561,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["facts"]["quantity"], 2)
         self.assertEqual(decision["facts"]["sex"], "Female")
         self.assertEqual(decision["facts"]["location"], "Riversdale")
-        self.assertIn("cannot say animals are held", decision["suggested_reply_text"])
+        self.assertIn("cannot confirm those animals", decision["suggested_reply_text"])
+        self.assertNotIn("implies_reservation", decision["conversation_review"]["blocked_reasons"])
 
     def test_live_pig_weight_range_infers_grower_category(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(

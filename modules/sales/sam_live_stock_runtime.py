@@ -994,7 +994,7 @@ def _safe_reply_draft(facts, route, missing, availability, blockers):
     if facts.get("breeding_interest"):
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
-        return "I can note your interest, but I cannot say animals are held until the farm confirms it on the system."
+        return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
     if missing:
         return _question_for_missing(missing[0])
     if availability.get("success") and int(availability.get("matched_count") or 0) <= 0:
