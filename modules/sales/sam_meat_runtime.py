@@ -14,6 +14,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
 )
+from modules.orders.order_intake_service import get_intake_context
 from modules.sales.meat_ops import get_meat_ops_status, record_meat_deposit_event
 from modules.sales.meat_documents import (
     BANK_ACCOUNT_NAME_ENV,
@@ -168,8 +169,9 @@ def handle_sam_meat_chatwoot_inbound(
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     lane_route = classify_sam_sales_lane(inbound["content"])
-    if lane_route.get("lane") == LANE_LIVE_STOCK:
-        decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route)
+    live_stock_context = _conversation_live_stock_context(inbound.get("conversation_id"))
+    if lane_route.get("lane") == LANE_LIVE_STOCK or live_stock_context.get("active"):
+        decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route, live_stock_context)
         return {
             "success": True,
             "status": "sam_meat_live_stock_handoff",
@@ -177,6 +179,7 @@ def handle_sam_meat_chatwoot_inbound(
             "inbound": inbound,
             "facts": facts,
             "lane_route": lane_route,
+            "live_stock_context": live_stock_context,
             "lead_payload": {},
             "lead_result": {
                 "success": False,
@@ -1499,7 +1502,8 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
     }
 
 
-def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None):
+def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None, live_stock_context=None):
+    live_stock_context = live_stock_context if isinstance(live_stock_context, dict) else {}
     return {
         "version": "sam_meat_wrong_lane_live_stock_guard_v1",
         "agent": "sam_meat_backend",
@@ -1517,12 +1521,40 @@ def build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route=None):
         ],
         "handoff": {
             "target": "sam_live_stock_backend",
-            "reason": "Customer intent is live pigs/piglets/weaners, not pork meat.",
+            "reason": "Customer intent or active conversation context is live pigs/piglets/weaners, not pork meat.",
             "conversation_id": inbound.get("conversation_id") if isinstance(inbound, dict) else "",
             "message_id": inbound.get("message_id") if isinstance(inbound, dict) else "",
         },
+        "live_stock_context": live_stock_context,
         "facts": facts if isinstance(facts, dict) else {},
         **_authority_flags(False, False),
+    }
+
+
+def _conversation_live_stock_context(conversation_id):
+    conversation_id = _clean(conversation_id, 100)
+    if not conversation_id:
+        return {"active": False, "status": "conversation_id_required"}
+    try:
+        context = get_intake_context(conversation_id)
+    except Exception as exc:
+        return {"active": False, "status": "live_stock_context_read_failed", "error": str(exc)[:180]}
+    if not isinstance(context, dict) or context.get("lookup_status") == "no_match":
+        return {"active": False, "status": "no_live_stock_intake"}
+    notes = _clean((context.get("intake") or {}).get("Notes") if isinstance(context.get("intake"), dict) else context.get("notes"), 600).lower()
+    items = context.get("items") if isinstance(context.get("items"), list) else []
+    live_item = any(
+        isinstance(item, dict)
+        and _clean(item.get("Status") or item.get("status"), 40).lower() == "active"
+        and _clean(item.get("Category") or item.get("category"), 80) in {"Piglet", "Weaner", "Grower", "Finisher", "Slaughter"}
+        for item in items
+    )
+    active = "sam_live_stock" in notes or "live_stock" in notes or live_item
+    return {
+        "active": active,
+        "status": "active_live_stock_intake" if active else "intake_not_live_stock",
+        "intake_id": _clean(context.get("intake_id"), 100),
+        "item_count": len(items),
     }
 
 

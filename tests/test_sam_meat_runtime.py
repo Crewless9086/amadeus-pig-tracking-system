@@ -611,6 +611,42 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(result["lead_payload"], {})
         self.assertEqual(calls, {"record": 0, "send": 0})
 
+    def test_existing_live_stock_intake_blocks_ambiguous_meat_autoreply(self):
+        calls = {"record": 0, "send": 0}
+
+        def record(_payload):
+            calls["record"] += 1
+            return {"success": True, "lead_id": "BAD-MEAT-LEAD"}, 201
+
+        def sender(_conversation_id, _message):
+            calls["send"] += 1
+            return {"ok": True}
+
+        with patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", side_effect=record), \
+             patch.object(sam_meat_runtime, "get_intake_context", return_value={
+                 "success": True,
+                 "lookup_status": "single_match",
+                 "intake_id": "INTAKE-1",
+                 "intake": {"Notes": "source=sam_live_stock_stage_4"},
+                 "items": [{
+                     "Status": "active",
+                     "Category": "Weaner",
+                     "Quantity": 2,
+                 }],
+             }):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Can you keep them for me until Friday?"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
+        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertTrue(result["live_stock_context"]["active"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(calls, {"record": 0, "send": 0})
+
     def test_family_set_recommendation_without_prior_context_is_specific(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Which set is best for a family of 3?",
