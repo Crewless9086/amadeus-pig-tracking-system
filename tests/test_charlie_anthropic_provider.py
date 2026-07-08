@@ -28,6 +28,7 @@ class CharlieAnthropicProviderTests(unittest.TestCase):
         def fake_open(request, timeout=0):
             captured["headers"] = dict(request.header_items())
             captured["timeout"] = timeout
+            captured["body"] = json.loads(request.data.decode("utf-8"))
             return FakeResponse({
                 "id": "msg_1",
                 "content": [{"type": "text", "text": "{\"summary\":\"ok\"}"}],
@@ -41,6 +42,24 @@ class CharlieAnthropicProviderTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["text"], "{\"summary\":\"ok\"}")
         self.assertIn(("X-api-key", "typo-key"), captured["headers"].items())
+        self.assertEqual(captured["body"]["max_tokens"], 8192)
+
+    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "real-key", "CHARLIE_ANTHROPIC_MAX_TOKENS": "12000"}, clear=True)
+    def test_run_anthropic_prompt_uses_configured_max_tokens(self):
+        captured = {}
+
+        def fake_open(request, timeout=0):
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return FakeResponse({
+                "id": "msg_1",
+                "content": [{"type": "text", "text": "{\"summary\":\"ok\"}"}],
+            })
+
+        result, status_code = run_anthropic_prompt("hello", model="claude-test", opener=fake_open)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(captured["body"]["max_tokens"], 12000)
 
     @patch.dict("os.environ", {}, clear=True)
     def test_run_anthropic_prompt_blocks_without_key(self):

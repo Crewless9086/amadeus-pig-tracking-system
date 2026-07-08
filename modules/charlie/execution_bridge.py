@@ -2646,9 +2646,11 @@ def _append_contract_retry_reminder(prompt):
     return (
         f"{prompt}\n\n"
         "CHARLIE CONTRACT REMINDER: Your previous attempt failed the handoff contract. "
-        "Return only one complete JSON object in a single ```json code block matching the CHARLIE handoff contract. "
-        "Include ALL required keys, especially vault_sources_used, confidence, and confidence_reason. "
-        "Do not include any prose outside the JSON block."
+        "Return only one complete, compact JSON object in a single ```json code block. "
+        "Do not include any prose outside the JSON block. Put the required keys first and keep every string concise so the object closes before the output limit. "
+        "Use this exact key order: summary, errors, bugs, vault_sources_used, confidence, confidence_reason, commands_run, files_inspected, recommended_owner_decision, release_notes, changed_files, test_evidence, stdout_tail, stderr_tail, next_action, vault_updates, no_vault_update_required. "
+        "Length caps: summary under 90 words, confidence_reason under 45 words, bugs/errors/release_notes/test_evidence max 3 items each, vault_sources_used/files_inspected/commands_run max 8 items each. "
+        "If details are long, summarize them instead of listing everything."
     )
 
 
