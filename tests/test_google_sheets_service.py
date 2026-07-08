@@ -38,6 +38,26 @@ class GoogleSheetsServiceCacheTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             google_sheets_service.get_worksheet("")
 
+    def test_service_account_credentials_can_use_json_env(self):
+        info = {
+            "type": "service_account",
+            "project_id": "amadeus-test",
+            "private_key_id": "key",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+            "client_email": "test@example.com",
+            "client_id": "123",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+
+        with patch.object(google_sheets_service, "GOOGLE_SERVICE_ACCOUNT_JSON", google_sheets_service.json.dumps(info)), \
+             patch.object(google_sheets_service, "GOOGLE_SERVICE_ACCOUNT_JSON_B64", ""), \
+             patch.object(google_sheets_service.Credentials, "from_service_account_info", return_value=Mock()) as from_info, \
+             patch.object(google_sheets_service.Credentials, "from_service_account_file") as from_file:
+            google_sheets_service.service_account_credentials(scopes=["scope"])
+
+        from_info.assert_called_once_with(info, scopes=["scope"])
+        from_file.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

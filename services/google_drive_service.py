@@ -3,19 +3,15 @@ import mimetypes
 from pathlib import Path
 
 from google.auth.transport.requests import AuthorizedSession
-from google.oauth2.service_account import Credentials
 
-from services.google_sheets_service import GOOGLE_SERVICE_ACCOUNT_FILE, SCOPES
+from services.google_sheets_service import SCOPES, service_account_credentials
 
 DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 
 
 def _get_drive_session():
-    credentials = Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_FILE,
-        scopes=SCOPES,
-    )
+    credentials = service_account_credentials(scopes=SCOPES)
     return AuthorizedSession(credentials)
 
 

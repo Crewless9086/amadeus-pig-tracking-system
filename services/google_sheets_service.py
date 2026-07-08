@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 import threading
 import time
@@ -12,6 +14,8 @@ SCOPES = [
 
 # Render / production env vars already in use
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service_account.json").strip()
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+GOOGLE_SERVICE_ACCOUNT_JSON_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_B64", "").strip()
 GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "AMADEUS PIG TRACKING SYSTEM").strip()
 SHEETS_RETRY_DELAYS = (2, 5)
 
@@ -30,12 +34,32 @@ def _get_client():
         if _CLIENT is not None:
             return _CLIENT
 
-        creds = Credentials.from_service_account_file(
-            GOOGLE_SERVICE_ACCOUNT_FILE,
-            scopes=SCOPES
-        )
+        creds = service_account_credentials(scopes=SCOPES)
         _CLIENT = gspread.authorize(creds)
         return _CLIENT
+
+
+def service_account_credentials(scopes=None):
+    scopes = scopes or SCOPES
+    info = _service_account_info_from_env()
+    if info:
+        return Credentials.from_service_account_info(info, scopes=scopes)
+    return Credentials.from_service_account_file(
+        GOOGLE_SERVICE_ACCOUNT_FILE,
+        scopes=scopes,
+    )
+
+
+def _service_account_info_from_env():
+    raw_json = GOOGLE_SERVICE_ACCOUNT_JSON
+    if not raw_json and GOOGLE_SERVICE_ACCOUNT_JSON_B64:
+        raw_json = base64.b64decode(GOOGLE_SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
+    if not raw_json:
+        return {}
+    parsed = json.loads(raw_json)
+    if not isinstance(parsed, dict):
+        raise ValueError("GOOGLE_SERVICE_ACCOUNT_JSON must contain a JSON object.")
+    return parsed
 
 
 def _reset_cached_spreadsheet():
