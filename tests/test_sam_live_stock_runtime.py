@@ -93,6 +93,28 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["location"], "Riversdale")
         self.assertFalse(facts["llm_used"])
 
+    def test_extract_live_stock_facts_infers_category_from_weight_band(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "Can you send pics of the 7-9kg ones, I will take 3 female 1 male",
+            {"conversation_id": "1478"},
+        )
+
+        self.assertEqual(facts["sales_lane"], "live_stock_sales")
+        self.assertEqual(facts["category"], "piglet")
+        self.assertEqual(facts["weight_range"], "7-9 kg")
+        self.assertEqual(facts["quantity"], 3)
+        self.assertEqual(facts["sex"], "split")
+
+    def test_extract_live_stock_facts_treats_six_week_old_pics_as_piglet_interest(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "Morning how much is your 6 weeks old pics",
+            {"conversation_id": "1828"},
+        )
+
+        self.assertEqual(facts["sales_lane"], "live_stock_sales")
+        self.assertEqual(facts["category"], "piglet")
+        self.assertTrue(facts["quote_requested"])
+
     def test_merge_prior_context_fills_missing_values_only(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts("I need 2 weaners", {})
         merged = sam_live_stock_runtime.merge_prior_live_stock_context(
