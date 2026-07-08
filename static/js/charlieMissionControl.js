@@ -503,6 +503,16 @@
     const editable = safeText(item.editable_text || item.exact_text);
     const risks = Array.isArray(item.risk_flags) ? item.risk_flags : [];
     const forbidden = Array.isArray(item.forbidden_actions) ? item.forbidden_actions : [];
+    const decisionSupported = item.decision_supported !== false && Boolean(missionId);
+    const actionButtons = decisionSupported ? `
+        <button type="button" data-owner-inbox-decision="approve">Approve</button>
+        <button type="button" data-owner-inbox-decision="edit">Edit</button>
+        <button type="button" data-owner-inbox-decision="reject">Reject</button>
+        <button type="button" data-owner-inbox-decision="pause">Pause</button>
+        <button type="button" data-owner-inbox-decision="send_back">Send Back</button>
+      ` : `
+        <button type="button" disabled>Review in SAM gate</button>
+      `;
     card.innerHTML = `
       <div class="charlie-owner-inbox-card-header">
         <div>
@@ -541,11 +551,7 @@
         <textarea rows="4" data-owner-inbox-edit>${escapeHtml(editable)}</textarea>
       </label>
       <div class="charlie-mission-actions charlie-owner-inbox-actions">
-        <button type="button" data-owner-inbox-decision="approve">Approve</button>
-        <button type="button" data-owner-inbox-decision="edit">Edit</button>
-        <button type="button" data-owner-inbox-decision="reject">Reject</button>
-        <button type="button" data-owner-inbox-decision="pause">Pause</button>
-        <button type="button" data-owner-inbox-decision="send_back">Send Back</button>
+        ${actionButtons}
       </div>
     `;
     card.querySelectorAll("[data-owner-inbox-decision]").forEach((button) => {
