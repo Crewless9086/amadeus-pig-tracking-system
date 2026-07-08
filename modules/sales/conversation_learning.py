@@ -383,12 +383,14 @@ def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=N
     }, 200
 
 
-def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None):
+def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None, customer_message=""):
     try:
         limit = max(1, min(int(limit), 10))
     except (TypeError, ValueError):
         limit = 3
     conversation_id = _clean(conversation_id, 120)
+    customer_message = _clean(customer_message, 1200)
+    candidate_limit = min(max(limit * 6, limit), 30)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return _unavailable("not_configured", configured=False), 503
@@ -397,7 +399,7 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
     except ImportError:
         return _unavailable("dependency_missing", configured=True), 500
 
-    params = {"conversation_id": conversation_id, "limit": limit}
+    params = {"conversation_id": conversation_id, "limit": candidate_limit}
     same_conversation_where = "and chatwoot_conversation_id = %(conversation_id)s" if conversation_id else ""
     try:
         with psycopg.connect(database_url, connect_timeout=10) as connection:
@@ -435,7 +437,7 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
                         if key not in seen:
                             rows.append(row)
                             seen.add(key)
-                        if len(rows) >= limit:
+                        if len(rows) >= candidate_limit:
                             break
     except Exception as exc:
         return {
@@ -448,11 +450,21 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
             **AUTHORITY_FLAGS,
         }, 500
 
+    ranked_rows = _rank_owner_reply_example_rows(
+        rows,
+        current_customer_message=customer_message,
+        current_conversation_id=conversation_id,
+    )
     return {
         "success": True,
         "configured": True,
         "status": "sam_live_stock_owner_reply_examples_loaded",
-        "examples": [_owner_reply_example_from_row(row) for row in rows[:limit]],
+        "examples": [_owner_reply_example_from_row(row) for row in ranked_rows[:limit]],
+        "ranking": {
+            "current_message_used": bool(customer_message),
+            "candidate_count": len(rows),
+            "top_relevance_score": ranked_rows[0][4] if ranked_rows and len(ranked_rows[0]) > 4 else 0.0,
+        },
         **AUTHORITY_FLAGS,
     }, 200
 
@@ -572,7 +584,26 @@ def _owner_reply_example_from_row(row):
         "owner_reply_excerpt": _clip(captured.get("owner_reply_excerpt") or "", 500),
         "classification": _clean(captured.get("owner_reply_classification"), 80),
         "created_at": row[3].isoformat() if hasattr(row[3], "isoformat") else str(row[3] or ""),
+        "example_relevance_score": row[4] if len(row) > 4 else 0.0,
     }
+
+
+def _rank_owner_reply_example_rows(rows, current_customer_message="", current_conversation_id=""):
+    current_customer_message = _normal_reply(current_customer_message)
+    current_conversation_id = _clean(current_conversation_id, 120)
+    ranked = []
+    for index, row in enumerate(rows or []):
+        row = tuple(row)
+        candidate_message = row[0] if len(row) > 0 else ""
+        score = _reply_similarity(current_customer_message, candidate_message) if current_customer_message else 0.0
+        captured = row[2] if len(row) > 2 else {}
+        if isinstance(captured, str):
+            captured = _loads(captured, {})
+        row_conversation_id = _clean(captured.get("chatwoot_conversation_id") or captured.get("conversation_id"), 120)
+        same_conversation = bool(current_conversation_id and row_conversation_id == current_conversation_id)
+        ranked.append((score, same_conversation, -index, row + (score,)))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    return [item[3] for item in ranked]
 
 
 def _example_key(row):

@@ -9,6 +9,8 @@ from modules.sales.conversation_learning import (
     build_owner_review_learning_event,
     record_sales_conversation_learning_event,
     summarize_sales_conversation_learning,
+    _owner_reply_example_from_row,
+    _rank_owner_reply_example_rows,
 )
 
 
@@ -83,6 +85,31 @@ class SalesConversationLearningTests(unittest.TestCase):
         ))
         self.assertEqual(pop["conversion_signal"], "deposit_proof_received_unverified")
         self.assertFalse(pop["calls_chatwoot"])
+
+    def test_live_stock_owner_reply_examples_rank_by_current_message_similarity(self):
+        rows = [
+            (
+                "Where are you located?",
+                "Are you looking for live pigs, pork, or slaughter?",
+                {"owner_reply_excerpt": "We are near Riversdale. Collection is arranged first.", "owner_reply_classification": "owner_replaced"},
+                "2026-07-08T10:00:00Z",
+            ),
+            (
+                "How much for one pig?",
+                "I will check the current list before anything is promised.",
+                {"owner_reply_excerpt": "The current weaner price is R450 each, subject to the final stock check.", "owner_reply_classification": "owner_edited"},
+                "2026-07-08T09:00:00Z",
+            ),
+        ]
+
+        ranked = _rank_owner_reply_example_rows(rows, current_customer_message="What is the price for 1?")
+        examples = [_owner_reply_example_from_row(row) for row in ranked]
+
+        self.assertEqual(
+            examples[0]["owner_reply_excerpt"],
+            "The current weaner price is R450 each, subject to the final stock check.",
+        )
+        self.assertGreater(examples[0]["example_relevance_score"], examples[1]["example_relevance_score"])
 
     def test_owner_review_event_is_evidence_only(self):
         event = build_owner_review_learning_event("OSK-SALES-LEAD-TEST", {

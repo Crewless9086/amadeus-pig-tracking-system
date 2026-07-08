@@ -72,6 +72,8 @@ def sam_live_stock_webhook_policy(environ=None):
         "draft_order_create_env": DRAFT_ORDER_CREATE_ENABLED_ENV,
         "owner_approved_send_enabled": _truthy(source.get(OWNER_SEND_ENABLED_ENV)),
         "owner_approved_send_env": OWNER_SEND_ENABLED_ENV,
+        "owner_example_retrieval_enabled": _truthy(source.get(OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV)),
+        "owner_example_retrieval_env": OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "read_only": True,
         "writes_allowed": False,
@@ -1385,6 +1387,7 @@ def _load_owner_correction_examples(inbound, source, owner_example_loader=None):
         result, _status = loader(
             conversation_id=(inbound or {}).get("conversation_id") or "",
             limit=3,
+            customer_message=(inbound or {}).get("content") or "",
         )
     except TypeError:
         result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
@@ -1429,7 +1432,7 @@ def _llm_reply_context_packet(
             "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
             "Do not share exact farm pins or exact private farm location.",
             "Never create orders, quotes, reservations, or commands.",
-            "Prefer the owner's corrected phrasing style shown in owner_correction_examples; when the owner replaced a similar draft, follow their wording, not the rejected draft.",
+            "owner_correction_examples are past cases where the owner rewrote a similar draft; mirror the owner's phrasing and structure, not the rejected draft. If none are clearly similar to this customer's question, ignore them.",
         ],
         "inbound": {
             "conversation_id": (inbound or {}).get("conversation_id") or "",

@@ -63,6 +63,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
             "OPENAI_API_KEY": "test-key",
             "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED": "1",
+            "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED": "1",
         })
 
         self.assertTrue(policy["enabled"])
@@ -73,6 +74,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(policy["read_only"])
         self.assertFalse(policy["writes_allowed"])
         self.assertFalse(policy["customer_send_allowed"])
+        self.assertTrue(policy["owner_example_retrieval_enabled"])
+        self.assertEqual(policy["owner_example_retrieval_env"], "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED")
         self.assertTrue(policy["intake_write_enabled"])
 
     def test_parse_chatwoot_inbound_ignores_outbound_messages(self):
@@ -279,6 +282,24 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_llm_context_includes_owner_correction_examples_when_enabled(self):
         calls = []
+        owner_example_calls = []
+
+        def owner_example_loader(conversation_id="", limit=3, customer_message=""):
+            owner_example_calls.append({
+                "conversation_id": conversation_id,
+                "limit": limit,
+                "customer_message": customer_message,
+            })
+            return {
+                "success": True,
+                "examples": [{
+                    "customer_message_excerpt": "Location",
+                    "rejected_sam_draft": "Are you looking for live pigs, pork, or slaughter?",
+                    "owner_reply_excerpt": "We are near Riversdale in the Western Cape. Collection is arranged with the farm first.",
+                    "classification": "owner_replaced",
+                    "example_relevance_score": 1.0,
+                }],
+            }, 200
 
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="Location"),
@@ -291,15 +312,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [],
-            owner_example_loader=lambda conversation_id="", limit=3: ({
-                "success": True,
-                "examples": [{
-                    "customer_message_excerpt": "Location",
-                    "rejected_sam_draft": "Are you looking for live pigs, pork, or slaughter?",
-                    "owner_reply_excerpt": "We are near Riversdale in the Western Cape. Collection is arranged with the farm first.",
-                    "classification": "owner_replaced",
-                }],
-            }, 200),
+            owner_example_loader=owner_example_loader,
             llm_drafter=lambda context, source: calls.append((context, source)) or {
                 "reply_text": "We are near Riversdale in the Western Cape. I can check the current live-pig list before anything is promised.",
                 "confidence": 0.86,
@@ -310,7 +323,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         examples = calls[0][0]["owner_correction_examples"]
         self.assertEqual(examples[0]["classification"], "owner_replaced")
         self.assertIn("Riversdale", examples[0]["owner_reply_excerpt"])
+        self.assertEqual(examples[0]["example_relevance_score"], 1.0)
         self.assertIn("owner_correction_examples", calls[0][0])
+        self.assertEqual(owner_example_calls[0]["customer_message"], "Location")
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
         context = {
