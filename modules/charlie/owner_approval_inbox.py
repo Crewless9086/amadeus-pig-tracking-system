@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from services.database_service import DATABASE_URL_ENV
 from modules.charlie.mission_store import (
     get_mission,
     list_owner_work_missions,
@@ -72,6 +73,7 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
     items = []
     source_statuses = {}
     configured = True
+    limit_per_status = _bounded_limit(limit_per_status)
     for status in INBOX_MISSION_STATUSES:
         result, status_code = list_owner_work_missions(
             status,
@@ -87,6 +89,16 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
             continue
         for mission in result.get("missions", []):
             items.extend(owner_approval_items_from_mission(mission))
+    runtime_result, runtime_status = list_sam_live_stock_runtime_owner_review_items(
+        limit=limit_per_status,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    source_statuses["sam_live_stock_conversation_review_events"] = runtime_status
+    if runtime_status == 503 and runtime_result.get("configured") is False and not items:
+        configured = False
+    if runtime_status < 400:
+        items.extend(runtime_result.get("items", []))
     items = sorted(items, key=_item_sort_key)
     pending_count = sum(1 for item in items if item.get("status") in {"pending", "send_back"})
     return {
@@ -106,6 +118,136 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
             "reservation/farm-write gates must execute separately after exact owner approval."
         ),
     }, 200
+
+
+def list_sam_live_stock_runtime_owner_review_items(limit=12, database_url=None, connect_factory=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "items": []}, 503
+    try:
+        if connect_factory:
+            connection_context = connect_factory(database_url)
+        else:
+            import psycopg
+            connection_context = psycopg.connect(database_url, connect_timeout=5)
+        with connection_context as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        review_event_id,
+                        chatwoot_conversation_id,
+                        chatwoot_message_id,
+                        customer_name,
+                        channel,
+                        source_agent,
+                        customer_message_excerpt,
+                        sam_reply_excerpt,
+                        score,
+                        confidence_target,
+                        safe_to_send,
+                        owner_send_required,
+                        no_reply_recommended,
+                        escalation_required,
+                        conversation_mode_recommendation,
+                        recommended_action,
+                        review_json,
+                        facts_json,
+                        decision_json,
+                        created_at
+                    from public.sam_live_stock_conversation_review_events
+                    where owner_send_required = true
+                       or safe_to_send = true
+                       or coalesce(sam_reply_excerpt, '') <> ''
+                       or coalesce(recommended_action, '') <> ''
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+                columns = [column.name for column in cursor.description]
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sam_live_stock_runtime_owner_review_items_failed",
+            "error_type": exc.__class__.__name__,
+            "items": [],
+        }, 503
+    items = [
+        owner_approval_item_from_sam_live_stock_review_event(dict(zip(columns, row)))
+        for row in rows
+    ]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "items": [item for item in items if item.get("approval_id")],
+    }, 200
+
+
+def owner_approval_item_from_sam_live_stock_review_event(event):
+    event = event if isinstance(event, dict) else {}
+    review = _json_dict(event.get("review_json"))
+    facts = _json_dict(event.get("facts_json"))
+    decision = _json_dict(event.get("decision_json"))
+    reply = _clean(
+        event.get("sam_reply_excerpt")
+        or decision.get("suggested_reply_text")
+        or review.get("suggested_reply_text"),
+        2500,
+    )
+    message = _clean(event.get("customer_message_excerpt"), 500)
+    action = _clean(event.get("recommended_action") or review.get("recommended_action"), 160)
+    title_parts = ["SAM Live Stock owner review"]
+    customer = _clean(event.get("customer_name"), 80)
+    if customer:
+        title_parts.append(customer)
+    item = normalize_owner_approval_item({
+        "approval_id": event.get("review_event_id"),
+        "source_type": "sam_live_stock_reply",
+        "source_agent": event.get("source_agent") or "SAM Live Stock",
+        "title": " - ".join(title_parts),
+        "status": "pending",
+        "action_label": action or "Review SAM Live Stock reply",
+        "exact_action": (
+            "Review the saved SAM Live Stock reply candidate. This inbox card is read-only; "
+            "use the SAM owner review Telegram callback/send gate for any customer reply."
+        ),
+        "exact_text": reply,
+        "editable_text": reply,
+        "target_label": customer or event.get("chatwoot_conversation_id"),
+        "source_ref": event.get("chatwoot_conversation_id"),
+        "conversation_id": event.get("chatwoot_conversation_id"),
+        "review_event_id": event.get("review_event_id"),
+        "risk_flags": _sam_live_stock_review_risk_flags(event, facts, message),
+        "forbidden_actions": [
+            "Inbox approval does not send the customer message.",
+            "No reservation, payment, order, stock, Chatwoot, Telegram, or farm lifecycle write from this card.",
+        ],
+        "created_at": _iso(event.get("created_at")),
+        "updated_at": _iso(event.get("created_at")),
+    }, {
+        "mission_id": "",
+        "status": "runtime_review",
+        "title": "SAM Live Stock runtime review",
+    })
+    item.update({
+        "mission_id": "",
+        "mission_title": "SAM Live Stock runtime review",
+        "mission_status": "runtime_review",
+        "decision_supported": False,
+        "runtime_source": "sam_live_stock_conversation_review_events",
+        "review_event_id": _clean(event.get("review_event_id"), 120),
+        "customer_message_excerpt": message,
+        "score": event.get("score"),
+        "confidence_target": event.get("confidence_target"),
+        "safe_to_send": bool(event.get("safe_to_send")),
+        "owner_send_required": bool(event.get("owner_send_required")),
+    })
+    return item
 
 
 def owner_approval_items_from_mission(mission):
@@ -317,6 +459,46 @@ def _inbox_counts(items):
     counts["total"] = len(items)
     counts["by_source"] = by_source
     return counts
+
+
+def _sam_live_stock_review_risk_flags(event, facts, message):
+    flags = []
+    if event.get("owner_send_required"):
+        flags.append("owner_send_required")
+    if event.get("safe_to_send"):
+        flags.append("safe_to_send_claim_requires_owner_gate")
+    if event.get("escalation_required"):
+        flags.append("escalation_required")
+    if event.get("no_reply_recommended"):
+        flags.append("no_reply_recommended")
+    if facts.get("category"):
+        flags.append(f"category:{_clean(facts.get('category'), 80)}")
+    if message:
+        flags.append("customer_message_captured")
+    return flags
+
+
+def _json_dict(value):
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, "isoformat") else _clean(value, 80)
+
+
+def _database_url(database_url):
+    import os
+    return (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+
+
+def _bounded_limit(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = 12
+    return max(1, min(parsed, 50))
 
 
 def _item_sort_key(item):
