@@ -158,10 +158,10 @@
     state.loading = true;
     try {
       const [buckets, command, runner, policy] = await Promise.all([
-        loadMissionBuckets(),
+        loadMissionBuckets().catch(() => state.buckets),
         fetchJson(API.commandCenter, { timeoutMs: 18000 }).catch(() => null),
-        fetchJson(API.runner, { timeoutMs: 18000 }),
-        fetchJson(API.policy, { timeoutMs: 18000 }),
+        fetchJson(API.runner, { timeoutMs: 18000 }).catch(() => state.runner || {}),
+        fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
       state.buckets = { ...state.buckets, ...buckets };
       if (command) applyCommandCenter(command);
@@ -184,7 +184,7 @@
       approved: ["approved"],
       review: ["pr_ready", "release_approved"],
       blocked: ["blocked"],
-      done: ["done", "merged", "deployed"],
+      done: [],
     };
     const loaded = {};
     await Promise.all(Object.entries(plan).map(async ([key, statuses]) => {
