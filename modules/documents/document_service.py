@@ -16,6 +16,9 @@ from modules.documents import document_supabase_write
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
 ORDER_DOCUMENTS_SHEET = "ORDER_DOCUMENTS"
 DOCUMENT_DELIVERY_WEBHOOK_URL = os.getenv("DOCUMENT_DELIVERY_WEBHOOK_URL", "").strip()
+CHATWOOT_BASE_URL = os.getenv("CHATWOOT_BASE_URL", "https://app.chatwoot.com").strip()
+CHATWOOT_ACCOUNT_ID = os.getenv("CHATWOOT_ACCOUNT_ID", "147387").strip()
+CHATWOOT_API_TOKEN = os.getenv("CHATWOOT_API_ACCESS_TOKEN", os.getenv("CHATWOOT_API_TOKEN", "")).strip()
 
 DOCUMENT_TYPE_QUOTE = "Quote"
 DOCUMENT_TYPE_INVOICE = "Invoice"
@@ -341,11 +344,7 @@ def _recently_sent(document, within_minutes=10):
 
 def _notify_document_delivery_workflow(document, conversation_id, sent_by, account_id):
     if not DOCUMENT_DELIVERY_WEBHOOK_URL:
-        return {
-            "sent": False,
-            "skipped": True,
-            "error": "DOCUMENT_DELIVERY_WEBHOOK_URL is not configured.",
-        }
+        return _send_document_direct_to_chatwoot(document, conversation_id, sent_by, account_id)
 
     document_type = str(document.get("Document_Type", "")).strip()
     document_ref = str(document.get("Document_Ref", "")).strip()
@@ -410,6 +409,83 @@ def _notify_document_delivery_workflow(document, conversation_id, sent_by, accou
     except Exception as exc:
         return {
             "sent": False,
+            "error": str(exc),
+        }
+
+
+def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, account_id):
+    if not CHATWOOT_API_TOKEN:
+        return {
+            "sent": False,
+            "skipped": True,
+            "error": "CHATWOOT_API_ACCESS_TOKEN is not configured and DOCUMENT_DELIVERY_WEBHOOK_URL is not configured.",
+        }
+    base_url = str(CHATWOOT_BASE_URL or "https://app.chatwoot.com").rstrip("/")
+    account_id = str(account_id or CHATWOOT_ACCOUNT_ID or "147387").strip()
+    conversation_id = str(conversation_id or "").strip()
+    document_type = str(document.get("Document_Type", "")).strip() or "document"
+    document_ref = str(document.get("Document_Ref", "")).strip()
+    drive_url = str(document.get("Google_Drive_URL", "")).strip()
+    total = str(document.get("Total", "")).strip()
+    payment_ref = str(document.get("Payment_Ref", "")).strip()
+    payment_method = str(document.get("Payment_Method", "")).strip()
+    lines = [
+        f"Please find your {document_type.lower()} attached: {document_ref}",
+    ]
+    if total:
+        lines.append(f"Total: R{total}")
+    if payment_ref:
+        lines.append(f"Payment reference: {payment_ref}")
+    if payment_method:
+        lines.append(f"Payment method: {payment_method}")
+    if drive_url:
+        lines.extend(["", drive_url])
+    body = {
+        "content": "\n".join(lines),
+        "message_type": "outgoing",
+        "private": False,
+        "source_id": f"order_document:{str(document.get('Document_ID', '')).strip()}",
+        "content_attributes": {
+            "amadeus_source": "order_document_delivery",
+            "document_id": str(document.get("Document_ID", "")).strip(),
+            "document_ref": document_ref,
+            "sent_by": str(sent_by or "").strip() or "App",
+        },
+    }
+    request = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+        data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+        headers={"Content-Type": "application/json", "api_access_token": CHATWOOT_API_TOKEN},
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="ignore")
+            status_code = getattr(response, "status", 200)
+            return {
+                "sent": 200 <= status_code < 300,
+                "status_code": status_code,
+                "body": response_body,
+                "delivery_channel": "chatwoot_direct",
+                "message_text": body["content"],
+                "error": "" if 200 <= status_code < 300 else response_body[:240],
+            }
+    except urllib_error.HTTPError as exc:
+        return {
+            "sent": False,
+            "delivery_channel": "chatwoot_direct",
+            "error": f"HTTPError {exc.code}: {exc.reason}",
+        }
+    except urllib_error.URLError as exc:
+        return {
+            "sent": False,
+            "delivery_channel": "chatwoot_direct",
+            "error": f"URLError: {exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "sent": False,
+            "delivery_channel": "chatwoot_direct",
             "error": str(exc),
         }
 
