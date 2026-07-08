@@ -366,6 +366,7 @@ def load_live_stock_read_context(
         "prior_context": prior_context,
         "intake_context": intake,
         "chatwoot_history": _compact_chatwoot_history(chatwoot_history),
+        "chatwoot_history_messages": _compact_chatwoot_history_messages(chatwoot_history),
         "availability": availability,
         "context_errors": context_errors,
     }
@@ -524,6 +525,24 @@ def _compact_chatwoot_history(history):
         "message_count": len(messages),
         "incoming_count": sum(1 for message in messages if _chatwoot_message_is_incoming(message)),
     }
+
+
+def _compact_chatwoot_history_messages(history, limit=10):
+    history = history if isinstance(history, dict) else {}
+    messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    compact = []
+    for message in messages[-max(int(limit or 10), 1):]:
+        if not isinstance(message, dict):
+            continue
+        content = _clean_multiline(message.get("content"), 500)
+        if not content:
+            continue
+        compact.append({
+            "message_type": message.get("message_type"),
+            "content": content,
+            "created_at": message.get("created_at"),
+        })
+    return compact
 
 
 def _chatwoot_message_is_incoming(message):
@@ -1320,11 +1339,14 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
     context_packet = context_packet if isinstance(context_packet, dict) else {}
     availability = context_packet.get("availability") if isinstance(context_packet.get("availability"), dict) else {}
     chatwoot_history = context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {}
-    history_messages = chatwoot_history.get("messages") if isinstance(chatwoot_history.get("messages"), list) else []
+    history_messages = context_packet.get("chatwoot_history_messages")
+    if not isinstance(history_messages, list):
+        history_messages = chatwoot_history.get("messages") if isinstance(chatwoot_history.get("messages"), list) else []
     compact_history = [
         {
             "message_type": message.get("message_type"),
             "content": _clean(message.get("content"), 500),
+            "created_at": message.get("created_at"),
         }
         for message in history_messages[-10:]
         if isinstance(message, dict)
@@ -2079,21 +2101,43 @@ def _live_stock_escalation_summary(facts, review):
 
 
 def _telegram_escalation_text(escalation_id, inbound, facts, review, suggested):
+    reasons = (review or {}).get("escalation_reasons") or (review or {}).get("blocked_reasons") or []
+    score = (review or {}).get("score", "-")
+    target = (review or {}).get("confidence_target", 96)
     return _clean(
         "\n".join([
-            "SAM Live Stock escalation",
-            f"ID: {escalation_id}",
-            f"Conversation: {(inbound or {}).get('conversation_id') or '-'}",
+            "SAM Live - Needs human check",
             f"Customer: {(inbound or {}).get('customer_name') or '-'}",
-            f"Score: {(review or {}).get('score', '-')}",
-            f"Reason: {', '.join((review or {}).get('escalation_reasons') or (review or {}).get('blocked_reasons') or []) or '-'}",
+            f"Conversation: {(inbound or {}).get('conversation_id') or '-'}",
+            f"Confidence: {score}/{target}",
+            f"Reason: {_human_escalation_reasons(reasons)}",
             "",
-            f"Customer: {_clean((inbound or {}).get('content'), 350)}",
+            "Customer message:",
+            _clean((inbound or {}).get("content"), 500),
             "",
-            f"Suggested: {suggested}",
+            "Suggested reply:",
+            _clean_multiline(suggested, 1200),
         ]),
         3500,
     )
+
+
+def _human_escalation_reasons(reasons):
+    labels = {
+        "lane_not_live_stock:unclear": "unclear sales lane",
+        "lane_not_live_stock:farm_general_question": "general farm question",
+        "wrong_or_unclear_lane": "needs lane confirmation",
+        "hostile_or_scam_location_challenge": "location trust concern",
+        "pricing_challenge_or_negotiation": "price challenge",
+        "blocked_reply_content": "draft needs safety check",
+    }
+    clean = []
+    for reason in reasons if isinstance(reasons, list) else []:
+        key = str(reason or "").strip()
+        if not key:
+            continue
+        clean.append(labels.get(key, key.replace("lane_not_live_stock:", "").replace("_", " ")))
+    return ", ".join(clean[:5]) if clean else "needs owner review"
 
 
 def _escalation_id(conversation_id, message_id, content):
@@ -2141,8 +2185,8 @@ def _configured_model(source):
 
 def _timeout(source):
     source = source or {}
-    default_timeout = 4 if _truthy(source.get("RENDER")) else 8
-    max_timeout = 6 if _truthy(source.get("RENDER")) else 30
+    default_timeout = 12 if _truthy(source.get("RENDER")) else 8
+    max_timeout = 15 if _truthy(source.get("RENDER")) else 30
     try:
         return max(1, min(max_timeout, int(source.get(LLM_TIMEOUT_ENV, str(default_timeout)))))
     except (TypeError, ValueError):

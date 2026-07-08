@@ -226,6 +226,38 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(decision["customer_send_allowed"])
         self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
 
+    def test_llm_context_includes_real_chatwoot_history_messages(self):
+        calls = []
+
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Do you have two females left?"),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {
+                "success": True,
+                "messages": [
+                    {"id": "1", "message_type": "incoming", "content": "I need two weaners near Riversdale.", "created_at": "2026-07-08T08:00:00Z"},
+                    {"id": "2", "message_type": "outgoing", "content": "I can check the current weaner list.", "created_at": "2026-07-08T08:01:00Z"},
+                    {"id": "3", "message_type": "incoming", "content": "Do you have two females left?", "created_at": "2026-07-08T08:02:00Z"},
+                ],
+            },
+            availability_loader=lambda: [],
+            llm_drafter=lambda context, source: calls.append((context, source)) or {
+                "reply_text": "I can check the current female weaner list before anything is promised.",
+                "confidence": 0.86,
+            },
+        )
+
+        self.assertEqual(result["sam_decision"]["reply_source"], "llm_live_stock_reply_draft")
+        history = calls[0][0]["recent_chatwoot_history"]
+        self.assertEqual(len(history), 3)
+        self.assertEqual(history[0]["content"], "I need two weaners near Riversdale.")
+        self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 3)
+
     def test_unsafe_llm_reply_falls_back_before_review_is_attached(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(),
@@ -268,6 +300,16 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(decision["llm_draft"]["used"])
         self.assertEqual(decision["llm_draft"]["status"], "llm_call_failed")
         self.assertFalse(result["sent"])
+
+    def test_render_llm_timeout_caps_at_fifteen_seconds(self):
+        self.assertEqual(sam_live_stock_runtime._timeout({"RENDER": "1"}), 12)
+        self.assertEqual(
+            sam_live_stock_runtime._timeout({
+                "RENDER": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS": "30",
+            }),
+            15,
+        )
 
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
         rows = [
@@ -897,6 +939,20 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("escalation_packet", decision)
         self.assertIn("waste your time", decision["escalation_packet"]["suggested_response"])
         self.assertIn("sam_live_approve_send:", decision["escalation_packet"]["telegram_packet"]["reply_markup"]["inline_keyboard"][0][0]["callback_data"])
+
+    def test_escalation_packet_uses_owner_facing_card_text(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can I learn more about your business?"),
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            availability_loader=lambda: [],
+        )
+
+        text = result["sam_decision"]["escalation_packet"]["telegram_packet"]["text"]
+        self.assertIn("SAM Live - Needs human check", text)
+        self.assertIn("Customer message:", text)
+        self.assertIn("Suggested reply:", text)
+        self.assertNotIn("ID: SAM-LIVE-ESC-", text)
+        self.assertNotIn("lane_not_live_stock:", text)
 
     def test_hostile_location_followup_inherits_live_stock_lane_and_visible_reply(self):
         def intake_loader(_conversation_id):

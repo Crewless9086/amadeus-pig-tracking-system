@@ -920,7 +920,14 @@ def _owner_card_stock_summary(decision):
         if not isinstance(item, dict):
             continue
         pig_id = _clean(item.get("pig_id") or item.get("Pig_ID") or item.get("id"), 40)
-        weight = _clean(item.get("current_weight") or item.get("weight") or item.get("Weight") or item.get("weight_kg"), 30)
+        weight = _clean(
+            item.get("current_weight_kg")
+            or item.get("current_weight")
+            or item.get("weight")
+            or item.get("Weight")
+            or item.get("weight_kg"),
+            30,
+        )
         if pig_id and weight:
             sample_bits.append(f"{pig_id} {weight}kg")
         elif pig_id:
@@ -973,6 +980,12 @@ def _owner_card_flags(event, review, decision):
         flags.append("breeding/replacement")
     if review.get("escalation_required"):
         flags.append("needs human check")
+    llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
+    llm_status = _clean(llm_draft.get("status"), 80)
+    if llm_status and llm_status != "llm_disabled":
+        flags.append(f"LLM {llm_status.replace('_', ' ')}")
+    if isinstance(decision.get("llm_draft_review"), dict):
+        flags.append("LLM safety fallback")
     if decision.get("reply_source"):
         flags.append(_clean(str(decision.get("reply_source")).replace("_", " "), 80))
     return ", ".join(flags)

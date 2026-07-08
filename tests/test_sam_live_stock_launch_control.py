@@ -30,8 +30,8 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
             "exact_match_count": 2,
             "match_status": "exact_match_available",
             "matched_sample": [
-                {"pig_id": "W-1043", "current_weight": 12.4},
-                {"pig_id": "W-1051", "current_weight": 13.1},
+                {"pig_id": "W-1043", "current_weight_kg": 12.4},
+                {"pig_id": "W-1051", "current_weight_kg": 13.1},
             ],
         },
         "price_answer_packet": {
@@ -214,6 +214,20 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_review_approve:SAM-LIVE-REVIEW-"))
         self.assertEqual(buttons[1][0]["text"], "Edit in Chatwoot")
         self.assertEqual(buttons[1][0]["url"], "https://app.chatwoot.com/app/accounts/147387/conversations/2401")
+
+    def test_owner_review_card_surfaces_llm_failure_status(self):
+        inbound, facts, decision = review_inputs()
+        decision["llm_draft"] = {"used": False, "status": "llm_call_failed"}
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+
+        self.assertIn("Flags: LLM llm call failed", packet["telegram_packet"]["text"])
 
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
