@@ -2102,6 +2102,8 @@ def _run_parallel_read_only_agents(
                 str(stage_paths["final_path"]),
                 "-",
             ]
+            if str(model_assignment.get("runtime_provider") or "").strip().lower() == "anthropic":
+                command = _codex_fallback_command(command)
             stage_started = datetime.now(timezone.utc).isoformat()
             _append_ledger_stage(
                 ledger,
