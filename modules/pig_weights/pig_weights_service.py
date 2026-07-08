@@ -4279,6 +4279,21 @@ def _allocation_source_row(overview_row, master_row):
     return row
 
 
+def _skip_allocation_row(row, growth):
+    status = to_clean_string(row.get("Status", ""))
+    on_farm = to_clean_string(row.get("On_Farm", ""))
+    animal_type = to_clean_string(row.get("Animal_Type", ""))
+    calculated_stage = to_clean_string(row.get("Calculated_Stage", ""))
+    tag_number = to_clean_string(row.get("Tag_Number", ""))
+    text = f"{animal_type} {calculated_stage}".lower()
+
+    if status.lower() != "active" or on_farm.lower() != "yes":
+        return False
+    if tag_number or growth.get("wean_date") or growth.get("wean_weight_kg") is not None:
+        return False
+    return any(token in text for token in ("piglet", "newborn", "suckling", "lactating"))
+
+
 def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=None):
     settings = settings or _allocation_settings()
     status = to_clean_string(row.get("Status", ""))
@@ -4395,6 +4410,8 @@ def get_pig_allocation_readiness(today=None):
         latest_weight = latest_weights.get(pig_id, {})
         sales_meta = sales_lookup.get(pig_id, {})
         growth = _growth_profile(row, latest_weight, today, settings)
+        if _skip_allocation_row(row, growth):
+            continue
         timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
         litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)
