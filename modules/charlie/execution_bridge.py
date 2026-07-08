@@ -132,8 +132,12 @@ AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
     "builder": {"changed_files"},
     "frontend_design_implementer": {"changed_files", "media_references_used"},
     "tester": {"media_references_used"},
-    "qa_red_team": {"qa_findings"},
+    "qa_red_team": {"qa_findings", "commands_run"},
     "visual_qa_reviewer": {"media_references_used"},
+    "product_reviewer": {"commands_run"},
+    "business_reviewer": {"commands_run"},
+    "security_reviewer": {"commands_run"},
+    "evidence_reviewer": {"commands_run"},
     "reviewer": {"changed_files", "media_references_used"},
 }
 AGENT_NO_PROGRESS_TIMEOUT_SECONDS = 1800

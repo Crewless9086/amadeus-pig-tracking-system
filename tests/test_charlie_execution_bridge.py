@@ -847,6 +847,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(artifact["red_team_status"], "blocked")
         self.assertEqual(artifact["risk_rating"], "high")
 
+    def test_qa_red_team_allows_empty_commands_for_read_only_review(self):
+        artifact = {
+            "summary": "QA review passed from attached evidence.",
+            "errors": [],
+            "bugs": [],
+            "qa_findings": [],
+            "red_team_status": "pass",
+            "risk_rating": "low",
+            "commands_run": [],
+            "files_inspected": ["mission evidence bundle"],
+            "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+            "confidence": 0.96,
+            "confidence_reason": "Evidence bundle contains test and screenshot proof.",
+        }
+
+        validation = execution_bridge._validate_agent_artifact("qa_red_team", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+
     def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
         text = """
         ```json
