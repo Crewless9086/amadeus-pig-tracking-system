@@ -315,6 +315,52 @@ class OrderRoutesTests(unittest.TestCase):
             "error": "Order not found.",
         })
 
+    def test_generate_quote_route_uses_readiness_flow_and_reuses_current_quote(self):
+        service_result = {
+            "success": True,
+            "action": "auto_generate_quote_if_ready",
+            "quote_ready": True,
+            "generated": False,
+            "skipped": True,
+            "reason": "latest_quote_current",
+            "order_id": "ORD-1",
+            "document": {"document_id": "DOC-1", "document_ref": "Q-1"},
+        }
+
+        with patch.object(order_routes, "auto_generate_quote_if_ready", return_value=service_result) as generate:
+            response = self.client.post("/api/orders/ORD-1/quote", json={"created_by": "Tester"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        generate.assert_called_once_with("ORD-1", created_by="Tester")
+
+    def test_generate_quote_route_returns_missing_fields_as_json(self):
+        service_result = {
+            "success": True,
+            "action": "auto_generate_quote_if_ready",
+            "quote_ready": False,
+            "generated": False,
+            "skipped": True,
+            "missing_fields": ["payment_method"],
+            "order_id": "ORD-1",
+        }
+
+        with patch.object(order_routes, "auto_generate_quote_if_ready", return_value=service_result):
+            response = self.client.post("/api/orders/ORD-1/quote", json={"created_by": "Tester"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["missing_fields"], ["payment_method"])
+
+    def test_generate_quote_route_returns_unexpected_errors_as_json(self):
+        with patch.object(order_routes, "auto_generate_quote_if_ready", side_effect=RuntimeError("drive offline")):
+            response = self.client.post("/api/orders/ORD-1/quote", json={"created_by": "Tester"})
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 500)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["action"], "generate_quote")
+        self.assertIn("RuntimeError: drive offline", payload["errors"][0])
+
     def test_order_search_route_passes_query_and_returns_400_for_validation_error(self):
         service_result = {
             "success": True,

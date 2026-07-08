@@ -322,13 +322,26 @@ def generate_quote(order_id):
     created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
 
     try:
-        result = generate_quote_for_order(order_id, created_by=created_by)
-        return jsonify(result), 201
+        result = auto_generate_quote_if_ready(order_id, created_by=created_by)
+        if not result.get("quote_ready"):
+            return jsonify(result), 400
+        return jsonify(result), 201 if result.get("generated") else 200
     except ValueError as exc:
         return jsonify({
             "success": False,
+            "action": "generate_quote",
+            "order_id": order_id,
             "errors": [str(exc)]
         }), 400
+    except Exception as exc:
+        logger.exception("Unexpected quote generation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "generate_quote",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "message": "Quote generation failed unexpectedly. The order was not changed by this failed attempt.",
+        }), 500
 
 
 @orders_bp.route("/orders/<order_id>/quote/send-latest", methods=["POST"])
