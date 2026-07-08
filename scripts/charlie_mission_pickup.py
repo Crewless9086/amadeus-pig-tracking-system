@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ from scripts.charlie_notify import _format_message, main as notify_main
 
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
 RECOVERED_STALE_MISSIONS = set()
+BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
 
 
 def main():
@@ -80,6 +82,10 @@ def main():
                 notify=args.notify,
                 timeout_seconds=args.codex_timeout_seconds,
             )
+            checkout = _ensure_base_branch()
+            result["post_execution_checkout"] = checkout
+            if not checkout["success"]:
+                status_code = max(int(status_code or 0), 409)
     print(result)
     return 0 if status_code < 400 else 1
 
@@ -170,8 +176,14 @@ def watch_for_mission(
                     notify=notify,
                     timeout_seconds=codex_timeout_seconds,
                 )
+                checkout = _ensure_base_branch()
+                result["post_execution_checkout"] = checkout
+                if not checkout["success"]:
+                    status_code = max(int(status_code or 0), 409)
                 result["checks"] = checks
                 write_runner_heartbeat(result)
+                if not checkout["success"]:
+                    return result, status_code
             if max_checks is not None and checks >= max_checks:
                 return result, status_code
             time.sleep(interval_seconds)
@@ -385,6 +397,14 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
+    checkout = _ensure_base_branch()
+    if not checkout["success"]:
+        return {
+            **checkout,
+            "status": "base_branch_checkout_failed",
+            "mission_count": 0,
+            "next_action": "Resolve the git checkout problem before CHARLIE picks up another mission.",
+        }, 409
     clean_status = str(status or "approved").strip()
     if clean_status == "approved":
         missions, status_code = _owner_queue_missions(statuses=("approved",), limit=limit)
@@ -457,6 +477,63 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "codex_chat_written": True,
         "mission_status": "in_progress",
     }, 200
+
+
+def _ensure_base_branch():
+    base_branch = str(os.getenv(BASE_BRANCH_ENV) or "main").strip() or "main"
+
+    def run(command):
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception as exc:  # pragma: no cover - defensive process boundary
+            return {
+                "returncode": 1,
+                "stdout": "",
+                "stderr": f"{exc.__class__.__name__}: {exc}",
+            }
+        return {
+            "returncode": completed.returncode,
+            "stdout": (completed.stdout or "").strip(),
+            "stderr": (completed.stderr or "").strip(),
+        }
+
+    current = run(["git", "branch", "--show-current"])
+    if current["returncode"] != 0:
+        return {
+            "success": False,
+            "status": "base_branch_current_failed",
+            "base_branch": base_branch,
+            "stderr": current["stderr"],
+        }
+    current_branch = current["stdout"]
+    if current_branch == base_branch:
+        return {
+            "success": True,
+            "status": "base_branch_already_active",
+            "base_branch": base_branch,
+            "current_branch": current_branch,
+        }
+    switched = run(["git", "switch", base_branch])
+    if switched["returncode"] != 0:
+        return {
+            "success": False,
+            "status": "base_branch_switch_failed",
+            "base_branch": base_branch,
+            "current_branch": current_branch,
+            "stderr": switched["stderr"],
+        }
+    return {
+        "success": True,
+        "status": "base_branch_restored",
+        "base_branch": base_branch,
+        "previous_branch": current_branch,
+    }
 
 
 def _codex_chat_content(mission):
