@@ -609,16 +609,87 @@ textarea {
 .allocation-table th,
 .allocation-table td {
   vertical-align: top;
+  white-space: normal;
+}
+
+.allocation-table th:nth-child(1),
+.allocation-table td:nth-child(1) {
+  width: 92px;
+  min-width: 86px;
+  max-width: 110px;
+}
+
+.allocation-table th:nth-child(2),
+.allocation-table td:nth-child(2) {
+  width: 150px;
+  min-width: 132px;
 }
 
 .allocation-table th:nth-child(3),
 .allocation-table td:nth-child(3) {
-  min-width: 240px;
+  min-width: 220px;
+  max-width: 300px;
 }
 
-.allocation-table th:nth-child(12),
-.allocation-table td:nth-child(12) {
-  min-width: 240px;
+.allocation-table th:nth-child(4),
+.allocation-table td:nth-child(4),
+.allocation-table th:nth-child(5),
+.allocation-table td:nth-child(5),
+.allocation-table th:nth-child(6),
+.allocation-table td:nth-child(6) {
+  min-width: 150px;
+  max-width: 190px;
+}
+
+.allocation-table th:nth-child(9),
+.allocation-table td:nth-child(9) {
+  width: 120px;
+  min-width: 112px;
+}
+
+.allocation-pig-cell {
+  overflow-wrap: anywhere;
+}
+
+.allocation-pig-link {
+  display: inline-flex;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.allocation-action-cell strong {
+  display: block;
+  line-height: 1.25;
+}
+
+.allocation-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.allocation-review-cell {
+  display: grid;
+  gap: 8px;
+}
+
+.allocation-row-details {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.allocation-row-details summary {
+  cursor: pointer;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.allocation-row-details span {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 
 .status-pill-warning {
@@ -2707,6 +2778,21 @@ button:disabled {
   .purpose-review-recheck-grid,
   .sales-stock-row {
     grid-template-columns: 1fr;
+  }
+
+  .allocation-table {
+    min-width: 980px;
+  }
+
+  .allocation-table th,
+  .allocation-table td {
+    padding: 0.65rem 0.7rem;
+  }
+
+  .allocation-review-button {
+    width: 100%;
+    min-height: 36px;
+    padding: 9px 10px;
   }
 
   .pig-list-toolbar .field-label,
