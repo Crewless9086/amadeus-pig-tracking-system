@@ -163,7 +163,7 @@
         fetchJson(API.runner, { timeoutMs: 18000 }).catch(() => state.runner || {}),
         fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
-      state.buckets = { ...state.buckets, ...buckets };
+      state.buckets = mergeBuckets(state.buckets, buckets);
       if (command) applyCommandCenter(command);
       state.runner = runner;
       state.policy = policy.charlie_build_relay || {};
@@ -188,32 +188,36 @@
     };
     const loaded = {};
     await Promise.all(Object.entries(plan).map(async ([key, statuses]) => {
+      if (!statuses.length) {
+        loaded[key] = state.buckets[key] || [];
+        return;
+      }
       const missions = [];
       const results = await Promise.allSettled(statuses.map((status) => (
         fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 })
       )));
+      let fulfilled = 0;
       results.forEach((result) => {
-        if (result.status === "fulfilled") missions.push(...(result.value.missions || []));
+        if (result.status === "fulfilled") {
+          fulfilled += 1;
+          missions.push(...(result.value.missions || []));
+        }
       });
-      loaded[key] = dedupe(missions);
+      loaded[key] = fulfilled ? dedupe(missions) : (state.buckets[key] || []);
     }));
     return loaded;
   }
 
+  function mergeBuckets(current, incoming) {
+    const merged = { ...(current || {}) };
+    Object.entries(incoming || {}).forEach(([key, value]) => {
+      if (Array.isArray(value)) merged[key] = value;
+    });
+    return merged;
+  }
+
   function applyCommandCenter(command) {
     state.counts = command.counts || {};
-    state.buckets.approved = (command.queue && command.queue.approved) || [];
-    state.buckets.review = [
-      ...((command.review && command.review.ready) || []),
-      ...((command.release && command.release.waiting_final_bridge) || []),
-    ];
-    state.buckets.blocked = (command.review && command.review.blocked) || [];
-    state.buckets.active = [
-      ...((command.release && command.release.in_progress) || []),
-      ...filterStatuses(command.recent_missions || [], ["in_progress", "release_in_progress"]),
-    ];
-    state.buckets.new = filterStatuses(command.recent_missions || [], ["new"]);
-    state.buckets.done = filterStatuses(command.recent_missions || [], ["done", "merged", "deployed"]);
   }
 
   function filterStatuses(missions, statuses) {
