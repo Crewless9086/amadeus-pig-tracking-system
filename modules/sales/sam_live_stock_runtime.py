@@ -15,8 +15,9 @@ from modules.orders.order_intake_service import (
 from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
 from modules.pig_weights.pig_weights_service import get_sales_availability
+from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
 from modules.sales.sam_pricing import resolve_live_stock_price_rule
-from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
+from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, classify_sam_sales_lane
 
 
 WEBHOOK_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED"
@@ -592,8 +593,49 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
                 "live_stock_context:merged_prior_intake",
             ],
         }
-    missing = _missing_live_stock_fields(facts)
     availability = context_packet.get("availability") if isinstance(context_packet, dict) else {}
+    if route["lane"] == LANE_FARM_GENERAL and facts.get("sales_lane") != LANE_LIVE_STOCK:
+        reply = _farm_general_reply(inbound, environ or {})
+        return {
+            "version": RUNTIME_VERSION,
+            "agent": "sam_live_stock_backend",
+            "mode": "read_only_stage_3",
+            "inbound": {
+                "conversation_id": inbound.get("conversation_id") or "",
+                "message_id": inbound.get("message_id") or "",
+                "customer_name": inbound.get("customer_name") or "",
+                "customer_phone": inbound.get("customer_phone") or "",
+                "channel": inbound.get("channel") or "",
+                "content": inbound.get("content") or "",
+            },
+            "sales_lane": LANE_FARM_GENERAL,
+            "lane_confidence": route["confidence"],
+            "facts": facts,
+            "missing_fields": [],
+            "read_context": {
+                "prior_context_source": (context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}).get("source", ""),
+                "chatwoot_history": context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {},
+                "context_errors": context_packet.get("context_errors") if isinstance(context_packet.get("context_errors"), list) else [],
+            },
+            "availability": availability,
+            "match_packet": {},
+            "draft_order_packet": {"draft_ready": False, "owner_review_required": False, "reason": "farm_general_question"},
+            "price_answer_packet": {"can_answer_price": False, "reason": "farm_general_question"},
+            "suggested_reply_text": reply,
+            "reply_source": "deterministic_farm_general_knowledge",
+            "recommended_action": "owner_review_send_candidate",
+            "owner_review_required": True,
+            "safe_to_autosend": False,
+            "should_reply": False,
+            "customer_send_allowed": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "reserves_stock": False,
+            "authority_note": "Farm-general replies are owner-review candidates only.",
+        }
+    missing = _missing_live_stock_fields(facts)
     blockers = []
     if route["lane"] != LANE_LIVE_STOCK:
         blockers.append(f"lane_not_live_stock:{route['lane']}")
@@ -984,7 +1026,7 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
     if blockers:
         escalation_reasons.extend(str(item) for item in blockers)
         score -= min(40, 10 * len(blockers))
-    if decision.get("sales_lane") != LANE_LIVE_STOCK:
+    if decision.get("sales_lane") not in {LANE_LIVE_STOCK, LANE_FARM_GENERAL}:
         escalation_reasons.append("wrong_or_unclear_lane")
         score -= 20
     if missing:
@@ -1292,6 +1334,26 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         if fact_reply:
             return fact_reply
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _farm_general_reply(inbound, source):
+    source = source if isinstance(source, dict) else {}
+    try:
+        knowledge_result = load_sam_farm_knowledge(source)
+        knowledge = knowledge_result.get("knowledge") if isinstance(knowledge_result, dict) else {}
+    except Exception:
+        knowledge = {}
+    profile = public_profile(knowledge)
+    faq = (knowledge if isinstance(knowledge, dict) else {}).get("faq") if isinstance((knowledge if isinstance(knowledge, dict) else {}).get("faq"), dict) else {}
+    location = _clean(faq.get("where_are_you_based") or profile.get("location_summary"), 300)
+    if not location:
+        location = "We are based around the Riversdale area."
+    customer_name = _first_name((inbound or {}).get("customer_name"))
+    greeting = f"Hi {customer_name}, " if customer_name else "Hi, "
+    return (
+        f"{greeting}{location} "
+        "If you are asking about live pigs, pork for the freezer, or farm collections, send me what you need and I will help from there."
+    )
 
 
 def _fact_aware_owner_draft(facts, packet, availability):

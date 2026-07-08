@@ -73,6 +73,11 @@ class SamSalesRouterTests(unittest.TestCase):
 
         self.assertLess(result["confidence"], 0.9)
 
+    def test_shorthand_location_question_routes_to_farm_general(self):
+        result = self.assert_lane("Where are u guys pls", LANE_FARM_GENERAL)
+
+        self.assertIn("answer generally", result["next_action"].lower())
+
     def test_prior_context_is_low_confidence_without_fresh_signal(self):
         result = classify_sam_sales_lane("Okay thanks", prior_context={"lane": LANE_LIVE_STOCK})
 

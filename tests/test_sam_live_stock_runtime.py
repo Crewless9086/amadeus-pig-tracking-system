@@ -204,6 +204,25 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             self.assertNotIn("lane_not_live_stock:unclear", decision["blockers"], message)
             self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"], message)
 
+    def test_general_location_question_gets_farm_knowledge_reply_candidate(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Where are u guys pls", sender={"name": "Anda"}),
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        review = decision["conversation_review"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["sales_lane"], "farm_general_question")
+        self.assertEqual(decision["reply_source"], "deterministic_farm_general_knowledge")
+        self.assertIn("Riversdale", decision["suggested_reply_text"])
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
+        self.assertNotIn("lane_not_live_stock:farm_general_question", decision.get("blockers", []))
+        self.assertNotIn("wrong_or_unclear_lane", review["escalation_reasons"])
+        self.assertFalse(result["sent"])
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 
