@@ -494,6 +494,308 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
+    def test_malformed_json_final_triggers_one_contract_retry_then_passes(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = {
+            **MISSION,
+            "mission_context_pack": {"agent_order": ["business_reviewer", "reviewer"]},
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+        }
+        get_mission.side_effect = _mission_readback_sequence(
+            mission,
+            _mission_with_persisted_review_packet(mission),
+        )
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        business_calls = {"count": 0}
+
+        def fake_runner(*_args, **kwargs):
+            agent = _agent_from_prompt(kwargs["input"])
+            payload = _successful_stage_payload(agent)
+            if agent == "business_reviewer":
+                business_calls["count"] += 1
+                if business_calls["count"] == 1:
+                    return SimpleNamespace(returncode=0, stdout="```json\n{\"summary\": \"truncated\"", stderr="")
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+            ledger = json.loads(Path(result["agent_ledger_path"]).read_text(encoding="utf-8"))
+            failed_artifact_exists = Path(ledger["contract_retries"][0]["failed_artifact_path"]).exists()
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "agent_execution_completed")
+        self.assertEqual(business_calls["count"], 2)
+        self.assertEqual(ledger["contract_retries"][0]["reason"], "malformed_json")
+        self.assertTrue(failed_artifact_exists)
+        self.assertTrue(any(stage["agent"] == "business_reviewer" and stage["attempt"] == 2 for stage in ledger["stages"]))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_missing_required_keys_triggers_contract_retry_then_passes(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = {
+            **MISSION,
+            "mission_context_pack": {"agent_order": ["business_reviewer", "reviewer"]},
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+        }
+        get_mission.side_effect = _mission_readback_sequence(
+            mission,
+            _mission_with_persisted_review_packet(mission),
+        )
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        business_calls = {"count": 0}
+
+        def fake_runner(*_args, **kwargs):
+            agent = _agent_from_prompt(kwargs["input"])
+            payload = _successful_stage_payload(agent)
+            if agent == "business_reviewer":
+                business_calls["count"] += 1
+                if business_calls["count"] == 1:
+                    payload.pop("vault_sources_used")
+                    payload.pop("confidence")
+                    payload.pop("confidence_reason")
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+            ledger = json.loads(Path(result["agent_ledger_path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(business_calls["count"], 2)
+        self.assertEqual(ledger["contract_retries"][0]["reason"], "missing_keys")
+        self.assertEqual(
+            set(ledger["contract_retries"][0]["missing_keys"]),
+            {"vault_sources_used", "confidence", "confidence_reason"},
+        )
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_contract_retry_failure_blocks_with_contract_reason_and_paths(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = {
+            **MISSION,
+            "mission_context_pack": {"agent_order": ["business_reviewer", "reviewer"]},
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+        }
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "blocked"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def fake_runner(*_args, **_kwargs):
+            return SimpleNamespace(returncode=0, stdout="```json\n{\"summary\": \"still truncated\"", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+            ledger = json.loads(Path(result["agent_ledger_path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertIn("after contract retry", result["blocked_reason"])
+        self.assertEqual(len(ledger["contract_retries"]), 1)
+        vault_metadata = update_vault.call_args.args[1]
+        blocked_artifact = vault_metadata["review_packet"]["agent_artifacts"]["business_reviewer"]
+        self.assertTrue(blocked_artifact["first_attempt_artifact_path"])
+        self.assertTrue(blocked_artifact["contract_retry_exhausted"])
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_contract_retry_prompt_and_no_backflow_or_prefix_replay(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = {
+            **MISSION,
+            "mission_context_pack": {"agent_order": ["idea_expander", "source_mapper", "business_reviewer", "reviewer"]},
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+        }
+        get_mission.side_effect = _mission_readback_sequence(
+            mission,
+            _mission_with_persisted_review_packet(mission),
+        )
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        prompts = []
+        called_agents = []
+
+        def fake_runner(*_args, **kwargs):
+            prompt = kwargs["input"]
+            prompts.append(prompt)
+            agent = _agent_from_prompt(prompt)
+            called_agents.append(agent)
+            payload = _successful_stage_payload(agent)
+            if agent == "business_reviewer" and called_agents.count("business_reviewer") == 1:
+                payload.pop("confidence")
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=fake_runner,
+            )
+            ledger = json.loads(Path(result["agent_ledger_path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "agent_execution_completed")
+        self.assertEqual(called_agents, ["business_reviewer", "business_reviewer", "reviewer"])
+        self.assertNotIn("CHARLIE CONTRACT REMINDER", prompts[0])
+        self.assertIn("CHARLIE CONTRACT REMINDER", prompts[1])
+        self.assertEqual(ledger.get("backflow_events"), [])
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_zero_exit_missing_final_retries_but_nonzero_exit_blocks(
+        self,
+        get_mission,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        mission = {
+            **MISSION,
+            "mission_context_pack": {"agent_order": ["business_reviewer"]},
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+        }
+        get_mission.side_effect = _mission_readback_sequence(
+            mission,
+            _mission_with_persisted_review_packet(mission),
+        )
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        calls = {"count": 0}
+
+        def missing_then_valid(*_args, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            payload = _successful_stage_payload(_agent_from_prompt(kwargs["input"]))
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=missing_then_valid,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(calls["count"], 2)
+
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        get_mission.side_effect = None
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "blocked"}, 200)
+        calls["count"] = 0
+
+        def nonzero_runner(*_args, **_kwargs):
+            calls["count"] += 1
+            return SimpleNamespace(returncode=124, stdout="", stderr="timed out")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+                run_subprocess=nonzero_runner,
+            )
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(calls["count"], 1)
+
+    def test_review_agent_parse_fallback_never_recommends_approval(self):
+        artifact = execution_bridge._agent_artifact_from_final("business_reviewer", "```json\n{\"summary\": \"truncated\"")
+
+        self.assertTrue(artifact["contract_parse_fallback"])
+        self.assertEqual(artifact["recommended_owner_decision"], "send_back")
+
+    def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
+        text = """
+        ```json
+        {"summary": "bad",
+        ```
+        ```json
+        {"summary": "ok", "items": ["one",],}
+        ```
+        """
+
+        parsed = execution_bridge._extract_json_object(text)
+
+        self.assertEqual(parsed["summary"], "ok")
+        self.assertEqual(parsed["items"], ["one"])
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_blocks_cleanly_when_stage_runner_times_out(
         self,
         get_mission,
