@@ -254,6 +254,38 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["conversation_plan"]["missing_fields"], decision["missing_fields"])
         self.assertEqual(decision["conversation_stage"], "quote")
 
+    def test_decision_uses_intake_context_draft_order_for_cross_turn_quote(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Please send me the quote", sender={"name": "Michaels"}),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "1478",
+                "draft_order_id": "ORD-2026-12BCCC",
+                "known_fields": {
+                    "collection_location": "Albertinia",
+                    "payment_method": "Cash",
+                    "order_commitment": True,
+                    "quote_requested": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Piglet",
+                    "weight_range": "7_to_9_Kg",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["next_action"], "generate_quote")
+        self.assertEqual(decision["missing_fields"], [])
+        self.assertEqual(decision["owner_action_packet"]["order_id"], "ORD-2026-12BCCC")
+        self.assertEqual(decision["owner_action_packet"]["status"], "ready_for_owner_quote_prepare")
+
     def test_quote_next_action_draft_explains_owner_review_quote_step(self):
         facts = {
             "quantity": 3,
@@ -332,6 +364,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(bundle["draft_order_ready"])
 
     def test_created_draft_order_refreshes_owner_action_bundle_to_quote_prepare(self):
+        writes = []
+
         def creator(_order_data, _sync_data):
             return {"success": True, "order_id": "ORD-2026-12BCCC"}
 
@@ -363,6 +397,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 14},
             ],
             draft_order_creator=creator,
+            intake_writer=lambda cleaned: writes.append(cleaned) or {"success": True, "draft_order_id": cleaned["patch"]["draft_order_id"]},
         )
 
         decision = result["sam_decision"]
@@ -373,6 +408,50 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(bundle["status"], "ready_for_owner_quote_prepare")
         self.assertEqual(bundle["order_id"], "ORD-2026-12BCCC")
         self.assertIn("/api/orders/ORD-2026-12BCCC/quote/prepare-send", bundle["routes"]["quote_prepare"]["route"])
+        self.assertEqual(writes[0]["patch"]["draft_order_id"], "ORD-2026-12BCCC")
+        self.assertTrue(writes[0]["patch"]["quote_requested"])
+
+    def test_created_non_quote_draft_order_refreshes_to_sync_lines(self):
+        writes = []
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I will take 3 female weaners around 10 to 15kg in Riversdale."),
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "1478",
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "order_commitment": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 12},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 13},
+                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 14},
+            ],
+            draft_order_creator=lambda _order_data, _sync_data: {"success": True, "order_id": "ORD-2026-NOQUOTE"},
+            intake_writer=lambda cleaned: writes.append(cleaned) or {"success": True, "draft_order_id": cleaned["patch"]["draft_order_id"]},
+        )
+
+        decision = result["sam_decision"]
+        bundle = decision["owner_action_packet"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["next_action"], "sync_lines")
+        self.assertEqual(decision["conversation_stage"], "draft_order")
+        self.assertEqual(bundle["status"], "ready_for_owner_sync_lines")
+        self.assertEqual(bundle["order_id"], "ORD-2026-NOQUOTE")
+        self.assertEqual(writes[0]["patch"]["draft_order_id"], "ORD-2026-NOQUOTE")
+        self.assertNotIn("quote_requested", writes[0]["patch"])
 
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []

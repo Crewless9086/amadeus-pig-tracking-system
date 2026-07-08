@@ -35,7 +35,7 @@ def _planner_inputs(intake_context, facts, order_state):
         "Collection_Time_Text": known.get("collection_time_text") or known.get("collection_date") or facts.get("timing") or "",
         "Payment_Method": known.get("payment_method") or facts.get("payment_method") or "",
         "Quote_Requested": _bool_sheet(known.get("quote_requested") or facts.get("quote_requested")),
-        "Order_Commitment": _bool_sheet(known.get("order_commitment") or facts.get("order_commitment") or facts.get("quote_requested")),
+        "Order_Commitment": _bool_sheet(known.get("order_commitment") or facts.get("order_commitment")),
         "Draft_Order_ID": (
             intake_context.get("draft_order_id")
             or known.get("draft_order_id")

@@ -60,6 +60,30 @@ class SamConversationStateTests(unittest.TestCase):
         self.assertEqual(plan["next_action"], "create_draft_then_quote")
         self.assertIn("draft_order_id", plan["missing_fields"])
 
+    def test_quote_request_alone_does_not_imply_order_commitment(self):
+        plan = plan_live_stock_next_action(
+            {
+                "conversation_id": "1478",
+                "known_fields": {
+                    "collection_location": "Albertinia",
+                    "payment_method": "Cash",
+                    "quote_requested": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Piglet",
+                    "weight_range": "7_to_9_Kg",
+                    "status": "active",
+                }],
+            },
+            {"customer_phone": "+27633640810"},
+        )
+
+        self.assertEqual(plan["next_action"], "ask_missing_field")
+        self.assertIn("order_commitment", plan["missing_fields"])
+        self.assertNotIn("draft_order_id", plan["missing_fields"])
+
     def test_plan_generate_quote_when_draft_exists(self):
         plan = plan_live_stock_next_action(
             {

@@ -190,6 +190,13 @@ def handle_sam_live_stock_chatwoot_inbound(
         decision["draft_order"] = draft_order
         if draft_order.get("success"):
             _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, draft_order)
+            decision["draft_order_intake_writeback"] = write_live_stock_draft_order_link_to_intake(
+                inbound,
+                facts,
+                draft_order,
+                decision,
+                intake_writer=intake_writer,
+            )
         if not draft_order.get("success"):
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
@@ -638,7 +645,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "reserves_stock": False,
             "authority_note": "Farm-general replies are owner-review candidates only.",
         }
-    intake_context = context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}
+    intake_context = context_packet.get("intake_context") if isinstance(context_packet.get("intake_context"), dict) else {}
     conversation_plan = plan_live_stock_next_action(intake_context, facts)
     legacy_missing = _missing_live_stock_fields(facts)
     plan_missing = conversation_plan.get("missing_fields") if isinstance(conversation_plan.get("missing_fields"), list) else []
@@ -850,11 +857,19 @@ def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, dra
     if not order_id:
         return
     plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
-    plan = {**plan, "next_action": "generate_quote" if plan.get("next_action") == "create_draft_then_quote" else plan.get("next_action")}
+    if plan.get("next_action") == "create_draft_then_quote":
+        next_action = "generate_quote"
+    elif plan.get("next_action") == "create_draft":
+        next_action = "sync_lines"
+    else:
+        next_action = plan.get("next_action")
+    plan = {**plan, "next_action": next_action}
     order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
     plan["order_state"] = {**order_state, "draft_order_id": order_id}
     if plan.get("next_action") == "generate_quote":
         plan["stage"] = "quote"
+    elif plan.get("next_action") == "sync_lines":
+        plan["stage"] = "draft_order"
     decision["conversation_plan"] = plan
     decision["next_action"] = plan.get("next_action") or decision.get("next_action") or ""
     decision["conversation_stage"] = plan.get("stage") or decision.get("conversation_stage") or ""
@@ -865,6 +880,65 @@ def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, dra
         decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {},
         decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
     )
+
+
+def write_live_stock_draft_order_link_to_intake(inbound, facts, draft_order, decision=None, intake_writer=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    draft_order = draft_order if isinstance(draft_order, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    result = draft_order.get("result") if isinstance(draft_order.get("result"), dict) else {}
+    order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    conversation_id = _clean(inbound.get("conversation_id") or facts.get("conversation_id"), 100)
+    if not order_id:
+        return {"attempted": False, "success": False, "status": "draft_order_id_missing"}
+    if not conversation_id:
+        return {"attempted": False, "success": False, "status": "conversation_id_missing"}
+    patch = {
+        "draft_order_id": order_id,
+        "last_customer_message": _clean(inbound.get("content"), 600),
+    }
+    if decision.get("next_action") == "generate_quote":
+        patch["quote_requested"] = True
+    payload = {
+        "conversation_id": conversation_id,
+        "account_id": _clean(inbound.get("account_id"), 100),
+        "contact_id": _clean(inbound.get("contact_id"), 100),
+        "customer_name": _clean(inbound.get("customer_name"), 120),
+        "customer_phone": _clean(inbound.get("customer_phone"), 80),
+        "customer_channel": _clean(inbound.get("channel"), 80),
+        "customer_language": "",
+        "updated_by": "Sam Live Stock",
+        "patch": {key: value for key, value in patch.items() if value not in ("", None)},
+        "items": [],
+    }
+    validation = validate_live_stock_intake_payload(payload)
+    if not validation["is_valid"]:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_link_validation_failed",
+            "errors": validation["errors"],
+            "payload": payload,
+        }
+    try:
+        writer = intake_writer or update_intake_state
+        result = writer(validation["cleaned_data"])
+        return {
+            "attempted": True,
+            "success": bool((result or {}).get("success")),
+            "status": "sam_live_stock_draft_order_link_written" if (result or {}).get("success") else "sam_live_stock_draft_order_link_write_failed",
+            "result": result,
+            "payload": payload,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_link_exception",
+            "error": _clean(str(exc), 240),
+            "payload": payload,
+        }
 
 
 def _prepared_owner_action_summary(action, order_id, draft_packet, price_answer_packet):
