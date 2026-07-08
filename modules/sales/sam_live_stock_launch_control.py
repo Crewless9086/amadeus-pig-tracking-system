@@ -337,10 +337,11 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
     }
 
 
-def build_sam_live_stock_owner_review_packet(event, *, links=None):
+def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None):
     event = event if isinstance(event, dict) else {}
     decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
     links = links if isinstance(links, dict) else {}
+    source = environ if environ is not None else os.environ
     review_event_id = _clean(event.get("review_event_id"), 120)
     conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
     reply = _clean_multiline(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 900)
@@ -369,8 +370,16 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None):
     keyboard = []
     if review_event_id and reply:
         keyboard.append([{"text": "Approve Send", "callback_data": f"sam_live_review_approve:{review_event_id}"}])
+    chatwoot_url = (
+        _clean(links.get("chatwoot_conversation_url"), 500)
+        or _chatwoot_conversation_url(conversation_id, source)
+    )
+    edit_button = {"text": "Edit in Chatwoot", "url": chatwoot_url} if chatwoot_url else {
+        "text": "Edit in Chatwoot",
+        "callback_data": f"sam_live_review_edit:{review_event_id or conversation_id}",
+    }
     keyboard.append([
-        {"text": "Edit in Chatwoot", "callback_data": f"sam_live_review_edit:{review_event_id or conversation_id}"},
+        edit_button,
         {"text": "Keep Human", "callback_data": f"sam_live_review_human:{review_event_id or conversation_id}"},
     ])
     keyboard.append([{"text": "Close", "callback_data": f"sam_live_review_close:{review_event_id or conversation_id}"}])
@@ -397,7 +406,7 @@ def send_sam_live_stock_new_lead_telegram(event, *, environ=None, telegram_sende
 
 def send_sam_live_stock_owner_review_telegram(event, *, environ=None, telegram_sender=None, links=None):
     source = environ if environ is not None else os.environ
-    packet = build_sam_live_stock_owner_review_packet(event, links=links)
+    packet = build_sam_live_stock_owner_review_packet(event, links=links, environ=source)
     if not _truthy(source.get(TELEGRAM_OWNER_REVIEW_SEND_ENABLED_ENV)):
         return {"success": False, "status": "sam_live_stock_owner_review_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
     return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_owner_review_telegram_sent")
@@ -790,6 +799,18 @@ def _chatwoot_write_custom_attributes(conversation_id, custom_attributes, source
             return {"status_code": getattr(response, "status", 200), "body": json.loads(raw or "{}")}
     except urllib_error.HTTPError as exc:
         raise RuntimeError(f"chatwoot_http_{exc.code}") from exc
+
+
+def _chatwoot_conversation_url(conversation_id, source):
+    conversation_id = _clean(conversation_id, 100)
+    if not conversation_id:
+        return ""
+    source = source if isinstance(source, dict) else {}
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    if not base_url or not account_id:
+        return ""
+    return f"{base_url}/app/accounts/{account_id}/conversations/{conversation_id}"
 
 
 def _callback_action(callback_data):

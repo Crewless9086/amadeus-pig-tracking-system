@@ -191,6 +191,8 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         buttons = calls[0][3]["inline_keyboard"]
         self.assertEqual(buttons[0][0]["text"], "Approve Send")
         self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_review_approve:SAM-LIVE-REVIEW-"))
+        self.assertEqual(buttons[1][0]["text"], "Edit in Chatwoot")
+        self.assertEqual(buttons[1][0]["url"], "https://app.chatwoot.com/app/accounts/147387/conversations/2401")
 
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
