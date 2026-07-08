@@ -468,6 +468,19 @@ function renderRows(rows) {
           <span class="table-subtext">${escapeHtml(typeSex)}</span>
         </td>
         <td><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
+        <td class="allocation-review-cell">
+          <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
+          <details class="allocation-row-details">
+            <summary>More</summary>
+            <span>Purpose confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
+            <span>Suggested reason: ${escapeHtml(row.suggested_purpose_reason || "-")}</span>
+            <span>Wean: ${row.wean_date ? `${escapeHtml(row.wean_date)} / ${escapeHtml(row.days_since_wean ?? "-")} days` : "No wean date"}</span>
+            <span>Parents: ${escapeHtml(parentText || "No parent links")}</span>
+            <span>Litter quality: ${escapeHtml(row.litter_quality || "Unknown")} / ${escapeHtml(formatPercent(row.litter_survival_rate))} survival</span>
+            <span>Existing link: ${escapeHtml(linkText)}</span>
+            <span>Pig ID: ${escapeHtml(row.pig_id || "-")}</span>
+          </details>
+        </td>
         <td class="allocation-action-cell">
           <strong>${escapeHtml(row.outlet_priority || "-")}</strong>
           <span class="table-subtext">${escapeHtml(row.recommended_action || "-")}</span>
@@ -496,19 +509,6 @@ function renderRows(rows) {
           <strong>${escapeHtml(row.purpose || "Unknown")}</strong>
           <span class="table-subtext">Suggested: ${escapeHtml(row.suggested_purpose || "-")}</span>
           <span class="table-subtext">${escapeHtml(row.marketing_readiness || "-")}</span>
-        </td>
-        <td class="allocation-review-cell">
-          <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
-          <details class="allocation-row-details">
-            <summary>More</summary>
-            <span>Purpose confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
-            <span>Suggested reason: ${escapeHtml(row.suggested_purpose_reason || "-")}</span>
-            <span>Wean: ${row.wean_date ? `${escapeHtml(row.wean_date)} / ${escapeHtml(row.days_since_wean ?? "-")} days` : "No wean date"}</span>
-            <span>Parents: ${escapeHtml(parentText || "No parent links")}</span>
-            <span>Litter quality: ${escapeHtml(row.litter_quality || "Unknown")} / ${escapeHtml(formatPercent(row.litter_survival_rate))} survival</span>
-            <span>Existing link: ${escapeHtml(linkText)}</span>
-            <span>Pig ID: ${escapeHtml(row.pig_id || "-")}</span>
-          </details>
         </td>
       </tr>
     `;

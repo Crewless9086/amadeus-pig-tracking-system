@@ -429,10 +429,16 @@ textarea {
 
 .allocation-filters {
   display: grid;
-  grid-template-columns: minmax(150px, 0.85fr) minmax(150px, 0.85fr) minmax(130px, 0.65fr) minmax(120px, 0.55fr) minmax(140px, 0.7fr) minmax(220px, 1.15fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 14px;
   align-items: end;
   margin-bottom: 18px;
+}
+
+.allocation-filters .slaughter-filter-actions .button-link {
+  width: 100%;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .meat-planning-filters {
@@ -604,47 +610,63 @@ textarea {
 
 .allocation-table-wrap {
   max-height: none;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.allocation-table {
+  min-width: 1080px;
 }
 
 .allocation-table th,
 .allocation-table td {
   vertical-align: top;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .allocation-table th:nth-child(1),
 .allocation-table td:nth-child(1) {
-  width: 92px;
-  min-width: 86px;
-  max-width: 110px;
+  width: 78px;
+  min-width: 70px;
+  max-width: 90px;
 }
 
 .allocation-table th:nth-child(2),
 .allocation-table td:nth-child(2) {
-  width: 150px;
-  min-width: 132px;
+  width: 132px;
+  min-width: 116px;
 }
 
 .allocation-table th:nth-child(3),
 .allocation-table td:nth-child(3) {
-  min-width: 220px;
-  max-width: 300px;
+  width: 108px;
+  min-width: 96px;
 }
 
 .allocation-table th:nth-child(4),
-.allocation-table td:nth-child(4),
+.allocation-table td:nth-child(4) {
+  min-width: 190px;
+  max-width: 260px;
+}
+
 .allocation-table th:nth-child(5),
 .allocation-table td:nth-child(5),
 .allocation-table th:nth-child(6),
-.allocation-table td:nth-child(6) {
-  min-width: 150px;
-  max-width: 190px;
+.allocation-table td:nth-child(6),
+.allocation-table th:nth-child(7),
+.allocation-table td:nth-child(7) {
+  min-width: 130px;
+  max-width: 170px;
 }
 
+.allocation-table th:nth-child(8),
+.allocation-table td:nth-child(8),
 .allocation-table th:nth-child(9),
 .allocation-table td:nth-child(9) {
-  width: 120px;
-  min-width: 112px;
+  min-width: 118px;
+  max-width: 150px;
 }
 
 .allocation-pig-cell {
@@ -653,7 +675,7 @@ textarea {
 
 .allocation-pig-link {
   display: inline-flex;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.1;
 }
 
@@ -2781,12 +2803,51 @@ button:disabled {
   }
 
   .allocation-table {
-    min-width: 980px;
+    min-width: 900px;
   }
 
   .allocation-table th,
   .allocation-table td {
-    padding: 0.65rem 0.7rem;
+    padding: 0.58rem 0.6rem;
+  }
+
+  .allocation-table th:nth-child(1),
+  .allocation-table td:nth-child(1) {
+    min-width: 64px;
+    max-width: 78px;
+  }
+
+  .allocation-table th:nth-child(2),
+  .allocation-table td:nth-child(2) {
+    min-width: 104px;
+  }
+
+  .allocation-table th:nth-child(3),
+  .allocation-table td:nth-child(3) {
+    min-width: 88px;
+  }
+
+  .allocation-table th:nth-child(4),
+  .allocation-table td:nth-child(4) {
+    min-width: 172px;
+    max-width: 220px;
+  }
+
+  .allocation-table th:nth-child(5),
+  .allocation-table td:nth-child(5),
+  .allocation-table th:nth-child(6),
+  .allocation-table td:nth-child(6),
+  .allocation-table th:nth-child(7),
+  .allocation-table td:nth-child(7) {
+    min-width: 118px;
+    max-width: 148px;
+  }
+
+  .allocation-table th:nth-child(8),
+  .allocation-table td:nth-child(8),
+  .allocation-table th:nth-child(9),
+  .allocation-table td:nth-child(9) {
+    min-width: 108px;
   }
 
   .allocation-review-button {
