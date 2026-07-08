@@ -1774,9 +1774,15 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
 def _return_workflow_to_stage(workflow, target_stage, comments):
     known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
     sequence = _workflow_sequence(workflow)
+    target_stage = _clean_text(target_stage, 80).strip().lower()
+    if target_stage and target_stage not in sequence:
+        sequence.append(target_stage)
     for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
     target_stage = target_stage if target_stage in known else "builder"
+    if target_stage not in known:
+        sequence.append(target_stage)
+        known[target_stage] = _workflow_defaults_for_sequence([target_stage])[0]
     target_seen = False
     for agent in sequence:
         if agent == target_stage:
@@ -1796,6 +1802,8 @@ def _normalize_review_send_back_stage(target_stage, workflow):
         return target_stage
     if target_stage == "frontend_design_implementer" and "builder" in sequence:
         return "builder"
+    if target_stage in AGENT_DEFINITIONS or target_stage in AGENT_STAGE_MAP:
+        return target_stage
     return "builder" if "builder" in sequence else sequence[0]
 
 

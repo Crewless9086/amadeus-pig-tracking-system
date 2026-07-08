@@ -15,6 +15,8 @@ from modules.charlie.mission_store import (
     update_mission_queue_priority,
     update_mission_status,
     update_mission_vault,
+    _normalize_review_send_back_stage,
+    _return_workflow_to_stage,
     _update_workflow_items,
 )
 from modules.charlie import vault_store
@@ -75,6 +77,20 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(by_agent["unexpected_specialist"]["status"], "complete")
         self.assertEqual(by_agent["unexpected_specialist"]["handoff_to"], "frontend_design_implementer")
         self.assertIn("frontend_design_implementer", by_agent)
+
+    def test_send_back_target_can_append_valid_missing_agent(self):
+        workflow = [
+            {"agent": "idea_expander", "status": "complete", "handoff_to": "source_mapper"},
+            {"agent": "source_mapper", "status": "complete", "handoff_to": "risk_agent"},
+        ]
+
+        target = _normalize_review_send_back_stage("builder", workflow)
+        updated = _return_workflow_to_stage(workflow, target, "Build the risk mitigation.")
+
+        by_agent = {item["agent"]: item for item in updated}
+        self.assertEqual(target, "builder")
+        self.assertEqual(by_agent["builder"]["status"], "active")
+        self.assertEqual(by_agent["builder"]["findings"], "Build the risk mitigation.")
 
     def test_record_mission_requires_database_configuration(self):
         result, status_code = record_mission({"raw_text": "Build CHARLIE mission queue"}, database_url="")
