@@ -371,6 +371,12 @@ def _attach_sam_live_stock_review_event(result, raw_payload):
 def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if not learning_result.get("success"):
         return {"attempted": False, "status": "review_event_not_recorded"}
+    if learning_result.get("created") is False:
+        return {
+            "attempted": False,
+            "status": "review_event_already_recorded_no_duplicate_telegram",
+            "review_event_id": learning_result.get("review_event_id"),
+        }
     decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
     review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
     packet = decision.get("escalation_packet") if isinstance(decision.get("escalation_packet"), dict) else {}

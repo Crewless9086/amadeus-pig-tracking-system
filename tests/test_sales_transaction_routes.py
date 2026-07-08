@@ -1792,6 +1792,38 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         owner_review.assert_called_once()
         new_lead.assert_not_called()
 
+    def test_sam_live_stock_duplicate_review_event_does_not_send_duplicate_telegram(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-DUPE",
+            "chatwoot_conversation_id": "1478",
+            "sam_reply_excerpt": "I will check the current list before anything is promised.",
+            "recommended_action": "owner_review_send_candidate",
+            "review_json": {"safe_to_send": True},
+            "decision_json": {"suggested_reply_text": "I will check the current list before anything is promised."},
+        }
+        learning_result = {
+            "success": True,
+            "created": False,
+            "status": "sam_live_stock_review_event_already_recorded",
+            "review_event_id": "SAM-LIVE-REVIEW-DUPE",
+            "conversation_event_count": 2,
+        }
+
+        with patch.object(sales_transaction_routes, "send_sam_live_stock_owner_review_telegram") as owner_review, patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+        ) as new_lead, patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_telegram_escalation",
+        ) as escalation:
+            notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(event, learning_result)
+
+        self.assertFalse(notification["attempted"])
+        self.assertEqual(notification["status"], "review_event_already_recorded_no_duplicate_telegram")
+        owner_review.assert_not_called()
+        new_lead.assert_not_called()
+        escalation.assert_not_called()
+
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
         with patch.object(
             sales_transaction_routes,
