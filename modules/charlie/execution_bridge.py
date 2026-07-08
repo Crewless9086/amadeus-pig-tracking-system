@@ -2080,6 +2080,106 @@ def _resume_agent_after_completed_stage(stage, agent_sequence):
     return ""
 
 
+def _retry_parallel_contract_failure(
+    mission,
+    execution_id,
+    ledger,
+    agent,
+    artifacts,
+    parallel_artifacts,
+    output_dir,
+    command_base,
+    runner,
+    timeout_seconds,
+    stage_attempts,
+    context,
+    completed,
+    reason,
+    missing_keys=None,
+    artifact=None,
+):
+    used = ledger.setdefault("parallel_contract_retry_used", {})
+    if used.get(agent):
+        return {"retried": False}
+    retry_queue = []
+    reminder_pending = set()
+    _retry_agent_contract_failure(
+        ledger,
+        retry_queue,
+        used,
+        reminder_pending,
+        agent,
+        context.get("attempt", 1),
+        reason,
+        context.get("started_at") or datetime.now(timezone.utc).isoformat(),
+        context["paths"],
+        output_dir,
+        execution_id,
+        missing_keys=missing_keys,
+        artifact=artifact,
+    )
+    stage_attempts[agent] = int(stage_attempts.get(agent, context.get("attempt", 1))) + 1
+    retry_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
+    prompt = _append_contract_retry_reminder(build_agent_stage_prompt(mission, agent, {**artifacts, **parallel_artifacts}, ledger))
+    retry_paths["prompt_path"].write_text(prompt, encoding="utf-8")
+    model_assignment = context.get("model_assignment") if isinstance(context.get("model_assignment"), dict) else choose_agent_model(
+        agent=agent,
+        mission_type=mission.get("mission_type", ""),
+        risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
+    )
+    command = [
+        *_readonly_command_base(_agent_command_base(command_base, model_assignment)),
+        "--output-last-message",
+        str(retry_paths["final_path"]),
+        "-",
+    ]
+    if str(model_assignment.get("runtime_provider") or "").strip().lower() == "anthropic":
+        command = _codex_fallback_command(command)
+    stage_started = datetime.now(timezone.utc).isoformat()
+    _append_ledger_stage(
+        ledger,
+        agent,
+        "running",
+        stage_started,
+        retry_paths,
+        current_action=f"{agent} running read-only parallel contract retry attempt {stage_attempts[agent]}",
+        command=command,
+        attempt=stage_attempts[agent],
+    )
+    _write_agent_ledger(output_dir, execution_id, ledger)
+    write_runner_heartbeat({
+        "status": "parallel_contract_retry_running",
+        "mission_id": mission["mission_id"],
+        "agent_runner_version": AGENT_RUNNER_VERSION,
+        "current_agent": agent,
+        "current_action": f"Retrying {agent} after handoff contract failure.",
+        "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
+    })
+    try:
+        retry_completed = runner(
+            command,
+            input=prompt,
+            cwd=str(REPO_ROOT),
+            timeout_seconds=min(int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS), AGENT_NO_PROGRESS_TIMEOUT_SECONDS),
+            stdout_path=retry_paths["stdout_path"],
+            stderr_path=retry_paths["stderr_path"],
+            final_path=retry_paths["final_path"],
+            mission_id=mission["mission_id"],
+            model_assignment=model_assignment,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        retry_completed = _completed_process_from_stage_exception(command, exc, retry_paths)
+    retry_context = {
+        "agent": agent,
+        "paths": retry_paths,
+        "started_at": stage_started,
+        "command": command,
+        "attempt": stage_attempts[agent],
+        "model_assignment": model_assignment,
+    }
+    return {"retried": True, "context": retry_context, "completed": retry_completed}
+
+
 def _parallel_read_only_prefix(agent_queue):
     if str(os.getenv("CHARLIE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
         return []
@@ -2194,6 +2294,7 @@ def _run_parallel_read_only_agents(
                 "started_at": stage_started,
                 "command": command,
                 "attempt": stage_attempts[agent],
+                "model_assignment": model_assignment,
             }
         _write_agent_ledger(output_dir, execution_id, ledger)
         write_runner_heartbeat({
@@ -2222,7 +2323,7 @@ def _run_parallel_read_only_agents(
         final_message = _read_text(paths["final_path"]) or (completed.stdout or "").strip()
         if final_message and not _read_text(paths["final_path"]):
             _write_process_text(paths["final_path"], final_message)
-        if completed.returncode != 0 or not _read_text(paths["final_path"]):
+        if completed.returncode != 0:
             result, status_code = _block_agent_stage(
                 mission["mission_id"],
                 execution_id,
@@ -2237,6 +2338,46 @@ def _run_parallel_read_only_agents(
                 connect_factory=connect_factory,
             )
             return {"blocked": True, "result": result, "status_code": status_code}
+        if not _read_text(paths["final_path"]):
+            retry = _retry_parallel_contract_failure(
+                mission,
+                execution_id,
+                ledger,
+                agent,
+                artifacts,
+                parallel_artifacts,
+                output_dir,
+                command_base,
+                runner,
+                timeout_seconds,
+                stage_attempts,
+                context,
+                completed,
+                reason="missing_final_artifact",
+            )
+            if retry.get("retried"):
+                context = retry["context"]
+                completed = retry["completed"]
+                paths = context["paths"]
+                final_message = _read_text(paths["final_path"]) or (completed.stdout or "").strip()
+                if final_message and not _read_text(paths["final_path"]):
+                    _write_process_text(paths["final_path"], final_message)
+            if completed.returncode != 0 or not _read_text(paths["final_path"]):
+                result, status_code = _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    paths,
+                    completed,
+                    context["started_at"],
+                    blocked_reason="Parallel read-only agent did not produce a valid final artifact after contract retry.",
+                    artifact={"contract_retry_exhausted": True, "first_attempt_artifact_path": _first_contract_retry_artifact_path(ledger, agent)},
+                    artifacts={**artifacts, **parallel_artifacts},
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+                return {"blocked": True, "result": result, "status_code": status_code}
         artifact = _agent_artifact_from_final(agent, _read_text(paths["final_path"]))
         artifact.update({
             "agent": agent,
@@ -2247,7 +2388,7 @@ def _run_parallel_read_only_agents(
             "stdout_tail": _tail_text(completed.stdout or _read_text(paths["stdout_path"]), 1200),
             "stderr_tail": _tail_text(completed.stderr or _read_text(paths["stderr_path"]), 1200),
             "attempt": context["attempt"],
-            "model_assignment": choose_agent_model(
+            "model_assignment": context.get("model_assignment") or choose_agent_model(
                 agent=agent,
                 mission_type=mission.get("mission_type", ""),
                 risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
@@ -2256,21 +2397,71 @@ def _run_parallel_read_only_agents(
         })
         validation = _validate_agent_artifact(agent, artifact)
         if not validation["valid"]:
-            result, status_code = _block_agent_stage(
-                mission["mission_id"],
+            retry = _retry_parallel_contract_failure(
+                mission,
                 execution_id,
                 ledger,
                 agent,
-                paths,
+                artifacts,
+                parallel_artifacts,
+                output_dir,
+                command_base,
+                runner,
+                timeout_seconds,
+                stage_attempts,
+                context,
                 completed,
-                context["started_at"],
-                blocked_reason=f"Parallel read-only artifact missing required keys: {', '.join(validation['missing_keys'])}.",
+                reason="missing_required_keys",
+                missing_keys=validation["missing_keys"],
                 artifact=artifact,
-                artifacts={**artifacts, **parallel_artifacts},
-                database_url=database_url,
-                connect_factory=connect_factory,
             )
-            return {"blocked": True, "result": result, "status_code": status_code}
+            if retry.get("retried"):
+                context = retry["context"]
+                completed = retry["completed"]
+                paths = context["paths"]
+                _write_process_text(paths["stdout_path"], completed.stdout or "")
+                _write_process_text(paths["stderr_path"], completed.stderr or "")
+                final_message = _read_text(paths["final_path"]) or (completed.stdout or "").strip()
+                if final_message and not _read_text(paths["final_path"]):
+                    _write_process_text(paths["final_path"], final_message)
+                artifact = _agent_artifact_from_final(agent, _read_text(paths["final_path"]))
+                artifact.update({
+                    "agent": agent,
+                    "parallel_mode": "read_only",
+                    "artifact_path": str(paths["final_path"]),
+                    "stdout_path": str(paths["stdout_path"]),
+                    "stderr_path": str(paths["stderr_path"]),
+                    "stdout_tail": _tail_text(completed.stdout or _read_text(paths["stdout_path"]), 1200),
+                    "stderr_tail": _tail_text(completed.stderr or _read_text(paths["stderr_path"]), 1200),
+                    "attempt": context["attempt"],
+                    "model_assignment": context.get("model_assignment") or choose_agent_model(
+                        agent=agent,
+                        mission_type=mission.get("mission_type", ""),
+                        risk_level="high" if _ui_quality_contract_for_mission(mission).get("ui_related") else "medium",
+                    ),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                })
+                validation = _validate_agent_artifact(agent, artifact)
+            if validation["valid"]:
+                pass
+            else:
+                artifact["contract_retry_exhausted"] = True
+                artifact["first_attempt_artifact_path"] = _first_contract_retry_artifact_path(ledger, agent)
+                result, status_code = _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    paths,
+                    completed,
+                    context["started_at"],
+                    blocked_reason=f"Parallel read-only artifact missing required keys after contract retry: {', '.join(validation['missing_keys'])}.",
+                    artifact=artifact,
+                    artifacts={**artifacts, **parallel_artifacts},
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+                return {"blocked": True, "result": result, "status_code": status_code}
         quality = _parallel_read_only_quality_gate(agent, artifact)
         if not quality["passed"]:
             result, status_code = _block_agent_stage(

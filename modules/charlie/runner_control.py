@@ -87,6 +87,9 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "agent_ledger_path": payload.get("agent_ledger_path", ""),
         "stdout_tail": payload.get("stdout_tail", ""),
         "stderr_tail": payload.get("stderr_tail", ""),
+        "notify_failing": bool(payload.get("notify_failing")),
+        "notification_level": payload.get("notification_level", ""),
+        "notification_title": payload.get("notification_title", ""),
         "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {},
         "orphan_processes": orphan_processes,
         "log_path": str(LOG_PATH),
@@ -122,6 +125,9 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "agent_ledger_path",
         "stdout_tail",
         "stderr_tail",
+        "notify_failing",
+        "notification_level",
+        "notification_title",
     ):
         if key in result:
             payload[key] = result.get(key)

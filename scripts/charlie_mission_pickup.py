@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -9,8 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status
-from modules.charlie.runner_control import write_runner_heartbeat
+from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
+from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -20,10 +21,12 @@ from modules.charlie.execution_bridge import (
     run_codex_execution_bridge,
     run_release_execution,
 )
+from modules.charlie.build_relay import build_relay_policy
 from scripts.charlie_notify import _format_message, main as notify_main
 
 
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
+RECOVERED_STALE_MISSIONS = set()
 
 
 def main():
@@ -97,11 +100,20 @@ def watch_for_mission(
     release_verify_url="",
 ):
     interval_seconds = max(5, int(interval_seconds or 60))
+    if notify:
+        preflight = _notification_preflight()
+        if not preflight["success"]:
+            write_runner_heartbeat(preflight)
+            return preflight, 503
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
     while True:
         checks += 1
         if continuous:
+            recovery = recover_stranded_missions(notify=notify)
+            if recovery.get("recovered_count"):
+                recovery["checks"] = checks
+                write_runner_heartbeat(recovery)
             cleanup_result = process_visual_review_cleanup_queue()
             if cleanup_result.get("processed_count"):
                 cleanup_result["checks"] = checks
@@ -183,6 +195,115 @@ def _active_mission():
     if status_code < 400 and missions:
         return missions[0]
     return None
+
+
+def recover_stranded_missions(notify=False):
+    missions, status_code = _owner_queue_missions(statuses=("in_progress",), limit=5)
+    if status_code >= 400:
+        return {"success": False, "status": "stranded_recovery_queue_unavailable", "recovered_count": 0, "status_code": status_code}
+    local_status = runner_status(include_orphans=False, include_git=False, include_ledger=True)
+    recovered = []
+    skipped = []
+    for mission in missions:
+        mission_id = str(mission.get("mission_id") or "").strip()
+        if not mission_id:
+            continue
+        decision = _stranded_recovery_decision(mission, local_status)
+        if not decision["recover"]:
+            skipped.append({"mission_id": mission_id, "reason": decision["reason"]})
+            continue
+        if mission_id in RECOVERED_STALE_MISSIONS:
+            skipped.append({"mission_id": mission_id, "reason": "already_recovered_this_runner"})
+            continue
+        blocked_agent = _recovery_blocked_agent(mission, local_status)
+        review_packet = {
+            "review_status": "blocked",
+            "blocked_agent": blocked_agent,
+            "return_to_stage": blocked_agent,
+            "blocked_reason": decision["reason"],
+            "summary": "CHARLIE runner recovered a stranded in-progress mission instead of freezing the queue.",
+            "recommended_next_action": "Review the recovery packet, then send back or approve rerun from the blocked stage.",
+            "runner_recovery": {
+                "status": "lease_expired_runner_dead",
+                "runner_status": local_status.get("status"),
+                "heartbeat_age_seconds": local_status.get("age_seconds"),
+                "process_alive": local_status.get("process_alive"),
+                "last_runner_mission_id": local_status.get("last_mission_id", ""),
+            },
+        }
+        status_result, block_status = update_mission_status(
+            mission_id,
+            "blocked",
+            owner_decision="CHARLIE runner watchdog recovered a stranded in-progress mission.",
+            event_type="status_changed",
+            notes=f"Runner watchdog moved stale in-progress mission to blocked: {decision['reason']}",
+            metadata={"watchdog": "charlie_mission_pickup", "blocked_agent": blocked_agent},
+            expected_status="in_progress",
+        )
+        if block_status >= 400:
+            skipped.append({"mission_id": mission_id, "reason": status_result.get("status", "blocked_status_update_failed")})
+            continue
+        vault_result, vault_status = update_mission_vault(
+            mission_id,
+            {
+                "review_packet": review_packet,
+                "mission_vault": {"mission_stage": f"blocked_at_{blocked_agent}" if blocked_agent else "blocked"},
+            },
+            notes="Runner watchdog wrote stranded-mission recovery packet.",
+        )
+        RECOVERED_STALE_MISSIONS.add(mission_id)
+        recovered.append({
+            "mission_id": mission_id,
+            "blocked_agent": blocked_agent,
+            "status_update": status_result.get("status"),
+            "vault_status": vault_result.get("status"),
+            "vault_status_code": vault_status,
+        })
+        if notify:
+            _send_blocked_notification(
+                "CHARLIE mission recovered as blocked",
+                f"Mission {mission_id} was stranded in_progress and has been moved to blocked. Reason: {decision['reason']}.",
+                mission_id=mission_id,
+            )
+    return {
+        "success": True,
+        "status": "stranded_recovery_checked",
+        "recovered_count": len(recovered),
+        "recovered": recovered,
+        "skipped": skipped,
+        "runner_status": local_status.get("status"),
+    }
+
+
+def _stranded_recovery_decision(mission, local_status):
+    mission_id = str(mission.get("mission_id") or "").strip()
+    last_mission_id = str(local_status.get("last_mission_id") or "").strip()
+    age = local_status.get("age_seconds")
+    heartbeat_stale = age is not None and int(age) > max(STALE_SECONDS * 2, 240)
+    process_dead = local_status.get("process_alive") is False
+    runner_not_active = local_status.get("active") is False and local_status.get("status") in {"runner_stale_or_stopped", "runner_not_started", "runner_code_stale"}
+    if last_mission_id and last_mission_id != mission_id and local_status.get("active"):
+        return {"recover": True, "reason": "in_progress_not_owned_by_active_runner"}
+    if process_dead and heartbeat_stale:
+        return {"recover": True, "reason": "runner_process_dead_and_heartbeat_stale"}
+    if runner_not_active and heartbeat_stale:
+        return {"recover": True, "reason": "runner_inactive_and_heartbeat_stale"}
+    return {"recover": False, "reason": "runner_heartbeat_still_active_or_uncertain"}
+
+
+def _recovery_blocked_agent(mission, local_status):
+    ledger = local_status.get("agent_ledger") if isinstance(local_status.get("agent_ledger"), dict) else {}
+    latest = ledger.get("latest_stage") if isinstance(ledger.get("latest_stage"), dict) else {}
+    agent = str(latest.get("agent") or ledger.get("blocked_agent") or "").strip().lower()
+    if agent:
+        return agent
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    for item in workflow:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "").strip().lower() in {"active", "blocked"}:
+            return str(item.get("agent") or "").strip().lower()
+    return "builder"
 
 
 def _release_approved_mission():
@@ -304,7 +425,6 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "would_mark_status": "in_progress",
         }, 200
 
-    _write_codex_chat(codex_chat_preview)
     updated, update_status = update_mission_status(
         mission_id,
         "in_progress",
@@ -312,15 +432,18 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         event_type="status_changed",
         notes="Codex mission pickup wrote planning/CODEX_CHAT.md and marked the mission in progress.",
         metadata={"script": "scripts/charlie_mission_pickup.py"},
+        expected_status=clean_status,
     )
     if update_status >= 400:
         return {
             "success": False,
-            "status": updated.get("status", "mission_status_update_failed"),
+            "status": "claim_lost" if updated.get("status") == "status_claim_lost" else updated.get("status", "mission_status_update_failed"),
             "mission_id": mission_id,
-            "codex_chat_written": True,
+            "codex_chat_written": False,
+            "expected_status": clean_status,
         }, update_status
 
+    _write_codex_chat(codex_chat_preview)
     if notify:
         _send_pickup_notification(mission)
 
@@ -555,6 +678,34 @@ def _write_codex_chat(content):
     CODEX_CHAT_PATH.write_text(content, encoding="utf-8")
 
 
+def _notification_preflight():
+    missing = []
+    if not str(os.getenv("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS") or "").strip():
+        missing.append("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS")
+    if not str(os.getenv("CHARLIE_BUILD_RELAY_BOT_TOKEN") or "").strip():
+        missing.append("CHARLIE_BUILD_RELAY_BOT_TOKEN")
+    policy = build_relay_policy()
+    if not policy.get("webhook_secret_configured"):
+        missing.append("CHARLIE_BUILD_RELAY_WEBHOOK_SECRET")
+    if not policy.get("explicitly_enabled"):
+        missing.append("CHARLIE_BUILD_RELAY_ENABLED")
+    if missing or not policy.get("enabled"):
+        return {
+            "success": False,
+            "status": "notification_preflight_failed",
+            "missing_env": sorted(set(missing)),
+            "relay_policy_status": {
+                "enabled": policy.get("enabled"),
+                "explicitly_enabled": policy.get("explicitly_enabled"),
+                "configured": policy.get("configured"),
+                "allowed_user_ids_configured": policy.get("allowed_user_ids_configured"),
+                "webhook_secret_configured": policy.get("webhook_secret_configured"),
+            },
+            "next_action": "Fix Telegram notification env before starting an unattended CHARLIE runner with --notify.",
+        }
+    return {"success": True, "status": "notification_preflight_ok"}
+
+
 def _send_pickup_notification(mission):
     return _send_notification(
         "info",
@@ -615,7 +766,16 @@ def _send_notification(level, title, message, mission_id=""):
         ]
         if mission_id:
             sys.argv.extend(["--mission-id", str(mission_id)])
-        return notify_main()
+        exit_code = notify_main()
+        if exit_code != 0:
+            write_runner_heartbeat({
+                "status": "notification_failed",
+                "mission_id": mission_id,
+                "notify_failing": True,
+                "notification_level": level,
+                "notification_title": title,
+            })
+        return exit_code
     finally:
         sys.argv = original_argv
 

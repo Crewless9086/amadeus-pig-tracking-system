@@ -142,6 +142,23 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("LEVEL 3: code and tests may be changed", content)
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
+        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
+        update_status.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "CODEX_CHAT.md"
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target):
+                result, status_code = charlie_mission_pickup.pick_up_next_mission()
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "claim_lost")
+        self.assertFalse(result["codex_chat_written"])
+        self.assertFalse(target.exists())
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_pickup_content_includes_level_four_merge_guidance(self, list_owner_work_missions):
@@ -233,6 +250,56 @@ class CharlieMissionPickupTests(unittest.TestCase):
         execute_codex.assert_not_called()
         write_heartbeat.assert_called()
         sleep.assert_not_called()
+
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
+    def test_watch_notify_preflight_blocks_mute_runner(self, write_heartbeat):
+        result, status_code = charlie_mission_pickup.watch_for_mission(
+            notify=True,
+            continuous=True,
+            max_checks=1,
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "notification_preflight_failed")
+        self.assertIn("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS", result["missing_env"])
+        write_heartbeat.assert_called_once()
+
+    @patch("scripts.charlie_mission_pickup._send_blocked_notification")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    @patch("scripts.charlie_mission_pickup.runner_status")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    def test_recover_stranded_mission_blocks_and_notifies(self, list_owner_work_missions, runner_status, update_status, update_vault, send_blocked):
+        active = {
+            **MISSION,
+            "status": "in_progress",
+            "mission_id": "CHARLIE-MISSION-STRANDED",
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+        }
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [active]}, 200)
+        runner_status.return_value = {
+            "status": "runner_stale_or_stopped",
+            "active": False,
+            "process_alive": False,
+            "age_seconds": 999,
+            "last_mission_id": "CHARLIE-MISSION-STRANDED",
+            "agent_ledger": {"latest_stage": {"agent": "builder"}},
+        }
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        charlie_mission_pickup.RECOVERED_STALE_MISSIONS.clear()
+
+        result = charlie_mission_pickup.recover_stranded_missions(notify=True)
+
+        self.assertEqual(result["recovered_count"], 1)
+        update_status.assert_called_once()
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+        self.assertEqual(update_status.call_args.kwargs["expected_status"], "in_progress")
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["blocked_agent"], "builder")
+        self.assertEqual(packet["return_to_stage"], "builder")
+        send_blocked.assert_called_once()
 
     @patch("scripts.charlie_mission_pickup._send_blocked_notification")
     @patch("scripts.charlie_mission_pickup._send_review_ready_notification")

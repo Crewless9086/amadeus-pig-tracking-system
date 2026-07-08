@@ -522,6 +522,7 @@ def update_mission_status(
     event_type="status_changed",
     notes="",
     metadata=None,
+    expected_status="",
     database_url=None,
     connect_factory=None,
 ):
@@ -533,6 +534,9 @@ def update_mission_status(
         return {"success": False, "status": "invalid_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
     if event_type not in MISSION_EVENT_TYPES:
         return {"success": False, "status": "invalid_event_type", "allowed_event_types": sorted(MISSION_EVENT_TYPES)}, 400
+    expected_status = _clean_text(expected_status, 40)
+    if expected_status and expected_status not in MISSION_STATUSES:
+        return {"success": False, "status": "invalid_expected_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
     approval_level = normalize_approval_level(approval_level)
     if approval_level and approval_level not in APPROVAL_LEVELS:
         return {"success": False, "status": "invalid_approval_level", "allowed_approval_levels": sorted(APPROVAL_LEVELS)}, 400
@@ -549,6 +553,7 @@ def update_mission_status(
         set_lines.append("approval_level = %(approval_level)s")
     set_lines.append("updated_at = now()")
     set_sql = ",\n                        ".join(set_lines)
+    expected_clause = "and status = %(expected_status)s" if expected_status else ""
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -557,6 +562,7 @@ def update_mission_status(
                     update public.charlie_missions
                     set {set_sql}
                     where mission_id = %(mission_id)s
+                    {expected_clause}
                     returning mission_id
                     """,
                     {
@@ -564,11 +570,19 @@ def update_mission_status(
                         "status": status,
                         "owner_decision": _clean_text(owner_decision, 1000),
                         "approval_level": approval_level,
+                        "expected_status": expected_status,
                     },
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                    return {
+                        "success": False,
+                        "configured": True,
+                        "status": "status_claim_lost" if expected_status else "not_found",
+                        "mission_id": mission_id,
+                        "expected_status": expected_status,
+                        "attempted_status": status,
+                    }, 409 if expected_status else 404
                 _insert_event(cursor, mission_id, event_type, notes or f"Mission status changed to {status}.", {
                     "status": status,
                     "approval_level": approval_level,

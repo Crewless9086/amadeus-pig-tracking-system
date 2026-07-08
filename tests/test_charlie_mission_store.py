@@ -336,6 +336,24 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(update_params["status"], "approved")
         self.assertEqual(update_params["owner_decision"], "Owner approved.")
 
+    def test_update_mission_status_expected_status_claim_lost(self):
+        connection = FakeConnection([])
+
+        result, status_code = update_mission_status(
+            "MISSION-1",
+            "in_progress",
+            expected_status="approved",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "status_claim_lost")
+        update_sql, update_params = connection.cursor_instance.executed[0]
+        self.assertIn("and status = %(expected_status)s", update_sql)
+        self.assertEqual(update_params["expected_status"], "approved")
+
     def test_update_mission_status_can_update_approval_level(self):
         connection = FakeConnection([("MISSION-1",)])
 
