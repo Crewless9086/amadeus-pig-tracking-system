@@ -1,6 +1,7 @@
 import json
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from modules.charlie.anthropic_provider import run_anthropic_prompt
 
@@ -48,6 +49,30 @@ class CharlieAnthropicProviderTests(unittest.TestCase):
         self.assertEqual(status_code, 503)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "anthropic_api_key_missing")
+
+    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "real-key"}, clear=True)
+    def test_run_anthropic_prompt_retries_retryable_http_error(self):
+        calls = {"count": 0}
+
+        def fake_open(_request, timeout=0):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise HTTPError("https://api.anthropic.com/v1/messages", 529, "overloaded", {}, None)
+            return FakeResponse({
+                "id": "msg_2",
+                "content": [{"type": "text", "text": "{\"summary\":\"retry ok\"}"}],
+            })
+
+        result, status_code = run_anthropic_prompt(
+            "hello",
+            model="claude-test",
+            opener=fake_open,
+            sleep_fn=lambda _seconds: None,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(calls["count"], 2)
+        self.assertEqual(result["text"], "{\"summary\":\"retry ok\"}")
 
 
 if __name__ == "__main__":

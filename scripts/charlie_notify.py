@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,6 +11,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.build_relay import send_charlie_telegram_message
+
+
+NOTIFY_ATTEMPTS = 3
 
 
 def main():
@@ -39,16 +43,30 @@ def main():
     deliveries = []
     success = True
     for chat_id in chat_ids:
-        result, status_code = send_charlie_telegram_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        result, status_code, attempts = _send_with_retry(chat_id, text, reply_markup)
         deliveries.append({
             "chat_id_set": bool(chat_id),
             "status_code": status_code,
             "success": result.get("success") is True,
             "status": result.get("status"),
+            "attempts": attempts,
         })
         success = success and result.get("success") is True
     print({"success": success, "status": "sent" if success else "partial_or_failed", "deliveries": deliveries})
     return 0 if success else 1
+
+
+def _send_with_retry(chat_id, text, reply_markup=None, attempts=NOTIFY_ATTEMPTS, sleep_fn=time.sleep):
+    last_result = {"success": False, "status": "not_attempted"}
+    last_status_code = 0
+    parsed_attempts = max(int(attempts or 1), 1)
+    for attempt in range(1, parsed_attempts + 1):
+        last_result, last_status_code = send_charlie_telegram_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        if last_result.get("success") is True:
+            return last_result, last_status_code, attempt
+        if attempt < parsed_attempts:
+            sleep_fn(min(2 ** (attempt - 1), 8))
+    return last_result, last_status_code, parsed_attempts
 
 
 def _format_message(level, title, message):

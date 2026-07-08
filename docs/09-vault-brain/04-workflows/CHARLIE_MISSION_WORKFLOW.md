@@ -100,6 +100,10 @@ If an agent subprocess times out or crashes, CHARLIE must convert the failure in
 
 When a runner result moves a mission to `pr_ready`, the review-ready notification must key off the mission status rather than a narrow internal status string.
 
+Existing `in_progress` missions must not be blindly re-executed by the watch loop. Until durable leases are implemented, the runner may execute only missions it just picked up from `approved`; stale or blocked work requires an explicit recovery/send-back decision.
+
+Provider-specific stages must use the provider-aware runner path. If Claude/Anthropic fails transiently, CHARLIE may fall back to the local Codex provider for that stage and must record the fallback in runner evidence instead of blocking only because the provider was unavailable.
+
 `planning/CODEX_CHAT.md` is the laptop-friendly active scratchpad. Supabase mission records are the durable queue. The Vault Brain is the doctrine layer that tells agents what rules and context to follow.
 
 ## Source References

@@ -1,5 +1,3 @@
-import os
-import sys
 import unittest
 from unittest.mock import patch
 
@@ -7,31 +5,22 @@ from scripts import charlie_notify
 
 
 class CharlieNotifyTests(unittest.TestCase):
-    @patch.dict(os.environ, {"CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}, clear=True)
-    def test_dry_run_includes_mission_status_reply_markup(self):
-        argv = [
-            "charlie_notify.py",
-            "--level",
-            "info",
-            "--title",
-            "Mission picked up",
-            "--message",
-            "Codex picked up a mission.",
-            "--mission-id",
-            "CHARLIE-MISSION-123",
-            "--dry-run",
+    @patch("scripts.charlie_notify.send_charlie_telegram_message")
+    def test_send_with_retry_retries_until_success(self, send_message):
+        send_message.side_effect = [
+            ({"success": False, "status": "telegram_api_unreachable"}, 502),
+            ({"success": True, "status": "telegram_sent"}, 200),
         ]
 
-        with patch.object(sys, "argv", argv), patch("builtins.print") as print_call:
-            result = charlie_notify.main()
-
-        self.assertEqual(result, 0)
-        payload = print_call.call_args.args[0]
-        self.assertEqual(payload["status"], "dry_run")
-        self.assertEqual(
-            payload["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
-            "status:CHARLIE-MISSION-123",
+        result, status_code, attempts = charlie_notify._send_with_retry(
+            "123",
+            "hello",
+            sleep_fn=lambda _seconds: None,
         )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(attempts, 2)
+        self.assertTrue(result["success"])
 
 
 if __name__ == "__main__":

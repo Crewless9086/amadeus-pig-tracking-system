@@ -393,6 +393,50 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge._run_agent_model_process")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_agent_runner_v2_default_runner_uses_provider_aware_process(
+        self,
+        get_mission,
+        run_agent_model_process,
+        update_status,
+        update_vault,
+        update_workflow,
+        _write_heartbeat,
+        _changed_files,
+    ):
+        get_mission.side_effect = _mission_readback_sequence(
+            MISSION,
+            _mission_with_persisted_review_packet(),
+        )
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def fake_provider_process(*_args, **kwargs):
+            agent = _agent_from_prompt(kwargs["input"])
+            payload = _successful_stage_payload(agent)
+            return SimpleNamespace(returncode=0, stdout=f"```json\n{json.dumps(payload)}\n```", stderr="")
+
+        run_agent_model_process.side_effect = fake_provider_process
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_agent_execution_bridge_v2(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                execute_codex=True,
+                output_dir=tmp,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "agent_execution_completed")
+        self.assertTrue(run_agent_model_process.called)
+        self.assertGreaterEqual(run_agent_model_process.call_count, 5)
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_blocks_cleanly_when_stage_runner_times_out(
         self,
@@ -624,6 +668,45 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         run_anthropic_prompt.assert_called_once()
         self.assertTrue(any(call.args[0].get("status") == "anthropic_agent_final_artifact_seen" for call in write_heartbeat.call_args_list))
+
+    @patch("modules.charlie.execution_bridge._run_codex_process")
+    @patch("modules.charlie.execution_bridge.run_anthropic_prompt")
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    def test_agent_model_process_falls_back_to_codex_when_anthropic_fails(
+        self,
+        _changed_files,
+        write_heartbeat,
+        run_anthropic_prompt,
+        run_codex_process,
+    ):
+        run_anthropic_prompt.return_value = ({
+            "success": False,
+            "status": "anthropic_api_unreachable",
+            "error": "temporary",
+        }, 502)
+        run_codex_process.return_value = SimpleNamespace(returncode=0, stdout="{\"summary\":\"fallback ok\"}", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            completed = execution_bridge._run_agent_model_process(
+                ["codex", "exec", "--model", "claude-sonnet-5", "-"],
+                input="review prompt",
+                stdout_path=tmp_path / "stdout.txt",
+                stderr_path=tmp_path / "stderr.txt",
+                final_path=tmp_path / "final.md",
+                mission_id="CHARLIE-MISSION-EXEC123",
+                model_assignment={
+                    "runtime_provider": "anthropic",
+                    "runtime_model": "claude-sonnet-5",
+                },
+            )
+
+        self.assertEqual(completed.returncode, 0)
+        fallback_command = run_codex_process.call_args.args[0]
+        self.assertNotIn("--model", fallback_command)
+        self.assertNotIn("claude-sonnet-5", fallback_command)
+        self.assertTrue(any(call.args[0].get("status") == "anthropic_agent_fallback_to_codex" for call in write_heartbeat.call_args_list))
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
@@ -1150,7 +1233,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(issues, [])
 
-    def test_write_process_text_recovers_from_permission_error(self):
+    def test_write_process_text_retries_transient_permission_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "stage.stdout.txt"
             calls = {"count": 0}
@@ -1165,10 +1248,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             with patch.object(Path, "write_text", fake_write_text):
                 result = execution_bridge._write_process_text(target, "runner output")
 
-            self.assertFalse(result["success"])
-            self.assertEqual(result["error_type"], "PermissionError")
-            self.assertTrue(Path(result["fallback_path"]).exists())
-            self.assertEqual(Path(result["fallback_path"]).read_text(encoding="utf-8"), "runner output")
+            self.assertTrue(result["success"])
+            self.assertEqual(calls["count"], 2)
+            self.assertEqual(target.read_text(encoding="utf-8"), "runner output")
 
     def test_agent_stage_prompt_includes_vault_context_and_required_fields(self):
         prompt = execution_bridge.build_agent_stage_prompt(MISSION, "planner", artifacts={}, ledger={})

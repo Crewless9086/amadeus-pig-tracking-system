@@ -108,18 +108,6 @@ def watch_for_mission(
                 write_runner_heartbeat(cleanup_result)
             active = _active_mission()
             if active:
-                if execute_codex and active.get("status") == "in_progress" and not dry_run:
-                    result, status_code = execute_codex_for_mission(
-                        active.get("mission_id", ""),
-                        notify=notify,
-                        timeout_seconds=codex_timeout_seconds,
-                    )
-                    result["checks"] = checks
-                    write_runner_heartbeat(result)
-                    if max_checks is not None and checks >= max_checks:
-                        return result, status_code
-                    time.sleep(interval_seconds)
-                    continue
                 result = {
                     "success": True,
                     "status": "active_mission_in_progress",
@@ -127,6 +115,7 @@ def watch_for_mission(
                     "title": active.get("title"),
                     "active_status": active.get("status"),
                     "checks": checks,
+                    "next_action": "Existing in-progress missions are observed only; CHARLIE will not blindly re-run the pipeline without a lease/recovery decision.",
                 }
                 write_runner_heartbeat(result)
                 if max_checks is not None and checks >= max_checks:
