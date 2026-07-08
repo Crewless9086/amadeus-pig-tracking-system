@@ -660,7 +660,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         environ or {},
         owner_example_loader=owner_example_loader,
     )
-    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet)
+    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet, conversation_plan)
     llm_draft = _build_llm_reply_draft_if_enabled(
         inbound,
         facts,
@@ -1318,7 +1318,8 @@ def build_sam_live_stock_go_live_checklist(environ=None):
         }
 
 
-def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None):
+def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None, conversation_plan=None):
+    conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
     if route["lane"] != LANE_LIVE_STOCK:
         if route["lane"] == "owner_handoff" and _payment_or_pop_interest(facts):
             return (
@@ -1330,6 +1331,9 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
+    action_reply = _reply_for_next_action(facts, conversation_plan, price_answer_packet)
+    if action_reply:
+        return action_reply
     if facts.get("quote_requested"):
         price_reply = _price_answer_reply(facts, price_answer_packet)
         if price_reply:
@@ -1343,6 +1347,23 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         if fact_reply:
             return fact_reply
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _reply_for_next_action(facts, plan, packet):
+    facts = facts if isinstance(facts, dict) else {}
+    plan = plan if isinstance(plan, dict) else {}
+    action = str(plan.get("next_action") or "").strip()
+    if action in {"create_draft_then_quote", "update_draft_then_quote", "generate_quote"}:
+        price = _price_answer_reply(facts, packet)
+        if price:
+            return (
+                f"{price}\n"
+                "I can prepare the quote for owner review next. Nothing is reserved or sent until the farm approves it."
+            )
+        return "I can prepare the quote for owner review once the last quote details are confirmed. Nothing is reserved or sent yet."
+    if action in {"create_draft", "sync_lines"}:
+        return "I have enough detail to prepare the draft order for owner review. Nothing is reserved or sent until the farm approves it."
+    return ""
 
 
 def _farm_general_reply(inbound, source):

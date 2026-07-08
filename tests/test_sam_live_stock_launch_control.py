@@ -23,6 +23,14 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
     decision = {
         "sales_lane": "live_stock_sales",
         "missing_fields": [],
+        "conversation_goal": "buy_live_stock: 2 weaner",
+        "conversation_stage": "quote",
+        "next_action": "generate_quote",
+        "conversation_plan": {
+            "goal": "buy_live_stock: 2 weaner",
+            "stage": "quote",
+            "next_action": "generate_quote",
+        },
         "blockers": [],
         "suggested_reply_text": "I can check the current weaner list for Riversdale handover next week.",
         "reply_source": "deterministic_read_only_guard",
@@ -206,6 +214,9 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(sent["success"])
         self.assertEqual(sent["status"], "sam_live_stock_owner_review_telegram_sent")
         self.assertIn("SAM Live - Charl N", calls[0][2])
+        self.assertIn("Intent: buy live stock: 2 weaner", calls[0][2])
+        self.assertIn("Stage: quote", calls[0][2])
+        self.assertIn("Next: generate quote", calls[0][2])
         self.assertIn("Wants: 2 any weaner, next week, Riversdale", calls[0][2])
         self.assertIn("Stock: 2 matches (W-1043 12.4kg, W-1051 13.1kg)", calls[0][2])
         self.assertIn("Price: R500 each - R1,000 total - source supabase", calls[0][2])

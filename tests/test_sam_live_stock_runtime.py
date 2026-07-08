@@ -254,6 +254,36 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["conversation_plan"]["missing_fields"], decision["missing_fields"])
         self.assertEqual(decision["conversation_stage"], "quote")
 
+    def test_quote_next_action_draft_explains_owner_review_quote_step(self):
+        facts = {
+            "quantity": 3,
+            "category": "Piglet",
+            "weight_range": "7_to_9_Kg",
+            "quote_requested": True,
+        }
+        packet = {
+            "can_answer_price": True,
+            "requested_quantity": 3,
+            "requested_category": "Piglet",
+            "requested_weight_range": "7_to_9_Kg",
+            "unit_price": 450,
+            "estimated_total": 1350,
+        }
+
+        reply = sam_live_stock_runtime._safe_reply_draft(
+            facts,
+            {"lane": "live_stock_sales"},
+            missing=[],
+            availability={"success": True, "matched_count": 11},
+            blockers=[],
+            price_answer_packet=packet,
+            conversation_plan={"next_action": "generate_quote"},
+        )
+
+        self.assertIn("Current SAM Live price estimate", reply)
+        self.assertIn("prepare the quote for owner review", reply)
+        self.assertIn("Nothing is reserved or sent", reply)
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 

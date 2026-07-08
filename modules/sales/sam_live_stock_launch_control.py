@@ -426,6 +426,9 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
     parts = [
         f"SAM Live - {_clean(event.get('customer_name') or 'Unknown customer', 80)}",
         f"Conversation: {conversation_id or 'unknown'}",
+        f"Intent: {_owner_card_intent_summary(decision)}",
+        f"Stage: {_owner_card_stage_summary(decision)}",
+        f"Next: {_owner_card_next_action_summary(decision)}",
         f"Wants: {_owner_card_fact_summary(facts)}",
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
@@ -1039,6 +1042,29 @@ def _owner_card_missing_summary(decision):
     missing = decision.get("missing_fields") if isinstance(decision.get("missing_fields"), list) else []
     missing = [_clean(item, 40) for item in missing if _clean(item, 40)]
     return ", ".join(missing) if missing else "none"
+
+
+def _owner_card_intent_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    goal = _clean(decision.get("conversation_goal") or plan.get("goal"), 120)
+    if goal:
+        return goal.replace("_", " ")
+    return _clean(decision.get("sales_lane") or "unknown", 120).replace("_", " ")
+
+
+def _owner_card_stage_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    stage = _clean(decision.get("conversation_stage") or plan.get("stage"), 80)
+    return stage.replace("_", " ") if stage else "unknown"
+
+
+def _owner_card_next_action_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    action = _clean(decision.get("next_action") or plan.get("next_action"), 120)
+    return action.replace("_", " ") if action else "owner review"
 
 
 def _owner_card_flags(event, review, decision):
