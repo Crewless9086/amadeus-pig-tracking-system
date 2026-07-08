@@ -173,6 +173,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             [],
         )
 
+    def test_review_agent_structured_pass_allows_out_of_scope_release_note(self):
+        artifact = _successful_stage_payload("business_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": [
+                "Auto-reply, payment confirmation, reservations, stock changes, and farm lifecycle writes remain out of scope for this gate.",
+            ],
+            "stdout_tail": "\"quality_gate\": {\"passed\": true} - writes remain out of scope for this gate.",
+            "stderr_tail": "\"quality_gate\": {\"passed\": true} - writes remain out of scope for this gate.",
+            "quality_gate": {
+                "passed": True,
+                "reason": "Business reviewer gate passed.",
+            },
+        })
+
+        quality = execution_bridge._agent_quality_gate("business_reviewer", artifact)
+
+        self.assertTrue(quality["passed"], quality)
+
     def test_builder_artifact_accepts_empty_changed_files_for_verification_mission(self):
         artifact = _successful_stage_payload("builder")
         artifact["changed_files"] = []

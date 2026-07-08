@@ -3090,6 +3090,8 @@ def _negative_judgement_evidence(agent, artifact):
             continue
         if field in {"stdout_tail", "stderr_tail"} and _raw_judgement_tails_are_advisory(agent, artifact):
             continue
+        if field in {"release_notes", "stdout_tail", "stderr_tail"} and _structured_review_judgement_passed(agent, artifact):
+            continue
         value = artifact.get(field)
         if isinstance(value, list):
             values.extend(value)
@@ -3112,6 +3114,25 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
     return status == "pass" and risk not in {"high", "critical"}
+
+
+def _structured_review_judgement_passed(agent, artifact):
+    review_agents = {
+        "product_reviewer",
+        "business_reviewer",
+        "security_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+    }
+    if agent not in review_agents:
+        return False
+    decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
+    if decision not in {"approve_final_release", "approve", "mark_done"}:
+        return False
+    quality_gate = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
+    if quality_gate.get("passed") is not True:
+        return False
+    return not (artifact.get("errors") or artifact.get("bugs"))
 
 
 def _is_blocking_judgement_text(agent, artifact, value):
