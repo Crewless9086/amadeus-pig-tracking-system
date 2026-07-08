@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -230,7 +231,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         calls = []
 
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
-            inbound_payload(content="Do you have two females left?"),
+            inbound_payload(id=44, content="Do you have two females left?"),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
                 "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
@@ -240,9 +241,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             conversation_history_loader=lambda _conversation_id, _source: {
                 "success": True,
                 "messages": [
-                    {"id": "1", "message_type": "incoming", "content": "I need two weaners near Riversdale.", "created_at": "2026-07-08T08:00:00Z"},
-                    {"id": "2", "message_type": "outgoing", "content": "I can check the current weaner list.", "created_at": "2026-07-08T08:01:00Z"},
-                    {"id": "3", "message_type": "incoming", "content": "Do you have two females left?", "created_at": "2026-07-08T08:02:00Z"},
+                    {"id": "1", "message_type": 0, "content": "I need two weaners near Riversdale.", "created_at": "2026-07-08T08:00:00Z"},
+                    {"id": "2", "message_type": 1, "content": "I can check the current weaner list.", "created_at": "2026-07-08T08:01:00Z"},
+                    {"id": "3", "message_type": 2, "content": "Conversation was resolved", "created_at": "2026-07-08T08:01:30Z"},
+                    {"id": "44", "message_type": 0, "content": "Do you have two females left?", "created_at": "2026-07-08T08:02:00Z"},
                 ],
             },
             availability_loader=lambda: [],
@@ -254,9 +256,35 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         self.assertEqual(result["sam_decision"]["reply_source"], "llm_live_stock_reply_draft")
         history = calls[0][0]["recent_chatwoot_history"]
-        self.assertEqual(len(history), 3)
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["speaker"], "customer")
         self.assertEqual(history[0]["content"], "I need two weaners near Riversdale.")
-        self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 3)
+        self.assertEqual(history[1]["speaker"], "farm")
+        self.assertNotIn("message_type", history[0])
+        self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 4)
+
+    def test_llm_payload_long_history_remains_valid_json_with_rules(self):
+        context = {
+            "rules": ["Use only supplied stock facts.", "Ask one useful question."],
+            "inbound": {"message": "I need pigs." * 200},
+            "recent_chatwoot_history": [
+                {"speaker": "customer", "content": f"message {idx} " + ("x" * 500)}
+                for idx in range(10)
+            ],
+            "match_packet": {"matched_sample": [{"pig_id": f"W-{idx}", "current_weight_kg": 12 + idx} for idx in range(10)]},
+            "fallback_reply": "fallback " * 300,
+        }
+
+        payload = sam_live_stock_runtime._llm_reply_payload(
+            context,
+            {"SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model"},
+        )
+        user_content = payload["messages"][1]["content"]
+        parsed = json.loads(user_content)
+
+        self.assertLessEqual(len(user_content), 8000)
+        self.assertEqual(parsed["rules"][0], "Use only supplied stock facts.")
+        self.assertIn("recent_chatwoot_history", parsed)
 
     def test_unsafe_llm_reply_falls_back_before_review_is_attached(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(

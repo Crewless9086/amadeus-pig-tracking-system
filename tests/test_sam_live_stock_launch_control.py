@@ -160,8 +160,11 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(sent["success"])
         self.assertEqual(sent["status"], "sam_live_stock_new_lead_telegram_sent")
         self.assertEqual(calls[0][1], "555")
-        self.assertIn("SAM Live Stock new lead", calls[0][2])
+        self.assertIn("SAM Live - New lead", calls[0][2])
         self.assertIn("Conversation: 2401", calls[0][2])
+        self.assertIn("Wants: qty=2, category=weaner", calls[0][2])
+        self.assertIn("Customer message:", calls[0][2])
+        self.assertNotIn("Action:", calls[0][2])
 
     def test_owner_review_telegram_send_has_approve_button_and_multiline_draft(self):
         inbound, facts, decision = review_inputs()
@@ -227,7 +230,23 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
         packet = launch.build_sam_live_stock_owner_review_packet(event)
 
-        self.assertIn("Flags: LLM llm call failed", packet["telegram_packet"]["text"])
+        self.assertIn("Flags: LLM call failed", packet["telegram_packet"]["text"])
+
+    def test_owner_review_card_hides_happy_path_llm_noise(self):
+        inbound, facts, decision = review_inputs()
+        decision["reply_source"] = "llm_live_stock_reply_draft"
+        decision["llm_draft"] = {"used": True, "status": "llm_reply_draft_used"}
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+
+        self.assertNotIn("LLM llm reply draft used", packet["telegram_packet"]["text"])
+        self.assertNotIn("llm live stock reply draft", packet["telegram_packet"]["text"])
 
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(

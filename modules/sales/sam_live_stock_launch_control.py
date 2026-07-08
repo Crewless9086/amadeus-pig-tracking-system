@@ -306,16 +306,19 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
     links = links if isinstance(links, dict) else {}
     conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
     parts = [
-        "SAM Live Stock new lead",
-        f"Conversation: {conversation_id or 'unknown'}",
+        "SAM Live - New lead",
         f"Customer: {_clean(event.get('customer_name') or 'Unknown', 80)}",
-        f"Message: {_clean(event.get('customer_message_excerpt'), 300)}",
-        "Captured: " + _lead_fact_summary(facts),
-        f"Action: {_clean(event.get('recommended_action') or review.get('recommended_action'), 80)}",
+        f"Conversation: {conversation_id or 'unknown'}",
+        f"Wants: {_lead_fact_summary(facts)}",
     ]
     reply = _clean_multiline(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 400)
+    parts.extend([
+        "",
+        "Customer message:",
+        _clean_multiline(event.get("customer_message_excerpt"), 500) or "No customer message captured.",
+    ])
     if reply:
-        parts.append(f"Draft: {reply}")
+        parts.extend(["", "Suggested reply:", reply])
     if links.get("availability_url"):
         parts.append(f"Stock truth: {links['availability_url']}")
     if links.get("open_intakes_url"):
@@ -982,12 +985,13 @@ def _owner_card_flags(event, review, decision):
         flags.append("needs human check")
     llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
     llm_status = _clean(llm_draft.get("status"), 80)
-    if llm_status and llm_status != "llm_disabled":
-        flags.append(f"LLM {llm_status.replace('_', ' ')}")
+    if llm_status and llm_status not in {"llm_disabled", "llm_reply_draft_used"}:
+        status_label = llm_status
+        if status_label.startswith("llm_"):
+            status_label = status_label[4:]
+        flags.append(f"LLM {status_label.replace('_', ' ')}")
     if isinstance(decision.get("llm_draft_review"), dict):
         flags.append("LLM safety fallback")
-    if decision.get("reply_source"):
-        flags.append(_clean(str(decision.get("reply_source")).replace("_", " "), 80))
     return ", ".join(flags)
 
 

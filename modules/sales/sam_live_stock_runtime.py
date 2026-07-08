@@ -366,7 +366,10 @@ def load_live_stock_read_context(
         "prior_context": prior_context,
         "intake_context": intake,
         "chatwoot_history": _compact_chatwoot_history(chatwoot_history),
-        "chatwoot_history_messages": _compact_chatwoot_history_messages(chatwoot_history),
+        "chatwoot_history_messages": _compact_chatwoot_history_messages(
+            chatwoot_history,
+            current_message_id=inbound.get("message_id"),
+        ),
         "availability": availability,
         "context_errors": context_errors,
     }
@@ -527,18 +530,23 @@ def _compact_chatwoot_history(history):
     }
 
 
-def _compact_chatwoot_history_messages(history, limit=10):
+def _compact_chatwoot_history_messages(history, limit=10, current_message_id=""):
     history = history if isinstance(history, dict) else {}
     messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    current_message_id = _clean(current_message_id, 100)
     compact = []
     for message in messages[-max(int(limit or 10), 1):]:
         if not isinstance(message, dict):
+            continue
+        if current_message_id and _clean(message.get("id"), 100) == current_message_id:
+            continue
+        if _chatwoot_message_is_activity(message):
             continue
         content = _clean_multiline(message.get("content"), 500)
         if not content:
             continue
         compact.append({
-            "message_type": message.get("message_type"),
+            "speaker": "customer" if _chatwoot_message_is_incoming(message) else "farm",
             "content": content,
             "created_at": message.get("created_at"),
         })
@@ -550,6 +558,13 @@ def _chatwoot_message_is_incoming(message):
         return False
     value = message.get("message_type")
     return value == 0 or str(value).strip().lower() == "incoming"
+
+
+def _chatwoot_message_is_activity(message):
+    if not isinstance(message, dict):
+        return False
+    value = message.get("message_type")
+    return value == 2 or str(value).strip().lower() == "activity"
 
 
 def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None):
@@ -1344,7 +1359,7 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
         history_messages = chatwoot_history.get("messages") if isinstance(chatwoot_history.get("messages"), list) else []
     compact_history = [
         {
-            "message_type": message.get("message_type"),
+            "speaker": message.get("speaker") or ("customer" if _chatwoot_message_is_incoming(message) else "farm"),
             "content": _clean(message.get("content"), 500),
             "created_at": message.get("created_at"),
         }
@@ -1352,6 +1367,14 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
         if isinstance(message, dict)
     ]
     return {
+        "rules": [
+            "Write one concise WhatsApp reply in the farm owner's voice.",
+            "Use only stock and price facts in this JSON. Do not invent animals, prices, reservations, delivery promises, paperwork, or payment status.",
+            "If a detail is missing, ask only one useful question.",
+            "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
+            "Do not share exact farm pins or exact private farm location.",
+            "Never create orders, quotes, reservations, or commands.",
+        ],
         "inbound": {
             "conversation_id": (inbound or {}).get("conversation_id") or "",
             "customer_name": (inbound or {}).get("customer_name") or "",
@@ -1370,14 +1393,6 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
         },
         "recent_chatwoot_history": compact_history,
         "fallback_reply": fallback_reply,
-        "rules": [
-            "Write one concise WhatsApp reply in the farm owner's voice.",
-            "Use only stock and price facts in this JSON. Do not invent animals, prices, reservations, delivery promises, paperwork, or payment status.",
-            "If a detail is missing, ask only one useful question.",
-            "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
-            "Do not share exact farm pins or exact private farm location.",
-            "Never create orders, quotes, reservations, or commands.",
-        ],
     }
 
 
@@ -1419,10 +1434,50 @@ def _llm_reply_payload(context_packet, source):
         "model": _configured_model(source),
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(context_packet, ensure_ascii=True, separators=(",", ":"))[:8000]},
+            {"role": "user", "content": _llm_reply_user_content(context_packet)},
         ],
         "response_format": {"type": "json_object"},
     }, source, 0.2)
+
+
+def _llm_reply_user_content(context_packet, max_chars=8000):
+    packet = dict(context_packet) if isinstance(context_packet, dict) else {}
+    history = packet.get("recent_chatwoot_history")
+    if isinstance(history, list):
+        packet["recent_chatwoot_history"] = list(history)
+    else:
+        packet["recent_chatwoot_history"] = []
+
+    def encoded():
+        return json.dumps(packet, ensure_ascii=True, separators=(",", ":"))
+
+    text = encoded()
+    while len(text) > max_chars and packet["recent_chatwoot_history"]:
+        packet["recent_chatwoot_history"] = packet["recent_chatwoot_history"][1:]
+        text = encoded()
+
+    if len(text) > max_chars:
+        inbound = packet.get("inbound") if isinstance(packet.get("inbound"), dict) else {}
+        if len(str(inbound.get("message") or "")) > 500:
+            inbound = dict(inbound)
+            inbound["message"] = _clean(inbound.get("message"), 500)
+            packet["inbound"] = inbound
+            text = encoded()
+
+    if len(text) > max_chars and len(str(packet.get("fallback_reply") or "")) > 300:
+        packet["fallback_reply"] = _clean_multiline(packet.get("fallback_reply"), 300)
+        text = encoded()
+
+    if len(text) > max_chars:
+        match_packet = packet.get("match_packet") if isinstance(packet.get("match_packet"), dict) else {}
+        sample = match_packet.get("matched_sample") if isinstance(match_packet.get("matched_sample"), list) else []
+        if len(sample) > 3:
+            match_packet = dict(match_packet)
+            match_packet["matched_sample"] = sample[:3]
+            packet["match_packet"] = match_packet
+            text = encoded()
+
+    return text
 
 
 def _llm_reply_needs_fallback(decision, review):
