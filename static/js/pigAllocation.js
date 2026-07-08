@@ -67,9 +67,7 @@ function formatTagNumber(value) {
 
 function pigLabel(item) {
   const tag = formatTagNumber(item.tag_number || item.pig_id || "-");
-  return item.pig_id && item.pig_id !== item.tag_number
-    ? `${tag} (${item.pig_id})`
-    : tag;
+  return tag;
 }
 
 function formatKg(value) {
@@ -453,7 +451,7 @@ function bucketClass(bucket) {
 
 function renderRows(rows) {
   if (!rows.length) {
-    bodyEl.innerHTML = '<tr><td colspan="14" class="table-empty">No pigs match the selected filters.</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="10" class="table-empty">No pigs match the selected filters.</td></tr>';
     countEl.textContent = "No pigs in this view.";
     return;
   }
@@ -463,19 +461,27 @@ function renderRows(rows) {
     const profileHref = `/pig/${encodeURIComponent(row.pig_id)}`;
     const parentText = [row.mother_id, row.father_id].filter(Boolean).join(" / ");
     const linkText = row.existing_link || row.reserved_for_order_id || "-";
+    const pigMeta = [row.animal_type, row.sex].filter(Boolean).join(" / ") || "-";
+    const reasonText = row.readiness_reason || row.recommended_action || "-";
     return `
       <tr>
-        <td>
-          <a class="detail-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
-          <span class="table-subtext">${escapeHtml(row.pig_id || "-")}</span>
-        </td>
-        <td><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
-        <td>
+        <td class="allocation-action-cell">
           <strong>${escapeHtml(row.outlet_priority || "-")}</strong>
           <span class="table-subtext">${escapeHtml(row.recommended_action || "-")}</span>
+          <span class="table-subtext allocation-reason-line">${escapeHtml(reasonText)}</span>
           <span class="table-subtext">${escapeHtml(row.marketing_readiness || "-")}</span>
         </td>
-        <td>${escapeHtml(row.readiness_reason || "-")}</td>
+        <td class="allocation-suggestion-cell">
+          <strong>${escapeHtml(row.suggested_purpose || "-")}</strong>
+          <span class="table-subtext">Confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
+          <span class="table-subtext allocation-reason-line">${escapeHtml(row.suggested_purpose_reason || "-")}</span>
+          <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
+        </td>
+        <td class="allocation-pig-cell">
+          <a class="detail-link allocation-pig-link" href="${profileHref}" title="Pig ID: ${escapeHtml(row.pig_id || "-")}">${escapeHtml(pigLabel(row))}</a>
+          <span class="table-subtext">${escapeHtml(pigMeta)}</span>
+        </td>
+        <td><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
         <td>
           <strong>${escapeHtml(formatKg(row.latest_weight_kg))}</strong>
           <span class="table-subtext">${row.latest_weight_date ? `${escapeHtml(row.latest_weight_date)} / ${escapeHtml(row.days_since_weight ?? "-")} days` : "No weight date"}</span>
@@ -490,28 +496,15 @@ function renderRows(rows) {
           <span class="table-subtext">Meat: ${escapeHtml(row.estimated_meat_ready_date || "-")} (${escapeHtml(row.days_until_meat_ready ?? "-")} days)</span>
           <span class="table-subtext">Abattoir: ${escapeHtml(row.estimated_abattoir_ready_date || "-")} (${escapeHtml(row.days_until_abattoir_ready ?? "-")} days)</span>
         </td>
+        <td><span class="allocation-current-purpose">${escapeHtml(row.purpose || "Unknown")}</span></td>
+        <td><span class="allocation-pen-label">${escapeHtml(formatPen(row))}</span></td>
         <td>
-          <strong>${escapeHtml(formatKg(row.wean_weight_kg))}</strong>
-          <span class="table-subtext">${row.wean_date ? `${escapeHtml(row.wean_date)} / ${escapeHtml(row.days_since_wean ?? "-")} days` : "No wean date"}</span>
-        </td>
-        <td>${escapeHtml(formatPen(row))}</td>
-        <td>
-          <strong>${escapeHtml(row.animal_type || "-")}</strong>
-          <span class="table-subtext">${escapeHtml(row.sex || "-")}</span>
-        </td>
-        <td>${escapeHtml(row.purpose || "Unknown")}</td>
-        <td>
-          <strong>${escapeHtml(row.suggested_purpose || "-")}</strong>
-          <span class="table-subtext">${escapeHtml(row.suggested_purpose_reason || "-")}</span>
-          <span class="table-subtext">Confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
-          <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
-        </td>
-        <td>
-          <strong>${escapeHtml(row.litter_id || "-")}</strong>
+          <strong>Litter ${escapeHtml(row.litter_id || "-")}</strong>
           <span class="table-subtext">${escapeHtml(parentText || "No parent links")}</span>
           <span class="table-subtext">${escapeHtml(row.litter_quality || "Unknown")} / ${escapeHtml(formatPercent(row.litter_survival_rate))} survival</span>
+          <span class="table-subtext">Wean: ${escapeHtml(formatKg(row.wean_weight_kg))}${row.wean_date ? ` / ${escapeHtml(row.wean_date)}` : ""}</span>
+          <span class="table-subtext">Link: ${escapeHtml(linkText)}</span>
         </td>
-        <td>${escapeHtml(linkText)}</td>
       </tr>
     `;
   }).join("");
@@ -539,7 +532,7 @@ async function loadAllocationReadiness() {
   } catch (error) {
     console.error("Pig allocation readiness error:", error);
     showMessage(error.message || "Something went wrong while loading pig allocation readiness.");
-    bodyEl.innerHTML = '<tr><td colspan="14" class="table-empty">Could not load pig allocation readiness.</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="10" class="table-empty">Could not load pig allocation readiness.</td></tr>';
   }
 }
 
