@@ -109,6 +109,15 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
 }
 AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
 AGENT_CONFIDENCE_MINIMUM = 0.96
+REVIEW_DECISION_AGENTS = {
+    "product_reviewer",
+    "business_reviewer",
+    "security_reviewer",
+    "evidence_reviewer",
+    "visual_qa_reviewer",
+    "reviewer",
+    "publisher",
+}
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
     "source_mapper": {"legacy_sources"},
     "visual_reference_interpreter": {"media_references_used"},
@@ -397,6 +406,8 @@ def run_agent_execution_bridge_v2(
     agent_queue = _agent_queue_from(start_agent, agent_sequence)
     stage_attempts = {agent: 0 for agent in agent_sequence}
     backflow_counts = {agent: 0 for agent in agent_sequence}
+    contract_retry_used = {}
+    contract_reminder_pending = set()
     parallel_agents = _parallel_read_only_prefix(agent_queue)
     if parallel_agents:
         parallel_result = _run_parallel_read_only_agents(
@@ -441,6 +452,9 @@ def run_agent_execution_bridge_v2(
             "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
         })
         prompt = build_agent_stage_prompt(mission, agent, artifacts, ledger)
+        if agent in contract_reminder_pending:
+            contract_reminder_pending.discard(agent)
+            prompt = _append_contract_retry_reminder(prompt)
         stage_paths["prompt_path"].write_text(prompt, encoding="utf-8")
         model_assignment = choose_agent_model(
             agent=agent,
@@ -515,7 +529,24 @@ def run_agent_execution_bridge_v2(
         if final_message and not _read_text(stage_paths["final_path"]):
             _write_process_text(stage_paths["final_path"], final_message)
 
-        if completed.returncode != 0 or not _read_text(stage_paths["final_path"]):
+        final_text = _read_text(stage_paths["final_path"])
+        if completed.returncode == 0 and not final_text:
+            if _retry_agent_contract_failure(
+                ledger,
+                agent_queue,
+                contract_retry_used,
+                contract_reminder_pending,
+                agent,
+                stage_attempts[agent],
+                "missing_final",
+                stage_started,
+                stage_paths,
+                output_dir,
+                execution_id,
+            ):
+                continue
+            completed.contract_failure_reason = "Agent completed without a final artifact after contract retry."
+        if completed.returncode != 0 or not final_text:
             return _block_agent_stage(
                 mission["mission_id"],
                 execution_id,
@@ -524,11 +555,13 @@ def run_agent_execution_bridge_v2(
                 stage_paths,
                 completed,
                 stage_started,
+                blocked_reason=getattr(completed, "contract_failure_reason", "Agent did not produce a valid final artifact."),
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
 
-        artifact = _agent_artifact_from_final(agent, _read_text(stage_paths["final_path"]))
+        parse_failed = not bool(_extract_json_object(final_text))
+        artifact = _agent_artifact_from_final(agent, final_text)
         artifact = _inherit_pr_reference(agent, artifact, artifacts)
         ui_contract = _ui_quality_contract_for_mission(mission)
         if ui_contract.get("ui_related"):
@@ -549,6 +582,28 @@ def run_agent_execution_bridge_v2(
         })
         validation = _validate_agent_artifact(agent, artifact)
         if not validation["valid"]:
+            retry_reason = "malformed_json" if parse_failed else "missing_keys"
+            if _retry_agent_contract_failure(
+                ledger,
+                agent_queue,
+                contract_retry_used,
+                contract_reminder_pending,
+                agent,
+                stage_attempts[agent],
+                retry_reason,
+                stage_started,
+                stage_paths,
+                output_dir,
+                execution_id,
+                missing_keys=validation["missing_keys"],
+                artifact=artifact,
+            ):
+                continue
+            artifact = {
+                **artifact,
+                "contract_retry_exhausted": True,
+                "first_attempt_artifact_path": _first_contract_retry_artifact_path(ledger, agent),
+            }
             return _block_agent_stage(
                 mission["mission_id"],
                 execution_id,
@@ -557,7 +612,7 @@ def run_agent_execution_bridge_v2(
                 stage_paths,
                 completed,
                 stage_started,
-                blocked_reason=f"Agent artifact missing required keys: {', '.join(validation['missing_keys'])}.",
+                blocked_reason=f"Agent artifact missing required keys after contract retry: {', '.join(validation['missing_keys'])}.",
                 artifact=artifact,
                 artifacts=artifacts,
                 database_url=database_url,
@@ -2587,12 +2642,83 @@ def _write_text_with_retry(path, text, attempts=3, delay_seconds=2):
         raise last_error
 
 
+def _append_contract_retry_reminder(prompt):
+    return (
+        f"{prompt}\n\n"
+        "CHARLIE CONTRACT REMINDER: Your previous attempt failed the handoff contract. "
+        "Return only one complete JSON object in a single ```json code block matching the CHARLIE handoff contract. "
+        "Include ALL required keys, especially vault_sources_used, confidence, and confidence_reason. "
+        "Do not include any prose outside the JSON block."
+    )
+
+
+def _retry_agent_contract_failure(
+    ledger,
+    agent_queue,
+    contract_retry_used,
+    contract_reminder_pending,
+    agent,
+    attempt,
+    reason,
+    stage_started,
+    stage_paths,
+    output_dir,
+    execution_id,
+    missing_keys=None,
+    artifact=None,
+):
+    if contract_retry_used.get(agent):
+        return False
+    contract_retry_used[agent] = True
+    contract_reminder_pending.add(agent)
+    entry = {
+        "agent": agent,
+        "failed_attempt": int(attempt or 1),
+        "reason": reason,
+        "missing_keys": list(missing_keys or []),
+        "failed_artifact_path": str(stage_paths["final_path"]),
+        "stdout_path": str(stage_paths["stdout_path"]),
+        "stderr_path": str(stage_paths["stderr_path"]),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if isinstance(artifact, dict) and artifact:
+        entry["artifact_summary"] = _truncate(artifact.get("summary") or "", 500)
+        entry["contract_parse_fallback"] = bool(artifact.get("contract_parse_fallback"))
+    ledger.setdefault("contract_retries", []).append(entry)
+    _append_ledger_stage(
+        ledger,
+        agent,
+        "contract_retry",
+        stage_started,
+        stage_paths,
+        current_action=f"{agent} attempt {attempt} failed the handoff contract; retrying once with a strict reminder.",
+        artifact={
+            "summary": f"{agent} failed the handoff contract and will retry once.",
+            "contract_failure_reason": reason,
+            "missing_keys": list(missing_keys or []),
+            "artifact_path": str(stage_paths["final_path"]),
+        },
+        attempt=attempt,
+    )
+    _write_agent_ledger(output_dir, execution_id, ledger)
+    agent_queue.insert(0, agent)
+    return True
+
+
+def _first_contract_retry_artifact_path(ledger, agent):
+    for entry in ledger.get("contract_retries", []) if isinstance(ledger, dict) else []:
+        if isinstance(entry, dict) and entry.get("agent") == agent:
+            return entry.get("failed_artifact_path", "")
+    return ""
+
+
 def _agent_artifact_from_final(agent, final_message):
     parsed = _extract_json_object(final_message)
     if parsed:
         return parsed
     artifact = {
         "summary": _truncate(final_message or f"{agent} completed.", 1200),
+        "contract_parse_fallback": True,
         "errors": _extract_errors(final_message),
         "bugs": [],
         "files_inspected": _extract_file_mentions(final_message),
@@ -2668,7 +2794,7 @@ def _agent_artifact_from_final(agent, final_message):
         artifact.update({"qa_findings": [artifact["summary"]], "red_team_status": "pass" if not artifact["errors"] else "blocked", "risk_rating": "low" if not artifact["errors"] else "high"})
     elif agent == "visual_qa_reviewer":
         artifact.update({
-            "recommended_owner_decision": "send_back" if artifact["errors"] else "approve_final_release",
+            "recommended_owner_decision": "send_back",
             "visual_acceptance_decision": "pause" if artifact["errors"] else "approve",
             "visual_review_notes": [artifact["summary"]],
             "reference_match_assessment": artifact["summary"],
@@ -2677,23 +2803,32 @@ def _agent_artifact_from_final(agent, final_message):
             "send_back_stage": "frontend_design_implementer",
         })
     else:
-        artifact.update({"recommended_owner_decision": "approve_final_release", "release_notes": ["Review PR and test evidence before final approval."], "changed_files": _changed_files(), "test_evidence": _extract_test_evidence(final_message)})
+        artifact.update({
+            "recommended_owner_decision": "send_back" if agent in REVIEW_DECISION_AGENTS else "approve_final_release",
+            "release_notes": ["Review PR and test evidence before final approval."],
+            "changed_files": _changed_files(),
+            "test_evidence": _extract_test_evidence(final_message),
+        })
     return artifact
 
 
 def _extract_json_object(text):
     text = str(text or "")
-    fenced = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
-    candidates = [fenced.group(1)] if fenced else []
+    candidates = []
+    for match in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE):
+        block = str(match.group(1) or "").strip()
+        if "{" in block and "}" in block:
+            candidates.append(block[block.find("{"):block.rfind("}") + 1])
     if "{" in text and "}" in text:
         candidates.append(text[text.find("{"):text.rfind("}") + 1])
     for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except ValueError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
+        for repaired in (candidate, re.sub(r",\s*([}\]])", r"\1", candidate)):
+            try:
+                parsed = json.loads(repaired)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
     return {}
 
 
@@ -4495,6 +4630,9 @@ def _compact_agent_artifacts_for_review(artifacts):
         "local_preview",
         "visual_review",
         "brain_guard",
+        "contract_parse_fallback",
+        "contract_retry_exhausted",
+        "first_attempt_artifact_path",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
