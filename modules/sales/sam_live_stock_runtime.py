@@ -228,6 +228,8 @@ def extract_live_stock_facts(message, inbound=None):
     text = _normal_text(message)
     weight_range = _extract_weight_range(text)
     category = _extract_category(text)
+    if not category and weight_range:
+        category = _category_from_weight_range(weight_range)
     if category == "live_pig":
         category = _category_from_weight_range(weight_range) or category
     facts = {
@@ -251,6 +253,16 @@ def extract_live_stock_facts(message, inbound=None):
         "llm_status": "not_enabled_read_only_stage",
     }
     route = classify_sam_sales_lane(message)
+    if route["lane"] in {"unclear", "farm_general_question", "owner_handoff"} and _has_live_stock_fact_signal(facts):
+        route = {
+            **route,
+            "lane": LANE_LIVE_STOCK,
+            "confidence": max(float(route.get("confidence") or 0), 0.9),
+            "reasons": [
+                *(route.get("reasons") if isinstance(route.get("reasons"), list) else []),
+                "live_stock_fact_signal",
+            ],
+        }
     facts["sales_lane"] = route["lane"]
     facts["lane_confidence"] = route["confidence"]
     facts["lane_reasons"] = route["reasons"]
@@ -1306,6 +1318,8 @@ def _prior_context_from_intake(intake):
 
 
 def _extract_category(text):
+    if re.search(r"\b\d{1,2}\s*(?:week|weeks|wk|wks)\s+old\b", text):
+        return "piglet"
     if _has_any(text, ("piglet", "piglets")):
         return "piglet"
     if _has_any(text, ("weaner", "weaners")):
@@ -1319,6 +1333,16 @@ def _extract_category(text):
     if _has_any(text, ("live pig", "live pigs", "pigs to raise", "buy pigs", "pigs for sale", "pig for sale", "pigs available")):
         return "live_pig"
     return ""
+
+
+def _has_live_stock_fact_signal(facts):
+    facts = facts if isinstance(facts, dict) else {}
+    category = _normal_text(facts.get("category"))
+    return bool(
+        category in {"piglet", "weaner", "grower", "finisher", "ready for slaughter", "ready_for_slaughter", "live pig"}
+        or facts.get("weight_range")
+        or facts.get("quantity")
+    )
 
 
 def _extract_quantity(text):
