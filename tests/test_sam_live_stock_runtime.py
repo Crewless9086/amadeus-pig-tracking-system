@@ -135,6 +135,35 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(merged["quote_requested"])
         self.assertEqual(merged["sales_lane"], "live_stock_sales")
 
+    def test_chatwoot_history_fills_latest_short_reply_context(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="Tank you albertinia can do",
+                id=730727167,
+                conversation={"id": 1478, "inbox": {"channel_type": "Channel::Whatsapp"}},
+            ),
+            environ={},
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {
+                "success": True,
+                "status": "loaded",
+                "messages": [
+                    {"id": 730682977, "message_type": 0, "content": "2 female 1 male"},
+                    {"id": 730720079, "message_type": 0, "content": "Ok how big is the (7-9) kg if you can send me pics of them please please then i will take 3 female 1 male"},
+                    {"id": 730727167, "message_type": 0, "content": "Tank you albertinia can do"},
+                ],
+            },
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertEqual(decision["facts"]["quantity"], 3)
+        self.assertEqual(decision["facts"]["sex"], "split")
+        self.assertEqual(decision["facts"]["location"], "Albertinia")
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
+        self.assertEqual(decision["read_context"]["chatwoot_history"]["incoming_count"], 3)
+
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
         rows = [
             {

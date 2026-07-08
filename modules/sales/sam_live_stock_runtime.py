@@ -95,6 +95,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     *,
     environ=None,
     intake_context_loader=None,
+    conversation_history_loader=None,
     availability_loader=None,
     intake_writer=None,
     draft_order_creator=None,
@@ -118,7 +119,9 @@ def handle_sam_live_stock_chatwoot_inbound(
         inbound,
         facts,
         intake_context_loader=intake_context_loader,
+        conversation_history_loader=conversation_history_loader,
         availability_loader=availability_loader,
+        environ=source,
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
     decision = build_sam_live_stock_decision(inbound, facts, context_packet, source)
@@ -295,12 +298,16 @@ def load_live_stock_read_context(
     facts,
     *,
     intake_context_loader=None,
+    conversation_history_loader=None,
     availability_loader=None,
+    environ=None,
 ):
     inbound = inbound if isinstance(inbound, dict) else {}
+    source = environ if environ is not None else os.environ
     context_errors = []
     prior_context = {}
     intake = {"success": False, "lookup_status": "not_loaded", "items": []}
+    chatwoot_history = {"success": False, "status": "not_loaded", "messages": []}
     if inbound.get("conversation_id"):
         try:
             loader = intake_context_loader or get_intake_context
@@ -309,6 +316,16 @@ def load_live_stock_read_context(
         except Exception as exc:
             context_errors.append(_integration_failure("order_intake_context_read_failed", exc))
             intake = {"success": False, "lookup_status": "read_failed", "items": []}
+        try:
+            history_loader = conversation_history_loader or load_chatwoot_conversation_history
+            chatwoot_history = history_loader(inbound.get("conversation_id"), source)
+            prior_context = _merge_prior_context_packets(
+                prior_context,
+                _prior_context_from_chatwoot_history(chatwoot_history, inbound),
+            )
+        except Exception as exc:
+            context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
+            chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
     try:
         loader = availability_loader or get_sales_availability
         availability_rows = loader()
@@ -322,6 +339,7 @@ def load_live_stock_read_context(
         "read_only": True,
         "prior_context": prior_context,
         "intake_context": intake,
+        "chatwoot_history": _compact_chatwoot_history(chatwoot_history),
         "availability": availability,
         "context_errors": context_errors,
     }
@@ -362,6 +380,131 @@ def summarize_live_stock_availability(rows, facts=None):
         "summary": bucket_counts,
         "matched_sample": [_availability_public_row(row) for row in matched[:10]],
     }
+
+
+def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
+    source = environ if environ is not None else os.environ
+    conversation_id = _clean(conversation_id, 100)
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV), 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    if not conversation_id:
+        return {"success": False, "status": "conversation_id_required", "messages": []}
+    if not base_url or not account_id or not token:
+        return {"success": False, "status": "chatwoot_history_not_configured", "messages": []}
+    request = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+        headers={"api_access_token": token},
+        method="GET",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=10) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            parsed = json.loads(raw or "{}")
+    except urllib_error.HTTPError as exc:
+        return {"success": False, "status": f"chatwoot_history_http_{exc.code}", "messages": []}
+    payload = parsed.get("payload") if isinstance(parsed, dict) else parsed
+    rows = payload if isinstance(payload, list) else []
+    messages = []
+    for row in rows[-max(int(limit or 20), 1):]:
+        if not isinstance(row, dict):
+            continue
+        content = _clean_multiline(row.get("content"), 800)
+        if not content:
+            continue
+        messages.append({
+            "id": _clean(row.get("id"), 100),
+            "message_type": row.get("message_type"),
+            "content": content,
+            "created_at": row.get("created_at"),
+        })
+    return {"success": True, "status": "loaded", "messages": messages}
+
+
+def _prior_context_from_chatwoot_history(history, inbound):
+    history = history if isinstance(history, dict) else {}
+    if not history.get("success"):
+        return {}
+    current_id = _clean((inbound or {}).get("message_id"), 100)
+    incoming_texts = []
+    for message in history.get("messages") if isinstance(history.get("messages"), list) else []:
+        if not _chatwoot_message_is_incoming(message):
+            continue
+        if current_id and _clean(message.get("id"), 100) == current_id:
+            continue
+        content = _clean_multiline(message.get("content"), 500)
+        if content:
+            incoming_texts.append(content)
+    if not incoming_texts:
+        return {}
+    facts = {}
+    for text in incoming_texts[-8:]:
+        extracted = extract_live_stock_facts(text, inbound or {})
+        for key in (
+            "sales_lane",
+            "lane_confidence",
+            "lane_reasons",
+            "quantity",
+            "category",
+            "sex",
+            "weight_range",
+            "timing",
+            "location",
+            "payment_method",
+        ):
+            if not _blank(extracted.get(key)):
+                facts[key] = extracted.get(key)
+        for key in ("quote_requested", "order_commitment", "reservation_requested", "breeding_interest"):
+            if extracted.get(key):
+                facts[key] = True
+    interest = {
+        "sales_lane": facts.get("sales_lane") if facts.get("sales_lane") == LANE_LIVE_STOCK else "",
+        "quantity": facts.get("quantity") or "",
+        "category": facts.get("category") or "",
+        "sex": facts.get("sex") or "",
+        "weight_range": facts.get("weight_range") or "",
+        "timing": facts.get("timing") or "",
+        "location": facts.get("location") or "",
+        "payment_method": facts.get("payment_method") or "",
+        "quote_requested": bool(facts.get("quote_requested")),
+        "order_commitment": bool(facts.get("order_commitment")),
+    }
+    return {"interest": interest, "source": "chatwoot_conversation_history"} if any(interest.values()) else {}
+
+
+def _merge_prior_context_packets(primary, secondary):
+    primary_interest = (primary or {}).get("interest") if isinstance((primary or {}).get("interest"), dict) else {}
+    secondary_interest = (secondary or {}).get("interest") if isinstance((secondary or {}).get("interest"), dict) else {}
+    if not secondary_interest:
+        return primary or {}
+    merged = dict(primary_interest)
+    for key, value in secondary_interest.items():
+        if _blank(merged.get(key)) and not _blank(value):
+            merged[key] = value
+        elif key in {"quote_requested", "order_commitment"} and value:
+            merged[key] = True
+    return {
+        "interest": merged,
+        "source": "+".join(source for source in [(primary or {}).get("source"), (secondary or {}).get("source")] if source),
+    }
+
+
+def _compact_chatwoot_history(history):
+    history = history if isinstance(history, dict) else {}
+    messages = history.get("messages") if isinstance(history.get("messages"), list) else []
+    return {
+        "success": bool(history.get("success")),
+        "status": history.get("status", ""),
+        "message_count": len(messages),
+        "incoming_count": sum(1 for message in messages if _chatwoot_message_is_incoming(message)),
+    }
+
+
+def _chatwoot_message_is_incoming(message):
+    if not isinstance(message, dict):
+        return False
+    value = message.get("message_type")
+    return value == 0 or str(value).strip().lower() == "incoming"
 
 
 def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
@@ -409,6 +552,11 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "lane_confidence": route["confidence"],
         "facts": facts,
         "missing_fields": missing,
+        "read_context": {
+            "prior_context_source": (context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}).get("source", ""),
+            "chatwoot_history": context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {},
+            "context_errors": context_packet.get("context_errors") if isinstance(context_packet.get("context_errors"), list) else [],
+        },
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
