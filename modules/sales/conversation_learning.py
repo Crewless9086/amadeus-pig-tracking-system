@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+from difflib import SequenceMatcher
 from datetime import datetime, timezone
 
 from services.database_service import DATABASE_URL_ENV
@@ -122,6 +123,55 @@ def build_owner_review_learning_event(lead_id, payload=None):
         "improvement_suggestion": _clean(payload.get("improvement_suggestion") or notes, 600),
         "campaign_source": _clean(payload.get("campaign_source"), 80),
         "recorded_by": _clean(payload.get("recorded_by") or "owner_review", 80),
+        **AUTHORITY_FLAGS,
+    }
+    return event
+
+
+def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=None):
+    outbound = outbound if isinstance(outbound, dict) else {}
+    latest_review_event = latest_review_event if isinstance(latest_review_event, dict) else {}
+    conversation_id = _clean(outbound.get("conversation_id") or latest_review_event.get("chatwoot_conversation_id"), 120)
+    owner_reply = _clean(outbound.get("content") or outbound.get("owner_reply_text"), 1800)
+    sam_draft = _clean(latest_review_event.get("sam_reply_excerpt"), 1800)
+    customer_message = _clean(latest_review_event.get("customer_message_excerpt"), 1200)
+    facts = _dict(latest_review_event.get("facts_json"))
+    review_event_id = _clean(latest_review_event.get("review_event_id"), 120)
+    classification = _owner_reply_classification(owner_reply, sam_draft)
+    lead_id = _clean(outbound.get("lead_id") or f"SAM-LIVE-CONV-{conversation_id}", 120)
+    event = {
+        "learning_event_id": _learning_event_id({
+            "lead_id": lead_id,
+            "conversation_id": conversation_id,
+            "review_event_id": review_event_id,
+            "owner_reply": owner_reply,
+            "message_id": outbound.get("message_id") or "",
+        }),
+        "lead_id": lead_id,
+        "chatwoot_conversation_id": conversation_id,
+        "channel": _clean(outbound.get("channel") or latest_review_event.get("channel") or "chatwoot_whatsapp", 80),
+        "source_agent": "sam_live_stock_backend",
+        "event_source": "chatwoot_outgoing_owner_reply",
+        "event_type": "owner_review_note",
+        "customer_message_excerpt": _clip(customer_message, 500),
+        "sam_reply_excerpt": _clip(sam_draft, 500),
+        "customer_wanted": _live_stock_customer_wanted(facts),
+        "captured_facts": {
+            "learning_kind": "owner_reply_capture",
+            "review_event_id": review_event_id,
+            "owner_reply_excerpt": _clip(owner_reply, 500),
+            "owner_reply_classification": classification,
+            "sam_reply_similarity": _reply_similarity(owner_reply, sam_draft),
+            "recommended_action": _clean(latest_review_event.get("recommended_action"), 120),
+        },
+        "missing_facts": _list((latest_review_event.get("decision_json") or {}).get("missing_fields") if isinstance(latest_review_event.get("decision_json"), dict) else []),
+        "objections": _objections(owner_reply),
+        "confusion_signals": _live_stock_confusion_signals(owner_reply, latest_review_event),
+        "sam_misses": _live_stock_owner_reply_misses(classification, owner_reply, sam_draft),
+        "conversion_signal": _live_stock_conversion_signal(owner_reply, classification),
+        "improvement_suggestion": _live_stock_owner_reply_suggestion(classification, owner_reply),
+        "campaign_source": "sam_live_stock_chatwoot",
+        "recorded_by": "sam_live_stock_owner_reply_capture",
         **AUTHORITY_FLAGS,
     }
     return event
@@ -452,6 +502,14 @@ def _captured_facts(facts):
     return captured
 
 
+def _live_stock_customer_wanted(facts):
+    wanted = {}
+    for key in ("sales_lane", "category", "quantity", "sex", "weight_range", "timing", "location", "payment_method"):
+        if facts.get(key):
+            wanted[key] = facts.get(key)
+    return wanted
+
+
 def _missing_facts(facts):
     missing = []
     product_type = facts.get("product_type") or "unknown"
@@ -505,6 +563,82 @@ def _confusion_signals(message, facts, reply):
     if re.search(r"\b(no personality|human factor|too robotic|robot|rigid|cold)\b", text):
         signals.append("robotic_tone")
     return signals
+
+
+def _live_stock_confusion_signals(message, latest_review_event):
+    signals = []
+    text = _clean(message, 1200).lower()
+    if re.search(r"\b(job|work|hiring|employment|cv)\b", text):
+        signals.append("not_sales_job_request")
+    if re.search(r"\b(where|location|province|far|transport|deliver|delivery)\b", text):
+        signals.append("location_or_transport_question")
+    if re.search(r"\b(price|how much|cost|r\s?\d+)\b", text):
+        signals.append("price_question")
+    review = latest_review_event.get("review_json") if isinstance(latest_review_event.get("review_json"), dict) else {}
+    if review.get("escalation_required"):
+        signals.append("sam_escalated_before_owner_reply")
+    return signals
+
+
+def _live_stock_owner_reply_misses(classification, owner_reply, sam_draft):
+    misses = []
+    if classification == "owner_replaced":
+        misses.append("sam_draft_replaced_by_owner")
+    elif classification == "owner_edited":
+        misses.append("sam_draft_needed_owner_edit")
+    if sam_draft and _reply_similarity(owner_reply, sam_draft) < 0.35:
+        misses.append("sam_draft_low_similarity_to_owner_reply")
+    return misses
+
+
+def _live_stock_conversion_signal(owner_reply, classification):
+    text = _clean(owner_reply, 1200).lower()
+    if re.search(r"\b(not now|no thanks|too far|too expensive|leave it|bye)\b", text):
+        return "lost_or_not_fit"
+    if re.search(r"\b(price|how much|location|transport|deliver|available|stock|pics|pictures|photo)\b", text):
+        return "needs_followup"
+    if classification in {"approved_verbatim", "owner_edited", "owner_replaced"}:
+        return "qualified_interest"
+    return "unknown"
+
+
+def _live_stock_owner_reply_suggestion(classification, owner_reply):
+    if classification == "approved_verbatim":
+        return "Owner approved SAM live-stock wording without changes; keep as positive reply example."
+    if classification == "owner_edited":
+        return "Owner edited SAM live-stock draft; compare wording and feed the corrected style into future draft examples."
+    if classification == "owner_replaced":
+        return "Owner replaced SAM live-stock draft; treat this as high-value correction for the next drafting prompt."
+    if _clean(owner_reply, 1200):
+        return "Owner replied without a matching SAM draft; use as live-stock conversation evidence."
+    return "No owner reply text captured."
+
+
+def _owner_reply_classification(owner_reply, sam_draft):
+    owner_reply = _normal_reply(owner_reply)
+    sam_draft = _normal_reply(sam_draft)
+    if not owner_reply:
+        return "empty_owner_reply"
+    if not sam_draft:
+        return "owner_reply_no_sam_draft"
+    if owner_reply == sam_draft:
+        return "approved_verbatim"
+    similarity = _reply_similarity(owner_reply, sam_draft)
+    if similarity >= 0.6:
+        return "owner_edited"
+    return "owner_replaced"
+
+
+def _reply_similarity(left, right):
+    left = _normal_reply(left)
+    right = _normal_reply(right)
+    if not left or not right:
+        return 0.0
+    return round(SequenceMatcher(None, left, right).ratio(), 3)
+
+
+def _normal_reply(value):
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
 
 
 def _sam_misses(message, facts, decision, missing_facts):

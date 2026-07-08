@@ -267,14 +267,16 @@ def extract_live_stock_facts(message, inbound=None):
         "llm_status": "not_enabled_read_only_stage",
     }
     route = classify_sam_sales_lane(message)
-    if route["lane"] in {"unclear", "farm_general_question", "owner_handoff"} and _has_live_stock_fact_signal(facts):
+    if route["lane"] in {"unclear", "farm_general_question", "owner_handoff"} and (
+        _has_live_stock_fact_signal(facts) or _has_live_stock_followup_signal(text)
+    ):
         route = {
             **route,
             "lane": LANE_LIVE_STOCK,
-            "confidence": max(float(route.get("confidence") or 0), 0.9),
+            "confidence": max(float(route.get("confidence") or 0), 0.82),
             "reasons": [
                 *(route.get("reasons") if isinstance(route.get("reasons"), list) else []),
-                "live_stock_fact_signal",
+                "live_stock_fact_or_followup_signal",
             ],
         }
     facts["sales_lane"] = route["lane"]
@@ -1601,7 +1603,36 @@ def _has_live_stock_fact_signal(facts):
     )
 
 
+def _has_live_stock_followup_signal(text):
+    return _has_any(
+        _normal_text(text),
+        (
+            "how much",
+            "price",
+            "cost",
+            "location",
+            "province",
+            "where are you",
+            "transport",
+            "deliver",
+            "delivery",
+            "send pics",
+            "send pictures",
+            "pics",
+            "photos",
+            "pictures",
+            "big ones",
+            "small ones",
+            "available",
+            "stock",
+        ),
+    )
+
+
 def _extract_quantity(text):
+    match = re.search(r"\b(?:for|need|want)\s+(\d{1,3})\b", text)
+    if match:
+        return int(match.group(1))
     match = re.search(
         r"\b(\d{1,3})\s+(?:x\s+)?(?:(?:live|breeding)\s+)?"
         r"(?:male|female|males|females|piglets|pigs|weaners|growers|finishers|gilts|boars|sows)\b",

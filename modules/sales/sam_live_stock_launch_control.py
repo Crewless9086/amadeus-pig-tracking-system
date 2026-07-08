@@ -298,6 +298,75 @@ def get_sam_live_stock_review_event(review_event_id, database_url=None):
         }, 500
 
 
+def get_latest_sam_live_stock_review_event_for_conversation(conversation_id, database_url=None):
+    conversation_id = _clean(conversation_id, 120)
+    if not conversation_id:
+        return {"success": False, "status": "chatwoot_conversation_id_required", **AUTHORITY_FLAGS}, 400
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "status": "database_url_not_configured", **AUTHORITY_FLAGS}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "status": "psycopg_dependency_missing", **AUTHORITY_FLAGS}, 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        review_event_id,
+                        chatwoot_conversation_id,
+                        chatwoot_message_id,
+                        customer_name,
+                        channel,
+                        event_source,
+                        customer_message_excerpt,
+                        sam_reply_excerpt,
+                        score,
+                        confidence_target,
+                        safe_to_send,
+                        owner_send_required,
+                        no_reply_recommended,
+                        escalation_required,
+                        conversation_mode_recommendation,
+                        recommended_action,
+                        review_json,
+                        facts_json,
+                        decision_json
+                    from public.sam_live_stock_conversation_review_events
+                    where chatwoot_conversation_id = %s
+                    order by created_at desc
+                    limit 1
+                    """,
+                    (conversation_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "sam_live_stock_review_event_not_found", "chatwoot_conversation_id": conversation_id, **AUTHORITY_FLAGS}, 404
+                columns = [column.name for column in cursor.description]
+        event = dict(zip(columns, row))
+        for key in ("review_json", "facts_json", "decision_json"):
+            event[key] = _json_value(event.get(key))
+        return {
+            "success": True,
+            "status": "sam_live_stock_latest_review_event_loaded",
+            "chatwoot_conversation_id": conversation_id,
+            "review_event_id": event.get("review_event_id"),
+            "event": event,
+            **AUTHORITY_FLAGS,
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "sam_live_stock_review_event_load_failed",
+            "error_type": exc.__class__.__name__,
+            "error": _clean(str(exc), 240),
+            "chatwoot_conversation_id": conversation_id,
+            **AUTHORITY_FLAGS,
+        }, 500
+
+
 def build_sam_live_stock_new_lead_packet(event, *, links=None):
     event = event if isinstance(event, dict) else {}
     facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}

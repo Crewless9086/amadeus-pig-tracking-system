@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from modules.sales.conversation_learning import (
     AUTHORITY_FLAGS,
     build_learning_event_from_sam_result,
+    build_live_stock_owner_reply_learning_event,
     build_owner_review_learning_event,
     record_sales_conversation_learning_event,
     summarize_sales_conversation_learning,
@@ -97,6 +98,36 @@ class SalesConversationLearningTests(unittest.TestCase):
         for flag, value in AUTHORITY_FLAGS.items():
             self.assertIn(flag, event)
             self.assertEqual(event[flag], value)
+
+    def test_live_stock_owner_reply_capture_compares_sam_draft_to_owner_reply(self):
+        event = build_live_stock_owner_reply_learning_event(
+            {
+                "conversation_id": "1840",
+                "message_id": "9001",
+                "content": "We are in the Western Cape near Riversdale. Collection is normally arranged with the farm first.",
+                "channel": "chatwoot_whatsapp",
+            },
+            {
+                "review_event_id": "SAM-LIVE-REVIEW-1",
+                "chatwoot_conversation_id": "1840",
+                "customer_message_excerpt": "Location",
+                "sam_reply_excerpt": "Just so I help you correctly: are you looking for live pigs, pork for the freezer, or slaughter help?",
+                "facts_json": {"sales_lane": "live_stock_sales", "location": "Riversdale"},
+                "decision_json": {"missing_fields": ["category"]},
+                "review_json": {"escalation_required": True},
+                "recommended_action": "owner_handoff",
+            },
+        )
+
+        self.assertEqual(event["lead_id"], "SAM-LIVE-CONV-1840")
+        self.assertEqual(event["source_agent"], "sam_live_stock_backend")
+        self.assertEqual(event["event_source"], "chatwoot_outgoing_owner_reply")
+        self.assertEqual(event["event_type"], "owner_review_note")
+        self.assertEqual(event["captured_facts"]["learning_kind"], "owner_reply_capture")
+        self.assertEqual(event["captured_facts"]["owner_reply_classification"], "owner_replaced")
+        self.assertIn("sam_draft_replaced_by_owner", event["sam_misses"])
+        self.assertFalse(event["applies_learning_now"])
+        self.assertFalse(event["sends_customer_message"])
 
     def test_summary_counts_patterns(self):
         summary = summarize_sales_conversation_learning([

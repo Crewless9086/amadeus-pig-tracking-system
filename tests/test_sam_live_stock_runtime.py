@@ -187,6 +187,20 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
         self.assertEqual(decision["read_context"]["chatwoot_history"]["incoming_count"], 3)
 
+    def test_live_stock_followup_questions_do_not_fall_back_to_lane_clarifier(self):
+        for message in ("How much for 1", "Location", "Can you send me some of your pics", "Must I come there.or will you transport"):
+            result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content=message),
+                intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+                conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+                availability_loader=lambda: [],
+            )
+
+            decision = result["sam_decision"]
+            self.assertEqual(decision["sales_lane"], "live_stock_sales", message)
+            self.assertNotIn("lane_not_live_stock:unclear", decision["blockers"], message)
+            self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"], message)
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 

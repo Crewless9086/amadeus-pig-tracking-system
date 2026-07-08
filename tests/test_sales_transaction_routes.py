@@ -1903,6 +1903,56 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         handle_inbound.assert_called_once_with({"event": "message_created"})
 
+    def test_sam_live_stock_outgoing_owner_reply_records_learning(self):
+        latest_event = {
+            "review_event_id": "SAM-LIVE-REVIEW-1",
+            "chatwoot_conversation_id": "1840",
+            "customer_message_excerpt": "Location",
+            "sam_reply_excerpt": "Just so I help you correctly: are you looking for live pigs, pork for the freezer, or slaughter help?",
+            "facts_json": {"sales_lane": "live_stock_sales"},
+            "decision_json": {"missing_fields": ["category"]},
+            "review_json": {"escalation_required": True},
+            "recommended_action": "owner_handoff",
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_live_stock_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "get_latest_sam_live_stock_review_event_for_conversation",
+            return_value=({"success": True, "status": "sam_live_stock_latest_review_event_loaded", "event": latest_event}, 200),
+        ) as latest, patch.object(
+            sales_transaction_routes,
+            "record_sales_conversation_learning_event",
+            return_value=({"success": True, "status": "sales_conversation_learning_event_recorded", "learning_event_id": "MSCL-LIVE-1"}, 201),
+        ) as record, patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+        ) as handle_inbound:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/inbound",
+                json={
+                    "event": "message_created",
+                    "message_type": "outgoing",
+                    "id": 9001,
+                    "content": "We are near Riversdale in the Western Cape.",
+                    "conversation": {"id": 1840, "inbox": {"channel_type": "Channel::Whatsapp"}},
+                    "sender": {"name": "Charl"},
+                },
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(payload["captured"])
+        self.assertEqual(payload["learning_event_id"], "MSCL-LIVE-1")
+        latest.assert_called_once_with("1840")
+        learning_event = record.call_args.args[0]
+        self.assertEqual(learning_event["source_agent"], "sam_live_stock_backend")
+        self.assertEqual(learning_event["captured_facts"]["owner_reply_classification"], "owner_replaced")
+        handle_inbound.assert_not_called()
+
     def test_sam_live_stock_review_and_owner_send_routes_are_gated(self):
         with patch.object(
             sales_transaction_routes,

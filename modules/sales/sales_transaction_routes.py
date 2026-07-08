@@ -75,6 +75,7 @@ from modules.sales.sam_live_stock_runtime import (
     authorize_sam_live_stock_webhook,
     build_sam_live_stock_resolved_cleanup_packet,
     handle_sam_live_stock_chatwoot_inbound,
+    parse_chatwoot_inbound as parse_sam_live_stock_chatwoot_inbound,
     review_sam_live_stock_conversation,
     sam_live_stock_webhook_policy,
     send_owner_approved_live_stock_reply,
@@ -86,6 +87,7 @@ from modules.sales.sam_live_stock_launch_control import (
     build_sam_live_stock_review_event,
     delete_sam_live_stock_telegram_escalation,
     execute_live_stock_order_reservation,
+    get_latest_sam_live_stock_review_event_for_conversation,
     list_sam_live_stock_open_intakes,
     process_sam_live_stock_owner_callback,
     record_sam_live_stock_review_event,
@@ -101,6 +103,7 @@ from modules.sales.sam_pricing import (
     record_live_stock_price_entry,
 )
 from modules.sales.conversation_learning import (
+    build_live_stock_owner_reply_learning_event,
     build_owner_review_learning_event,
     list_sales_conversation_learning_events,
     record_sales_conversation_learning_event,
@@ -418,6 +421,9 @@ def sam_live_stock_chatwoot_inbound():
         status_code = 403 if denied.get("status") == "sam_live_stock_backend_webhook_auth_denied" else 503
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
+    owner_reply_capture = _capture_sam_live_stock_owner_reply_if_needed(payload)
+    if owner_reply_capture.get("attempted"):
+        return jsonify(owner_reply_capture), owner_reply_capture.get("status_code", 200)
     try:
         result, status_code = handle_sam_live_stock_chatwoot_inbound(payload)
     except Exception as exc:
@@ -437,6 +443,38 @@ def sam_live_stock_chatwoot_inbound():
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
         _attach_sam_live_stock_review_event(result, payload)
     return jsonify(result), status_code
+
+
+def _capture_sam_live_stock_owner_reply_if_needed(payload):
+    inbound = parse_sam_live_stock_chatwoot_inbound(payload)
+    if inbound.get("message_type") != "outgoing" or not inbound.get("content") or not inbound.get("conversation_id"):
+        return {"attempted": False, "captured": False, "status": "not_outgoing_owner_reply"}
+    latest, latest_status = get_latest_sam_live_stock_review_event_for_conversation(inbound.get("conversation_id"))
+    latest_event = latest.get("event") if latest.get("success") and isinstance(latest.get("event"), dict) else {}
+    event = build_live_stock_owner_reply_learning_event({
+        **inbound,
+        "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
+    }, latest_event)
+    learning, learning_status = record_sales_conversation_learning_event(event)
+    return {
+        "success": learning.get("success") is True,
+        "attempted": True,
+        "captured": learning.get("success") is True,
+        "status": learning.get("status"),
+        "status_code": learning_status,
+        "latest_review_status": latest.get("status"),
+        "latest_review_status_code": latest_status,
+        "learning_event_id": learning.get("learning_event_id", ""),
+        "chatwoot_conversation_id": inbound.get("conversation_id"),
+        "source": "sam_live_stock_owner_reply_capture",
+        "processed": False,
+        "sent": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "reserves_stock": False,
+    }
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/review", methods=["POST"])
