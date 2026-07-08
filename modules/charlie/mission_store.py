@@ -1737,7 +1737,16 @@ def _default_forbidden_actions():
 
 
 def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
-    known = {item.get("agent"): dict(item) for item in workflow if isinstance(item, dict)}
+    known = {}
+    for item in workflow:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_text(item.get("agent"), 80).strip().lower()
+        if not name:
+            continue
+        normalized = dict(item)
+        normalized["agent"] = name
+        known[name] = normalized
     sequence = _workflow_sequence(workflow)
     agent = _clean_text(agent, 80).strip().lower()
     next_agent = _clean_text(next_agent, 80).strip().lower()
@@ -1749,6 +1758,9 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         known.setdefault(default["agent"], dict(default))
     if next_agent and next_agent in known:
         known[agent]["handoff_to"] = next_agent
+    if not agent:
+        return [known[name] for name in sequence]
+    known.setdefault(agent, _workflow_defaults_for_sequence([agent])[0])
     known[agent]["status"] = step_status
     if findings:
         known[agent]["findings"] = findings
