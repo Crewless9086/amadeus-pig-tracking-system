@@ -378,7 +378,6 @@ function renderPurposeReview(row) {
       <div class="allocation-review-primary">
         <span>Selected Pig</span>
         <strong>${escapeHtml(pigLabel(row))}</strong>
-        <small>${escapeHtml(row.pig_id || "-")}</small>
       </div>
       <div>
         <span>Recommendation</span>
