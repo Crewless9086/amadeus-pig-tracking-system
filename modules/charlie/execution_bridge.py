@@ -1992,10 +1992,17 @@ def _execution_start_agent(mission, agent_sequence=None):
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
     if target in agent_sequence:
         return target
+    blocked_agent = str(review_packet.get("blocked_agent") or "").strip().lower()
+    if blocked_agent in agent_sequence:
+        return blocked_agent
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     stage = str(vault.get("mission_stage") or "").strip().lower()
     if stage.startswith("returned_to_"):
         target = stage.replace("returned_to_", "", 1)
+        if target in agent_sequence:
+            return target
+    if stage.startswith("blocked_at_"):
+        target = stage.replace("blocked_at_", "", 1)
         if target in agent_sequence:
             return target
     resume_agent = _resume_agent_after_completed_stage(stage, agent_sequence)

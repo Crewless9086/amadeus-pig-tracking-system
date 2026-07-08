@@ -136,6 +136,43 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_blocked_packet_resume_starts_from_blocked_agent(self):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "review_packet": {
+                    "review_status": "agent_blocked",
+                    "blocked_agent": "tester",
+                    "summary": "Blocked at tester.",
+                },
+            },
+        }
+        sequence = ["idea_expander", "source_mapper", "builder", "tester", "reviewer"]
+
+        start_agent = execution_bridge._execution_start_agent(mission, sequence)
+
+        self.assertEqual(start_agent, "tester")
+        self.assertEqual(
+            execution_bridge._parallel_read_only_prefix(execution_bridge._agent_queue_from(start_agent, sequence)),
+            [],
+        )
+
+    def test_blocked_at_mission_stage_resume_starts_from_agent(self):
+        mission = {
+            **MISSION,
+            "metadata": {"review_packet": {}},
+            "vault": {"mission_stage": "blocked_at_builder"},
+        }
+        sequence = ["idea_expander", "source_mapper", "builder", "tester", "reviewer"]
+
+        start_agent = execution_bridge._execution_start_agent(mission, sequence)
+
+        self.assertEqual(start_agent, "builder")
+        self.assertEqual(
+            execution_bridge._parallel_read_only_prefix(execution_bridge._agent_queue_from(start_agent, sequence)),
+            [],
+        )
+
     def test_builder_artifact_accepts_empty_changed_files_for_verification_mission(self):
         artifact = _successful_stage_payload("builder")
         artifact["changed_files"] = []
