@@ -700,6 +700,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(called_agents, ["business_reviewer", "business_reviewer", "reviewer"])
         self.assertNotIn("CHARLIE CONTRACT REMINDER", prompts[0])
         self.assertIn("CHARLIE CONTRACT REMINDER", prompts[1])
+        self.assertIn("Put the required keys first", prompts[1])
+        self.assertIn("summary, errors, bugs, vault_sources_used, confidence, confidence_reason", prompts[1])
+        self.assertIn("summary under 90 words", prompts[1])
         self.assertEqual(ledger.get("backflow_events"), [])
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])

@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-DEFAULT_MAX_TOKENS = 4096
+DEFAULT_MAX_TOKENS = 8192
 RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504, 529}
 
 
@@ -35,9 +35,10 @@ def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAU
             "error": "Set ANTHROPIC_API_KEY. ANTROPIC_API_KEY is accepted as a temporary typo alias.",
         }, 503
     model = str(model or os.getenv("CHARLIE_CLAUDE_MODEL") or "claude-sonnet-5").strip()
+    max_tokens = _anthropic_max_tokens(max_tokens)
     payload = {
         "model": model,
-        "max_tokens": int(max_tokens or DEFAULT_MAX_TOKENS),
+        "max_tokens": max_tokens,
         "messages": [
             {
                 "role": "user",
@@ -106,6 +107,16 @@ def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAU
         "usage": parsed.get("usage") if isinstance(parsed.get("usage"), dict) else {},
         "stop_reason": parsed.get("stop_reason", ""),
     }, 200
+
+
+def _anthropic_max_tokens(max_tokens=None):
+    configured = str(os.getenv("CHARLIE_ANTHROPIC_MAX_TOKENS") or "").strip()
+    raw = configured or max_tokens or DEFAULT_MAX_TOKENS
+    try:
+        parsed = int(raw)
+    except (TypeError, ValueError):
+        parsed = DEFAULT_MAX_TOKENS
+    return max(1024, min(parsed, 16000))
 
 
 def _extract_text(parsed):
