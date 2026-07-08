@@ -632,6 +632,16 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "reasoning-model-a",
         )
 
+    def test_codex_fallback_command_removes_model_flag_for_parallel_anthropic_ledgers(self):
+        command = ["codex", "exec", "--sandbox", "read-only", "--model", "claude-sonnet-5", "--output-last-message", "final.md", "-"]
+
+        cleaned = execution_bridge._codex_fallback_command(command)
+
+        self.assertNotIn("--model", cleaned)
+        self.assertNotIn("claude-sonnet-5", cleaned)
+        self.assertIn("--sandbox", cleaned)
+        self.assertIn("read-only", cleaned)
+
     @patch("modules.charlie.execution_bridge.run_anthropic_prompt")
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
