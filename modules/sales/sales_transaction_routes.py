@@ -377,12 +377,12 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if packet and review.get("escalation_required"):
         sent, status_code = send_sam_live_stock_telegram_escalation(packet)
         return {"attempted": True, "type": "escalation", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
-    if int(learning_result.get("conversation_event_count") or 0) == 1:
-        sent, status_code = send_sam_live_stock_new_lead_telegram(event)
-        return {"attempted": True, "type": "new_lead", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     if _sam_live_stock_owner_review_notification_needed(event):
         sent, status_code = send_sam_live_stock_owner_review_telegram(event)
         return {"attempted": True, "type": "owner_review", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
+    if int(learning_result.get("conversation_event_count") or 0) == 1:
+        sent, status_code = send_sam_live_stock_new_lead_telegram(event)
+        return {"attempted": True, "type": "new_lead", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     return {"attempted": False, "status": "not_new_or_escalation"}
 
 
