@@ -26,6 +26,8 @@ LLM_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"
 AGENT_V3_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
 AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
+LLM_URL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_URL"
+LLM_TIMEOUT_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
 OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
@@ -34,6 +36,7 @@ CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
 CHATWOOT_TOKEN_ENV = "CHATWOOT_API_ACCESS_TOKEN"
 CHATWOOT_TOKEN_FALLBACK_ENV = "CHATWOOT_API_TOKEN"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
+DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
 
 RUNTIME_VERSION = "sam_live_stock_read_only_v1"
@@ -50,7 +53,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
         "autoreply_enabled": False,
         "autoreply_explicitly_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
-        "llm_enabled": False,
+        "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)) and llm_configured,
         "llm_explicitly_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
         "llm_configured": llm_configured,
         "agent_v3_enabled": False,
@@ -99,6 +102,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     availability_loader=None,
     intake_writer=None,
     draft_order_creator=None,
+    llm_drafter=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -124,8 +128,18 @@ def handle_sam_live_stock_chatwoot_inbound(
         environ=source,
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
-    decision = build_sam_live_stock_decision(inbound, facts, context_packet, source)
+    decision = build_sam_live_stock_decision(inbound, facts, context_packet, source, llm_drafter=llm_drafter)
     conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
+    if _llm_reply_needs_fallback(decision, conversation_review):
+        decision["llm_draft_review"] = {
+            "status": "rejected_by_safety_review",
+            "blocked_reasons": conversation_review.get("blocked_reasons", []),
+            "escalation_reasons": conversation_review.get("escalation_reasons", []),
+            "original_reply_text": decision.get("suggested_reply_text", ""),
+        }
+        decision["suggested_reply_text"] = decision.get("deterministic_fallback_reply_text", "")
+        decision["reply_source"] = "deterministic_fallback_after_llm_review"
+        conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     decision["conversation_review"] = conversation_review
     if conversation_review.get("no_reply_recommended"):
         decision["suggested_reply_text"] = ""
@@ -519,7 +533,7 @@ def _chatwoot_message_is_incoming(message):
     return value == 0 or str(value).strip().lower() == "incoming"
 
 
-def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
+def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None):
     route = classify_sam_sales_lane(inbound.get("content"), prior_context={"lane": facts.get("sales_lane")})
     if facts.get("sales_lane") == LANE_LIVE_STOCK and route["lane"] != LANE_LIVE_STOCK:
         route = {
@@ -547,7 +561,22 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
-    reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet)
+    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet)
+    llm_draft = _build_llm_reply_draft_if_enabled(
+        inbound,
+        facts,
+        context_packet,
+        route,
+        missing,
+        blockers,
+        match_packet,
+        price_answer_packet,
+        fallback_reply,
+        environ or {},
+        drafter=llm_drafter,
+    )
+    reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
+    reply_source = llm_draft.get("reply_source") if llm_draft.get("used") else "deterministic_read_only_guard"
     return {
         "version": RUNTIME_VERSION,
         "agent": "sam_live_stock_backend",
@@ -573,10 +602,12 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None):
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
         "draft_order_packet": draft_packet,
+        "llm_draft": llm_draft,
         "blockers": blockers,
         "ready_for_runtime_next_step": ready_for_runtime_next_step,
         "suggested_reply_text": reply,
-        "reply_source": "deterministic_read_only_guard",
+        "deterministic_fallback_reply_text": fallback_reply,
+        "reply_source": reply_source,
         "should_reply": False,
         "writes_allowed": False,
         "intake_write_allowed": _truthy((environ or {}).get(INTAKE_WRITE_ENABLED_ENV)) and route["lane"] == LANE_LIVE_STOCK,
@@ -1230,6 +1261,154 @@ def _price_answer_reply(facts, packet):
     lines.append("- This is not a reservation.")
     lines.append("- The farm must confirm the actual animals before anything is promised.")
     return "\n".join(lines)
+
+
+def _build_llm_reply_draft_if_enabled(
+    inbound,
+    facts,
+    context_packet,
+    route,
+    missing,
+    blockers,
+    match_packet,
+    price_answer_packet,
+    fallback_reply,
+    source,
+    *,
+    drafter=None,
+):
+    source = source if isinstance(source, dict) else {}
+    if not _truthy(source.get(LLM_ENABLED_ENV)):
+        return {"used": False, "status": "llm_disabled"}
+    if route.get("lane") != LANE_LIVE_STOCK:
+        return {"used": False, "status": "llm_wrong_lane"}
+    if not (_configured_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
+        return {"used": False, "status": "llm_not_configured"}
+    caller = drafter or _call_sam_live_stock_reply_llm
+    raw = caller(
+        _llm_reply_context_packet(
+            inbound,
+            facts,
+            context_packet,
+            route,
+            missing,
+            blockers,
+            match_packet,
+            price_answer_packet,
+            fallback_reply,
+        ),
+        source,
+    )
+    if not isinstance(raw, dict):
+        return {"used": False, "status": "llm_empty_response"}
+    if raw.get("_llm_error"):
+        return {"used": False, "status": "llm_call_failed", "llm_error": raw.get("_llm_error")}
+    reply = _clean_multiline(raw.get("reply_text") or raw.get("suggested_reply_text"), 1800)
+    if not reply:
+        return {"used": False, "status": "llm_no_reply_text"}
+    return {
+        "used": True,
+        "status": "llm_reply_draft_used",
+        "reply_source": "llm_live_stock_reply_draft",
+        "reply_text": reply,
+        "confidence": raw.get("confidence", ""),
+        "notes": _clean(raw.get("notes"), 240),
+    }
+
+
+def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, blockers, match_packet, price_answer_packet, fallback_reply):
+    context_packet = context_packet if isinstance(context_packet, dict) else {}
+    availability = context_packet.get("availability") if isinstance(context_packet.get("availability"), dict) else {}
+    chatwoot_history = context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {}
+    history_messages = chatwoot_history.get("messages") if isinstance(chatwoot_history.get("messages"), list) else []
+    compact_history = [
+        {
+            "message_type": message.get("message_type"),
+            "content": _clean(message.get("content"), 500),
+        }
+        for message in history_messages[-10:]
+        if isinstance(message, dict)
+    ]
+    return {
+        "inbound": {
+            "conversation_id": (inbound or {}).get("conversation_id") or "",
+            "customer_name": (inbound or {}).get("customer_name") or "",
+            "message": _clean((inbound or {}).get("content"), 1000),
+        },
+        "route": route,
+        "facts": facts if isinstance(facts, dict) else {},
+        "missing_fields": missing if isinstance(missing, list) else [],
+        "blockers": blockers if isinstance(blockers, list) else [],
+        "match_packet": match_packet if isinstance(match_packet, dict) else {},
+        "price_answer_packet": price_answer_packet if isinstance(price_answer_packet, dict) else {},
+        "availability_status": {
+            "success": availability.get("success"),
+            "matched_count": availability.get("matched_count"),
+            "total_available_count": availability.get("total_available_count"),
+        },
+        "recent_chatwoot_history": compact_history,
+        "fallback_reply": fallback_reply,
+        "rules": [
+            "Write one concise WhatsApp reply in the farm owner's voice.",
+            "Use only stock and price facts in this JSON. Do not invent animals, prices, reservations, delivery promises, paperwork, or payment status.",
+            "If a detail is missing, ask only one useful question.",
+            "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
+            "Do not share exact farm pins or exact private farm location.",
+            "Never create orders, quotes, reservations, or commands.",
+        ],
+    }
+
+
+def _call_sam_live_stock_reply_llm(context_packet, source):
+    payload = _llm_reply_payload(context_packet, source)
+    req = urllib_request.Request(
+        str(source.get(LLM_URL_ENV, DEFAULT_LLM_URL) or DEFAULT_LLM_URL).strip() or DEFAULT_LLM_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {str(source.get(OPENAI_API_KEY_ENV, '') or '').strip()}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+            body = response.read().decode("utf-8")
+    except urllib_error.HTTPError as exc:
+        return _llm_error_payload("http_error", exc)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        return _llm_error_payload("request_error", exc)
+    try:
+        data = json.loads(body or "{}")
+        content = data["choices"][0]["message"]["content"]
+        return _parse_llm_json_object(str(content or ""), fallback_reply_text=True)
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _llm_reply_payload(context_packet, source):
+    system = (
+        "You are SAM Live Stock's reply drafter for Amadeus Farm. "
+        "Return JSON only with keys reply_text, confidence, notes. "
+        "Draft a customer WhatsApp reply using only the supplied context. "
+        "Never promise availability, reservation, delivery, paperwork, payment, order creation, or exact farm location. "
+        "The owner will review before anything is sent."
+    )
+    return _with_supported_temperature({
+        "model": _configured_model(source),
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(context_packet, ensure_ascii=True, separators=(",", ":"))[:8000]},
+        ],
+        "response_format": {"type": "json_object"},
+    }, source, 0.2)
+
+
+def _llm_reply_needs_fallback(decision, review):
+    decision = decision if isinstance(decision, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    if not str(decision.get("reply_source") or "").startswith("llm_"):
+        return False
+    return bool(review.get("blocked_reasons"))
 
 
 def _live_stock_price_rule_for_packet(facts, match_packet):
@@ -1958,6 +2137,76 @@ def _send_chatwoot_message(conversation_id, message, source):
 
 def _configured_model(source):
     return str(source.get(AGENT_V3_MODEL_ENV) or source.get(LLM_MODEL_ENV) or "").strip()
+
+
+def _timeout(source):
+    source = source or {}
+    default_timeout = 4 if _truthy(source.get("RENDER")) else 8
+    max_timeout = 6 if _truthy(source.get("RENDER")) else 30
+    try:
+        return max(1, min(max_timeout, int(source.get(LLM_TIMEOUT_ENV, str(default_timeout)))))
+    except (TypeError, ValueError):
+        return default_timeout
+
+
+def _with_supported_temperature(payload, source, temperature):
+    payload = dict(payload or {})
+    model = str(_configured_model(source)).lower()
+    if model.startswith("gpt-5"):
+        return payload
+    payload["temperature"] = temperature
+    return payload
+
+
+def _strip_code_fence(value):
+    text = str(value or "").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return text
+
+
+def _parse_llm_json_object(content, fallback_reply_text=False):
+    text = _strip_code_fence(content)
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.S)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            pass
+    if fallback_reply_text:
+        reply = _clean_multiline(text, 1800)
+        if reply:
+            return {"reply_text": reply, "confidence": 0.72}
+    return {}
+
+
+def _llm_error_payload(kind, exc):
+    details = {
+        "kind": _clean(kind, 40),
+        "type": _clean(exc.__class__.__name__, 80),
+        "message": _clean(str(exc), 240),
+    }
+    if isinstance(exc, urllib_error.HTTPError):
+        details["status_code"] = exc.code
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        details["body_excerpt"] = _clean(body, 400)
+    return {"_llm_error": details}
 
 
 def _normal_text(value):

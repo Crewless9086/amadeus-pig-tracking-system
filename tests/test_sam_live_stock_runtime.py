@@ -52,7 +52,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         self.assertTrue(allowed)
 
-    def test_policy_stays_read_only_even_if_autoreply_or_llm_envs_enabled(self):
+    def test_policy_allows_llm_draft_while_staying_read_only(self):
         policy = sam_live_stock_runtime.sam_live_stock_webhook_policy(environ={
             "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED": "1",
             "SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN": "test-sam-live-stock-token-32-chars",
@@ -67,7 +67,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(policy["enabled"])
         self.assertTrue(policy["autoreply_explicitly_enabled"])
         self.assertFalse(policy["autoreply_enabled"])
-        self.assertFalse(policy["llm_enabled"])
+        self.assertTrue(policy["llm_enabled"])
         self.assertFalse(policy["agent_v3_enabled"])
         self.assertTrue(policy["read_only"])
         self.assertFalse(policy["writes_allowed"])
@@ -185,6 +185,89 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["facts"]["location"], "Albertinia")
         self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
         self.assertEqual(decision["read_context"]["chatwoot_history"]["incoming_count"], 3)
+
+    def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
+        calls = []
+
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [
+                {
+                    "pig_id": "W-1043",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "reserved_status": "",
+                    "available_for_sale": "Yes",
+                    "purpose": "Sale",
+                    "sale_category": "Weaner Piglets",
+                    "weight_band": "10_to_14_Kg",
+                    "current_weight_kg": 12.4,
+                }
+            ],
+            llm_drafter=lambda context, source: calls.append((context, source)) or {
+                "reply_text": "Thanks, I can help with female weaners around 10-15kg. I will confirm the current animals with the farm before anything is promised.",
+                "confidence": 0.88,
+            },
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft")
+        self.assertTrue(decision["llm_draft"]["used"])
+        self.assertIn("female weaners", decision["suggested_reply_text"])
+        self.assertFalse(result["sent"])
+        self.assertFalse(decision["customer_send_allowed"])
+        self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
+
+    def test_unsafe_llm_reply_falls_back_before_review_is_attached(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+            llm_drafter=lambda _context, _source: {
+                "reply_text": "Yes, they are available and I have reserved them for you. Payment is confirmed.",
+                "confidence": 0.99,
+            },
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["reply_source"], "deterministic_fallback_after_llm_review")
+        self.assertEqual(decision["llm_draft_review"]["status"], "rejected_by_safety_review")
+        self.assertNotIn("reserved them", decision["suggested_reply_text"])
+        self.assertFalse(result["sent"])
+
+    def test_llm_failure_falls_back_to_deterministic_reply(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+            llm_drafter=lambda _context, _source: {"_llm_error": {"kind": "request_error"}},
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["reply_source"], "deterministic_read_only_guard")
+        self.assertFalse(decision["llm_draft"]["used"])
+        self.assertEqual(decision["llm_draft"]["status"], "llm_call_failed")
+        self.assertFalse(result["sent"])
 
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
         rows = [
