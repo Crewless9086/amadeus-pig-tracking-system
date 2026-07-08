@@ -429,6 +429,7 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Intent: {_owner_card_intent_summary(decision)}",
         f"Stage: {_owner_card_stage_summary(decision)}",
         f"Next: {_owner_card_next_action_summary(decision)}",
+        f"Prepared: {_owner_card_prepared_action_summary(decision)}",
         f"Wants: {_owner_card_fact_summary(facts)}",
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
@@ -1065,6 +1066,24 @@ def _owner_card_next_action_summary(decision):
     plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
     action = _clean(decision.get("next_action") or plan.get("next_action"), 120)
     return action.replace("_", " ") if action else "owner review"
+
+
+def _owner_card_prepared_action_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    if not packet:
+        return "none"
+    label = _clean(packet.get("label"), 120).replace("_", " ")
+    status = _clean(packet.get("status"), 120).replace("_", " ")
+    order_id = _clean(packet.get("order_id"), 100)
+    detail = _clean(packet.get("detail"), 180)
+    parts = [part for part in (label, status) if part]
+    if order_id:
+        parts.append(order_id)
+    summary = " - ".join(parts) if parts else "owner review"
+    if detail:
+        summary = f"{summary} ({detail})"
+    return summary
 
 
 def _owner_card_flags(event, review, decision):

@@ -188,6 +188,8 @@ def handle_sam_live_stock_chatwoot_inbound(
     )
     if draft_order.get("attempted"):
         decision["draft_order"] = draft_order
+        if draft_order.get("success"):
+            _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, draft_order)
         if not draft_order.get("success"):
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
@@ -655,6 +657,13 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    owner_action_packet = build_live_stock_prepared_owner_action_bundle(
+        inbound,
+        facts,
+        conversation_plan,
+        draft_packet,
+        price_answer_packet,
+    )
     owner_correction_examples = _load_owner_correction_examples(
         inbound,
         environ or {},
@@ -705,6 +714,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
         "draft_order_packet": draft_packet,
         "llm_draft": llm_draft,
@@ -801,6 +811,118 @@ def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, i
             "error": _clean(str(exc), 240),
             "payload": payload,
         }
+
+
+def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_plan=None, draft_packet=None, price_answer_packet=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
+    draft_packet = draft_packet if isinstance(draft_packet, dict) else {}
+    price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
+    action = _clean(conversation_plan.get("next_action"), 80)
+    order_state = conversation_plan.get("order_state") if isinstance(conversation_plan.get("order_state"), dict) else {}
+    order_id = _clean(order_state.get("draft_order_id") or order_state.get("order_id"), 100)
+    conversation_id = _clean(inbound.get("conversation_id") or facts.get("conversation_id"), 100)
+    action_packet = build_live_stock_owner_action_packet(order_id=order_id, conversation_id=conversation_id)
+    summary = _prepared_owner_action_summary(action, order_id, draft_packet, price_answer_packet)
+    return {
+        "version": "sam_live_stock_prepared_owner_action_bundle_v1",
+        "next_action": action,
+        "stage": _clean(conversation_plan.get("stage"), 80),
+        "goal": _clean(conversation_plan.get("goal"), 160),
+        "order_id": order_id,
+        "conversation_id": conversation_id,
+        "status": summary["status"],
+        "label": summary["label"],
+        "detail": summary["detail"],
+        "owner_gate_required": True,
+        "manual_review_required": True,
+        "draft_order_ready": bool(draft_packet.get("draft_ready")),
+        "price_ready": bool(price_answer_packet.get("can_answer_price")),
+        "routes": action_packet,
+        **_authority_flags(),
+    }
+
+
+def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, draft_order):
+    result = draft_order.get("result") if isinstance(draft_order.get("result"), dict) else {}
+    order_id = _clean(result.get("order_id") or result.get("Order_ID"), 100)
+    if not order_id:
+        return
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    plan = {**plan, "next_action": "generate_quote" if plan.get("next_action") == "create_draft_then_quote" else plan.get("next_action")}
+    order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
+    plan["order_state"] = {**order_state, "draft_order_id": order_id}
+    if plan.get("next_action") == "generate_quote":
+        plan["stage"] = "quote"
+    decision["conversation_plan"] = plan
+    decision["next_action"] = plan.get("next_action") or decision.get("next_action") or ""
+    decision["conversation_stage"] = plan.get("stage") or decision.get("conversation_stage") or ""
+    decision["owner_action_packet"] = build_live_stock_prepared_owner_action_bundle(
+        inbound,
+        facts,
+        plan,
+        decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {},
+        decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
+    )
+
+
+def _prepared_owner_action_summary(action, order_id, draft_packet, price_answer_packet):
+    if action in {"create_draft", "create_draft_then_quote"}:
+        if draft_packet.get("draft_ready"):
+            label = "Prepare draft order"
+            if action == "create_draft_then_quote":
+                label = "Prepare draft order, then quote"
+            return {
+                "status": "ready_for_owner_prepare",
+                "label": label,
+                "detail": "SAM has enough detail to prepare the draft order for owner review.",
+            }
+        errors = draft_packet.get("validation_errors") if isinstance(draft_packet.get("validation_errors"), list) else []
+        stock_gate = _clean(draft_packet.get("stock_gate"), 80).replace("_", " ")
+        detail = "; ".join(_clean(error, 120) for error in errors[:3] if _clean(error, 120))
+        if not detail and stock_gate:
+            detail = f"Stock gate: {stock_gate}."
+        return {
+            "status": "blocked_until_draft_ready",
+            "label": "Draft order not ready",
+            "detail": detail or "SAM still needs clean order details before a draft order can be prepared.",
+        }
+    if action in {"generate_quote", "update_draft_then_quote"}:
+        if order_id:
+            return {
+                "status": "ready_for_owner_quote_prepare",
+                "label": "Prepare latest quote send",
+                "detail": f"Use order {order_id} to generate or verify the latest quote before any customer send.",
+            }
+        return {
+            "status": "blocked_until_order_exists",
+            "label": "Quote needs draft order first",
+            "detail": "SAM needs a draft order ID before it can prepare the quote send packet.",
+        }
+    if action == "sync_lines":
+        return {
+            "status": "ready_for_owner_sync_lines" if order_id else "blocked_until_order_exists",
+            "label": "Update draft order lines",
+            "detail": f"Use order {order_id} to sync the current requested animals." if order_id else "SAM needs a draft order ID before syncing order lines.",
+        }
+    if action == "ask_missing_field":
+        return {
+            "status": "needs_customer_detail",
+            "label": "Ask one missing detail",
+            "detail": "SAM should ask for the next missing detail before preparing an order action.",
+        }
+    if action:
+        return {
+            "status": "owner_review",
+            "label": action.replace("_", " "),
+            "detail": "Owner review is required before any customer or order action.",
+        }
+    return {
+        "status": "owner_review",
+        "label": "Owner review",
+        "detail": "No prepared order action is ready yet.",
+    }
 
 
 def build_live_stock_match_packet(facts, availability):

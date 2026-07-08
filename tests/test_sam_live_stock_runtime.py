@@ -284,6 +284,96 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("prepare the quote for owner review", reply)
         self.assertIn("Nothing is reserved or sent", reply)
 
+    def test_prepared_owner_action_bundle_requires_order_before_quote(self):
+        bundle = sam_live_stock_runtime.build_live_stock_prepared_owner_action_bundle(
+            {"conversation_id": "1478"},
+            {"quantity": 3, "category": "Piglet", "weight_range": "7_to_9_Kg"},
+            conversation_plan={"next_action": "generate_quote", "stage": "quote", "goal": "buy_live_stock: 3 Piglet"},
+            draft_packet={"draft_ready": True},
+            price_answer_packet={"can_answer_price": True},
+        )
+
+        self.assertEqual(bundle["status"], "blocked_until_order_exists")
+        self.assertEqual(bundle["label"], "Quote needs draft order first")
+        self.assertFalse(bundle["creates_order"])
+        self.assertFalse(bundle["sends_customer_message"])
+
+    def test_prepared_owner_action_bundle_exposes_quote_routes_for_existing_order(self):
+        bundle = sam_live_stock_runtime.build_live_stock_prepared_owner_action_bundle(
+            {"conversation_id": "1478"},
+            {"quantity": 3, "category": "Piglet", "weight_range": "7_to_9_Kg"},
+            conversation_plan={
+                "next_action": "generate_quote",
+                "stage": "quote",
+                "goal": "buy_live_stock: 3 Piglet",
+                "order_state": {"draft_order_id": "ORD-2026-12BCCC"},
+            },
+            draft_packet={"draft_ready": True},
+            price_answer_packet={"can_answer_price": True},
+        )
+
+        self.assertEqual(bundle["status"], "ready_for_owner_quote_prepare")
+        self.assertEqual(bundle["order_id"], "ORD-2026-12BCCC")
+        self.assertIn("/api/orders/ORD-2026-12BCCC/quote/prepare-send", bundle["routes"]["quote_prepare"]["route"])
+        self.assertIn("/api/orders/ORD-2026-12BCCC/quote/send-latest-confirmed", bundle["routes"]["quote_send_confirmed"]["route"])
+        self.assertFalse(bundle["routes"]["quote_prepare"]["allowed_for_sam_auto"])
+
+    def test_prepared_owner_action_bundle_marks_draft_order_ready(self):
+        bundle = sam_live_stock_runtime.build_live_stock_prepared_owner_action_bundle(
+            {"conversation_id": "1478"},
+            {"quantity": 3, "category": "Piglet", "weight_range": "7_to_9_Kg"},
+            conversation_plan={"next_action": "create_draft_then_quote", "stage": "quote"},
+            draft_packet={"draft_ready": True, "validation_errors": []},
+            price_answer_packet={"can_answer_price": True},
+        )
+
+        self.assertEqual(bundle["status"], "ready_for_owner_prepare")
+        self.assertEqual(bundle["label"], "Prepare draft order, then quote")
+        self.assertTrue(bundle["draft_order_ready"])
+
+    def test_created_draft_order_refreshes_owner_action_bundle_to_quote_prepare(self):
+        def creator(_order_data, _sync_data):
+            return {"success": True, "order_id": "ORD-2026-12BCCC"}
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Please send me the quote for 3 female weaners around 10 to 15kg in Riversdale."),
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "1478",
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "payment_method": "Cash",
+                    "order_commitment": True,
+                    "quote_requested": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 12},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 13},
+                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 14},
+            ],
+            draft_order_creator=creator,
+        )
+
+        decision = result["sam_decision"]
+        bundle = decision["owner_action_packet"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["draft_order"]["status"], "sam_live_stock_draft_order_created")
+        self.assertEqual(decision["next_action"], "generate_quote")
+        self.assertEqual(bundle["status"], "ready_for_owner_quote_prepare")
+        self.assertEqual(bundle["order_id"], "ORD-2026-12BCCC")
+        self.assertIn("/api/orders/ORD-2026-12BCCC/quote/prepare-send", bundle["routes"]["quote_prepare"]["route"])
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 
