@@ -778,6 +778,33 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(artifact["contract_parse_fallback"])
         self.assertEqual(artifact["recommended_owner_decision"], "send_back")
 
+    def test_council_synthesis_parsed_artifact_gets_contract_defaults(self):
+        final = """Council-approved build brief:
+        Keep the Pig Allocation change frontend-only.
+
+        ```json
+        {
+          "summary": "Council aligned on compact Pig Allocation table.",
+          "errors": [],
+          "bugs": [],
+          "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+          "files_inspected": ["static/js/pigAllocation.js"],
+          "commands_run": ["node --check static/js/pigAllocation.js"],
+          "confidence": 0.96,
+          "confidence_reason": "Based on upstream agent artifacts.",
+          "next_action": "Planner should hand the scoped table cleanup to Builder."
+        }
+        ```
+        """
+
+        artifact = execution_bridge._agent_artifact_from_final("council_synthesis", final)
+        validation = execution_bridge._validate_agent_artifact("council_synthesis", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+        self.assertIn("Council aligned", artifact["build_brief"])
+        self.assertEqual(artifact["agreements"], ["Council aligned on compact Pig Allocation table."])
+        self.assertEqual(artifact["conflicts_resolved"], ["No council conflicts were recorded in the parsed artifact."])
+
     def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
         text = """
         ```json

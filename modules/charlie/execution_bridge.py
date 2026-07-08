@@ -2908,7 +2908,7 @@ def _first_contract_retry_artifact_path(ledger, agent):
 def _agent_artifact_from_final(agent, final_message):
     parsed = _extract_json_object(final_message)
     if parsed:
-        return parsed
+        return _normalize_agent_artifact(agent, parsed, final_message)
     artifact = {
         "summary": _truncate(final_message or f"{agent} completed.", 1200),
         "contract_parse_fallback": True,
@@ -3002,6 +3002,29 @@ def _agent_artifact_from_final(agent, final_message):
             "changed_files": _changed_files(),
             "test_evidence": _extract_test_evidence(final_message),
         })
+    return artifact
+
+
+def _normalize_agent_artifact(agent, artifact, final_message=""):
+    artifact = dict(artifact or {})
+    if agent != "council_synthesis":
+        return artifact
+    summary = _truncate(artifact.get("summary") or final_message or "Council synthesis completed.", 1200)
+    next_action = _truncate(artifact.get("next_action") or "", 900)
+    if not artifact.get("agreements"):
+        artifact["agreements"] = [summary]
+    if not artifact.get("conflicts_resolved"):
+        artifact["conflicts_resolved"] = ["No council conflicts were recorded in the parsed artifact."]
+    if "unresolved_blockers" not in artifact:
+        artifact["unresolved_blockers"] = []
+    if not artifact.get("build_brief"):
+        brief_parts = [summary]
+        if next_action:
+            brief_parts.append(f"Next action: {next_action}")
+        artifact["build_brief"] = "\n\n".join(brief_parts)
+    if not artifact.get("acceptance_priorities"):
+        criteria = artifact.get("acceptance_criteria")
+        artifact["acceptance_priorities"] = criteria[:6] if isinstance(criteria, list) else []
     return artifact
 
 
