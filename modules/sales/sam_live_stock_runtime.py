@@ -18,6 +18,7 @@ from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
 from modules.sales.sam_pricing import resolve_live_stock_price_rule
 from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, classify_sam_sales_lane
+from modules.sales.sam_conversation_state import plan_live_stock_next_action
 
 
 WEBHOOK_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED"
@@ -635,7 +636,11 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "reserves_stock": False,
             "authority_note": "Farm-general replies are owner-review candidates only.",
         }
-    missing = _missing_live_stock_fields(facts)
+    intake_context = context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}
+    conversation_plan = plan_live_stock_next_action(intake_context, facts)
+    legacy_missing = _missing_live_stock_fields(facts)
+    plan_missing = conversation_plan.get("missing_fields") if isinstance(conversation_plan.get("missing_fields"), list) else []
+    missing = plan_missing if _planner_has_signal(intake_context, facts) else legacy_missing
     blockers = []
     if route["lane"] != LANE_LIVE_STOCK:
         blockers.append(f"lane_not_live_stock:{route['lane']}")
@@ -688,6 +693,10 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "lane_confidence": route["confidence"],
         "facts": facts,
         "missing_fields": missing,
+        "conversation_plan": conversation_plan,
+        "next_action": conversation_plan.get("next_action") or "",
+        "conversation_stage": conversation_plan.get("stage") or "",
+        "conversation_goal": conversation_plan.get("goal") or "",
         "read_context": {
             "prior_context_source": (context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}).get("source", ""),
             "chatwoot_history": context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {},
@@ -1354,6 +1363,19 @@ def _farm_general_reply(inbound, source):
         f"{greeting}{location} "
         "If you are asking about live pigs, pork for the freezer, or farm collections, send me what you need and I will help from there."
     )
+
+
+def _planner_has_signal(intake_context, facts):
+    intake_context = intake_context if isinstance(intake_context, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    if intake_context.get("intake_id") or intake_context.get("draft_order_id"):
+        return True
+    if isinstance(intake_context.get("items"), list) and intake_context.get("items"):
+        return True
+    known = intake_context.get("known_fields") if isinstance(intake_context.get("known_fields"), dict) else {}
+    if any(known.get(key) not in ("", None, False) for key in ("order_commitment", "quote_requested", "collection_location", "payment_method")):
+        return True
+    return bool(facts.get("order_commitment") or facts.get("quote_requested"))
 
 
 def _fact_aware_owner_draft(facts, packet, availability):

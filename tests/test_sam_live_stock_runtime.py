@@ -223,6 +223,37 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("wrong_or_unclear_lane", review["escalation_reasons"])
         self.assertFalse(result["sent"])
 
+    def test_decision_uses_intake_planner_missing_and_next_action(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Please send me the quote", sender={"name": "Michaels"}),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "1478",
+                "known_fields": {
+                    "collection_location": "Albertinia",
+                    "payment_method": "Cash",
+                    "order_commitment": True,
+                    "quote_requested": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Piglet",
+                    "weight_range": "7_to_9_Kg",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["next_action"], "create_draft_then_quote")
+        self.assertEqual(decision["missing_fields"], ["draft_order_id"])
+        self.assertEqual(decision["conversation_plan"]["missing_fields"], decision["missing_fields"])
+        self.assertEqual(decision["conversation_stage"], "quote")
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 
