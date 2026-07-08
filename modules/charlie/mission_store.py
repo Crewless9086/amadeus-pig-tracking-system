@@ -931,7 +931,7 @@ def update_mission_workflow_step(
     if step_status == "complete":
         vault["mission_stage"] = AGENT_STAGE_MAP.get(agent, vault.get("mission_stage", "intake"))
     elif step_status == "blocked":
-        vault["mission_stage"] = "blocked"
+        vault["mission_stage"] = f"blocked_at_{agent}" if agent else "blocked"
     if findings:
         handoff_notes = vault.get("handoff_notes") if isinstance(vault.get("handoff_notes"), list) else []
         handoff_notes = list(handoff_notes)

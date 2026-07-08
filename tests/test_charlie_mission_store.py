@@ -639,6 +639,44 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn('"creative_ui_designer", "status": "pending"', update_params["metadata_json"])
         self.assertIn("Mapped owner reference media", update_params["metadata_json"])
 
+    def test_update_mission_workflow_step_records_blocked_agent_stage(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "approved", "telegram", "12345", "67890",
+            "Build queue", "Build queue", "P1", "feature build", "LEVEL 3",
+            "", "", "", {
+                "mission_vault": {"mission_stage": "intake"},
+                "agent_workflow": [
+                    {"agent": "builder", "status": "active", "purpose": "Build", "handoff_to": "tester"},
+                    {"agent": "tester", "status": "pending", "purpose": "Test", "handoff_to": "reviewer"},
+                ],
+                "mission_context_pack": {"version": "charlie_context_pack_v1"},
+            }, now, now,
+        )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
+
+        def factory(_):
+            return connections.pop(0)
+
+        from modules.charlie.mission_store import update_mission_workflow_step
+
+        result, status_code = update_mission_workflow_step(
+            "MISSION-1",
+            "builder",
+            step_status="blocked",
+            findings="Final artifact missing.",
+            database_url="postgres://unit-test",
+            connect_factory=factory,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        _update_sql, update_params = update_connection.cursor_instance.executed[0]
+        self.assertIn('"mission_stage": "blocked_at_builder"', update_params["metadata_json"])
+        self.assertIn('"builder", "status": "blocked"', update_params["metadata_json"])
+
     def test_build_mission_review_packet_collects_stage_8_evidence(self):
         packet = build_mission_review_packet({
             "mission_id": "MISSION-1",
