@@ -43,7 +43,7 @@ def main():
             "url": f"{base_url}{WEBHOOK_PATH}",
             "secret_token": secret,
             "drop_pending_updates": False,
-            "allowed_updates": ["message", "edited_message"],
+            "allowed_updates": ["message", "edited_message", "callback_query"],
         }
         method = "setWebhook"
 
