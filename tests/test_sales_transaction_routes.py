@@ -2014,6 +2014,35 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         record.assert_not_called()
         handle_inbound.assert_not_called()
 
+    def test_order_document_delivery_echo_is_not_captured_as_owner_reply(self):
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_live_stock_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "record_sales_conversation_learning_event",
+        ) as record, patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_chatwoot_inbound",
+        ) as handle_inbound:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-live-stock/inbound",
+                json={
+                    "event": "message_created",
+                    "message_type": "outgoing",
+                    "source_id": "order_document:DOC-1",
+                    "content_attributes": {"amadeus_source": "order_document_delivery"},
+                    "content": "Please find your quote attached: Q-1",
+                    "conversation": {"id": 1840, "inbox": {"channel_type": "Channel::Whatsapp"}},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "sam_live_stock_send_echo_skipped")
+        record.assert_not_called()
+        handle_inbound.assert_not_called()
+
     def test_sam_live_stock_owner_reply_learning_failure_still_returns_200(self):
         with patch.object(
             sales_transaction_routes,

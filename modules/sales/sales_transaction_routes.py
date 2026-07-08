@@ -505,10 +505,13 @@ def _owner_reply_capture_skipped(status, inbound):
 def _is_sam_live_stock_send_echo(payload):
     payload = payload if isinstance(payload, dict) else {}
     source_id = str(payload.get("source_id") or "").strip().lower()
-    if source_id.startswith("sam_live_stock:"):
+    if source_id.startswith("sam_live_stock:") or source_id.startswith("order_document:"):
         return True
     attrs = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
-    return attrs.get("amadeus_source") == "sam_live_stock_owner_approved_send" or attrs.get("sam_live_stock_generated") is True
+    return attrs.get("amadeus_source") in {
+        "sam_live_stock_owner_approved_send",
+        "order_document_delivery",
+    } or attrs.get("sam_live_stock_generated") is True
 
 
 def _truthy_payload_value(value):

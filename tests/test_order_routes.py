@@ -580,6 +580,7 @@ class OrderRoutesTests(unittest.TestCase):
                     "sent_by": "Oom Sakkie",
                     "confirmation_source": "telegram_button",
                     "telegram_user_id": "123",
+                    "force_resend": True,
                 },
             )
 
@@ -594,6 +595,7 @@ class OrderRoutesTests(unittest.TestCase):
             conversation_id="1774",
             sent_by="Oom Sakkie",
             account_id="147387",
+            force_resend=True,
         )
 
     def test_send_latest_quote_confirmed_route_blocks_stale_document_selection(self):

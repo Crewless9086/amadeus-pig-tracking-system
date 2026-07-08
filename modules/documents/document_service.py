@@ -1,6 +1,9 @@
 import json
+import mimetypes
 import os
 from datetime import date, datetime, timedelta
+from pathlib import Path
+import tempfile
 import uuid
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -12,6 +15,7 @@ from services.google_sheets_service import (
 )
 from modules.documents import document_supabase_read
 from modules.documents import document_supabase_write
+from services.google_drive_service import download_drive_file
 
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
 ORDER_DOCUMENTS_SHEET = "ORDER_DOCUMENTS"
@@ -269,7 +273,7 @@ def mark_document_sent(document_id, sent_by="n8n", sent_at=None):
     raise ValueError(f"Document '{document_id}' not found.")
 
 
-def send_order_document(document_id, conversation_id, sent_by="App", account_id="147387"):
+def send_order_document(document_id, conversation_id, sent_by="App", account_id="147387", force_resend=False):
     document = get_order_document(document_id)
     if not document:
         raise ValueError("Document not found.")
@@ -277,7 +281,7 @@ def send_order_document(document_id, conversation_id, sent_by="App", account_id=
     if str(document.get("Document_Status", "")).strip() == STATUS_VOIDED:
         raise ValueError("Voided documents cannot be sent.")
 
-    if _recently_sent(document):
+    if not force_resend and _recently_sent(document):
         return {
             "success": True,
             "skipped": True,
@@ -425,10 +429,19 @@ def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, accoun
     conversation_id = str(conversation_id or "").strip()
     document_type = str(document.get("Document_Type", "")).strip() or "document"
     document_ref = str(document.get("Document_Ref", "")).strip()
-    drive_url = str(document.get("Google_Drive_URL", "")).strip()
+    drive_file_id = str(document.get("Google_Drive_File_ID", "")).strip()
+    file_name = str(document.get("File_Name", "")).strip() or f"{document_ref or 'document'}.pdf"
     total = str(document.get("Total", "")).strip()
     payment_ref = str(document.get("Payment_Ref", "")).strip()
     payment_method = str(document.get("Payment_Method", "")).strip()
+    if not drive_file_id:
+        return {
+            "sent": False,
+            "skipped": True,
+            "delivery_channel": "chatwoot_direct_attachment",
+            "attachment_sent": False,
+            "error": "Google_Drive_File_ID is required for direct PDF delivery.",
+        }
     lines = [
         f"Please find your {document_type.lower()} attached: {document_ref}",
     ]
@@ -438,27 +451,39 @@ def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, accoun
         lines.append(f"Payment reference: {payment_ref}")
     if payment_method:
         lines.append(f"Payment method: {payment_method}")
-    if drive_url:
-        lines.extend(["", drive_url])
-    body = {
-        "content": "\n".join(lines),
-        "message_type": "outgoing",
-        "private": False,
-        "source_id": f"order_document:{str(document.get('Document_ID', '')).strip()}",
-        "content_attributes": {
-            "amadeus_source": "order_document_delivery",
-            "document_id": str(document.get("Document_ID", "")).strip(),
-            "document_ref": document_ref,
-            "sent_by": str(sent_by or "").strip() or "App",
-        },
-    }
-    request = urllib_request.Request(
-        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
-        data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
-        headers={"Content-Type": "application/json", "api_access_token": CHATWOOT_API_TOKEN},
-        method="POST",
-    )
+    message = "\n".join(lines)
+    document_id = str(document.get("Document_ID", "")).strip()
+
     try:
+        with tempfile.TemporaryDirectory(prefix="amadeus-order-doc-") as temp_dir:
+            pdf_path = Path(temp_dir) / _safe_attachment_filename(file_name)
+            download_drive_file(drive_file_id, pdf_path)
+            boundary = "----AmadeusOrderDocument" + uuid.uuid4().hex[:16]
+            request = urllib_request.Request(
+                f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+                data=_multipart_body(
+                    boundary,
+                    {
+                        "content": message,
+                        "message_type": "outgoing",
+                        "private": "false",
+                        "source_id": f"order_document:{document_id}",
+                        "content_attributes[amadeus_source]": "order_document_delivery",
+                        "content_attributes[document_id]": document_id,
+                        "content_attributes[document_ref]": document_ref,
+                        "content_attributes[sent_by]": str(sent_by or "").strip() or "App",
+                    },
+                    "attachments[]",
+                    pdf_path.name,
+                    mimetypes.guess_type(pdf_path.name)[0] or "application/pdf",
+                    pdf_path.read_bytes(),
+                ),
+                headers={
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                    "api_access_token": CHATWOOT_API_TOKEN,
+                },
+                method="POST",
+            )
         with urllib_request.urlopen(request, timeout=30) as response:
             response_body = response.read().decode("utf-8", errors="ignore")
             status_code = getattr(response, "status", 200)
@@ -466,28 +491,61 @@ def _send_document_direct_to_chatwoot(document, conversation_id, sent_by, accoun
                 "sent": 200 <= status_code < 300,
                 "status_code": status_code,
                 "body": response_body,
-                "delivery_channel": "chatwoot_direct",
-                "message_text": body["content"],
+                "delivery_channel": "chatwoot_direct_attachment",
+                "attachment_sent": 200 <= status_code < 300,
+                "file_name": pdf_path.name,
+                "message_text": message,
                 "error": "" if 200 <= status_code < 300 else response_body[:240],
             }
     except urllib_error.HTTPError as exc:
         return {
             "sent": False,
-            "delivery_channel": "chatwoot_direct",
+            "delivery_channel": "chatwoot_direct_attachment",
+            "attachment_sent": False,
             "error": f"HTTPError {exc.code}: {exc.reason}",
         }
     except urllib_error.URLError as exc:
         return {
             "sent": False,
-            "delivery_channel": "chatwoot_direct",
+            "delivery_channel": "chatwoot_direct_attachment",
+            "attachment_sent": False,
             "error": f"URLError: {exc.reason}",
         }
     except Exception as exc:
         return {
             "sent": False,
-            "delivery_channel": "chatwoot_direct",
+            "delivery_channel": "chatwoot_direct_attachment",
+            "attachment_sent": False,
             "error": str(exc),
         }
+
+
+def _safe_attachment_filename(value):
+    cleaned = str(value or "").strip() or "document.pdf"
+    cleaned = cleaned.replace("\\", "_").replace("/", "_").replace(":", "_")
+    if not cleaned.lower().endswith(".pdf"):
+        cleaned = f"{cleaned}.pdf"
+    return cleaned
+
+
+def _multipart_body(boundary, fields, file_field, filename, content_type, file_bytes):
+    parts = []
+    for name, value in fields.items():
+        parts.extend([
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+            str(value).encode("utf-8"),
+            b"\r\n",
+        ])
+    parts.extend([
+        f"--{boundary}\r\n".encode("utf-8"),
+        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode("utf-8"),
+        f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+        file_bytes,
+        b"\r\n",
+        f"--{boundary}--\r\n".encode("utf-8"),
+    ])
+    return b"".join(parts)
 
 
 def _year_from_order_id(order_id):

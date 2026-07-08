@@ -427,6 +427,7 @@ def send_latest_quote_confirmed(order_id):
     account_id = str(payload.get("account_id", "147387")).strip() or "147387"
     confirmation_source = str(payload.get("confirmation_source", "")).strip()
     telegram_user_id = str(payload.get("telegram_user_id", "")).strip()
+    force_resend = _truthy(payload.get("force_resend"))
 
     try:
         result = _send_latest_quote_confirmed(
@@ -437,6 +438,7 @@ def send_latest_quote_confirmed(order_id):
             account_id=account_id,
             confirmation_source=confirmation_source,
             telegram_user_id=telegram_user_id,
+            force_resend=force_resend,
         )
         status_code = 200 if result.get("success") else 502
         if result.get("skipped") and result.get("reason") != "already_sent":
@@ -474,6 +476,7 @@ def send_document(document_id):
     conversation_id = str(payload.get("conversation_id", "")).strip()
     sent_by = str(payload.get("sent_by", payload.get("changed_by", "App"))).strip() or "App"
     account_id = str(payload.get("account_id", "147387")).strip() or "147387"
+    force_resend = _truthy(payload.get("force_resend"))
 
     try:
         result = send_order_document(
@@ -481,6 +484,7 @@ def send_document(document_id):
             conversation_id=conversation_id,
             sent_by=sent_by,
             account_id=account_id,
+            force_resend=force_resend,
         )
         status_code = 200 if result.get("success") else 502
         if result.get("skipped") and result.get("reason") != "already_sent":
@@ -875,6 +879,7 @@ def _send_latest_quote_confirmed(
     account_id="147387",
     confirmation_source="",
     telegram_user_id="",
+    force_resend=False,
 ):
     order_id = str(order_id or "").strip()
     document_id = str(document_id or "").strip()
@@ -914,6 +919,7 @@ def _send_latest_quote_confirmed(
         conversation_id=conversation_id,
         sent_by=sent_by,
         account_id=account_id,
+        force_resend=force_resend,
     )
     result["action"] = "send_latest_quote_confirmed"
     result["order_id"] = str(result.get("order_id") or order_id).strip()
