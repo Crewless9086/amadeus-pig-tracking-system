@@ -137,6 +137,13 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
     customer_message = _clean(latest_review_event.get("customer_message_excerpt"), 1200)
     facts = _dict(latest_review_event.get("facts_json"))
     review_event_id = _clean(latest_review_event.get("review_event_id"), 120)
+    review_created_at = _clean(latest_review_event.get("created_at"), 80)
+    outbound_created_at = _clean(outbound.get("created_at") or outbound.get("last_inbound_at"), 80)
+    age_seconds = _seconds_between(review_created_at, outbound_created_at)
+    stale_review_link = age_seconds is not None and age_seconds > 12 * 60 * 60
+    if stale_review_link:
+        sam_draft = ""
+        review_event_id = ""
     classification = _owner_reply_classification(owner_reply, sam_draft)
     lead_id = _clean(outbound.get("lead_id") or f"SAM-LIVE-CONV-{conversation_id}", 120)
     event = {
@@ -163,6 +170,10 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
             "owner_reply_classification": classification,
             "sam_reply_similarity": _reply_similarity(owner_reply, sam_draft),
             "recommended_action": _clean(latest_review_event.get("recommended_action"), 120),
+            "review_event_created_at": review_created_at,
+            "owner_reply_created_at": outbound_created_at,
+            "review_reply_delta_seconds": age_seconds,
+            "stale_review_link": stale_review_link,
         },
         "missing_facts": _list((latest_review_event.get("decision_json") or {}).get("missing_fields") if isinstance(latest_review_event.get("decision_json"), dict) else []),
         "objections": _objections(owner_reply),
@@ -372,6 +383,80 @@ def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=N
     }, 200
 
 
+def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None):
+    try:
+        limit = max(1, min(int(limit), 10))
+    except (TypeError, ValueError):
+        limit = 3
+    conversation_id = _clean(conversation_id, 120)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _unavailable("not_configured", configured=False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", configured=True), 500
+
+    params = {"conversation_id": conversation_id, "limit": limit}
+    same_conversation_where = "and chatwoot_conversation_id = %(conversation_id)s" if conversation_id else ""
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
+                    from public.meat_sales_conversation_learning_events
+                    where source_agent = 'sam_live_stock_backend'
+                      and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
+                      and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                      {same_conversation_where}
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+                if len(rows) < limit:
+                    cursor.execute(
+                        """
+                        select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
+                        from public.meat_sales_conversation_learning_events
+                        where source_agent = 'sam_live_stock_backend'
+                          and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
+                          and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                        order by created_at desc
+                        limit %(limit)s
+                        """,
+                        params,
+                    )
+                    seen = {_example_key(row) for row in rows}
+                    for row in cursor.fetchall():
+                        key = _example_key(row)
+                        if key not in seen:
+                            rows.append(row)
+                            seen.add(key)
+                        if len(rows) >= limit:
+                            break
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_conversation_learning_read_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "examples": [],
+            **AUTHORITY_FLAGS,
+        }, 500
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "sam_live_stock_owner_reply_examples_loaded",
+        "examples": [_owner_reply_example_from_row(row) for row in rows[:limit]],
+        **AUTHORITY_FLAGS,
+    }, 200
+
+
 def summarize_sales_conversation_learning(events):
     events = events if isinstance(events, list) else []
     summary = {
@@ -475,6 +560,30 @@ def _row_to_event(row):
         "created_at": row[19].isoformat() if hasattr(row[19], "isoformat") else str(row[19] or ""),
         **AUTHORITY_FLAGS,
     }
+
+
+def _owner_reply_example_from_row(row):
+    captured = row[2] or {}
+    if isinstance(captured, str):
+        captured = _loads(captured, {})
+    return {
+        "customer_message_excerpt": _clip(row[0] or "", 300),
+        "rejected_sam_draft": _clip(row[1] or "", 500),
+        "owner_reply_excerpt": _clip(captured.get("owner_reply_excerpt") or "", 500),
+        "classification": _clean(captured.get("owner_reply_classification"), 80),
+        "created_at": row[3].isoformat() if hasattr(row[3], "isoformat") else str(row[3] or ""),
+    }
+
+
+def _example_key(row):
+    captured = row[2] or {}
+    if isinstance(captured, str):
+        captured = _loads(captured, {})
+    return "|".join([
+        _clean(row[0], 120),
+        _clean(row[1], 120),
+        _clean(captured.get("owner_reply_excerpt"), 120),
+    ])
 
 
 def _customer_wanted(facts):
@@ -639,6 +748,29 @@ def _reply_similarity(left, right):
 
 def _normal_reply(value):
     return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def _seconds_between(start, end):
+    start_dt = _parse_datetime(start)
+    end_dt = _parse_datetime(end)
+    if not start_dt or not end_dt:
+        return None
+    return max(0, int((end_dt - start_dt).total_seconds()))
+
+
+def _parse_datetime(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _sam_misses(message, facts, decision, missing_facts):

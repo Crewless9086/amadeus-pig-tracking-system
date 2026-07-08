@@ -272,7 +272,8 @@ def get_sam_live_stock_review_event(review_event_id, database_url=None):
                         recommended_action,
                         review_json,
                         facts_json,
-                        decision_json
+                        decision_json,
+                        created_at
                     from public.sam_live_stock_conversation_review_events
                     where review_event_id = %s
                     limit 1
@@ -333,7 +334,8 @@ def get_latest_sam_live_stock_review_event_for_conversation(conversation_id, dat
                         recommended_action,
                         review_json,
                         facts_json,
-                        decision_json
+                        decision_json,
+                        created_at
                     from public.sam_live_stock_conversation_review_events
                     where chatwoot_conversation_id = %s
                     order by created_at desc

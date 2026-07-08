@@ -277,6 +277,41 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("message_type", history[0])
         self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 4)
 
+    def test_llm_context_includes_owner_correction_examples_when_enabled(self):
+        calls = []
+
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Location"),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED": "1",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+            owner_example_loader=lambda conversation_id="", limit=3: ({
+                "success": True,
+                "examples": [{
+                    "customer_message_excerpt": "Location",
+                    "rejected_sam_draft": "Are you looking for live pigs, pork, or slaughter?",
+                    "owner_reply_excerpt": "We are near Riversdale in the Western Cape. Collection is arranged with the farm first.",
+                    "classification": "owner_replaced",
+                }],
+            }, 200),
+            llm_drafter=lambda context, source: calls.append((context, source)) or {
+                "reply_text": "We are near Riversdale in the Western Cape. I can check the current live-pig list before anything is promised.",
+                "confidence": 0.86,
+            },
+        )
+
+        self.assertEqual(result["sam_decision"]["reply_source"], "llm_live_stock_reply_draft")
+        examples = calls[0][0]["owner_correction_examples"]
+        self.assertEqual(examples[0]["classification"], "owner_replaced")
+        self.assertIn("Riversdale", examples[0]["owner_reply_excerpt"])
+        self.assertIn("owner_correction_examples", calls[0][0])
+
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
         context = {
             "rules": ["Use only supplied stock facts.", "Ask one useful question."],

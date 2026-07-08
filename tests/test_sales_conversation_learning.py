@@ -129,6 +129,29 @@ class SalesConversationLearningTests(unittest.TestCase):
         self.assertFalse(event["applies_learning_now"])
         self.assertFalse(event["sends_customer_message"])
 
+    def test_live_stock_owner_reply_stale_review_is_not_trusted_as_draft_match(self):
+        event = build_live_stock_owner_reply_learning_event(
+            {
+                "conversation_id": "1840",
+                "message_id": "9001",
+                "content": "We are in the Western Cape near Riversdale.",
+                "last_inbound_at": "2026-07-08T14:00:00+00:00",
+                "channel": "chatwoot_whatsapp",
+            },
+            {
+                "review_event_id": "SAM-LIVE-REVIEW-OLD",
+                "chatwoot_conversation_id": "1840",
+                "created_at": "2026-07-07T00:00:00+00:00",
+                "customer_message_excerpt": "Location",
+                "sam_reply_excerpt": "Old draft",
+                "facts_json": {"sales_lane": "live_stock_sales"},
+            },
+        )
+
+        self.assertEqual(event["captured_facts"]["owner_reply_classification"], "owner_reply_no_sam_draft")
+        self.assertTrue(event["captured_facts"]["stale_review_link"])
+        self.assertEqual(event["captured_facts"]["review_event_id"], "")
+
     def test_summary_counts_patterns(self):
         summary = summarize_sales_conversation_learning([
             {

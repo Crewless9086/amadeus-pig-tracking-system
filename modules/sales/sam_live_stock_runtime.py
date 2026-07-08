@@ -28,6 +28,7 @@ LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
 AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
 LLM_URL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"
+OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
 OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
@@ -103,6 +104,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     intake_writer=None,
     draft_order_creator=None,
     llm_drafter=None,
+    owner_example_loader=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -128,7 +130,14 @@ def handle_sam_live_stock_chatwoot_inbound(
         environ=source,
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
-    decision = build_sam_live_stock_decision(inbound, facts, context_packet, source, llm_drafter=llm_drafter)
+    decision = build_sam_live_stock_decision(
+        inbound,
+        facts,
+        context_packet,
+        source,
+        llm_drafter=llm_drafter,
+        owner_example_loader=owner_example_loader,
+    )
     conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     if _llm_reply_needs_fallback(decision, conversation_review):
         decision["llm_draft_review"] = {
@@ -569,7 +578,7 @@ def _chatwoot_message_is_activity(message):
     return value == 2 or str(value).strip().lower() == "activity"
 
 
-def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None):
+def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, llm_drafter=None, owner_example_loader=None):
     route = classify_sam_sales_lane(inbound.get("content"), prior_context={"lane": facts.get("sales_lane")})
     if facts.get("sales_lane") == LANE_LIVE_STOCK and route["lane"] != LANE_LIVE_STOCK:
         route = {
@@ -597,6 +606,11 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    owner_correction_examples = _load_owner_correction_examples(
+        inbound,
+        environ or {},
+        owner_example_loader=owner_example_loader,
+    )
     fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet)
     llm_draft = _build_llm_reply_draft_if_enabled(
         inbound,
@@ -610,6 +624,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         fallback_reply,
         environ or {},
         drafter=llm_drafter,
+        owner_correction_examples=owner_correction_examples,
     )
     reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
     reply_source = llm_draft.get("reply_source") if llm_draft.get("used") else "deterministic_read_only_guard"
@@ -637,6 +652,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "owner_correction_examples": owner_correction_examples,
         "draft_order_packet": draft_packet,
         "llm_draft": llm_draft,
         "blockers": blockers,
@@ -1312,6 +1328,7 @@ def _build_llm_reply_draft_if_enabled(
     source,
     *,
     drafter=None,
+    owner_correction_examples=None,
 ):
     source = source if isinstance(source, dict) else {}
     if not _truthy(source.get(LLM_ENABLED_ENV)):
@@ -1332,6 +1349,7 @@ def _build_llm_reply_draft_if_enabled(
             match_packet,
             price_answer_packet,
             fallback_reply,
+            owner_correction_examples=owner_correction_examples,
         ),
         source,
     )
@@ -1352,7 +1370,42 @@ def _build_llm_reply_draft_if_enabled(
     }
 
 
-def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, blockers, match_packet, price_answer_packet, fallback_reply):
+def _load_owner_correction_examples(inbound, source, owner_example_loader=None):
+    source = source if isinstance(source, dict) else {}
+    if not _truthy(source.get(OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV)):
+        return []
+    loader = owner_example_loader
+    if loader is None:
+        try:
+            from modules.sales.conversation_learning import list_live_stock_owner_reply_examples
+        except Exception:
+            return []
+        loader = list_live_stock_owner_reply_examples
+    try:
+        result, _status = loader(
+            conversation_id=(inbound or {}).get("conversation_id") or "",
+            limit=3,
+        )
+    except TypeError:
+        result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
+    except Exception:
+        return []
+    examples = result.get("examples") if isinstance(result, dict) else []
+    return examples if isinstance(examples, list) else []
+
+
+def _llm_reply_context_packet(
+    inbound,
+    facts,
+    context_packet,
+    route,
+    missing,
+    blockers,
+    match_packet,
+    price_answer_packet,
+    fallback_reply,
+    owner_correction_examples=None,
+):
     context_packet = context_packet if isinstance(context_packet, dict) else {}
     availability = context_packet.get("availability") if isinstance(context_packet.get("availability"), dict) else {}
     chatwoot_history = context_packet.get("chatwoot_history") if isinstance(context_packet.get("chatwoot_history"), dict) else {}
@@ -1376,6 +1429,7 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
             "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
             "Do not share exact farm pins or exact private farm location.",
             "Never create orders, quotes, reservations, or commands.",
+            "Prefer the owner's corrected phrasing style shown in owner_correction_examples; when the owner replaced a similar draft, follow their wording, not the rejected draft.",
         ],
         "inbound": {
             "conversation_id": (inbound or {}).get("conversation_id") or "",
@@ -1394,6 +1448,7 @@ def _llm_reply_context_packet(inbound, facts, context_packet, route, missing, bl
             "total_available_count": availability.get("total_available_count"),
         },
         "recent_chatwoot_history": compact_history,
+        "owner_correction_examples": owner_correction_examples if isinstance(owner_correction_examples, list) else [],
         "fallback_reply": fallback_reply,
     }
 
@@ -2247,7 +2302,17 @@ def _send_chatwoot_message(conversation_id, message, source):
         raise RuntimeError("CHATWOOT_ACCOUNT_ID is required")
     if not token:
         raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
-    body = {"content": message, "message_type": "outgoing", "private": False}
+    marker = "sam_live_stock_owner_approved_send"
+    body = {
+        "content": message,
+        "message_type": "outgoing",
+        "private": False,
+        "source_id": f"sam_live_stock:{hashlib.sha1(f'{conversation_id}|{message}'.encode('utf-8', errors='ignore')).hexdigest()[:16]}",
+        "content_attributes": {
+            "amadeus_source": marker,
+            "sam_live_stock_generated": True,
+        },
+    }
     request = urllib_request.Request(
         f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
         data=json.dumps(body, ensure_ascii=True).encode("utf-8"),

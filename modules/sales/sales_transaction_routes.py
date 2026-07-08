@@ -449,11 +449,16 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
     inbound = parse_sam_live_stock_chatwoot_inbound(payload)
     if inbound.get("message_type") != "outgoing" or not inbound.get("content") or not inbound.get("conversation_id"):
         return {"attempted": False, "captured": False, "status": "not_outgoing_owner_reply"}
+    if _truthy_payload_value((payload or {}).get("private")):
+        return _owner_reply_capture_skipped("private_note_skipped", inbound)
+    if _is_sam_live_stock_send_echo(payload):
+        return _owner_reply_capture_skipped("sam_live_stock_send_echo_skipped", inbound)
     latest, latest_status = get_latest_sam_live_stock_review_event_for_conversation(inbound.get("conversation_id"))
     latest_event = latest.get("event") if latest.get("success") and isinstance(latest.get("event"), dict) else {}
     event = build_live_stock_owner_reply_learning_event({
         **inbound,
         "message_id": str((payload or {}).get("id") or (payload or {}).get("message_id") or ""),
+        "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
     }, latest_event)
     learning, learning_status = record_sales_conversation_learning_event(event)
     return {
@@ -461,7 +466,8 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "attempted": True,
         "captured": learning.get("success") is True,
         "status": learning.get("status"),
-        "status_code": learning_status,
+        "status_code": 200,
+        "learning_status_code": learning_status,
         "latest_review_status": latest.get("status"),
         "latest_review_status_code": latest_status,
         "learning_event_id": learning.get("learning_event_id", ""),
@@ -475,6 +481,38 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "changes_stock": False,
         "reserves_stock": False,
     }
+
+
+def _owner_reply_capture_skipped(status, inbound):
+    return {
+        "success": True,
+        "attempted": True,
+        "captured": False,
+        "status": status,
+        "status_code": 200,
+        "chatwoot_conversation_id": inbound.get("conversation_id"),
+        "source": "sam_live_stock_owner_reply_capture",
+        "processed": False,
+        "sent": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "reserves_stock": False,
+    }
+
+
+def _is_sam_live_stock_send_echo(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    source_id = str(payload.get("source_id") or "").strip().lower()
+    if source_id.startswith("sam_live_stock:"):
+        return True
+    attrs = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
+    return attrs.get("amadeus_source") == "sam_live_stock_owner_approved_send" or attrs.get("sam_live_stock_generated") is True
+
+
+def _truthy_payload_value(value):
+    return value is True or str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/review", methods=["POST"])
