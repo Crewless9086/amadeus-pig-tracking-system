@@ -805,6 +805,48 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(artifact["agreements"], ["Council aligned on compact Pig Allocation table."])
         self.assertEqual(artifact["conflicts_resolved"], ["No council conflicts were recorded in the parsed artifact."])
 
+    def test_council_synthesis_without_commands_run_normalizes_to_empty_evidence(self):
+        final = """```json
+        {
+          "summary": "Council aligned on compact Pig Allocation table.",
+          "errors": [],
+          "bugs": [],
+          "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+          "files_inspected": ["static/js/pigAllocation.js"],
+          "confidence": 0.96,
+          "confidence_reason": "Based on upstream agent artifacts.",
+          "next_action": "Planner should continue."
+        }
+        ```"""
+
+        artifact = execution_bridge._agent_artifact_from_final("council_synthesis", final)
+        validation = execution_bridge._validate_agent_artifact("council_synthesis", artifact)
+
+        self.assertTrue(validation["valid"], validation)
+        self.assertEqual(artifact["commands_run"], [])
+
+    def test_qa_red_team_parsed_artifact_gets_contract_keys_from_findings(self):
+        final = """```json
+        {
+          "summary": "QA cannot approve because evidence is missing.",
+          "errors": [],
+          "bugs": ["No fresh tester evidence was attached."],
+          "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+          "commands_run": ["git status --short"],
+          "files_inspected": ["tests/test_pig_allocation_readiness_service.py"],
+          "confidence": 0.55,
+          "confidence_reason": "Evidence bundle is incomplete.",
+          "recommended_owner_decision": "pause",
+          "next_action": "Send back to builder."
+        }
+        ```"""
+
+        artifact = execution_bridge._agent_artifact_from_final("qa_red_team", final)
+
+        self.assertEqual(artifact["qa_findings"], ["No fresh tester evidence was attached."])
+        self.assertEqual(artifact["red_team_status"], "blocked")
+        self.assertEqual(artifact["risk_rating"], "high")
+
     def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
         text = """
         ```json

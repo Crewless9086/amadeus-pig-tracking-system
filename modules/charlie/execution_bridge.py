@@ -119,12 +119,16 @@ REVIEW_DECISION_AGENTS = {
     "publisher",
 }
 AGENT_ARTIFACT_ALLOW_EMPTY_KEYS = {
-    "source_mapper": {"legacy_sources"},
-    "visual_reference_interpreter": {"media_references_used"},
-    "creative_ui_designer": {"media_references_used"},
-    "ux_interaction_designer": {"media_references_used"},
-    "technical_architect": {"files_to_inspect", "implementation_plan"},
-    "architect": {"files_to_inspect", "implementation_plan"},
+    "idea_expander": {"commands_run"},
+    "product_architect": {"commands_run"},
+    "source_mapper": {"legacy_sources", "commands_run"},
+    "visual_reference_interpreter": {"media_references_used", "commands_run"},
+    "creative_ui_designer": {"media_references_used", "commands_run"},
+    "ux_interaction_designer": {"media_references_used", "commands_run"},
+    "technical_architect": {"files_to_inspect", "implementation_plan", "commands_run"},
+    "council_synthesis": {"commands_run"},
+    "planner": {"commands_run"},
+    "architect": {"files_to_inspect", "implementation_plan", "commands_run"},
     "builder": {"changed_files"},
     "frontend_design_implementer": {"changed_files", "media_references_used"},
     "tester": {"media_references_used"},
@@ -3007,6 +3011,31 @@ def _agent_artifact_from_final(agent, final_message):
 
 def _normalize_agent_artifact(agent, artifact, final_message=""):
     artifact = dict(artifact or {})
+    required = AGENT_ARTIFACT_REQUIRED_KEYS.get(agent, [])
+    if "commands_run" in required and "commands_run" not in artifact:
+        artifact["commands_run"] = []
+    if agent == "qa_red_team":
+        findings = artifact.get("qa_findings")
+        if not isinstance(findings, list) or not findings:
+            bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
+            errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
+            summary = artifact.get("summary")
+            artifact["qa_findings"] = [*bugs, *errors] or ([summary] if summary else [])
+        if not artifact.get("red_team_status"):
+            decision_text = " ".join(
+                str(value or "").lower()
+                for value in [
+                    artifact.get("recommended_owner_decision"),
+                    artifact.get("summary"),
+                    artifact.get("next_action"),
+                ]
+            )
+            has_blocker = bool(artifact.get("bugs") or artifact.get("errors")) or any(
+                term in decision_text for term in ("pause", "send back", "blocked", "blocker")
+            )
+            artifact["red_team_status"] = "blocked" if has_blocker else "pass"
+        if not artifact.get("risk_rating"):
+            artifact["risk_rating"] = "high" if artifact.get("red_team_status") == "blocked" else "low"
     if agent != "council_synthesis":
         return artifact
     summary = _truncate(artifact.get("summary") or final_message or "Council synthesis completed.", 1200)
