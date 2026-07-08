@@ -2,6 +2,7 @@
 
 ## 2026-07-07
 
+- Hardened CHARLIE emergency runner behavior after the SAM Live Stock overnight block: v2 now uses the provider-aware runner path, existing `in_progress` missions are observed instead of blindly re-executed, Claude failures can fall back to local Codex, Telegram notifications retry, transient artifact write locks retry, workflow updates tolerate unknown agent names, and synthetic review-board pass overwrites were removed.
 - Activated Claude/Anthropic as a real CHARLIE CORE provider for selected review/specialist stages when `ANTHROPIC_API_KEY` is configured, with temporary `ANTROPIC_API_KEY` typo-alias support; Builder/Tester remain local runner stages until separately reviewed.
 - Hardened CHARLIE runner reliability so subprocess timeout/crash paths become blocked review packets with evidence instead of silently leaving missions in progress, and review-ready notifications now key off `mission_status = pr_ready`.
 - Added the CHARLIE Owner Approval Inbox workflow rule: Beacon, SAM Live Stock, SAM Meat, Butcher, and Herdmaster may attach exact owner-review suggestions to the Mission Vault for approve/edit/reject/pause/send-back decisions, but inbox approval records a decision only and does not execute customer sends, public posts, money-path actions, reservations, bookings, migrations, or farm lifecycle writes.

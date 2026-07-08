@@ -384,7 +384,7 @@ def run_agent_execution_bridge_v2(
             "will_execute_codex": False,
         }, 200
 
-    runner = run_subprocess or _run_codex_process
+    runner = run_subprocess or _run_agent_model_process
     command_base = codex_command or [
         _codex_executable(),
         "exec",
@@ -2542,24 +2542,40 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
 
 def _write_agent_ledger(output_dir, execution_id, ledger):
     path = Path(output_dir) / f"{execution_id}.agent-ledger.json"
-    path.write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+    _write_text_with_retry(path, json.dumps(ledger, indent=2))
     return path
 
 
 def _write_process_text(path, text):
     path = Path(path)
     try:
-        path.write_text(text or "", encoding="utf-8")
+        _write_text_with_retry(path, text or "")
         return {"success": True, "path": str(path)}
     except PermissionError as exc:
         fallback = path.with_name(f"{path.stem}.recovered{path.suffix}")
-        fallback.write_text(text or "", encoding="utf-8")
+        _write_text_with_retry(fallback, text or "")
         return {
             "success": False,
             "path": str(path),
             "fallback_path": str(fallback),
             "error_type": exc.__class__.__name__,
         }
+
+
+def _write_text_with_retry(path, text, attempts=3, delay_seconds=2):
+    path = Path(path)
+    last_error = None
+    for attempt in range(1, max(int(attempts or 1), 1) + 1):
+        try:
+            path.write_text(text or "", encoding="utf-8")
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt >= max(int(attempts or 1), 1):
+                raise
+            time.sleep(delay_seconds)
+    if last_error:
+        raise last_error
 
 
 def _agent_artifact_from_final(agent, final_message):
@@ -3869,10 +3885,6 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     review_links = dict(reviewer_links)
     review_links["local_preview"] = review_links.get("local_preview") or local_preview.get("url", "")
     review_board = build_review_board_packet(mission, artifacts)
-    for item in review_board.get("reviews", []):
-        if item.get("agent") in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
-            item["status"] = "pass"
-            item["summary"] = "Runner evidence is ready for owner inspection."
     normalized_vault_writes = _write_normalized_vault_records(
         mission,
         execution_id=execution_id,
@@ -5424,7 +5436,7 @@ def _run_agent_model_process(
     model_assignment = model_assignment if isinstance(model_assignment, dict) else {}
     provider = str(model_assignment.get("runtime_provider") or "").strip().lower()
     if provider == "anthropic":
-        return _run_anthropic_agent_process(
+        completed = _run_anthropic_agent_process(
             command,
             input=input,
             cwd=cwd,
@@ -5434,6 +5446,33 @@ def _run_agent_model_process(
             final_path=final_path,
             mission_id=mission_id,
             model_assignment=model_assignment,
+            **kwargs,
+        )
+        if completed.returncode == 0:
+            return completed
+        write_runner_heartbeat({
+            "status": "anthropic_agent_fallback_to_codex",
+            "mission_id": mission_id,
+            "execution_artifact": str(final_path or ""),
+            "final_artifact_present": False,
+            "model_provider": "codex_cli",
+            "fallback_from_provider": "anthropic",
+            "stderr_tail": _tail_text(completed.stderr, 1200),
+        })
+        fallback_prompt = (
+            f"{input or ''}\n\n"
+            "CHARLIE PROVIDER FALLBACK: Anthropic/Claude did not return a usable stage artifact. "
+            "Complete this same stage through the local Codex provider and include provider_fallback=true in the final JSON."
+        )
+        return _run_codex_process(
+            _codex_fallback_command(command),
+            input=fallback_prompt,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            final_path=final_path,
+            mission_id=mission_id,
             **kwargs,
         )
     return _run_codex_process(
@@ -5447,6 +5486,21 @@ def _run_agent_model_process(
         mission_id=mission_id,
         **kwargs,
     )
+
+
+def _codex_fallback_command(command):
+    command = list(command or [])
+    cleaned = []
+    skip_next = False
+    for item in command:
+        if skip_next:
+            skip_next = False
+            continue
+        if item in {"--model", "-m"}:
+            skip_next = True
+            continue
+        cleaned.append(item)
+    return cleaned
 
 
 def _completed_process_from_stage_exception(command, exc, paths):

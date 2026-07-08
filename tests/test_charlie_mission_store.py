@@ -15,6 +15,7 @@ from modules.charlie.mission_store import (
     update_mission_queue_priority,
     update_mission_status,
     update_mission_vault,
+    _update_workflow_items,
 )
 from modules.charlie import vault_store
 
@@ -59,6 +60,22 @@ class FailingCursor(FakeCursor):
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_update_workflow_items_tolerates_unknown_agent_names(self):
+        workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]
+
+        updated = _update_workflow_items(
+            workflow,
+            "unexpected_specialist",
+            "complete",
+            "Completed without crashing.",
+            "frontend_design_implementer",
+        )
+
+        by_agent = {item["agent"]: item for item in updated}
+        self.assertEqual(by_agent["unexpected_specialist"]["status"], "complete")
+        self.assertEqual(by_agent["unexpected_specialist"]["handoff_to"], "frontend_design_implementer")
+        self.assertIn("frontend_design_implementer", by_agent)
+
     def test_record_mission_requires_database_configuration(self):
         result, status_code = record_mission({"raw_text": "Build CHARLIE mission queue"}, database_url="")
 

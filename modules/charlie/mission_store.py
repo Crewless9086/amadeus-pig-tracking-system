@@ -1741,9 +1741,9 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
     sequence = _workflow_sequence(workflow)
     agent = _clean_text(agent, 80).strip().lower()
     next_agent = _clean_text(next_agent, 80).strip().lower()
-    if agent in all_agent_names() and agent not in sequence:
+    if agent and agent not in sequence:
         sequence.append(agent)
-    if next_agent in all_agent_names() and next_agent not in sequence:
+    if next_agent and next_agent not in sequence:
         sequence.append(next_agent)
     for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
@@ -1788,7 +1788,11 @@ def _normalize_review_send_back_stage(target_stage, workflow):
 
 
 def _workflow_sequence(workflow):
-    sequence = [item.get("agent") for item in workflow if isinstance(item, dict) and item.get("agent") in all_agent_names()]
+    sequence = [
+        _clean_text(item.get("agent"), 80).strip().lower()
+        for item in workflow
+        if isinstance(item, dict) and _clean_text(item.get("agent"), 80).strip()
+    ]
     return sequence or list(CORE_AGENT_SEQUENCE_V2)
 
 

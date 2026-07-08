@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from urllib import request as url_request
 from urllib.error import HTTPError, URLError
 
@@ -7,6 +8,7 @@ from urllib.error import HTTPError, URLError
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MAX_TOKENS = 4096
+RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504, 529}
 
 
 def anthropic_api_key():
@@ -24,7 +26,7 @@ def anthropic_api_key_env_name():
     return ""
 
 
-def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAULT_MAX_TOKENS, opener=None):
+def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAULT_MAX_TOKENS, opener=None, attempts=3, sleep_fn=time.sleep):
     api_key = anthropic_api_key()
     if not api_key:
         return {
@@ -55,25 +57,38 @@ def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAU
         method="POST",
     )
     open_fn = opener or url_request.urlopen
-    try:
-        with open_fn(request, timeout=max(30, int(timeout_seconds or 600))) as response:
-            response_body = response.read().decode("utf-8", errors="replace")
-            parsed = json.loads(response_body)
-    except HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
-        return {
-            "success": False,
-            "status": "anthropic_api_rejected",
-            "http_status": exc.code,
-            "error": error_body[:1000],
-        }, 502
-    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        return {
-            "success": False,
-            "status": "anthropic_api_unreachable",
-            "error_type": exc.__class__.__name__,
-            "error": str(exc)[:1000],
-        }, 502
+    parsed_attempts = max(int(attempts or 1), 1)
+    last_error = {}
+    for attempt in range(1, parsed_attempts + 1):
+        try:
+            with open_fn(request, timeout=max(30, int(timeout_seconds or 600))) as response:
+                response_body = response.read().decode("utf-8", errors="replace")
+                parsed = json.loads(response_body)
+            break
+        except HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+            last_error = {
+                "success": False,
+                "status": "anthropic_api_rejected",
+                "http_status": exc.code,
+                "error": error_body[:1000],
+                "attempts": attempt,
+            }
+            if exc.code not in RETRYABLE_HTTP_STATUSES or attempt >= parsed_attempts:
+                return last_error, 502
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            last_error = {
+                "success": False,
+                "status": "anthropic_api_unreachable",
+                "error_type": exc.__class__.__name__,
+                "error": str(exc)[:1000],
+                "attempts": attempt,
+            }
+            if attempt >= parsed_attempts:
+                return last_error, 502
+        sleep_fn(min(2 ** (attempt - 1), 8))
+    else:
+        return last_error or {"success": False, "status": "anthropic_api_unreachable", "attempts": parsed_attempts}, 502
 
     text = _extract_text(parsed)
     if not text:

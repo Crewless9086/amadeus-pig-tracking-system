@@ -205,7 +205,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_continuous_watch_executes_active_in_progress_when_enabled(self, list_owner_work_missions, write_heartbeat, execute_codex, sleep):
+    def test_continuous_watch_does_not_rerun_existing_in_progress_mission(self, list_owner_work_missions, write_heartbeat, execute_codex, sleep):
         def fake_list_owner_work_missions(status="", limit=10):
             if status == "in_progress":
                 return ({
@@ -220,13 +220,6 @@ class CharlieMissionPickupTests(unittest.TestCase):
             return {"success": True, "status": "ok", "missions": []}, 200
 
         list_owner_work_missions.side_effect = fake_list_owner_work_missions
-        execute_codex.return_value = ({
-            "success": True,
-            "status": "codex_execution_completed",
-            "mission_id": "CHARLIE-MISSION-ACTIVE",
-            "mission_status": "pr_ready",
-        }, 200)
-
         result, status_code = charlie_mission_pickup.watch_for_mission(
             interval_seconds=5,
             max_checks=1,
@@ -235,9 +228,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["status"], "codex_execution_completed")
+        self.assertEqual(result["status"], "active_mission_in_progress")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-ACTIVE")
-        execute_codex.assert_called_once()
+        execute_codex.assert_not_called()
         write_heartbeat.assert_called()
         sleep.assert_not_called()
 
