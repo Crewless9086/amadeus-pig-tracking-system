@@ -248,6 +248,24 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertNotIn("LLM llm reply draft used", packet["telegram_packet"]["text"])
         self.assertNotIn("llm live stock reply draft", packet["telegram_packet"]["text"])
 
+    def test_owner_review_card_surfaces_llm_safety_fallback_reason(self):
+        inbound, facts, decision = review_inputs()
+        decision["reply_source"] = "deterministic_fallback_after_llm_review"
+        decision["llm_draft_review"] = {
+            "status": "rejected_by_safety_review",
+            "blocked_reasons": ["unsafe_sales_or_discount_language"],
+        }
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+
+        self.assertIn("LLM safety fallback: unsafe sales or discount language", packet["telegram_packet"]["text"])
+
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
             "SAM-LIVE-ESC-1",

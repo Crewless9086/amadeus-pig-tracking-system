@@ -1062,7 +1062,11 @@ def _owner_card_flags(event, review, decision):
             status_label = status_label[4:]
         flags.append(f"LLM {status_label.replace('_', ' ')}")
     if isinstance(decision.get("llm_draft_review"), dict):
-        flags.append("LLM safety fallback")
+        draft_review = decision.get("llm_draft_review") or {}
+        blocked = draft_review.get("blocked_reasons") if isinstance(draft_review.get("blocked_reasons"), list) else []
+        blocked = [_clean(item, 80).replace("_", " ") for item in blocked if _clean(item, 80)]
+        suffix = f": {', '.join(blocked[:3])}" if blocked else ""
+        flags.append(f"LLM safety fallback{suffix}")
     return ", ".join(flags)
 
 

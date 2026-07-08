@@ -373,6 +373,87 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("reserved them", decision["suggested_reply_text"])
         self.assertFalse(result["sent"])
 
+    def test_scanner_does_not_hard_block_plain_available(self):
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "reply_source": "llm_live_stock_reply_draft",
+            "suggested_reply_text": "I can check if the 3 piglets are available for Friday collection before we finalise anything.",
+            "missing_fields": [],
+            "blockers": [],
+        }
+
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            {"content": "Can I come Friday?"},
+            {"category": "Piglet", "quantity": 3, "timing": "friday"},
+            decision,
+        )
+
+        self.assertNotIn("unsafe_sales_or_discount_language", review["blocked_reasons"])
+        self.assertFalse(sam_live_stock_runtime._llm_reply_needs_fallback(decision, review))
+
+    def test_scanner_still_blocks_reservation_payment_sales_and_location(self):
+        cases = [
+            ("They are reserved for you.", "implies_reservation"),
+            ("Payment is confirmed.", "confirms_payment"),
+            ("These pigs are for sale now.", "unsafe_sales_or_discount_language"),
+            ("I can send our location.", "shares_or_invites_exact_location"),
+        ]
+
+        for reply, expected in cases:
+            with self.subTest(reply=reply):
+                review = sam_live_stock_runtime.review_sam_live_stock_conversation(
+                    {"content": "Can I take them?"},
+                    {"category": "Piglet", "quantity": 3},
+                    {
+                        "sales_lane": "live_stock_sales",
+                        "suggested_reply_text": reply,
+                        "missing_fields": [],
+                        "blockers": [],
+                    },
+                )
+
+                self.assertIn(expected, review["blocked_reasons"])
+
+    def test_safe_reply_draft_is_fact_aware_when_nothing_missing(self):
+        facts = {
+            "customer_name": "michaels",
+            "quantity": 3,
+            "category": "Piglet",
+            "weight_range": "7_to_9_Kg",
+            "sex": "Any",
+            "timing": "friday",
+            "location": "Albertinia",
+        }
+        packet = {
+            "can_answer_price": True,
+            "requested_quantity": 3,
+            "requested_category": "Piglet",
+            "requested_weight_range": "7_to_9_Kg",
+            "requested_sex": "Any",
+            "unit_price": 450,
+            "estimated_total": 1350,
+        }
+
+        reply = sam_live_stock_runtime._safe_reply_draft(
+            facts,
+            {"lane": "live_stock_sales"},
+            missing=[],
+            availability={"success": True, "matched_count": 11},
+            blockers=[],
+            price_answer_packet=packet,
+        )
+
+        self.assertNotEqual(reply, "I have the main live-pig details. I will check the current list before anything is promised.")
+        self.assertIn("Michaels", reply)
+        self.assertIn("Friday", reply)
+        self.assertIn("3 piglets", reply)
+        self.assertIn("7-9 kg", reply)
+        self.assertIn("R450", reply)
+        self.assertIn("R1,350", reply)
+        lowered = reply.lower()
+        for forbidden in ("reserved", "held", "booked", "available", "delivery", "transport", "payment confirmed"):
+            self.assertNotIn(forbidden, lowered)
+
     def test_llm_failure_falls_back_to_deterministic_reply(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(),

@@ -995,7 +995,7 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         unsafe_reply_patterns = [
             (r"\breserved\b|\bheld\b|\bbooked\b", "implies_reservation"),
             (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
-            (r"\b(for sale|available|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
+            (r"\b(for sale|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
             (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
         ]
         for pattern, label in unsafe_reply_patterns:
@@ -1287,7 +1287,40 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         return _question_for_missing(missing[0])
     if availability.get("success") and int(availability.get("matched_count") or 0) <= 0:
         return "I do not want to over-promise that exact group. I can check nearby suitable options for farm review."
+    if availability.get("success") and int(availability.get("matched_count") or 0) > 0:
+        fact_reply = _fact_aware_owner_draft(facts, price_answer_packet, availability)
+        if fact_reply:
+            return fact_reply
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _fact_aware_owner_draft(facts, packet, availability):
+    facts = facts if isinstance(facts, dict) else {}
+    packet = packet if isinstance(packet, dict) else {}
+    availability = availability if isinstance(availability, dict) else {}
+    if not packet.get("can_answer_price"):
+        return ""
+    quantity = _quantity_number(packet.get("requested_quantity") or facts.get("quantity"))
+    if quantity <= 0:
+        return ""
+    customer_name = _first_name(facts.get("customer_name"))
+    category = _live_stock_category_label(
+        packet.get("requested_category") or (packet.get("pricing") or {}).get("sale_category") or facts.get("category"),
+        quantity,
+    )
+    weight_band = _human_weight_band(packet.get("requested_weight_range") or (packet.get("pricing") or {}).get("weight_band") or facts.get("weight_range"))
+    timing = _clean(facts.get("timing"), 120)
+    unit = _money_label(packet.get("unit_price"))
+    total = _money_label(packet.get("estimated_total")) if packet.get("estimated_total") not in ("", None) else ""
+    quantity_label = _quantity_label(quantity)
+    greeting = f"Thanks {customer_name}." if customer_name else "Thanks."
+    timing_line = f"{_sentence_case(timing)} can work for collection; let me confirm the final collection time with the farm." if timing else "We can work around a collection time once the farm confirms the group."
+    price_line = f"The {quantity_label} {category} ({weight_band}) are {unit} each"
+    if total and quantity > 1:
+        price_line += f", {total} total"
+    price_line += "."
+    close_line = "I'll double-check the group before we finalise anything."
+    return " ".join([greeting, timing_line, price_line, close_line])
 
 
 def _price_answer_reply(facts, packet):
@@ -1573,6 +1606,35 @@ def _quantity_number(value):
 def _quantity_label(value):
     number = _quantity_number(value)
     return str(int(number)) if isinstance(number, int) or float(number).is_integer() else str(number)
+
+
+def _first_name(value):
+    text = _clean(value, 80)
+    return _sentence_case(text.split()[0]) if text else ""
+
+
+def _live_stock_category_label(value, quantity=0):
+    text = _clean(value, 80)
+    if not text:
+        return "live pigs"
+    lower = text.lower().replace("_", " ")
+    if _quantity_number(quantity) != 1:
+        singulars = {
+            "piglet": "piglets",
+            "weaner": "weaners",
+            "grower": "growers",
+            "finisher": "finishers",
+            "live pig": "live pigs",
+        }
+        return singulars.get(lower, lower)
+    return lower
+
+
+def _sentence_case(value):
+    text = _clean(value, 160)
+    if not text:
+        return ""
+    return text[:1].upper() + text[1:]
 
 
 def _money_label(value):
