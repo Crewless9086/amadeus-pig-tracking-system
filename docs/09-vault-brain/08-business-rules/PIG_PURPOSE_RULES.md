@@ -20,6 +20,7 @@ Unknown purpose is a data/classification problem, not a silent sale/meat/slaught
 Use these as advisory labels first, not automatic writes:
 
 - `Needs Data`: missing identity, tag, sex, weight, age/stage, or pen data.
+- Pre-wean tagless piglets are not allocation-applicable yet and should not appear as `Needs Data`; they enter Pig Allocation after weaning, tagging, and weighing. If a piglet has wean data but is still staged as `Piglet`, show it as `Needs Data` for lifecycle-stage correction.
 - `Needs Classification`: enough basic data exists but purpose is blank or `Unknown`.
 - `Growing`: active/on-farm and below useful sale/slaughter/meat thresholds.
 - `Livestock Candidate`: likely better to sell live, especially slow or underperforming pigs.
