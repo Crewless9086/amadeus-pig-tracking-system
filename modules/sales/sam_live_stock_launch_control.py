@@ -97,7 +97,7 @@ def build_sam_live_stock_review_event(inbound, facts, decision, review=None, *, 
         "source_agent": "sam_live_stock_backend",
         "event_source": _clean(event_source, 80),
         "customer_message_excerpt": _clean(inbound.get("content"), 500),
-        "sam_reply_excerpt": _clean_multiline(decision.get("suggested_reply_text"), 500),
+        "sam_reply_excerpt": _clean_multiline(decision.get("suggested_reply_text"), 1800),
         "score": int(review.get("score") or 0),
         "confidence_target": int(review.get("confidence_target") or 96),
         "safe_to_send": bool(review.get("safe_to_send")),
@@ -339,30 +339,37 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
 
 def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None):
     event = event if isinstance(event, dict) else {}
+    facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}
     decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
+    review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
     links = links if isinstance(links, dict) else {}
     source = environ if environ is not None else os.environ
     review_event_id = _clean(event.get("review_event_id"), 120)
     conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
-    reply = _clean_multiline(event.get("sam_reply_excerpt") or decision.get("suggested_reply_text"), 900)
+    reply = _clean_multiline(decision.get("suggested_reply_text") or event.get("sam_reply_excerpt"), 1800)
+    score = int(event.get("score") or 0)
+    target = int(event.get("confidence_target") or 96)
     parts = [
-        "SAM Live Stock owner review",
-        f"Review: {review_event_id or 'unknown'}",
+        f"SAM Live - {_clean(event.get('customer_name') or 'Unknown customer', 80)}",
         f"Conversation: {conversation_id or 'unknown'}",
-        f"Customer: {_clean(event.get('customer_name') or 'Unknown', 80)}",
-        f"Score: {int(event.get('score') or 0)}/{int(event.get('confidence_target') or 96)}",
-        f"Action: {_clean(event.get('recommended_action'), 100)}",
+        f"Wants: {_owner_card_fact_summary(facts)}",
+        f"Stock: {_owner_card_stock_summary(decision)}",
+        f"Price: {_owner_card_price_summary(decision)}",
+        f"Missing: {_owner_card_missing_summary(decision)}",
+    ]
+    flags = _owner_card_flags(event, review, decision)
+    if flags:
+        parts.append(f"Flags: {flags}")
+    if score < target:
+        parts.append(f"Confidence: {score}/{target}")
+    parts.extend([
         "",
-        "Customer message:",
+        "Customer:",
         _clean_multiline(event.get("customer_message_excerpt"), 500) or "No customer message captured.",
         "",
-        "SAM suggested reply:",
+        "Draft reply:",
         reply or "No reply recommended.",
-        "",
-        "Safety:",
-        "- Nothing has been sent to WhatsApp yet.",
-        "- Approve only if the reply is correct for the current stock and conversation.",
-    ]
+    ])
     if links.get("sales_availability"):
         parts.append(f"Stock truth: {links['sales_availability']}")
     if links.get("open_intakes_api"):
@@ -485,7 +492,8 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
             return _callback_result(action["action"], loaded, load_status, escalation_id)
         event = loaded.get("event") if isinstance(loaded.get("event"), dict) else {}
         conversation_id = event.get("chatwoot_conversation_id")
-        message = _clean_multiline(event.get("sam_reply_excerpt") or _json_value(event.get("decision_json")).get("suggested_reply_text"), 1800)
+        decision_json = _json_value(event.get("decision_json"))
+        message = _clean_multiline(decision_json.get("suggested_reply_text") or event.get("sam_reply_excerpt"), 1800)
         if action["action"] == "review_approve_send":
             send_result, status = send_owner_approved_live_stock_reply(
                 conversation_id,
@@ -724,7 +732,7 @@ def _review_event_params(event):
         "recommended_action",
     ):
         if key == "sam_reply_excerpt":
-            params[key] = _clean_multiline(event.get(key), 500)
+            params[key] = _clean_multiline(event.get(key), 1800)
         else:
             params[key] = _clean(event.get(key), 500 if key.endswith("excerpt") else 120)
     for key in ("score", "confidence_target"):
@@ -878,6 +886,106 @@ def _lead_fact_summary(facts):
         if value:
             parts.append(f"{label}={value}")
     return ", ".join(parts) if parts else "not enough detail yet"
+
+
+def _owner_card_fact_summary(facts):
+    facts = facts if isinstance(facts, dict) else {}
+    pieces = []
+    quantity = _clean(facts.get("quantity"), 20)
+    sex = _clean(facts.get("sex"), 40)
+    category = _clean(facts.get("category"), 60)
+    weight = _clean(facts.get("weight_range"), 60)
+    timing = _clean(facts.get("timing"), 80)
+    location = _clean(facts.get("location"), 80)
+    item = " ".join(piece for piece in (quantity, sex, category) if piece)
+    if item:
+        pieces.append(item)
+    if weight:
+        pieces.append(weight)
+    if timing:
+        pieces.append(timing)
+    if location:
+        pieces.append(location)
+    return ", ".join(pieces) if pieces else "not enough detail yet"
+
+
+def _owner_card_stock_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("match_packet") if isinstance(decision.get("match_packet"), dict) else {}
+    count = int(packet.get("exact_match_count") or 0)
+    status = _clean(packet.get("match_status"), 80)
+    sample = packet.get("matched_sample") if isinstance(packet.get("matched_sample"), list) else []
+    sample_bits = []
+    for item in sample[:3]:
+        if not isinstance(item, dict):
+            continue
+        pig_id = _clean(item.get("pig_id") or item.get("Pig_ID") or item.get("id"), 40)
+        weight = _clean(item.get("current_weight") or item.get("weight") or item.get("Weight") or item.get("weight_kg"), 30)
+        if pig_id and weight:
+            sample_bits.append(f"{pig_id} {weight}kg")
+        elif pig_id:
+            sample_bits.append(pig_id)
+    sample_text = f" ({', '.join(sample_bits)})" if sample_bits else ""
+    if count:
+        return f"{count} match{'' if count == 1 else 'es'}{sample_text}"
+    return status.replace("_", " ") if status else "no stock match shown"
+
+
+def _owner_card_price_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {}
+    if not packet.get("can_answer_price"):
+        return "not resolved"
+    unit = packet.get("unit_price")
+    total = packet.get("estimated_total")
+    quantity = packet.get("requested_quantity")
+    parts = []
+    if unit not in ("", None):
+        parts.append(f"R{_money(unit)} each")
+    if total not in ("", None):
+        parts.append(f"R{_money(total)} total")
+    pricing = packet.get("pricing") if isinstance(packet.get("pricing"), dict) else {}
+    source = _clean(pricing.get("source") or pricing.get("price_source"), 60)
+    if source:
+        parts.append(f"source {source}")
+    if quantity and not total:
+        parts.append(f"qty {quantity}")
+    return " - ".join(parts) if parts else "not resolved"
+
+
+def _owner_card_missing_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    missing = decision.get("missing_fields") if isinstance(decision.get("missing_fields"), list) else []
+    missing = [_clean(item, 40) for item in missing if _clean(item, 40)]
+    return ", ".join(missing) if missing else "none"
+
+
+def _owner_card_flags(event, review, decision):
+    flags = []
+    event = event if isinstance(event, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}
+    blockers = decision.get("blockers") if isinstance(decision.get("blockers"), list) else []
+    if facts.get("reservation_requested") or "reservation_request_owner_gate" in blockers:
+        flags.append("reservation request")
+    if facts.get("breeding_interest") or "breeding_or_replacement_stock_owner_gate" in blockers:
+        flags.append("breeding/replacement")
+    if review.get("escalation_required"):
+        flags.append("needs human check")
+    if decision.get("reply_source"):
+        flags.append(_clean(str(decision.get("reply_source")).replace("_", " "), 80))
+    return ", ".join(flags)
+
+
+def _money(value):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return _clean(value, 40)
+    if amount.is_integer():
+        return f"{int(amount):,}"
+    return f"{amount:,.2f}"
 
 
 def _open_intake_row(row):

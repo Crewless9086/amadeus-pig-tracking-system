@@ -25,6 +25,22 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
         "missing_fields": [],
         "blockers": [],
         "suggested_reply_text": "I can check the current weaner list for Riversdale handover next week.",
+        "reply_source": "deterministic_read_only_guard",
+        "match_packet": {
+            "exact_match_count": 2,
+            "match_status": "exact_match_available",
+            "matched_sample": [
+                {"pig_id": "W-1043", "current_weight": 12.4},
+                {"pig_id": "W-1051", "current_weight": 13.1},
+            ],
+        },
+        "price_answer_packet": {
+            "can_answer_price": True,
+            "unit_price": 500,
+            "estimated_total": 1000,
+            "requested_quantity": 2,
+            "pricing": {"source": "supabase"},
+        },
     }
     return inbound, facts, decision
 
@@ -186,7 +202,12 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(sent_status, 200)
         self.assertTrue(sent["success"])
         self.assertEqual(sent["status"], "sam_live_stock_owner_review_telegram_sent")
-        self.assertIn("SAM Live Stock owner review", calls[0][2])
+        self.assertIn("SAM Live - Charl N", calls[0][2])
+        self.assertIn("Wants: 2 any weaner, next week, Riversdale", calls[0][2])
+        self.assertIn("Stock: 2 matches (W-1043 12.4kg, W-1051 13.1kg)", calls[0][2])
+        self.assertIn("Price: R500 each - R1,000 total - source supabase", calls[0][2])
+        self.assertIn("Missing: none", calls[0][2])
+        self.assertIn("Draft reply:", calls[0][2])
         self.assertIn("\n- 2 x Female Weaner", calls[0][2])
         buttons = calls[0][3]["inline_keyboard"]
         self.assertEqual(buttons[0][0]["text"], "Approve Send")
@@ -299,6 +320,27 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["action"], "review_approve_send")
         self.assertTrue(result["sends_customer_message"])
         self.assertEqual(send_calls, [("2401", "Current SAM Live price estimate:\n- 2 x Weaner: R500 each")])
+
+    def test_owner_review_callback_uses_full_decision_reply_not_excerpt(self):
+        full_reply = "Line 1\n" + "\n".join(f"Detail line {index}" for index in range(1, 80))
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-LONG",
+            "chatwoot_conversation_id": "2401",
+            "sam_reply_excerpt": full_reply[:500],
+            "decision_json": {"suggested_reply_text": full_reply},
+        }
+        send_calls = []
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_review_approve:SAM-LIVE-REVIEW-LONG"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
+            chatwoot_sender=lambda conversation_id, message, source: send_calls.append((conversation_id, message)) or {"ok": True},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["sends_customer_message"])
+        self.assertEqual(send_calls, [("2401", full_reply[:1800])])
 
     def test_owner_review_callback_edit_returns_safe_manual_instruction(self):
         event = {
