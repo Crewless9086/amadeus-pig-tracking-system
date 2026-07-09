@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -145,31 +146,36 @@ def _render_removal_certificate_pdf(pdf_path, settings, order, lines, pen_groups
     normal = styles["Normal"]
     small = styles["Small"]
     subheading = styles["Subheading"]
-    story.append(_order_summary_table(order, lines, form_data))
-    story.append(Spacer(1, 5 * mm))
+    story.append(_movement_parties_table(settings, form_data))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_transport_authority_table(settings, order, lines, form_data, generated_at))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("<b>Transport / Movement Details</b>", subheading))
     story.append(_two_column_table([
         ("Removal date", form_data.get("movement_date") or _safe(order.get("collection_date")) or generated_at.strftime("%Y-%m-%d")),
         ("Removal time", form_data.get("movement_time")),
-        ("Driver", form_data.get("driver_name")),
-        ("Driver ID / phone", form_data.get("driver_id") or form_data.get("driver_phone")),
-        ("Vehicle registration", form_data.get("vehicle_registration")),
-        ("Trailer registration", form_data.get("trailer_registration")),
-        ("From", _farm_address(settings)),
-        ("Destination", form_data.get("destination_address") or _safe(order.get("collection_location"))),
+        ("Driver name", _movement_value(settings, form_data, "driver_name", "movement_default_driver_name")),
+        ("Driver ID / licence", _movement_value(settings, form_data, "driver_id", "movement_default_driver_id")),
+        ("Driver phone", _movement_value(settings, form_data, "driver_phone", "movement_default_driver_phone")),
+        ("Vehicle / trailer", _vehicle_text(settings, form_data)),
+        ("Origin", _farm_address(settings)),
+        ("Destination / client", _fillable(form_data.get("destination_address") or _safe(order.get("collection_location")))),
+        ("Route / permit notes", _fillable(form_data.get("route_notes"))),
+        ("Reason for movement", form_data.get("movement_reason") or "Sale / transfer of ownership"),
     ]))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("<b>Animals Removed</b>", subheading))
     story.append(_animal_table(lines))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(
-        "I certify that the animals listed above are removed from Amadeus Farm under this order reference. "
-        "This certificate identifies the animals for loading and transport record purposes.",
+        "I certify that the animals listed above are removed from the holding shown on this certificate. "
+        "The animals are identified for transport, inspection, and hand-over purposes. Client / consignee details "
+        "may be completed by hand before travel where required.",
         normal,
     ))
-    story.append(Spacer(1, 8 * mm))
-    story.append(_signature_table(form_data))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 4 * mm))
+    story.append(_movement_signature_table(settings, form_data, include_driver=True))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("No prices, payment information, or private customer notes are shown on this certificate.", small))
     _build_doc(pdf_path, story)
 
@@ -179,26 +185,29 @@ def _render_health_declaration_pdf(pdf_path, settings, order, lines, pen_groups,
     normal = styles["Normal"]
     small = styles["Small"]
     subheading = styles["Subheading"]
-    story.append(_order_summary_table(order, lines, form_data))
-    story.append(Spacer(1, 5 * mm))
+    story.append(_movement_parties_table(settings, form_data))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_transport_authority_table(settings, order, lines, form_data, generated_at))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("<b>Declaration</b>", subheading))
     declarations = [
-        "The animals listed in this document were visually checked at loading.",
-        "At the time of loading, no obvious signs of illness or injury were observed unless noted below.",
-        "The animals are declared fit for normal farm transport based on visual inspection.",
-        "Final handling, loading, and transport remain the responsibility of the persons loading and transporting the animals.",
+        "The animals listed below were visually inspected at loading by / on behalf of the owner.",
+        "No obvious signs of illness, injury, lameness, severe weakness, or distress were observed unless noted.",
+        "To the best of the owner's knowledge, the animals are fit for normal farm transport on the date shown.",
+        "No known notifiable disease restriction, quarantine instruction, or movement stop applies to these animals unless noted.",
+        "No medicine withdrawal / treatment restriction relevant to this movement is known unless noted.",
+        "Transport, off-loading, and onward handling remain the responsibility of the driver / consignee after loading.",
     ]
-    for item in declarations:
-        story.append(Paragraph(f"[  ] {_xml(item)}", normal))
+    story.append(_checklist_table(declarations))
     notes = form_data.get("health_notes") or "No additional health notes recorded at document generation."
-    story.append(Spacer(1, 4 * mm))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(f"<b>Health notes:</b> {_xml(notes)}", normal))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph("<b>Animals Covered By This Declaration</b>", subheading))
     story.append(_animal_table(lines))
-    story.append(Spacer(1, 8 * mm))
-    story.append(_signature_table(form_data))
-    story.append(Spacer(1, 3 * mm))
+    story.append(Spacer(1, 4 * mm))
+    story.append(_movement_signature_table(settings, form_data, include_driver=False))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("No prices, payment information, or private customer notes are shown on this declaration.", small))
     _build_doc(pdf_path, story)
 
@@ -248,6 +257,33 @@ def _order_summary_table(order, lines, form_data):
     return table
 
 
+def _movement_parties_table(settings, form_data):
+    owner_name = _movement_value(settings, form_data, "owner_name", "movement_owner_name", "Charl Nieuwendyk")
+    owner_id = _movement_value(settings, form_data, "owner_id", "movement_owner_id")
+    owner_phone = _movement_value(settings, form_data, "owner_phone", "movement_owner_phone") or _safe(settings.get("business_phone"))
+    rows = [
+        ["Owner / keeper", owner_name, "Owner ID / phone", _join_slash([owner_id, owner_phone])],
+        ["Farm / holding", _safe(settings.get("business_name")), "Holding address", _farm_address(settings)],
+        ["Client / consignee", _fillable(form_data.get("client_name")), "Client ID / phone", _fillable(_join_slash([form_data.get("client_id"), form_data.get("client_phone")]))],
+        ["Client address", _fillable(form_data.get("client_address")), "Signature", "____________________________"],
+    ]
+    table = Table(rows, colWidths=[28 * mm, 66 * mm, 30 * mm, 64 * mm])
+    table.setStyle(_simple_grid_style(font_size=7.6, vertical_label_columns=True))
+    return table
+
+
+def _transport_authority_table(settings, order, lines, form_data, generated_at):
+    movement_date = form_data.get("movement_date") or _safe(order.get("collection_date")) or generated_at.strftime("%Y-%m-%d")
+    rows = [
+        ["Order / ref", _safe(order.get("order_id")), "Document date", movement_date],
+        ["Species", "Pigs / swine", "Number moved", str(len(lines))],
+        ["Class / description", _request_summary(order), "Movement type", form_data.get("movement_reason") or "Sale / collection"],
+    ]
+    table = Table(rows, colWidths=[28 * mm, 66 * mm, 30 * mm, 64 * mm])
+    table.setStyle(_simple_grid_style(font_size=7.6, vertical_label_columns=True))
+    return table
+
+
 def _two_column_table(items):
     rows = []
     for index in range(0, len(items), 2):
@@ -259,8 +295,26 @@ def _two_column_table(items):
     return table
 
 
+def _checklist_table(items):
+    rows = [["", Paragraph(_xml(item), getSampleStyleSheet()["Normal"])] for item in items]
+    table = Table(rows, colWidths=[8 * mm, 180 * mm])
+    table.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#dddddd")),
+        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+    ]))
+    for index in range(len(items)):
+        rows[index][0] = "[ ]"
+    return table
+
+
 def _animal_table(lines):
-    data = [["Tag", "Pig ID", "Sex", "Type", "Latest kg", "Pen"]]
+    data = [["Tag", "Pig ID", "Sex", "Class", "Latest kg", "Pen", "Loaded"]]
     for line in lines:
         data.append([
             _safe(line.get("tag_number")) or "-",
@@ -269,45 +323,56 @@ def _animal_table(lines):
             _line_type(line),
             _weight_text(line.get("current_weight_kg")),
             _safe(line.get("current_pen_name")) or _safe(line.get("current_pen_id")) or "-",
+            "[ ]",
         ])
-    table = Table(data, colWidths=[22 * mm, 34 * mm, 20 * mm, 42 * mm, 22 * mm, 48 * mm], repeatRows=1)
+    table = Table(data, colWidths=[18 * mm, 32 * mm, 17 * mm, 37 * mm, 20 * mm, 48 * mm, 16 * mm], repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#222222")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.4),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#999999")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f7f7")]),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     return table
 
 
-def _signature_table(form_data):
-    responsible = form_data.get("responsible_person") or "Charl Nieuwendyk"
-    return Table([
-        ["Responsible person", responsible, "Signature", "____________________"],
+def _movement_signature_table(settings, form_data, include_driver=False):
+    responsible = form_data.get("responsible_person") or _movement_value(settings, form_data, "owner_name", "movement_owner_name", "Charl Nieuwendyk")
+    driver = _movement_value(settings, form_data, "driver_name", "movement_default_driver_name")
+    rows = [
+        ["Owner / responsible person", responsible, "Owner signature", "____________________"],
         ["Date", form_data.get("signature_date") or datetime.now().strftime("%Y-%m-%d"), "Place", form_data.get("signature_place") or "Amadeus Farm"],
-    ], colWidths=[34 * mm, 60 * mm, 26 * mm, 68 * mm], style=_simple_grid_style())
+    ]
+    if include_driver:
+        rows.append(["Driver", driver or "________________", "Driver signature", "____________________"])
+    return Table([
+        *rows,
+    ], colWidths=[38 * mm, 56 * mm, 30 * mm, 64 * mm], style=_simple_grid_style(font_size=7.6, vertical_label_columns=True))
 
 
-def _simple_grid_style():
-    return TableStyle([
+def _simple_grid_style(font_size=8, vertical_label_columns=True):
+    style = [
         ("BOX", (0, 0), (-1, -1), 0.35, colors.HexColor("#777777")),
         ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cccccc")),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
-        ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-        ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), font_size),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ])
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    if vertical_label_columns:
+        style.extend([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+            ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+        ])
+    return TableStyle(style)
 
 
 def _build_doc(pdf_path, story):
@@ -327,6 +392,8 @@ def _clean_form_data(form_data):
         "movement_date", "movement_time", "driver_name", "driver_id", "driver_phone",
         "vehicle_registration", "trailer_registration", "destination_address",
         "responsible_person", "signature_date", "signature_place", "health_notes",
+        "owner_name", "owner_id", "owner_phone", "client_name", "client_id",
+        "client_phone", "client_address", "route_notes", "movement_reason",
     }
     return {key: _safe(value)[:300] for key, value in dict(form_data or {}).items() if key in allowed}
 
@@ -359,3 +426,27 @@ def _farm_address(settings):
         _safe(settings.get("business_address_line_2")),
         _safe(settings.get("business_address_line_3")),
     ]).strip(", ")
+
+
+def _movement_value(settings, form_data, form_key, setting_key, default=""):
+    return (
+        _safe(form_data.get(form_key))
+        or _safe(settings.get(setting_key))
+        or _safe(os.getenv(setting_key.upper(), ""))
+        or _safe(default)
+    )
+
+
+def _vehicle_text(settings, form_data):
+    vehicle = _movement_value(settings, form_data, "vehicle_registration", "movement_default_vehicle_registration")
+    trailer = _movement_value(settings, form_data, "trailer_registration", "movement_default_trailer_registration")
+    return _join_slash([vehicle, trailer]) or "________________"
+
+
+def _join_slash(parts):
+    values = [_safe(part) for part in parts if _safe(part)]
+    return " / ".join(values)
+
+
+def _fillable(value=""):
+    return _safe(value) or "____________________________"

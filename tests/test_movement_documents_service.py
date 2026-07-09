@@ -59,7 +59,13 @@ class MovementDocumentsServiceTests(unittest.TestCase):
              patch.object(movement_documents_service, "append_order_document", side_effect=records.append):
             result = movement_documents_service.generate_removal_certificate_for_order(
                 "ORD-2026-TEST",
-                form_data={"driver_name": "Dad", "vehicle_registration": "ABC123"},
+                form_data={
+                    "driver_name": "Dad",
+                    "driver_id": "DAD-ID",
+                    "vehicle_registration": "ABC123",
+                    "client_name": "Leave blank client",
+                    "movement_reason": "Sale / transfer",
+                },
                 created_by="Test",
             )
 
@@ -70,6 +76,9 @@ class MovementDocumentsServiceTests(unittest.TestCase):
         self.assertEqual(record["Total"], "")
         self.assertEqual(record["Payment_Method"], "")
         self.assertIn("contains_prices\":false", record["Notes"])
+        self.assertIn("client_name", record["Notes"])
+        self.assertIn("driver_id", record["Notes"])
+        self.assertIn("movement_reason", record["Notes"])
 
     def test_generate_health_declaration_stores_worker_safe_record(self):
         records = []
@@ -82,7 +91,11 @@ class MovementDocumentsServiceTests(unittest.TestCase):
              patch.object(movement_documents_service, "append_order_document", side_effect=records.append):
             result = movement_documents_service.generate_health_declaration_for_order(
                 "ORD-2026-TEST",
-                form_data={"health_notes": "No visible illness observed."},
+                form_data={
+                    "health_notes": "No visible illness observed.",
+                    "owner_name": "Charl Nieuwendyk",
+                    "client_address": "Leave blank for client",
+                },
                 created_by="Test",
             )
 
@@ -93,6 +106,8 @@ class MovementDocumentsServiceTests(unittest.TestCase):
         self.assertEqual(record["Total"], "")
         self.assertEqual(record["Payment_Method"], "")
         self.assertIn("contains_payment_details\":false", record["Notes"])
+        self.assertIn("client_address", record["Notes"])
+        self.assertIn("owner_name", record["Notes"])
 
 
 if __name__ == "__main__":
