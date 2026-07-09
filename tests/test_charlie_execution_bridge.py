@@ -1882,7 +1882,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         artifact = _successful_stage_payload("reviewer")
         artifact.update({
             "recommended_owner_decision": "approve_final_release",
-            "next_action": "Owner should review PR #89 and choose Approve Final Release or Send Back. Do not merge or deploy until final owner approval is recorded.",
+            "next_action": "Owner final review: approve PR #89 for merge/release, or send back with comments if the visual emphasis should be stronger/different.",
             "release_notes": [
                 "Owner should review PR #89 and either approve final release or send back with comments. Do not merge or deploy until owner final approval is recorded."
             ],
