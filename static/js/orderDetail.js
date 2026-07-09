@@ -139,6 +139,7 @@ function setFieldValue(id, value) {
 function applyDocumentActionVisibility(order, documents) {
   const quoteBtn = document.getElementById("generate_quote_btn");
   const invoiceBtn = document.getElementById("generate_invoice_btn");
+  const loadingSheetBtn = document.getElementById("generate_loading_sheet_btn");
   const conversationInput = document.getElementById("document_conversation_id");
   const orderStatus = (order.order_status || "").trim();
   const terminal = orderStatus === "Cancelled" || orderStatus === "Completed";
@@ -151,6 +152,7 @@ function applyDocumentActionVisibility(order, documents) {
 
   if (quoteBtn) quoteBtn.disabled = terminal;
   if (invoiceBtn) invoiceBtn.disabled = !invoiceEligible || !hasQuote;
+  if (loadingSheetBtn) loadingSheetBtn.disabled = terminal;
 }
 
 async function loadOrderDetail(orderId) {
@@ -369,7 +371,9 @@ function renderOrderDocuments(documents) {
   }
 
   container.innerHTML = documents.map(doc => {
-    const canSend = doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const isLoadingSheet = doc.document_type === "Loading Sheet";
+    const canSend = !isLoadingSheet && doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const canSendTelegram = isLoadingSheet && doc.document_status !== "Voided" && doc.google_drive_file_id;
     const cardId = `document_details_${escapeDomId(doc.document_id)}`;
     const sentMeta = doc.sent_at
       ? `Sent ${escapeHtml(doc.sent_at)}${doc.sent_by ? ` by ${escapeHtml(doc.sent_by)}` : ""}`
@@ -377,6 +381,12 @@ function renderOrderDocuments(documents) {
     const driveLink = doc.google_drive_url
       ? `<a class="secondary-link" href="${escapeHtml(doc.google_drive_url)}" target="_blank" rel="noopener">Open PDF</a>`
       : "";
+    const appPdfLink = doc.google_drive_file_id
+      ? `<a class="secondary-link" href="/api/order-documents/${encodeURIComponent(doc.document_id)}/download" target="_blank" rel="noopener">View / Print</a>`
+      : "";
+    const subtitleParts = isLoadingSheet
+      ? [doc.document_type || "-", "No prices", `V${doc.version || "-"}`]
+      : [doc.document_type || "-", formatMoney(doc.total), doc.payment_method || "-"];
 
     return `
       <div class="history-item document-item compact-record">
@@ -385,11 +395,11 @@ function renderOrderDocuments(documents) {
         <div class="compact-record-main">
           <div>
             <div class="history-item-date">${escapeHtml(doc.document_ref || doc.document_id || "-")}</div>
-            <div class="compact-subtitle">${escapeHtml(doc.document_type || "-")} | ${formatMoney(doc.total)} | ${escapeHtml(doc.payment_method || "-")}</div>
+            <div class="compact-subtitle">${subtitleParts.map(escapeHtml).join(" | ")}</div>
           </div>
           <div class="compact-record-status">
             <span class="status-pill">${escapeHtml(doc.document_status || "-")}</span>
-            <span>${doc.sent_at ? "Sent" : "Not sent"}</span>
+            <span>${isLoadingSheet ? "Worker sheet" : (doc.sent_at ? "Sent" : "Not sent")}</span>
           </div>
         </div>
 
@@ -400,12 +410,12 @@ function renderOrderDocuments(documents) {
         <div id="${cardId}" class="compact-details hidden">
           <div class="history-item-grid">
           <div>
-            <div class="history-label">Total</div>
-            <div class="history-value">${formatMoney(doc.total)}</div>
+          <div class="history-label">Total</div>
+            <div class="history-value">${isLoadingSheet ? "Hidden" : formatMoney(doc.total)}</div>
           </div>
           <div>
             <div class="history-label">Payment</div>
-            <div class="history-value">${escapeHtml(doc.payment_method || "-")}</div>
+            <div class="history-value">${isLoadingSheet ? "Hidden" : escapeHtml(doc.payment_method || "-")}</div>
           </div>
           <div>
             <div class="history-label">Created</div>
@@ -417,7 +427,7 @@ function renderOrderDocuments(documents) {
           </div>
           <div>
             <div class="history-label">Payment Ref</div>
-            <div class="history-value">${escapeHtml(doc.payment_ref || "-")}</div>
+            <div class="history-value">${isLoadingSheet ? "Hidden" : escapeHtml(doc.payment_ref || "-")}</div>
           </div>
           <div>
             <div class="history-label">Version</div>
@@ -428,8 +438,10 @@ function renderOrderDocuments(documents) {
         ${doc.notes ? `<div class="history-notes"><div class="history-label">Notes</div><div>${escapeHtml(doc.notes)}</div></div>` : ""}
 
         <div class="form-actions compact-actions document-card-actions">
+          ${appPdfLink}
           ${driveLink}
           <button type="button" ${canSend ? "" : "disabled"} onclick="sendDocument('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send</button>
+          ${isLoadingSheet ? `<button type="button" ${canSendTelegram ? "" : "disabled"} onclick="sendLoadingSheetTelegram('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send Telegram</button>` : ""}
         </div>
         </div>
       </div>
@@ -776,6 +788,7 @@ function formatRequestSummary(order) {
 function setupDocumentActions(orderId) {
   const quoteBtn = document.getElementById("generate_quote_btn");
   const invoiceBtn = document.getElementById("generate_invoice_btn");
+  const loadingSheetBtn = document.getElementById("generate_loading_sheet_btn");
 
   if (quoteBtn) {
     quoteBtn.addEventListener("click", async function () {
@@ -786,6 +799,12 @@ function setupDocumentActions(orderId) {
   if (invoiceBtn) {
     invoiceBtn.addEventListener("click", async function () {
       await runDocumentGeneration(`/api/orders/${orderId}/invoice`, orderId, "Invoice generated.");
+    });
+  }
+
+  if (loadingSheetBtn) {
+    loadingSheetBtn.addEventListener("click", async function () {
+      await runDocumentGeneration(`/api/orders/${orderId}/loading-sheet`, orderId, "Loading sheet generated.");
     });
   }
 }
@@ -861,6 +880,39 @@ async function sendDocument(documentId, documentRef) {
     messageBox.classList.remove("hidden", "message-success", "message-error");
     messageBox.classList.add("message-error");
     messageBox.textContent = "Document send failed.";
+  }
+}
+
+async function sendLoadingSheetTelegram(documentId, documentRef) {
+  const orderId = window.location.pathname.split("/").pop();
+  const messageBox = document.getElementById("document_action_message");
+  const confirmed = window.confirm(
+    `Send ${documentRef || documentId} as a PDF attachment to your Telegram?`
+  );
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(`/api/order-documents/${documentId}/send-telegram`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sent_by: "App" })
+    });
+    const result = await response.json();
+
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    if (response.ok && result.success) {
+      messageBox.classList.add("message-success");
+      messageBox.textContent = "Loading sheet sent to Telegram.";
+      await loadOrderDetail(orderId);
+    } else {
+      messageBox.classList.add("message-error");
+      messageBox.textContent = (result.errors || [result.error || result.message || "Telegram send failed."]).join(" ");
+    }
+  } catch (error) {
+    console.error("Loading sheet Telegram send error:", error);
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    messageBox.classList.add("message-error");
+    messageBox.textContent = "Telegram send failed.";
   }
 }
 
