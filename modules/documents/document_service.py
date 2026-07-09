@@ -26,6 +26,7 @@ CHATWOOT_API_TOKEN = os.getenv("CHATWOOT_API_ACCESS_TOKEN", os.getenv("CHATWOOT_
 
 DOCUMENT_TYPE_QUOTE = "Quote"
 DOCUMENT_TYPE_INVOICE = "Invoice"
+DOCUMENT_TYPE_LOADING_SHEET = "Loading Sheet"
 
 STATUS_GENERATED = "Generated"
 STATUS_SENT = "Sent"
@@ -99,7 +100,13 @@ def build_document_ref(order_id, document_type, version=1):
     order_id = str(order_id or "").strip()
     order_suffix = get_order_suffix(order_id)
     year = _year_from_order_id(order_id)
-    prefix = "Q" if document_type == DOCUMENT_TYPE_QUOTE else "INV"
+    document_type = str(document_type or "").strip()
+    if document_type == DOCUMENT_TYPE_QUOTE:
+        prefix = "Q"
+    elif document_type == DOCUMENT_TYPE_LOADING_SHEET:
+        prefix = "LOAD"
+    else:
+        prefix = "INV"
     base_ref = f"{prefix}-{year}-{order_suffix}"
 
     if int(version or 1) > 1:
@@ -120,16 +127,22 @@ def build_document_file_name(
     total,
     payment_method,
 ):
-    prefix = "QUO" if document_type == DOCUMENT_TYPE_QUOTE else "INV"
+    document_type = str(document_type or "").strip()
+    if document_type == DOCUMENT_TYPE_QUOTE:
+        prefix = "QUO"
+    elif document_type == DOCUMENT_TYPE_LOADING_SHEET:
+        prefix = "LOAD"
+    else:
+        prefix = "INV"
     date_part = _format_filename_date(generated_date)
     version_part = f"V{int(version or 1)}"
+    payment_ref = str(payment_ref or "").strip() or "NOREF"
+    if document_type == DOCUMENT_TYPE_LOADING_SHEET:
+        return f"{prefix}_{date_part}_{payment_ref}_{version_part}.pdf"
+
     total_part = _format_rand_amount(total)
     payment_method = str(payment_method or "").strip() or "Unknown"
-
-    return (
-        f"{prefix}_{date_part}_{payment_ref}_{version_part}_"
-        f"({total_part})_{payment_method}.pdf"
-    )
+    return f"{prefix}_{date_part}_{payment_ref}_{version_part}_({total_part})_{payment_method}.pdf"
 
 
 def get_order_documents(order_id, document_type=None):

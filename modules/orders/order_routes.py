@@ -1,6 +1,9 @@
 import logging
+import tempfile
+from io import BytesIO
+from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from modules.orders.order_service import (
     list_orders,
@@ -30,11 +33,17 @@ from modules.documents.quote_service import (
     generate_quote_for_order,
 )
 from modules.documents.invoice_service import generate_invoice_for_order
+from modules.documents.loading_sheet_service import (
+    generate_loading_sheet_for_order,
+    send_loading_sheet_to_owner_telegram,
+)
 from modules.documents.document_service import (
     get_latest_non_voided_quote,
+    get_order_document,
     get_order_documents,
     send_order_document,
 )
+from services.google_drive_service import download_drive_file
 from modules.orders.order_intake_service import (
     get_intake_context,
     update_intake_state,
@@ -470,6 +479,84 @@ def generate_invoice(order_id):
         }), 400
 
 
+@orders_bp.route("/orders/<order_id>/loading-sheet", methods=["POST"])
+def generate_loading_sheet(order_id):
+    payload = request.get_json(silent=True) or {}
+    created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
+
+    try:
+        result = generate_loading_sheet_for_order(order_id, created_by=created_by)
+        return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "generate_loading_sheet",
+            "order_id": order_id,
+            "errors": [str(exc)]
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected loading sheet generation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "generate_loading_sheet",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "message": "Loading sheet generation failed unexpectedly.",
+        }), 500
+
+
+@orders_bp.route("/order-documents/<document_id>/download", methods=["GET"])
+def download_order_document(document_id):
+    try:
+        document = get_order_document(document_id)
+        if not document:
+            return jsonify({"success": False, "errors": ["Document not found."]}), 404
+        drive_file_id = str(document.get("Google_Drive_File_ID", "")).strip()
+        if not drive_file_id:
+            return jsonify({"success": False, "errors": ["Document is missing a Google Drive file ID."]}), 400
+        file_name = _safe_download_filename(str(document.get("File_Name", "")).strip() or f"{document_id}.pdf")
+        with tempfile.TemporaryDirectory(prefix="amadeus-order-document-") as temp_dir:
+            pdf_path = Path(temp_dir) / file_name
+            download_drive_file(drive_file_id, pdf_path)
+            pdf_bytes = pdf_path.read_bytes()
+            return send_file(
+                BytesIO(pdf_bytes),
+                mimetype="application/pdf",
+                as_attachment=False,
+                download_name=file_name,
+            )
+    except ValueError as exc:
+        return jsonify({"success": False, "errors": [str(exc)]}), 400
+    except Exception as exc:
+        logger.exception("Unexpected document download failure for document %s", document_id)
+        return jsonify({
+            "success": False,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+        }), 500
+
+
+@orders_bp.route("/order-documents/<document_id>/send-telegram", methods=["POST"])
+def send_loading_sheet_telegram(document_id):
+    payload = request.get_json(silent=True) or {}
+    sent_by = str(payload.get("sent_by", payload.get("changed_by", "App"))).strip() or "App"
+    chat_id = str(payload.get("chat_id", "")).strip()
+
+    try:
+        result = send_loading_sheet_to_owner_telegram(
+            document_id,
+            sent_by=sent_by,
+            chat_id=chat_id,
+        )
+        return jsonify(result), 200 if result.get("success") else 502
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "send_loading_sheet_telegram",
+            "document_id": document_id,
+            "errors": [str(exc)]
+        }), 400
+
+
 @orders_bp.route("/order-documents/<document_id>/send", methods=["POST"])
 def send_document(document_id):
     payload = request.get_json(silent=True) or {}
@@ -704,6 +791,12 @@ def _serialize_order_documents(documents):
         return (item.get("document_type", ""), version, item.get("created_at", ""))
 
     return sorted(serialized, key=sort_key, reverse=True)
+
+
+def _safe_download_filename(value):
+    cleaned = str(value or "").strip() or "document.pdf"
+    cleaned = cleaned.replace("\\", "_").replace("/", "_").replace(":", "_")
+    return cleaned if cleaned.lower().endswith(".pdf") else f"{cleaned}.pdf"
 
 
 def _attach_auto_quote_result(result, order_id, changed_by="App"):
