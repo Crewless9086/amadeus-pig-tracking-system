@@ -463,12 +463,12 @@ function renderRows(rows) {
     const typeSex = [row.animal_type, row.sex].filter(Boolean).join(" / ") || "-";
     return `
       <tr>
-        <td class="allocation-pig-cell">
+        <td class="allocation-pig-cell" data-label="Pig">
           <a class="detail-link allocation-pig-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
           <span class="table-subtext">${escapeHtml(typeSex)}</span>
         </td>
-        <td><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
-        <td class="allocation-review-cell">
+        <td data-label="Bucket"><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
+        <td class="allocation-review-cell" data-label="Review">
           <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
           <details class="allocation-row-details">
             <summary>More</summary>
@@ -481,31 +481,31 @@ function renderRows(rows) {
             <span>Pig ID: ${escapeHtml(row.pig_id || "-")}</span>
           </details>
         </td>
-        <td class="allocation-action-cell">
+        <td class="allocation-action-cell" data-label="Action / Reason">
           <strong>${escapeHtml(row.outlet_priority || "-")}</strong>
           <span class="table-subtext">${escapeHtml(row.recommended_action || "-")}</span>
           <span class="table-subtext allocation-clamp">${escapeHtml(row.readiness_reason || "-")}</span>
         </td>
-        <td>
+        <td data-label="Weight">
           <strong>${escapeHtml(formatKg(row.latest_weight_kg))}</strong>
           <span class="table-subtext">${row.latest_weight_date ? `${escapeHtml(row.latest_weight_date)} / ${escapeHtml(row.days_since_weight ?? "-")} days` : "No weight date"}</span>
           <span class="table-subtext">Wean: ${escapeHtml(formatKg(row.wean_weight_kg))}</span>
         </td>
-        <td>
+        <td data-label="Growth">
           <strong>${escapeHtml(row.growth_class || "Unknown")}</strong>
           <span class="table-subtext">${escapeHtml(row.growth_basis || "Lifetime ADG")}: ${escapeHtml(formatAdg(row.average_daily_gain_kg))}</span>
           <span class="table-subtext">Post-wean: ${escapeHtml(formatAdg(row.post_wean_daily_gain_kg))}</span>
         </td>
-        <td>
+        <td data-label="Timing">
           <strong>${escapeHtml(row.meat_window_status || "-")}</strong>
           <span class="table-subtext">Meat: ${escapeHtml(row.estimated_meat_ready_date || "-")} (${escapeHtml(row.days_until_meat_ready ?? "-")} days)</span>
           <span class="table-subtext">Abattoir: ${escapeHtml(row.estimated_abattoir_ready_date || "-")} (${escapeHtml(row.days_until_abattoir_ready ?? "-")} days)</span>
         </td>
-        <td>
+        <td data-label="Pen">
           <strong>${escapeHtml(formatPen(row))}</strong>
           <span class="table-subtext">${escapeHtml(row.litter_id || "No litter")}</span>
         </td>
-        <td>
+        <td data-label="Purpose">
           <strong>${escapeHtml(row.purpose || "Unknown")}</strong>
           <span class="table-subtext">Suggested: ${escapeHtml(row.suggested_purpose || "-")}</span>
           <span class="table-subtext">${escapeHtml(row.marketing_readiness || "-")}</span>

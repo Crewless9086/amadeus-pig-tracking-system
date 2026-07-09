@@ -428,11 +428,12 @@ textarea {
   margin: 0 auto;
   border-radius: 18px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .allocation-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 14px;
   align-items: end;
   margin-bottom: 18px;
@@ -708,6 +709,15 @@ textarea {
 .allocation-review-cell {
   display: grid;
   gap: 8px;
+  align-content: start;
+}
+
+.allocation-review-button {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .allocation-row-details {
@@ -726,6 +736,117 @@ textarea {
   display: block;
   margin-top: 5px;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .allocation-shell {
+    padding: 14px;
+  }
+
+  .allocation-card {
+    padding: 20px 16px;
+  }
+
+  .allocation-card .page-header-with-link {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .allocation-card .ops-header-actions {
+    justify-content: flex-start;
+  }
+
+  .allocation-card .ops-header-actions a {
+    flex: 1 1 150px;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .allocation-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .allocation-table {
+    min-width: 0;
+  }
+
+  .allocation-table thead {
+    display: none;
+  }
+
+  .allocation-table,
+  .allocation-table tbody,
+  .allocation-table tr,
+  .allocation-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .allocation-table tbody {
+    display: grid;
+    gap: 12px;
+    padding: 10px;
+  }
+
+  .allocation-table tr {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+    overflow: hidden;
+  }
+
+  .allocation-table th,
+  .allocation-table td {
+    padding: 0.62rem 0.72rem;
+    border-bottom: 1px solid #eee6dc;
+  }
+
+  .allocation-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .allocation-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text-soft);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .allocation-table td.table-empty::before {
+    display: none;
+  }
+
+  .allocation-table th:nth-child(1),
+  .allocation-table td:nth-child(1),
+  .allocation-table th:nth-child(2),
+  .allocation-table td:nth-child(2),
+  .allocation-table th:nth-child(3),
+  .allocation-table td:nth-child(3),
+  .allocation-table th:nth-child(4),
+  .allocation-table td:nth-child(4),
+  .allocation-table th:nth-child(5),
+  .allocation-table td:nth-child(5),
+  .allocation-table th:nth-child(6),
+  .allocation-table td:nth-child(6),
+  .allocation-table th:nth-child(7),
+  .allocation-table td:nth-child(7),
+  .allocation-table th:nth-child(8),
+  .allocation-table td:nth-child(8),
+  .allocation-table th:nth-child(9),
+  .allocation-table td:nth-child(9) {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .allocation-review-button {
+    width: 100%;
+    min-height: 36px;
+    padding: 9px 10px;
+  }
 }
 
 .status-pill-warning {
@@ -2814,60 +2935,6 @@ button:disabled {
   .purpose-review-recheck-grid,
   .sales-stock-row {
     grid-template-columns: 1fr;
-  }
-
-  .allocation-table {
-    min-width: 780px;
-  }
-
-  .allocation-table th,
-  .allocation-table td {
-    padding: 0.58rem 0.6rem;
-  }
-
-  .allocation-table th:nth-child(1),
-  .allocation-table td:nth-child(1) {
-    min-width: 64px;
-    max-width: 78px;
-  }
-
-  .allocation-table th:nth-child(2),
-  .allocation-table td:nth-child(2) {
-    min-width: 104px;
-  }
-
-  .allocation-table th:nth-child(3),
-  .allocation-table td:nth-child(3) {
-    min-width: 88px;
-  }
-
-  .allocation-table th:nth-child(4),
-  .allocation-table td:nth-child(4) {
-    min-width: 172px;
-    max-width: 220px;
-  }
-
-  .allocation-table th:nth-child(5),
-  .allocation-table td:nth-child(5),
-  .allocation-table th:nth-child(6),
-  .allocation-table td:nth-child(6),
-  .allocation-table th:nth-child(7),
-  .allocation-table td:nth-child(7) {
-    min-width: 118px;
-    max-width: 148px;
-  }
-
-  .allocation-table th:nth-child(8),
-  .allocation-table td:nth-child(8),
-  .allocation-table th:nth-child(9),
-  .allocation-table td:nth-child(9) {
-    min-width: 108px;
-  }
-
-  .allocation-review-button {
-    width: 100%;
-    min-height: 36px;
-    padding: 9px 10px;
   }
 
   .pig-list-toolbar .field-label,
