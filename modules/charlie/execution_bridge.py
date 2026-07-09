@@ -5753,7 +5753,13 @@ def _build_visual_review_packet(
     if ui_related and mission_id:
         existing_media = _review_media_items(mission_id)
         if not _visual_review_has_required_viewport_media({"media": existing_media}):
-            promoted = _promote_durable_visual_evidence(mission_id, artifacts)
+            promoted = _promote_durable_visual_evidence(
+                mission_id,
+                artifacts,
+                local_preview=local_preview,
+                changed_files=changed_files,
+                final_message=final_message,
+            )
             if promoted.get("promoted"):
                 capture = {
                     **(capture if isinstance(capture, dict) else {}),
@@ -6112,25 +6118,31 @@ def _review_media_items(mission_id):
     return items
 
 
-def _promote_durable_visual_evidence(mission_id, artifacts):
+def _promote_durable_visual_evidence(mission_id, artifacts, local_preview=None, changed_files=None, final_message=""):
     mission_id = str(mission_id or "").strip()
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     if not mission_id:
         return {"promoted": False, "status": "mission_id_missing", "items": []}
     candidates = _durable_visual_evidence_candidates(artifacts)
+    review_scope = _durable_visual_review_scope(
+        local_preview=local_preview,
+        changed_files=changed_files,
+        final_message=final_message,
+    )
     selected = {}
     for candidate in candidates:
         viewport = candidate.get("viewport")
         path = candidate.get("path")
         if viewport not in {"desktop", "mobile"} or viewport in selected:
             continue
-        if _durable_visual_evidence_path_allowed(path):
+        if _durable_visual_evidence_path_allowed(path) and _durable_visual_evidence_matches_scope(candidate, review_scope):
             selected[viewport] = candidate
     if "desktop" not in selected or "mobile" not in selected:
         return {
             "promoted": False,
             "status": "required_viewports_missing",
             "candidate_count": len(candidates),
+            "review_scope": review_scope,
             "items": list(selected.values()),
         }
     media_dir = _review_media_path(mission_id)
@@ -6157,6 +6169,56 @@ def _promote_durable_visual_evidence(mission_id, artifacts):
             "agent": selected[viewport].get("agent", ""),
         })
     return {"promoted": True, "status": "promoted", "items": promoted}
+
+
+def _durable_visual_review_scope(local_preview=None, changed_files=None, final_message=""):
+    local_preview = local_preview if isinstance(local_preview, dict) else {}
+    preview_url = str(local_preview.get("url") or "").strip()
+    route_path = ""
+    if preview_url:
+        route_path = _normalize_preview_route_path(urlparse(preview_url).path or "")
+    files = [str(path or "").replace("\\", "/").lower() for path in (changed_files or [])]
+    text = f"{' '.join(files)} {str(final_message or '').lower()}"
+    tokens = set()
+    if route_path and route_path not in {"/", "/charlie"}:
+        parts = [part for part in re.split(r"[/_.-]+", route_path.lower()) if len(part) >= 3]
+        tokens.update(part for part in parts if part not in {"pig", "sow", "page", "view", "html"})
+        segments = [segment for segment in route_path.lower().strip("/").split("/") if segment]
+        for segment in segments:
+            if len(segment) >= 4 and not re.fullmatch(r"[a-z]+-\d+", segment):
+                tokens.add(segment)
+    for file_path in files:
+        stem = Path(file_path).stem.lower()
+        if stem:
+            tokens.update(part for part in re.split(r"[_\-.]+", stem) if len(part) >= 4)
+            tokens.add(stem.replace("_", "-"))
+    for match in re.findall(r"/[a-z0-9_./-]{3,}", text):
+        route = _normalize_preview_route_path(match)
+        if route not in {"/", "/charlie"}:
+            tokens.add(route.strip("/").split("/")[-1].replace("_", "-"))
+    return {
+        "route_path": route_path,
+        "tokens": sorted(token for token in tokens if token),
+    }
+
+
+def _durable_visual_evidence_matches_scope(candidate, review_scope):
+    review_scope = review_scope if isinstance(review_scope, dict) else {}
+    tokens = [str(token or "").lower() for token in review_scope.get("tokens", []) if str(token or "").strip()]
+    route_path = str(review_scope.get("route_path") or "").strip()
+    if not tokens and route_path in {"", "/", "/charlie"}:
+        return True
+    haystack = " ".join([
+        str(candidate.get("path") or ""),
+        str(candidate.get("context") or ""),
+        str(candidate.get("agent") or ""),
+    ]).replace("\\", "/").lower()
+    compact_haystack = re.sub(r"[^a-z0-9]+", "", haystack)
+    for token in tokens:
+        compact_token = re.sub(r"[^a-z0-9]+", "", token)
+        if token in haystack or (compact_token and compact_token in compact_haystack):
+            return True
+    return False
 
 
 def _durable_visual_evidence_candidates(artifacts):

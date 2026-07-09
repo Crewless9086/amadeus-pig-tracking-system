@@ -2615,6 +2615,44 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(filenames, {"owner_review_preview.png", "owner_review_mobile.png"})
         self.assertFalse(execution_bridge._visual_review_blocks_owner_review(packet))
 
+    def test_visual_review_packet_does_not_promote_unrelated_durable_stage_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner_root = Path(tmp) / ".charlie_runner"
+            executions = runner_root / "executions"
+            stage_media = executions / "stage-media"
+            review_media = runner_root / "review_media"
+            stage_media.mkdir(parents=True)
+            desktop = stage_media / "charlie-dashboard-desktop-1440.png"
+            mobile = stage_media / "charlie-dashboard-mobile-390.png"
+            desktop.write_bytes(b"desktop png")
+            mobile.write_bytes(b"mobile png")
+            with patch("modules.charlie.execution_bridge.EXECUTION_DIR", executions):
+                with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", review_media):
+                    with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={
+                        "captured": False,
+                        "status": "preview_url_not_reachable",
+                        "capture_source": "local_preview",
+                    }):
+                        packet = execution_bridge._build_visual_review_packet(
+                            mission_id="CHARLIE-MISSION-EXEC123",
+                            mission_type="ui_product_build",
+                            changed_files=["templates/pig_family_tree.html"],
+                            local_preview={"url": "http://127.0.0.1:5003/pig/SOW-1/family-tree", "status": "not_reachable"},
+                            artifacts={
+                                "tester": {
+                                    "screenshots_captured": [
+                                        {"label": "desktop", "path": str(desktop)},
+                                        {"label": "mobile", "path": str(mobile)},
+                                    ]
+                                }
+                            },
+                        )
+
+        self.assertEqual(packet["status"], "not_captured_blocked")
+        self.assertEqual(packet["capture"]["capture_source"], "local_preview")
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review(packet))
+        self.assertFalse(packet["media"])
+
     def test_visual_review_blocks_owner_review_for_ui_without_media(self):
         self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
             "ui_related": True,
