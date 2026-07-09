@@ -56,6 +56,12 @@ No migration is required for the first alert build unless a later mission adds s
 | Sold/Exited Data Conflict | Pig appears sold, slaughtered, dead, removed, off-farm, or linked to an exit while another read model still shows active/available/on-farm. | Critical. | Owner/admin reconciliation is required. Alert must block allocation, marketing, slaughter, breeding, and customer-facing availability until resolved. |
 | Future Sow Replacement | Future alert for replacement planning using sow age/parity, litter outcomes, daughter quality, health, and breeding records once the data contract is approved. | Medium by default. | Owner decides replacement strategy. Alert cannot retire, replace, mate, cull, or reclassify sow/gilt records. |
 
+## Pre-Wean Piglet Allocation Rule
+
+Active on-farm piglets that are still pre-wean, tagless, and without trusted wean or weight data must not appear in Pig Allocation as `Needs Data`.
+
+Piglets become allocation-applicable after weaning signals are present: tag number, trusted current/post-wean weight, wean date, or wean weight. If a pig still has `Animal_Type = Piglet` after wean data exists, Pig Allocation should keep it visible as `Needs Data` so the lifecycle stage can be corrected to Weaner.
+
 ## Severity Rules
 
 - `Critical`: source conflict, exited/sold inconsistency, or an alert that could cause wrong lifecycle, customer, payment, reservation, or slaughter action if ignored.

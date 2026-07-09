@@ -599,6 +599,69 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             "Pig has wean data but Animal Type is still Piglet. Update lifecycle stage to Weaner.",
         )
 
+    def test_allocation_readiness_defers_pre_wean_tagless_piglets(self):
+        overview_rows = [
+            {
+                "Pig_ID": "PIG-NURSING",
+                "Tag_Number": "",
+                "Animal_Type": "Piglet",
+                "Sex": "",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-FARROW",
+                "Current_Weight_Kg": "",
+                "Last_Weight_Date": "",
+                "Date_Of_Birth": "2026-06-01",
+                "Age_Days": "14",
+                "Wean_Date": "",
+                "Wean_Weight_Kg": "",
+                "Litter_ID": "LIT-NEW",
+            },
+            {
+                "Pig_ID": "PIG-WEANED-ACTIONABLE",
+                "Tag_Number": "",
+                "Animal_Type": "Piglet",
+                "Sex": "Female",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": "8",
+                "Last_Weight_Date": "2026-06-15",
+                "Date_Of_Birth": "2026-05-01",
+                "Age_Days": "45",
+                "Wean_Date": "2026-06-10",
+                "Wean_Weight_Kg": "7",
+                "Litter_ID": "LIT-OLD",
+            },
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{
+                    "Pig_ID": "PIG-WEANED-ACTIONABLE",
+                    "Weight_Date": "2026-06-15",
+                    "Weight_Kg": "8",
+                }]
+            if sheet_name == "PEN_REGISTER":
+                return [
+                    {"Pen_ID": "PEN-FARROW", "Pen_Name": "Farrowing Pen"},
+                    {"Pen_ID": "PEN-1", "Pen_Name": "Weaner Pen"},
+                ]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 15))
+
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+        self.assertNotIn("PIG-NURSING", by_id)
+        self.assertEqual(result["summary"]["allocation_deferred_pre_wean_tagless_piglets"], 1)
+        self.assertEqual(by_id["PIG-WEANED-ACTIONABLE"]["readiness_bucket"], "Needs Data")
+        self.assertIn("Missing tag", by_id["PIG-WEANED-ACTIONABLE"]["readiness_reason"])
+
     def test_purpose_review_queue_filters_unknown_purpose_and_keeps_litter_focus(self):
         allocation_result = {
             "success": True,
