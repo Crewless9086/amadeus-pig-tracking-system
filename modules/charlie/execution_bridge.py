@@ -3472,6 +3472,8 @@ def _negative_judgement_evidence(agent, artifact):
     for field in fields:
         if field == "qa_findings" and _qa_findings_are_advisory(agent, artifact):
             continue
+        if field == "visual_review_notes" and _visual_review_notes_are_advisory(agent, artifact):
+            continue
         if field in {"stdout_tail", "stderr_tail"} and _raw_judgement_tails_are_advisory(agent, artifact):
             continue
         if field in {"release_notes", "stdout_tail", "stderr_tail"} and _structured_review_judgement_passed(agent, artifact):
@@ -3498,6 +3500,14 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
     return status == "pass" and risk not in {"high", "critical"}
+
+
+def _visual_review_notes_are_advisory(agent, artifact):
+    if agent not in {"visual_qa_reviewer", "reviewer"}:
+        return False
+    visual_decision = str((artifact or {}).get("visual_acceptance_decision") or "").strip().lower()
+    owner_decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
+    return visual_decision == "approve" and owner_decision in {"approve", "approve_final_release", "mark_done", ""}
 
 
 def _structured_review_judgement_passed(agent, artifact):

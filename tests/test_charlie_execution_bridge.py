@@ -1895,6 +1895,27 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_visual_qa_approved_notes_are_not_send_back_blockers(self):
+        artifact = _successful_stage_payload("visual_qa_reviewer")
+        artifact.update({
+            "ui_quality_contract": {"ui_related": True, "reference_media_required": False},
+            "recommended_owner_decision": "approve_final_release",
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": [
+                "Review and Reset controls remain visible in desktop, laptop, mobile, and empty-state evidence.",
+                "Non-blocking polish note: summary metric cards above the table are low contrast.",
+            ],
+            "reference_match_assessment": "The compact table matches the written owner request.",
+            "media_references_used": [],
+            "commands_run": ["node --check static\\js\\pigAllocation.js"],
+            "files_inspected": ["static/js/pigAllocation.js", "static/css/main.css"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md"],
+        })
+
+        result = execution_bridge._agent_quality_gate("visual_qa_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_review_board_owner_approval_gate_instruction_is_not_send_back_blocker(self):
         for agent in ["product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer"]:
             with self.subTest(agent=agent):
