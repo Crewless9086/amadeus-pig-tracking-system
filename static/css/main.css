@@ -465,6 +465,61 @@ textarea {
   margin-top: 3px;
 }
 
+.summary-metric-alert {
+  border-color: #d9651c;
+  background: #fff2e4;
+  box-shadow: inset 4px 0 0 #d9651c;
+}
+
+.summary-metric-alert span {
+  color: #8f3f0d;
+  font-weight: 800;
+}
+
+.summary-metric-alert strong {
+  color: #7d2f00;
+}
+
+.status-pill-alert {
+  background: #d9651c;
+  color: #ffffff;
+  border-color: #b94d0d;
+}
+
+.allocation-missing-data-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid #d9651c;
+  border-left-width: 6px;
+  border-radius: 10px;
+  background: #fff2e4;
+  color: #552100;
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+
+.allocation-missing-data-alert strong {
+  color: #7d2f00;
+  font-size: 15px;
+}
+
+.allocation-missing-data-alert span {
+  color: #6f350c;
+  font-size: 13px;
+}
+
+.allocation-row-alert,
+.purpose-review-row-alert {
+  background: #fff8ef;
+  box-shadow: inset 5px 0 0 #d9651c;
+}
+
+.simple-table tbody tr.allocation-row-alert:hover,
+.simple-table tbody tr.purpose-review-row-alert:hover {
+  background: #ffeedc;
+}
+
 .purpose-review-table th:nth-child(4),
 .purpose-review-table td:nth-child(4) {
   min-width: 210px;

@@ -1,6 +1,7 @@
 const messageBox = document.getElementById("allocation_message");
 const subtitle = document.getElementById("allocation_subtitle");
 const summaryEl = document.getElementById("allocation_summary");
+const missingDataAlertEl = document.getElementById("allocation_missing_data_alert");
 const rulesEl = document.getElementById("allocation_rules");
 const countEl = document.getElementById("allocation_count");
 const bodyEl = document.getElementById("allocation_body");
@@ -143,11 +144,29 @@ function renderSummary(summary) {
   ];
 
   summaryEl.innerHTML = items.map(([label, value]) => `
-    <div class="summary-metric">
+    <div class="summary-metric${label === "Needs Data" && Number(value) > 0 ? " summary-metric-alert" : ""}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
   `).join("");
+
+  renderMissingDataAlert(buckets["Needs Data"] ?? 0);
+}
+
+function renderMissingDataAlert(count) {
+  if (!missingDataAlertEl) return;
+  const missingCount = Number(count) || 0;
+  if (!missingCount) {
+    missingDataAlertEl.classList.add("hidden");
+    missingDataAlertEl.innerHTML = "";
+    return;
+  }
+
+  missingDataAlertEl.classList.remove("hidden");
+  missingDataAlertEl.innerHTML = `
+    <strong>Needs Data: ${escapeHtml(missingCount)} pig${missingCount === 1 ? "" : "s"} blocked from trusted allocation.</strong>
+    <span>Complete the missing identity, weight, sex, pen, or weaning data before treating these rows as sale, meat, slaughter, or breeding decisions.</span>
+  `;
 }
 
 function renderRules(rules) {
@@ -444,11 +463,16 @@ function renderPurposeReview(row) {
 }
 function bucketClass(bucket) {
   const normalized = String(bucket || "").toLowerCase();
+  if (normalized === "needs data") return "status-pill status-pill-alert";
   if (normalized.includes("needs")) return "status-pill status-pill-warning";
   if (normalized.includes("candidate")) return "status-pill";
   if (normalized.includes("allocated")) return "status-pill status-pill-muted";
   if (normalized.includes("exited")) return "status-pill status-pill-muted";
   return "status-pill status-pill-muted";
+}
+
+function rowClass(row) {
+  return row.readiness_bucket === "Needs Data" ? "allocation-row-alert" : "";
 }
 
 function renderRows(rows) {
@@ -464,7 +488,7 @@ function renderRows(rows) {
     const parentText = [row.mother_id, row.father_id].filter(Boolean).join(" / ");
     const linkText = row.existing_link || row.reserved_for_order_id || "-";
     return `
-      <tr>
+      <tr class="${rowClass(row)}">
         <td>
           <a class="detail-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
           <span class="table-subtext">${escapeHtml(row.pig_id || "-")}</span>
