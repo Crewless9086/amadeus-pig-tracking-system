@@ -182,6 +182,18 @@ PLACEHOLDER_MISSION_TITLES = {
     "charlie relay",
     "<idea>",
 }
+SYSTEM_TEST_MISSION_MARKERS = (
+    "smoke test",
+    "validation mission",
+    "system validation",
+    "runner validation",
+    "queue validation",
+    "relay validation",
+    "test mission",
+    "canary mission",
+    "no-op mission",
+    "noop mission",
+)
 
 
 def record_mission(mission, source_context=None, database_url=None, connect_factory=None):
@@ -1523,7 +1535,8 @@ def _mission_queue_class(title, raw_text, metadata=None):
     normalized_raw = _normalize_mission_text(raw_text)
     if normalized_title in PLACEHOLDER_MISSION_TITLES and normalized_raw in PLACEHOLDER_MISSION_TITLES:
         return "system_noise"
-    if "smoke test" in normalized_title or "validation mission" in normalized_title:
+    combined_text = f"{normalized_title} {normalized_raw}".strip()
+    if any(marker in combined_text for marker in SYSTEM_TEST_MISSION_MARKERS):
         return "system_test"
     return "owner_work"
 
