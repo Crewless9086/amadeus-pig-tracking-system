@@ -2475,39 +2475,6 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
         self.assertEqual(len(capture["captures"]), 2)
 
-    @patch("modules.charlie.execution_bridge._probe_local_http_url")
-    def test_visual_review_capture_recovers_dead_preview_url_from_command_port(self, probe):
-        probe.side_effect = [
-            {"ok": False, "status": "probe_failed", "error_type": "URLError"},
-            {"ok": True, "status": "ok", "http_status": 200},
-        ]
-        seen_urls = []
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
-                def fake_runner(command, **_kwargs):
-                    seen_urls.append(command[-2])
-                    Path(command[-1]).write_bytes(b"fake png")
-                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
-
-                capture = execution_bridge._capture_visual_review_media(
-                    "CHARLIE-MISSION-EXEC123",
-                    {
-                        "url": "http://127.0.0.1:5003/pig/SOW-1/family-tree",
-                        "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
-                    },
-                    changed_files=["templates/family-tree.html"],
-                    run_subprocess=fake_runner,
-                )
-
-        self.assertTrue(capture["captured"])
-        self.assertEqual(capture["url"], "http://127.0.0.1:5003/pig/SOW-1/family-tree")
-        self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/pig/SOW-1/family-tree")
-        self.assertEqual(capture["capture_url_recovery"]["status"], "recovered_from_preview_command_port")
-        self.assertEqual(seen_urls, [
-            "http://127.0.0.1:5000/pig/SOW-1/family-tree",
-            "http://127.0.0.1:5000/pig/SOW-1/family-tree",
-        ])
-
     def test_visual_review_packet_generates_fallback_media_without_preview_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):

@@ -5614,11 +5614,6 @@ def _capture_visual_review_media(
     if not preview_url:
         fallback_reason = "preview_url_not_captured"
     else:
-        recovery = _recover_local_preview_capture_url(preview_url, local_preview)
-        if recovery.get("url") and recovery.get("url") != preview_url:
-            capture_url = recovery["url"]
-        elif recovery.get("url"):
-            capture_url = recovery["url"]
         parsed = urlparse(preview_url)
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
@@ -5690,7 +5685,6 @@ def _capture_visual_review_media(
         "status": "captured" if captured else "capture_command_failed",
         "url": preview_url,
         "capture_url": capture_url,
-        "capture_url_recovery": recovery if preview_url else {},
         "capture_source": "generated_owner_review_packet" if fallback_reason else "local_preview",
         "fallback_reason": fallback_reason,
         "captures": captures,
@@ -5700,70 +5694,6 @@ def _capture_visual_review_media(
         "stdout_tail": _truncate(" | ".join(item.get("stdout_tail", "") for item in captures), 1200),
         "stderr_tail": _truncate(" | ".join(item.get("stderr_tail", "") or item.get("error_type", "") for item in captures), 1200),
     }
-
-
-def _recover_local_preview_capture_url(preview_url, local_preview=None):
-    preview_url = str(preview_url or "").strip()
-    parsed = urlparse(preview_url)
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
-        return {"url": preview_url, "status": "not_local"}
-
-    original_probe = _probe_local_http_url(preview_url)
-    if original_probe.get("ok"):
-        return {"url": preview_url, "status": "original_reachable", "probe": original_probe}
-
-    command = str((local_preview or {}).get("command") or "")
-    ports = _local_preview_ports_from_command(command)
-    if parsed.port:
-        ports = [port for port in ports if port != str(parsed.port)]
-    for port in ports:
-        candidate = parsed._replace(netloc=f"{parsed.hostname}:{port}").geturl()
-        probe = _probe_local_http_url(candidate)
-        if probe.get("ok"):
-            return {
-                "url": candidate,
-                "status": "recovered_from_preview_command_port",
-                "original_url": preview_url,
-                "original_probe": original_probe,
-                "command": command,
-                "probe": probe,
-            }
-    return {
-        "url": preview_url,
-        "status": "unrecovered",
-        "original_probe": original_probe,
-        "candidate_ports": ports,
-        "command": command,
-    }
-
-
-def _local_preview_ports_from_command(command_text=""):
-    text = str(command_text or "")
-    ports = []
-    for explicit, colon in re.findall(r"--port\s+(\d+)|:(\d+)", text):
-        port = explicit or colon
-        if port and port not in ports:
-            ports.append(port)
-    return ports
-
-
-def _probe_local_http_url(url):
-    parsed = urlparse(str(url or ""))
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
-        return {"ok": False, "status": "not_local"}
-    try:
-        opener = url_request.build_opener(url_request.HTTPRedirectHandler)
-        req = url_request.Request(url, headers={"User-Agent": "CHARLIE-local-preview-capture-probe"})
-        with opener.open(req, timeout=3) as response:
-            status = int(response.status)
-            final_url = response.geturl()
-    except URLError as exc:
-        return {"ok": False, "status": "probe_failed", "error_type": exc.__class__.__name__, "reason": str(exc.reason) if hasattr(exc, "reason") else str(exc)}
-    except (OSError, ValueError) as exc:
-        return {"ok": False, "status": "probe_failed", "error_type": exc.__class__.__name__}
-    if status >= 500:
-        return {"ok": False, "status": "bad_status", "http_status": status, "final_url": final_url}
-    return {"ok": True, "status": "ok", "http_status": status, "final_url": final_url}
 
 
 def _npx_executable():
