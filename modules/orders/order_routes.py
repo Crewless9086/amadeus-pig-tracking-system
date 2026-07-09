@@ -37,6 +37,10 @@ from modules.documents.loading_sheet_service import (
     generate_loading_sheet_for_order,
     send_loading_sheet_to_owner_telegram,
 )
+from modules.documents.movement_documents_service import (
+    generate_health_declaration_for_order,
+    generate_removal_certificate_for_order,
+)
 from modules.documents.document_service import (
     get_latest_non_voided_quote,
     get_order_document,
@@ -502,6 +506,58 @@ def generate_loading_sheet(order_id):
             "order_id": order_id,
             "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
             "message": "Loading sheet generation failed unexpectedly.",
+        }), 500
+
+
+@orders_bp.route("/orders/<order_id>/removal-certificate", methods=["POST"])
+def generate_removal_certificate(order_id):
+    payload = request.get_json(silent=True) or {}
+    created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
+    form_data = payload.get("form_data") if isinstance(payload.get("form_data"), dict) else payload
+
+    try:
+        result = generate_removal_certificate_for_order(order_id, form_data=form_data, created_by=created_by)
+        return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "generate_removal_certificate",
+            "order_id": order_id,
+            "errors": [str(exc)]
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected removal certificate generation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "generate_removal_certificate",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+        }), 500
+
+
+@orders_bp.route("/orders/<order_id>/health-declaration", methods=["POST"])
+def generate_health_declaration(order_id):
+    payload = request.get_json(silent=True) or {}
+    created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
+    form_data = payload.get("form_data") if isinstance(payload.get("form_data"), dict) else payload
+
+    try:
+        result = generate_health_declaration_for_order(order_id, form_data=form_data, created_by=created_by)
+        return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "generate_health_declaration",
+            "order_id": order_id,
+            "errors": [str(exc)]
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected health declaration generation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "generate_health_declaration",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
         }), 500
 
 

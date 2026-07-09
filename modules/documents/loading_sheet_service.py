@@ -16,7 +16,9 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from modules.documents.document_service import (
+    DOCUMENT_TYPE_HEALTH_DECLARATION,
     DOCUMENT_TYPE_LOADING_SHEET,
+    DOCUMENT_TYPE_REMOVAL_CERTIFICATE,
     STATUS_GENERATED,
     append_order_document,
     build_document_file_name,
@@ -146,8 +148,8 @@ def send_loading_sheet_to_owner_telegram(document_id, sent_by="App", chat_id="")
     document = get_order_document(document_id)
     if not document:
         raise ValueError("Document not found.")
-    if str(document.get("Document_Type", "")).strip() != DOCUMENT_TYPE_LOADING_SHEET:
-        raise ValueError("Only loading sheet documents can be sent with this action.")
+    if str(document.get("Document_Type", "")).strip() not in OWNER_TELEGRAM_DOCUMENT_TYPES:
+        raise ValueError("Only loading sheet and movement documents can be sent with this action.")
 
     chat_ids = [str(chat_id or "").strip()] if str(chat_id or "").strip() else _owner_telegram_chat_ids()
     chat_ids = [item for item in chat_ids if item]
@@ -167,7 +169,7 @@ def send_loading_sheet_to_owner_telegram(document_id, sent_by="App", chat_id="")
         ok = ok and result.get("success") is True
     return {
         "success": ok,
-        "status": "telegram_loading_sheet_sent" if ok else "telegram_loading_sheet_partial_or_failed",
+        "status": "telegram_owner_document_sent" if ok else "telegram_owner_document_partial_or_failed",
         "document_id": document_id,
         "order_id": str(document.get("Order_ID", "")).strip(),
         "document_ref": str(document.get("Document_Ref", "")).strip(),
@@ -183,6 +185,13 @@ def loading_sheet_summary(document):
         "file_name": str(document.get("File_Name", "")).strip(),
         "google_drive_url": str(document.get("Google_Drive_URL", "")).strip(),
     }
+
+
+OWNER_TELEGRAM_DOCUMENT_TYPES = {
+    DOCUMENT_TYPE_LOADING_SHEET,
+    DOCUMENT_TYPE_REMOVAL_CERTIFICATE,
+    DOCUMENT_TYPE_HEALTH_DECLARATION,
+}
 
 
 def _render_loading_sheet_pdf(pdf_path, settings, order, lines, pen_groups, document_ref, generated_at):
@@ -313,13 +322,14 @@ def _send_loading_sheet_document(chat_id, document, sent_by="App"):
         return {"success": False, "status": "drive_file_id_required", "chat_id_set": bool(chat_id)}
 
     order_id = str(document.get("Order_ID", "")).strip()
+    document_type = str(document.get("Document_Type", "")).strip() or "Document"
     document_ref = str(document.get("Document_Ref", "")).strip()
     file_name = str(document.get("File_Name", "")).strip() or f"{document_ref or order_id or 'loading-sheet'}.pdf"
     caption = (
-        f"Loading Sheet PDF\n"
+        f"{document_type} PDF\n"
         f"Order: {order_id}\n"
         f"Ref: {document_ref}\n"
-        f"Use this for pen loading. No prices are shown. Tick loaded pigs and write final weights on the sheet."
+        f"Owner/farm paperwork copy. No prices are shown. Check details before printing or sharing."
     )
     try:
         with tempfile.TemporaryDirectory(prefix="amadeus-loading-telegram-") as temp_dir:

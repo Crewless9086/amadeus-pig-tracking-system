@@ -27,6 +27,8 @@ CHATWOOT_API_TOKEN = os.getenv("CHATWOOT_API_ACCESS_TOKEN", os.getenv("CHATWOOT_
 DOCUMENT_TYPE_QUOTE = "Quote"
 DOCUMENT_TYPE_INVOICE = "Invoice"
 DOCUMENT_TYPE_LOADING_SHEET = "Loading Sheet"
+DOCUMENT_TYPE_REMOVAL_CERTIFICATE = "Removal Certificate"
+DOCUMENT_TYPE_HEALTH_DECLARATION = "Health Declaration"
 
 STATUS_GENERATED = "Generated"
 STATUS_SENT = "Sent"
@@ -105,6 +107,10 @@ def build_document_ref(order_id, document_type, version=1):
         prefix = "Q"
     elif document_type == DOCUMENT_TYPE_LOADING_SHEET:
         prefix = "LOAD"
+    elif document_type == DOCUMENT_TYPE_REMOVAL_CERTIFICATE:
+        prefix = "REM"
+    elif document_type == DOCUMENT_TYPE_HEALTH_DECLARATION:
+        prefix = "HEALTH"
     else:
         prefix = "INV"
     base_ref = f"{prefix}-{year}-{order_suffix}"
@@ -132,12 +138,16 @@ def build_document_file_name(
         prefix = "QUO"
     elif document_type == DOCUMENT_TYPE_LOADING_SHEET:
         prefix = "LOAD"
+    elif document_type == DOCUMENT_TYPE_REMOVAL_CERTIFICATE:
+        prefix = "REM"
+    elif document_type == DOCUMENT_TYPE_HEALTH_DECLARATION:
+        prefix = "HEALTH"
     else:
         prefix = "INV"
     date_part = _format_filename_date(generated_date)
     version_part = f"V{int(version or 1)}"
     payment_ref = str(payment_ref or "").strip() or "NOREF"
-    if document_type == DOCUMENT_TYPE_LOADING_SHEET:
+    if document_type in {DOCUMENT_TYPE_LOADING_SHEET, DOCUMENT_TYPE_REMOVAL_CERTIFICATE, DOCUMENT_TYPE_HEALTH_DECLARATION}:
         return f"{prefix}_{date_part}_{payment_ref}_{version_part}.pdf"
 
     total_part = _format_rand_amount(total)
