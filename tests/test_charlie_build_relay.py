@@ -583,6 +583,38 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
         )
 
+    def test_dashboard_summary_converts_legacy_review_media_path_to_served_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            review_root = Path(tmp) / "review_media"
+            legacy_root = Path(tmp) / "review-media"
+            media_dir = legacy_root / "MISSION-1"
+            media_dir.mkdir(parents=True)
+            (media_dir / "desktop.png").write_bytes(b"fake-image")
+            with patch.object(charlie_routes, "REVIEW_MEDIA_DIR", review_root):
+                with patch.object(charlie_routes, "LEGACY_REVIEW_MEDIA_DIR", legacy_root):
+                    summary = charlie_routes._mission_dashboard_summary({
+                        "mission_id": "MISSION-1",
+                        "status": "pr_ready",
+                        "metadata": {
+                            "review_packet": {
+                                "visual_review": {
+                                    "status": "captured",
+                                    "media": [{
+                                        "filename": "desktop.png",
+                                        "reference": ".charlie_runner/review-media/MISSION-1/desktop.png",
+                                        "media_type": "image",
+                                    }],
+                                },
+                            },
+                        },
+                    })
+
+        media = summary["metadata"]["review_packet"]["visual_review"]["media"]
+        self.assertEqual(
+            media[0]["reference"],
+            "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
+        )
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.list_missions")
     def test_missions_route_passes_owner_queue_filter(self, list_missions, _owner_access):

@@ -64,6 +64,7 @@ from modules.charlie.vault_retrieval import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
 REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
 MISSION_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "mission_media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 INLINE_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$", re.IGNORECASE)
@@ -5602,31 +5603,49 @@ def _review_media_path(mission_id):
     return REVIEW_MEDIA_DIR / safe_id
 
 
-def _review_media_items(mission_id):
-    media_dir = _review_media_path(mission_id)
+def _review_media_candidate_paths(mission_id):
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "-", str(mission_id or "").strip())[:120] or "unknown"
+    paths = [REVIEW_MEDIA_DIR / safe_id]
+    legacy = LEGACY_REVIEW_MEDIA_DIR / safe_id
+    if legacy not in paths:
+        paths.append(legacy)
+    return paths
+
+
+def _resolve_review_media_dir(media_dir):
     try:
         resolved_dir = media_dir.resolve()
-        resolved_root = REVIEW_MEDIA_DIR.resolve()
     except OSError:
-        return []
-    if resolved_root not in resolved_dir.parents and resolved_dir != resolved_root:
-        return []
-    if not media_dir.exists() or not media_dir.is_dir():
-        return []
-    items = []
-    for path in sorted(media_dir.iterdir(), key=lambda item: item.name.lower()):
-        if not path.is_file() or path.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+        return None
+    for root in (REVIEW_MEDIA_DIR, LEGACY_REVIEW_MEDIA_DIR):
+        try:
+            resolved_root = root.resolve()
+        except OSError:
             continue
-        media_type = "video" if path.suffix.lower() in {".mp4", ".webm"} else "image"
-        items.append({
-            "label": path.stem.replace("_", " ").replace("-", " ")[:120] or path.name,
-            "media_type": media_type,
-            "reference": f"/api/charlie/build-relay/review-media/{media_dir.name}/{path.name}",
-            "path": str(path),
-            "filename": path.name,
-        })
-        if len(items) >= 12:
-            break
+        if resolved_dir == resolved_root or resolved_root in resolved_dir.parents:
+            return resolved_dir
+    return None
+
+
+def _review_media_items(mission_id):
+    items = []
+    for media_dir in _review_media_candidate_paths(mission_id):
+        resolved_dir = _resolve_review_media_dir(media_dir)
+        if not resolved_dir or not media_dir.exists() or not media_dir.is_dir():
+            continue
+        for path in sorted(media_dir.iterdir(), key=lambda item: item.name.lower()):
+            if not path.is_file() or path.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+                continue
+            media_type = "video" if path.suffix.lower() in {".mp4", ".webm"} else "image"
+            items.append({
+                "label": path.stem.replace("_", " ").replace("-", " ")[:120] or path.name,
+                "media_type": media_type,
+                "reference": f"/api/charlie/build-relay/review-media/{media_dir.name}/{path.name}",
+                "path": str(path),
+                "filename": path.name,
+            })
+            if len(items) >= 12:
+                return items
     return items
 
 

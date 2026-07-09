@@ -2202,6 +2202,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             for item in media
         ))
 
+    def test_review_media_items_accepts_legacy_hyphen_media_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            canonical_root = Path(tmp) / "review_media"
+            legacy_root = Path(tmp) / "review-media"
+            media_dir = legacy_root / "CHARLIE-MISSION-EXEC123"
+            media_dir.mkdir(parents=True)
+            (media_dir / "purpose-review-desktop.png").write_bytes(b"fake png")
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", canonical_root):
+                with patch("modules.charlie.execution_bridge.LEGACY_REVIEW_MEDIA_DIR", legacy_root):
+                    media = execution_bridge._review_media_items("CHARLIE-MISSION-EXEC123")
+
+        self.assertEqual(len(media), 1)
+        self.assertEqual(media[0]["filename"], "purpose-review-desktop.png")
+        self.assertIn(
+            "/api/charlie/build-relay/review-media/CHARLIE-MISSION-EXEC123/purpose-review-desktop.png",
+            media[0]["reference"],
+        )
+
     def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):

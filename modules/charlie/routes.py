@@ -60,6 +60,7 @@ from modules.charlie.owner_approval_inbox import (
 charlie_bp = Blueprint("charlie", __name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 
 
@@ -640,18 +641,19 @@ def charlie_build_relay_review_media_route(mission_id, filename):
     safe_filename = Path(str(filename or "")).name
     if not safe_mission_id or not safe_filename or Path(safe_filename).suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
         return jsonify({"success": False, "status": "review_media_not_found"}), 404
-    media_dir = REVIEW_MEDIA_DIR / safe_mission_id
-    try:
-        resolved_dir = media_dir.resolve()
-        resolved_root = REVIEW_MEDIA_DIR.resolve()
-    except OSError:
-        return jsonify({"success": False, "status": "review_media_not_found"}), 404
-    if resolved_root not in resolved_dir.parents:
-        return jsonify({"success": False, "status": "review_media_not_found"}), 404
-    media_path = resolved_dir / safe_filename
-    if not media_path.exists() or not media_path.is_file():
-        return jsonify({"success": False, "status": "review_media_not_found"}), 404
-    return send_from_directory(resolved_dir, safe_filename)
+    for root in (REVIEW_MEDIA_DIR, LEGACY_REVIEW_MEDIA_DIR):
+        media_dir = root / safe_mission_id
+        try:
+            resolved_dir = media_dir.resolve()
+            resolved_root = root.resolve()
+        except OSError:
+            continue
+        if resolved_dir != resolved_root and resolved_root not in resolved_dir.parents:
+            continue
+        media_path = resolved_dir / safe_filename
+        if media_path.exists() and media_path.is_file():
+            return send_from_directory(resolved_dir, safe_filename)
+    return jsonify({"success": False, "status": "review_media_not_found"}), 404
 
 
 def _owner_work_missions_for_status(status, limit=1):
@@ -911,9 +913,10 @@ def _dashboard_review_media_reference(mission_id, reference):
     safe_filename = Path(reference).name
     if not safe_mission_id or not safe_filename or Path(safe_filename).suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
         return reference
-    review_path = REVIEW_MEDIA_DIR / safe_mission_id / safe_filename
-    if review_path.exists() and review_path.is_file():
-        return f"/api/charlie/build-relay/review-media/{safe_mission_id}/{safe_filename}"
+    for root in (REVIEW_MEDIA_DIR, LEGACY_REVIEW_MEDIA_DIR):
+        review_path = root / safe_mission_id / safe_filename
+        if review_path.exists() and review_path.is_file():
+            return f"/api/charlie/build-relay/review-media/{safe_mission_id}/{safe_filename}"
     return reference
 
 
