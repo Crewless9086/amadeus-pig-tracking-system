@@ -143,7 +143,7 @@ function renderSummary(summary) {
   ];
 
   summaryEl.innerHTML = items.map(([label, value]) => `
-    <div class="summary-metric">
+    <div class="summary-metric${label === "Needs Data" && Number(value) > 0 ? " summary-metric-needs-data" : ""}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
@@ -375,7 +375,15 @@ function renderPurposeReview(row) {
 
   reviewStatus.textContent = `${pigLabel(row)} selected for purpose review. Preview the exact write before applying any change.`;
   const mappedPurpose = storedPurposeForSuggestion(row) || row.purpose || "Unknown";
+  const needsData = row.readiness_bucket === "Needs Data";
+  const needsDataBanner = needsData ? `
+    <div class="allocation-review-data-alert">
+      <strong>Missing data blocks trusted allocation</strong>
+      <span>${escapeHtml(row.readiness_reason || "Complete missing data before approving a purpose decision.")}</span>
+    </div>
+  ` : "";
   reviewDetail.innerHTML = `
+    ${needsDataBanner}
     <div class="allocation-review-grid">
       <div class="allocation-review-primary">
         <span>Selected Pig</span>
@@ -444,6 +452,7 @@ function renderPurposeReview(row) {
 }
 function bucketClass(bucket) {
   const normalized = String(bucket || "").toLowerCase();
+  if (normalized === "needs data") return "status-pill status-pill-needs-data";
   if (normalized.includes("needs")) return "status-pill status-pill-warning";
   if (normalized.includes("candidate")) return "status-pill";
   if (normalized.includes("allocated")) return "status-pill status-pill-muted";
@@ -463,8 +472,9 @@ function renderRows(rows) {
     const profileHref = `/pig/${encodeURIComponent(row.pig_id)}`;
     const parentText = [row.mother_id, row.father_id].filter(Boolean).join(" / ");
     const linkText = row.existing_link || row.reserved_for_order_id || "-";
+    const rowClass = row.readiness_bucket === "Needs Data" ? ' class="allocation-row-needs-data"' : "";
     return `
-      <tr>
+      <tr${rowClass}>
         <td>
           <a class="detail-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
           <span class="table-subtext">${escapeHtml(row.pig_id || "-")}</span>
