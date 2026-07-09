@@ -493,6 +493,22 @@ textarea {
   font-size: 14px;
 }
 
+.purpose-review-row-needs-data,
+.allocation-row-needs-data {
+  background: #fff7e8;
+  box-shadow: inset 5px 0 0 #d66b1f;
+}
+
+.purpose-review-row-needs-data td,
+.allocation-row-needs-data td {
+  border-bottom-color: #efc28c;
+}
+
+.purpose-review-row-needs-data:hover,
+.allocation-row-needs-data:hover {
+  background: #fff1d9;
+}
+
 .purpose-review-recheck {
   margin-top: 22px;
   border: 1px solid var(--border);
@@ -570,6 +586,22 @@ textarea {
   margin-bottom: 22px;
 }
 
+.allocation-card .summary-metric {
+  background: #ffffff;
+  border-color: var(--border);
+  color: var(--text-main);
+}
+
+.allocation-card .summary-metric span {
+  color: var(--text-soft);
+}
+
+.allocation-card .summary-metric.summary-metric-needs-data {
+  border-color: #d66b1f;
+  background: #fff3df;
+  box-shadow: inset 0 0 0 2px rgba(214, 107, 31, 0.18);
+}
+
 .allocation-rules {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -624,6 +656,13 @@ textarea {
 .status-pill-warning {
   background: #fff1cf;
   color: #7a4a00;
+}
+
+.status-pill.status-pill-needs-data {
+  border: 1px solid #b94f16;
+  background: #d66b1f;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(214, 107, 31, 0.16);
 }
 
 .slaughter-detail-grid {
@@ -1010,6 +1049,20 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
+}
+
+.summary-metric-needs-data {
+  border-color: #d66b1f;
+  background: #fff3df;
+  box-shadow: inset 0 0 0 2px rgba(214, 107, 31, 0.18);
+}
+
+.summary-metric.summary-metric-needs-data span {
+  color: #8b3f12;
+}
+
+.summary-metric.summary-metric-needs-data strong {
+  color: #7a2f0b;
 }
 
 .summary-metric span,
@@ -7697,6 +7750,26 @@ body.oom-farm-command-body {
   border-radius: 10px;
   background: #ffffff;
   padding: 12px;
+}
+
+.allocation-review-data-alert {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #d66b1f;
+  border-left-width: 6px;
+  border-radius: 10px;
+  background: #fff3df;
+  padding: 12px 14px;
+}
+
+.allocation-review-data-alert strong {
+  color: #7a2f0b;
+  font-size: 16px;
+}
+
+.allocation-review-data-alert span {
+  color: #8b3f12;
+  line-height: 1.4;
 }
 
 .allocation-review-grid span,

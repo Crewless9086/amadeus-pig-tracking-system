@@ -108,7 +108,7 @@ function renderSummary(summary) {
     ["Classified", summary.classified ?? 0],
   ];
   summaryEl.innerHTML = items.map(([label, value]) => `
-    <div class="summary-metric">
+    <div class="summary-metric${label === "Needs Data" && Number(value) > 0 ? " summary-metric-needs-data" : ""}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
@@ -163,7 +163,7 @@ function renderPurposeOptions(row) {
 
 function statusClass(status) {
   if (status === "needs_owner_decision") return "status-pill status-pill-warning";
-  if (status === "needs_data") return "status-pill status-pill-muted";
+  if (status === "needs_data") return "status-pill status-pill-needs-data";
   return "status-pill";
 }
 
@@ -179,8 +179,9 @@ function renderRows(rows) {
     const canSelect = row.review_status !== "classified";
     const checked = selectedPigIds.has(row.pig_id) ? " checked" : "";
     const disabled = canSelect ? "" : " disabled";
+    const rowClass = row.review_status === "needs_data" ? ' class="purpose-review-row-needs-data"' : "";
     return `
-      <tr>
+      <tr${rowClass}>
         <td><input type="checkbox" data-purpose-check="${escapeHtml(row.pig_id)}"${checked}${disabled} /></td>
         <td>
           <a class="detail-link" href="/pig/${encodeURIComponent(row.pig_id)}">${escapeHtml(pigLabel(row))}</a>
