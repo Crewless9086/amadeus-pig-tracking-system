@@ -1916,6 +1916,28 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_evidence_reviewer_approved_visual_notes_are_not_false_blockers(self):
+        artifact = _successful_stage_payload("evidence_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": [
+                "Needs Data pill uses text label + color, avoiding color-only accessibility failure.",
+                "Desktop and mobile screenshots captured with no overflow/layout breakage.",
+            ],
+            "test_evidence": [
+                "node --check static/js/pigAllocation.js -> pass",
+                ".\\venv\\Scripts\\python.exe -m unittest tests.test_frontend_route_contracts -> 39 tests OK",
+            ],
+            "media_references_used": [
+                ".charlie_runner/review-media/CHARLIE-MISSION-20C3BC66A8BAD3C5/purpose-review-desktop-1440x1000.png",
+            ],
+        })
+
+        result = execution_bridge._agent_quality_gate("evidence_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_visual_qa_approved_tail_json_is_not_send_back_blocker(self):
         artifact = _successful_stage_payload("visual_qa_reviewer")
         approved_tail = (

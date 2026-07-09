@@ -3507,7 +3507,16 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
 
 
 def _visual_review_notes_are_advisory(agent, artifact):
-    if agent not in {"visual_qa_reviewer", "reviewer"}:
+    if agent not in {
+        "visual_qa_reviewer",
+        "product_reviewer",
+        "business_reviewer",
+        "security_reviewer",
+        "evidence_reviewer",
+        "reviewer",
+    }:
+        return False
+    if (artifact or {}).get("errors") or (artifact or {}).get("bugs"):
         return False
     visual_decision = str((artifact or {}).get("visual_acceptance_decision") or "").strip().lower()
     owner_decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
