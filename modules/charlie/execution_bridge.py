@@ -3474,7 +3474,10 @@ def _negative_judgement_evidence(agent, artifact):
             continue
         if field == "visual_review_notes" and _visual_review_notes_are_advisory(agent, artifact):
             continue
-        if field in {"stdout_tail", "stderr_tail"} and _raw_judgement_tails_are_advisory(agent, artifact):
+        if field in {"stdout_tail", "stderr_tail"} and (
+            _raw_judgement_tails_are_advisory(agent, artifact)
+            or _visual_review_tails_are_advisory(agent, artifact)
+        ):
             continue
         if field in {"release_notes", "stdout_tail", "stderr_tail"} and _structured_review_judgement_passed(agent, artifact):
             continue
@@ -3508,6 +3511,12 @@ def _visual_review_notes_are_advisory(agent, artifact):
     visual_decision = str((artifact or {}).get("visual_acceptance_decision") or "").strip().lower()
     owner_decision = str((artifact or {}).get("recommended_owner_decision") or "").strip().lower()
     return visual_decision == "approve" and owner_decision in {"approve", "approve_final_release", "mark_done", ""}
+
+
+def _visual_review_tails_are_advisory(agent, artifact):
+    if not _visual_review_notes_are_advisory(agent, artifact):
+        return False
+    return not ((artifact or {}).get("errors") or (artifact or {}).get("bugs"))
 
 
 def _structured_review_judgement_passed(agent, artifact):

@@ -1916,6 +1916,34 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_visual_qa_approved_tail_json_is_not_send_back_blocker(self):
+        artifact = _successful_stage_payload("visual_qa_reviewer")
+        approved_tail = (
+            '"visual_review_notes": ["Pig ID is no longer duplicated in the primary Pig cell; '
+            'it remains available under More/details.", "Review actions remain visible on desktop, '
+            'laptop, and mobile.", "Residual polish: summary metric cards are low contrast, '
+            'but this is not a blocker."], "send_back_stage": ""'
+        )
+        artifact.update({
+            "ui_quality_contract": {"ui_related": True, "reference_media_required": False},
+            "recommended_owner_decision": "approve_final_release",
+            "visual_acceptance_decision": "approve",
+            "visual_review_notes": [
+                "Review actions remain visible on desktop, laptop, and mobile.",
+            ],
+            "reference_match_assessment": "The compact table matches the written owner request.",
+            "media_references_used": [],
+            "commands_run": ["node --check static\\js\\pigAllocation.js"],
+            "files_inspected": ["static/js/pigAllocation.js", "static/css/main.css"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/CHARLIE_CORE_UI_MISSION_STANDARD.md"],
+            "stdout_tail": approved_tail,
+            "stderr_tail": approved_tail,
+        })
+
+        result = execution_bridge._agent_quality_gate("visual_qa_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_review_board_owner_approval_gate_instruction_is_not_send_back_blocker(self):
         for agent in ["product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer"]:
             with self.subTest(agent=agent):
