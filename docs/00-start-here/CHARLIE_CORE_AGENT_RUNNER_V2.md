@@ -42,6 +42,8 @@ Validation missions must include PR evidence before owner review.
 
 Tester failure sends the workflow back to Builder. Reviewer rejection or findings send the workflow back to Builder unless the Reviewer artifact names a different valid `send_back_stage`. Backflow is bounded by a retry limit so the mission cannot loop forever. Backflow events are recorded in the Agent Runner ledger and the owner review packet.
 
+**Cross-session loop cap (Stage 1 reliability fix).** The per-run ledger backflow counter resets every runner session, so before this fix a repeated blocker could loop across restarts and churn overnight without ever landing. The hard-loop cap is now **mission-durable**: each backflow stamps its blocker fingerprint into durable mission memory, and the loop detector counts prior occurrences across all previous sessions (`_durable_backflow_fingerprint_count`). A blocker that repeats across sessions converts to an honest owner-review block with a recovery packet instead of an infinite retry.
+
 ## Dashboard Visibility
 
 The local runner heartbeat exposes:
@@ -89,6 +91,8 @@ This prevents silent stuck missions.
 When all stages complete, CHARLIE creates a review packet and moves the mission to `pr_ready`. Owner review remains mandatory before release. Send-back comments rerun from the chosen workflow stage and downstream stages.
 
 When owner review sends a mission back to a stage, upstream artifacts are preserved and only the selected stage plus downstream stages rerun. This keeps good planning/architecture evidence intact while still forcing new Builder/Tester/Reviewer evidence.
+
+**Cross-session evidence recovery (Stage 1 reliability fix).** When a mission resumes in a new runner session, upstream artifacts are recovered not only from the review packet and vault handoff reports but also from **durable mission memory** (`latest_by_agent`). Before this fix, a resumed downstream agent (e.g. QA/Red-Team) could be handed an empty `previous_agent_artifacts` and correctly refuse to certify implementation it could not see — re-blocking work that had already passed in an earlier session. Recovered artifacts are additive and never overwrite evidence already present for the run.
 
 ## Release
 

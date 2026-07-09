@@ -173,6 +173,81 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             [],
         )
 
+    def test_rerun_recovers_upstream_artifacts_from_mission_memory(self):
+        # Stage 1 fix B (evidence threading): when the review packet has lost the
+        # upstream agent artifacts across a runner session, a resumed downstream
+        # agent must still receive builder/tester evidence from durable mission
+        # memory instead of an empty previous_agent_artifacts (the exact overnight
+        # stall: qa_red_team blocked because "previous_agent_artifacts is empty").
+        sequence = ["idea_expander", "source_mapper", "builder", "tester", "qa_red_team", "reviewer"]
+        mission = {
+            **MISSION,
+            "metadata": {
+                "review_packet": {"agent_artifacts": {}},
+                "mission_memory": {
+                    "version": "charlie_mission_memory_v1",
+                    "latest_by_agent": {
+                        "builder": {
+                            "agent": "builder",
+                            "type": "agent_complete",
+                            "summary": "Implemented pre-wean tagless exclusion.",
+                            "changed_files": ["modules/pig_weights/pig_weights_service.py"],
+                            "commands_run": ["python -m unittest tests.test_pig_allocation_readiness_service"],
+                            "tests_run": ["Ran 190 tests OK"],
+                            "files_inspected": ["modules/pig_weights/pig_weights_service.py"],
+                            "confidence": "0.97",
+                        },
+                        "tester": {
+                            "agent": "tester",
+                            "type": "agent_complete",
+                            "summary": "Focused suite passed.",
+                            "tests_run": ["Ran 190 tests OK"],
+                            "files_inspected": ["tests/test_pig_allocation_readiness_service.py"],
+                        },
+                    },
+                },
+            },
+        }
+
+        recovered = execution_bridge._existing_agent_artifacts_for_rerun(mission, "qa_red_team", sequence)
+
+        self.assertIn("builder", recovered)
+        self.assertIn("tester", recovered)
+        self.assertEqual(
+            recovered["builder"]["changed_files"],
+            ["modules/pig_weights/pig_weights_service.py"],
+        )
+        self.assertEqual(recovered["builder"]["recovered_from"], "mission_memory_latest_by_agent")
+        self.assertTrue(recovered["tester"]["test_evidence"])
+        # Never recover the current/downstream stage's own artifact.
+        self.assertNotIn("qa_red_team", recovered)
+        self.assertNotIn("reviewer", recovered)
+
+    def test_durable_backflow_count_persists_across_sessions(self):
+        # Stage 1 fix A (durable loop cap): the per-run ledger resets every runner
+        # session, so a repeated blocker used to loop forever overnight. The count
+        # must survive across sessions via mission memory so the hard-loop cap can
+        # convert an infinite retry into an honest owner block.
+        mission = {
+            **MISSION,
+            "metadata": {
+                "mission_memory": {
+                    "version": "charlie_mission_memory_v1",
+                    "events": [
+                        {"type": "agent_backflow", "metadata": {"backflow_fingerprint": "abc123"}},
+                        {"type": "agent_complete", "metadata": {"backflow_fingerprint": "abc123"}},
+                        {"type": "agent_backflow", "metadata": {"backflow_fingerprint": "abc123"}},
+                        {"type": "agent_backflow", "metadata": {"backflow_fingerprint": "different"}},
+                    ],
+                },
+            },
+        }
+
+        self.assertEqual(execution_bridge._durable_backflow_fingerprint_count(mission, "abc123"), 2)
+        self.assertEqual(execution_bridge._durable_backflow_fingerprint_count(mission, "different"), 1)
+        self.assertEqual(execution_bridge._durable_backflow_fingerprint_count(mission, "missing"), 0)
+        self.assertEqual(execution_bridge._durable_backflow_fingerprint_count({}, "abc123"), 0)
+
     def test_review_agent_structured_pass_allows_out_of_scope_release_note(self):
         artifact = _successful_stage_payload("business_reviewer")
         artifact.update({

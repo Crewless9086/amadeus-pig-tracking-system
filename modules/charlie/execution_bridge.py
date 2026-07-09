@@ -43,6 +43,7 @@ from modules.charlie.mission_memory import (
     final_artifact_contract_packet,
     memory_patch_from_event,
     memory_prompt_context,
+    mission_memory_from_metadata,
     partial_recovery_contract_packet,
 )
 from modules.charlie.mission_quality import (
@@ -637,7 +638,11 @@ def run_agent_execution_bridge_v2(
             )
             if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
                 blocker_fingerprint = _backflow_fingerprint(agent, backflow_target, quality["reason"], artifact)
-                if _backflow_fingerprint_count(ledger, blocker_fingerprint) >= HARD_LOOP_REPEAT_LIMIT - 1:
+                prior_same_loop = (
+                    _backflow_fingerprint_count(ledger, blocker_fingerprint)
+                    + _durable_backflow_fingerprint_count(mission, blocker_fingerprint)
+                )
+                if prior_same_loop >= HARD_LOOP_REPEAT_LIMIT - 1:
                     backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
                     _append_backflow_event(
                         ledger,
@@ -689,6 +694,11 @@ def run_agent_execution_bridge_v2(
                         attempt=stage_attempts[agent],
                         artifact=artifact,
                         quality_gate=quality,
+                        metadata={
+                            "backflow_fingerprint": blocker_fingerprint,
+                            "backflow_from": agent,
+                            "backflow_to": backflow_target,
+                        },
                     ),
                     database_url=database_url,
                     connect_factory=connect_factory,
@@ -2754,6 +2764,43 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
             "confidence": report.get("confidence") or "96%",
             "confidence_reason": "Recovered from mission vault handoff report during runner resume.",
         }
+    # Durable cross-session recovery: mission memory persists each agent's last
+    # completed work in metadata (survives new runner sessions). When the review
+    # packet / vault handoff reports have lost an upstream artifact, recover it
+    # here so a resumed downstream agent (e.g. qa_red_team) is never handed an
+    # empty previous_agent_artifacts and forced to re-block work that already
+    # passed. Additive only: never overwrites an artifact already preserved above.
+    memory = mission_memory_from_metadata(metadata)
+    latest_by_agent = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
+    for agent, event in latest_by_agent.items():
+        agent = str(agent or "").strip().lower()
+        if (
+            not agent
+            or agent in preserved
+            or agent not in agent_sequence
+            or agent_sequence.index(agent) >= start_index
+            or not isinstance(event, dict)
+        ):
+            continue
+        if str(event.get("type") or "").strip().lower() not in {"agent_complete", "parallel_agent_complete"}:
+            continue
+        preserved[agent] = {
+            "summary": event.get("summary") or f"{agent} completed in an earlier runner session.",
+            "status": "complete",
+            "vault_sources_used": event.get("vault_sources_used") or ["mission_memory"],
+            "files_inspected": event.get("files_inspected") or [],
+            "commands_run": event.get("commands_run") or [],
+            "changed_files": event.get("changed_files") or [],
+            "test_evidence": event.get("tests_run") or [],
+            "quality_gate": event.get("quality_gate") or {},
+            "next_action": event.get("next_action") or "",
+            "confidence": event.get("confidence") or "96%",
+            "confidence_reason": (
+                event.get("confidence_reason")
+                or "Recovered from durable mission memory during cross-session runner resume."
+            ),
+            "recovered_from": "mission_memory_latest_by_agent",
+        }
     return preserved
 
 
@@ -4066,6 +4113,33 @@ def _backflow_fingerprint_count(ledger, fingerprint):
         return 0
     events = ledger.get("backflow_events") if isinstance(ledger.get("backflow_events"), list) else []
     return sum(1 for event in events if isinstance(event, dict) and event.get("fingerprint") == fingerprint)
+
+
+def _durable_backflow_fingerprint_count(mission, fingerprint):
+    """Count how many times this exact blocker loop already fired across ALL
+    prior runner sessions for this mission, using durable mission memory.
+
+    The per-run ledger resets every session, so a loop that repeats after a
+    runner restart used to reset its counter and could churn overnight. Mission
+    memory persists in mission metadata, so counting backflow fingerprints here
+    makes the hard-loop cap mission-durable: a repeated blocker converts to an
+    honest owner-review block instead of an infinite cross-session retry.
+    """
+    if not fingerprint or not isinstance(mission, dict):
+        return 0
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    memory = mission_memory_from_metadata(metadata)
+    events = memory.get("events") if isinstance(memory.get("events"), list) else []
+    count = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("type") or "").strip().lower() != "agent_backflow":
+            continue
+        event_metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        if event_metadata.get("backflow_fingerprint") == fingerprint:
+            count += 1
+    return count
 
 
 def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
