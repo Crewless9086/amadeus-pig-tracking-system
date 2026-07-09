@@ -35,6 +35,10 @@ Farm record writes require approved backend paths and audit evidence.
 - Litter detail attention should include the reason and recommended action when the read model flags attention; if no attention reason exists, the UI should not reserve empty attention space.
 - Litter attention reconciliation should count sold, slaughtered, disposed, removed, and completed-sale piglet rows as accounted terminal live-born outcomes, not missing piglets. Litter-level stillborn/mummified counts may account for non-live outcomes without requiring separate pig rows when `Total_Born = Born_Alive + Stillborn/Mummified` and live-born piglet history reconciles.
 
+## Family Tree Read Contract
+
+- Family tree reads should remain read-only and relationship-first, but may add breeding decision context for selected sows or boars by composing existing mating, litter, piglet outcome, survival, active/exited piglet, average weight, and data-quality read models. This context must be additive to the existing selected pig, parent, sibling, litter, and source fields.
+
 ## Agent Use
 
 - Herdmaster may recommend purpose/lifecycle actions.
