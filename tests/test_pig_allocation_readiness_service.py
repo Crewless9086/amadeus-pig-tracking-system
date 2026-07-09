@@ -599,6 +599,61 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             "Pig has wean data but Animal Type is still Piglet. Update lifecycle stage to Weaner.",
         )
 
+    def test_allocation_readiness_defers_tagless_pre_wean_piglets(self):
+        overview_rows = [
+            {
+                "Pig_ID": "PIG-PREWEAN",
+                "Tag_Number": "",
+                "Animal_Type": "Piglet",
+                "Sex": "",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": "",
+                "Last_Weight_Date": "",
+                "Date_Of_Birth": "2026-06-01",
+                "Age_Days": "14",
+                "Litter_ID": "LIT-1",
+                "Wean_Date": "",
+                "Wean_Weight_Kg": "",
+            },
+            {
+                "Pig_ID": "PIG-ACTIONABLE",
+                "Tag_Number": "",
+                "Animal_Type": "Piglet",
+                "Sex": "Female",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": "",
+                "Last_Weight_Date": "",
+                "Date_Of_Birth": "2026-04-01",
+                "Age_Days": "75",
+                "Litter_ID": "LIT-1",
+                "Wean_Date": "2026-05-20",
+                "Wean_Weight_Kg": "6",
+            },
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Piglet Pen"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 15))
+
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+        self.assertNotIn("PIG-PREWEAN", by_id)
+        self.assertIn("PIG-ACTIONABLE", by_id)
+        self.assertEqual(by_id["PIG-ACTIONABLE"]["readiness_bucket"], "Needs Data")
+        self.assertEqual(result["summary"]["total"], 1)
+        self.assertEqual(result["summary"]["buckets"]["Needs Data"], 1)
+
     def test_purpose_review_queue_filters_unknown_purpose_and_keeps_litter_focus(self):
         allocation_result = {
             "success": True,
