@@ -197,7 +197,7 @@ function buildSiblingCard(pig) {
     `${pig.sex || "-"} - ${pig.calculated_stage || "-"} - ${pig.current_weight_kg !== null && pig.current_weight_kg !== "" ? `${formatNumber(pig.current_weight_kg, 2)} kg` : "No weight"}`;
 
   const extra = document.createElement("div");
-  extra.className = "sales-meta-grid";
+  extra.className = "sales-meta-grid family-tree-sibling-meta";
   extra.innerHTML = `
     <div><span class="history-label">Status</span><span class="history-value">${escapeHtml(pig.status || "-")}</span></div>
     <div><span class="history-label">On Farm</span><span class="history-value">${escapeHtml(pig.on_farm || "-")}</span></div>

@@ -2094,6 +2094,22 @@ button:disabled {
   color: var(--green-dark);
 }
 
+.family-tree-sibling-meta div {
+  min-width: 0;
+}
+
+.family-tree-sibling-meta .history-label,
+.family-tree-sibling-meta .history-value {
+  display: block;
+}
+
+.family-tree-sibling-meta .history-value {
+  margin-top: 3px;
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .family-card {
   display: flex;
   flex-direction: column;

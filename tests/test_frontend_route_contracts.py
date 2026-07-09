@@ -1762,6 +1762,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("tree.breeding_context", js)
         self.assertIn("Piglets Born Alive", js)
         self.assertIn("family-tree-record", js)
+        self.assertIn("family-tree-sibling-meta", js)
         self.assertNotIn('method: "POST"', js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
