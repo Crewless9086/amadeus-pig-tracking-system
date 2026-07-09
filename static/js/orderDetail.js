@@ -832,15 +832,18 @@ function setupDocumentActions(orderId) {
 
 function collectMovementDocumentFields(kind) {
   const today = new Date().toISOString().slice(0, 10);
+  const savedDefaults = loadMovementDocumentDefaults();
   const fields = [
     ["movement_date", "Removal / declaration date", today],
     ["movement_time", "Removal time", ""],
-    ["driver_name", "Driver name", ""],
+    ["driver_name", "Driver name", "Dad"],
     ["driver_id", "Driver ID number", ""],
     ["driver_phone", "Driver phone", ""],
     ["vehicle_registration", "Vehicle registration", ""],
     ["trailer_registration", "Trailer registration", ""],
     ["destination_address", "Destination / buyer address", ""],
+    ["route_notes", "Route / permit notes", ""],
+    ["movement_reason", "Reason for movement", "Sale / transfer of ownership"],
     ["responsible_person", "Responsible person signing", "Charl Nieuwendyk"],
     ["signature_place", "Place signed", "Amadeus Farm"],
   ];
@@ -849,12 +852,44 @@ function collectMovementDocumentFields(kind) {
   }
   const data = {};
   for (const [key, label, fallback] of fields) {
-    const value = window.prompt(label, fallback);
+    const value = window.prompt(label, savedDefaults[key] || fallback);
     if (value === null) return null;
     data[key] = value.trim();
   }
   data.signature_date = data.movement_date || today;
+  saveMovementDocumentDefaults(data);
   return data;
+}
+
+function loadMovementDocumentDefaults() {
+  try {
+    return JSON.parse(window.localStorage.getItem("amadeus_movement_document_defaults") || "{}") || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function saveMovementDocumentDefaults(data) {
+  const stickyKeys = [
+    "driver_name",
+    "driver_id",
+    "driver_phone",
+    "vehicle_registration",
+    "trailer_registration",
+    "route_notes",
+    "movement_reason",
+    "responsible_person",
+    "signature_place",
+  ];
+  const values = {};
+  stickyKeys.forEach((key) => {
+    if (data[key]) values[key] = data[key];
+  });
+  try {
+    window.localStorage.setItem("amadeus_movement_document_defaults", JSON.stringify(values));
+  } catch (error) {
+    console.warn("Could not save movement document defaults", error);
+  }
 }
 
 async function runDocumentGeneration(url, orderId, successText, formData) {
