@@ -10281,3 +10281,12 @@ body.oom-farm-command-body {
         padding: 10px;
     }
 }
+
+.status-pill.status-pill-alert,
+.simple-table .status-pill.status-pill-alert,
+.purpose-review-table .status-pill.status-pill-alert,
+.allocation-review-panel .status-pill.status-pill-alert {
+  border-color: #b94d0d;
+  background: #d9651c;
+  color: #ffffff;
+}
