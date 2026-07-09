@@ -1992,6 +1992,14 @@ button:disabled {
   background: #fbfaf6;
 }
 
+.family-tree-decision-panel.hidden,
+.family-tree-section.hidden,
+.family-tree-relationship-title.hidden,
+#family_tree_siblings_header.hidden,
+.pig-list-grid.hidden {
+  display: none;
+}
+
 .family-tree-metric-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

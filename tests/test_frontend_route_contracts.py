@@ -1763,6 +1763,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Piglets Born Alive", js)
         self.assertIn("family-tree-record", js)
         self.assertIn("family-tree-sibling-meta", js)
+        self.assertIn('id="family_tree_relationship_title"', template)
+        self.assertIn('id="family_tree_relationship_section"', template)
+        self.assertIn('id="family_tree_siblings_header"', template)
+        self.assertIn('parts.indexOf("pig")', js)
+        self.assertIn('parts[pigIndex + 2] === "family-tree"', js)
+        self.assertIn("clearFamilyTreeContent", js)
+        self.assertIn("clearBreedingContext", js)
+        self.assertIn("setRelationshipTreeVisible(false)", js)
+        self.assertIn("setRelationshipTreeVisible(true)", js)
+        self.assertIn(".family-tree-decision-panel.hidden", css := Path("static/css/main.css").read_text(encoding="utf-8"))
+        self.assertIn("#family_tree_siblings_header.hidden", css)
         self.assertNotIn('method: "POST"', js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):

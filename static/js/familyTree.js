@@ -9,6 +9,9 @@ const familyTreeBreedingSummary = document.getElementById("family_tree_breeding_
 const familyTreeQualityFlags = document.getElementById("family_tree_quality_flags");
 const familyTreeMatings = document.getElementById("family_tree_matings");
 const familyTreeLitters = document.getElementById("family_tree_litters");
+const familyTreeRelationshipTitle = document.getElementById("family_tree_relationship_title");
+const familyTreeRelationshipSection = document.getElementById("family_tree_relationship_section");
+const familyTreeSiblingsHeader = document.getElementById("family_tree_siblings_header");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -20,8 +23,12 @@ function escapeHtml(value) {
 }
 
 function getPigIdFromFamilyTreeUrl() {
-  const parts = window.location.pathname.split("/");
-  return decodeURIComponent(parts[parts.length - 2] || "");
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const pigIndex = parts.indexOf("pig");
+  if (pigIndex >= 0 && parts[pigIndex + 2] === "family-tree") {
+    return decodeURIComponent(parts[pigIndex + 1] || "");
+  }
+  return "";
 }
 
 function pigProfileHref(pigId) {
@@ -39,6 +46,31 @@ function showFamilyTreeMessage(message, type = "error") {
   familyTreeMessage.classList.remove("hidden", "message-success", "message-error");
   familyTreeMessage.classList.add(type === "success" ? "message-success" : "message-error");
   familyTreeMessage.textContent = message;
+}
+
+function clearBreedingContext() {
+  if (familyTreeBreedingPanel) familyTreeBreedingPanel.classList.add("hidden");
+  if (familyTreeBreedingSummary) familyTreeBreedingSummary.innerHTML = "";
+  if (familyTreeQualityFlags) familyTreeQualityFlags.innerHTML = "";
+  if (familyTreeMatings) familyTreeMatings.innerHTML = "";
+  if (familyTreeLitters) familyTreeLitters.innerHTML = "";
+}
+
+function setRelationshipTreeVisible(isVisible) {
+  [familyTreeRelationshipTitle, familyTreeRelationshipSection, familyTreeSiblingsHeader, familyTreeSiblings].forEach((element) => {
+    if (!element) return;
+    element.classList.toggle("hidden", !isVisible);
+  });
+}
+
+function clearFamilyTreeContent() {
+  clearBreedingContext();
+  setRelationshipTreeVisible(false);
+  familyTreeMother.innerHTML = "";
+  familyTreeFather.innerHTML = "";
+  familyTreeCurrent.innerHTML = "";
+  familyTreeSiblings.innerHTML = "";
+  familyTreeSiblingCount.textContent = "";
 }
 
 function formatNumber(value, decimals = 2) {
@@ -92,7 +124,7 @@ function renderFamilyMetric(label, value, helper = "") {
 
 function renderBreedingContext(context) {
   if (!familyTreeBreedingPanel || !context || !context.is_breeding_animal || !context.animal) {
-    if (familyTreeBreedingPanel) familyTreeBreedingPanel.classList.add("hidden");
+    clearBreedingContext();
     return;
   }
 
@@ -217,6 +249,7 @@ async function loadFamilyTree() {
   const pigId = getPigIdFromFamilyTreeUrl();
 
   if (!pigId) {
+    clearFamilyTreeContent();
     showFamilyTreeMessage("No pig ID found in URL.", "error");
     return;
   }
@@ -229,6 +262,7 @@ async function loadFamilyTree() {
     const data = await response.json();
 
     if (!response.ok || !data.success) {
+      clearFamilyTreeContent();
       showFamilyTreeMessage(data.error || "Could not load family tree.", "error");
       return;
     }
@@ -237,6 +271,7 @@ async function loadFamilyTree() {
 
     document.getElementById("family_tree_title").textContent = `Family Tree - ${tree.current_pig.tag_number || tree.current_pig.pig_id}`;
     document.getElementById("family_tree_subtitle").textContent = `Pig ID: ${tree.current_pig.pig_id}`;
+    setRelationshipTreeVisible(true);
     renderBreedingContext(tree.breeding_context);
 
     familyTreeMother.innerHTML = buildFamilyCard(tree.mother, "Mother");
@@ -262,6 +297,7 @@ async function loadFamilyTree() {
     });
   } catch (error) {
     console.error("loadFamilyTree error:", error);
+    clearFamilyTreeContent();
     showFamilyTreeMessage("Something went wrong while loading family tree.", "error");
   }
 }
