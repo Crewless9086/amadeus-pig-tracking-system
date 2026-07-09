@@ -905,6 +905,35 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(quality["passed"], quality)
         self.assertIn("commands_run", quality["reason"])
 
+    def test_agent_prompt_artifacts_prioritize_recent_upstream_evidence(self):
+        artifacts = {
+            "builder": {
+                "summary": "Builder artifact.",
+                "commands_run": [f"builder command {index}" for index in range(80)],
+                "files_inspected": [f"builder_file_{index}.py" for index in range(80)],
+                "changed_files": ["modules/pig_weights/pig_weights_service.py"],
+                "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+            },
+            "tester": {
+                "summary": "Tester independently verified the change.",
+                "commands_run": ["python -m unittest tests.test_pig_allocation_readiness_service"],
+                "tests_run": [{"command": "python -m unittest tests.test_pig_allocation_readiness_service", "result": "pass"}],
+                "test_status": "pass",
+                "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
+            },
+        }
+
+        prompt_artifacts = execution_bridge._agent_artifacts_for_prompt(
+            artifacts,
+            "qa_red_team",
+            ["builder", "tester", "qa_red_team", "product_reviewer"],
+        )
+        encoded = json.dumps(prompt_artifacts, indent=2)[:12000]
+
+        self.assertLess(encoded.index('"tester"'), encoded.index('"builder"'))
+        self.assertIn("Tester independently verified the change", encoded)
+        self.assertIn("commands_run_truncated_count", encoded)
+
     def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
         text = """
         ```json

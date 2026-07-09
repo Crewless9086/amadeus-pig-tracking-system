@@ -1514,7 +1514,7 @@ Forbidden actions:
 {_format_list(vault.get("forbidden_actions"))}
 
 Previous agent artifacts:
-{json.dumps(artifacts, indent=2)[:8000]}
+{json.dumps(_agent_artifacts_for_prompt(artifacts, agent, sequence), indent=2)[:12000]}
 
 Mission agent order:
 {", ".join(sequence)}
@@ -4957,6 +4957,33 @@ def _compact_agent_artifacts_for_review(artifacts):
             item["stderr_tail_excerpt"] = stderr_tail
         compact[agent] = item
     return compact
+
+
+def _agent_artifacts_for_prompt(artifacts, current_agent="", agent_sequence=None):
+    compact = _compact_agent_artifacts_for_review(artifacts)
+    agent_sequence = agent_sequence or list(AGENT_SEQUENCE)
+    current_agent = str(current_agent or "").strip().lower()
+    if current_agent in agent_sequence:
+        current_index = agent_sequence.index(current_agent)
+        ordered_agents = list(reversed(agent_sequence[:current_index]))
+    else:
+        ordered_agents = list(reversed(agent_sequence))
+    ordered_agents.extend(agent for agent in compact if agent not in ordered_agents)
+    prompt_artifacts = {}
+    for agent in ordered_agents:
+        artifact = compact.get(agent)
+        if not isinstance(artifact, dict):
+            continue
+        item = {}
+        for key, value in artifact.items():
+            if isinstance(value, list):
+                item[key] = value[:12]
+                if len(value) > 12:
+                    item[f"{key}_truncated_count"] = len(value) - 12
+            else:
+                item[key] = value
+        prompt_artifacts[agent] = item
+    return prompt_artifacts
 
 
 def _artifact_value_list(value):
