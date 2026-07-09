@@ -970,7 +970,12 @@ def update_mission_workflow_step(
     context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack(mission.get("mission_type", ""))
 
     status = ""
-    if agent == "reviewer" and step_status == "complete":
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    if (
+        agent == "reviewer"
+        and step_status == "complete"
+        and str(review_packet.get("review_status") or "").strip() == "ready_for_owner_review"
+    ):
         status = "pr_ready"
     elif step_status == "blocked":
         status = "blocked"

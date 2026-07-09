@@ -14,7 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from modules.charlie.mission_store import list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
+from modules.charlie.core_workflow import build_core_plan
+from modules.charlie.mission_store import get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -449,6 +450,13 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "would_mark_status": "in_progress",
         }, 200
 
+    refresh = _refresh_core_plan_for_pickup(mission)
+    if refresh.get("refreshed"):
+        refreshed, refreshed_status = get_mission(mission_id)
+        if refreshed_status < 400 and refreshed.get("mission"):
+            mission = refreshed["mission"]
+            codex_chat_preview = _codex_chat_content(mission)
+
     updated, update_status = update_mission_status(
         mission_id,
         "in_progress",
@@ -482,7 +490,63 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "codex_chat_written": True,
         "mission_status": "in_progress",
         "execution_lease": lease,
+        "workflow_refresh": refresh,
     }, 200
+
+
+def _refresh_core_plan_for_pickup(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    mission_id = str(mission.get("mission_id") or "").strip()
+    if not mission_id:
+        return {"refreshed": False, "reason": "mission_id_missing"}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    if review_packet.get("return_to_stage") or review_packet.get("blocked_agent"):
+        return {"refreshed": False, "reason": "resume_marker_present"}
+    current_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    current_truth = current_core.get("project_truth") if isinstance(current_core.get("project_truth"), dict) else {}
+    plan = build_core_plan(mission)
+    planned_truth = plan.get("project_truth") if isinstance(plan.get("project_truth"), dict) else {}
+    current_agents = [
+        str(item.get("agent") or "").strip()
+        for item in (mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip()
+    ]
+    planned_agents = [
+        str(item.get("agent") or "").strip()
+        for item in (plan.get("agent_workflow") if isinstance(plan.get("agent_workflow"), list) else [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip()
+    ]
+    if (
+        current_agents == planned_agents
+        and current_truth.get("pipeline_profile") == planned_truth.get("pipeline_profile")
+        and current_truth.get("workflow_right_sized") == planned_truth.get("workflow_right_sized")
+    ):
+        return {"refreshed": False, "reason": "workflow_already_current", "pipeline_profile": planned_truth.get("pipeline_profile", "")}
+    payload = {
+        "agent_workflow": plan.get("agent_workflow", []),
+        "mission_context_pack": {
+            "version": plan.get("version", ""),
+            "agent_order": planned_agents,
+            "workflow_template": planned_truth.get("workflow_template", ""),
+            "pipeline_profile": planned_truth.get("pipeline_profile", ""),
+            "workflow_right_sized": planned_truth.get("workflow_right_sized", False),
+        },
+        "charlie_core": plan,
+    }
+    result, status_code = update_mission_vault(
+        mission_id,
+        payload,
+        notes="CHARLIE runner refreshed approved mission workflow before pickup.",
+    )
+    return {
+        "refreshed": int(status_code or 0) < 400 and result.get("success") is True,
+        "reason": result.get("status", "workflow_refresh_attempted"),
+        "status_code": status_code,
+        "pipeline_profile": planned_truth.get("pipeline_profile", ""),
+        "workflow_right_sized": planned_truth.get("workflow_right_sized", False),
+        "agent_count": len(planned_agents),
+    }
 
 
 def _write_execution_lease(mission_id):

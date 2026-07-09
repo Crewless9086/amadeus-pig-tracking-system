@@ -113,13 +113,15 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("--mission-id", captured_argv)
         self.assertIn("CHARLIE-MISSION-123", captured_argv)
 
+    @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, update_vault, list_owner_work_missions):
+    def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, update_vault, list_owner_work_missions, get_mission):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "in_progress"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
@@ -145,11 +147,63 @@ class CharlieMissionPickupTests(unittest.TestCase):
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
         self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
-        update_vault.assert_called_once()
+        self.assertGreaterEqual(update_vault.call_count, 1)
         lease = update_vault.call_args.args[1]["execution_lease"]
         self.assertEqual(lease["mission_id"], "CHARLIE-MISSION-123")
         self.assertIn("lease_id", lease)
         self.assertTrue(result["execution_lease"]["persisted"])
+        self.assertIn("workflow_refresh", result)
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    def test_pickup_refreshes_old_workflow_before_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
+        old_mission = {
+            **MISSION,
+            "metadata": {"charlie_core": {"project_truth": {"pipeline_profile": "full", "workflow_right_sized": False}}},
+            "agent_workflow": [{"agent": "idea_expander", "status": "active"}],
+        }
+        refreshed_mission = {
+            **old_mission,
+            "agent_workflow": [{"agent": "planner", "status": "active"}],
+            "mission_context_pack": {"agent_order": ["planner", "builder", "tester", "reviewer", "publisher"]},
+        }
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [old_mission]}, 200)
+        update_status.return_value = ({"success": True, "status": "ok", "mission_status": "in_progress"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": refreshed_mission}, 200)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "CODEX_CHAT.md"
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target):
+                result, status_code = charlie_mission_pickup.pick_up_next_mission()
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["workflow_refresh"]["refreshed"])
+        refresh_payload = update_vault.call_args_list[0].args[1]
+        self.assertIn("agent_workflow", refresh_payload)
+        self.assertIn("mission_context_pack", refresh_payload)
+        self.assertIn("charlie_core", refresh_payload)
+        self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    def test_dry_run_does_not_refresh_old_workflow(self, update_status, update_vault, list_owner_work_missions):
+        old_mission = {
+            **MISSION,
+            "metadata": {"charlie_core": {"project_truth": {"pipeline_profile": "full", "workflow_right_sized": False}}},
+            "agent_workflow": [{"agent": "idea_expander", "status": "active"}],
+        }
+        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [old_mission]}, 200)
+
+        result, status_code = charlie_mission_pickup.pick_up_next_mission(dry_run=True)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "dry_run")
+        update_vault.assert_not_called()
+        update_status.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")

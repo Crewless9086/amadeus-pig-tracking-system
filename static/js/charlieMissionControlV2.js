@@ -281,7 +281,9 @@
     let cls = "amber";
     let label = "Runner unknown";
     if (scope === "render_cannot_see_laptop_runner") {
-      label = "Runner unknown from Render";
+      label = runner.active_mission
+        ? `DB active: ${shortId(runner.active_mission)}`
+        : "Laptop runner hidden from Render";
     } else if (local.active) {
       cls = "green";
       label = `Runner active ${text(local.age_seconds, "0")}s`;
@@ -469,12 +471,17 @@
     const local = runner.local_runner || {};
     const scope = text(runner.local_runner_scope);
     const command = text(runner.local_runner_command, ".\\venv\\Scripts\\python.exe scripts\\charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30");
+    const activeMission = runner.active_mission || {};
     const label = scope === "render_cannot_see_laptop_runner"
-      ? "Unknown from Render"
+      ? (activeMission.mission_id ? `Cloud sees active mission ${shortId(activeMission)}` : "Cloud cannot see the laptop runner")
       : (local.active ? `Active (${text(local.age_seconds, "0")}s heartbeat)` : "Stale/off");
+    const visibility = scope === "render_cannot_see_laptop_runner"
+      ? "Render can read mission status from Supabase, but it cannot see the local laptop process heartbeat. Use the local status command for runner truth."
+      : text(runner.local_runner_visibility_note, "Local runner heartbeat is visible here.");
     return `<div class="field">
       <label>Runner</label>
       <strong>${escapeHtml(label)}</strong>
+      <span class="muted">${escapeHtml(visibility)}</span>
       <span class="muted">${escapeHtml(text(runner.next_action, text(local.next_action, "Start local runner before expecting approved missions to run.")))}</span>
       <code>${escapeHtml(command)}</code>
       <button data-copy-command="${escapeAttr(command)}">Copy Runner Command</button>
@@ -486,7 +493,7 @@
     const local = runner.local_runner || {};
     const policy = state.policy || {};
     const activeLabel = runner.local_runner_scope === "render_cannot_see_laptop_runner"
-      ? "Unknown from cloud"
+      ? (runner.active_mission ? "DB active, laptop hidden" : "Laptop hidden")
       : (local.active ? "Active" : "Stale/off");
     el.systemStrip.innerHTML = [
       strip("Queue", `New ${(state.buckets.new || []).length} | Approved ${(state.buckets.approved || []).length}`),

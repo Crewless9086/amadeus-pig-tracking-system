@@ -4613,6 +4613,45 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     )
     if reviewer_status >= 400:
         return reviewer_result, reviewer_status
+    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
+        mission["mission_id"],
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if not persisted_ok:
+        rewrite_result, rewrite_status = update_mission_vault(
+            mission["mission_id"],
+            review_packet,
+            notes="CHARLIE Agent Runner v2 repaired owner review packet after workflow update.",
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if rewrite_status >= 400 or not rewrite_result.get("success"):
+            return {
+                "success": False,
+                "status": "owner_review_packet_lost_after_workflow_update",
+                "mission_id": mission["mission_id"],
+                "mission_status": mission.get("status", "in_progress"),
+                "error_status": persisted_status,
+                "repair_status": rewrite_result.get("status", ""),
+                "agent_ledger_path": str(ledger_path),
+                "next_action": "Do not mark pr_ready. Review packet disappeared after workflow update and repair failed.",
+            }, max(int(rewrite_status or 500), 500)
+        persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
+            mission["mission_id"],
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if not persisted_ok:
+            return {
+                "success": False,
+                "status": "owner_review_packet_repair_verify_failed",
+                "mission_id": mission["mission_id"],
+                "mission_status": mission.get("status", "in_progress"),
+                "error_status": persisted_status,
+                "agent_ledger_path": str(ledger_path),
+                "next_action": "Do not mark pr_ready. Review packet repair did not read back from mission storage.",
+            }, 502
     ready_result, ready_status = update_mission_status(
         mission["mission_id"],
         "pr_ready",

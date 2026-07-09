@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from modules.charlie.mission_store import (
     agent_sequence_for_mission,
@@ -77,6 +78,60 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(by_agent["unexpected_specialist"]["status"], "complete")
         self.assertEqual(by_agent["unexpected_specialist"]["handoff_to"], "frontend_design_implementer")
         self.assertIn("frontend_design_implementer", by_agent)
+
+    @patch("modules.charlie.mission_store.update_mission_vault")
+    @patch("modules.charlie.mission_store.get_mission")
+    def test_reviewer_complete_does_not_mark_pr_ready_without_review_packet(self, get_mission_mock, update_vault_mock):
+        get_mission_mock.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "MISSION-1",
+                "mission_type": "feature build",
+                "metadata": {
+                    "agent_workflow": [{"agent": "reviewer", "status": "active"}],
+                    "mission_vault": {},
+                    "mission_context_pack": {},
+                    "review_packet": {},
+                },
+            },
+        }, 200)
+        update_vault_mock.return_value = ({"success": True, "status": "ok"}, 200)
+
+        from modules.charlie.mission_store import update_mission_workflow_step
+
+        result, status_code = update_mission_workflow_step("MISSION-1", "reviewer", step_status="complete")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(update_vault_mock.call_args.kwargs.get("status"), "")
+
+    @patch("modules.charlie.mission_store.update_mission_vault")
+    @patch("modules.charlie.mission_store.get_mission")
+    def test_reviewer_complete_can_mark_pr_ready_with_verified_review_packet(self, get_mission_mock, update_vault_mock):
+        get_mission_mock.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mission": {
+                "mission_id": "MISSION-1",
+                "mission_type": "feature build",
+                "metadata": {
+                    "agent_workflow": [{"agent": "reviewer", "status": "active"}],
+                    "mission_vault": {},
+                    "mission_context_pack": {},
+                    "review_packet": {"review_status": "ready_for_owner_review"},
+                },
+            },
+        }, 200)
+        update_vault_mock.return_value = ({"success": True, "status": "ok"}, 200)
+
+        from modules.charlie.mission_store import update_mission_workflow_step
+
+        result, status_code = update_mission_workflow_step("MISSION-1", "reviewer", step_status="complete")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(update_vault_mock.call_args.kwargs.get("status"), "pr_ready")
 
     def test_send_back_target_can_append_valid_missing_agent(self):
         workflow = [
