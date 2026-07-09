@@ -1981,6 +1981,99 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
+.family-tree-decision-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 22px 0 28px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfaf6;
+}
+
+.family-tree-decision-panel.hidden,
+.family-tree-section.hidden,
+.family-tree-relationship-title.hidden,
+#family_tree_siblings_header.hidden,
+.pig-list-grid.hidden {
+  display: none;
+}
+
+.family-tree-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.family-tree-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.family-tree-quality-list {
+  min-height: 34px;
+}
+
+.family-tree-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.family-tree-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.family-tree-record {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.family-tree-record strong,
+.family-tree-record span {
+  overflow-wrap: anywhere;
+}
+
+.family-tree-record-meta,
+.family-tree-inline-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.family-tree-record-meta span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.family-tree-relationship-title {
+  margin-bottom: 14px;
+}
+
+.compact-empty-state {
+  padding: 14px;
+}
+
 .family-tree-section {
   display: flex;
   flex-direction: column;
@@ -2007,6 +2100,22 @@ button:disabled {
   font-size: 28px;
   font-weight: 700;
   color: var(--green-dark);
+}
+
+.family-tree-sibling-meta div {
+  min-width: 0;
+}
+
+.family-tree-sibling-meta .history-label,
+.family-tree-sibling-meta .history-value {
+  display: block;
+}
+
+.family-tree-sibling-meta .history-value {
+  margin-top: 3px;
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .family-card {
@@ -2700,6 +2809,8 @@ button:disabled {
   .history-summary-grid,
   .history-item-grid,
   .sales-meta-grid,
+  .family-tree-metric-grid,
+  .family-tree-record-grid,
   .family-tree-parents,
   .family-tree-current,
   .dashboard-actions-grid,
