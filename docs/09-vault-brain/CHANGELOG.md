@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-09
+
+- Clarified Pig Allocation/Herdmaster alert rules so active pre-wean tagless piglets are not shown as allocation `Needs Data`, while post-wean or wean/weight-data piglets remain visible when actionable tag, weight, sex, purpose, pen, or lifecycle-stage data is missing or inconsistent.
+
 ## 2026-07-07
 
 - Hardened CHARLIE emergency runner behavior after the SAM Live Stock overnight block: v2 now uses the provider-aware runner path, existing `in_progress` missions are observed instead of blindly re-executed, Claude failures can fall back to local Codex, Telegram notifications retry, transient artifact write locks retry, workflow updates tolerate unknown agent names, and synthetic review-board pass overwrites were removed.

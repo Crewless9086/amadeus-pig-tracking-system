@@ -4279,6 +4279,23 @@ def _allocation_source_row(overview_row, master_row):
     return row
 
 
+def _is_pre_wean_tagless_piglet(row, growth):
+    status = to_clean_string(row.get("Status", "")).lower()
+    on_farm = to_clean_string(row.get("On_Farm", "")).lower()
+    animal_type = to_clean_string(row.get("Animal_Type", ""))
+    tag_number = to_clean_string(row.get("Tag_Number", ""))
+
+    return (
+        status == "active"
+        and on_farm == "yes"
+        and animal_type == "Piglet"
+        and not tag_number
+        and not growth.get("wean_date")
+        and growth.get("wean_weight_kg") is None
+        and growth.get("latest_weight_kg") is None
+    )
+
+
 def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=None):
     settings = settings or _allocation_settings()
     status = to_clean_string(row.get("Status", ""))
@@ -4395,6 +4412,8 @@ def get_pig_allocation_readiness(today=None):
         latest_weight = latest_weights.get(pig_id, {})
         sales_meta = sales_lookup.get(pig_id, {})
         growth = _growth_profile(row, latest_weight, today, settings)
+        if _is_pre_wean_tagless_piglet(row, growth):
+            continue
         timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
         litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)

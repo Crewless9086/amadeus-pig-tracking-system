@@ -39,13 +39,15 @@ Future alerts should build on the existing read-only Pig Allocation surface:
 
 The alert layer must not create a second allocation engine. It should consume or extend the same canonical allocation packet: readiness bucket, reason, latest weight, days since weight, growth class, meat/abattoir timing, litter quality, suggested purpose, suggested-purpose reason, confidence, current links, and source metadata.
 
+Active pre-wean tagless piglets are not allocation-applicable missing-data rows. Piglets enter Pig Allocation once weaning/tag/weight data makes the animal actionable; post-wean tagless piglets or piglets with wean/weight data must still remain visible when tag, weight, sex, purpose, pen, or lifecycle-stage data is missing or inconsistent.
+
 No migration is required for the first alert build unless a later mission adds stored alert acknowledgements, owner decisions, or alert history.
 
 ## Alert Categories
 
 | Alert | Trigger | Default Severity | Owner Decision Boundary |
 | --- | --- | --- | --- |
-| Missing Data | Missing tag, sex, weight, pen, identity, wean date/weight where needed, or source conflict blocking trusted classification. | High when allocation is blocked; Medium when useful but not blocking. | Owner may request data correction or capture. No sale, meat, slaughter, or breeding action may proceed from this alert alone. |
+| Missing Data | Missing tag, sex, weight, pen, identity, wean date/weight where needed after the pig is allocation-applicable, or source conflict blocking trusted classification. | High when allocation is blocked; Medium when useful but not blocking. | Owner may request data correction or capture. No sale, meat, slaughter, or breeding action may proceed from this alert alone. |
 | Purpose Review Due | More than 14 days after weaning and post-wean weight exists, or purpose is blank/Unknown with enough basic data to classify. | Medium; High if the pig is also in a sale/meat/slaughter timing window. | Owner approves, overrides, defers, or asks Herdmaster to recheck. Backend writes only through approved purpose-review rails. |
 | Meat Window Entered | Latest trusted weight is in the owner window `60-<80 kg`. | High when weight is fresh; Medium when weight is older than fresh-weight rule but not stale. | Owner decides whether to coordinate meat preorder review. No customer promise, reservation, slaughter, or public listing is automatic. |
 | Meat Window Expiring / Past | Pig is near the top of the meat window or has reached/passed `80 kg`. | High; Critical only when an approved preorder or owner plan is at risk. | Owner decides whether to push demand, hold, or move to slaughter/abattoir planning. |
