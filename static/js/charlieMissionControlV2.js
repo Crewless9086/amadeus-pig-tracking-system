@@ -6,6 +6,7 @@
     runner: "/api/charlie/build-relay/runner/status",
     policy: "/api/charlie/build-relay/policy",
     missions: "/api/charlie/build-relay/missions",
+    summary: "/api/charlie/build-relay/missions/summary",
   };
 
   const tabs = [
@@ -157,16 +158,15 @@
     if (state.loading) return;
     state.loading = true;
     try {
-      const [buckets, command, runner, policy] = await Promise.all([
-        loadMissionBuckets().catch(() => state.buckets),
-        fetchJson(API.commandCenter, { timeoutMs: 18000 }).catch(() => null),
+      const [summary, runner, policy] = await Promise.all([
+        fetchJson(API.summary, { timeoutMs: 18000 }).catch(() => null),
         fetchJson(API.runner, { timeoutMs: 18000 }).catch(() => state.runner || {}),
         fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
-      state.buckets = mergeBuckets(state.buckets, buckets);
-      if (command) applyCommandCenter(command);
+      if (summary && summary.counts) state.counts = summary.counts;
       state.runner = runner;
       state.policy = policy.charlie_build_relay || {};
+      await refreshTab(state.activeTab);
       state.lastUpdated = new Date();
       ensureSelection();
       render();
@@ -220,6 +220,17 @@
     state.counts = command.counts || {};
   }
 
+  async function refreshTab(tabId) {
+    const tab = tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    const loaded = [];
+    for (const status of tab.statuses) {
+      const data = await fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 });
+      loaded.push(...(data.missions || []));
+    }
+    state.buckets[tabId] = dedupe(loaded);
+  }
+
   function filterStatuses(missions, statuses) {
     const allowed = new Set(statuses);
     return (missions || []).filter((mission) => allowed.has(text(mission.status).toLowerCase()));
@@ -228,12 +239,7 @@
   async function ensureTabLoaded(tabId) {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab || (state.buckets[tabId] && state.buckets[tabId].length)) return;
-    const loaded = [];
-    for (const status of tab.statuses) {
-      const data = await fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`);
-      loaded.push(...(data.missions || []));
-    }
-    state.buckets[tabId] = dedupe(loaded);
+    await refreshTab(tabId);
   }
 
   function dedupe(missions) {
@@ -595,7 +601,7 @@
     el.reviewDrawerBody.innerHTML = `<div class="notice">Loading review packet...</div>`;
     openDrawer(el.reviewDrawer);
     try {
-      const data = await fetchJson(`${API.missions}/${encodeURIComponent(mission.mission_id)}/review`);
+      const data = await fetchJson(`${API.missions}/${encodeURIComponent(mission.mission_id)}/review?compact=1`, { timeoutMs: 25000 });
       const packet = data.review_packet || data.packet || data || {};
       el.reviewDrawerBody.innerHTML = `
         ${field("Mission", `${titleOf(mission)} | ${shortId(mission)}`)}

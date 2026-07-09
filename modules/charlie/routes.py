@@ -579,10 +579,13 @@ def charlie_build_relay_mission_review_packet_route(mission_id):
     denied = require_owner_read_access()
     if denied:
         return denied
+    compact = str(request.args.get("compact") or "").strip().lower() in {"1", "true", "yes"}
     result, status_code = get_mission_review_packet(mission_id)
     if isinstance(result, dict) and isinstance(result.get("review_packet"), dict):
         result = dict(result)
         result["review_packet"] = _normalize_review_packet_media(result["review_packet"], mission_id)
+        if compact:
+            result["review_packet"] = _compact_owner_review_packet(result["review_packet"], mission_id=mission_id)
     return jsonify(result), status_code
 
 
@@ -854,6 +857,31 @@ def _compact_review_packet(packet, mission_id=""):
         compact["unresolved_blockers"] = _compact_event_list(compact.get("unresolved_blockers"), limit=5)
     if "visual_review" in compact:
         compact["visual_review"] = _compact_visual_review(compact.get("visual_review"), mission_id=mission_id)
+    return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
+
+
+def _compact_owner_review_packet(packet, mission_id=""):
+    packet = packet if isinstance(packet, dict) else {}
+    compact = {
+        "mission": packet.get("mission") if isinstance(packet.get("mission"), dict) else {},
+        "summary": _short_text(packet.get("summary"), 1600),
+        "findings": [_short_text(item, 500) for item in _as_list(packet.get("findings"))[:6]],
+        "errors": [_short_text(item, 500) for item in _as_list(packet.get("errors"))[:6]],
+        "bugs": [_short_text(item, 500) for item in _as_list(packet.get("bugs"))[:6]],
+        "changed_files": [_short_text(item, 240) for item in _as_list(packet.get("changed_files"))[:20]],
+        "test_evidence": [_short_text(item, 500) for item in _as_list(packet.get("test_evidence"))[:8]],
+        "release_notes": [_short_text(item, 500) for item in _as_list(packet.get("release_notes"))[:8]],
+        "links": packet.get("links") if isinstance(packet.get("links"), dict) else {},
+        "local_preview": packet.get("local_preview") if isinstance(packet.get("local_preview"), dict) else {},
+        "visual_review": _compact_visual_review(packet.get("visual_review"), mission_id=mission_id),
+        "blocked_agent": _short_text(packet.get("blocked_agent"), 100),
+        "blocked_reason": _short_text(packet.get("blocked_reason"), 800),
+        "unresolved_blockers": _compact_event_list(packet.get("unresolved_blockers"), limit=6),
+        "recommended_next_action": _short_text(packet.get("recommended_next_action"), 800),
+        "can_approve_final_release": packet.get("can_approve_final_release") is True,
+        "can_send_back": packet.get("can_send_back") is True,
+        "allowed_decisions": packet.get("allowed_decisions") if isinstance(packet.get("allowed_decisions"), list) else [],
+    }
     return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
 
 
