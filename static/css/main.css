@@ -419,12 +419,15 @@ textarea {
 .allocation-shell {
   display: block;
   padding: 24px;
+  overflow-x: hidden;
 }
 
 .allocation-card {
+  width: 100%;
   max-width: 1640px;
   margin: 0 auto;
   border-radius: 18px;
+  min-width: 0;
 }
 
 .allocation-filters {
@@ -435,7 +438,12 @@ textarea {
   margin-bottom: 18px;
 }
 
+.allocation-filters .form-group {
+  min-width: 0;
+}
+
 .allocation-filters .slaughter-filter-actions .button-link {
+  min-width: 0;
   width: 100%;
   padding-left: 14px;
   padding-right: 14px;
@@ -606,17 +614,23 @@ textarea {
 
 .allocation-table-section {
   margin-top: 22px;
+  min-width: 0;
 }
 
 .allocation-table-wrap {
+  display: block;
+  min-width: 0;
   max-height: none;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  contain: inline-size;
 }
 
 .allocation-table {
-  min-width: 1080px;
+  min-width: 960px;
+  table-layout: fixed;
 }
 
 .allocation-table th,
@@ -2803,7 +2817,7 @@ button:disabled {
   }
 
   .allocation-table {
-    min-width: 900px;
+    min-width: 780px;
   }
 
   .allocation-table th,
