@@ -434,6 +434,7 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
         f"Missing: {_owner_card_missing_summary(decision)}",
+        f"Reply: {_owner_card_reply_source_summary(decision)}",
     ]
     flags = _owner_card_flags(event, review, decision)
     if flags:
@@ -1113,6 +1114,29 @@ def _owner_card_flags(event, review, decision):
         suffix = f": {', '.join(blocked[:3])}" if blocked else ""
         flags.append(f"LLM safety fallback{suffix}")
     return ", ".join(flags)
+
+
+def _owner_card_reply_source_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    source = _clean(decision.get("reply_source"), 120)
+    llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
+    llm_status = _clean(llm_draft.get("status"), 80)
+    if source == "llm_live_stock_reply_draft":
+        return "LLM draft"
+    if source == "deterministic_fallback_after_llm_review":
+        review = decision.get("llm_draft_review") if isinstance(decision.get("llm_draft_review"), dict) else {}
+        blocked = review.get("blocked_reasons") if isinstance(review.get("blocked_reasons"), list) else []
+        reason = _clean(", ".join(str(item).replace("_", " ") for item in blocked[:2]), 160)
+        return f"Safety fallback{f' - {reason}' if reason else ''}"
+    if source == "deterministic_farm_general_knowledge":
+        return "Farm knowledge fallback"
+    if source == "natural_close_no_reply_guard":
+        return "No reply recommended"
+    if llm_status and llm_status not in {"llm_disabled", "llm_reply_draft_used"}:
+        return f"Fallback - {llm_status.replace('_', ' ')}"
+    if source == "deterministic_read_only_guard":
+        return "Fact-aware fallback"
+    return source.replace("_", " ") if source else "Fallback"
 
 
 def _money(value):

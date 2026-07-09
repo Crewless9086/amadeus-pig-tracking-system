@@ -191,7 +191,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["read_context"]["chatwoot_history"]["incoming_count"], 3)
 
     def test_live_stock_followup_questions_do_not_fall_back_to_lane_clarifier(self):
-        for message in ("How much for 1", "Location", "Can you send me some of your pics", "Must I come there.or will you transport"):
+        for message in ("How much for 1", "Must I come there.or will you transport"):
             result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
                 inbound_payload(content=message),
                 intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -203,6 +203,27 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             self.assertEqual(decision["sales_lane"], "live_stock_sales", message)
             self.assertNotIn("lane_not_live_stock:unclear", decision["blockers"], message)
             self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"], message)
+
+    def test_location_followup_inherits_active_live_stock_context(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Location"),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {},
+                "items": [{
+                    "quantity": 3,
+                    "category": "Piglet",
+                    "weight_range": "7_to_9_Kg",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
 
     def test_general_location_question_gets_farm_knowledge_reply_candidate(self):
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -222,6 +243,38 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("lane_not_live_stock:farm_general_question", decision.get("blockers", []))
         self.assertNotIn("wrong_or_unclear_lane", review["escalation_reasons"])
         self.assertFalse(result["sent"])
+
+    def test_general_ad_question_gets_useful_farm_reply_candidate(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you tell me more about your ad?", sender={"name": "Rudolf Kriel"}),
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["sales_lane"], "farm_general_question")
+        self.assertEqual(decision["reply_source"], "deterministic_farm_general_knowledge")
+        self.assertIn("Amadeus Farm", decision["suggested_reply_text"])
+        self.assertIn("Riversdale", decision["suggested_reply_text"])
+        self.assertIn("what you are interested in", decision["suggested_reply_text"])
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
+
+    def test_general_picture_question_gets_specific_picture_followup(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you send me some of your pics", sender={"name": "Lucas Junior"}),
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["sales_lane"], "farm_general_question")
+        self.assertIn("which group you want to see", decision["suggested_reply_text"])
+        self.assertIn("piglets", decision["suggested_reply_text"])
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
 
     def test_decision_uses_intake_planner_missing_and_next_action(self):
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -551,7 +604,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             }, 200
 
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
-            inbound_payload(content="Location"),
+            inbound_payload(content="How much for 1 piglet?"),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
                 "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
@@ -574,7 +627,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("Riversdale", examples[0]["owner_reply_excerpt"])
         self.assertEqual(examples[0]["example_relevance_score"], 1.0)
         self.assertIn("owner_correction_examples", calls[0][0])
-        self.assertEqual(owner_example_calls[0]["customer_message"], "Location")
+        self.assertEqual(owner_example_calls[0]["customer_message"], "How much for 1 piglet?")
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
         context = {
@@ -1362,19 +1415,18 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("waste your time", decision["escalation_packet"]["suggested_response"])
         self.assertIn("sam_live_approve_send:", decision["escalation_packet"]["telegram_packet"]["reply_markup"]["inline_keyboard"][0][0]["callback_data"])
 
-    def test_escalation_packet_uses_owner_facing_card_text(self):
+    def test_business_question_no_longer_creates_debug_escalation_card(self):
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="Can I learn more about your business?"),
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
             availability_loader=lambda: [],
         )
 
-        text = result["sam_decision"]["escalation_packet"]["telegram_packet"]["text"]
-        self.assertIn("SAM Live - Needs human check", text)
-        self.assertIn("Customer message:", text)
-        self.assertIn("Suggested reply:", text)
-        self.assertNotIn("ID: SAM-LIVE-ESC-", text)
-        self.assertNotIn("lane_not_live_stock:", text)
+        decision = result["sam_decision"]
+        self.assertEqual(decision["sales_lane"], "farm_general_question")
+        self.assertEqual(decision["reply_source"], "deterministic_farm_general_knowledge")
+        self.assertNotIn("escalation_packet", decision)
+        self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
 
     def test_hostile_location_followup_inherits_live_stock_lane_and_visible_reply(self):
         def intake_loader(_conversation_id):

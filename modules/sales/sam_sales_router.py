@@ -266,6 +266,18 @@ SLAUGHTER_TERMS = (
 )
 
 FARM_GENERAL_TERMS = (
+    "tell me more",
+    "tell me more about",
+    "tell me more about your ad",
+    "about your ad",
+    "your ad",
+    "your advert",
+    "your business",
+    "learn more",
+    "learn more about",
+    "what do you do",
+    "what are you selling",
+    "what do you sell",
     "where are you",
     "where are u",
     "where u",
@@ -286,6 +298,11 @@ FARM_GENERAL_TERMS = (
     "open",
     "hours",
     "directions",
+    "send pictures",
+    "send pics",
+    "pictures",
+    "photos",
+    "pics",
 )
 
 OWNER_HANDOFF_TERMS = (

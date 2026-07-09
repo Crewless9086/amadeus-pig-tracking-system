@@ -289,9 +289,10 @@ def extract_live_stock_facts(message, inbound=None):
         "llm_status": "not_enabled_read_only_stage",
     }
     route = classify_sam_sales_lane(message)
-    if route["lane"] in {"unclear", "farm_general_question", "owner_handoff"} and (
-        _has_live_stock_fact_signal(facts) or _has_live_stock_followup_signal(text)
-    ):
+    if (
+        route["lane"] in {"unclear", "owner_handoff"}
+        or (route["lane"] == LANE_FARM_GENERAL and _has_live_stock_fact_signal(facts))
+    ) and (_has_live_stock_fact_signal(facts) or _has_live_stock_followup_signal(text)):
         route = {
             **route,
             "lane": LANE_LIVE_STOCK,
@@ -1576,9 +1577,103 @@ def _farm_general_reply(inbound, source):
         location = "We are based around the Riversdale area."
     customer_name = _first_name((inbound or {}).get("customer_name"))
     greeting = f"Hi {customer_name}, " if customer_name else "Hi, "
+    text = _normal_text((inbound or {}).get("content"))
+    products = _farm_product_menu_summary(knowledge)
+    if _asks_about_business(text):
+        return (
+            f"{greeting}we are Amadeus Farm in the Riversdale area. "
+            f"{products} "
+            "Tell me what you are interested in and roughly when you need it, then I can help with the right next step."
+        )
+    if _asks_for_pictures_or_ad(text):
+        return (
+            f"{greeting}we are Amadeus Farm in the Riversdale area. "
+            f"{products} "
+            "If you want photos, tell me which group you want to see - piglets, weaners, growers, finishers, or bigger pigs - and I will line up the right farm pictures for owner review."
+        )
+    if _asks_location_question(text):
+        return (
+            f"{greeting}{location} "
+            "Collections are arranged with the farm once the order details are confirmed. "
+            "Tell me what you need and when you would like to collect, and I will help from there."
+        )
     return (
         f"{greeting}{location} "
         "If you are asking about live pigs, pork for the freezer, or farm collections, send me what you need and I will help from there."
+    )
+
+
+def _farm_product_menu_summary(knowledge):
+    items = (knowledge if isinstance(knowledge, dict) else {}).get("product_menu")
+    if not isinstance(items, list):
+        return "We can help with live pig enquiries, pork freezer options when the meat lane is open, and general farm questions."
+    labels = []
+    for item in items[:4]:
+        if not isinstance(item, dict):
+            continue
+        label = _clean(item.get("label"), 80)
+        summary = _clean(item.get("summary"), 140)
+        if label and summary:
+            labels.append(f"{label}: {summary}")
+        elif label:
+            labels.append(label)
+    if not labels:
+        return "We can help with live pig enquiries, pork freezer options when the meat lane is open, and general farm questions."
+    return " ".join(labels)
+
+
+def _asks_location_question(text):
+    return _has_any(
+        text,
+        (
+            "where are you",
+            "where are u",
+            "where u",
+            "where are you guys",
+            "where are u guys",
+            "where are you located",
+            "where are u located",
+            "where are you based",
+            "where are u based",
+            "location",
+            "located",
+            "province",
+            "directions",
+        ),
+    )
+
+
+def _asks_about_business(text):
+    return _has_any(
+        text,
+        (
+            "tell me more",
+            "tell me more about",
+            "tell me more about your ad",
+            "learn more",
+            "about your business",
+            "your business",
+            "what do you do",
+            "what do you sell",
+            "what are you selling",
+            "your ad",
+            "your advert",
+        ),
+    )
+
+
+def _asks_for_pictures_or_ad(text):
+    return _has_any(
+        text,
+        (
+            "send pics",
+            "send pictures",
+            "pictures",
+            "photos",
+            "pics",
+            "big ones",
+            "small ones",
+        ),
     )
 
 
@@ -2031,17 +2126,9 @@ def _has_live_stock_followup_signal(text):
             "how much",
             "price",
             "cost",
-            "location",
-            "province",
-            "where are you",
             "transport",
             "deliver",
             "delivery",
-            "send pics",
-            "send pictures",
-            "pics",
-            "photos",
-            "pictures",
             "big ones",
             "small ones",
             "available",
