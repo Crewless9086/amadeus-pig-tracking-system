@@ -420,6 +420,7 @@ textarea {
   display: block;
   padding: 24px;
   overflow-x: hidden;
+  max-width: 100%;
 }
 
 .allocation-card {
@@ -429,6 +430,12 @@ textarea {
   border-radius: 18px;
   min-width: 0;
   overflow: hidden;
+}
+
+.allocation-card *,
+.allocation-table-section *,
+.allocation-review-panel * {
+  min-width: 0;
 }
 
 .allocation-filters {
@@ -448,6 +455,8 @@ textarea {
   width: 100%;
   padding-left: 14px;
   padding-right: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .meat-planning-filters {
@@ -718,6 +727,7 @@ textarea {
   padding: 9px 10px;
   border-radius: 10px;
   font-size: 14px;
+  white-space: normal;
 }
 
 .allocation-row-details {
@@ -760,6 +770,7 @@ textarea {
     flex: 1 1 150px;
     min-width: 0;
     white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .allocation-filters {
@@ -785,7 +796,7 @@ textarea {
   .allocation-table tbody {
     display: grid;
     gap: 12px;
-    padding: 10px;
+    padding: 8px;
   }
 
   .allocation-table tr {
@@ -846,6 +857,30 @@ textarea {
     width: 100%;
     min-height: 36px;
     padding: 9px 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .allocation-shell {
+    padding: 10px;
+  }
+
+  .allocation-card {
+    padding: 16px 12px;
+    border-radius: 14px;
+  }
+
+  .allocation-card .ops-header-actions,
+  .allocation-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .allocation-card .ops-header-actions a {
+    flex-basis: 100%;
+  }
+
+  .allocation-table tbody {
+    padding: 6px;
   }
 }
 
