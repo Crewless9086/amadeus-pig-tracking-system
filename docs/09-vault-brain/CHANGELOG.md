@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-09
+
+- Clarified Pig Purpose readiness rules so active pre-wean tagless piglets are deferred from Pig Allocation until weaning/tagging/weighing creates actionable data, while post-wean missing data remains visible as `Needs Data`.
+
 ## 2026-07-07
 
 - Hardened CHARLIE emergency runner behavior after the SAM Live Stock overnight block: v2 now uses the provider-aware runner path, existing `in_progress` missions are observed instead of blindly re-executed, Claude failures can fall back to local Codex, Telegram notifications retry, transient artifact write locks retry, workflow updates tolerate unknown agent names, and synthetic review-board pass overwrites were removed.

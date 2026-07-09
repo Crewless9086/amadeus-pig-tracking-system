@@ -29,6 +29,8 @@ Use these as advisory labels first, not automatic writes:
 - `Allocated`: already committed to an order, slaughter batch, or future meat workflow.
 - `Exited`: already left farm or terminal status.
 
+Pre-wean tagless piglets are not allocation-ready missing-data items. They should be deferred from Pig Allocation until weaning/tagging/weighing creates actionable data. Once wean data, a tag, or a trusted weight exists, missing post-wean tag, sex, weight, age/stage, or pen data should appear as `Needs Data`.
+
 ## Timing Rules
 
 - Purpose attention should not appear immediately after weaning.
