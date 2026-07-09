@@ -1748,6 +1748,22 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"Back to Breeding Detail"', js)
         self.assertNotIn('method: "POST"', js)
 
+    def test_family_tree_page_has_read_only_breeding_decision_context(self):
+        template = Path("templates/family-tree.html").read_text(encoding="utf-8")
+        js = Path("static/js/familyTree.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="family_tree_breeding_panel"', template)
+        self.assertIn('id="family_tree_breeding_summary"', template)
+        self.assertIn('id="family_tree_matings"', template)
+        self.assertIn('id="family_tree_litters"', template)
+        self.assertIn("Breeding Decision Summary", template)
+        self.assertIn("Relationship Tree", template)
+        self.assertIn("renderBreedingContext", js)
+        self.assertIn("tree.breeding_context", js)
+        self.assertIn("Piglets Born Alive", js)
+        self.assertIn("family-tree-record", js)
+        self.assertNotIn('method: "POST"', js)
+
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")
         js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")

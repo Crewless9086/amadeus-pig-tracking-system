@@ -720,6 +720,7 @@ def get_family_tree(pig_id, connect_factory=None):
         "mother": _pig_summary_card(mother_row) if mother_row else None,
         "father": _pig_summary_card(father_row) if father_row else None,
         "siblings": siblings,
+        "breeding_context": _family_tree_breeding_context(_text(pig_id), connect_factory=connect_factory),
         "litter_id": litter_id,
         "sibling_count": len(siblings),
         "source": "supabase_canonical",
@@ -1376,6 +1377,131 @@ def _finish_breeding_metrics(metrics):
             metric["survival_pct"] = round((weaned_total / born_alive_total) * 100, 1)
         rows.append(metric)
     return sorted(rows, key=lambda item: (-item["litter_count"], -item["farrowed_count"], str(item["tag_number"] or item["pig_id"]).lower()))
+
+
+def _family_tree_litter_flags(litter):
+    flags = []
+    if litter.get("needs_attention") == "Yes":
+        flags.append(_text(litter.get("attention_reason")) or "Needs attention")
+    if litter.get("born_alive") in (None, ""):
+        flags.append("Missing born alive")
+    if litter.get("weaned_count") in (None, ""):
+        flags.append("Missing weaned count")
+    return flags
+
+
+def _family_tree_mating_flags(mating):
+    flags = []
+    if mating.get("is_open") == "Yes" and mating.get("is_overdue_check") == "Yes":
+        flags.append("Pregnancy check overdue")
+    if mating.get("is_open") == "Yes" and mating.get("is_overdue_farrowing") == "Yes":
+        flags.append("Farrowing overdue")
+    if mating.get("mating_status") == "Farrowed" and not mating.get("linked_litter_id"):
+        flags.append("Farrowed without linked litter")
+    return flags
+
+
+def _family_tree_breeding_context(pig_id, connect_factory=None):
+    try:
+        analytics = get_breeding_analytics(connect_factory=connect_factory)
+    except Exception:
+        return {
+            "is_breeding_animal": False,
+            "animal_type": "",
+            "animal": None,
+            "matings": [],
+            "litters": [],
+            "data_quality": {"flag_count": 0, "flags": []},
+            "unavailable": True,
+        }
+    animal = None
+    animal_type = ""
+    for row in analytics.get("sows", []):
+        if row.get("pig_id") == pig_id:
+            animal = row
+            animal_type = "sow"
+            break
+    if animal is None:
+        for row in analytics.get("boars", []):
+            if row.get("pig_id") == pig_id:
+                animal = row
+                animal_type = "boar"
+                break
+
+    if animal is None:
+        return {
+            "is_breeding_animal": False,
+            "animal_type": "",
+            "animal": None,
+            "matings": [],
+            "litters": [],
+            "data_quality": {"flag_count": 0, "flags": []},
+        }
+
+    try:
+        matings = []
+        for row in get_mating_overview(connect_factory=connect_factory):
+            if row.get("sow_pig_id") != pig_id and row.get("boar_pig_id") != pig_id:
+                continue
+            matings.append({
+                "mating_id": row.get("mating_id", ""),
+                "mating_date": row.get("mating_date", ""),
+                "sow_pig_id": row.get("sow_pig_id", ""),
+                "sow_tag_number": row.get("sow_tag_number", ""),
+                "boar_pig_id": row.get("boar_pig_id", ""),
+                "boar_tag_number": row.get("boar_tag_number", ""),
+                "mating_status": row.get("mating_status", ""),
+                "pregnancy_check_result": row.get("pregnancy_check_result", ""),
+                "linked_litter_id": row.get("linked_litter_id", ""),
+                "expected_farrowing_date": row.get("expected_farrowing_date", ""),
+                "is_open": row.get("is_open", ""),
+                "quality_flags": _family_tree_mating_flags(row),
+            })
+
+        litters = []
+        for row in list_litter_overview(connect_factory=connect_factory).get("litters", []):
+            if row.get("sow_pig_id") != pig_id and row.get("boar_pig_id") != pig_id:
+                continue
+            born_alive = _float_or_none(row.get("born_alive"))
+            weaned_count = _float_or_none(row.get("weaned_count"))
+            survival_pct = None
+            if born_alive:
+                survival_pct = round(((weaned_count or 0) / born_alive) * 100, 1)
+            litters.append({
+                "litter_id": row.get("litter_id", ""),
+                "farrowing_date": row.get("farrowing_date", ""),
+                "sow_pig_id": row.get("sow_pig_id", ""),
+                "sow_tag_number": row.get("sow_tag_number", ""),
+                "boar_pig_id": row.get("boar_pig_id", ""),
+                "boar_tag_number": row.get("boar_tag_number", ""),
+                "born_alive": born_alive,
+                "weaned_count": weaned_count,
+                "active_pig_count": _float_or_none(row.get("active_pig_records")),
+                "exited_pig_count": _float_or_none(row.get("exited_pig_records")),
+                "average_current_weight_kg": _float_or_none(row.get("average_current_weight_kg")),
+                "survival_pct": survival_pct,
+                "litter_status": row.get("litter_status", ""),
+                "quality_flags": _family_tree_litter_flags(row),
+            })
+    except Exception:
+        matings = []
+        litters = []
+
+    flags = []
+    for row in matings + litters:
+        flags.extend(row.get("quality_flags", []))
+
+    return {
+        "is_breeding_animal": True,
+        "animal_type": animal_type,
+        "animal": animal,
+        "matings": matings,
+        "litters": litters,
+        "data_quality": {
+            "flag_count": len(flags),
+            "flags": sorted(set(flags)),
+        },
+    }
 
 
 def get_breeding_analytics(connect_factory=None):

@@ -364,7 +364,98 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(tree["father"]["pig_id"], "BOAR-1")
         self.assertEqual(tree["sibling_count"], 1)
         self.assertEqual(tree["siblings"][0]["pig_id"], "PIG-2")
+        self.assertIn("breeding_context", tree)
         self.assertEqual(tree["source"], "supabase_canonical")
+
+    def test_family_tree_adds_breeding_context_for_selected_sow(self):
+        rows = [
+            {
+                "pig_id": "SOW-1",
+                "tag_number": "10",
+                "status": "Active",
+                "on_farm": True,
+                "animal_type": "Sow",
+                "sex": "Female",
+                "purpose": "Breeding",
+            },
+            {
+                "pig_id": "PIG-1",
+                "tag_number": "101",
+                "status": "Active",
+                "on_farm": True,
+                "animal_type": "Grower",
+                "sex": "Female",
+                "litter_id": "LIT-1",
+                "mother_pig_id": "SOW-1",
+                "father_pig_id": "BOAR-1",
+            },
+        ]
+        analytics = {
+            "success": True,
+            "sows": [{
+                "pig_id": "SOW-1",
+                "tag_number": "10",
+                "mating_count": 2,
+                "confirmed_pregnant_count": 1,
+                "repeat_service_count": 1,
+                "farrowed_count": 1,
+                "open_count": 1,
+                "litter_count": 1,
+                "born_alive_total": 8,
+                "weaned_total": 6,
+                "average_born_alive": 8.0,
+                "average_weaned": 6.0,
+                "survival_pct": 75.0,
+            }],
+            "boars": [],
+        }
+        matings = [{
+            "mating_id": "MAT-1",
+            "mating_date": "2026-01-01",
+            "sow_pig_id": "SOW-1",
+            "sow_tag_number": "10",
+            "boar_pig_id": "BOAR-1",
+            "boar_tag_number": "3",
+            "mating_status": "Farrowed",
+            "pregnancy_check_result": "",
+            "linked_litter_id": "",
+            "is_open": "Yes",
+            "is_overdue_check": "Yes",
+            "is_overdue_farrowing": "No",
+        }]
+        litter_overview = {
+            "litters": [{
+                "litter_id": "LIT-1",
+                "farrowing_date": "2026-04-24",
+                "sow_pig_id": "SOW-1",
+                "sow_tag_number": "10",
+                "boar_pig_id": "BOAR-1",
+                "boar_tag_number": "3",
+                "born_alive": 8,
+                "weaned_count": 6,
+                "active_pig_records": 6,
+                "exited_pig_records": 2,
+                "average_current_weight_kg": 22.5,
+                "litter_status": "Weaned",
+                "needs_attention": "Yes",
+                "attention_reason": "Review litter counts",
+            }],
+        }
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=rows), \
+             patch.object(farm_supabase_read_service, "get_breeding_analytics", return_value=analytics), \
+             patch.object(farm_supabase_read_service, "get_mating_overview", return_value=matings), \
+             patch.object(farm_supabase_read_service, "list_litter_overview", return_value=litter_overview):
+            tree = farm_supabase_read_service.get_family_tree("SOW-1")
+
+        context = tree["breeding_context"]
+        self.assertTrue(context["is_breeding_animal"])
+        self.assertEqual(context["animal_type"], "sow")
+        self.assertEqual(context["animal"]["litter_count"], 1)
+        self.assertEqual(context["matings"][0]["mating_id"], "MAT-1")
+        self.assertEqual(context["litters"][0]["survival_pct"], 75.0)
+        self.assertIn("Pregnancy check overdue", context["data_quality"]["flags"])
+        self.assertIn("Review litter counts", context["data_quality"]["flags"])
 
     def test_allocation_input_rows_maps_supabase_to_sheet_like_rows(self):
         current_rows = [{
