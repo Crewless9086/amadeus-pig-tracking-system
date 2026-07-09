@@ -3112,7 +3112,7 @@ def _agent_quality_gate(agent, artifact):
     confidence_quality = _artifact_confidence_quality_gate(agent, artifact)
     if not confidence_quality["passed"]:
         return confidence_quality
-    if not commands:
+    if not commands and not _read_only_reviewer_has_upstream_evidence(agent, artifact):
         return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
     if not inspected:
         return {"passed": False, "reason": f"{agent} did not record files_inspected evidence."}
@@ -3173,6 +3173,28 @@ def _agent_quality_gate(agent, artifact):
         "reason": f"{agent} quality gate passed.",
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _read_only_reviewer_has_upstream_evidence(agent, artifact):
+    if agent not in REVIEW_DECISION_AGENTS:
+        return False
+    inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
+    if not inspected:
+        return False
+    if not _artifact_vault_sources(artifact):
+        return False
+    decision = str(artifact.get("recommended_owner_decision") or "").strip()
+    if not decision:
+        return False
+    evidence_lists = (
+        artifact.get("test_evidence"),
+        artifact.get("changed_files"),
+        artifact.get("release_notes"),
+        artifact.get("visual_review_notes"),
+    )
+    if any(isinstance(items, list) and any(str(item).strip() for item in items) for items in evidence_lists):
+        return True
+    return bool(str(artifact.get("no_vault_update_required") or "").strip())
 
 
 def _artifact_confidence_quality_gate(agent, artifact):

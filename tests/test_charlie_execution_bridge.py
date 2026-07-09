@@ -866,6 +866,45 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(validation["valid"], validation)
 
+    def test_read_only_product_reviewer_allows_empty_commands_with_upstream_evidence(self):
+        artifact = {
+            "summary": "Product review passed from attached evidence.",
+            "errors": [],
+            "bugs": [],
+            "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+            "confidence": 0.97,
+            "confidence_reason": "Reviewed upstream test evidence and repo files.",
+            "commands_run": [],
+            "files_inspected": ["modules/pig_weights/pig_weights_service.py"],
+            "recommended_owner_decision": "approve_final_release",
+            "release_notes": ["Pre-wean tagless piglets are deferred from Needs Data."],
+            "changed_files": ["modules/pig_weights/pig_weights_service.py"],
+            "test_evidence": ["190 upstream regression tests passed."],
+        }
+
+        quality = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(quality["passed"], quality)
+
+    def test_builder_still_requires_command_evidence(self):
+        artifact = {
+            "summary": "Builder changed files.",
+            "errors": [],
+            "bugs": [],
+            "vault_sources_used": ["docs/09-vault-brain/INDEX.md"],
+            "confidence": 0.97,
+            "confidence_reason": "Reviewed repo files.",
+            "commands_run": [],
+            "files_inspected": ["modules/pig_weights/pig_weights_service.py"],
+            "changed_files": ["modules/pig_weights/pig_weights_service.py"],
+            "build_notes": ["Changed service behavior."],
+        }
+
+        quality = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertFalse(quality["passed"], quality)
+        self.assertIn("commands_run", quality["reason"])
+
     def test_extract_json_object_multiple_fenced_blocks_and_trailing_commas(self):
         text = """
         ```json
