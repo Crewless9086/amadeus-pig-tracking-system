@@ -4347,6 +4347,23 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 
 
+def _defer_pre_wean_tagless_piglet(row, growth):
+    status = to_clean_string(row.get("Status", ""))
+    on_farm = to_clean_string(row.get("On_Farm", ""))
+    animal_type = to_clean_string(row.get("Animal_Type", ""))
+    tag_number = to_clean_string(row.get("Tag_Number", ""))
+
+    return (
+        status.lower() == "active"
+        and on_farm.lower() == "yes"
+        and animal_type == "Piglet"
+        and not tag_number
+        and not growth.get("wean_date")
+        and growth.get("wean_weight_kg") is None
+        and growth.get("latest_weight_kg") is None
+    )
+
+
 def get_pig_allocation_readiness(today=None):
     today = today or datetime.now().date()
     settings = _allocation_settings()
@@ -4385,6 +4402,7 @@ def get_pig_allocation_readiness(today=None):
         "Exited": 0,
     }
     rows = []
+    deferred_pre_wean_piglet_count = 0
 
     for row in overview_rows:
         pig_id = to_clean_string(row.get(columns["pig_id"], ""))
@@ -4395,6 +4413,10 @@ def get_pig_allocation_readiness(today=None):
         latest_weight = latest_weights.get(pig_id, {})
         sales_meta = sales_lookup.get(pig_id, {})
         growth = _growth_profile(row, latest_weight, today, settings)
+        if _defer_pre_wean_tagless_piglet(row, growth):
+            deferred_pre_wean_piglet_count += 1
+            continue
+
         timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
         litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)
@@ -4493,6 +4515,7 @@ def get_pig_allocation_readiness(today=None):
         "summary": {
             "total": len(rows),
             "buckets": buckets,
+            "deferred_pre_wean_piglet_count": deferred_pre_wean_piglet_count,
         },
         "pigs": rows,
         "writes_to_sheets": False,

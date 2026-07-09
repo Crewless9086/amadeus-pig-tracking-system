@@ -564,6 +564,63 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["days_since_wean"], 10)
         self.assertEqual(row["post_wean_daily_gain_kg"], 0.35)
 
+    def test_allocation_readiness_defers_pre_wean_tagless_piglets(self):
+        overview_rows = [
+            {
+                "Pig_ID": "PIG-PREWEAN",
+                "Tag_Number": "",
+                "Animal_Type": "Piglet",
+                "Sex": "",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": "",
+                "Last_Weight_Date": "",
+                "Date_Of_Birth": "2026-06-01",
+                "Age_Days": "14",
+                "Litter_ID": "LIT-1",
+                "Wean_Date": "",
+                "Wean_Weight_Kg": "",
+            },
+            {
+                "Pig_ID": "PIG-WEANER",
+                "Tag_Number": "81",
+                "Animal_Type": "Weaner",
+                "Sex": "Female",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": "12",
+                "Last_Weight_Date": "2026-06-15",
+                "Date_Of_Birth": "2026-04-20",
+                "Age_Days": "56",
+                "Litter_ID": "LIT-1",
+                "Wean_Date": "2026-06-10",
+                "Wean_Weight_Kg": "9",
+            },
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{"Pig_ID": "PIG-WEANER", "Weight_Date": "2026-06-15", "Weight_Kg": "12"}]
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Piglet Pen"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 15))
+
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+        self.assertNotIn("PIG-PREWEAN", by_id)
+        self.assertIn("PIG-WEANER", by_id)
+        self.assertEqual(result["summary"]["total"], 1)
+        self.assertEqual(result["summary"]["deferred_pre_wean_piglet_count"], 1)
+        self.assertEqual(result["summary"]["buckets"]["Needs Data"], 0)
+
     def test_allocation_readiness_explains_weaned_piglet_stage_mismatch(self):
         overview_rows = [{
             "Pig_ID": "PIG-STAGE",
