@@ -16,6 +16,7 @@ from modules.charlie.mission_store import (
     update_mission_queue_priority,
     update_mission_status,
     update_mission_vault,
+    _mission_queue_class,
     _normalize_review_send_back_stage,
     _return_workflow_to_stage,
     _update_workflow_items,
@@ -188,6 +189,31 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["stored"])
         self.assertEqual(result["status"], "mission_intake_too_vague")
         self.assertEqual(result["reason"], "placeholder_charlie_relay_title_without_specific_goal")
+
+    def test_mission_queue_class_detects_system_test_from_raw_text(self):
+        queue_class = _mission_queue_class(
+            "CHARLIE queue check",
+            "Validation mission smoke test for the local runner queue.",
+        )
+
+        self.assertEqual(queue_class, "system_test")
+
+    def test_mission_queue_class_keeps_real_owner_work_with_test_plan_wording(self):
+        queue_class = _mission_queue_class(
+            "Improve CHARLIE queue filters",
+            "Build better owner mission filters and include focused tests for the change.",
+        )
+
+        self.assertEqual(queue_class, "owner_work")
+
+    def test_mission_queue_class_respects_existing_metadata_queue_class(self):
+        queue_class = _mission_queue_class(
+            "CHARLIE queue check",
+            "Validation mission smoke test for the local runner queue.",
+            {"intake_quality": {"queue_class": "owner_work"}},
+        )
+
+        self.assertEqual(queue_class, "owner_work")
 
     def test_record_mission_suppresses_duplicate_open_mission(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
