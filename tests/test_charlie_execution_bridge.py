@@ -2412,7 +2412,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
-    def test_visual_review_capture_writes_local_screenshot_media(self):
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url", return_value={"ok": True, "status": "ok", "http_status": 200})
+    def test_visual_review_capture_writes_local_screenshot_media(self, _probe):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
                 def fake_runner(command, **_kwargs):
@@ -2456,7 +2457,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             media[0]["reference"],
         )
 
-    def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self):
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url", return_value={"ok": True, "status": "ok", "http_status": 200})
+    def test_visual_review_capture_uses_local_preview_for_mission_specific_url(self, _probe):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
                 def fake_runner(command, **_kwargs):
@@ -2499,7 +2501,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                     )
 
         self.assertTrue(packet["ui_related"])
-        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["status"], "not_captured_blocked")
         self.assertEqual(packet["capture"]["fallback_reason"], "preview_url_not_captured")
         self.assertEqual(packet["media"][0]["filename"], "owner_review_preview.png")
         self.assertTrue(execution_bridge._visual_review_blocks_owner_review(packet))
@@ -2541,6 +2543,116 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(preview["url"], "http://127.0.0.1:5002/charlie")
         self.assertEqual(preview["source"], "local_runner_probe")
 
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url")
+    def test_local_preview_recovers_refused_preview_url_on_active_same_route_port(self, probe):
+        probe.side_effect = [
+            {"ok": False, "status": "probe_failed", "error_type": "URLError"},
+            {"ok": False, "status": "probe_failed", "error_type": "URLError"},
+            {"ok": True, "status": "ok", "http_status": 200},
+        ]
+
+        preview = execution_bridge._local_preview_from_reviewer({
+            "summary": "Reviewer preview http://127.0.0.1:5003/pig/SOW-1/family-tree",
+            "links": {},
+        })
+
+        self.assertEqual(preview["url"], "http://127.0.0.1:5002/pig/SOW-1/family-tree")
+        self.assertEqual(preview["source"], "local_runner_probe")
+        self.assertEqual(preview["recovered_from"], "http://127.0.0.1:5003/pig/SOW-1/family-tree")
+
+    @patch("modules.charlie.execution_bridge._start_local_preview_server", return_value={"ok": False, "status": "server_start_failed"})
+    @patch("modules.charlie.execution_bridge._probe_local_preview_url", return_value={"ok": False, "status": "probe_failed", "error_type": "URLError"})
+    def test_visual_review_capture_blocks_refused_preview_before_playwright(self, _probe, _start_server):
+        def fail_runner(*_args, **_kwargs):
+            raise AssertionError("Playwright should not run against an unreachable preview URL")
+
+        capture = execution_bridge._capture_visual_review_media(
+            "CHARLIE-MISSION-EXEC123",
+            {"url": "http://127.0.0.1:5003/pig/SOW-1/family-tree"},
+            run_subprocess=fail_runner,
+        )
+
+        self.assertFalse(capture["captured"])
+        self.assertEqual(capture["status"], "preview_url_not_reachable")
+        self.assertIn("Start or repair the local preview server", capture["stderr_tail"])
+
+    def test_visual_review_packet_promotes_durable_desktop_and_mobile_stage_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner_root = Path(tmp) / ".charlie_runner"
+            executions = runner_root / "executions"
+            stage_media = executions / "stage-media"
+            review_media = runner_root / "review_media"
+            stage_media.mkdir(parents=True)
+            desktop = stage_media / "family-tree-desktop-1440.png"
+            mobile = stage_media / "family-tree-mobile-390.png"
+            desktop.write_bytes(b"desktop png")
+            mobile.write_bytes(b"mobile png")
+            with patch("modules.charlie.execution_bridge.EXECUTION_DIR", executions):
+                with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", review_media):
+                    with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={
+                        "captured": False,
+                        "status": "preview_url_not_reachable",
+                        "capture_source": "local_preview",
+                    }):
+                        packet = execution_bridge._build_visual_review_packet(
+                            mission_id="CHARLIE-MISSION-EXEC123",
+                            mission_type="ui_product_build",
+                            changed_files=["templates/pig_family_tree.html"],
+                            local_preview={"url": "http://127.0.0.1:5003/pig/SOW-1/family-tree", "status": "not_reachable"},
+                            artifacts={
+                                "tester": {
+                                    "screenshots_captured": [
+                                        {"label": "desktop", "path": str(desktop)},
+                                        {"label": "mobile", "path": str(mobile)},
+                                    ]
+                                }
+                            },
+                        )
+
+        self.assertEqual(packet["status"], "captured")
+        self.assertEqual(packet["capture"]["capture_source"], "durable_stage_evidence")
+        filenames = {item["filename"] for item in packet["media"]}
+        self.assertEqual(filenames, {"owner_review_preview.png", "owner_review_mobile.png"})
+        self.assertFalse(execution_bridge._visual_review_blocks_owner_review(packet))
+
+    def test_visual_review_packet_does_not_promote_unrelated_durable_stage_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner_root = Path(tmp) / ".charlie_runner"
+            executions = runner_root / "executions"
+            stage_media = executions / "stage-media"
+            review_media = runner_root / "review_media"
+            stage_media.mkdir(parents=True)
+            desktop = stage_media / "charlie-dashboard-desktop-1440.png"
+            mobile = stage_media / "charlie-dashboard-mobile-390.png"
+            desktop.write_bytes(b"desktop png")
+            mobile.write_bytes(b"mobile png")
+            with patch("modules.charlie.execution_bridge.EXECUTION_DIR", executions):
+                with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", review_media):
+                    with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={
+                        "captured": False,
+                        "status": "preview_url_not_reachable",
+                        "capture_source": "local_preview",
+                    }):
+                        packet = execution_bridge._build_visual_review_packet(
+                            mission_id="CHARLIE-MISSION-EXEC123",
+                            mission_type="ui_product_build",
+                            changed_files=["templates/pig_family_tree.html"],
+                            local_preview={"url": "http://127.0.0.1:5003/pig/SOW-1/family-tree", "status": "not_reachable"},
+                            artifacts={
+                                "tester": {
+                                    "screenshots_captured": [
+                                        {"label": "desktop", "path": str(desktop)},
+                                        {"label": "mobile", "path": str(mobile)},
+                                    ]
+                                }
+                            },
+                        )
+
+        self.assertEqual(packet["status"], "not_captured_blocked")
+        self.assertEqual(packet["capture"]["capture_source"], "local_preview")
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review(packet))
+        self.assertFalse(packet["media"])
+
     def test_visual_review_blocks_owner_review_for_ui_without_media(self):
         self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
             "ui_related": True,
@@ -2557,6 +2669,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "status": "captured",
             "capture": {"capture_source": "local_preview"},
             "media": [{"filename": "owner_review_preview.png"}, {"filename": "owner_review_mobile.png"}],
+        }))
+        self.assertFalse(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+            "capture": {"capture_source": "durable_stage_evidence"},
+            "media": [{"filename": "owner_review_preview.png"}, {"filename": "owner_review_mobile.png"}],
+        }))
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+            "capture": {"capture_source": "generated_owner_review_packet"},
+            "media": [{"filename": "owner_review_preview.png"}, {"filename": "owner_review_mobile.png"}],
+        }))
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review({
+            "ui_related": True,
+            "status": "captured",
+            "capture": {"capture_source": "durable_stage_evidence"},
+            "media": [{"filename": "owner_review_preview.png"}],
         }))
 
     def test_agent_build_mission_type_is_not_ui_by_substring(self):
@@ -2758,7 +2888,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             shutil.rmtree(media_dir)
         media_dir.mkdir(parents=True)
         try:
-            (media_dir / "owner-review.png").write_bytes(b"not-real-image-but-route-contract")
+            (media_dir / "owner-review-desktop.png").write_bytes(b"not-real-image-but-route-contract")
+            (media_dir / "owner-review-mobile.png").write_bytes(b"not-real-image-but-route-contract")
             with patch("modules.charlie.execution_bridge._capture_visual_review_media", return_value={"captured": True, "status": "captured"}):
                 packet = execution_bridge._build_visual_review_packet(
                     mission_id=mission_id,
@@ -2770,7 +2901,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(packet["ui_related"])
         self.assertEqual(packet["status"], "captured")
-        self.assertEqual(packet["media"][0]["reference"], "/api/charlie/build-relay/review-media/CHARLIE-MISSION-VISUAL123/owner-review.png")
+        self.assertEqual(packet["media"][0]["reference"], "/api/charlie/build-relay/review-media/CHARLIE-MISSION-VISUAL123/owner-review-desktop.png")
         self.assertEqual(packet["cleanup"]["status"], "pending_owner_decision")
 
     def test_cleanup_visual_review_media_removes_only_runner_media_dir(self):

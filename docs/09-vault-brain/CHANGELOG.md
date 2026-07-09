@@ -2,6 +2,7 @@
 
 ## 2026-07-09
 
+- Clarified CHARLIE CORE UI owner-review media reliability: local preview URLs must be probed before capture, stale/refused localhost ports should recover on the same route or start local Flask when safe, durable `.charlie_runner` desktop/mobile screenshots may be promoted, and generated or incomplete media must not satisfy `pr_ready`.
 - Added CHARLIE queue discipline: owner-facing queues and local runner pickup must treat `owner_work` as actionable, while system smoke tests, validation/canary/no-op checks, placeholder relay records, and low-signal intake must not crowd out real owner missions.
 - Clarified the Pig Allocation rule that active pre-wean tagless piglets should stay under litter/weaning attention and must not appear as Pig Allocation `Needs Data` or Herdmaster missing-data alerts until weaning, tagging, or weight capture creates actionable allocation evidence.
 

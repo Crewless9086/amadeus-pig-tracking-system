@@ -101,3 +101,10 @@ CHARLIE CORE must block UI missions before owner review unless:
 - the review packet exposes visual media clearly to the owner.
 
 Generated fallback packets are useful diagnostics, but they do not satisfy the UI mission visual gate.
+
+Preview capture reliability rule:
+
+- before owner-review capture, the runner must probe the local preview URL for the actual changed route;
+- if a localhost preview port is stale or refused, the runner should reuse an active local preview on the same route path or start a local Flask preview when safe;
+- if live capture still cannot be proven, the runner may promote existing durable builder/tester/QA desktop and mobile screenshots into owner-review media only when those files are real image artifacts under `.charlie_runner`;
+- UI missions must remain blocked before `pr_ready` when owner-review desktop and mobile media are missing, generated only, unrelated to the changed page, or incomplete.
