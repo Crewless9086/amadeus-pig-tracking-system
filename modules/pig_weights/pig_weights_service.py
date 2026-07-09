@@ -4279,6 +4279,24 @@ def _allocation_source_row(overview_row, master_row):
     return row
 
 
+def _defer_tagless_pre_wean_piglet_from_allocation(row, growth):
+    status = to_clean_string(row.get("Status", "")).lower()
+    on_farm = to_clean_string(row.get("On_Farm", "")).lower()
+    animal_type = to_clean_string(row.get("Animal_Type", ""))
+    tag_number = to_clean_string(row.get("Tag_Number", ""))
+    has_wean_data = bool(growth.get("wean_date")) or growth.get("wean_weight_kg") is not None
+    has_weight_data = growth.get("latest_weight_kg") is not None
+
+    return (
+        status == "active"
+        and on_farm == "yes"
+        and animal_type == "Piglet"
+        and not tag_number
+        and not has_wean_data
+        and not has_weight_data
+    )
+
+
 def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=None):
     settings = settings or _allocation_settings()
     status = to_clean_string(row.get("Status", ""))
@@ -4398,6 +4416,8 @@ def get_pig_allocation_readiness(today=None):
         timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
         litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)
+        if _defer_tagless_pre_wean_piglet_from_allocation(row, growth):
+            continue
         bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings)
         outlet_action = _recommended_outlet_action(bucket, growth, timing, litter_quality)
         suggested_purpose = _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_quality)

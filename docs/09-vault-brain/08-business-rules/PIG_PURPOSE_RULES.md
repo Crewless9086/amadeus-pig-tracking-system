@@ -31,6 +31,7 @@ Use these as advisory labels first, not automatic writes:
 
 ## Timing Rules
 
+- Pre-wean tagless piglets should not appear in Pig Allocation as `Needs Data` just because tag, sex, or weight data is missing. They remain under litter/weaning workflow attention until weaning/tagging/weighing creates actionable allocation data.
 - Purpose attention should not appear immediately after weaning.
 - First rule: wait 14 days after weaning before final purpose review.
 - If the 14-day window has passed but no post-wean weight exists, dashboard attention should say `Post-wean weight needed`.
