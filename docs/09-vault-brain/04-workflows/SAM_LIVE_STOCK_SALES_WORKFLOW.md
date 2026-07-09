@@ -78,6 +78,23 @@ Current build delivers:
 - owner action packet;
 - unit tests proving lane separation, pricing, draft order, and no-reservation authority.
 
+## Durable Next Action Contract
+
+Every processed inbound Chatwoot live-stock message must expose one durable SAM `next_action` on the decision packet:
+
+- `answer_general_info`;
+- `answer_location`;
+- `answer_price`;
+- `ask_one_missing_detail`;
+- `prepare_draft_order`;
+- `update_draft_order`;
+- `prepare_quote`;
+- `prepare_picture_response`;
+- `no_reply_needed`;
+- `escalate`.
+
+Internal order-intake planner actions may still be preserved as implementation detail, but owner-facing review, learning, and handoff packets should use the durable SAM action. Customer send, quote send, reservation, payment, and stock movement remain owner/backend-gated.
+
 ## Supervision And Intervention Target
 
 Live launch should be monitored through Chatwoot and the app dashboards. If SAM produces a risky draft, hostile conversation, pricing challenge, location challenge, or low-confidence result, the conversation should be owner-handoff.
