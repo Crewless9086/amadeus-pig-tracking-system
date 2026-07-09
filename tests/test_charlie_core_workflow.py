@@ -98,6 +98,50 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertLess(agents.index("tester"), agents.index("product_reviewer"))
         self.assertLess(agents.index("product_reviewer"), agents.index("reviewer"))
 
+    def test_explicit_simple_non_ui_fix_uses_right_sized_pipeline(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-SIMPLE",
+            "title": "Simple backend bug fix",
+            "raw_text": "Fix a small backend service regression. No UI changes, no frontend changes.",
+            "mission_type": "feature build",
+        }
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["pipeline_profile"], "minimal_software_fix")
+        self.assertTrue(metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertIn("qa_red_team", agents)
+        self.assertIn("reviewer", agents)
+        self.assertNotIn("idea_expander", agents)
+        self.assertNotIn("product_architect", agents)
+        self.assertLess(len(agents), len(WORKFLOW_TEMPLATES["software_build"]["agent_order"]))
+
+    def test_ui_and_sensitive_work_stay_on_full_pipeline(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-UI",
+            "title": "Dashboard rebuild",
+            "raw_text": "Rebuild the dashboard UI with a clean workflow.",
+            "mission_type": "feature build",
+        }
+        metadata = attach_core_plan_to_metadata(mission, {})
+        ui_agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        sensitive = {
+            "mission_id": "CHARLIE-MISSION-SAFE",
+            "title": "Payment route fix",
+            "raw_text": "Fix a small payment status regression. No UI changes.",
+            "mission_type": "feature build",
+        }
+        sensitive_metadata = attach_core_plan_to_metadata(sensitive, {})
+        sensitive_agents = [item["agent"] for item in sensitive_metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "ui_product_build")
+        self.assertIn("creative_ui_designer", ui_agents)
+        self.assertFalse(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
+        self.assertIn("product_architect", sensitive_agents)
+
     def test_design_agents_have_specific_model_assignments(self):
         visual = choose_agent_model("creative_ui_designer", mission_type="dashboard ui")
         implementer = choose_agent_model("frontend_design_implementer", mission_type="dashboard ui")

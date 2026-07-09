@@ -11,6 +11,8 @@ MAX_ATTEMPTS = 40
 MAX_AGENT_NOTES = 40
 MAX_HANDOFFS = 40
 MAX_RECOVERY_NOTES = 30
+MAX_DONE_LOCKS = 40
+MAX_BLOCK_PATTERNS = 30
 MAX_TEXT = 1200
 
 
@@ -28,6 +30,8 @@ def mission_memory_from_metadata(metadata):
         "handoffs": _list(memory.get("handoffs"))[-MAX_HANDOFFS:],
         "recovery_notes": _list(memory.get("recovery_notes"))[-MAX_RECOVERY_NOTES:],
         "latest_by_agent": memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {},
+        "done_locks": memory.get("done_locks") if isinstance(memory.get("done_locks"), dict) else {},
+        "recurring_block_patterns": memory.get("recurring_block_patterns") if isinstance(memory.get("recurring_block_patterns"), dict) else {},
         "open_questions": _list(memory.get("open_questions"))[-30:],
         "updated_at": memory.get("updated_at") or "",
     }
@@ -71,6 +75,11 @@ def append_memory_event(metadata, event):
     agent = _clean(event.get("agent"), 80)
     if agent:
         memory["latest_by_agent"][agent] = event
+        if _is_done_lock_event(event):
+            memory["done_locks"][agent] = _done_lock_record(event)
+            if len(memory["done_locks"]) > MAX_DONE_LOCKS:
+                keep = sorted(memory["done_locks"].items(), key=lambda item: item[1].get("locked_at", ""))[-MAX_DONE_LOCKS:]
+                memory["done_locks"] = dict(keep)
     if event.get("type") in {"agent_complete", "parallel_agent_complete", "agent_blocked", "agent_backflow", "agent_recovered"}:
         memory["attempts"] = [*memory["attempts"], _attempt_record(event)][-MAX_ATTEMPTS:]
     if event.get("type") in {"agent_complete", "parallel_agent_complete", "agent_note"}:
@@ -79,6 +88,8 @@ def append_memory_event(metadata, event):
         memory["handoffs"] = [*memory["handoffs"], _handoff_record(event)][-MAX_HANDOFFS:]
     if event.get("type") in {"agent_blocked", "partial_recovery", "agent_backflow", "agent_recovered"}:
         memory["recovery_notes"] = [*memory["recovery_notes"], _recovery_record(event)][-MAX_RECOVERY_NOTES:]
+    if event.get("type") in {"agent_blocked", "agent_backflow"}:
+        _record_block_pattern(memory, event)
     memory["updated_at"] = _utc_now()
     metadata["mission_memory"] = memory
     return metadata
@@ -108,6 +119,25 @@ def memory_prompt_context(metadata, limit=8):
             if isinstance(item, dict)
         ],
         "recent_recovery_notes": memory.get("recovery_notes", [])[-5:],
+        "done_locks": [
+            {
+                "agent": agent,
+                "summary": item.get("summary", ""),
+                "quality_gate": item.get("quality_gate", {}),
+                "locked_at": item.get("locked_at", ""),
+            }
+            for agent, item in list(memory.get("done_locks", {}).items())[-limit:]
+            if isinstance(item, dict)
+        ],
+        "recurring_block_patterns": [
+            item
+            for item in sorted(
+                memory.get("recurring_block_patterns", {}).values(),
+                key=lambda value: (value.get("count", 0), value.get("last_seen_at", "")),
+                reverse=True,
+            )[:5]
+            if isinstance(item, dict)
+        ],
         "recent_handoffs": memory.get("handoffs", [])[-5:],
         "open_questions": memory.get("open_questions", [])[-10:],
     }
@@ -259,6 +289,76 @@ def _attempt_record(event):
         "quality_gate": event.get("quality_gate", {}),
         "recorded_at": event.get("recorded_at", ""),
     }
+
+
+def _is_done_lock_event(event):
+    if not isinstance(event, dict):
+        return False
+    if event.get("type") not in {"agent_complete", "parallel_agent_complete"}:
+        return False
+    quality = event.get("quality_gate") if isinstance(event.get("quality_gate"), dict) else {}
+    if quality and quality.get("passed") is False:
+        return False
+    if str(event.get("summary") or "").strip():
+        return True
+    return bool(event.get("commands_run") or event.get("tests_run") or event.get("changed_files"))
+
+
+def _done_lock_record(event):
+    return {
+        "agent": event.get("agent", ""),
+        "type": event.get("type", ""),
+        "summary": event.get("summary", ""),
+        "quality_gate": event.get("quality_gate", {}),
+        "files_inspected": event.get("files_inspected", []),
+        "changed_files": event.get("changed_files", []),
+        "commands_run": event.get("commands_run", []),
+        "tests_run": event.get("tests_run", []),
+        "risks": event.get("risks", []),
+        "next_action": event.get("next_action", ""),
+        "artifact_path": event.get("artifact_path", ""),
+        "confidence": event.get("confidence", ""),
+        "confidence_reason": event.get("confidence_reason", ""),
+        "locked_at": event.get("recorded_at", _utc_now()),
+        "done_lock_version": "charlie_done_lock_v1",
+    }
+
+
+def _record_block_pattern(memory, event):
+    patterns = memory.get("recurring_block_patterns") if isinstance(memory.get("recurring_block_patterns"), dict) else {}
+    key = _block_pattern_key(event)
+    if not key:
+        return
+    existing = patterns.get(key) if isinstance(patterns.get(key), dict) else {}
+    count = _int(existing.get("count"), 0) + 1
+    patterns[key] = {
+        "key": key,
+        "count": count,
+        "agent": event.get("agent", ""),
+        "type": event.get("type", ""),
+        "summary": _clean(event.get("summary"), 500),
+        "recovery": event.get("recovery", {}),
+        "first_seen_at": existing.get("first_seen_at") or event.get("recorded_at") or _utc_now(),
+        "last_seen_at": event.get("recorded_at") or _utc_now(),
+        "next_run_guidance": "Inspect this recurring blocker before retrying; do not repeat the same backflow without new evidence.",
+    }
+    if len(patterns) > MAX_BLOCK_PATTERNS:
+        keep = sorted(patterns.items(), key=lambda item: item[1].get("last_seen_at", ""))[-MAX_BLOCK_PATTERNS:]
+        patterns = dict(keep)
+    memory["recurring_block_patterns"] = patterns
+
+
+def _block_pattern_key(event):
+    metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    fingerprint = _clean(metadata.get("backflow_fingerprint"), 120)
+    if fingerprint:
+        return f"fingerprint:{fingerprint}"
+    recovery = event.get("recovery") if isinstance(event.get("recovery"), dict) else {}
+    reason = _clean(recovery.get("reason") or event.get("summary") or event.get("next_action"), 180).lower()
+    agent = _clean(event.get("agent"), 80).lower()
+    if not reason and not agent:
+        return ""
+    return f"{agent}:{' '.join(reason.split())}"
 
 
 def _agent_note(event):

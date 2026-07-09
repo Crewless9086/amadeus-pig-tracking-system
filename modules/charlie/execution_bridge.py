@@ -2771,8 +2771,10 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
     # empty previous_agent_artifacts and forced to re-block work that already
     # passed. Additive only: never overwrites an artifact already preserved above.
     memory = mission_memory_from_metadata(metadata)
+    done_locks = memory.get("done_locks") if isinstance(memory.get("done_locks"), dict) else {}
     latest_by_agent = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
-    for agent, event in latest_by_agent.items():
+    durable_artifacts = {**latest_by_agent, **done_locks}
+    for agent, event in durable_artifacts.items():
         agent = str(agent or "").strip().lower()
         if (
             not agent
@@ -2782,7 +2784,10 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
             or not isinstance(event, dict)
         ):
             continue
-        if str(event.get("type") or "").strip().lower() not in {"agent_complete", "parallel_agent_complete"}:
+        if (
+            str(event.get("type") or "").strip().lower() not in {"agent_complete", "parallel_agent_complete"}
+            and str(event.get("done_lock_version") or "").strip() != "charlie_done_lock_v1"
+        ):
             continue
         preserved[agent] = {
             "summary": event.get("summary") or f"{agent} completed in an earlier runner session.",
@@ -2799,7 +2804,8 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
                 event.get("confidence_reason")
                 or "Recovered from durable mission memory during cross-session runner resume."
             ),
-            "recovered_from": "mission_memory_latest_by_agent",
+            "done_lock": str(event.get("done_lock_version") or "").strip() == "charlie_done_lock_v1",
+            "recovered_from": "mission_memory_done_locks" if event.get("done_lock_version") else "mission_memory_latest_by_agent",
         }
     return preserved
 
@@ -3250,6 +3256,9 @@ def _artifact_confidence_quality_gate(agent, artifact):
     if confidence is None:
         return {"passed": False, "reason": f"{agent} did not record a parseable confidence value."}
     if confidence < AGENT_CONFIDENCE_MINIMUM:
+        objective = _objective_evidence_quality_override(agent, artifact, confidence)
+        if objective["passed"]:
+            return objective
         return {
             "passed": False,
             "reason": f"{agent} confidence {confidence:.0%} is below the required 96%; clarify or inspect more evidence.",
@@ -3260,6 +3269,62 @@ def _artifact_confidence_quality_gate(agent, artifact):
     if not any(term in reason.lower() for term in evidence_terms):
         return {"passed": False, "reason": f"{agent} confidence_reason is not evidence-backed."}
     return {"passed": True, "reason": "confidence_gate_passed"}
+
+
+def _objective_evidence_quality_override(agent, artifact, confidence):
+    if confidence is None or confidence < 0.80:
+        return {"passed": False, "reason": "objective_gate_confidence_too_low"}
+    errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else [])
+    bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else [])
+    if errors or bugs:
+        return {"passed": False, "reason": "objective_gate_blocking_items_present"}
+    if not _artifact_vault_sources(artifact):
+        return {"passed": False, "reason": "objective_gate_missing_vault_sources"}
+    inspected = artifact.get("files_inspected") if isinstance(artifact.get("files_inspected"), list) else []
+    if not inspected:
+        return {"passed": False, "reason": "objective_gate_missing_files_inspected"}
+    tests = artifact.get("tests_run") or artifact.get("test_evidence") or artifact.get("commands_run")
+    if not (isinstance(tests, list) and any(_artifact_test_evidence_passes(item) for item in tests)):
+        return {"passed": False, "reason": "objective_gate_missing_passing_test_evidence"}
+    if agent == "tester":
+        if str(artifact.get("test_status") or "").strip().lower() != "pass":
+            return {"passed": False, "reason": "objective_gate_tester_not_pass"}
+    if agent == "qa_red_team":
+        if str(artifact.get("red_team_status") or "").strip().lower() != "pass":
+            return {"passed": False, "reason": "objective_gate_qa_not_pass"}
+        if str(artifact.get("risk_rating") or "").strip().lower() in {"high", "critical"}:
+            return {"passed": False, "reason": "objective_gate_high_risk"}
+    if agent in REVIEW_DECISION_AGENTS or agent == "reviewer":
+        decision = str(artifact.get("recommended_owner_decision") or "").strip()
+        if decision and decision not in {"approve_final_release", "approve", "not_applicable"}:
+            return {"passed": False, "reason": "objective_gate_reviewer_not_approve"}
+    has_pr_or_diff = bool(
+        artifact.get("changed_files")
+        or artifact.get("pr_url")
+        or artifact.get("pr_number")
+        or (isinstance(artifact.get("links"), dict) and artifact["links"].get("pr"))
+    )
+    if agent in {"builder", "reviewer", "publisher", "product_reviewer", "evidence_reviewer"} and not has_pr_or_diff:
+        return {"passed": False, "reason": "objective_gate_missing_pr_or_diff"}
+    return {
+        "passed": True,
+        "reason": f"{agent} passed objective evidence gate with confidence {confidence:.0%}; concrete tests, inspected files, Vault sources, and no blockers were present.",
+        "objective_gate": True,
+    }
+
+
+def _artifact_test_evidence_passes(item):
+    if isinstance(item, dict):
+        status = str(item.get("status") or item.get("result") or "").strip().lower()
+        text = " ".join(str(value or "") for value in item.values()).lower()
+    else:
+        status = ""
+        text = str(item or "").lower()
+    if any(phrase in text for phrase in ("no errors", "no error", "no failures", "no whitespace errors")):
+        return True
+    if any(word in text for word in ("failed", "failure", "error", "traceback")):
+        return False
+    return status == "pass" or " ok" in text or "tests ok" in text or "passed" in text or "no whitespace errors" in text
 
 
 def _parse_confidence_value(value):

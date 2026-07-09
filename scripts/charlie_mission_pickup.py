@@ -1,8 +1,11 @@
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,6 +32,7 @@ from scripts.charlie_notify import _format_message, main as notify_main
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
 RECOVERED_STALE_MISSIONS = set()
 BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
+LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
 
 def main():
@@ -463,6 +467,7 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "expected_status": clean_status,
         }, update_status
 
+    lease = _write_execution_lease(mission_id)
     _write_codex_chat(codex_chat_preview)
     if notify:
         _send_pickup_notification(mission)
@@ -476,7 +481,36 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "runner_mode": _runner_mode(mission.get("approval_level")),
         "codex_chat_written": True,
         "mission_status": "in_progress",
+        "execution_lease": lease,
     }, 200
+
+
+def _write_execution_lease(mission_id):
+    lease = _execution_lease_packet(mission_id)
+    result, status_code = update_mission_vault(
+        mission_id,
+        {"execution_lease": lease},
+        notes="CHARLIE runner claimed execution lease for local mission run.",
+    )
+    return {
+        **lease,
+        "write_status": result.get("status") if isinstance(result, dict) else "unknown",
+        "write_status_code": status_code,
+        "persisted": int(status_code or 0) < 400,
+    }
+
+
+def _execution_lease_packet(mission_id):
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "lease_id": f"charlie-lease-{uuid.uuid4().hex[:16]}",
+        "mission_id": str(mission_id or "").strip(),
+        "holder": f"{socket.gethostname()}:{os.getpid()}",
+        "acquired_at": now,
+        "heartbeat_at": now,
+        "ttl_seconds": LEASE_TTL_SECONDS,
+        "source": "scripts/charlie_mission_pickup.py",
+    }
 
 
 def _ensure_base_branch():

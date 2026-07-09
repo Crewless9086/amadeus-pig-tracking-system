@@ -248,6 +248,77 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(execution_bridge._durable_backflow_fingerprint_count(mission, "missing"), 0)
         self.assertEqual(execution_bridge._durable_backflow_fingerprint_count({}, "abc123"), 0)
 
+    def test_rerun_recovers_done_lock_when_latest_agent_event_is_backflow(self):
+        sequence = ["builder", "tester", "qa_red_team", "reviewer"]
+        mission = {
+            **MISSION,
+            "metadata": {
+                "review_packet": {"agent_artifacts": {}},
+                "mission_memory": {
+                    "version": "charlie_mission_memory_v1",
+                    "latest_by_agent": {
+                        "tester": {
+                            "agent": "tester",
+                            "type": "agent_backflow",
+                            "summary": "Reviewer asked for one more check.",
+                        },
+                    },
+                    "done_locks": {
+                        "tester": {
+                            "agent": "tester",
+                            "type": "agent_complete",
+                            "summary": "Focused tests passed before send-back.",
+                            "tests_run": ["python -m unittest tests.test_charlie_execution_bridge OK"],
+                            "files_inspected": ["tests/test_charlie_execution_bridge.py"],
+                            "confidence": "0.90",
+                            "done_lock_version": "charlie_done_lock_v1",
+                        },
+                    },
+                },
+            },
+        }
+
+        recovered = execution_bridge._existing_agent_artifacts_for_rerun(mission, "qa_red_team", sequence)
+
+        self.assertEqual(recovered["tester"]["summary"], "Focused tests passed before send-back.")
+        self.assertTrue(recovered["tester"]["done_lock"])
+        self.assertEqual(recovered["tester"]["recovered_from"], "mission_memory_done_locks")
+
+    def test_objective_evidence_gate_allows_low_confidence_pass_with_concrete_evidence(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact.update({
+            "confidence": "88%",
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "tests_run": ["python -m unittest tests.test_charlie_execution_bridge OK"],
+            "red_team_status": "pass",
+            "risk_rating": "low",
+        })
+
+        gate = execution_bridge._artifact_confidence_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(gate["passed"])
+        self.assertTrue(gate["objective_gate"])
+        self.assertIn("objective evidence gate", gate["reason"])
+
+    def test_objective_evidence_gate_still_blocks_high_risk_or_failed_tests(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact.update({
+            "confidence": "88%",
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "tests_run": ["tests failed with traceback"],
+            "red_team_status": "pass",
+            "risk_rating": "low",
+        })
+        failed_test_gate = execution_bridge._artifact_confidence_quality_gate("qa_red_team", artifact)
+
+        artifact["tests_run"] = ["python -m unittest tests.test_charlie_execution_bridge OK"]
+        artifact["risk_rating"] = "high"
+        high_risk_gate = execution_bridge._artifact_confidence_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(failed_test_gate["passed"])
+        self.assertFalse(high_risk_gate["passed"])
+        self.assertEqual(high_risk_gate["reason"], "qa_red_team confidence 88% is below the required 96%; clarify or inspect more evidence.")
+
     def test_review_agent_structured_pass_allows_out_of_scope_release_note(self):
         artifact = _successful_stage_payload("business_reviewer")
         artifact.update({

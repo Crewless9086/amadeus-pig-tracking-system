@@ -114,10 +114,12 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("CHARLIE-MISSION-123", captured_argv)
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, list_owner_work_missions):
+    def test_pickup_writes_codex_chat_and_marks_in_progress(self, update_status, update_vault, list_owner_work_missions):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "in_progress"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
@@ -143,6 +145,11 @@ class CharlieMissionPickupTests(unittest.TestCase):
         update_status.assert_called_once()
         self.assertEqual(update_status.call_args.args[1], "in_progress")
         self.assertEqual(update_status.call_args.kwargs["expected_status"], "approved")
+        update_vault.assert_called_once()
+        lease = update_vault.call_args.args[1]["execution_lease"]
+        self.assertEqual(lease["mission_id"], "CHARLIE-MISSION-123")
+        self.assertIn("lease_id", lease)
+        self.assertTrue(result["execution_lease"]["persisted"])
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")

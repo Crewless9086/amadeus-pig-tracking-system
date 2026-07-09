@@ -40,6 +40,51 @@ class CharlieMissionMemoryTest(unittest.TestCase):
         self.assertEqual(prompt["latest_agent_notes"][0]["agent"], "builder")
         self.assertIn("Built replay console", prompt["latest_agent_notes"][0]["summary"])
 
+    def test_done_lock_survives_later_backflow_for_same_agent(self):
+        metadata = append_memory_event({}, build_memory_event(
+            "tester",
+            "agent_complete",
+            artifact={
+                "summary": "Focused tests passed.",
+                "files_inspected": ["tests/test_charlie_execution_bridge.py"],
+                "tests_run": ["python -m unittest tests.test_charlie_execution_bridge OK"],
+                "confidence": "0.91",
+            },
+            quality_gate={"passed": True, "reason": "objective evidence gate"},
+        ))
+
+        metadata = append_memory_event(metadata, build_memory_event(
+            "tester",
+            "agent_backflow",
+            summary="Reviewer asked tester to inspect a missing edge.",
+            metadata={"backflow_fingerprint": "same-blocker"},
+        ))
+        memory = metadata["mission_memory"]
+        prompt = memory_prompt_context(metadata)
+
+        self.assertEqual(memory["latest_by_agent"]["tester"]["type"], "agent_backflow")
+        self.assertEqual(memory["done_locks"]["tester"]["done_lock_version"], "charlie_done_lock_v1")
+        self.assertIn("Focused tests passed.", memory["done_locks"]["tester"]["summary"])
+        self.assertEqual(prompt["done_locks"][0]["agent"], "tester")
+
+    def test_recurring_block_patterns_are_counted_and_shown_to_agents(self):
+        metadata = {}
+        for _ in range(2):
+            metadata = append_memory_event(metadata, build_memory_event(
+                "qa_red_team",
+                "agent_backflow",
+                summary="Previous artifacts missing.",
+                metadata={"backflow_fingerprint": "missing-evidence"},
+            ))
+
+        memory = metadata["mission_memory"]
+        prompt = memory_prompt_context(metadata)
+        pattern = memory["recurring_block_patterns"]["fingerprint:missing-evidence"]
+
+        self.assertEqual(pattern["count"], 2)
+        self.assertEqual(prompt["recurring_block_patterns"][0]["key"], "fingerprint:missing-evidence")
+        self.assertIn("do not repeat", prompt["recurring_block_patterns"][0]["next_run_guidance"].lower())
+
     def test_replay_packet_combines_memory_execution_and_debug_focus(self):
         metadata = append_memory_event({}, build_memory_event("tester", "agent_blocked", summary="Tests failed."))
         metadata["review_packet"] = {

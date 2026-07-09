@@ -440,6 +440,46 @@ def workflow_template(template_id):
     return template
 
 
+def right_sized_workflow_template(template_id, mission=None):
+    template = workflow_template(template_id)
+    mission = mission if isinstance(mission, dict) else {}
+    profile = pipeline_profile_for_mission(template_id, mission)
+    if profile == "minimal_software_fix":
+        template["agent_order"] = [
+            "source_mapper",
+            "planner",
+            "architect",
+            "builder",
+            "tester",
+            "qa_red_team",
+            "evidence_reviewer",
+            "reviewer",
+            "publisher",
+        ]
+        template["required_artifacts"] = ["source_map", "build_plan", "test_report", "review_board_packet"]
+        template["pipeline_profile"] = profile
+        template["right_sized"] = True
+        template["right_sizing_reason"] = "Small non-UI software fix; skipped broad product/council stages to reduce retry surface and token cost."
+    else:
+        template["pipeline_profile"] = profile
+        template["right_sized"] = False
+    return template
+
+
+def pipeline_profile_for_mission(template_id, mission=None):
+    mission = mission if isinstance(mission, dict) else {}
+    haystack = f"{mission.get('mission_type', '')} {mission.get('title', '')} {mission.get('raw_text', '')}".lower()
+    if template_id != "software_build":
+        return "full"
+    if not explicit_non_ui_requested(haystack):
+        return "full"
+    if re.search(r"\b(customer-facing|sales|payment|security|migration|schema|database|telegram|chatwoot)\b", haystack):
+        return "full"
+    if re.search(r"\b(simple|small|tiny|focused|bug|fix|regression|test|cleanup|one[- ]?line|backend|service)\b", haystack):
+        return "minimal_software_fix"
+    return "standard"
+
+
 def agent_instruction_pack(agent):
     definition = SPECIALIST_AGENTS.get(agent, {})
     return {
@@ -471,6 +511,11 @@ def agent_instruction_pack(agent):
 
 def build_workflow(template_id):
     template = workflow_template(template_id)
+    return build_workflow_from_template(template)
+
+
+def build_workflow_from_template(template):
+    template = template if isinstance(template, dict) else workflow_template("software_build")
     workflow = []
     for index, agent in enumerate(template["agent_order"]):
         next_agent = template["agent_order"][index + 1] if index + 1 < len(template["agent_order"]) else "owner"
@@ -493,13 +538,15 @@ def build_project_truth(mission):
     mission = mission if isinstance(mission, dict) else {}
     mission_type = clean_text(mission.get("mission_type", "feature build"), 80)
     template_id = classify_workflow_template(mission_type, mission.get("raw_text", ""))
-    template = workflow_template(template_id)
+    template = right_sized_workflow_template(template_id, mission)
     return {
         "version": CHARLIE_CORE_VERSION,
         "project_key": clean_text(mission.get("project_key") or _project_key_for_mission(mission_type), 80),
         "mission_type": mission_type,
         "workflow_template": template_id,
         "workflow_label": template["label"],
+        "pipeline_profile": template.get("pipeline_profile", "full"),
+        "workflow_right_sized": bool(template.get("right_sized")),
         "owner": "CHARL",
         "charlie_role": "workflow_governor",
         "required_artifacts": list(template["required_artifacts"]),
@@ -519,13 +566,14 @@ def build_core_plan(mission):
 
     project_truth = build_project_truth(mission)
     template_id = project_truth["workflow_template"]
-    agent_workflow = build_workflow(template_id)
+    template = right_sized_workflow_template(template_id, mission)
+    agent_workflow = build_workflow_from_template(template)
     agent_order = [item.get("agent", "") for item in agent_workflow if isinstance(item, dict)]
     return {
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
         "project_truth": project_truth,
-        "workflow_template": workflow_template(template_id),
+        "workflow_template": template,
         "agent_workflow": agent_workflow,
         "review_board": build_review_board_packet({}),
         "model_registry": model_registry_packet(),
