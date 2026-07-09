@@ -140,6 +140,8 @@ function applyDocumentActionVisibility(order, documents) {
   const quoteBtn = document.getElementById("generate_quote_btn");
   const invoiceBtn = document.getElementById("generate_invoice_btn");
   const loadingSheetBtn = document.getElementById("generate_loading_sheet_btn");
+  const removalBtn = document.getElementById("generate_removal_certificate_btn");
+  const healthBtn = document.getElementById("generate_health_declaration_btn");
   const conversationInput = document.getElementById("document_conversation_id");
   const orderStatus = (order.order_status || "").trim();
   const terminal = orderStatus === "Cancelled" || orderStatus === "Completed";
@@ -153,6 +155,8 @@ function applyDocumentActionVisibility(order, documents) {
   if (quoteBtn) quoteBtn.disabled = terminal;
   if (invoiceBtn) invoiceBtn.disabled = !invoiceEligible || !hasQuote;
   if (loadingSheetBtn) loadingSheetBtn.disabled = terminal;
+  if (removalBtn) removalBtn.disabled = terminal;
+  if (healthBtn) healthBtn.disabled = terminal;
 }
 
 async function loadOrderDetail(orderId) {
@@ -371,9 +375,10 @@ function renderOrderDocuments(documents) {
   }
 
   container.innerHTML = documents.map(doc => {
-    const isLoadingSheet = doc.document_type === "Loading Sheet";
-    const canSend = !isLoadingSheet && doc.document_status !== "Voided" && doc.google_drive_file_id;
-    const canSendTelegram = isLoadingSheet && doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const ownerTelegramTypes = ["Loading Sheet", "Removal Certificate", "Health Declaration"];
+    const isOwnerPaperwork = ownerTelegramTypes.includes(doc.document_type);
+    const canSend = !isOwnerPaperwork && doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const canSendTelegram = isOwnerPaperwork && doc.document_status !== "Voided" && doc.google_drive_file_id;
     const cardId = `document_details_${escapeDomId(doc.document_id)}`;
     const sentMeta = doc.sent_at
       ? `Sent ${escapeHtml(doc.sent_at)}${doc.sent_by ? ` by ${escapeHtml(doc.sent_by)}` : ""}`
@@ -384,7 +389,7 @@ function renderOrderDocuments(documents) {
     const appPdfLink = doc.google_drive_file_id
       ? `<a class="secondary-link" href="/api/order-documents/${encodeURIComponent(doc.document_id)}/download" target="_blank" rel="noopener">View / Print</a>`
       : "";
-    const subtitleParts = isLoadingSheet
+    const subtitleParts = isOwnerPaperwork
       ? [doc.document_type || "-", "No prices", `V${doc.version || "-"}`]
       : [doc.document_type || "-", formatMoney(doc.total), doc.payment_method || "-"];
 
@@ -399,7 +404,7 @@ function renderOrderDocuments(documents) {
           </div>
           <div class="compact-record-status">
             <span class="status-pill">${escapeHtml(doc.document_status || "-")}</span>
-            <span>${isLoadingSheet ? "Worker sheet" : (doc.sent_at ? "Sent" : "Not sent")}</span>
+            <span>${isOwnerPaperwork ? "Farm paperwork" : (doc.sent_at ? "Sent" : "Not sent")}</span>
           </div>
         </div>
 
@@ -411,11 +416,11 @@ function renderOrderDocuments(documents) {
           <div class="history-item-grid">
           <div>
           <div class="history-label">Total</div>
-            <div class="history-value">${isLoadingSheet ? "Hidden" : formatMoney(doc.total)}</div>
+            <div class="history-value">${isOwnerPaperwork ? "Hidden" : formatMoney(doc.total)}</div>
           </div>
           <div>
             <div class="history-label">Payment</div>
-            <div class="history-value">${isLoadingSheet ? "Hidden" : escapeHtml(doc.payment_method || "-")}</div>
+            <div class="history-value">${isOwnerPaperwork ? "Hidden" : escapeHtml(doc.payment_method || "-")}</div>
           </div>
           <div>
             <div class="history-label">Created</div>
@@ -427,7 +432,7 @@ function renderOrderDocuments(documents) {
           </div>
           <div>
             <div class="history-label">Payment Ref</div>
-            <div class="history-value">${isLoadingSheet ? "Hidden" : escapeHtml(doc.payment_ref || "-")}</div>
+            <div class="history-value">${isOwnerPaperwork ? "Hidden" : escapeHtml(doc.payment_ref || "-")}</div>
           </div>
           <div>
             <div class="history-label">Version</div>
@@ -441,7 +446,7 @@ function renderOrderDocuments(documents) {
           ${appPdfLink}
           ${driveLink}
           <button type="button" ${canSend ? "" : "disabled"} onclick="sendDocument('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send</button>
-          ${isLoadingSheet ? `<button type="button" ${canSendTelegram ? "" : "disabled"} onclick="sendLoadingSheetTelegram('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send Telegram</button>` : ""}
+          ${isOwnerPaperwork ? `<button type="button" ${canSendTelegram ? "" : "disabled"} onclick="sendLoadingSheetTelegram('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send Telegram</button>` : ""}
         </div>
         </div>
       </div>
@@ -807,16 +812,59 @@ function setupDocumentActions(orderId) {
       await runDocumentGeneration(`/api/orders/${orderId}/loading-sheet`, orderId, "Loading sheet generated.");
     });
   }
+
+  if (removalBtn) {
+    removalBtn.addEventListener("click", async function () {
+      const formData = collectMovementDocumentFields("removal");
+      if (!formData) return;
+      await runDocumentGeneration(`/api/orders/${orderId}/removal-certificate`, orderId, "Removal certificate generated.", formData);
+    });
+  }
+
+  if (healthBtn) {
+    healthBtn.addEventListener("click", async function () {
+      const formData = collectMovementDocumentFields("health");
+      if (!formData) return;
+      await runDocumentGeneration(`/api/orders/${orderId}/health-declaration`, orderId, "Health declaration generated.", formData);
+    });
+  }
 }
 
-async function runDocumentGeneration(url, orderId, successText) {
+function collectMovementDocumentFields(kind) {
+  const today = new Date().toISOString().slice(0, 10);
+  const fields = [
+    ["movement_date", "Removal / declaration date", today],
+    ["movement_time", "Removal time", ""],
+    ["driver_name", "Driver name", ""],
+    ["driver_id", "Driver ID number", ""],
+    ["driver_phone", "Driver phone", ""],
+    ["vehicle_registration", "Vehicle registration", ""],
+    ["trailer_registration", "Trailer registration", ""],
+    ["destination_address", "Destination / buyer address", ""],
+    ["responsible_person", "Responsible person signing", "Charl Nieuwendyk"],
+    ["signature_place", "Place signed", "Amadeus Farm"],
+  ];
+  if (kind === "health") {
+    fields.push(["health_notes", "Health notes", "No visible illness or injury observed at loading."]);
+  }
+  const data = {};
+  for (const [key, label, fallback] of fields) {
+    const value = window.prompt(label, fallback);
+    if (value === null) return null;
+    data[key] = value.trim();
+  }
+  data.signature_date = data.movement_date || today;
+  return data;
+}
+
+async function runDocumentGeneration(url, orderId, successText, formData) {
   const messageBox = document.getElementById("document_action_message");
 
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ created_by: "App" })
+      body: JSON.stringify({ created_by: "App", form_data: formData || {} })
     });
     const result = await response.json();
 
