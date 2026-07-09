@@ -7,6 +7,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -68,6 +69,7 @@ REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
 LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
 MISSION_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "mission_media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
+REVIEW_MEDIA_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 INLINE_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 3600
 FINAL_ARTIFACT_GRACE_SECONDS = 20
@@ -4710,7 +4712,7 @@ def _visual_review_blocks_owner_review(visual_review):
     if visual_review.get("status") != "captured":
         return True
     capture = visual_review.get("capture") if isinstance(visual_review.get("capture"), dict) else {}
-    if capture.get("capture_source") != "local_preview":
+    if capture.get("capture_source") not in {"local_preview", "durable_stage_evidence"}:
         return True
     return not _visual_review_has_required_viewport_media(visual_review)
 
@@ -5484,21 +5486,45 @@ def _local_preview_from_reviewer(reviewer):
         inferred = _infer_local_preview_url(local_preview.get("command", ""))
         if inferred.get("url"):
             local_preview.update(inferred)
+    elif _is_local_preview_url(local_preview.get("url")):
+        probe = _probe_local_preview_url(local_preview.get("url"))
+        if probe.get("ok"):
+            local_preview["status"] = "captured"
+            local_preview["message"] = local_preview.get("message") or f"Verified reachable local preview URL before review capture ({probe.get('http_status')})."
+            local_preview["source"] = local_preview.get("source") or "reviewer_local_preview_probe"
+            local_preview["probe"] = probe
+        else:
+            recovered = _recover_local_preview_url(
+                local_preview.get("url"),
+                command_text=local_preview.get("command", ""),
+                original_probe=probe,
+                allow_start=False,
+            )
+            if recovered.get("url"):
+                local_preview.update(recovered)
+            else:
+                local_preview["status"] = "not_reachable"
+                local_preview["message"] = _preview_server_recovery_message(local_preview.get("url"), probe)
+                local_preview["probe"] = probe
     return local_preview
 
 
-def _infer_local_preview_url(command_text=""):
+def _infer_local_preview_url(command_text="", route_path="/charlie"):
     candidates = []
     text = str(command_text or "")
+    route_path = _normalize_preview_route_path(route_path)
     port_matches = re.findall(r"--port\s+(\d+)|:(\d+)", text)
     for explicit, colon in port_matches:
         port = explicit or colon
         if port:
-            candidates.append(f"http://127.0.0.1:{port}/charlie")
+            candidates.append(f"http://127.0.0.1:{port}{route_path}")
+    env_preview = os.getenv("CHARLIE_LOCAL_PREVIEW_URL", "").strip()
+    if env_preview:
+        candidates.append(_replace_preview_route_path(env_preview, route_path))
     candidates.extend([
-        os.getenv("CHARLIE_LOCAL_PREVIEW_URL", "").strip(),
-        "http://127.0.0.1:5002/charlie",
-        "http://127.0.0.1:5000/charlie",
+        f"http://127.0.0.1:5002{route_path}",
+        f"http://127.0.0.1:5000{route_path}",
+        f"http://127.0.0.1:5003{route_path}",
     ])
     seen = set()
     for url in candidates:
@@ -5513,13 +5539,14 @@ def _infer_local_preview_url(command_text=""):
                 "status": "captured",
                 "message": f"Inferred reachable local preview URL from runner probe ({probe.get('http_status')}).",
                 "source": "local_runner_probe",
+                "probe": probe,
             }
     return {"url": "", "status": "not_captured", "message": "No reachable local CHARLIE preview URL was detected by the runner."}
 
 
 def _probe_local_preview_url(url):
     parsed = urlparse(str(url or ""))
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+    if not _is_local_preview_url(url):
         return {"ok": False, "status": "not_local"}
     try:
         opener = url_request.build_opener(url_request.HTTPRedirectHandler)
@@ -5534,9 +5561,164 @@ def _probe_local_preview_url(url):
         return {"ok": False, "status": "bad_status", "http_status": status, "final_url": final_url}
     if "/owner/login" in str(final_url):
         return {"ok": False, "status": "login_redirect", "http_status": status, "final_url": final_url}
-    if "CHARLIE Mission Control" not in body:
+    if _is_control_dashboard_preview_url(url) and "CHARLIE Mission Control" not in body:
         return {"ok": False, "status": "unexpected_body", "http_status": status, "final_url": final_url}
     return {"ok": True, "status": "ok", "http_status": status, "final_url": final_url}
+
+
+def _is_local_preview_url(url):
+    parsed = urlparse(str(url or ""))
+    return parsed.scheme in {"http", "https"} and parsed.hostname in {"127.0.0.1", "localhost"}
+
+
+def _normalize_preview_route_path(route_path):
+    route_path = str(route_path or "").strip() or "/charlie"
+    if not route_path.startswith("/"):
+        route_path = f"/{route_path}"
+    return route_path
+
+
+def _replace_preview_route_path(url, route_path):
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    route_path = _normalize_preview_route_path(route_path)
+    return f"{parsed.scheme}://{parsed.netloc}{route_path}"
+
+
+def _recover_local_preview_url(url, command_text="", original_probe=None, allow_start=True):
+    parsed = urlparse(str(url or ""))
+    route_path = _normalize_preview_route_path(parsed.path or "/charlie")
+    inferred = _infer_local_preview_url(command_text=command_text or str(url or ""), route_path=route_path)
+    if inferred.get("url"):
+        inferred["recovered_from"] = url
+        return inferred
+    if not allow_start:
+        return {
+            "url": "",
+            "status": "not_reachable",
+            "message": _preview_server_recovery_message(url, original_probe),
+            "source": "local_preview_recovery_failed",
+            "probe": original_probe or {},
+            "server": {"ok": False, "status": "server_start_deferred_until_capture"},
+            "recovered_from": url,
+        }
+    started = _start_local_preview_server(url)
+    if started.get("ok"):
+        probe = _probe_local_preview_url(started.get("url"))
+        if probe.get("ok"):
+            return {
+                "url": started.get("url"),
+                "status": "captured",
+                "message": f"Started local Flask preview server and verified route before review capture ({probe.get('http_status')}).",
+                "source": "local_flask_server_started",
+                "probe": probe,
+                "server": started,
+                "recovered_from": url,
+            }
+        started["post_start_probe"] = probe
+    return {
+        "url": "",
+        "status": "not_reachable",
+        "message": _preview_server_recovery_message(url, original_probe or started),
+        "source": "local_preview_recovery_failed",
+        "probe": original_probe or {},
+        "server": started,
+        "recovered_from": url,
+    }
+
+
+def _start_local_preview_server(url):
+    parsed = urlparse(str(url or ""))
+    if parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"ok": False, "status": "not_local"}
+    port = parsed.port or 5000
+    route_path = _normalize_preview_route_path(parsed.path or "/charlie")
+    preview_url = f"http://127.0.0.1:{port}{route_path}"
+    log_dir = EXECUTION_DIR / "preview_servers"
+    stdout_handle = None
+    stderr_handle = None
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stdout_path = log_dir / f"flask-preview-{port}.stdout.txt"
+        stderr_path = log_dir / f"flask-preview-{port}.stderr.txt"
+        stdout_handle = stdout_path.open("ab")
+        stderr_handle = stderr_path.open("ab")
+        startupinfo = None
+        creationflags = 0
+        if os.name == "nt":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        process = subprocess.Popen(
+            [sys.executable, "-m", "flask", "--app", "app", "run", "--host", "127.0.0.1", "--port", str(port)],
+            cwd=str(REPO_ROOT),
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            stdin=subprocess.DEVNULL,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "status": "server_start_failed", "url": preview_url, "error_type": exc.__class__.__name__}
+    finally:
+        if stdout_handle:
+            try:
+                stdout_handle.close()
+            except Exception:
+                pass
+        if stderr_handle:
+            try:
+                stderr_handle.close()
+            except Exception:
+                pass
+    deadline = time.monotonic() + 8
+    last_probe = {}
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        last_probe = _probe_local_preview_url(preview_url)
+        if last_probe.get("ok"):
+            return {
+                "ok": True,
+                "status": "server_started",
+                "url": preview_url,
+                "pid": process.pid,
+                "stdout_path": str(stdout_path),
+                "stderr_path": str(stderr_path),
+            }
+        if process.poll() is not None:
+            return {
+                "ok": False,
+                "status": "server_exited_before_ready",
+                "url": preview_url,
+                "pid": process.pid,
+                "returncode": process.returncode,
+                "probe": last_probe,
+                "stdout_path": str(stdout_path),
+                "stderr_path": str(stderr_path),
+            }
+    return {
+        "ok": False,
+        "status": "server_start_timeout",
+        "url": preview_url,
+        "pid": process.pid,
+        "probe": last_probe,
+        "stdout_path": str(stdout_path),
+        "stderr_path": str(stderr_path),
+    }
+
+
+def _preview_server_recovery_message(url, probe=None):
+    probe = probe if isinstance(probe, dict) else {}
+    parsed = urlparse(str(url or ""))
+    port = parsed.port or 5000
+    route_path = _normalize_preview_route_path(parsed.path or "/charlie")
+    status = probe.get("status") or probe.get("error_type") or "not_reachable"
+    return (
+        f"Local preview URL was not reachable before screenshot capture ({status}). "
+        f"Start or repair the local preview server with: {sys.executable} -m flask --app app run --host 127.0.0.1 --port {port}; "
+        f"then retry owner review capture at http://127.0.0.1:{port}{route_path}."
+    )
 
 
 def _build_visual_review_packet(
@@ -5568,10 +5750,23 @@ def _build_visual_review_packet(
         "captured": False,
         "reason": "mission_not_ui_related",
     }
+    if ui_related and mission_id:
+        existing_media = _review_media_items(mission_id)
+        if not _visual_review_has_required_viewport_media({"media": existing_media}):
+            promoted = _promote_durable_visual_evidence(mission_id, artifacts)
+            if promoted.get("promoted"):
+                capture = {
+                    **(capture if isinstance(capture, dict) else {}),
+                    "captured": True,
+                    "status": "captured",
+                    "capture_source": "durable_stage_evidence",
+                    "fallback_reason": "",
+                    "promotion": promoted,
+                }
     media = _review_media_items(mission_id) if ui_related else []
     status = "not_applicable"
     if ui_related:
-        status = "captured" if media else "not_captured_blocked"
+        status = "captured" if _visual_review_has_required_viewport_media({"media": media}) else "not_captured_blocked"
     preview_url = str(local_preview.get("url") or "").strip()
     return {
         "contract": "charlie_visual_review_v1",
@@ -5619,6 +5814,36 @@ def _capture_visual_review_media(
             fallback_reason = "preview_url_not_local"
         elif _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, changed_files, final_message):
             fallback_reason = "control_dashboard_preview_not_mission_visual"
+        else:
+            probe = _probe_local_preview_url(preview_url)
+            if not probe.get("ok"):
+                recovered = _recover_local_preview_url(
+                    preview_url,
+                    command_text=(local_preview or {}).get("command", ""),
+                    original_probe=probe,
+                )
+                if recovered.get("url"):
+                    preview_url = recovered["url"]
+                    capture_url = preview_url
+                    if isinstance(local_preview, dict):
+                        local_preview.update(recovered)
+                else:
+                    return {
+                        "captured": False,
+                        "status": "preview_url_not_reachable",
+                        "url": preview_url,
+                        "capture_url": "",
+                        "capture_source": "local_preview",
+                        "fallback_reason": "preview_url_not_reachable",
+                        "probe": probe,
+                        "recovery": recovered,
+                        "captures": [],
+                        "command": "",
+                        "path": "",
+                        "returncode": 1,
+                        "stdout_tail": "",
+                        "stderr_tail": recovered.get("message") or _preview_server_recovery_message(preview_url, probe),
+                    }
 
     if fallback_reason:
         html_path = _write_visual_review_preview_html(
@@ -5885,6 +6110,121 @@ def _review_media_items(mission_id):
             if len(items) >= 12:
                 return items
     return items
+
+
+def _promote_durable_visual_evidence(mission_id, artifacts):
+    mission_id = str(mission_id or "").strip()
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    if not mission_id:
+        return {"promoted": False, "status": "mission_id_missing", "items": []}
+    candidates = _durable_visual_evidence_candidates(artifacts)
+    selected = {}
+    for candidate in candidates:
+        viewport = candidate.get("viewport")
+        path = candidate.get("path")
+        if viewport not in {"desktop", "mobile"} or viewport in selected:
+            continue
+        if _durable_visual_evidence_path_allowed(path):
+            selected[viewport] = candidate
+    if "desktop" not in selected or "mobile" not in selected:
+        return {
+            "promoted": False,
+            "status": "required_viewports_missing",
+            "candidate_count": len(candidates),
+            "items": list(selected.values()),
+        }
+    media_dir = _review_media_path(mission_id)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    promoted = []
+    for viewport, filename in (("desktop", "owner_review_preview.png"), ("mobile", "owner_review_mobile.png")):
+        source = Path(selected[viewport]["path"])
+        target = media_dir / filename
+        try:
+            shutil.copyfile(source, target)
+        except OSError as exc:
+            return {
+                "promoted": False,
+                "status": "copy_failed",
+                "error_type": exc.__class__.__name__,
+                "source": str(source),
+                "target": str(target),
+                "items": promoted,
+            }
+        promoted.append({
+            "viewport": viewport,
+            "source": str(source),
+            "target": str(target),
+            "agent": selected[viewport].get("agent", ""),
+        })
+    return {"promoted": True, "status": "promoted", "items": promoted}
+
+
+def _durable_visual_evidence_candidates(artifacts):
+    candidates = []
+    for agent, artifact in (artifacts or {}).items():
+        if not isinstance(artifact, dict):
+            continue
+        _collect_visual_evidence_candidates(artifact, candidates, str(agent or ""))
+    return candidates
+
+
+def _collect_visual_evidence_candidates(value, candidates, agent="", context=""):
+    if isinstance(value, dict):
+        next_context = " ".join(str(part or "") for part in [
+            context,
+            value.get("label"),
+            value.get("filename"),
+            value.get("viewport"),
+            value.get("name"),
+        ])
+        for key in ("path", "reference", "file", "screenshot", "url"):
+            if key in value:
+                _add_visual_evidence_candidate(value.get(key), candidates, agent, next_context)
+        for item in value.values():
+            _collect_visual_evidence_candidates(item, candidates, agent, next_context)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_visual_evidence_candidates(item, candidates, agent, context)
+        return
+    _add_visual_evidence_candidate(value, candidates, agent, context)
+
+
+def _add_visual_evidence_candidate(value, candidates, agent="", context=""):
+    text = str(value or "").strip()
+    if not text:
+        return
+    if text.startswith("/api/charlie/build-relay/review-media/"):
+        parts = [part for part in text.split("/") if part]
+        if len(parts) >= 5:
+            text = str(_review_media_path(parts[-2]) / parts[-1])
+    path = Path(text)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    if path.suffix.lower() not in REVIEW_MEDIA_IMAGE_EXTENSIONS:
+        return
+    viewport_text = f"{context} {path.name}".lower()
+    viewport = ""
+    if any(token in viewport_text for token in ("mobile", "phone", "390", "375")):
+        viewport = "mobile"
+    elif any(token in viewport_text for token in ("desktop", "laptop", "preview", "1440", "1366")):
+        viewport = "desktop"
+    if viewport:
+        candidates.append({"path": str(path), "viewport": viewport, "agent": agent, "context": context})
+
+
+def _durable_visual_evidence_path_allowed(path):
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, TypeError, ValueError):
+        return False
+    if not resolved.exists() or not resolved.is_file() or resolved.stat().st_size <= 0:
+        return False
+    try:
+        runner_root = EXECUTION_DIR.parent.resolve()
+    except OSError:
+        return False
+    return resolved == runner_root or runner_root in resolved.parents
 
 
 def _visual_review_summary(ui_related, media, preview_url):
