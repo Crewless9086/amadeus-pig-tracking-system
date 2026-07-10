@@ -70,6 +70,14 @@ def _date_or_none(value):
         return None
 
 
+def _withdrawal_clear_from_date(withdrawal_end_date, today=None):
+    end_date = _date_or_none(withdrawal_end_date)
+    if not end_date:
+        return "Yes"
+    today = today or date.today()
+    return "Yes" if end_date <= today else "No"
+
+
 def _litter_birth_date(litter, pigs):
     litter_birth_date = _date_or_none(litter.get("farrowing_date"))
     if litter_birth_date:
@@ -205,6 +213,7 @@ def _calculated_stage(row):
 
 
 def _pig_summary(row):
+    withdrawal_end_date = row.get("current_withdrawal_end_date")
     return {
         "pig_id": _text(row.get("pig_id")),
         "tag_number": _text(row.get("tag_number")),
@@ -225,6 +234,8 @@ def _pig_summary(row):
         "weight_band": _weight_band(row.get("current_weight_kg")),
         "is_sale_ready": "",
         "reserved_status": "",
+        "current_withdrawal_end_date": _date_text(withdrawal_end_date),
+        "withdrawal_clear": _withdrawal_clear_from_date(withdrawal_end_date),
     }
 
 
@@ -247,6 +258,14 @@ def _pig_summary_card(row):
 def _current_state_rows(connect_factory=None):
     return _fetch_all(
         """
+        with latest_medical as (
+            select distinct on (pig_id)
+                pig_id,
+                withdrawal_end_date
+            from public.pig_medical_events
+            where pig_id is not null
+            order by pig_id, withdrawal_end_date desc nulls last, treatment_date desc nulls last, created_at desc nulls last, medical_event_id desc
+        )
         select
             state.pig_id,
             state.tag_number,
@@ -267,9 +286,11 @@ def _current_state_rows(connect_factory=None):
             pig.wean_date,
             pig.wean_weight_kg,
             pig.exit_reason,
-            pig.notes
+            pig.notes,
+            latest_medical.withdrawal_end_date as current_withdrawal_end_date
         from public.pig_current_state state
         join public.pigs pig on pig.pig_id = state.pig_id
+        left join latest_medical on latest_medical.pig_id = state.pig_id
         order by coalesce(nullif(state.tag_number, ''), state.pig_id)
         """,
         connect_factory=connect_factory,
@@ -727,6 +748,7 @@ def get_family_tree(pig_id, connect_factory=None):
 
 
 def _allocation_overview_row(row):
+    withdrawal_end_date = row.get("current_withdrawal_end_date")
     return {
         "Pig_ID": _text(row.get("pig_id")),
         "Tag_Number": _text(row.get("tag_number")),
@@ -748,6 +770,8 @@ def _allocation_overview_row(row):
         "Litter_ID": _text(row.get("litter_id")),
         "Mother_Pig_ID": _text(row.get("mother_pig_id")),
         "Father_Pig_ID": _text(row.get("father_pig_id")),
+        "Current_Withdrawal_End_Date": _date_text(withdrawal_end_date),
+        "Withdrawal_Clear": _withdrawal_clear_from_date(withdrawal_end_date),
     }
 
 

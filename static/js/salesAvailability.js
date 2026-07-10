@@ -72,6 +72,7 @@ function buildSalesCard(pig) {
   const salesInfo = document.createElement("div");
   salesInfo.className = "sales-meta-grid";
   salesInfo.innerHTML = `
+    <div><span class="history-label">Latest Weight Date</span><span class="history-value">${pig.last_weight_date || "-"}</span></div>
     <div><span class="history-label">Stage</span><span class="history-value">${pig.calculated_stage || "—"}</span></div>
     <div><span class="history-label">Purpose</span><span class="history-value">${pig.purpose || "—"}</span></div>
     <div><span class="history-label">Available</span><span class="history-value">${pig.available_for_sale || "—"}</span></div>
