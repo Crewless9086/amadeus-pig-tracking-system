@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-10
+
+- Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
+
 ## 2026-07-09
 
 - Added the SAM Live Stock durable `next_action` contract for inbound Chatwoot decisions, while preserving owner gates for customer send, quote send, reservation, payment, and stock movement.

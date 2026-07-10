@@ -2475,6 +2475,84 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
         self.assertEqual(len(capture["captures"]), 2)
 
+    @patch("modules.charlie.execution_bridge._probe_local_http_url")
+    def test_visual_review_capture_recovers_dead_preview_url_from_command_port(self, probe):
+        probe.side_effect = [
+            {"ok": False, "status": "probe_failed", "error_type": "URLError"},
+            {"ok": True, "status": "ok", "http_status": 200},
+        ]
+        seen_urls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_runner(command, **_kwargs):
+                    seen_urls.append(command[-2])
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {
+                        "url": "http://127.0.0.1:5003/pig/SOW-1/family-tree",
+                        "command": ".\\venv\\Scripts\\python.exe -m flask --app app run --host 127.0.0.1 --port 5000",
+                    },
+                    changed_files=["templates/family-tree.html"],
+                    run_subprocess=fake_runner,
+                )
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["url"], "http://127.0.0.1:5003/pig/SOW-1/family-tree")
+        self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/pig/SOW-1/family-tree")
+        self.assertEqual(capture["capture_url_recovery"]["status"], "recovered_from_preview_command_port")
+        self.assertEqual(seen_urls, [
+            "http://127.0.0.1:5000/pig/SOW-1/family-tree",
+            "http://127.0.0.1:5000/pig/SOW-1/family-tree",
+        ])
+
+    @patch("modules.charlie.execution_bridge._probe_local_http_url", return_value={"ok": True, "status": "ok", "http_status": 200})
+    def test_visual_review_capture_reuses_durable_stage_media_when_playwright_fails(self, _probe):
+        with tempfile.TemporaryDirectory() as tmp:
+            review_root = Path(tmp) / "review_media"
+            source_dir = review_root / "stage-evidence"
+            source_dir.mkdir(parents=True)
+            desktop = source_dir / "family-tree-desktop-1440.png"
+            mobile = source_dir / "family-tree-mobile-390.png"
+            desktop.write_bytes(b"desktop")
+            mobile.write_bytes(b"mobile")
+
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", review_root):
+                def failing_runner(command, **_kwargs):
+                    return SimpleNamespace(returncode=1, stdout="", stderr="ERR_CONNECTION_REFUSED")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-EXEC123",
+                    {"url": "http://127.0.0.1:5000/pig/SOW-1/family-tree"},
+                    artifacts={
+                        "tester": {
+                            "screenshots_captured": [
+                                {"viewport": "desktop/laptop", "path": str(desktop)},
+                                {"viewport": "mobile", "path": str(mobile)},
+                            ],
+                        }
+                    },
+                    run_subprocess=failing_runner,
+                )
+                media = execution_bridge._review_media_items("CHARLIE-MISSION-EXEC123")
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["capture_method"], "durable_stage_media_reuse")
+        self.assertEqual(capture["durable_media_reuse"]["status"], "promoted_from_durable_stage_media")
+        self.assertEqual({item["filename"] for item in media}, {"owner_review_preview.png", "owner_review_mobile.png"})
+
+    def test_visual_review_blocks_owner_review_without_required_viewport_media(self):
+        packet = {
+            "ui_related": True,
+            "status": "captured",
+            "capture": {"capture_source": "local_preview"},
+            "media": [{"filename": "owner_review_preview.png"}],
+        }
+
+        self.assertTrue(execution_bridge._visual_review_blocks_owner_review(packet))
+
     def test_visual_review_packet_generates_fallback_media_without_preview_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
