@@ -3,6 +3,7 @@
 ## 2026-07-10
 
 - Added SAM Live Stock requested-delivery planning: collection-first normal replies must not advertise delivery; explicit delivery/transport/drop-off/far-away questions collect destination and one-way km, estimate at R20/km, expose owner-review Telegram delivery fields, and keep delivery as an owner-reviewed estimate only.
+- Added the CHARLIE CORE testing timeout rubric: timeout-only broad runner/full-suite failures are advisory when focused changed-surface evidence passes and no owner/customer/order/stock safety risk is present; real safety failures still block.
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 
 ## 2026-07-09

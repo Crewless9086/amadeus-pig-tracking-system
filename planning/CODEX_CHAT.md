@@ -17,7 +17,7 @@ Codex must follow:
 ### Concept / Problem / Idea
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Update SAM Live Stock conversation planning for requested delivery only. If customer asks delivery/transport/drop-off/far-away question, capture destination town/address/location and one-way km requirement, calculate or request the missing distance/destination, then draft an owner-reviewed reply with collection-first wording and optional delivery estimate. Do not advertise delivery in normal stock/price replies. Add Telegram card fields: delivery requested, destination, one-way km, delivery fee estimate, total with livestock + delivery, and owner override warning. Feed owner corrections into learning. Tests: general price reply should not mention delivery; delivery question should produce delivery-aware draft; unknown destination asks one useful question; known km calculates R20/km; safety scanner blocks delivery promises but allows estimates.
 ```
 
 ### Desired Outcome
@@ -29,13 +29,13 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 ### Urgency
 
 ```text
-P0
+P1
 ```
 
 ### Mission Type
 
 ```text
-content engine
+sam_live_stock_agentic_workflow
 ```
 
 ### Approval Level
@@ -49,11 +49,11 @@ LEVEL 3
 ## CHARLIE MISSION RECORD
 
 ```text
-Mission ID: CHARLIE-MISSION-D2F2EE1B0230469D
-Mission title: Beacon Live Stock Awareness Packet Split
+Mission ID: CHARLIE-MISSION-C49AB9AE9B8646DD
+Mission title: SAM Live Stock Delivery-Aware Conversation Planner
 Mission status at pickup: in_progress
 Runner mode: code_test_pr
-Vault stage: intake
+Vault stage: returned_to_builder
 ```
 
 ---
@@ -63,43 +63,34 @@ Vault stage: intake
 ### Problem Statement
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Update SAM Live Stock conversation planning for requested delivery only. If customer asks delivery/transport/drop-off/far-away question, capture destination town/address/location and one-way km requirement, calculate or request the missing distance/destination, then draft an owner-reviewed reply with collection-first wording and optional delivery estimate. Do not advertise delivery in normal stock/price replies. Add Telegram card fields: delivery requested, destination, one-way km, delivery fee estimate, total with livestock + delivery, and owner override warning. Feed owner corrections into learning. Tests: general price reply should not mention delivery; delivery question should produce delivery-aware draft; unknown destination asks one useful question; known km calculates R20/km; safety scanner blocks delivery promises but allows estimates.
 ```
 
 ### Desired Outcome
 
 ```text
-Beacon can prepare correct live-stock awareness post packets from approved farm media without drifting into meat sales.
+Codex scopes this CHARLIE mission, updates active docs, builds only within the approved level and hard stops, tests thoroughly, and reports a debrief.
 ```
 
 ### Acceptance Criteria
 
 ```text
-- Beacon has an explicit live_stock_awareness campaign/packet mode.
-- Piglet/litter/weaner approved media routes to live-stock awareness drafts, not meat launch drafts.
-- Live-stock awareness packet validates no direct sales terms such as for sale, price, reserve, book, available, or DM to buy.
-- Owner packet includes selected media, exact caption, platform, SAM Live Stock handoff path, and pause/rollback instruction.
-- Existing meat launch tests still pass.
+- Not captured yet; Codex must scope this before build.
 ```
 
 ### Test Plan
 
 ```text
-- Run focused unit tests for touched modules.
-- Run route/frontend contract tests when routes or UI are touched.
-- Prove unsafe actions remain blocked by policy/authority flags.
-- Prepare owner review packet with changed files, tests, risks, rollback, and next gate.
-- Add Beacon tests proving live-stock media does not produce meat packet output.
+- Not captured yet; Codex must scope this before build.
 ```
 
 ### Forbidden Actions
 
 ```text
-- Do not send customer messages without an approved customer-send gate.
-- Do not post publicly without exact owner approval and channel gate.
-- Do not create orders, quotes, invoices, reservations, stock changes, slaughter bookings, butcher bookings, payment confirmations, or farm lifecycle writes unless the mission explicitly builds and tests the gate and still stops at owner review.
-- Do not change Render production envs without owner instruction.
-- Do not merge or deploy without final owner release approval.
+- No production data writes unless explicitly approved.
+- No migrations unless explicitly approved.
+- No customer sends, public posts, payments, reservations, or lifecycle writes unless explicitly approved.
+- No .env, secrets, screenshots, external_sources, static/assets, or planning/Prompts.md unless explicitly approved.
 ```
 
 ### Media / References
@@ -111,13 +102,19 @@ Beacon can prepare correct live-stock awareness post packets from approved farm 
 ### Agent Workflow
 
 ```text
-- idea_expander: active - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
-- source_mapper: pending - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
-- concept_strategist: pending - Turn the idea into a clear concept, strategic thesis, options, and decision memo.
-- product_architect: pending - Shape product flow, owner value, user behavior, and acceptance boundaries.
-- risk_agent: pending - Create risk register across technical, legal, financial, operational, brand, and data risks.
-- council_synthesis: pending - Reconcile upstream agent thinking into one council-approved brief before planning or building.
-- business_reviewer: pending - Check commercial logic, income-stream readiness, and owner decision clarity.
+- idea_expander: complete - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
+- source_mapper: complete - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
+- product_architect: complete - Shape product flow, owner value, user behavior, and acceptance boundaries.
+- technical_architect: complete - Design implementation structure, file/API/data impacts, integration risk, and test strategy.
+- risk_agent: complete - Create risk register across technical, legal, financial, operational, brand, and data risks.
+- council_synthesis: complete - Reconcile upstream agent thinking into one council-approved brief before planning or building.
+- planner: complete - Turn owner concept into scoped mission plan.
+- architect: complete - Identify files, data sources, risks, and implementation approach.
+- builder: active - Implement scoped changes under approval level.
+- tester: pending - Run tests and pressure checks.
+- qa_red_team: pending - Challenge the work for regressions, unsafe actions, weak evidence, and owner-risk before review.
+- product_reviewer: pending - Check that the result matches owner intent, user value, and acceptance criteria.
+- security_reviewer: pending - Review permissions, secrets, data exposure, injection, and dangerous actions.
 - evidence_reviewer: pending - Check claims, tests, citations, artifacts, and proof against the Vault.
 - reviewer: pending - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
 - publisher: pending - Prepare deployment/publishing packet after owner approval and verification.
