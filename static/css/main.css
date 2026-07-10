@@ -2009,6 +2009,129 @@ button:disabled {
   color: var(--green-dark);
 }
 
+.family-decision-panel {
+  display: grid;
+  gap: 18px;
+  margin: 22px 0 28px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fffdf9;
+}
+
+.family-decision-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.family-decision-header h2 {
+  margin: 4px 0 6px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.family-decision-header p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+
+.family-decision-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.family-decision-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.family-decision-list {
+  min-width: 0;
+}
+
+.family-decision-list .section-title-row {
+  margin-bottom: 10px;
+}
+
+.family-decision-list h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.family-decision-list p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.family-outcome-list {
+  display: grid;
+  gap: 10px;
+}
+
+.family-outcome-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.family-outcome-row strong,
+.family-outcome-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.family-outcome-row small {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.family-outcome-row dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.family-outcome-row dt {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.family-outcome-row dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.family-litter-link {
+  font-size: 18px;
+}
+
+.family-quality-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.family-empty-state {
+  padding: 18px;
+}
+
 .family-card {
   display: flex;
   flex-direction: column;
@@ -2700,10 +2823,26 @@ button:disabled {
   .history-summary-grid,
   .history-item-grid,
   .sales-meta-grid,
+  .family-decision-metrics,
+  .family-decision-grid,
   .family-tree-parents,
   .family-tree-current,
   .dashboard-actions-grid,
   .document-control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .family-decision-header {
+    flex-direction: column;
+  }
+
+  .family-decision-header .button-link {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .family-outcome-row,
+  .family-outcome-row dl {
     grid-template-columns: 1fr;
   }
 
