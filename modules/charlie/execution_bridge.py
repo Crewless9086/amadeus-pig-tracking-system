@@ -3459,7 +3459,7 @@ def _implementation_source_quality_gate(agent, artifact):
             }
     elif _implementation_sensitive_source_map(source_map):
         values = []
-        for key in ("files_inspected", "implementation_sources_used"):
+        for key in ("files_inspected", "implementation_sources_used", "changed_files", "files_changed"):
             value = artifact.get(key)
             if isinstance(value, list):
                 values.extend(str(item or "").replace("\\", "/") for item in value)

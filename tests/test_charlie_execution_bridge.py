@@ -2081,6 +2081,31 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_builder_source_gate_accepts_changed_matched_implementation_file(self):
+        artifact = _successful_stage_payload("builder")
+        artifact["implementation_source_map"] = {
+            "matched_sections": [
+                {
+                    "key": "sam_live_stock_sales",
+                    "must_inspect_before_advice": True,
+                    "code_paths": ["modules/sales/sam_live_stock_launch_control.py"],
+                    "tests": ["tests/test_sam_live_stock_launch_control.py"],
+                }
+            ],
+            "required_inspection_paths": [
+                "modules/sales/sam_live_stock_launch_control.py",
+                "tests/test_sam_live_stock_launch_control.py",
+            ],
+        }
+        artifact["files_inspected"] = ["docs/09-vault-brain/02-agents/sales/SAM.md"]
+        artifact["implementation_sources_used"] = []
+        artifact["changed_files"] = ["modules/sales/sam_live_stock_launch_control.py"]
+        artifact["links"] = {"pr": "https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/131"}
+
+        result = execution_bridge._agent_quality_gate("builder", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
         artifact = _successful_stage_payload("reviewer")
         artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
