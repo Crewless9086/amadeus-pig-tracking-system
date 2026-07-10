@@ -5801,7 +5801,15 @@ def _capture_visual_review_media(
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
         elif _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, changed_files, final_message):
-            fallback_reason = "control_dashboard_preview_not_mission_visual"
+            inferred = _infer_changed_ui_preview_url(preview_url, changed_files, final_message)
+            if inferred.get("url"):
+                capture_url = inferred["url"]
+                recovery = {
+                    **recovery,
+                    "changed_ui_preview_inference": inferred,
+                }
+            else:
+                fallback_reason = "control_dashboard_preview_not_mission_visual"
 
     if fallback_reason:
         html_path = _write_visual_review_preview_html(
@@ -6096,6 +6104,31 @@ def _preview_url_matches_changed_ui(url, changed_files=None, final_message=""):
     if path == "/charlie":
         return any(token in text for token in ("templates/charlie.html", "charliemissioncontrol", "mission control", "/charlie"))
     return path != "/"
+
+
+def _infer_changed_ui_preview_url(preview_url, changed_files=None, final_message=""):
+    parsed = urlparse(str(preview_url or ""))
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"url": "", "status": "not_local_preview"}
+    files = " ".join(str(item or "").replace("\\", "/").lower() for item in (changed_files or []))
+    text = f"{files} {str(final_message or '').lower()}"
+    route = ""
+    if "salesavailability.js" in text or "sales availability" in text or "sales dashboard" in text:
+        route = "/sales-dashboard"
+    elif "templates/charlie" in text or "charliemissioncontrol" in text or "mission control" in text:
+        route = "/charlie"
+    if not route or route == (parsed.path.rstrip("/") or "/"):
+        return {"url": "", "status": "no_changed_route_inferred"}
+    candidate = parsed._replace(path=route, params="", query="", fragment="").geturl()
+    probe = _probe_local_http_url(candidate)
+    if not probe.get("ok"):
+        return {"url": "", "status": "inferred_route_not_reachable", "candidate_url": candidate, "probe": probe}
+    return {
+        "url": candidate,
+        "status": "inferred_changed_ui_route",
+        "source": "changed_files",
+        "probe": probe,
+    }
 
 
 def _write_visual_review_preview_html(
