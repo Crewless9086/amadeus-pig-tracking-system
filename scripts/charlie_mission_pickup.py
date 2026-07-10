@@ -608,6 +608,7 @@ def _execution_lease_packet(mission_id):
 
 def _ensure_base_branch():
     base_branch = str(os.getenv(BASE_BRANCH_ENV) or "main").strip() or "main"
+    upstream_ref = f"origin/{base_branch}" if "/" not in base_branch else base_branch
 
     def run(command):
         try:
@@ -646,8 +647,30 @@ def _ensure_base_branch():
             "base_branch": base_branch,
             "current_branch": current_branch,
         }
+    upstream = run(["git", "rev-parse", "--verify", upstream_ref])
+    if upstream["returncode"] == 0:
+        contains_upstream = run(["git", "merge-base", "--is-ancestor", upstream_ref, "HEAD"])
+        if contains_upstream["returncode"] == 0:
+            return {
+                "success": True,
+                "status": "base_branch_upstream_contained_by_current_branch",
+                "base_branch": base_branch,
+                "upstream_ref": upstream_ref,
+                "current_branch": current_branch,
+            }
     switched = run(["git", "switch", base_branch])
     if switched["returncode"] != 0:
+        if upstream["returncode"] == 0:
+            contains_upstream = run(["git", "merge-base", "--is-ancestor", upstream_ref, "HEAD"])
+            if contains_upstream["returncode"] == 0:
+                return {
+                    "success": True,
+                    "status": "base_branch_switch_skipped_upstream_contained",
+                    "base_branch": base_branch,
+                    "upstream_ref": upstream_ref,
+                    "current_branch": current_branch,
+                    "switch_stderr": switched["stderr"],
+                }
         return {
             "success": False,
             "status": "base_branch_switch_failed",
