@@ -224,7 +224,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("SAM Live - Charl N", calls[0][2])
         self.assertIn("Intent: buy live stock: 2 weaner", calls[0][2])
         self.assertIn("Stage: quote", calls[0][2])
-        self.assertIn("Open order/quote: ORD-1", calls[0][2])
+        self.assertIn("Open order/quote: ORD-1 - quote prepare ready", calls[0][2])
         self.assertIn("Next: generate quote", calls[0][2])
         self.assertIn("Prepared: Prepare latest quote send - ready for owner quote prepare - ORD-1", calls[0][2])
         self.assertIn("Wants: 2 any weaner, next week, Riversdale", calls[0][2])
@@ -245,6 +245,8 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("No Reply Needed", button_labels)
         self.assertIn("Prepare Quote", button_labels)
         self.assertIn("Close", button_labels)
+        self.assertTrue(any(value.startswith("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-") for value in callback_values))
+        self.assertTrue(any(value.startswith("sam_live_review_no_reply:SAM-LIVE-REVIEW-") for value in callback_values))
         self.assertTrue(all(not value or value.startswith("sam_live_") for value in callback_values))
         self.assertNotIn("n8n", str(calls[0][3]).lower())
 
@@ -513,40 +515,51 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             "decision_json": {
                 "owner_action_packet": {
                     "next_action": "prepare_quote",
-                    "status": "ready_for_owner_quote_prepare",
                     "order_id": "ORD-1",
+                    "label": "Prepare latest quote send",
+                    "status": "ready_for_owner_quote_prepare",
+                    "detail": "Use order ORD-1 to generate or verify the latest quote before any customer send.",
                     "routes": {
                         "quote_prepare": {
-                            "route": "/api/orders/ORD-1/quote/prepare-send",
                             "allowed_for_sam_auto": False,
+                            "route": "/api/orders/ORD-1/quote/prepare-send",
+                            "method": "POST",
                         }
                     },
                 }
             },
         }
 
-        for callback, expected_action, expected_status in (
-            ("sam_live_review_no_reply:SAM-LIVE-REVIEW-ABC123", "review_no_reply", "sam_live_stock_review_no_reply_needed"),
-            ("sam_live_review_draft_order:SAM-LIVE-REVIEW-ABC123", "review_prepare_draft_order", "sam_live_stock_review_draft_order_prepared_for_owner"),
-            ("sam_live_review_quote:SAM-LIVE-REVIEW-ABC123", "review_prepare_quote", "sam_live_stock_review_quote_prepared_for_owner"),
-            ("sam_live_review_picture:SAM-LIVE-REVIEW-ABC123", "review_picture_reply", "sam_live_stock_review_picture_reply_prepared_for_owner"),
+        for callback_data, expected_action, expected_status in (
+            ("sam_live_review_no_reply:SAM-LIVE-REVIEW-ABC123", "review_no_reply", "sam_live_stock_review_no_reply_recorded"),
+            ("sam_live_review_draft_order:SAM-LIVE-REVIEW-ABC123", "review_prepare_draft_order", "sam_live_stock_review_prepare_draft_order_ready"),
+            ("sam_live_review_quote:SAM-LIVE-REVIEW-ABC123", "review_prepare_quote", "sam_live_stock_review_prepare_quote_ready"),
+            ("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123", "review_prepare_quote", "sam_live_stock_review_prepare_quote_ready"),
+            ("sam_live_review_prepare_draft:SAM-LIVE-REVIEW-ABC123", "review_prepare_draft_order", "sam_live_stock_review_prepare_draft_order_ready"),
+            ("sam_live_review_update_draft:SAM-LIVE-REVIEW-ABC123", "review_update_draft_order", "sam_live_stock_review_update_draft_order_ready"),
+            ("sam_live_review_picture:SAM-LIVE-REVIEW-ABC123", "review_picture_reply", "sam_live_stock_review_picture_reply_ready"),
         ):
-            with self.subTest(callback=callback):
+            with self.subTest(callback=callback_data):
                 result, status = launch.process_sam_live_stock_owner_callback(
-                    {"callback_data": callback},
+                    {"callback_data": callback_data},
                     review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
                     chatwoot_sender=lambda *args: self.fail("customer send must not execute"),
                     chatwoot_writer=lambda *args: self.fail("chatwoot write must not execute"),
                 )
 
                 self.assertEqual(status, 200)
+                self.assertTrue(result["success"])
                 self.assertEqual(result["action"], expected_action)
                 self.assertEqual(result["status"], expected_status)
                 self.assertFalse(result["sends_customer_message"])
                 self.assertFalse(result["calls_chatwoot"])
                 self.assertFalse(result["calls_telegram"])
+                self.assertFalse(result["calls_n8n"])
                 self.assertFalse(result["creates_order"])
+                self.assertFalse(result["creates_quote"])
                 self.assertFalse(result["reserves_stock"])
+                self.assertTrue(result["prepared_action"]["owner_gate_required"])
+                self.assertTrue(result["prepared_action"]["manual_review_required"])
 
     def test_live_stock_reservation_plan_is_advisory(self):
         plan = launch.build_live_stock_reservation_plan(

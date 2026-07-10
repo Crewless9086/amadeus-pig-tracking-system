@@ -544,6 +544,57 @@ class OomSakkieRouteTests(unittest.TestCase):
         mock_handle.assert_not_called()
         mock_send.assert_called_once()
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.process_sam_live_stock_owner_callback")
+    def test_telegram_direct_route_handles_sam_live_v2_callbacks_natively_without_n8n(self, mock_callback, mock_send):
+        mock_callback.return_value = ({
+            "success": True,
+            "status": "sam_live_stock_review_prepare_quote_ready",
+            "action": "review_prepare_quote",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "creates_quote": False,
+            "reserves_stock": False,
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={
+                "callback_query": {
+                    "data": "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123",
+                    "from": {"id": 12345},
+                    "message": {"message_id": 987, "chat": {"id": 67890}},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "telegram_sent")
+        self.assertEqual(data["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
+        self.assertEqual(data["sam_live_callback"]["action"], "review_prepare_quote")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertNotIn("n8n", data["status"].lower())
+        mock_callback.assert_called_once()
+        callback_payload = mock_callback.call_args.args[0]
+        self.assertEqual(callback_payload["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
+        self.assertEqual(callback_payload["telegram_chat_id"], "67890")
+        mock_send.assert_called_once()
+
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/review-packet",

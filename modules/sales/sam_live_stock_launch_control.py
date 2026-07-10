@@ -34,7 +34,9 @@ AUTHORITY_FLAGS = {
     "sends_customer_message": False,
     "calls_chatwoot": False,
     "calls_telegram": False,
+    "calls_n8n": False,
     "creates_order": False,
+    "creates_quote": False,
     "reserves_stock": False,
     "releases_stock": False,
     "changes_stock": False,
@@ -569,16 +571,18 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
-    if action["action"] in {
+    review_actions = {
         "review_approve_send",
         "review_edit",
         "review_human",
         "review_close",
         "review_no_reply",
         "review_prepare_draft_order",
+        "review_update_draft_order",
         "review_prepare_quote",
         "review_picture_reply",
-    }:
+    }
+    if action["action"] in review_actions:
         loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
         if load_status >= 400 or not loaded.get("success"):
             return _callback_result(action["action"], loaded, load_status, escalation_id)
@@ -586,6 +590,14 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
         conversation_id = event.get("chatwoot_conversation_id")
         decision_json = _json_value(event.get("decision_json"))
         message = _clean_multiline(decision_json.get("suggested_reply_text") or event.get("sam_reply_excerpt"), 1800)
+        if action["action"] in {
+            "review_no_reply",
+            "review_prepare_draft_order",
+            "review_update_draft_order",
+            "review_prepare_quote",
+            "review_picture_reply",
+        }:
+            return _prepared_review_callback_result(action["action"], escalation_id, event, decision_json, message), 200
         if action["action"] == "review_approve_send":
             send_result, status = send_owner_approved_live_stock_reply(
                 conversation_id,
@@ -942,6 +954,9 @@ def _callback_action(callback_data):
         "sam_live_review_no_reply": "review_no_reply",
         "sam_live_review_draft_order": "review_prepare_draft_order",
         "sam_live_review_quote": "review_prepare_quote",
+        "sam_live_review_prepare_draft": "review_prepare_draft_order",
+        "sam_live_review_update_draft": "review_update_draft_order",
+        "sam_live_review_prepare_quote": "review_prepare_quote",
         "sam_live_review_picture": "review_picture_reply",
         "sam_live_review_close": "review_close",
         "approve_send": "approve_send",
@@ -1068,6 +1083,24 @@ def _owner_card_price_summary(decision):
     return " - ".join(parts) if parts else "not resolved"
 
 
+def _owner_card_open_order_quote_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    order_id = _clean(packet.get("order_id"), 100)
+    routes = packet.get("routes") if isinstance(packet.get("routes"), dict) else {}
+    quote_prepare = routes.get("quote_prepare") if isinstance(routes.get("quote_prepare"), dict) else {}
+    quote_send = routes.get("quote_send_confirmed") if isinstance(routes.get("quote_send_confirmed"), dict) else {}
+    status = _clean(packet.get("status"), 120)
+    pieces = []
+    if order_id:
+        pieces.append(order_id)
+    if quote_prepare.get("route") or status == "ready_for_owner_quote_prepare":
+        pieces.append("quote prepare ready")
+    elif quote_send.get("route"):
+        pieces.append("quote send gate ready")
+    return " - ".join(pieces) if pieces else "none open"
+
+
 def _owner_card_missing_summary(decision):
     decision = decision if isinstance(decision, dict) else {}
     missing = decision.get("missing_fields") if isinstance(decision.get("missing_fields"), list) else []
@@ -1105,8 +1138,9 @@ def _owner_card_open_order_quote_summary(decision):
     routes = packet.get("routes") if isinstance(packet.get("routes"), dict) else {}
     quote_prepare = routes.get("quote_prepare") if isinstance(routes.get("quote_prepare"), dict) else {}
     quote_route = _clean(quote_prepare.get("route"), 200)
-    if order_id and quote_route:
-        return f"{order_id}; quote ready for owner prepare"
+    status = _clean(packet.get("status"), 120)
+    if order_id and (quote_route or status == "ready_for_owner_quote_prepare"):
+        return f"{order_id} - quote prepare ready"
     if order_id:
         return order_id
     draft_packet = decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {}
@@ -1133,52 +1167,74 @@ def _owner_card_prepared_action_summary(decision):
     return summary
 
 
-def _owner_card_prepared_action_buttons(decision, target_id):
+def _owner_card_prepared_action_buttons(decision, callback_id):
     decision = decision if isinstance(decision, dict) else {}
-    target_id = _clean(target_id, 120)
-    if not target_id:
-        return []
     packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
-    next_action = _clean(packet.get("next_action") or decision.get("next_action"), 80)
-    internal_next = _clean(packet.get("internal_next_action") or decision.get("internal_next_action"), 80)
-    status = _clean(packet.get("status"), 100)
-    draft_ready = bool(packet.get("draft_order_ready"))
-    rows = []
-    if next_action in {"prepare_draft_order", "update_draft_order"} or internal_next in {"create_draft", "create_draft_then_quote", "sync_lines"} or draft_ready:
-        label = "Update Draft Order" if next_action == "update_draft_order" or internal_next == "sync_lines" else "Prepare Draft Order"
-        rows.append([{"text": label, "callback_data": f"sam_live_review_draft_order:{target_id}"}])
-    if next_action in {"prepare_quote", "generate_quote"} or internal_next in {"generate_quote", "update_draft_then_quote"} or status == "ready_for_owner_quote_prepare":
-        rows.append([{"text": "Prepare Quote", "callback_data": f"sam_live_review_quote:{target_id}"}])
-    if next_action == "prepare_picture_response":
-        rows.append([{"text": "Send Picture Reply", "callback_data": f"sam_live_review_picture:{target_id}"}])
-    return rows
+    callback_id = _clean(callback_id, 120)
+    if not callback_id:
+        return []
+    status = _clean(packet.get("status"), 120)
+    next_action = _clean(packet.get("next_action") or decision.get("next_action"), 120)
+    internal_next_action = _clean(packet.get("internal_next_action") or decision.get("internal_next_action"), 120)
+    buttons = []
+    if status == "ready_for_owner_prepare" or bool(packet.get("draft_order_ready")) or next_action == "prepare_draft_order" or internal_next_action in {"create_draft", "create_draft_then_quote"}:
+        buttons.append([{"text": "Prepare Draft Order", "callback_data": f"sam_live_review_prepare_draft:{callback_id}"}])
+    if status == "ready_for_owner_sync_lines" or next_action == "update_draft_order" or internal_next_action == "sync_lines":
+        buttons.append([{"text": "Update Draft Order", "callback_data": f"sam_live_review_update_draft:{callback_id}"}])
+    if status == "ready_for_owner_quote_prepare" or next_action == "prepare_quote" or internal_next_action in {"generate_quote", "update_draft_then_quote"}:
+        buttons.append([{"text": "Prepare Quote", "callback_data": f"sam_live_review_prepare_quote:{callback_id}"}])
+    if next_action == "prepare_picture_response" or internal_next_action == "prepare_picture_response":
+        buttons.append([{"text": "Send Picture Reply", "callback_data": f"sam_live_review_picture:{callback_id}"}])
+    return buttons
 
 
-def _prepared_review_callback_result(action, review_event_id, conversation_id, event, decision):
+def _prepared_review_callback_result(action, review_event_id, event, decision, message):
+    event = event if isinstance(event, dict) else {}
     decision = decision if isinstance(decision, dict) else {}
     packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
     routes = packet.get("routes") if isinstance(packet.get("routes"), dict) else {}
-    status_map = {
-        "review_prepare_draft_order": "sam_live_stock_review_draft_order_prepared_for_owner",
-        "review_prepare_quote": "sam_live_stock_review_quote_prepared_for_owner",
-        "review_picture_reply": "sam_live_stock_review_picture_reply_prepared_for_owner",
-    }
-    next_map = {
-        "review_prepare_draft_order": "Use the owner order screen/API route to prepare or update the draft order. This callback does not create or update an order.",
-        "review_prepare_quote": "Use the owner quote prepare route to review the latest quote. This callback does not create, send, or confirm a quote.",
-        "review_picture_reply": "Select or attach the approved farm picture in Chatwoot, then send manually. This callback does not send a customer message or media.",
-    }
+    route_key = {
+        "review_prepare_draft_order": "draft_order",
+        "review_update_draft_order": "send_for_approval",
+        "review_prepare_quote": "quote_prepare",
+        "review_picture_reply": "picture_reply",
+    }.get(action, "")
+    route_packet = routes.get(route_key) if isinstance(routes.get(route_key), dict) else {}
+    status = {
+        "review_no_reply": "sam_live_stock_review_no_reply_recorded",
+        "review_prepare_draft_order": "sam_live_stock_review_prepare_draft_order_ready",
+        "review_update_draft_order": "sam_live_stock_review_update_draft_order_ready",
+        "review_prepare_quote": "sam_live_stock_review_prepare_quote_ready",
+        "review_picture_reply": "sam_live_stock_review_picture_reply_ready",
+    }.get(action, f"sam_live_stock_callback_{action}")
+    recommended_next = {
+        "review_no_reply": "No customer message was sent. Leave the conversation as-is, close it, or continue manually in Chatwoot.",
+        "review_prepare_draft_order": "Use the prepared order route from the owner console/API only after confirming the draft details.",
+        "review_update_draft_order": "Update the existing draft order from the owner console/API only after confirming the latest animal lines.",
+        "review_prepare_quote": "Prepare or verify the latest quote packet from the owner console/API before any customer send.",
+        "review_picture_reply": "Review the picture reply and approved media in Chatwoot before sending anything to the customer.",
+    }.get(action, "Owner review is required before any execution.")
     return {
         "success": True,
-        "status": status_map.get(action, "sam_live_stock_review_prepared_action_ready"),
+        "status": status,
         "action": action,
-        "review_event_id": _clean(review_event_id, 120),
-        "conversation_id": _clean(conversation_id, 100),
-        "prepared_action": packet,
-        "routes": routes,
-        "recommended_next": next_map.get(action, "Continue through the owner-approved backend surface."),
+        "review_event_id": review_event_id,
+        "conversation_id": _clean(event.get("chatwoot_conversation_id"), 100),
+        "prepared_action": {
+            "version": "sam_live_stock_prepared_callback_action_v1",
+            "owner_gate_required": True,
+            "manual_review_required": True,
+            "action": action,
+            "order_id": _clean(packet.get("order_id"), 100),
+            "label": _clean(packet.get("label"), 120),
+            "status": _clean(packet.get("status"), 120),
+            "detail": _clean(packet.get("detail"), 300),
+            "route": route_packet,
+        },
+        "suggested_reply": message if action == "review_picture_reply" else "",
+        "recommended_next": recommended_next,
         **AUTHORITY_FLAGS,
-    }, 200
+    }
 
 
 def _owner_card_flags(event, review, decision):
