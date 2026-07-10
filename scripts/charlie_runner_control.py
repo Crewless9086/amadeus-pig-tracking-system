@@ -12,8 +12,19 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.runner_control import cleanup_runner_environment, runner_status, start_runner, stop_runner
 
 
+def _load_runner_dotenv():
+    candidates = [REPO_ROOT / ".env"]
+    if REPO_ROOT.parent.name == ".worktrees":
+        candidates.append(REPO_ROOT.parent.parent / ".env")
+    for path in candidates:
+        if path.exists():
+            load_dotenv(path, override=False)
+            return str(path)
+    return ""
+
+
 def main():
-    load_dotenv(REPO_ROOT / ".env", override=False)
+    _load_runner_dotenv()
     parser = argparse.ArgumentParser(description="Control the local CHARLIE mission pickup runner.")
     parser.add_argument("action", choices=["status", "start", "stop", "cleanup"])
     args = parser.parse_args()

@@ -20,10 +20,10 @@ class CharlieMissionQualityTests(unittest.TestCase):
         commands = [item["command"] for item in memory["commands"]]
 
         self.assertFalse(memory["pytest_allowed"])
-        self.assertIn(
-            ".\\venv\\Scripts\\python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_improvement_analyst",
-            commands,
-        )
+        self.assertTrue(any(
+            command.endswith("-m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_improvement_analyst")
+            for command in commands
+        ))
         self.assertIn("node --check static\\js\\charlieMissionControl.js", commands)
 
     def test_recovery_packet_includes_known_failures_and_rerun_stage(self):

@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+from modules.charlie.runner_preflight import python_test_command
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -114,13 +116,13 @@ def repo_test_command_memory(changed_files=None):
             commands.append({"command": command, "reason": reason})
 
     if not changed:
-        add(".\\venv\\Scripts\\python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow", "Default CHARLIE CORE focused regression suite.")
+        add(python_test_command("-m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow"), "Default CHARLIE CORE focused regression suite.")
     if any(path.startswith("modules/charlie/") or path.startswith("scripts/charlie_") for path in changed):
-        add(".\\venv\\Scripts\\python.exe -m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_improvement_analyst", "CHARLIE runner, workflow, store, and Analyst regression suite.")
+        add(python_test_command("-m unittest tests.test_charlie_execution_bridge tests.test_charlie_core_workflow tests.test_charlie_mission_store tests.test_charlie_improvement_analyst"), "CHARLIE runner, workflow, store, and Analyst regression suite.")
     if any(path.startswith("modules/pig_weights/") for path in changed):
-        add(".\\venv\\Scripts\\python.exe -m unittest tests.test_pig_weights_bulk_service tests.test_pig_weights_litter_service tests.test_farm_supabase_read_service", "Pig tracking focused service tests.")
+        add(python_test_command("-m unittest tests.test_pig_weights_bulk_service tests.test_pig_weights_litter_service tests.test_farm_supabase_read_service"), "Pig tracking focused service tests.")
     if any(path.startswith("modules/sales/") for path in changed):
-        add(".\\venv\\Scripts\\python.exe -m unittest tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_sam_command_state", "SAM/meat sales focused backend tests.")
+        add(python_test_command("-m unittest tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_sam_command_state"), "SAM/meat sales focused backend tests.")
     for path in changed:
         if path.startswith("static/js/") and path.endswith(".js"):
             win_path = path.replace("/", "\\")
@@ -129,12 +131,12 @@ def repo_test_command_memory(changed_files=None):
             win_path = path.replace("/", "\\")
             add(f"node --check {win_path}", f"JavaScript test syntax check for {path}.")
     if any(path.startswith("templates/") or path.startswith("static/") for path in changed):
-        add(".\\venv\\Scripts\\python.exe -m unittest tests.test_frontend_route_contracts", "Frontend route contract smoke coverage.")
+        add(python_test_command("-m unittest tests.test_frontend_route_contracts"), "Frontend route contract smoke coverage.")
     if not commands:
-        add(".\\venv\\Scripts\\python.exe -m unittest", "Fallback full unittest suite when no focused mapping exists.")
+        add(python_test_command("-m unittest"), "Fallback full unittest suite when no focused mapping exists.")
 
     return {
-        "version": "repo_test_command_memory_v1",
+        "version": "repo_test_command_memory_v2",
         "commands": commands,
         "notes": notes,
         "pytest_allowed": _repo_declares_pytest(),

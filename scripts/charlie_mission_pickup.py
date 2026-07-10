@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
+from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -36,8 +37,19 @@ BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
 
+def _load_runner_dotenv():
+    candidates = [REPO_ROOT / ".env"]
+    if REPO_ROOT.parent.name == ".worktrees":
+        candidates.append(REPO_ROOT.parent.parent / ".env")
+    for path in candidates:
+        if path.exists():
+            load_dotenv(path, override=False)
+            return str(path)
+    return ""
+
+
 def main():
-    load_dotenv(REPO_ROOT / ".env", override=False)
+    _load_runner_dotenv()
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
     parser.add_argument("--limit", type=int, default=10)
@@ -113,6 +125,11 @@ def watch_for_mission(
     interval_seconds = max(5, int(interval_seconds or 60))
     if notify:
         preflight = _notification_preflight()
+        if not preflight["success"]:
+            write_runner_heartbeat(preflight)
+            return preflight, 503
+    if execute_codex:
+        preflight = runner_environment_preflight()
         if not preflight["success"]:
             write_runner_heartbeat(preflight)
             return preflight, 503
@@ -359,6 +376,19 @@ def _retryable_queue_error(result, status_code):
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    loaded, _load_status = get_mission(mission_id) if mission_id else ({}, 400)
+    mission = loaded.get("mission") if isinstance(loaded, dict) and isinstance(loaded.get("mission"), dict) else {}
+    preflight = runner_environment_preflight(require_browser=_mission_requires_browser_preflight(mission))
+    if not preflight["success"]:
+        preflight["mission_id"] = mission_id
+        write_runner_heartbeat(preflight)
+        if notify:
+            _send_blocked_notification(
+                "CHARLIE runner preflight failed",
+                f"Mission {mission_id} was not executed because the local runner environment is not ready. {preflight.get('recommended_action')}",
+                mission_id=mission_id,
+            )
+        return preflight, 503
     result, status_code = run_agent_execution_bridge_v2(
         mission_id=mission_id,
         execute_codex=True,
@@ -376,6 +406,16 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
                 mission_id=mission_id,
             )
     return result, status_code
+
+
+def _mission_requires_browser_preflight(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    haystack = " ".join([
+        str(mission.get("title") or ""),
+        str(mission.get("mission_type") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    return any(term in haystack for term in ("ui", "frontend", "dashboard", "visual", "browser", "screenshot", "family tree"))
 
 
 def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):
@@ -578,7 +618,10 @@ def _execution_lease_packet(mission_id):
 
 
 def _ensure_base_branch():
-    base_branch = str(os.getenv(BASE_BRANCH_ENV) or "main").strip() or "main"
+    configured_base = str(os.getenv(BASE_BRANCH_ENV) or "").strip()
+    default_base = "charlie-runner-clean-base" if REPO_ROOT.parent.name == ".worktrees" else ""
+    base_branch = configured_base or default_base
+    upstream_ref = f"origin/{base_branch}" if "/" not in base_branch else base_branch
 
     def run(command):
         try:
@@ -610,6 +653,12 @@ def _ensure_base_branch():
             "stderr": current["stderr"],
         }
     current_branch = current["stdout"]
+    if not base_branch:
+        return {
+            "success": True,
+            "status": "base_branch_not_required_outside_runner_worktree",
+            "current_branch": current_branch,
+        }
     if current_branch == base_branch:
         return {
             "success": True,
@@ -625,6 +674,21 @@ def _ensure_base_branch():
             "base_branch": base_branch,
             "current_branch": current_branch,
             "stderr": switched["stderr"],
+            "recommended_action": (
+                f"Stop the runner and restore the runner worktree to {base_branch}. "
+                "CHARLIE will not pick another mission from a mission branch."
+            ),
+        }
+    verified = run(["git", "branch", "--show-current"])
+    if verified["returncode"] != 0 or verified["stdout"] != base_branch:
+        return {
+            "success": False,
+            "status": "base_branch_verify_failed",
+            "base_branch": base_branch,
+            "previous_branch": current_branch,
+            "current_branch": verified["stdout"],
+            "stderr": verified["stderr"],
+            "recommended_action": "Runner branch verification failed after checkout; do not pick a mission.",
         }
     return {
         "success": True,
