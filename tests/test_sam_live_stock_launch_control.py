@@ -224,6 +224,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("SAM Live - Charl N", calls[0][2])
         self.assertIn("Intent: buy live stock: 2 weaner", calls[0][2])
         self.assertIn("Stage: quote", calls[0][2])
+        self.assertIn("Open order/quote: ORD-1 - quote prepare ready", calls[0][2])
         self.assertIn("Next: generate quote", calls[0][2])
         self.assertIn("Prepared: Prepare latest quote send - ready for owner quote prepare - ORD-1", calls[0][2])
         self.assertIn("Wants: 2 any weaner, next week, Riversdale", calls[0][2])
@@ -238,6 +239,76 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_review_approve:SAM-LIVE-REVIEW-"))
         self.assertEqual(buttons[1][0]["text"], "Edit in Chatwoot")
         self.assertEqual(buttons[1][0]["url"], "https://app.chatwoot.com/app/accounts/147387/conversations/2401")
+        button_labels = [button["text"] for row in buttons for button in row]
+        callback_values = [button.get("callback_data", "") for row in buttons for button in row]
+        self.assertIn("Keep Human", button_labels)
+        self.assertIn("No Reply Needed", button_labels)
+        self.assertIn("Prepare Quote", button_labels)
+        self.assertIn("Close", button_labels)
+        self.assertTrue(any(value.startswith("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-") for value in callback_values))
+        self.assertTrue(any(value.startswith("sam_live_review_no_reply:SAM-LIVE-REVIEW-") for value in callback_values))
+        self.assertTrue(all(not value or value.startswith("sam_live_") for value in callback_values))
+        self.assertNotIn("n8n", str(calls[0][3]).lower())
+
+    def test_owner_review_packet_v2_buttons_cover_prepared_actions(self):
+        inbound, facts, decision = review_inputs()
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+
+        self.assertEqual(packet["version"], "sam_live_stock_owner_review_packet_v2")
+        self.assertFalse(packet["sends_customer_message"])
+        self.assertFalse(packet["calls_chatwoot"])
+        self.assertFalse(packet["creates_order"])
+        self.assertFalse(packet["reserves_stock"])
+
+        labels = [
+            button["text"]
+            for row in packet["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+        self.assertEqual(labels.count("Approve Send"), 1)
+        self.assertIn("Edit in Chatwoot", labels)
+        self.assertIn("Keep Human", labels)
+        self.assertIn("No Reply Needed", labels)
+        self.assertIn("Prepare Quote", labels)
+        self.assertIn("Close", labels)
+
+        decision["owner_action_packet"]["next_action"] = "prepare_draft_order"
+        decision["owner_action_packet"]["internal_next_action"] = "create_draft"
+        decision["owner_action_packet"]["draft_order_ready"] = True
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+        labels = [
+            button["text"]
+            for row in launch.build_sam_live_stock_owner_review_packet(event)["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("Prepare Draft Order", labels)
+
+        decision["owner_action_packet"]["next_action"] = "update_draft_order"
+        decision["owner_action_packet"]["internal_next_action"] = "sync_lines"
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+        labels = [
+            button["text"]
+            for row in launch.build_sam_live_stock_owner_review_packet(event)["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("Update Draft Order", labels)
+
+        decision["owner_action_packet"]["next_action"] = "prepare_picture_response"
+        decision["next_action"] = "prepare_picture_response"
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+        labels = [
+            button["text"]
+            for row in launch.build_sam_live_stock_owner_review_packet(event)["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("Send Picture Reply", labels)
 
     def test_owner_review_card_surfaces_llm_failure_status(self):
         inbound, facts, decision = review_inputs()
@@ -435,6 +506,60 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["conversation_id"], "2401")
         self.assertEqual(result["suggested_reply"], "Suggested reply")
         self.assertFalse(result["sends_customer_message"])
+
+    def test_owner_review_v2_callbacks_prepare_without_executing_actions(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-ABC123",
+            "chatwoot_conversation_id": "2401",
+            "sam_reply_excerpt": "Suggested reply",
+            "decision_json": {
+                "owner_action_packet": {
+                    "next_action": "prepare_quote",
+                    "order_id": "ORD-1",
+                    "label": "Prepare latest quote send",
+                    "status": "ready_for_owner_quote_prepare",
+                    "detail": "Use order ORD-1 to generate or verify the latest quote before any customer send.",
+                    "routes": {
+                        "quote_prepare": {
+                            "allowed_for_sam_auto": False,
+                            "route": "/api/orders/ORD-1/quote/prepare-send",
+                            "method": "POST",
+                        }
+                    },
+                }
+            },
+        }
+
+        for callback_data, expected_action, expected_status in (
+            ("sam_live_review_no_reply:SAM-LIVE-REVIEW-ABC123", "review_no_reply", "sam_live_stock_review_no_reply_recorded"),
+            ("sam_live_review_draft_order:SAM-LIVE-REVIEW-ABC123", "review_prepare_draft_order", "sam_live_stock_review_prepare_draft_order_ready"),
+            ("sam_live_review_quote:SAM-LIVE-REVIEW-ABC123", "review_prepare_quote", "sam_live_stock_review_prepare_quote_ready"),
+            ("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123", "review_prepare_quote", "sam_live_stock_review_prepare_quote_ready"),
+            ("sam_live_review_prepare_draft:SAM-LIVE-REVIEW-ABC123", "review_prepare_draft_order", "sam_live_stock_review_prepare_draft_order_ready"),
+            ("sam_live_review_update_draft:SAM-LIVE-REVIEW-ABC123", "review_update_draft_order", "sam_live_stock_review_update_draft_order_ready"),
+            ("sam_live_review_picture:SAM-LIVE-REVIEW-ABC123", "review_picture_reply", "sam_live_stock_review_picture_reply_ready"),
+        ):
+            with self.subTest(callback=callback_data):
+                result, status = launch.process_sam_live_stock_owner_callback(
+                    {"callback_data": callback_data},
+                    review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
+                    chatwoot_sender=lambda *args: self.fail("customer send must not execute"),
+                    chatwoot_writer=lambda *args: self.fail("chatwoot write must not execute"),
+                )
+
+                self.assertEqual(status, 200)
+                self.assertTrue(result["success"])
+                self.assertEqual(result["action"], expected_action)
+                self.assertEqual(result["status"], expected_status)
+                self.assertFalse(result["sends_customer_message"])
+                self.assertFalse(result["calls_chatwoot"])
+                self.assertFalse(result["calls_telegram"])
+                self.assertFalse(result["calls_n8n"])
+                self.assertFalse(result["creates_order"])
+                self.assertFalse(result["creates_quote"])
+                self.assertFalse(result["reserves_stock"])
+                self.assertTrue(result["prepared_action"]["owner_gate_required"])
+                self.assertTrue(result["prepared_action"]["manual_review_required"])
 
     def test_live_stock_reservation_plan_is_advisory(self):
         plan = launch.build_live_stock_reservation_plan(
