@@ -836,9 +836,9 @@ function collectMovementDocumentFields(kind) {
   const fields = [
     ["movement_date", "Removal / declaration date", today],
     ["movement_time", "Removal time", ""],
-    ["driver_name", "Driver name", "Dad"],
-    ["driver_id", "Driver ID number", ""],
-    ["driver_phone", "Driver phone", ""],
+    ["driver_name", "Driver name", "Hendrik Anton Niewuendyk"],
+    ["driver_id", "Driver ID number", "6310255087089"],
+    ["driver_phone", "Driver phone", "084-567-9327"],
     ["vehicle_registration", "Vehicle registration", ""],
     ["trailer_registration", "Trailer registration", ""],
     ["destination_address", "Destination / buyer address", ""],
