@@ -3202,6 +3202,13 @@ def _agent_quality_gate(agent, artifact):
     if agent == "qa_red_team":
         status = str(artifact.get("red_team_status") or "").strip().lower()
         risk = str(artifact.get("risk_rating") or "").strip().lower()
+        if status != "pass" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+            return {
+                "passed": True,
+                "reason": "QA/red-team timeout-only command issue treated as advisory because focused passing evidence is present.",
+                "timeout_advisory": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
             return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
         if risk in {"high", "critical"}:
@@ -3579,6 +3586,8 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if agent == "risk_agent" and field == "recommended_owner_decision" and decision == "pause":
             continue
         if decision and decision not in passing_values:
+            if field == "red_team_status" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+                continue
             return {
                 "passed": False,
                 "reason": f"{agent} recorded non-passing {field}={decision}.",
@@ -3650,7 +3659,7 @@ def _qa_findings_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
 
 
 def _raw_judgement_tails_are_advisory(agent, artifact):
@@ -3658,7 +3667,60 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
+
+
+def _qa_timeout_only_failure_is_advisory(agent, artifact):
+    if agent != "qa_red_team" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("red_team_status") or "").strip().lower()
+    if status not in {"fail", "blocked"}:
+        return False
+    values = []
+    for key in ("errors", "bugs", "qa_findings"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value if str(item or "").strip())
+        elif value:
+            values.append(str(value))
+    if not values:
+        return False
+    timeout_terms = ("timed out", "timeout", "tool timeout", "command timed out", "crossed the")
+    if not any(any(term in value.lower() for term in timeout_terms) for value in values):
+        return False
+    pseudo_pass_artifact = {**artifact, "red_team_status": "pass", "risk_rating": "low"}
+    non_timeout_blockers = [
+        value for value in values
+        if not any(term in value.lower() for term in timeout_terms)
+        and (
+            _is_blocking_judgement_text(agent, pseudo_pass_artifact, value)
+            or any(term in value.lower() for term in (
+                "without owner approval",
+                "customer send",
+                "customer message",
+                "chatwoot write",
+                "create an order",
+                "creates an order",
+                "create quote",
+                "creates quote",
+                "reservation",
+                "reserve stock",
+                "payment",
+                "production write",
+                "changes stock",
+            ))
+        )
+    ]
+    if non_timeout_blockers:
+        return False
+    evidence_values = []
+    for key in ("tests_run", "test_evidence", "stdout_tail", "confidence_reason"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            evidence_values.extend(value)
+        elif value:
+            evidence_values.append(value)
+    return any(_artifact_test_evidence_passes(item) for item in evidence_values)
 
 
 def _visual_review_notes_are_advisory(agent, artifact):

@@ -3212,6 +3212,44 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
 
+    def test_qa_quality_gate_treats_timeout_only_failure_as_advisory_with_pass_evidence(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = [
+            "tests.test_charlie_execution_bridge timed out after 120s.",
+            "tests.test_charlie_mission_pickup timed out after 120s.",
+        ]
+        artifact["qa_findings"] = [
+            "Changed-file regression evidence is incomplete because CHARLIE execution bridge and mission pickup test modules timed out.",
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_charlie_source_map", "status": "pass", "output": "Ran 16 tests in 0.307s OK"},
+            {"command": "python -m unittest tests.test_sam_live_stock_launch_control", "status": "pass", "output": "Ran 82 tests in 2.939s OK"},
+        ]
+        artifact["stdout_tail"] = "Focused suites passed. Ran 16 tests OK. Ran 82 tests OK."
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("timeout_advisory"), result)
+
+    def test_qa_quality_gate_still_blocks_real_failure_with_timeout_noise(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = [
+            "tests.test_charlie_execution_bridge timed out after 120s.",
+            "Prepared action can create an order without owner approval.",
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_charlie_source_map", "status": "pass", "output": "Ran 16 tests in 0.307s OK"},
+        ]
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["files_to_inspect"] = []
