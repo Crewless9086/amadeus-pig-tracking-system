@@ -288,6 +288,16 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         ]
         self.assertIn("Prepare Draft Order", labels)
 
+        decision["owner_action_packet"]["next_action"] = "update_draft_order"
+        decision["owner_action_packet"]["internal_next_action"] = "sync_lines"
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+        labels = [
+            button["text"]
+            for row in launch.build_sam_live_stock_owner_review_packet(event)["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+        self.assertIn("Update Draft Order", labels)
+
         decision["owner_action_packet"]["next_action"] = "prepare_picture_response"
         decision["next_action"] = "prepare_picture_response"
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
