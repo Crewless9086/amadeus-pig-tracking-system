@@ -819,6 +819,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ("Payment is confirmed.", "confirms_payment"),
             ("These pigs are for sale now.", "unsafe_sales_or_discount_language"),
             ("I can send our location.", "shares_or_invites_exact_location"),
+            ("We will deliver them tomorrow.", "promises_delivery"),
         ]
 
         for reply, expected in cases:
@@ -835,6 +836,35 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 )
 
                 self.assertIn(expected, review["blocked_reasons"])
+
+    def test_scanner_allows_delivery_estimate_but_blocks_delivery_promise(self):
+        estimate_review = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            {"content": "Can you deliver?"},
+            {"category": "Weaner", "quantity": 2, "transport_expectation": "delivery_requested"},
+            {
+                "sales_lane": "live_stock_sales",
+                "suggested_reply_text": (
+                    "Collection is still the first option, but I can note the delivery request for owner review. "
+                    "Estimated delivery to Albertinia at R20/km one way (30 km): R600. "
+                    "The owner must confirm delivery availability before anything is promised."
+                ),
+                "missing_fields": [],
+                "blockers": [],
+            },
+        )
+        promise_review = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            {"content": "Can you deliver?"},
+            {"category": "Weaner", "quantity": 2, "transport_expectation": "delivery_requested"},
+            {
+                "sales_lane": "live_stock_sales",
+                "suggested_reply_text": "We will deliver them tomorrow.",
+                "missing_fields": [],
+                "blockers": [],
+            },
+        )
+
+        self.assertNotIn("promises_delivery", estimate_review["blocked_reasons"])
+        self.assertIn("promises_delivery", promise_review["blocked_reasons"])
 
     def test_safe_reply_draft_is_fact_aware_when_nothing_missing(self):
         facts = {
@@ -1204,6 +1234,87 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(decision["sends_customer_message"])
         self.assertFalse(decision["creates_order"])
         self.assertFalse(decision["reserves_stock"])
+        self.assertFalse(decision["delivery_estimate_packet"]["delivery_requested"])
+        self.assertNotIn("delivery", reply.lower())
+
+    def test_delivery_question_with_known_km_drafts_owner_review_estimate(self):
+        def intake_loader(_conversation_id):
+            return {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "collection_time_text": "next week",
+                    "quote_requested": False,
+                    "order_commitment": False,
+                },
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            }
+
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "status": "ok",
+                "sale_category": "Weaner",
+                "weight_band": "10_to_14_Kg",
+                "unit_price": 500,
+                "currency": "ZAR",
+                "source": "test",
+            },
+        ):
+            result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="Can you deliver to Albertinia? It is 30 km one way."),
+                intake_context_loader=intake_loader,
+                availability_loader=lambda: [],
+            )
+
+        decision = result["sam_decision"]
+        packet = decision["delivery_estimate_packet"]
+        reply = decision["suggested_reply_text"]
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(packet["delivery_requested"])
+        self.assertEqual(packet["destination"], "Albertinia")
+        self.assertEqual(packet["one_way_km"], 30)
+        self.assertEqual(packet["delivery_fee_estimate"], 600)
+        self.assertEqual(packet["total_with_livestock_and_delivery"], 1600)
+        self.assertIn("Collection is still the first option", reply)
+        self.assertIn("R20/km one way (30 km): R600", reply)
+        self.assertIn("Livestock plus delivery estimate: R1,600", reply)
+        self.assertFalse(decision["sends_customer_message"])
+
+    def test_delivery_question_without_destination_asks_one_useful_question(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you deliver the pigs?"),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {},
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Any",
+                    "status": "active",
+                }],
+            },
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(decision["delivery_estimate_packet"]["delivery_requested"])
+        self.assertIn("delivery_destination", decision["missing_fields"])
+        self.assertEqual(reply, "Where would delivery need to go?")
+        self.assertEqual(reply.count("?"), 1)
 
     def test_intake_write_blocks_wrong_lane_and_breeding_stock(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="I want pork chops."))

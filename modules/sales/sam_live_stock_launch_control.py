@@ -436,6 +436,12 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Wants: {_owner_card_fact_summary(facts)}",
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
+        f"Delivery requested: {_owner_card_delivery_requested(decision)}",
+        f"Delivery destination: {_owner_card_delivery_destination(decision)}",
+        f"One-way km: {_owner_card_delivery_km(decision)}",
+        f"Delivery estimate: {_owner_card_delivery_fee(decision)}",
+        f"Total incl delivery: {_owner_card_delivery_total(decision)}",
+        f"Owner override: {_owner_card_delivery_warning(decision)}",
         f"Missing: {_owner_card_missing_summary(decision)}",
         f"Reply: {_owner_card_reply_source_summary(decision)}",
     ]
@@ -1068,6 +1074,45 @@ def _owner_card_price_summary(decision):
     return " - ".join(parts) if parts else "not resolved"
 
 
+def _owner_card_delivery_packet(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    return decision.get("delivery_estimate_packet") if isinstance(decision.get("delivery_estimate_packet"), dict) else {}
+
+
+def _owner_card_delivery_requested(decision):
+    packet = _owner_card_delivery_packet(decision)
+    return "yes" if packet.get("delivery_requested") else "no"
+
+
+def _owner_card_delivery_destination(decision):
+    packet = _owner_card_delivery_packet(decision)
+    return _clean(packet.get("destination"), 120) or "not captured"
+
+
+def _owner_card_delivery_km(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("one_way_km")
+    return f"{_money(value)} km" if value not in ("", None) else "not captured"
+
+
+def _owner_card_delivery_fee(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("delivery_fee_estimate")
+    return f"R{_money(value)}" if value not in ("", None) else "not estimated"
+
+
+def _owner_card_delivery_total(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("total_with_livestock_and_delivery")
+    return f"R{_money(value)}" if value not in ("", None) else "not estimated"
+
+
+def _owner_card_delivery_warning(decision):
+    packet = _owner_card_delivery_packet(decision)
+    warning = _clean(packet.get("owner_override_warning"), 180)
+    return warning if warning else "owner must confirm any delivery estimate before customer send"
+
+
 def _owner_card_open_order_quote_summary(decision):
     decision = decision if isinstance(decision, dict) else {}
     packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
@@ -1215,6 +1260,9 @@ def _owner_card_flags(event, review, decision):
         flags.append("reservation request")
     if facts.get("breeding_interest") or "breeding_or_replacement_stock_owner_gate" in blockers:
         flags.append("breeding/replacement")
+    delivery = decision.get("delivery_estimate_packet") if isinstance(decision.get("delivery_estimate_packet"), dict) else {}
+    if delivery.get("delivery_requested"):
+        flags.append("delivery estimate owner review")
     if review.get("escalation_required"):
         flags.append("needs human check")
     llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}

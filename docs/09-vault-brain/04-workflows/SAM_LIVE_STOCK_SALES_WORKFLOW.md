@@ -33,6 +33,21 @@ Mixed meat/live-stock language must clarify before proceeding. Example: `I want 
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
 
+## Requested Delivery Planning
+
+SAM must stay collection-first. Normal live-stock stock, price, and availability replies must not advertise delivery or transport.
+
+If the customer explicitly asks about delivery, transport, drop-off, or being far away, SAM may capture delivery planning facts for owner review:
+
+- destination town, address, or location;
+- one-way kilometres from Riversdale to that destination;
+- delivery fee estimate at R20 per one-way kilometre;
+- total estimate combining livestock plus delivery when livestock price is available.
+
+If the delivery destination is missing, SAM asks only where delivery would need to go. If the destination is known but one-way kilometres are missing, SAM asks only for the one-way kilometre distance. Delivery wording must remain an estimate and must not promise driver availability, timing, final delivery approval, or final total.
+
+Owner-review packets for delivery requests must surface: delivery requested, destination, one-way km, delivery fee estimate, total with livestock plus delivery, and an owner override warning. Owner corrections to delivery estimates or wording should be preserved as learning evidence for future SAM review.
+
 ## Required Facts
 
 Before a live-stock draft order can be prepared:

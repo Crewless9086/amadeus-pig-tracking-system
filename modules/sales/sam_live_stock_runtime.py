@@ -43,6 +43,7 @@ DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
 
 RUNTIME_VERSION = "sam_live_stock_read_only_v1"
+LIVE_STOCK_DELIVERY_RATE_PER_ONE_WAY_KM = 20
 
 SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS = {
     "answer_general_info",
@@ -292,6 +293,8 @@ def extract_live_stock_facts(message, inbound=None):
         "timing": _extract_timing(text),
         "location": _extract_location(text),
         "transport_expectation": _extract_transport(text),
+        "delivery_destination": _extract_delivery_destination(text),
+        "delivery_one_way_km": _extract_one_way_km(text),
         "payment_method": _extract_payment(text),
         "quote_requested": _asks_quote(text),
         "reservation_requested": _asks_reservation(text),
@@ -339,6 +342,8 @@ def merge_prior_live_stock_context(facts, prior_context):
         "timing",
         "location",
         "transport_expectation",
+        "delivery_destination",
+        "delivery_one_way_km",
         "payment_method",
         "quote_requested",
         "order_commitment",
@@ -669,6 +674,9 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     legacy_missing = _missing_live_stock_fields(facts)
     plan_missing = conversation_plan.get("missing_fields") if isinstance(conversation_plan.get("missing_fields"), list) else []
     missing = plan_missing if _planner_has_signal(intake_context, facts) else legacy_missing
+    delivery_missing = _missing_delivery_fields(facts)
+    if delivery_missing:
+        missing = [*delivery_missing, *(field for field in missing if field not in delivery_missing)]
     blockers = []
     if route["lane"] != LANE_LIVE_STOCK:
         blockers.append(f"lane_not_live_stock:{route['lane']}")
@@ -683,6 +691,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    delivery_estimate_packet = build_live_stock_delivery_estimate_packet(facts, price_answer_packet)
     durable_action = _durable_live_stock_next_action(
         inbound,
         facts,
@@ -704,7 +713,16 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         environ or {},
         owner_example_loader=owner_example_loader,
     )
-    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet, conversation_plan)
+    fallback_reply = _safe_reply_draft(
+        facts,
+        route,
+        missing,
+        availability,
+        blockers,
+        price_answer_packet,
+        conversation_plan,
+        delivery_estimate_packet,
+    )
     llm_draft = _build_llm_reply_draft_if_enabled(
         inbound,
         facts,
@@ -750,6 +768,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "delivery_estimate_packet": delivery_estimate_packet,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
         "draft_order_packet": draft_packet,
@@ -1209,6 +1228,34 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
     }
 
 
+def build_live_stock_delivery_estimate_packet(facts, price_answer_packet=None):
+    facts = facts if isinstance(facts, dict) else {}
+    price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
+    requested = _delivery_requested(facts)
+    destination = _clean(facts.get("delivery_destination") or facts.get("location"), 160)
+    one_way_km = _number_value(facts.get("delivery_one_way_km"))
+    fee = round(one_way_km * LIVE_STOCK_DELIVERY_RATE_PER_ONE_WAY_KM, 2) if requested and one_way_km > 0 else ""
+    livestock_total = _number_value(price_answer_packet.get("estimated_total"))
+    total_with_delivery = round(livestock_total + fee, 2) if fee not in ("", None) and livestock_total > 0 else ""
+    missing = _missing_delivery_fields(facts)
+    return {
+        "version": "sam_live_stock_delivery_estimate_packet_v1",
+        "delivery_requested": requested,
+        "destination": destination,
+        "one_way_km": one_way_km if one_way_km > 0 else "",
+        "rate_per_one_way_km": LIVE_STOCK_DELIVERY_RATE_PER_ONE_WAY_KM,
+        "delivery_fee_estimate": fee,
+        "livestock_total": livestock_total if livestock_total > 0 else "",
+        "total_with_livestock_and_delivery": total_with_delivery,
+        "can_estimate_delivery": bool(requested and destination and one_way_km > 0),
+        "missing_fields": missing,
+        "owner_review_required": True,
+        "customer_send_allowed": False,
+        "owner_override_warning": "Delivery is an owner-reviewed estimate only. Do not promise delivery, driver availability, timing, or final total without owner approval.",
+        **_authority_flags(),
+    }
+
+
 def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=None, draft_order_creator=None):
     source = environ if environ is not None else os.environ
     if not _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)):
@@ -1340,11 +1387,17 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
             (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
             (r"\b(for sale|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
             (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
+            (r"\b(we will|we can|we'll|can)\s+deliver\b|\bdelivery\b.{0,30}\b(confirmed|guaranteed|booked)\b", "promises_delivery"),
         ]
         for pattern, label in unsafe_reply_patterns:
             if re.search(pattern, lowered):
                 if label == "implies_reservation" and re.search(
                     r"\b(nothing|not|no animals?|cannot|can't|can not)\b.{0,30}\b(reserved|held|booked)\b",
+                    lowered,
+                ):
+                    continue
+                if label == "promises_delivery" and re.search(
+                    r"\b(estimate|estimated|owner review|owner must confirm|must confirm|not confirmed|collection is still the first option)\b",
                     lowered,
                 ):
                     continue
@@ -1615,8 +1668,18 @@ def build_sam_live_stock_go_live_checklist(environ=None):
         }
 
 
-def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None, conversation_plan=None):
+def _safe_reply_draft(
+    facts,
+    route,
+    missing,
+    availability,
+    blockers,
+    price_answer_packet=None,
+    conversation_plan=None,
+    delivery_estimate_packet=None,
+):
     conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
+    delivery_estimate_packet = delivery_estimate_packet if isinstance(delivery_estimate_packet, dict) else {}
     if route["lane"] != LANE_LIVE_STOCK:
         if route["lane"] == "owner_handoff" and _payment_or_pop_interest(facts):
             return (
@@ -1628,6 +1691,9 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
+    delivery_reply = _delivery_estimate_reply(facts, delivery_estimate_packet, price_answer_packet)
+    if delivery_reply and not any(field in (missing or []) for field in ("delivery_destination", "delivery_one_way_km")):
+        return delivery_reply
     action_reply = _reply_for_next_action(facts, conversation_plan, price_answer_packet)
     if action_reply:
         return action_reply
@@ -1644,6 +1710,31 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         if fact_reply:
             return fact_reply
     return "I have the main live-pig details. I will check the current list before anything is promised."
+
+
+def _delivery_estimate_reply(facts, delivery_packet, price_packet=None):
+    facts = facts if isinstance(facts, dict) else {}
+    delivery_packet = delivery_packet if isinstance(delivery_packet, dict) else {}
+    price_packet = price_packet if isinstance(price_packet, dict) else {}
+    if not delivery_packet.get("delivery_requested"):
+        return ""
+    if not delivery_packet.get("can_estimate_delivery"):
+        return ""
+    destination = _clean(delivery_packet.get("destination"), 120)
+    one_way_km = delivery_packet.get("one_way_km")
+    delivery_fee = _money_label(delivery_packet.get("delivery_fee_estimate"))
+    livestock_total = delivery_packet.get("livestock_total")
+    total_with_delivery = delivery_packet.get("total_with_livestock_and_delivery")
+    lines = [
+        "Collection is still the first option, but I can note the delivery request for owner review.",
+        f"Estimated delivery to {destination} at R{LIVE_STOCK_DELIVERY_RATE_PER_ONE_WAY_KM}/km one way ({one_way_km} km): {delivery_fee}.",
+    ]
+    if price_packet.get("can_answer_price") and livestock_total not in ("", None, 0):
+        lines.append(f"Livestock estimate: {_money_label(livestock_total)}.")
+    if total_with_delivery not in ("", None, 0):
+        lines.append(f"Livestock plus delivery estimate: {_money_label(total_with_delivery)}.")
+    lines.append("The owner must confirm the animals, delivery availability, and final total before anything is promised.")
+    return " ".join(lines)
 
 
 def _reply_for_next_action(facts, plan, packet):
@@ -2099,6 +2190,14 @@ def _quantity_number(value):
     return int(number) if number.is_integer() else number
 
 
+def _number_value(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0
+    return int(number) if number.is_integer() else number
+
+
 def _quantity_label(value):
     number = _quantity_number(value)
     return str(int(number)) if isinstance(number, int) or float(number).is_integer() else str(number)
@@ -2157,6 +2256,8 @@ def _question_for_missing(field):
         "sex": "Do you need males, females, or does the sex not matter if the size is right?",
         "timing": "When would you want them?",
         "location": "Where would they need to go?",
+        "delivery_destination": "Where would delivery need to go?",
+        "delivery_one_way_km": "How many one-way kilometres is it from Riversdale to that delivery point?",
     }.get(field, "What detail should I note for the farm?")
 
 
@@ -2166,6 +2267,21 @@ def _missing_live_stock_fields(facts):
         if _blank(facts.get(key)):
             missing.append(key)
     return missing
+
+
+def _missing_delivery_fields(facts):
+    if not _delivery_requested(facts):
+        return []
+    if _blank(facts.get("delivery_destination")) and _blank(facts.get("location")):
+        return ["delivery_destination"]
+    if _blank(facts.get("delivery_one_way_km")):
+        return ["delivery_one_way_km"]
+    return []
+
+
+def _delivery_requested(facts):
+    facts = facts if isinstance(facts, dict) else {}
+    return str(facts.get("transport_expectation") or "").strip().lower() == "delivery_requested"
 
 
 def _prior_context_from_intake(intake):
@@ -2317,10 +2433,48 @@ def _extract_location(text):
 
 
 def _extract_transport(text):
-    if _has_any(text, ("deliver", "delivery", "bring them", "drop off")):
+    if _has_any(text, ("deliver", "delivery", "transport", "bring them", "drop off", "far away", "too far", "how far")):
         return "delivery_requested"
     if _has_any(text, ("collect", "collection", "pick up", "pickup", "afhaal")):
         return "collection_requested"
+    return ""
+
+
+def _extract_delivery_destination(text):
+    if _extract_transport(text) != "delivery_requested":
+        return ""
+    known = _extract_location(text)
+    if known:
+        return known
+    match = re.search(
+        r"\b(?:deliver(?:y)?|transport|bring them|drop off|drop them|send them)\s+(?:to|at|in)\s+([a-z0-9][a-z0-9\s.,-]{2,80})",
+        text,
+    )
+    if not match:
+        match = re.search(r"\b(?:to|in|at)\s+([a-z][a-z\s-]{2,60})\s+(?:is|it is|it's)?\s*\d{1,4}\s*km\b", text)
+    if not match:
+        return ""
+    destination = re.split(
+        r"\b(?:one way|return|round trip|km|kilometres|kilometers|from|for|next week|today|tomorrow|cash|eft)\b",
+        match.group(1),
+        maxsplit=1,
+    )[0]
+    return _sentence_case(_clean(destination.strip(" .,;-"), 120))
+
+
+def _extract_one_way_km(text):
+    patterns = [
+        r"\bone[-\s]?way\s*(?:is|=|:)?\s*(\d{1,4}(?:\.\d+)?)\s*(?:km|kilometres|kilometers)\b",
+        r"\b(\d{1,4}(?:\.\d+)?)\s*(?:km|kilometres|kilometers)\s*(?:one[-\s]?way|from riversdale)\b",
+        r"\b(?:distance|far)\s*(?:is|=|:)?\s*(\d{1,4}(?:\.\d+)?)\s*(?:km|kilometres|kilometers)\b",
+        r"\b(\d{1,4}(?:\.\d+)?)\s*(?:km|kilometres|kilometers)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = _number_value(match.group(1))
+            if value > 0:
+                return value
     return ""
 
 
@@ -2704,6 +2858,8 @@ def _intake_notes(facts, decision):
         f"lane_confidence={facts.get('lane_confidence', '')}",
         f"original_location={facts.get('location') or ''}",
         f"transport={facts.get('transport_expectation') or ''}",
+        f"delivery_destination={facts.get('delivery_destination') or ''}",
+        f"delivery_one_way_km={facts.get('delivery_one_way_km') or ''}",
         f"missing={','.join(decision.get('missing_fields') or []) if isinstance(decision.get('missing_fields'), list) else ''}",
     ]
     return _clean("; ".join(piece for piece in pieces if piece), 600)
