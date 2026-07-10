@@ -1387,7 +1387,8 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
             (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
             (r"\b(for sale|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
             (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
-            (r"\b(we will|we can|we'll|can)\s+deliver\b|\bdelivery\b.{0,30}\b(confirmed|guaranteed|booked)\b", "promises_delivery"),
+            (r"\b(we will|we can|we'll|can)\s+deliver\b", "promises_delivery"),
+            (r"\bdelivery\b.{0,30}\b(confirmed|guaranteed|booked)\b", "promises_delivery_status"),
         ]
         for pattern, label in unsafe_reply_patterns:
             if re.search(pattern, lowered):
@@ -1396,12 +1397,12 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
                     lowered,
                 ):
                     continue
-                if label == "promises_delivery" and re.search(
+                if label == "promises_delivery_status" and re.search(
                     r"\b(estimate|estimated|owner review|owner must confirm|must confirm|not confirmed|collection is still the first option)\b",
                     lowered,
                 ):
                     continue
-                blocked.append(label)
+                blocked.append("promises_delivery" if label == "promises_delivery_status" else label)
                 score -= 35
         if reply.count("?") > 1:
             issues.append("asks_more_than_one_question")

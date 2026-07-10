@@ -866,6 +866,24 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("promises_delivery", estimate_review["blocked_reasons"])
         self.assertIn("promises_delivery", promise_review["blocked_reasons"])
 
+    def test_scanner_blocks_delivery_promise_even_with_estimate_and_owner_confirm(self):
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            {"content": "Can you deliver to Albertinia?"},
+            {"category": "Weaner", "quantity": 2, "transport_expectation": "delivery_requested"},
+            {
+                "sales_lane": "live_stock_sales",
+                "suggested_reply_text": (
+                    "We can deliver them to Albertinia, estimated delivery is R600, "
+                    "owner must confirm final total."
+                ),
+                "missing_fields": [],
+                "blockers": [],
+            },
+        )
+
+        self.assertFalse(review["safe_to_send"])
+        self.assertIn("promises_delivery", review["blocked_reasons"])
+
     def test_safe_reply_draft_is_fact_aware_when_nothing_missing(self):
         facts = {
             "customer_name": "michaels",
