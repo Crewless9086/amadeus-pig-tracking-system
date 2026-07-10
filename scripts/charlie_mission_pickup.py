@@ -618,8 +618,9 @@ def _execution_lease_packet(mission_id):
 
 
 def _ensure_base_branch():
-    base_branch = str(os.getenv(BASE_BRANCH_ENV) or "main").strip() or "main"
-    upstream_ref = f"origin/{base_branch}" if "/" not in base_branch else base_branch
+    configured_base = str(os.getenv(BASE_BRANCH_ENV) or "").strip()
+    default_base = "charlie-runner-clean-base" if REPO_ROOT.parent.name == ".worktrees" else ""
+    base_branch = configured_base or default_base
 
     def run(command):
         try:
@@ -651,6 +652,12 @@ def _ensure_base_branch():
             "stderr": current["stderr"],
         }
     current_branch = current["stdout"]
+    if not base_branch:
+        return {
+            "success": True,
+            "status": "base_branch_not_required_outside_runner_worktree",
+            "current_branch": current_branch,
+        }
     if current_branch == base_branch:
         return {
             "success": True,
@@ -658,36 +665,29 @@ def _ensure_base_branch():
             "base_branch": base_branch,
             "current_branch": current_branch,
         }
-    upstream = run(["git", "rev-parse", "--verify", upstream_ref])
-    if upstream["returncode"] == 0:
-        contains_upstream = run(["git", "merge-base", "--is-ancestor", upstream_ref, "HEAD"])
-        if contains_upstream["returncode"] == 0:
-            return {
-                "success": True,
-                "status": "base_branch_upstream_contained_by_current_branch",
-                "base_branch": base_branch,
-                "upstream_ref": upstream_ref,
-                "current_branch": current_branch,
-            }
     switched = run(["git", "switch", base_branch])
     if switched["returncode"] != 0:
-        if upstream["returncode"] == 0:
-            contains_upstream = run(["git", "merge-base", "--is-ancestor", upstream_ref, "HEAD"])
-            if contains_upstream["returncode"] == 0:
-                return {
-                    "success": True,
-                    "status": "base_branch_switch_skipped_upstream_contained",
-                    "base_branch": base_branch,
-                    "upstream_ref": upstream_ref,
-                    "current_branch": current_branch,
-                    "switch_stderr": switched["stderr"],
-                }
         return {
             "success": False,
             "status": "base_branch_switch_failed",
             "base_branch": base_branch,
             "current_branch": current_branch,
             "stderr": switched["stderr"],
+            "recommended_action": (
+                f"Stop the runner and restore the runner worktree to {base_branch}. "
+                "CHARLIE will not pick another mission from a mission branch."
+            ),
+        }
+    verified = run(["git", "branch", "--show-current"])
+    if verified["returncode"] != 0 or verified["stdout"] != base_branch:
+        return {
+            "success": False,
+            "status": "base_branch_verify_failed",
+            "base_branch": base_branch,
+            "previous_branch": current_branch,
+            "current_branch": verified["stdout"],
+            "stderr": verified["stderr"],
+            "recommended_action": "Runner branch verification failed after checkout; do not pick a mission.",
         }
     return {
         "success": True,

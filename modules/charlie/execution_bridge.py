@@ -3468,6 +3468,13 @@ def _implementation_source_quality_gate(agent, artifact):
             return {
                 "passed": False,
                 "reason": f"{agent} did not cite any matched implementation source-map path.",
+                "required_inspection_paths_sample": sorted(required)[:12],
+                "cited_paths_sample": sorted(set(values))[:12],
+                "matched_source_sections": [
+                    section.get("key") or section.get("label")
+                    for section in source_map.get("matched_sections", [])
+                    if isinstance(section, dict)
+                ],
             }
     return {"passed": True, "reason": "implementation_source_gate_passed"}
 
@@ -4437,7 +4444,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         mission=mission,
     )
     if _visual_review_blocks_owner_review(visual_review):
-        blocked_reason = visual_review.get("summary") or "UI mission visual review media was not captured."
+        blocked_reason = _visual_review_block_reason(visual_review)
         block_artifact = {
             **reviewer,
             "summary": blocked_reason,
@@ -4718,6 +4725,32 @@ def _visual_review_blocks_owner_review(visual_review):
     if capture.get("capture_source") != "local_preview":
         return True
     return not _visual_review_has_required_viewport_media(visual_review)
+
+
+def _visual_review_block_reason(visual_review):
+    visual_review = visual_review if isinstance(visual_review, dict) else {}
+    summary = str(visual_review.get("summary") or "UI mission visual review media was not captured.").strip()
+    capture = visual_review.get("capture") if isinstance(visual_review.get("capture"), dict) else {}
+    local_preview = visual_review.get("local_preview") if isinstance(visual_review.get("local_preview"), dict) else {}
+    failed = []
+    for item in capture.get("captures") or []:
+        if isinstance(item, dict) and not item.get("captured"):
+            failed.append({
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "command": item.get("command"),
+                "stderr_tail": item.get("stderr_tail"),
+                "error_type": item.get("error_type"),
+            })
+    detail = {
+        "preview_url": local_preview.get("url") or capture.get("url") or "",
+        "capture_url": capture.get("capture_url") or "",
+        "fallback_reason": capture.get("fallback_reason") or "",
+        "capture_source": capture.get("capture_source") or "",
+        "capture_url_recovery": capture.get("capture_url_recovery") or {},
+        "failed_viewports": failed[:3],
+    }
+    return f"{summary} Visual capture diagnostics: {json.dumps(detail, ensure_ascii=False, default=str)[:1200]}"
 
 
 def _visual_review_has_required_viewport_media(visual_review):

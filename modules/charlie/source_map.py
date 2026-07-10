@@ -405,6 +405,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "finishers",
             "sell pigs",
             "pigs ready to be sold",
+            "telegram control card",
+            "owner surface",
+            "process_sam_live_stock_owner_callback",
         ],
         "vault_docs": [
             "docs/09-vault-brain/02-agents/sales/SAM.md",
@@ -634,7 +637,7 @@ def implementation_source_packet(mission=None, limit_sections=6):
         score, reasons = _score_entry(key, query, entry)
         if score:
             matched.append(_entry_packet(key, entry, score, reasons))
-    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])))
+    matched = _filter_matched_sections(sorted(matched, key=lambda item: (-item["score"], item["key"])), query)
     matched = matched[: max(1, int(limit_sections or 6))]
     return {
         "version": SOURCE_MAP_VERSION,
@@ -651,10 +654,17 @@ def implementation_source_packet(mission=None, limit_sections=6):
     }
 
 
-def _filter_matched_sections(matched):
+def _filter_matched_sections(matched, query=""):
     if not matched:
         return []
-    return [section for section in matched if int(section.get("score") or 0) >= 30]
+    filtered = [section for section in matched if int(section.get("score") or 0) >= 30]
+    lower = str(query or "").lower()
+    keys = {section.get("key") for section in filtered}
+    if "sam_live_stock_sales" in keys and not _meat_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "sam_meat_sales"]
+    if "sam_meat_sales" in keys and not _live_stock_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "sam_live_stock_sales"]
+    return filtered
 
 
 def validate_implementation_inspection(artifact, source_packet):
@@ -739,6 +749,44 @@ def _charlie_dashboard_context(lower):
         "workflow ui",
     )
     return any(term in lower for term in dashboard_terms)
+
+
+def _live_stock_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    live_terms = (
+        "sam live stock",
+        "sam livestock",
+        "live stock",
+        "livestock",
+        "live pig",
+        "live pigs",
+        "piglet",
+        "piglets",
+        "weaner",
+        "weaners",
+        "grower pig",
+        "grower pigs",
+        "telegram control card",
+    )
+    return any(term in normalized for term in live_terms)
+
+
+def _meat_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    meat_terms = (
+        "meat",
+        "pork",
+        "carcass",
+        "half carcass",
+        "custom cut",
+        "butcher",
+        "slaughter",
+        "abattoir",
+        "set a",
+        "meat lead",
+        "meat sales",
+    )
+    return any(term in normalized for term in meat_terms)
 
 
 def _keyword_is_negated(lower, keyword):
