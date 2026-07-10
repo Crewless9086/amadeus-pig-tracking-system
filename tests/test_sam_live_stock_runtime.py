@@ -575,6 +575,68 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["reserves_stock"])
 
+    def test_existing_draft_order_partial_sync_blocks_quote_packet_prepare(self):
+        creates = []
+        syncs = []
+        writes = []
+
+        def syncer(order_id, sync_data):
+            syncs.append((order_id, sync_data))
+            return {
+                "success": True,
+                "action": "sync_order_lines_from_request",
+                "order_id": order_id,
+                "complete_fulfillment": False,
+                "partial_fulfillment": True,
+                "results": [{"request_item_key": "live_stock_primary", "match_status": "partial_match"}],
+            }
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Please send me the quote for 3 female weaners around 10 to 15kg in Riversdale."),
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "conversation_id": "1478",
+                "draft_order_id": "ORD-EXISTING-PARTIAL",
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "payment_method": "Cash",
+                    "order_commitment": True,
+                    "quote_requested": True,
+                },
+                "items": [{
+                    "item_key": "item_1",
+                    "quantity": 3,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 12},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 13},
+                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 14},
+            ],
+            draft_order_creator=lambda order_data, sync_data: creates.append((order_data, sync_data)),
+            draft_order_syncer=syncer,
+            intake_writer=lambda cleaned: writes.append(cleaned) or {"success": True, "draft_order_id": cleaned["patch"]["draft_order_id"]},
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(creates, [])
+        self.assertEqual(len(syncs), 1)
+        self.assertEqual(writes, [])
+        self.assertEqual(decision["draft_order"]["status"], "sam_live_stock_draft_order_sync_stale_stock")
+        self.assertFalse(decision["draft_order"]["success"])
+        self.assertIn("sam_live_stock_draft_order_sync_stale_stock", decision["blockers"])
+        self.assertNotEqual(decision["owner_action_packet"]["status"], "ready_for_owner_quote_prepare")
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["reserves_stock"])
+
     def test_llm_reply_draft_is_used_when_enabled_and_configured(self):
         calls = []
 
@@ -1342,6 +1404,52 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(len(syncs), 1)
         self.assertEqual(syncs[0][0], "ORD-EXISTING-2")
         self.assertEqual(syncs[0][1]["requested_items"][0]["request_item_key"], "live_stock_primary")
+
+    def test_existing_draft_order_partial_sync_is_stale_state_failure(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(
+            [
+                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner"},
+            ],
+            facts,
+        )
+        match = sam_live_stock_runtime.build_live_stock_match_packet(facts, availability)
+        packet = sam_live_stock_runtime.build_live_stock_draft_order_packet(inbound, facts, match)
+        creates = []
+        syncs = []
+
+        result = sam_live_stock_runtime.create_live_stock_draft_order_if_enabled(
+            inbound,
+            facts,
+            {
+                "sales_lane": "live_stock_sales",
+                "draft_order_packet": packet,
+                "match_packet": match,
+                "conversation_plan": {"order_state": {"draft_order_id": "ORD-EXISTING-PARTIAL"}},
+            },
+            environ={"SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED": "1"},
+            draft_order_creator=lambda order_data, sync_data: creates.append((order_data, sync_data)),
+            draft_order_syncer=lambda order_id, sync_data: syncs.append((order_id, sync_data)) or {
+                "success": True,
+                "order_id": order_id,
+                "complete_fulfillment": False,
+                "partial_fulfillment": True,
+                "results": [{"request_item_key": "live_stock_primary", "match_status": "partial_match"}],
+            },
+        )
+
+        self.assertTrue(result["attempted"])
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "sam_live_stock_draft_order_sync_stale_stock")
+        self.assertEqual(result["reused_draft_order_id"], "ORD-EXISTING-PARTIAL")
+        self.assertFalse(result["created_order"])
+        self.assertEqual(creates, [])
+        self.assertEqual(len(syncs), 1)
+        self.assertTrue(result["result"]["partial_fulfillment"])
+        self.assertFalse(result["result"]["complete_fulfillment"])
 
     def test_draft_order_not_ready_when_stock_does_not_match(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
