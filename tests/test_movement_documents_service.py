@@ -109,6 +109,39 @@ class MovementDocumentsServiceTests(unittest.TestCase):
         self.assertIn("client_address", record["Notes"])
         self.assertIn("owner_name", record["Notes"])
 
+    def test_removal_certificate_client_copy_blanks_transport_fields(self):
+        data = movement_documents_service._movement_copy_form_data(
+            {
+                "driver_name": "Farm driver",
+                "driver_id": "ID-1",
+                "driver_phone": "000",
+                "destination_address": "Known destination",
+                "route_notes": "Known route",
+                "client_name": "Buyer",
+            },
+            {"collection_location": "Albertinia"},
+            "client",
+        )
+
+        self.assertEqual(data["driver_name"], "")
+        self.assertEqual(data["driver_id"], "")
+        self.assertEqual(data["driver_phone"], "")
+        self.assertEqual(data["destination_address"], "")
+        self.assertEqual(data["route_notes"], "")
+        self.assertEqual(data["client_name"], "")
+
+    def test_removal_certificate_farm_copy_defaults_driver_details(self):
+        data = movement_documents_service._movement_copy_form_data(
+            {},
+            {"collection_location": "Albertinia"},
+            "farm_driver",
+        )
+
+        self.assertEqual(data["driver_name"], "Hendrik Anton Niewuendyk")
+        self.assertEqual(data["driver_id"], "6310255087089")
+        self.assertEqual(data["driver_phone"], "084-567-9327")
+        self.assertEqual(data["destination_address"], "Albertinia")
+
 
 if __name__ == "__main__":
     unittest.main()
