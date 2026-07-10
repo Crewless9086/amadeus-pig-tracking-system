@@ -3463,13 +3463,22 @@ def _implementation_source_quality_gate(agent, artifact):
             value = artifact.get(key)
             if isinstance(value, list):
                 values.extend(str(item or "").replace("\\", "/") for item in value)
-        required = set(source_map.get("required_inspection_paths") or [])
-        if not required.intersection(values):
+        valid_paths = set(str(path or "").replace("\\", "/") for path in source_map.get("required_inspection_paths") or [])
+        for section in source_map.get("matched_sections") or []:
+            if not isinstance(section, dict):
+                continue
+            for key in ("vault_docs", "code_paths", "tests", "legacy_sources", "app_routes", "migrations"):
+                items = section.get(key)
+                if isinstance(items, list):
+                    valid_paths.update(str(item or "").replace("\\", "/") for item in items if str(item or "").strip())
+        cited = set(path for path in values if path)
+        if not valid_paths.intersection(cited):
             return {
                 "passed": False,
                 "reason": f"{agent} did not cite any matched implementation source-map path.",
-                "required_inspection_paths_sample": sorted(required)[:12],
-                "cited_paths_sample": sorted(set(values))[:12],
+                "required_inspection_paths_sample": sorted(set(source_map.get("required_inspection_paths") or []))[:12],
+                "valid_source_map_paths_sample": sorted(valid_paths)[:16],
+                "cited_paths_sample": sorted(cited)[:12],
                 "matched_source_sections": [
                     section.get("key") or section.get("label")
                     for section in source_map.get("matched_sections", [])

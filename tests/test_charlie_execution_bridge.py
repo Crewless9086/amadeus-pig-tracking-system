@@ -2106,6 +2106,53 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_tester_source_gate_accepts_matched_code_and_test_paths_without_doc_citation(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["implementation_source_map"] = {
+            "matched_sections": [
+                {
+                    "key": "sam_live_stock_sales",
+                    "must_inspect_before_advice": True,
+                    "vault_docs": [
+                        "docs/09-vault-brain/02-agents/sales/SAM.md",
+                        "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+                    ],
+                    "code_paths": [
+                        "modules/sales/sam_live_stock_launch_control.py",
+                        "modules/oom_sakkie/telegram_direct.py",
+                    ],
+                    "tests": [
+                        "tests/test_sam_live_stock_launch_control.py",
+                        "tests/test_oom_sakkie_routes.py",
+                    ],
+                    "legacy_sources": [
+                        "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+                    ],
+                }
+            ],
+            "required_inspection_paths": [
+                "docs/09-vault-brain/02-agents/sales/SAM.md",
+                "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+                "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+            ],
+        }
+        artifact["files_inspected"] = [
+            "modules/sales/sam_live_stock_launch_control.py",
+            "modules/oom_sakkie/telegram_direct.py",
+            "tests/test_sam_live_stock_launch_control.py",
+            "tests/test_oom_sakkie_routes.py",
+        ]
+        artifact["commands_run"] = [
+            "python -m unittest tests.test_sam_live_stock_launch_control tests.test_oom_sakkie_routes"
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_sam_live_stock_launch_control tests.test_oom_sakkie_routes", "status": "pass"}
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
         artifact = _successful_stage_payload("reviewer")
         artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
