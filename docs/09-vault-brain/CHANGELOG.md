@@ -2,6 +2,7 @@
 
 ## 2026-07-10
 
+- Added the SAM live-stock read contract: Herdmaster/Pig Allocation availability must carry latest weight date, medical withdrawal clearance, family/litter context, sale eligibility reason, and explicit media reference status, with withdrawal holds blocking sale eligibility.
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 
 ## 2026-07-09

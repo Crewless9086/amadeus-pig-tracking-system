@@ -3749,10 +3749,21 @@ def _sales_availability_from_supabase_allocation():
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
-            "withdrawal_clear": "",
+            "withdrawal_clear": _live_stock_withdrawal_clear(pig),
+            "current_withdrawal_end_date": pig.get("current_withdrawal_end_date", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
             "purpose": pig.get("purpose", ""),
+            "litter_id": pig.get("litter_id", ""),
+            "mother_pig_id": pig.get("mother_id", pig.get("mother_pig_id", "")),
+            "father_pig_id": pig.get("father_id", pig.get("father_pig_id", "")),
+            "sow_pig_id": pig.get("sow_pig_id", ""),
+            "sow_tag_number": pig.get("sow_tag_number", ""),
+            "boar_pig_id": pig.get("boar_pig_id", ""),
+            "boar_tag_number": pig.get("boar_tag_number", ""),
+            "family_context": _live_stock_family_context(pig),
+            "media_references": _live_stock_media_references(pig),
+            "media_reference_status": _live_stock_media_reference_status(pig),
             "available_for_sale": "Yes" if eligibility["eligible"] else "No",
             "live_stock_sale_eligible": eligibility["eligible"],
             "live_stock_sale_reason": eligibility["reason"],
@@ -3777,11 +3788,14 @@ def _live_stock_sale_eligibility(pig):
     calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
     latest_weight_kg = to_float(pig.get("latest_weight_kg"))
     wean_date = to_clean_string(pig.get("wean_date", ""))
+    withdrawal_clear = _live_stock_withdrawal_clear(pig)
 
     if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
         return _live_stock_sale_block("not_active", "Pig is not active.")
     if on_farm not in {"yes", "true", "1", "on farm"}:
         return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
+    if withdrawal_clear == "No":
+        return _live_stock_sale_block("withdrawal_hold", "Pig is still inside a medical withdrawal hold and cannot be offered.")
     if reserved_status == "reserved" or reserved_for_order_id:
         return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
@@ -3817,6 +3831,39 @@ def _live_stock_sale_block(code, reason):
         "weight_band": "",
         "suggested_price_category": code,
     }
+
+
+def _live_stock_withdrawal_clear(pig):
+    withdrawal_clear = to_clean_string(pig.get("withdrawal_clear", pig.get("Withdrawal_Clear", "")))
+    if withdrawal_clear in {"Yes", "No"}:
+        return withdrawal_clear
+    withdrawal_end_date = parse_sheet_date(pig.get("current_withdrawal_end_date", pig.get("Current_Withdrawal_End_Date", "")))
+    if not withdrawal_end_date:
+        return "Yes"
+    return "No" if withdrawal_end_date > datetime.now().date() else "Yes"
+
+
+def _live_stock_family_context(pig):
+    return {
+        "litter_id": pig.get("litter_id", ""),
+        "mother_pig_id": pig.get("mother_id", pig.get("mother_pig_id", "")),
+        "father_pig_id": pig.get("father_id", pig.get("father_pig_id", "")),
+        "sow_pig_id": pig.get("sow_pig_id", ""),
+        "sow_tag_number": pig.get("sow_tag_number", ""),
+        "boar_pig_id": pig.get("boar_pig_id", ""),
+        "boar_tag_number": pig.get("boar_tag_number", ""),
+    }
+
+
+def _live_stock_media_references(pig):
+    media = pig.get("media_references")
+    return media if isinstance(media, list) else []
+
+
+def _live_stock_media_reference_status(pig):
+    if _live_stock_media_references(pig):
+        return "source_backed"
+    return "not_configured"
 
 
 def _is_breeding_or_retained_stage(animal_type, calculated_stage):

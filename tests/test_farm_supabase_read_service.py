@@ -23,6 +23,7 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             "last_weight_date": date(2026, 6, 22),
             "current_pen_id": "PEN-1",
             "current_pen_name": "Grower Pen",
+            "current_withdrawal_end_date": date(2099, 1, 1),
         }
 
         summary = farm_supabase_read_service._pig_summary(row)
@@ -34,6 +35,25 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(summary["last_weight_date"], "2026-06-22")
         self.assertEqual(summary["current_pen_name"], "Grower Pen")
         self.assertEqual(summary["weight_band"], "60-<80 kg")
+        self.assertEqual(summary["current_withdrawal_end_date"], "2099-01-01")
+        self.assertEqual(summary["withdrawal_clear"], "No")
+
+    def test_allocation_overview_row_maps_medical_withdrawal_status(self):
+        row = {
+            "pig_id": "PIG-1",
+            "tag_number": "101",
+            "status": "Active",
+            "on_farm": True,
+            "animal_type": "Grower",
+            "sex": "Female",
+            "purpose": "Sale",
+            "current_withdrawal_end_date": date(2099, 1, 1),
+        }
+
+        overview = farm_supabase_read_service._allocation_overview_row(row)
+
+        self.assertEqual(overview["Current_Withdrawal_End_Date"], "2099-01-01")
+        self.assertEqual(overview["Withdrawal_Clear"], "No")
 
     def test_weight_history_calculates_differences_from_supabase_rows(self):
         rows_by_sql = []

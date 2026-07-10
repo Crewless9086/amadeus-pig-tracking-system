@@ -917,6 +917,12 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "available_for_sale": "Yes",
                 "sale_category": "Weaner",
                 "current_weight_kg": 12,
+                "last_weight_date": "2026-06-22",
+                "live_stock_sale_reason": "Purpose = Sale and current weight maps to band.",
+                "litter_id": "LIT-1",
+                "family_context": {"litter_id": "LIT-1", "sow_tag_number": "S1"},
+                "media_references": [],
+                "media_reference_status": "not_configured",
             },
             {
                 "pig_id": "PIG-2",
@@ -943,6 +949,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(summary["total_available_count"], 1)
         self.assertEqual(summary["matched_count"], 1)
         self.assertEqual(summary["matched_sample"][0]["pig_id"], "PIG-1")
+        self.assertEqual(summary["matched_sample"][0]["last_weight_date"], "2026-06-22")
+        self.assertEqual(summary["matched_sample"][0]["family_context"]["litter_id"], "LIT-1")
+        self.assertEqual(summary["matched_sample"][0]["media_references"], [])
+        self.assertEqual(summary["matched_sample"][0]["media_reference_status"], "not_configured")
+        self.assertIn("Purpose = Sale", summary["matched_sample"][0]["live_stock_sale_reason"])
 
     def test_availability_summary_respects_requested_weight_range(self):
         rows = [
