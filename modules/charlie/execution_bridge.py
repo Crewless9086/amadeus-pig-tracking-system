@@ -5611,9 +5611,13 @@ def _capture_visual_review_media(
 
     fallback_reason = ""
     capture_url = preview_url
+    recovery = {}
     if not preview_url:
         fallback_reason = "preview_url_not_captured"
     else:
+        recovery = _recover_local_preview_capture_url(preview_url, local_preview)
+        if recovery.get("url"):
+            capture_url = recovery["url"]
         parsed = urlparse(preview_url)
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
@@ -5680,12 +5684,21 @@ def _capture_visual_review_media(
             "stderr_tail": _truncate(completed.stderr or "", 1200),
         })
     captured = bool(captures) and all(item.get("captured") for item in captures)
+    durable_reuse = {}
+    if not captured and not fallback_reason:
+        durable_reuse = _promote_durable_visual_review_media(mission_id, artifacts)
+        captured = bool(durable_reuse.get("captured"))
+        if captured:
+            captures.append(durable_reuse)
     return {
         "captured": captured,
         "status": "captured" if captured else "capture_command_failed",
         "url": preview_url,
         "capture_url": capture_url,
+        "capture_url_recovery": recovery if preview_url else {},
         "capture_source": "generated_owner_review_packet" if fallback_reason else "local_preview",
+        "capture_method": "durable_stage_media_reuse" if durable_reuse.get("captured") else "playwright_screenshot",
+        "durable_media_reuse": durable_reuse,
         "fallback_reason": fallback_reason,
         "captures": captures,
         "command": captures[-1].get("command", "") if captures else "",
@@ -5694,6 +5707,195 @@ def _capture_visual_review_media(
         "stdout_tail": _truncate(" | ".join(item.get("stdout_tail", "") for item in captures), 1200),
         "stderr_tail": _truncate(" | ".join(item.get("stderr_tail", "") or item.get("error_type", "") for item in captures), 1200),
     }
+
+
+def _recover_local_preview_capture_url(preview_url, local_preview=None):
+    preview_url = str(preview_url or "").strip()
+    parsed = urlparse(preview_url)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"url": preview_url, "status": "not_local"}
+
+    original_probe = _probe_local_http_url(preview_url)
+    if original_probe.get("ok"):
+        return {"url": preview_url, "status": "original_reachable", "probe": original_probe}
+
+    command = str((local_preview or {}).get("command") or "")
+    ports = _local_preview_ports_from_command(command)
+    if parsed.port:
+        ports = [port for port in ports if port != str(parsed.port)]
+    for port in ports:
+        candidate = parsed._replace(netloc=f"{parsed.hostname}:{port}").geturl()
+        probe = _probe_local_http_url(candidate)
+        if probe.get("ok"):
+            return {
+                "url": candidate,
+                "status": "recovered_from_preview_command_port",
+                "original_url": preview_url,
+                "original_probe": original_probe,
+                "command": command,
+                "probe": probe,
+            }
+    return {
+        "url": preview_url,
+        "status": "unrecovered",
+        "original_probe": original_probe,
+        "candidate_ports": ports,
+        "command": command,
+    }
+
+
+def _local_preview_ports_from_command(command_text=""):
+    text = str(command_text or "")
+    ports = []
+    for explicit, colon in re.findall(r"--port\s+(\d+)|:(\d+)", text):
+        port = explicit or colon
+        if port and port not in ports:
+            ports.append(port)
+    return ports
+
+
+def _probe_local_http_url(url):
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"ok": False, "status": "not_local"}
+    try:
+        opener = url_request.build_opener(url_request.HTTPRedirectHandler)
+        req = url_request.Request(url, headers={"User-Agent": "CHARLIE-local-preview-capture-probe"})
+        with opener.open(req, timeout=3) as response:
+            status = int(response.status)
+            final_url = response.geturl()
+    except URLError as exc:
+        return {"ok": False, "status": "probe_failed", "error_type": exc.__class__.__name__, "reason": str(exc.reason) if hasattr(exc, "reason") else str(exc)}
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "status": "probe_failed", "error_type": exc.__class__.__name__}
+    if status >= 500:
+        return {"ok": False, "status": "bad_status", "http_status": status, "final_url": final_url}
+    return {"ok": True, "status": "ok", "http_status": status, "final_url": final_url}
+
+
+def _promote_durable_visual_review_media(mission_id, artifacts=None):
+    mission_id = str(mission_id or "").strip()
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    media_dir = _review_media_path(mission_id)
+    media_dir.mkdir(parents=True, exist_ok=True)
+    evidence = _durable_visual_evidence_paths(artifacts)
+    promoted = []
+    for viewport, filename in (("desktop", "owner_review_preview.png"), ("mobile", "owner_review_mobile.png")):
+        source_path = evidence.get(viewport)
+        if not source_path:
+            continue
+        target_path = media_dir / filename
+        try:
+            shutil.copy2(source_path, target_path)
+        except OSError as exc:
+            promoted.append({
+                "viewport": viewport,
+                "captured": False,
+                "status": "durable_media_copy_failed",
+                "source_path": str(source_path),
+                "error_type": exc.__class__.__name__,
+            })
+            continue
+        promoted.append({
+            "viewport": viewport,
+            "captured": True,
+            "status": "promoted_from_durable_stage_media",
+            "source_path": str(source_path),
+            "path": str(target_path),
+            "filename": filename,
+        })
+    captured = (media_dir / "owner_review_preview.png").exists() and (media_dir / "owner_review_mobile.png").exists()
+    return {
+        "label": "durable stage media reuse",
+        "captured": captured,
+        "status": "promoted_from_durable_stage_media" if captured else "durable_stage_media_missing",
+        "promoted": promoted,
+    }
+
+
+def _durable_visual_evidence_paths(artifacts=None):
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    found = {}
+    for agent in ("builder", "tester", "qa_red_team", "visual_qa_reviewer", "reviewer"):
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        for value in _visual_evidence_values_from_artifact(artifact):
+            path = _resolve_durable_visual_evidence_path(value)
+            if not path:
+                continue
+            viewport = _visual_evidence_viewport(value, path)
+            if viewport and viewport not in found:
+                found[viewport] = path
+    return found
+
+
+def _visual_evidence_values_from_artifact(artifact):
+    keys = ("screenshots_captured", "media_references_used", "browser_checks", "visual_review_notes")
+    values = []
+    for key in keys:
+        raw = artifact.get(key)
+        if isinstance(raw, list):
+            values.extend(raw)
+        elif raw:
+            values.append(raw)
+    return values
+
+
+def _resolve_durable_visual_evidence_path(value):
+    candidates = []
+    if isinstance(value, dict):
+        for key in ("path", "local_path", "reference", "file", "filename"):
+            if value.get(key):
+                candidates.append(str(value.get(key)))
+    else:
+        text = str(value or "")
+        candidates.append(text)
+        candidates.extend(re.findall(r"[\w./:\\ -]+\.(?:png|jpe?g|webp|gif|mp4|webm)", text, flags=re.IGNORECASE))
+    for candidate in candidates:
+        path = _resolve_local_visual_evidence_path(candidate)
+        if path:
+            return path
+    return None
+
+
+def _resolve_local_visual_evidence_path(candidate):
+    raw = str(candidate or "").strip().strip("\"'")
+    if not raw:
+        return None
+    if raw.startswith("/api/charlie/build-relay/review-media/"):
+        parts = raw.strip("/").split("/")
+        if len(parts) >= 5:
+            raw = str(_review_media_path(parts[-2]) / parts[-1])
+    path = Path(raw)
+    if not path.is_absolute():
+        path = REPO_ROOT / raw
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return None
+    if not resolved.exists() or not resolved.is_file() or resolved.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
+        return None
+    allowed_roots = [
+        REPO_ROOT / ".charlie_runner",
+        REVIEW_MEDIA_DIR,
+        LEGACY_REVIEW_MEDIA_DIR,
+    ]
+    for root in allowed_roots:
+        try:
+            resolved_root = root.resolve()
+        except OSError:
+            continue
+        if resolved == resolved_root or resolved_root in resolved.parents:
+            return resolved
+    return None
+
+
+def _visual_evidence_viewport(value, path):
+    text = f"{value} {path.name}".lower()
+    if "mobile" in text or "390" in text or "844" in text:
+        return "mobile"
+    if "desktop" in text or "laptop" in text or "1440" in text or "900" in text or "preview" in text:
+        return "desktop"
+    return ""
 
 
 def _npx_executable():

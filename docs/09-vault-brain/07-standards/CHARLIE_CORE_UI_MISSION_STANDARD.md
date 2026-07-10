@@ -94,7 +94,9 @@ Reviewer must not recommend final owner approval when visual review media is mis
 CHARLIE CORE must block UI missions before owner review unless:
 
 - a real local preview URL for the changed page is captured;
+- the local preview URL is probed before screenshot capture, with stale localhost ports recovered from the recorded preview command or blocked with clear preview-server recovery instructions;
 - desktop/laptop and mobile screenshot artifacts exist;
+- durable Builder/Tester/QA/Reviewer screenshot evidence may be reused only when it is local runner media for the same mission route and is promoted into owner-review desktop/mobile media;
 - attached reference media is cited when provided;
 - Visual Reference Interpreter, Creative UI Designer, UX Interaction Designer, Frontend Design Implementer, and Visual QA Reviewer artifacts exist for UI council missions;
 - Builder, Tester, QA/Red-Team, and Reviewer include UI-specific evidence;
