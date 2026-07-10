@@ -438,6 +438,9 @@ IMPLEMENTATION_SOURCE_MAP = {
         "code_paths": [
             "modules/sales/sam_sales_router.py",
             "modules/sales/sam_live_stock_runtime.py",
+            "modules/sales/sam_live_stock_launch_control.py",
+            "modules/oom_sakkie/telegram_direct.py",
+            "modules/oom_sakkie/routes.py",
             "modules/pig_weights/pig_weights_service.py",
             "modules/orders/order_intake_service.py",
             "modules/orders/order_service.py",
@@ -456,6 +459,8 @@ IMPLEMENTATION_SOURCE_MAP = {
         "tests": [
             "tests/test_sam_sales_router.py",
             "tests/test_sam_live_stock_runtime.py",
+            "tests/test_sam_live_stock_launch_control.py",
+            "tests/test_oom_sakkie_routes.py",
             "tests/test_order_intake_service.py",
             "tests/test_order_routes.py",
             "tests/test_order_service_reservation.py",
