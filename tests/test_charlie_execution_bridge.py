@@ -3250,6 +3250,57 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"], result)
 
+    def test_tester_quality_gate_treats_broad_timeout_as_advisory_with_focused_pass_evidence(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["tests_run"] = [
+            {
+                "command": "python -m unittest tests.test_sam_live_stock_runtime tests.test_sam_live_stock_launch_control",
+                "status": "pass",
+                "result": "89 focused SAM Live Stock tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_charlie_mission_pickup",
+                "status": "fail",
+                "result": "broad CHARLIE runner suite timed out after 124 seconds",
+            },
+        ]
+        artifact["errors"] = [
+            "tests.test_charlie_mission_pickup timed out after 124 seconds.",
+            "Full CHARLIE core regression command timed out after 124 seconds.",
+        ]
+        artifact["stdout_tail"] = "Focused SAM suites passed. Ran 89 tests OK. Broad runner command timed out."
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("timeout_advisory"), result)
+        self.assertTrue(result.get("focused_tests_passed"), result)
+
+    def test_tester_quality_gate_still_blocks_real_safety_failure_with_timeout_noise(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["tests_run"] = [
+            {
+                "command": "python -m unittest tests.test_sam_live_stock_runtime",
+                "status": "pass",
+                "result": "focused tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_charlie_mission_pickup",
+                "status": "fail",
+                "result": "timed out after 124 seconds",
+            },
+        ]
+        artifact["errors"] = [
+            "tests.test_charlie_mission_pickup timed out after 124 seconds.",
+            "Owner-approved send path can create an order without owner approval.",
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["files_to_inspect"] = []

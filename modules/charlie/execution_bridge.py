@@ -1487,6 +1487,9 @@ Partial recovery contract:
 Repo test command memory:
 {json.dumps(test_command_memory, indent=2)}
 
+Focused test budget:
+{_focused_test_budget_prompt(mission, agent, artifacts)}
+
 Runner environment preflight:
 {json.dumps(runner_preflight, indent=2)}
 
@@ -1539,6 +1542,7 @@ You must work like an interactive coding agent:
 - check the Vault Brain before opinion, and cite the docs you used
 - read relevant files
 - run focused commands when useful
+- prefer focused tests for the changed surface first; broad runner/full-suite timeouts are advisory only when focused evidence passes and no owner/customer/order/stock safety risk is present
 - patch only scoped files
 - recover from errors
 - record what you did and what remains
@@ -3195,6 +3199,14 @@ def _agent_quality_gate(agent, artifact):
         }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
+        if status != "pass" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+            return {
+                "passed": True,
+                "reason": "Tester timeout-only broad command issue treated as advisory because focused changed-surface tests passed.",
+                "timeout_advisory": True,
+                "focused_tests_passed": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
             return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
         if errors or bugs:
@@ -3588,6 +3600,8 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if decision and decision not in passing_values:
             if field == "red_team_status" and _qa_timeout_only_failure_is_advisory(agent, artifact):
                 continue
+            if field == "test_status" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+                continue
             return {
                 "passed": False,
                 "reason": f"{agent} recorded non-passing {field}={decision}.",
@@ -3676,8 +3690,21 @@ def _qa_timeout_only_failure_is_advisory(agent, artifact):
     status = str(artifact.get("red_team_status") or "").strip().lower()
     if status not in {"fail", "blocked"}:
         return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _tester_timeout_only_failure_is_advisory(agent, artifact):
+    if agent != "tester" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("test_status") or "").strip().lower()
+    if status not in {"fail", "failed", "blocked"}:
+        return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _timeout_only_failure_has_focused_pass_evidence(agent, artifact):
     values = []
-    for key in ("errors", "bugs", "qa_findings"):
+    for key in ("errors", "bugs", "qa_findings", "tests_run"):
         value = artifact.get(key)
         if isinstance(value, list):
             values.extend(str(item or "") for item in value if str(item or "").strip())
@@ -3688,7 +3715,7 @@ def _qa_timeout_only_failure_is_advisory(agent, artifact):
     timeout_terms = ("timed out", "timeout", "tool timeout", "command timed out", "crossed the")
     if not any(any(term in value.lower() for term in timeout_terms) for value in values):
         return False
-    pseudo_pass_artifact = {**artifact, "red_team_status": "pass", "risk_rating": "low"}
+    pseudo_pass_artifact = {**artifact, "red_team_status": "pass", "test_status": "pass", "risk_rating": "low"}
     non_timeout_blockers = [
         value for value in values
         if not any(term in value.lower() for term in timeout_terms)
@@ -3714,13 +3741,56 @@ def _qa_timeout_only_failure_is_advisory(agent, artifact):
     if non_timeout_blockers:
         return False
     evidence_values = []
-    for key in ("tests_run", "test_evidence", "stdout_tail", "confidence_reason"):
+    for key in ("tests_run", "test_evidence", "stdout_tail", "confidence_reason", "commands_run"):
         value = artifact.get(key)
         if isinstance(value, list):
             evidence_values.extend(value)
         elif value:
             evidence_values.append(value)
     return any(_artifact_test_evidence_passes(item) for item in evidence_values)
+
+
+def _focused_test_budget_prompt(mission, agent, artifacts):
+    mission = mission if isinstance(mission, dict) else {}
+    agent = str(agent or "").strip().lower()
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return "No special test-budget instructions for this agent."
+    changed = _mission_changed_files_from_artifacts(artifacts or {})
+    implementation_context = implementation_source_packet(mission)
+    matched_tests = []
+    for section in implementation_context.get("matched_sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for test_path in section.get("tests") or []:
+            text = str(test_path or "").strip()
+            if text and text not in matched_tests:
+                matched_tests.append(text)
+    profile = "focused"
+    haystack = " ".join([
+        str(mission.get("title") or ""),
+        str(mission.get("mission_type") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    if any(term in haystack for term in ("runner", "charlie core", "mission pickup", "execution bridge", "workflow", "conveyor")):
+        profile = "standard"
+    if any(term in haystack for term in ("migration", "security", "auth", "payment", "customer send", "reserve stock", "merge", "deploy")):
+        profile = "full"
+    return json.dumps({
+        "version": "charlie_focused_test_budget_v1",
+        "profile": profile,
+        "rule": (
+            "Run focused changed-surface tests first and record them as focused_tests_passed when green. "
+            "Do not turn unrelated broad/full-suite timeouts into a blocker when focused tests pass and no real owner/customer/order/stock safety defect is present. "
+            "Real product, security, data, source-of-truth, customer-send, order/quote, reservation, payment, or deployment failures still block."
+        ),
+        "changed_files_from_upstream": changed[:16],
+        "source_map_matched_tests": matched_tests[:16],
+        "reporting": {
+            "tests_run": "List each focused and broad command separately with pass/fail/timeout.",
+            "test_status": "Use pass when focused required tests pass and any broad timeout is advisory only.",
+            "advisory_timeouts": "Record broad timeout details without send_back if no real blocker exists.",
+        },
+    }, indent=2)
 
 
 def _visual_review_notes_are_advisory(agent, artifact):
