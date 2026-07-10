@@ -27,6 +27,20 @@ Farm record writes require approved backend paths and audit evidence.
 - Unknown purpose is a classification gap, not a sale/meat/slaughter decision.
 - Sale/slaughter/meat exits must link back to explicit order or sales transaction evidence where possible.
 
+## Herdmaster To SAM Sales Availability Read Contract
+
+SAM Live Stock sales must consume the Herdmaster/Pig Allocation derived sales availability read model as authoritative stock context. The read model must carry:
+
+- pig identity, tag, sex, status, on-farm state, purpose, reservation status, and order link;
+- latest weight and latest weight date;
+- medical withdrawal clearance, current withdrawal end date, and health exclusion reason when a medical hold exists;
+- live-stock sale eligibility and explainable block/sale reason;
+- sale category, weight band, suggested price category, and pen;
+- litter and parent/family context where source records provide it;
+- animal media references only when a canonical animal media source exists. If none exists, expose an empty `media_references` list and an explicit source status instead of inventing URLs.
+
+SAM must not offer or prepare order candidates for sold, exited, terminal, off-farm, reserved, breeding/retained, non-`Purpose = Sale`, withdrawal-blocked, or source-conflicted animals. Latest weight date must remain visible wherever SAM sales availability stock cards are shown.
+
 ## Litter Detail Read Contract
 
 - Litter detail reads should expose the operational detail state: active, weaned, or completed.

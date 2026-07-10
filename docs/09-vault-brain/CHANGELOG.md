@@ -2,6 +2,7 @@
 
 ## 2026-07-10
 
+- Added the Herdmaster-to-SAM sales availability read contract: SAM Live Stock must use the Pig Allocation/Herdmaster read model as authoritative stock context, carry latest weight date, medical withdrawal/health exclusion, family context, and non-invented media reference status, and exclude unavailable, breeding/retained, non-sale-purpose, reserved, exited, off-farm, withdrawal-blocked, or source-conflicted animals.
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 
 ## 2026-07-09

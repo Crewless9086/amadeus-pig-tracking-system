@@ -114,15 +114,31 @@ def _available_pigs_from_sales_rows(rows):
         reserved_status = to_clean_string(row.get("Reserved_Status", row.get("reserved_status", "")))
         if reserved_status == "Reserved":
             continue
+        withdrawal_clear = to_clean_string(row.get("Withdrawal_Clear", row.get("withdrawal_clear", "")))
+        if withdrawal_clear == "No":
+            continue
 
         pigs.append({
             "pig_id": to_clean_string(row.get("Pig_ID", row.get("pig_id", ""))),
             "tag_number": to_clean_string(row.get("Tag_Number", row.get("tag_number", ""))),
             "sex": to_clean_string(row.get("Sex", row.get("sex", ""))),
             "current_weight_kg": to_float(row.get("Current_Weight_Kg", row.get("current_weight_kg", ""))),
+            "latest_weight_date": to_clean_string(row.get("Last_Weight_Date", row.get("latest_weight_date", row.get("last_weight_date", "")))),
             "weight_band": to_clean_string(row.get("Weight_Band", row.get("weight_band", ""))),
             "sale_category": to_clean_string(row.get("Sale_Category", row.get("sale_category", ""))),
             "suggested_price_category": to_clean_string(row.get("Suggested_Price_Category", row.get("suggested_price_category", ""))),
+            "withdrawal_clear": withdrawal_clear,
+            "family_context": row.get("family_context") if isinstance(row.get("family_context"), dict) else {
+                "litter_id": to_clean_string(row.get("Litter_ID", row.get("litter_id", ""))),
+                "mother_id": to_clean_string(row.get("Mother_Pig_ID", row.get("mother_id", ""))),
+                "father_id": to_clean_string(row.get("Father_Pig_ID", row.get("father_id", ""))),
+                "sow_pig_id": to_clean_string(row.get("sow_pig_id", "")),
+                "sow_tag_number": to_clean_string(row.get("sow_tag_number", "")),
+                "boar_pig_id": to_clean_string(row.get("boar_pig_id", "")),
+                "boar_tag_number": to_clean_string(row.get("boar_tag_number", "")),
+            },
+            "media_references": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
+            "media_source_status": to_clean_string(row.get("media_source_status", "no_canonical_animal_media_source")),
             "reserved_status": reserved_status,
         })
 

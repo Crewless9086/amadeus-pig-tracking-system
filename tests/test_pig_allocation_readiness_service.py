@@ -356,6 +356,94 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
 
+    def test_supabase_allocation_sales_availability_blocks_current_medical_withdrawal_and_preserves_context(self):
+        allocation_inputs = {
+            "source": "supabase_canonical",
+            "overview_rows": [
+                {
+                    "Pig_ID": "PIG-SAFE",
+                    "Tag_Number": "11",
+                    "Animal_Type": "Weaner",
+                    "Sex": "Female",
+                    "Status": "Active",
+                    "On_Farm": "Yes",
+                    "Purpose": "Sale",
+                    "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 12,
+                    "Last_Weight_Date": "2026-07-01",
+                    "Wean_Date": "2026-06-01",
+                    "Date_Of_Birth": "2026-05-01",
+                    "Calculated_Stage": "Weaner",
+                    "Weight_Band": "10_to_14_Kg",
+                    "Litter_ID": "LIT-1",
+                    "Mother_Pig_ID": "SOW-1",
+                    "Father_Pig_ID": "BOAR-1",
+                },
+                {
+                    "Pig_ID": "PIG-HOLD",
+                    "Tag_Number": "12",
+                    "Animal_Type": "Weaner",
+                    "Sex": "Male",
+                    "Status": "Active",
+                    "On_Farm": "Yes",
+                    "Purpose": "Sale",
+                    "Current_Pen_ID": "PEN-1",
+                    "Current_Weight_Kg": 13,
+                    "Last_Weight_Date": "2026-07-01",
+                    "Wean_Date": "2026-06-01",
+                    "Date_Of_Birth": "2026-05-01",
+                    "Calculated_Stage": "Weaner",
+                    "Weight_Band": "10_to_14_Kg",
+                    "Litter_ID": "LIT-1",
+                    "Mother_Pig_ID": "SOW-1",
+                    "Father_Pig_ID": "BOAR-1",
+                },
+            ],
+            "pig_master_rows": [],
+            "weight_rows": [
+                {"Pig_ID": "PIG-SAFE", "Weight_Date": "2026-07-01", "Weight_Kg": 12},
+                {"Pig_ID": "PIG-HOLD", "Weight_Date": "2026-07-01", "Weight_Kg": 13},
+            ],
+            "medical_rows": [
+                {
+                    "Pig_ID": "PIG-HOLD",
+                    "Treatment_Date": "2026-07-05",
+                    "Product_Name": "LongActingMed",
+                    "Withdrawal_End_Date": "2026-07-20",
+                }
+            ],
+            "sales_rows": [],
+            "litter_rows": [
+                {
+                    "Litter_ID": "LIT-1",
+                    "Sow_Pig_ID": "SOW-1",
+                    "Sow_Tag_Number": "S1",
+                    "Boar_Pig_ID": "BOAR-1",
+                    "Boar_Tag_Number": "B1",
+                    "Born_Alive": 10,
+                    "Weaned_Count": 9,
+                }
+            ],
+            "pen_lookup": {"PEN-1": {"pen_name": "Weaner Pen"}},
+        }
+
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+                patch.object(farm_supabase_read_service, "get_allocation_input_rows", return_value=allocation_inputs):
+            allocation = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 7, 10))
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation):
+            availability = pig_weights_service.get_sales_availability()
+
+        by_id = {row["pig_id"]: row for row in availability}
+        self.assertEqual(by_id["PIG-SAFE"]["available_for_sale"], "Yes")
+        self.assertEqual(by_id["PIG-SAFE"]["latest_weight_date"], "2026-07-01")
+        self.assertEqual(by_id["PIG-SAFE"]["family_context"]["litter_id"], "LIT-1")
+        self.assertEqual(by_id["PIG-SAFE"]["media_references"], [])
+        self.assertEqual(by_id["PIG-SAFE"]["media_source_status"], "no_canonical_animal_media_source")
+        self.assertEqual(by_id["PIG-HOLD"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-HOLD"]["withdrawal_clear"], "No")
+        self.assertEqual(by_id["PIG-HOLD"]["current_withdrawal_end_date"], "2026-07-20")
+        self.assertIn("Medical withdrawal active", by_id["PIG-HOLD"]["live_stock_sale_reason"])
+
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{
             "Pig_ID": "PIG-FAST",

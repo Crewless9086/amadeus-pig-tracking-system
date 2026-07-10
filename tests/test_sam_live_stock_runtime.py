@@ -824,6 +824,52 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(summary["matched_count"], 1)
         self.assertEqual(summary["matched_sample"][0]["pig_id"], "PIG-1")
 
+    def test_availability_summary_hides_withdrawal_stock_and_preserves_authoritative_context(self):
+        rows = [
+            {
+                "pig_id": "PIG-READY",
+                "tag_number": "21",
+                "sex": "Female",
+                "status": "Active",
+                "on_farm": "Yes",
+                "purpose": "Sale",
+                "reserved_status": "",
+                "withdrawal_clear": "Yes",
+                "available_for_sale": "Yes",
+                "sale_category": "Weaner",
+                "current_weight_kg": 12,
+                "latest_weight_date": "2026-07-01",
+                "family_context": {"litter_id": "LIT-2", "sow_tag_number": "S2"},
+                "media_references": [],
+                "media_source_status": "no_canonical_animal_media_source",
+                "live_stock_sale_reason": "Purpose = Sale and current.",
+            },
+            {
+                "pig_id": "PIG-HOLD",
+                "sex": "Female",
+                "status": "Active",
+                "on_farm": "Yes",
+                "purpose": "Sale",
+                "reserved_status": "",
+                "withdrawal_clear": "No",
+                "available_for_sale": "Yes",
+                "sale_category": "Weaner",
+                "current_weight_kg": 13,
+                "latest_weight_date": "2026-07-01",
+            },
+        ]
+
+        summary = sam_live_stock_runtime.summarize_live_stock_availability(rows, {"category": "weaner", "sex": "female"})
+
+        self.assertEqual(summary["total_available_count"], 1)
+        self.assertEqual(summary["matched_count"], 1)
+        sample = summary["matched_sample"][0]
+        self.assertEqual(sample["pig_id"], "PIG-READY")
+        self.assertEqual(sample["latest_weight_date"], "2026-07-01")
+        self.assertEqual(sample["family_context"]["litter_id"], "LIT-2")
+        self.assertEqual(sample["media_references"], [])
+        self.assertEqual(sample["media_source_status"], "no_canonical_animal_media_source")
+
     def test_availability_summary_respects_requested_weight_range(self):
         rows = [
             {

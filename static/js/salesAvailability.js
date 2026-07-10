@@ -66,8 +66,11 @@ function buildSalesCard(pig) {
 
   const subMeta = document.createElement("div");
   subMeta.className = "pig-list-submeta";
+  const latestWeightDate = pig.latest_weight_date || pig.last_weight_date || "";
   subMeta.textContent =
     `${pig.sale_category || "—"} • ${pig.weight_band || "—"} • ${pig.current_weight_kg !== null && pig.current_weight_kg !== "" ? `${formatNumber(pig.current_weight_kg, 2)} kg` : "No weight"}`;
+
+  subMeta.textContent = `${subMeta.textContent} - Weight date: ${latestWeightDate || "No date"}`;
 
   const salesInfo = document.createElement("div");
   salesInfo.className = "sales-meta-grid";
