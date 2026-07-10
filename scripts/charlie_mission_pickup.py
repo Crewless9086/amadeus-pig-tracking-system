@@ -37,8 +37,19 @@ BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
 
+def _load_runner_dotenv():
+    candidates = [REPO_ROOT / ".env"]
+    if REPO_ROOT.parent.name == ".worktrees":
+        candidates.append(REPO_ROOT.parent.parent / ".env")
+    for path in candidates:
+        if path.exists():
+            load_dotenv(path, override=False)
+            return str(path)
+    return ""
+
+
 def main():
-    load_dotenv(REPO_ROOT / ".env", override=False)
+    _load_runner_dotenv()
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
     parser.add_argument("--limit", type=int, default=10)
