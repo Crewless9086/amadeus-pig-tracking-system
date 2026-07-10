@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-10
+
+- Clarified the SAM Live Stock draft-order workflow: when conversation memory already has a `draft_order_id`, SAM must reuse it and sync draft lines instead of creating a duplicate draft order before quote preparation.
+
 ## 2026-07-09
 
 - Added CHARLIE queue discipline: owner-facing queues and local runner pickup must treat `owner_work` as actionable, while system smoke tests, validation/canary/no-op checks, placeholder relay records, and low-signal intake must not crowd out real owner missions.
