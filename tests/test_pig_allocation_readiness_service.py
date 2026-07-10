@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -173,6 +174,209 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-5"]["readiness_bucket"], "Exited")
         self.assertEqual(by_id["PIG-5"]["suggested_purpose"], "Closed")
         self.assertEqual(result["summary"]["buckets"]["Allocated"], 1)
+
+    def test_herdmaster_allocation_alerts_cover_required_categories_without_writes(self):
+        allocation = {
+            "success": True,
+            "generated_date": "2026-06-24",
+            "source": "supabase_canonical",
+            "thresholds": {
+                "stale_weight_days": 30,
+                "slow_grower_adg_kg_day": 0.2,
+                "meat_target_max_kg": 80,
+            },
+            "business_rules": {
+                "meat_window_label": "60-<80 kg",
+                "abattoir_window_label": "80 kg+",
+            },
+            "pigs": [
+                {
+                    "pig_id": "PIG-MISSING",
+                    "tag_number": "",
+                    "sex": "",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Needs Data",
+                    "readiness_reason": "Missing tag, sex, weight before allocation can be trusted.",
+                    "latest_weight_kg": None,
+                    "latest_weight_date": "",
+                    "days_since_weight": None,
+                    "meat_window_status": "Unknown",
+                    "abattoir_window_status": "Unknown",
+                },
+                {
+                    "pig_id": "PIG-PURPOSE",
+                    "tag_number": "12",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Classification",
+                    "readiness_reason": "Purpose is still unknown.",
+                    "suggested_purpose": "Meat",
+                    "suggested_purpose_reason": "Purpose is unknown, but weight is in the meat window.",
+                    "suggested_purpose_confidence": "Medium",
+                    "latest_weight_kg": 62,
+                    "latest_weight_date": "2026-06-20",
+                    "days_since_weight": 4,
+                    "wean_date": "2026-06-01",
+                    "days_since_wean": 23,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                    "meat_target_min_kg": 60,
+                    "meat_target_max_kg": 80,
+                },
+                {
+                    "pig_id": "PIG-EXPIRING",
+                    "tag_number": "13",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Meat Candidate",
+                    "readiness_reason": "Weight is in the first planned meat-candidate range.",
+                    "latest_weight_kg": 77,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                    "meat_target_min_kg": 60,
+                    "meat_target_max_kg": 80,
+                },
+                {
+                    "pig_id": "PIG-SLAUGHTER",
+                    "tag_number": "14",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Slaughter Candidate",
+                    "readiness_reason": "Weight is in the first planned slaughter-candidate range.",
+                    "latest_weight_kg": 82,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "meat_window_status": "Past meat window",
+                    "abattoir_window_status": "In abattoir window",
+                    "abattoir_target_min_kg": 80,
+                    "meat_target_max_kg": 80,
+                },
+                {
+                    "pig_id": "PIG-SLOW",
+                    "tag_number": "15",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Livestock Candidate",
+                    "growth_class": "Slow",
+                    "growth_reason": "Lifetime ADG is 0.150 kg/day, below 0.200 kg/day.",
+                    "average_daily_gain_kg": 0.15,
+                    "latest_weight_kg": 28,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "meat_window_status": "Before meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+                {
+                    "pig_id": "PIG-BREED",
+                    "tag_number": "16",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Breeding",
+                    "readiness_bucket": "Retain / Breeding Candidate",
+                    "readiness_reason": "Current purpose is breeding or retention.",
+                    "suggested_purpose": "Breeding Review",
+                    "suggested_purpose_reason": "Growth and litter quality justify reviewing retention.",
+                    "growth_class": "Exceptional",
+                    "average_daily_gain_kg": 0.55,
+                    "litter_quality": "Good",
+                    "litter_survival_rate": 0.9,
+                    "latest_weight_kg": 66,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+                {
+                    "pig_id": "PIG-STALE",
+                    "tag_number": "17",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Growing",
+                    "latest_weight_kg": 55,
+                    "latest_weight_date": "2026-05-01",
+                    "days_since_weight": 54,
+                    "meat_window_status": "Before meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+                {
+                    "pig_id": "PIG-CONFLICT",
+                    "tag_number": "18",
+                    "sex": "Female",
+                    "status": "Sold",
+                    "on_farm": "No",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Exited",
+                    "available_for_sale": "Yes",
+                    "reserved_status": "Available",
+                    "marketing_readiness": "Ready For Listing",
+                    "latest_weight_kg": 70,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+            ],
+        }
+
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            today=date(2026, 6, 24),
+            allocation=allocation,
+        )
+
+        categories = {alert["category"] for alert in result["alerts"]}
+        self.assertTrue({
+            "missing_data",
+            "purpose_review_due",
+            "meat_window_entered",
+            "meat_window_expiring",
+            "slaughter_candidate",
+            "slow_grower_feed_risk",
+            "breeding_candidate",
+            "stale_weight",
+            "sold_exited_data_conflict",
+        }.issubset(categories))
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+        self.assertFalse(result["writes_orders"])
+        self.assertFalse(result["writes_sales"])
+        self.assertFalse(result["writes_slaughter"])
+        self.assertFalse(result["writes_reservations"])
+        self.assertFalse(result["writes_lifecycle"])
+        self.assertEqual(result["summary"]["categories"]["sold_exited_data_conflict"], 1)
+        self.assertGreaterEqual(result["summary"]["blocked_allocation_count"], 2)
+
+        conflict = next(alert for alert in result["alerts"] if alert["category"] == "sold_exited_data_conflict")
+        self.assertEqual(conflict["severity"], "Critical")
+        self.assertTrue(conflict["blocks_allocation"])
+        self.assertIn("available_for_sale", conflict["source_fields"])
+        self.assertIn("Do not change pig lifecycle", conflict["forbidden_actions"][0])
+        self.assertEqual(
+            conflict["alert_id"],
+            "herdmaster-pig-allocation:PIG-CONFLICT:sold_exited_data_conflict",
+        )
+
+    def test_herdmaster_alert_api_route_is_wired_as_read_only_endpoint(self):
+        routes_source = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
+        controller_source = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
+
+        self.assertIn('/herdmaster-pig-allocation-alerts', routes_source)
+        self.assertIn("get_herdmaster_pig_allocation_alerts_data", routes_source)
+        self.assertIn("get_herdmaster_pig_allocation_alerts()", controller_source)
 
     def test_allocation_readiness_can_use_supabase_input_rows(self):
         supabase_inputs = {

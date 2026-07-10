@@ -12,6 +12,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
     get_sales_dashboard_data,
     get_pig_allocation_readiness_data,
+    get_herdmaster_pig_allocation_alerts_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
     get_purpose_review_recheck_packet,
@@ -104,6 +105,11 @@ def sales_dashboard():
 @pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])
 def pig_allocation_readiness():
     return jsonify(get_pig_allocation_readiness_data())
+
+
+@pig_weights_bp.route("/herdmaster-pig-allocation-alerts", methods=["GET"])
+def herdmaster_pig_allocation_alerts():
+    return jsonify(get_herdmaster_pig_allocation_alerts_data())
 
 
 @pig_weights_bp.route("/purpose-review", methods=["GET"])

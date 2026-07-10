@@ -4520,6 +4520,299 @@ def get_pig_allocation_readiness(today=None):
     }
 
 
+HERDMASTER_ALERT_FORBIDDEN_ACTIONS = [
+    "Do not change pig lifecycle, purpose, death, movement, medical, litter, mating, breeding, weight, slaughter, reservation, payment, order, or customer records from this alert.",
+    "Do not create stock reservations, sales transactions, slaughter bookings, delivery promises, customer messages, or public posts from this alert.",
+    "Do not treat missing or unknown purpose as approval for meat, slaughter, sale, or breeding.",
+]
+
+
+def _alert_confidence(row, *, base="High", blocks_allocation=False):
+    if _sold_exited_data_conflict(row):
+        return "Low"
+    if row.get("readiness_bucket") == "Needs Data" or blocks_allocation:
+        return "Medium"
+    if row.get("suggested_purpose_confidence") == "Low":
+        return "Medium"
+    return base
+
+
+def _alert_source_fields(row, *field_names):
+    source = {}
+    for field_name in field_names:
+        source[field_name] = row.get(field_name)
+    return source
+
+
+def _alert_record(row, category, severity, reason, source_fields, owner_action, *, confidence="High", blocks_allocation=False):
+    pig_id = to_clean_string(row.get("pig_id", ""))
+    return {
+        "alert_id": f"herdmaster-pig-allocation:{pig_id}:{category}",
+        "pig_id": pig_id,
+        "tag_number": to_clean_string(row.get("tag_number", "")),
+        "category": category,
+        "severity": severity,
+        "confidence": confidence,
+        "reason": reason,
+        "source_fields": source_fields,
+        "owner_action": owner_action,
+        "forbidden_actions": HERDMASTER_ALERT_FORBIDDEN_ACTIONS,
+        "blocks_allocation": blocks_allocation,
+        "created_from": "pig_allocation_readiness",
+    }
+
+
+def _append_alert(alerts, row, category, severity, reason, source_fields, owner_action, *, confidence="High", blocks_allocation=False):
+    if any(alert["pig_id"] == row.get("pig_id") and alert["category"] == category for alert in alerts):
+        return
+    alerts.append(_alert_record(
+        row,
+        category,
+        severity,
+        reason,
+        source_fields,
+        owner_action,
+        confidence=confidence,
+        blocks_allocation=blocks_allocation,
+    ))
+
+
+def _sold_exited_data_conflict(row):
+    status = to_clean_string(row.get("status", "")).lower()
+    on_farm = to_clean_string(row.get("on_farm", "")).lower()
+    readiness_bucket = to_clean_string(row.get("readiness_bucket", ""))
+    available_for_sale = to_clean_string(row.get("available_for_sale", "")).lower()
+    reserved_status = to_clean_string(row.get("reserved_status", "")).lower()
+    reserved_for_order_id = to_clean_string(row.get("reserved_for_order_id", ""))
+    marketing_readiness = to_clean_string(row.get("marketing_readiness", "")).lower()
+
+    terminal_or_exited = (
+        status in {value.lower() for value in TERMINAL_PIG_STATUSES}
+        or on_farm == "no"
+        or readiness_bucket == "Exited"
+    )
+    active_sale_signal = (
+        available_for_sale == "yes"
+        or reserved_status in {"available", "reserved"}
+        or bool(reserved_for_order_id)
+        or marketing_readiness in {"ready for listing", "ready for interest"}
+    )
+    active_state_with_exited_bucket = status == "active" and on_farm == "yes" and readiness_bucket == "Exited"
+    return bool((terminal_or_exited and active_sale_signal) or active_state_with_exited_bucket)
+
+
+def _has_basic_allocation_data(row):
+    return bool(
+        to_clean_string(row.get("pig_id", ""))
+        and to_clean_string(row.get("tag_number", ""))
+        and to_clean_string(row.get("sex", ""))
+        and row.get("latest_weight_kg") is not None
+    )
+
+
+def _has_post_wean_weight(row):
+    wean_date = parse_sheet_date(row.get("wean_date", ""))
+    latest_weight_date = parse_sheet_date(row.get("latest_weight_date", ""))
+    return bool(wean_date and latest_weight_date and latest_weight_date >= wean_date)
+
+
+def _purpose_is_unknown(row):
+    purpose = to_clean_string(row.get("purpose", "")).lower().replace("-", "_").replace(" ", "_")
+    return purpose in {"", "unknown"}
+
+
+def _active_on_farm(row):
+    return to_clean_string(row.get("status", "")).lower() == "active" and to_clean_string(row.get("on_farm", "")).lower() == "yes"
+
+
+def _alerts_for_pig(row, settings):
+    alerts = []
+    if not isinstance(row, dict):
+        return alerts
+
+    conflict = _sold_exited_data_conflict(row)
+    if conflict:
+        _append_alert(
+            alerts,
+            row,
+            "sold_exited_data_conflict",
+            "Critical",
+            "Pig has sold/exited or off-farm evidence while another allocation or sales signal still treats it as active or available.",
+            _alert_source_fields(row, "status", "on_farm", "readiness_bucket", "available_for_sale", "reserved_status", "reserved_for_order_id", "marketing_readiness"),
+            "Owner/admin must reconcile pig lifecycle, sales, and allocation source data before any availability, breeding, meat, or slaughter action.",
+            confidence="High",
+            blocks_allocation=True,
+        )
+
+    if row.get("readiness_bucket") == "Needs Data":
+        _append_alert(
+            alerts,
+            row,
+            "missing_data",
+            "High",
+            row.get("readiness_reason") or "Pig allocation is missing source data needed for trusted classification.",
+            _alert_source_fields(row, "tag_number", "sex", "current_pen_id", "latest_weight_kg", "latest_weight_date", "readiness_bucket", "readiness_reason"),
+            "Capture or correct the missing pig data, then rerun Pig Allocation readiness.",
+            confidence=_alert_confidence(row, blocks_allocation=True),
+            blocks_allocation=True,
+        )
+
+    days_since_weight = row.get("days_since_weight")
+    stale_weight_days = int(settings.get("stale_weight_days") or STALE_WEIGHT_DAYS)
+    if days_since_weight is None or days_since_weight > stale_weight_days:
+        severity = "High" if row.get("readiness_bucket") in {"Meat Candidate", "Slaughter Candidate", "Retain / Breeding Candidate"} else "Medium"
+        reason = "No latest weight date is available." if days_since_weight is None else f"Latest weight is {days_since_weight} days old, beyond the {stale_weight_days}-day freshness rule."
+        _append_alert(
+            alerts,
+            row,
+            "stale_weight",
+            severity,
+            reason,
+            _alert_source_fields(row, "latest_weight_kg", "latest_weight_date", "days_since_weight", "readiness_bucket", "meat_window_status", "abattoir_window_status"),
+            "Weigh this pig before using the alert for value, meat, slaughter, or breeding decisions.",
+            confidence="Medium",
+            blocks_allocation=severity == "High",
+        )
+
+    if _active_on_farm(row) and _has_basic_allocation_data(row):
+        purpose_due = (
+            row.get("readiness_bucket") == "Needs Classification"
+            or (_purpose_is_unknown(row) and _has_post_wean_weight(row))
+            or ((row.get("days_since_wean") or 0) > POST_WEAN_PURPOSE_REVIEW_DAYS and _has_post_wean_weight(row) and _purpose_is_unknown(row))
+        )
+        if purpose_due:
+            severity = "High" if row.get("meat_window_status") == "In meat window" or row.get("abattoir_window_status") == "In abattoir window" else "Medium"
+            _append_alert(
+                alerts,
+                row,
+                "purpose_review_due",
+                severity,
+                row.get("suggested_purpose_reason") or row.get("readiness_reason") or "Purpose review is due from current allocation signals.",
+                _alert_source_fields(row, "purpose", "wean_date", "latest_weight_date", "days_since_wean", "readiness_bucket", "suggested_purpose", "suggested_purpose_confidence"),
+                "Owner should approve, override, defer, or request a Herdmaster recheck through the purpose-review workflow.",
+                confidence=_alert_confidence(row, base="Medium"),
+                blocks_allocation=False,
+            )
+
+    if row.get("meat_window_status") == "In meat window":
+        _append_alert(
+            alerts,
+            row,
+            "meat_window_entered",
+            "High" if (days_since_weight is not None and days_since_weight <= stale_weight_days) else "Medium",
+            "Latest trusted weight is inside the owner meat window.",
+            _alert_source_fields(row, "latest_weight_kg", "latest_weight_date", "days_since_weight", "meat_window_status", "meat_target_min_kg", "meat_target_max_kg"),
+            "Owner may review meat preorder demand. This alert does not promise, reserve, sell, or book anything.",
+            confidence=_alert_confidence(row, base="High"),
+            blocks_allocation=False,
+        )
+
+    latest_weight_kg = row.get("latest_weight_kg")
+    meat_target_max = row.get("meat_target_max_kg") or settings.get("meat_target_max_kg") or MEAT_TARGET_MAX_KG
+    if latest_weight_kg is not None and latest_weight_kg >= meat_target_max - 5:
+        _append_alert(
+            alerts,
+            row,
+            "meat_window_expiring",
+            "High",
+            "Pig is near the top of the meat window or has already passed it.",
+            _alert_source_fields(row, "latest_weight_kg", "latest_weight_date", "meat_window_status", "abattoir_window_status", "meat_target_max_kg"),
+            "Owner should decide whether to push demand, hold, or move to approved slaughter/abattoir planning.",
+            confidence=_alert_confidence(row, base="High"),
+            blocks_allocation=False,
+        )
+
+    if row.get("readiness_bucket") == "Slaughter Candidate" or row.get("abattoir_window_status") in {"In abattoir window", "Past abattoir window"}:
+        _append_alert(
+            alerts,
+            row,
+            "slaughter_candidate",
+            "High",
+            row.get("readiness_reason") or "Pig is in or beyond the abattoir/slaughter planning window.",
+            _alert_source_fields(row, "latest_weight_kg", "latest_weight_date", "readiness_bucket", "abattoir_window_status", "abattoir_target_min_kg"),
+            "Owner must approve any slaughter or abattoir plan through approved rails.",
+            confidence=_alert_confidence(row, base="High"),
+            blocks_allocation=False,
+        )
+
+    if row.get("growth_class") in {"Extremely Slow", "Slow"} or (
+        row.get("average_daily_gain_kg") is not None and row.get("average_daily_gain_kg") < settings.get("slow_grower_adg_kg_day", SLOW_GROWER_ADG_KG_DAY)
+    ):
+        _append_alert(
+            alerts,
+            row,
+            "slow_grower_feed_risk",
+            "Medium",
+            row.get("growth_reason") or "Pig is under the slow-grower feed-risk threshold.",
+            _alert_source_fields(row, "growth_class", "average_daily_gain_kg", "post_wean_daily_gain_kg", "readiness_bucket", "latest_weight_kg"),
+            "Owner should decide whether to keep growing, inspect health/feed, sell live, or cull through approved rails.",
+            confidence=_alert_confidence(row, base="Medium"),
+            blocks_allocation=False,
+        )
+
+    if row.get("readiness_bucket") == "Retain / Breeding Candidate" or row.get("suggested_purpose") == "Breeding Review":
+        _append_alert(
+            alerts,
+            row,
+            "breeding_candidate",
+            "Medium",
+            row.get("suggested_purpose_reason") or row.get("readiness_reason") or "Growth and litter signals justify retention review.",
+            _alert_source_fields(row, "readiness_bucket", "suggested_purpose", "growth_class", "average_daily_gain_kg", "litter_quality", "litter_survival_rate", "sow_pig_id", "boar_pig_id"),
+            "Owner should decide retention. This alert cannot create mating plans or change purpose automatically.",
+            confidence=_alert_confidence(row, base="Medium"),
+            blocks_allocation=False,
+        )
+
+    return alerts
+
+
+def get_herdmaster_pig_allocation_alerts(today=None, allocation=None):
+    today = today or datetime.now().date()
+    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)
+    settings = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
+    alerts = []
+    for row in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        alerts.extend(_alerts_for_pig(row, settings))
+
+    severity_order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+    alerts.sort(key=lambda item: (
+        severity_order.get(item["severity"], 99),
+        item["category"],
+        _pig_sort_key(item.get("tag_number") or item.get("pig_id")),
+    ))
+
+    categories = {}
+    severities = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
+    for alert in alerts:
+        categories[alert["category"]] = categories.get(alert["category"], 0) + 1
+        severities[alert["severity"]] = severities.get(alert["severity"], 0) + 1
+
+    return {
+        "success": True,
+        "mode": "herdmaster_pig_allocation_alerts",
+        "generated_date": allocation.get("generated_date", today.isoformat()) if isinstance(allocation, dict) else today.isoformat(),
+        "source": "pig_allocation_readiness",
+        "allocation_source": allocation.get("source", "") if isinstance(allocation, dict) else "",
+        "business_rules": allocation.get("business_rules", {}) if isinstance(allocation, dict) else {},
+        "thresholds": settings,
+        "summary": {
+            "total_alerts": len(alerts),
+            "categories": categories,
+            "severities": severities,
+            "blocked_allocation_count": sum(1 for alert in alerts if alert.get("blocks_allocation")),
+        },
+        "alerts": alerts,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "writes_orders": False,
+        "writes_sales": False,
+        "writes_slaughter": False,
+        "writes_reservations": False,
+        "writes_lifecycle": False,
+        "message": "Herdmaster pig allocation alerts are advisory and read-only. No pig, litter, purpose, lifecycle, sales, reservation, slaughter, payment, order, customer, or public records were changed.",
+    }
+
+
 def get_meat_ready_stock_summary(today=None, allocation=None, price_entries=None):
     today = today or datetime.now().date()
     allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)

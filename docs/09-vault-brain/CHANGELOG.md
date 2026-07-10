@@ -2,6 +2,7 @@
 
 ## 2026-07-10
 
+- Marked Herdmaster Pig Allocation Alert Rules v1 as implemented through a read-only backend alert packet/API, while keeping stored alert history, migrations, acknowledgements, and automated farm/sales/slaughter actions unapproved future scope.
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 
 ## 2026-07-09

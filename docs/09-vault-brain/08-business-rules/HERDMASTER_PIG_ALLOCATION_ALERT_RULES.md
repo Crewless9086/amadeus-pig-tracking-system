@@ -1,6 +1,6 @@
 # Herdmaster Pig Allocation Alert Rules
 
-Status: draft authority for owner review before implementation.
+Status: v1 implemented as a read-only backend alert packet/API. Stored alert history, acknowledgements, migrations, and automated actions remain unapproved future scope.
 
 Purpose: define the source-of-truth rules and implementation design pack for future Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, and owner-gated until a later approved build creates code and tests.
 
@@ -33,6 +33,7 @@ Future alerts should build on the existing read-only Pig Allocation surface:
 
 - route: `/pig-allocation`;
 - API: `/api/pig-weights/pig-allocation-readiness`;
+- alert API: `/api/pig-weights/herdmaster-pig-allocation-alerts`;
 - purpose review APIs: `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
 - implementation files: `modules/pig_weights/pig_weights_service.py`, `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
 - focused test file: `tests/test_pig_allocation_readiness_service.py`.
