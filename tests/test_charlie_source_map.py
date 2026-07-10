@@ -245,6 +245,11 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("sam_live_stock_sales", keys)
         self.assertNotIn("sam_meat_sales", keys)
         self.assertIn("modules/sales/sam_live_stock_runtime.py", packet["required_inspection_paths"])
+        self.assertIn("modules/sales/sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/telegram_direct.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/routes.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_oom_sakkie_routes.py", packet["required_inspection_paths"])
         self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertIn("/api/order-intake/context", packet["required_routes"])
 
