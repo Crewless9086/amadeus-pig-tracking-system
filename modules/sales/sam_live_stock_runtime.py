@@ -44,6 +44,19 @@ MIN_TOKEN_CHARS = 32
 
 RUNTIME_VERSION = "sam_live_stock_read_only_v1"
 
+SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS = {
+    "answer_general_info",
+    "answer_location",
+    "answer_price",
+    "ask_one_missing_detail",
+    "prepare_draft_order",
+    "update_draft_order",
+    "prepare_quote",
+    "prepare_picture_response",
+    "no_reply_needed",
+    "escalate",
+}
+
 
 def sam_live_stock_webhook_policy(environ=None):
     source = environ if environ is not None else os.environ
@@ -157,8 +170,10 @@ def handle_sam_live_stock_chatwoot_inbound(
     if conversation_review.get("no_reply_recommended"):
         decision["suggested_reply_text"] = ""
         decision["reply_source"] = "natural_close_no_reply_guard"
+        _set_durable_next_action(decision, "no_reply_needed")
     if conversation_review.get("escalation_required"):
         decision["owner_gate_required"] = True
+        _set_durable_next_action(decision, "escalate")
         decision["escalation_packet"] = build_sam_live_stock_escalation_packet(
             inbound,
             facts,
@@ -607,6 +622,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     availability = context_packet.get("availability") if isinstance(context_packet, dict) else {}
     if route["lane"] == LANE_FARM_GENERAL and facts.get("sales_lane") != LANE_LIVE_STOCK:
         reply = _farm_general_reply(inbound, environ or {})
+        durable_action = _durable_farm_general_next_action(inbound)
         return {
             "version": RUNTIME_VERSION,
             "agent": "sam_live_stock_backend",
@@ -634,6 +650,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "price_answer_packet": {"can_answer_price": False, "reason": "farm_general_question"},
             "suggested_reply_text": reply,
             "reply_source": "deterministic_farm_general_knowledge",
+            "next_action": durable_action,
+            "internal_next_action": "farm_general_question",
             "recommended_action": "owner_review_send_candidate",
             "owner_review_required": True,
             "safe_to_autosend": False,
@@ -665,6 +683,15 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    durable_action = _durable_live_stock_next_action(
+        inbound,
+        facts,
+        route,
+        missing,
+        blockers,
+        conversation_plan,
+        price_answer_packet,
+    )
     owner_action_packet = build_live_stock_prepared_owner_action_bundle(
         inbound,
         facts,
@@ -711,7 +738,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "facts": facts,
         "missing_fields": missing,
         "conversation_plan": conversation_plan,
-        "next_action": conversation_plan.get("next_action") or "",
+        "next_action": durable_action,
+        "internal_next_action": conversation_plan.get("next_action") or "",
         "conversation_stage": conversation_plan.get("stage") or "",
         "conversation_goal": conversation_plan.get("goal") or "",
         "read_context": {
@@ -828,6 +856,15 @@ def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_p
     draft_packet = draft_packet if isinstance(draft_packet, dict) else {}
     price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
     action = _clean(conversation_plan.get("next_action"), 80)
+    durable_action = _durable_live_stock_next_action(
+        inbound,
+        facts,
+        {"lane": LANE_LIVE_STOCK},
+        [],
+        [],
+        conversation_plan,
+        price_answer_packet,
+    )
     order_state = conversation_plan.get("order_state") if isinstance(conversation_plan.get("order_state"), dict) else {}
     order_id = _clean(order_state.get("draft_order_id") or order_state.get("order_id"), 100)
     conversation_id = _clean(inbound.get("conversation_id") or facts.get("conversation_id"), 100)
@@ -835,7 +872,8 @@ def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_p
     summary = _prepared_owner_action_summary(action, order_id, draft_packet, price_answer_packet)
     return {
         "version": "sam_live_stock_prepared_owner_action_bundle_v1",
-        "next_action": action,
+        "next_action": durable_action,
+        "internal_next_action": action,
         "stage": _clean(conversation_plan.get("stage"), 80),
         "goal": _clean(conversation_plan.get("goal"), 160),
         "order_id": order_id,
@@ -872,7 +910,16 @@ def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, dra
     elif plan.get("next_action") == "sync_lines":
         plan["stage"] = "draft_order"
     decision["conversation_plan"] = plan
-    decision["next_action"] = plan.get("next_action") or decision.get("next_action") or ""
+    decision["internal_next_action"] = plan.get("next_action") or decision.get("internal_next_action") or ""
+    decision["next_action"] = _durable_live_stock_next_action(
+        inbound,
+        facts,
+        {"lane": decision.get("sales_lane") or LANE_LIVE_STOCK},
+        decision.get("missing_fields") if isinstance(decision.get("missing_fields"), list) else [],
+        decision.get("blockers") if isinstance(decision.get("blockers"), list) else [],
+        plan,
+        decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
+    )
     decision["conversation_stage"] = plan.get("stage") or decision.get("conversation_stage") or ""
     decision["owner_action_packet"] = build_live_stock_prepared_owner_action_bundle(
         inbound,
@@ -899,7 +946,7 @@ def write_live_stock_draft_order_link_to_intake(inbound, facts, draft_order, dec
         "draft_order_id": order_id,
         "last_customer_message": _clean(inbound.get("content"), 600),
     }
-    if decision.get("next_action") == "generate_quote":
+    if decision.get("internal_next_action") == "generate_quote":
         patch["quote_requested"] = True
     payload = {
         "conversation_id": conversation_id,
@@ -998,6 +1045,54 @@ def _prepared_owner_action_summary(action, order_id, draft_packet, price_answer_
         "label": "Owner review",
         "detail": "No prepared order action is ready yet.",
     }
+
+
+def _set_durable_next_action(decision, action):
+    action = _clean(action, 80)
+    if action not in SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS:
+        action = "escalate"
+    decision["next_action"] = action
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    if packet:
+        packet["next_action"] = action
+        decision["owner_action_packet"] = packet
+
+
+def _durable_farm_general_next_action(inbound):
+    text = _normal_text((inbound or {}).get("content"))
+    if _asks_for_pictures_or_ad(text):
+        return "prepare_picture_response"
+    if _asks_location_question(text):
+        return "answer_location"
+    return "answer_general_info"
+
+
+def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, conversation_plan, price_answer_packet):
+    facts = facts if isinstance(facts, dict) else {}
+    route = route if isinstance(route, dict) else {}
+    missing = missing if isinstance(missing, list) else []
+    blockers = blockers if isinstance(blockers, list) else []
+    conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
+    price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
+    text = _normal_text((inbound or {}).get("content"))
+    if _natural_close_signal(text):
+        return "no_reply_needed"
+    if route.get("lane") not in {"", LANE_LIVE_STOCK, LANE_FARM_GENERAL} or blockers:
+        return "escalate"
+    internal_action = _clean(conversation_plan.get("next_action"), 80)
+    if price_answer_packet.get("can_answer_price") and _asks_price_question(text):
+        return "answer_price"
+    if internal_action in {"generate_quote", "update_draft_then_quote"}:
+        return "prepare_quote"
+    if internal_action in {"create_draft", "create_draft_then_quote"}:
+        return "prepare_draft_order"
+    if internal_action == "sync_lines":
+        return "update_draft_order"
+    if price_answer_packet.get("can_answer_price") and (facts.get("quote_requested") or _asks_quote(text)):
+        return "answer_price"
+    if missing or internal_action == "ask_missing_field":
+        return "ask_one_missing_detail"
+    return "answer_general_info"
 
 
 def build_live_stock_match_packet(facts, availability):
@@ -1248,6 +1343,11 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         ]
         for pattern, label in unsafe_reply_patterns:
             if re.search(pattern, lowered):
+                if label == "implies_reservation" and re.search(
+                    r"\b(nothing|not|no animals?|cannot|can't|can not)\b.{0,30}\b(reserved|held|booked)\b",
+                    lowered,
+                ):
+                    continue
                 blocked.append(label)
                 score -= 35
         if reply.count("?") > 1:
@@ -2234,6 +2334,10 @@ def _extract_payment(text):
 
 def _asks_quote(text):
     return _has_any(text, ("price", "cost", "how much", "quote", "quotation", "prys"))
+
+
+def _asks_price_question(text):
+    return _has_any(text, ("price", "cost", "how much", "prys"))
 
 
 def _asks_reservation(text):
