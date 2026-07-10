@@ -761,6 +761,15 @@ def get_allocation_input_rows(connect_factory=None):
         """,
         connect_factory=connect_factory,
     )
+    medical_rows = _fetch_all(
+        """
+        select pig_id, treatment_date, treatment_type, product_name,
+               withdrawal_days, withdrawal_end_date, reason_for_treatment
+        from public.pig_medical_events
+        order by pig_id, treatment_date, created_at, medical_event_id
+        """,
+        connect_factory=connect_factory,
+    )
     litter_rows = _fetch_all(
         """
         select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
@@ -785,6 +794,15 @@ def get_allocation_input_rows(connect_factory=None):
         "Weight_Date": _date_text(row.get("weight_date")),
         "Weight_Kg": _float_or_none(row.get("weight_kg")),
     } for row in weight_rows]
+    formatted_medical_rows = [{
+        "Pig_ID": _text(row.get("pig_id")),
+        "Treatment_Date": _date_text(row.get("treatment_date")),
+        "Treatment_Type": _text(row.get("treatment_type")),
+        "Product_Name": _text(row.get("product_name")),
+        "Withdrawal_Days": _float_or_none(row.get("withdrawal_days")),
+        "Withdrawal_End_Date": _date_text(row.get("withdrawal_end_date")),
+        "Reason_For_Treatment": _text(row.get("reason_for_treatment")),
+    } for row in medical_rows]
     formatted_litter_rows = [{
         "Litter_ID": _text(row.get("litter_id")),
         "Sow_Pig_ID": _text(row.get("sow_pig_id")),
@@ -808,6 +826,7 @@ def get_allocation_input_rows(connect_factory=None):
         "overview_rows": overview_rows,
         "pig_master_rows": pig_master_rows,
         "weight_rows": formatted_weight_rows,
+        "medical_rows": formatted_medical_rows,
         "sales_rows": [],
         "litter_rows": formatted_litter_rows,
         "pen_lookup": pen_lookup,

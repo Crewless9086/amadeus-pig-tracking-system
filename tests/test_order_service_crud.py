@@ -154,6 +154,40 @@ class OrderCrudServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already on this order"):
                 order_write.create_order_line({"order_id": "ORD-1", "pig_id": "PIG-1"})
 
+    def test_available_pigs_for_orders_filters_withdrawal_hold_and_preserves_stock_context(self):
+        rows = [
+            {
+                "pig_id": "PIG-READY",
+                "tag_number": "31",
+                "sex": "Female",
+                "current_weight_kg": 12,
+                "latest_weight_date": "2026-07-01",
+                "weight_band": "10_to_14_Kg",
+                "sale_category": "Weaner",
+                "suggested_price_category": "Weaner|10_to_14_Kg",
+                "available_for_sale": "Yes",
+                "withdrawal_clear": "Yes",
+                "reserved_status": "",
+                "family_context": {"litter_id": "LIT-3"},
+                "media_references": [],
+                "media_source_status": "no_canonical_animal_media_source",
+            },
+            {
+                "pig_id": "PIG-HOLD",
+                "tag_number": "32",
+                "available_for_sale": "Yes",
+                "withdrawal_clear": "No",
+                "reserved_status": "",
+            },
+        ]
+
+        pigs = order_write._available_pigs_from_sales_rows(rows)
+
+        self.assertEqual([pig["pig_id"] for pig in pigs], ["PIG-READY"])
+        self.assertEqual(pigs[0]["latest_weight_date"], "2026-07-01")
+        self.assertEqual(pigs[0]["family_context"]["litter_id"], "LIT-3")
+        self.assertEqual(pigs[0]["media_references"], [])
+
     def test_update_order_line_updates_active_line_and_blocks_terminal(self):
         with patch.object(order_write, "_get_order_line_row", return_value={"Order_Line_ID": "OL-1", "Line_Status": "Draft"}), \
              patch.object(order_write, "_update_sheet_row_by_id") as update_row:

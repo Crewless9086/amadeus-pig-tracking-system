@@ -2289,6 +2289,7 @@ def _row_available_for_live_stock(row):
     reserved = _normal_text(row.get("reserved_status"))
     available = _normal_text(row.get("available_for_sale"))
     purpose = _normal_text(row.get("purpose"))
+    withdrawal_clear = _normal_text(row.get("withdrawal_clear"))
     if status in {"sold", "exited", "dead", "terminal"}:
         return False
     if on_farm and on_farm not in {"yes", "true", "1", "on farm"}:
@@ -2298,6 +2299,8 @@ def _row_available_for_live_stock(row):
     if available and available not in {"yes", "true", "1"}:
         return False
     if purpose and purpose != "sale":
+        return False
+    if withdrawal_clear == "no":
         return False
     return True
 
@@ -2360,9 +2363,22 @@ def _availability_public_row(row):
         "tag_number": _clean(row.get("tag_number"), 80),
         "sex": _clean(row.get("sex"), 40),
         "current_weight_kg": row.get("current_weight_kg"),
+        "latest_weight_date": _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40),
         "weight_band": _clean(row.get("weight_band"), 80),
         "sale_category": _clean(row.get("sale_category"), 120),
         "suggested_price_category": _clean(row.get("suggested_price_category"), 120),
+        "live_stock_sale_reason": _clean(row.get("live_stock_sale_reason") or row.get("sales_notes"), 300),
+        "family_context": row.get("family_context") if isinstance(row.get("family_context"), dict) else {
+            "litter_id": _clean(row.get("litter_id"), 80),
+            "mother_id": _clean(row.get("mother_id"), 80),
+            "father_id": _clean(row.get("father_id"), 80),
+            "sow_pig_id": _clean(row.get("sow_pig_id"), 80),
+            "sow_tag_number": _clean(row.get("sow_tag_number"), 80),
+            "boar_pig_id": _clean(row.get("boar_pig_id"), 80),
+            "boar_tag_number": _clean(row.get("boar_tag_number"), 80),
+        },
+        "media_references": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
+        "media_source_status": _clean(row.get("media_source_status") or "no_canonical_animal_media_source", 120),
     }
 
 

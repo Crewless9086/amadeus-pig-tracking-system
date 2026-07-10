@@ -3743,16 +3743,29 @@ def _sales_availability_from_supabase_allocation():
             "age_days": pig.get("age_days"),
             "current_weight_kg": pig.get("latest_weight_kg"),
             "last_weight_date": pig.get("latest_weight_date", ""),
+            "latest_weight_date": pig.get("latest_weight_date", ""),
             "average_daily_gain_kg": pig.get("average_daily_gain_kg"),
             "calculated_stage": pig.get("calculated_stage", ""),
             "weight_band": eligibility.get("weight_band") or pig.get("weight_band", ""),
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
-            "withdrawal_clear": "",
+            "withdrawal_clear": pig.get("withdrawal_clear", ""),
+            "current_withdrawal_end_date": pig.get("current_withdrawal_end_date", ""),
+            "health_exclusion_reason": pig.get("health_exclusion_reason", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
             "purpose": pig.get("purpose", ""),
+            "litter_id": pig.get("litter_id", ""),
+            "mother_id": pig.get("mother_id", ""),
+            "father_id": pig.get("father_id", ""),
+            "sow_pig_id": pig.get("sow_pig_id", ""),
+            "sow_tag_number": pig.get("sow_tag_number", ""),
+            "boar_pig_id": pig.get("boar_pig_id", ""),
+            "boar_tag_number": pig.get("boar_tag_number", ""),
+            "family_context": pig.get("family_context", {}),
+            "media_references": pig.get("media_references", []),
+            "media_source_status": pig.get("media_source_status", "no_canonical_animal_media_source"),
             "available_for_sale": "Yes" if eligibility["eligible"] else "No",
             "live_stock_sale_eligible": eligibility["eligible"],
             "live_stock_sale_reason": eligibility["reason"],
@@ -3777,6 +3790,8 @@ def _live_stock_sale_eligibility(pig):
     calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
     latest_weight_kg = to_float(pig.get("latest_weight_kg"))
     wean_date = to_clean_string(pig.get("wean_date", ""))
+    withdrawal_clear = to_clean_string(pig.get("withdrawal_clear", ""))
+    health_exclusion_reason = to_clean_string(pig.get("health_exclusion_reason", ""))
 
     if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
         return _live_stock_sale_block("not_active", "Pig is not active.")
@@ -3784,6 +3799,9 @@ def _live_stock_sale_eligibility(pig):
         return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
     if reserved_status == "reserved" or reserved_for_order_id:
         return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
+    if withdrawal_clear.lower() == "no":
+        reason = health_exclusion_reason or "Pig is still inside a medical withdrawal period."
+        return _live_stock_sale_block("withdrawal_hold", reason)
     if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
         return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
@@ -3971,6 +3989,48 @@ def _litter_quality_summary(litter_row, settings=None):
         "sow_tag_number": to_clean_string(litter_row.get("Sow_Tag_Number", "")),
         "boar_pig_id": to_clean_string(litter_row.get("Boar_Pig_ID", "")),
         "boar_tag_number": to_clean_string(litter_row.get("Boar_Tag_Number", "")),
+    }
+
+
+def _current_withdrawal_lookup(medical_rows, today=None):
+    today = today or datetime.now().date()
+    lookup = {}
+    for row in medical_rows or []:
+        pig_id = to_clean_string(row.get("Pig_ID", row.get("pig_id", "")))
+        if not pig_id:
+            continue
+        withdrawal_end_date = parse_sheet_date(
+            row.get("Withdrawal_End_Date", row.get("withdrawal_end_date", ""))
+        )
+        if not withdrawal_end_date:
+            continue
+        current = lookup.get(pig_id)
+        if current and current["current_withdrawal_end_date"] >= withdrawal_end_date.isoformat():
+            continue
+        is_active_hold = withdrawal_end_date >= today
+        product_name = to_clean_string(row.get("Product_Name", row.get("product_name", "")))
+        treatment_type = to_clean_string(row.get("Treatment_Type", row.get("treatment_type", "")))
+        reason = to_clean_string(row.get("Reason_For_Treatment", row.get("reason_for_treatment", "")))
+        source_label = product_name or treatment_type or reason or "medical event"
+        lookup[pig_id] = {
+            "withdrawal_clear": "No" if is_active_hold else "Yes",
+            "current_withdrawal_end_date": withdrawal_end_date.isoformat(),
+            "health_exclusion_reason": (
+                f"Medical withdrawal active until {withdrawal_end_date.isoformat()} from {source_label}."
+                if is_active_hold
+                else ""
+            ),
+        }
+    return lookup
+
+
+def _withdrawal_context_for_pig(pig_id, medical_lookup):
+    if pig_id in medical_lookup:
+        return medical_lookup[pig_id]
+    return {
+        "withdrawal_clear": "Yes",
+        "current_withdrawal_end_date": "",
+        "health_exclusion_reason": "",
     }
 
 
@@ -4374,6 +4434,7 @@ def get_pig_allocation_readiness(today=None):
         overview_rows = supabase_inputs.get("overview_rows", [])
         pig_master_rows = supabase_inputs.get("pig_master_rows", [])
         weight_rows = supabase_inputs.get("weight_rows", [])
+        medical_rows = supabase_inputs.get("medical_rows", [])
         sales_rows = supabase_inputs.get("sales_rows", [])
         litter_rows = supabase_inputs.get("litter_rows", [])
         pen_lookup = supabase_inputs.get("pen_lookup", {})
@@ -4382,12 +4443,14 @@ def get_pig_allocation_readiness(today=None):
         overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
         pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
         weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+        medical_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"])
         sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
         litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
         pen_lookup = _build_pen_lookup()
         source = "google_sheets"
     master_lookup = _build_pig_lookup(pig_master_rows, columns)
     latest_weights = _latest_weights_by_pig(weight_rows, columns)
+    withdrawal_lookup = _current_withdrawal_lookup(medical_rows, today)
     sales_lookup = _sales_availability_by_pig(sales_rows, columns)
     litter_lookup = _litter_overview_by_id(litter_rows)
 
@@ -4416,6 +4479,7 @@ def get_pig_allocation_readiness(today=None):
         timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
         litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)
+        withdrawal_context = _withdrawal_context_for_pig(pig_id, withdrawal_lookup)
         if _defer_tagless_pre_wean_piglet_from_allocation(row, growth):
             continue
         bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings)
@@ -4467,6 +4531,15 @@ def get_pig_allocation_readiness(today=None):
             "sow_tag_number": litter_quality["sow_tag_number"],
             "boar_pig_id": litter_quality["boar_pig_id"],
             "boar_tag_number": litter_quality["boar_tag_number"],
+            "family_context": {
+                "litter_id": litter_id,
+                "mother_id": to_clean_string(row.get("Mother_Pig_ID", "")),
+                "father_id": to_clean_string(row.get("Father_Pig_ID", "")),
+                "sow_pig_id": litter_quality["sow_pig_id"],
+                "sow_tag_number": litter_quality["sow_tag_number"],
+                "boar_pig_id": litter_quality["boar_pig_id"],
+                "boar_tag_number": litter_quality["boar_tag_number"],
+            },
             "litter_quality": litter_quality["litter_quality"],
             "litter_quality_reason": litter_quality["litter_quality_reason"],
             "litter_survival_rate": litter_quality["litter_survival_rate"],
@@ -4480,6 +4553,11 @@ def get_pig_allocation_readiness(today=None):
             "suggested_purpose": suggested_purpose["suggested_purpose"],
             "suggested_purpose_reason": suggested_purpose["suggested_purpose_reason"],
             "suggested_purpose_confidence": suggested_purpose["suggested_purpose_confidence"],
+            "withdrawal_clear": withdrawal_context["withdrawal_clear"],
+            "current_withdrawal_end_date": withdrawal_context["current_withdrawal_end_date"],
+            "health_exclusion_reason": withdrawal_context["health_exclusion_reason"],
+            "media_references": [],
+            "media_source_status": "no_canonical_animal_media_source",
             "available_for_sale": sales_meta.get("available_for_sale", ""),
             "reserved_status": sales_meta.get("reserved_status", ""),
             "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
