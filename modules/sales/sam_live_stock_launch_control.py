@@ -433,6 +433,12 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Wants: {_owner_card_fact_summary(facts)}",
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
+        f"Delivery requested: {_owner_card_delivery_requested(decision)}",
+        f"Destination: {_owner_card_delivery_destination(decision)}",
+        f"One-way km: {_owner_card_delivery_one_way_km(decision)}",
+        f"Delivery estimate: {_owner_card_delivery_fee(decision)}",
+        f"Total incl delivery: {_owner_card_delivery_total(decision)}",
+        f"Owner override: {_owner_card_delivery_owner_override(decision)}",
         f"Missing: {_owner_card_missing_summary(decision)}",
         f"Reply: {_owner_card_reply_source_summary(decision)}",
     ]
@@ -1037,6 +1043,52 @@ def _owner_card_price_summary(decision):
     if quantity and not total:
         parts.append(f"qty {quantity}")
     return " - ".join(parts) if parts else "not resolved"
+
+
+def _owner_card_delivery_packet(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("delivery_packet") if isinstance(decision.get("delivery_packet"), dict) else {}
+    return packet
+
+
+def _owner_card_delivery_requested(decision):
+    return "yes" if _owner_card_delivery_packet(decision).get("delivery_requested") else "no"
+
+
+def _owner_card_delivery_destination(decision):
+    packet = _owner_card_delivery_packet(decision)
+    return _clean(packet.get("destination"), 120) or "not captured"
+
+
+def _owner_card_delivery_one_way_km(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("one_way_km")
+    if value in ("", None):
+        return "not captured"
+    return f"{_money(value).replace(',', '')} km"
+
+
+def _owner_card_delivery_fee(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("delivery_fee_estimate")
+    if value in ("", None):
+        return "not calculated"
+    rate = packet.get("rate_per_km") or 20
+    return f"R{_money(value)} at R{_money(rate)}/km"
+
+
+def _owner_card_delivery_total(decision):
+    packet = _owner_card_delivery_packet(decision)
+    value = packet.get("total_with_livestock_and_delivery")
+    if value in ("", None):
+        return "not calculated"
+    return f"R{_money(value)}"
+
+
+def _owner_card_delivery_owner_override(decision):
+    packet = _owner_card_delivery_packet(decision)
+    warning = _clean(packet.get("owner_override_warning"), 180)
+    return warning or "none"
 
 
 def _owner_card_missing_summary(decision):

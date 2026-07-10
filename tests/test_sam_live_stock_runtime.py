@@ -1212,9 +1212,122 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("- 2 x Female Weaner, 10-14 kg: R500 each", reply)
         self.assertIn("- Estimated total: R1,000", reply)
         self.assertIn("- This is not a reservation.", reply)
+        self.assertNotIn("delivery", reply.lower())
+        self.assertFalse(decision["delivery_packet"]["delivery_requested"])
         self.assertFalse(decision["sends_customer_message"])
         self.assertFalse(decision["creates_order"])
         self.assertFalse(decision["reserves_stock"])
+
+    def test_delivery_question_with_known_km_returns_owner_review_estimate(self):
+        def intake_loader(_conversation_id):
+            return {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Riversdale",
+                    "quote_requested": True,
+                    "order_commitment": True,
+                },
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            }
+
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "status": "ok",
+                "sale_category": "Weaner Piglets",
+                "weight_band": "10_to_14_Kg",
+                "unit_price": 500,
+                "currency": "ZAR",
+                "source": "test",
+            },
+        ):
+            result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="Can you deliver to Mossel Bay? It is 60km one way."),
+                intake_context_loader=intake_loader,
+                conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+                availability_loader=lambda: [],
+            )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+        delivery = decision["delivery_packet"]
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(delivery["delivery_requested"])
+        self.assertEqual(delivery["destination"], "Mossel Bay")
+        self.assertEqual(delivery["one_way_km"], 60)
+        self.assertEqual(delivery["delivery_fee_estimate"], 1200)
+        self.assertEqual(delivery["total_with_livestock_and_delivery"], 2200)
+        self.assertIn("Collection is normally first", reply)
+        self.assertIn("estimated R1,200 at R20/km", reply)
+        self.assertIn("Estimated livestock plus delivery total: R2,200", reply)
+        self.assertIn("Delivery is not promised", reply)
+
+    def test_delivery_question_without_destination_asks_one_useful_question(self):
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you deliver or transport them?"),
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {"collection_location": "Riversdale"},
+                "items": [{
+                    "quantity": 2,
+                    "category": "Weaner",
+                    "weight_range": "10_to_14_Kg",
+                    "sex": "Female",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(decision["delivery_packet"]["delivery_requested"])
+        self.assertIn("delivery_destination", decision["missing_fields"])
+        self.assertEqual(reply.count("?"), 1)
+        self.assertIn("what town or address", reply.lower())
+
+    def test_safety_scanner_blocks_delivery_promises_but_allows_estimates(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(content="Can you deliver to Mossel Bay?")
+        )
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+
+        promised = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            inbound,
+            facts,
+            {
+                "sales_lane": "live_stock_sales",
+                "missing_fields": [],
+                "blockers": [],
+                "suggested_reply_text": "We can deliver to Mossel Bay tomorrow. Delivery is confirmed.",
+            },
+        )
+        estimated = sam_live_stock_runtime.review_sam_live_stock_conversation(
+            inbound,
+            facts,
+            {
+                "sales_lane": "live_stock_sales",
+                "missing_fields": [],
+                "blockers": [],
+                "suggested_reply_text": "Delivery to Mossel Bay would be an estimate for owner review only and is not promised.",
+            },
+        )
+
+        self.assertIn("hard_delivery_promise", promised["blocked_reasons"])
+        self.assertFalse(promised["safe_to_send"])
+        self.assertNotIn("hard_delivery_promise", estimated["blocked_reasons"])
 
     def test_intake_write_blocks_wrong_lane_and_breeding_stock(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="I want pork chops."))

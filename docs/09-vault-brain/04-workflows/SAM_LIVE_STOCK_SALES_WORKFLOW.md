@@ -33,6 +33,8 @@ Mixed meat/live-stock language must clarify before proceeding. Example: `I want 
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
 
+Requested delivery is handled only when the customer asks about delivery, transport, drop-off, or being far away. Normal stock and price replies must stay collection-first and must not advertise delivery. When delivery is requested, SAM captures the destination town/address/location and one-way kilometre distance, estimates delivery at R20 per one-way kilometre when known, and keeps the wording owner-reviewed and non-promissory.
+
 ## Required Facts
 
 Before a live-stock draft order can be prepared:
@@ -127,6 +129,7 @@ The backend-native controlled launch surface should expose:
 - append-only conversation review event logging in `sam_live_stock_conversation_review_events`;
 - escalation packet for Telegram/Oom Sakkie;
 - owner-review Telegram packet for normal safe drafts, with customer message, SAM draft, risk score, and approve/edit/human/close actions;
+- owner-review Telegram packet delivery fields when delivery was requested: delivery requested, destination, one-way km, delivery fee estimate, livestock plus delivery total, and owner override warning;
 - owner-approved send route, disabled unless the owner-send env gate is enabled;
 - Telegram escalation send route, disabled unless the Telegram escalation send env gate is enabled;
 - Telegram callback route for approve-send, edit-in-Chatwoot, close, keep-human, and resolved actions;

@@ -41,6 +41,7 @@ CHATWOOT_TOKEN_FALLBACK_ENV = "CHATWOOT_API_TOKEN"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 MIN_TOKEN_CHARS = 32
+LIVE_STOCK_DELIVERY_RATE_PER_KM = 20
 
 RUNTIME_VERSION = "sam_live_stock_read_only_v1"
 
@@ -292,6 +293,9 @@ def extract_live_stock_facts(message, inbound=None):
         "timing": _extract_timing(text),
         "location": _extract_location(text),
         "transport_expectation": _extract_transport(text),
+        "delivery_requested": _delivery_requested(text),
+        "delivery_destination": _extract_delivery_destination(text),
+        "delivery_one_way_km": _extract_delivery_one_way_km(text),
         "payment_method": _extract_payment(text),
         "quote_requested": _asks_quote(text),
         "reservation_requested": _asks_reservation(text),
@@ -339,6 +343,9 @@ def merge_prior_live_stock_context(facts, prior_context):
         "timing",
         "location",
         "transport_expectation",
+        "delivery_requested",
+        "delivery_destination",
+        "delivery_one_way_km",
         "payment_method",
         "quote_requested",
         "order_commitment",
@@ -683,6 +690,12 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    delivery_packet = build_live_stock_delivery_packet(facts, price_answer_packet)
+    if delivery_packet.get("delivery_requested"):
+        if not delivery_packet.get("destination"):
+            missing = ["delivery_destination"] + [item for item in missing if item != "delivery_destination"]
+        elif delivery_packet.get("one_way_km") in ("", None):
+            missing = ["delivery_one_way_km"] + [item for item in missing if item != "delivery_one_way_km"]
     durable_action = _durable_live_stock_next_action(
         inbound,
         facts,
@@ -704,7 +717,16 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         environ or {},
         owner_example_loader=owner_example_loader,
     )
-    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet, conversation_plan)
+    fallback_reply = _safe_reply_draft(
+        facts,
+        route,
+        missing,
+        availability,
+        blockers,
+        price_answer_packet,
+        conversation_plan,
+        delivery_packet,
+    )
     llm_draft = _build_llm_reply_draft_if_enabled(
         inbound,
         facts,
@@ -750,6 +772,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "delivery_packet": delivery_packet,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
         "draft_order_packet": draft_packet,
@@ -1209,6 +1232,39 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
     }
 
 
+def build_live_stock_delivery_packet(facts, price_answer_packet=None):
+    facts = facts if isinstance(facts, dict) else {}
+    price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
+    delivery_requested = bool(facts.get("delivery_requested") or facts.get("transport_expectation") == "delivery_requested")
+    destination = _clean(facts.get("delivery_destination"), 160) if delivery_requested else ""
+    one_way_km = _delivery_km_number(facts.get("delivery_one_way_km")) if delivery_requested else ""
+    delivery_fee = round(float(one_way_km) * LIVE_STOCK_DELIVERY_RATE_PER_KM, 2) if one_way_km not in ("", None) else ""
+    livestock_total = price_answer_packet.get("estimated_total")
+    total_with_delivery = ""
+    if delivery_fee not in ("", None) and livestock_total not in ("", None):
+        try:
+            total_with_delivery = round(float(livestock_total) + float(delivery_fee), 2)
+        except (TypeError, ValueError):
+            total_with_delivery = ""
+    return {
+        "version": "sam_live_stock_delivery_packet_v1",
+        "delivery_requested": delivery_requested,
+        "destination": destination,
+        "one_way_km": one_way_km,
+        "rate_per_km": LIVE_STOCK_DELIVERY_RATE_PER_KM,
+        "delivery_fee_estimate": delivery_fee,
+        "livestock_total": livestock_total if livestock_total not in (None, "") else "",
+        "total_with_livestock_and_delivery": total_with_delivery,
+        "owner_override_warning": (
+            "Delivery is an owner-reviewed estimate only. Normal live-stock handover is collection-first, "
+            "and the owner may override route, fee, availability, or whether delivery is possible."
+        ) if delivery_requested else "",
+        "customer_send_allowed": False,
+        "delivery_promise_created": False,
+        **_authority_flags(),
+    }
+
+
 def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=None, draft_order_creator=None):
     source = environ if environ is not None else os.environ
     if not _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)):
@@ -1340,6 +1396,8 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
             (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
             (r"\b(for sale|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
             (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
+            (r"\b(delivery|deliver|transport|drop off)\b.{0,45}\b(guaranteed|confirmed|booked|scheduled|free|included|definitely)\b", "hard_delivery_promise"),
+            (r"\b(we will|we can|i will|i can)\b.{0,35}\b(deliver|transport|drop off)\b(?!.{0,80}\b(estimate|owner review|owner-reviewed|farm review|not promised)\b)", "hard_delivery_promise"),
         ]
         for pattern, label in unsafe_reply_patterns:
             if re.search(pattern, lowered):
@@ -1615,8 +1673,18 @@ def build_sam_live_stock_go_live_checklist(environ=None):
         }
 
 
-def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None, conversation_plan=None):
+def _safe_reply_draft(
+    facts,
+    route,
+    missing,
+    availability,
+    blockers,
+    price_answer_packet=None,
+    conversation_plan=None,
+    delivery_packet=None,
+):
     conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
+    delivery_packet = delivery_packet if isinstance(delivery_packet, dict) else {}
     if route["lane"] != LANE_LIVE_STOCK:
         if route["lane"] == "owner_handoff" and _payment_or_pop_interest(facts):
             return (
@@ -1628,6 +1696,10 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
+    if delivery_packet.get("delivery_requested"):
+        delivery_reply = _delivery_aware_reply(facts, price_answer_packet, delivery_packet, missing)
+        if delivery_reply:
+            return delivery_reply
     action_reply = _reply_for_next_action(facts, conversation_plan, price_answer_packet)
     if action_reply:
         return action_reply
@@ -1661,6 +1733,33 @@ def _reply_for_next_action(facts, plan, packet):
     if action in {"create_draft", "sync_lines"}:
         return "I have enough detail to prepare the draft order for owner review. Nothing is reserved or sent until the farm approves it."
     return ""
+
+
+def _delivery_aware_reply(facts, price_packet, delivery_packet, missing):
+    facts = facts if isinstance(facts, dict) else {}
+    price_packet = price_packet if isinstance(price_packet, dict) else {}
+    delivery_packet = delivery_packet if isinstance(delivery_packet, dict) else {}
+    missing = missing if isinstance(missing, list) else []
+    if "delivery_destination" in missing or not delivery_packet.get("destination"):
+        return "Collection is normally first. If you want delivery reviewed, what town or address would the pigs need to go to?"
+    if "delivery_one_way_km" in missing or delivery_packet.get("one_way_km") in ("", None):
+        destination = _clean(delivery_packet.get("destination"), 160)
+        return f"Collection is normally first. For owner-reviewed delivery to {destination}, what is the one-way distance in km from Riversdale?"
+    destination = _clean(delivery_packet.get("destination"), 160)
+    fee = _money_label(delivery_packet.get("delivery_fee_estimate"))
+    km = _km_label(delivery_packet.get("one_way_km"))
+    lines = [
+        "Collection is normally first for live pigs.",
+        f"For owner review, delivery to {destination} at {km} one way would be an estimated {fee} at R{LIVE_STOCK_DELIVERY_RATE_PER_KM}/km.",
+    ]
+    if price_packet.get("can_answer_price"):
+        price = _price_answer_reply(facts, price_packet)
+        if price:
+            lines.extend(["", price])
+        if delivery_packet.get("total_with_livestock_and_delivery") not in ("", None):
+            lines.append(f"- Estimated livestock plus delivery total: {_money_label(delivery_packet.get('total_with_livestock_and_delivery'))}")
+    lines.append("Delivery is not promised; the owner must approve whether it can work.")
+    return "\n".join(lines)
 
 
 def _farm_general_reply(inbound, source):
@@ -2143,6 +2242,16 @@ def _money_label(value):
     return f"R{amount:,.2f}"
 
 
+def _km_label(value):
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return _clean(value, 40)
+    if amount.is_integer():
+        return f"{int(amount)} km"
+    return f"{amount:g} km"
+
+
 def _human_weight_band(value):
     text = _clean(value, 80)
     if not text:
@@ -2157,6 +2266,8 @@ def _question_for_missing(field):
         "sex": "Do you need males, females, or does the sex not matter if the size is right?",
         "timing": "When would you want them?",
         "location": "Where would they need to go?",
+        "delivery_destination": "Collection is normally first. If you want delivery reviewed, what town or address would the pigs need to go to?",
+        "delivery_one_way_km": "Collection is normally first. What is the one-way distance in km from Riversdale for owner-reviewed delivery?",
     }.get(field, "What detail should I note for the farm?")
 
 
@@ -2317,11 +2428,62 @@ def _extract_location(text):
 
 
 def _extract_transport(text):
-    if _has_any(text, ("deliver", "delivery", "bring them", "drop off")):
+    if _delivery_requested(text):
         return "delivery_requested"
     if _has_any(text, ("collect", "collection", "pick up", "pickup", "afhaal")):
         return "collection_requested"
     return ""
+
+
+def _delivery_requested(text):
+    return _has_any(text, (
+        "deliver",
+        "delivery",
+        "transport",
+        "bring them",
+        "drop off",
+        "drop-off",
+        "drop them",
+        "far away",
+        "too far",
+        "far from you",
+    ))
+
+
+def _extract_delivery_destination(text):
+    if not _delivery_requested(text):
+        return ""
+    explicit = re.search(
+        r"\b(?:to|in|near|at)\s+([a-z][a-z0-9 .'-]{2,80}?)(?:\s+(?:is|for|and|with|one way|one-way|\d+\s*km)\b|[?.!,;]|$)",
+        text,
+    )
+    if explicit:
+        raw = _clean(explicit.group(1), 120)
+        if raw and not re.fullmatch(r"(me|us|you|them|there|here|the farm|your farm)", raw):
+            known = _extract_location(raw)
+            return known or raw.title()
+    return _extract_location(text)
+
+
+def _extract_delivery_one_way_km(text):
+    if not _delivery_requested(text):
+        return ""
+    match = re.search(r"\b(\d{1,4}(?:\.\d+)?)\s*(?:km|kilometres|kilometers)\b", text)
+    if not match:
+        return ""
+    return _delivery_km_number(match.group(1))
+
+
+def _delivery_km_number(value):
+    if value in ("", None):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    return int(number) if number.is_integer() else round(number, 1)
 
 
 def _extract_payment(text):

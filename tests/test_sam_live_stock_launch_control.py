@@ -290,6 +290,34 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Reply: Safety fallback - unsafe sales or discount language", packet["telegram_packet"]["text"])
         self.assertIn("LLM safety fallback: unsafe sales or discount language", packet["telegram_packet"]["text"])
 
+    def test_owner_review_card_surfaces_delivery_estimate_fields(self):
+        inbound, facts, decision = review_inputs(message="Can you deliver to Mossel Bay? It is 60km one way.")
+        decision["delivery_packet"] = {
+            "delivery_requested": True,
+            "destination": "Mossel Bay",
+            "one_way_km": 60,
+            "rate_per_km": 20,
+            "delivery_fee_estimate": 1200,
+            "total_with_livestock_and_delivery": 2200,
+            "owner_override_warning": "Delivery is an owner-reviewed estimate only.",
+        }
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+        text = packet["telegram_packet"]["text"]
+
+        self.assertIn("Delivery requested: yes", text)
+        self.assertIn("Destination: Mossel Bay", text)
+        self.assertIn("One-way km: 60 km", text)
+        self.assertIn("Delivery estimate: R1,200 at R20/km", text)
+        self.assertIn("Total incl delivery: R2,200", text)
+        self.assertIn("Owner override: Delivery is an owner-reviewed estimate only.", text)
+
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
         result, status = launch.delete_sam_live_stock_telegram_escalation(
             "SAM-LIVE-ESC-1",

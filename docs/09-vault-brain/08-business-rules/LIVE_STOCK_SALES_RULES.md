@@ -16,6 +16,7 @@ Status: Current authority for SAM Live Stock Sales.
 - Only pigs with purpose `Sale` and source-truth sale availability may be sold through SAM Live Stock.
 - No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
 - The farm's exact live location must not be shared. Live-stock handover is arranged in Riversdale or Albertinia after the order path is confirmed.
+- Delivery is not advertised in normal live-stock stock or price replies. If the customer asks for delivery, transport, drop-off, or says they are far away, SAM may capture destination and one-way kilometres, estimate at R20/km for owner review, and must state collection is normal and delivery is not promised.
 - SAM must not debate or prove the farm's legitimacy to rude, aggressive, or already-decided scam accusations. It should close politely, log/escalate, and stop replying unless the owner reopens.
 - SAM must not negotiate pricing or use cheap/budget/discount language unless the owner creates a specific approved pricing rule.
 - SAM must not keep a conversation alive just to have the last word. Polite acknowledgement endings may be left unanswered.
@@ -78,6 +79,8 @@ Reservation, payment confirmation, quote/send, and customer-visible promises rem
 Live-stock sales may use cash on delivery or EFT on delivery with immediate payment confirmation. EFT handover requires payment to reflect before animals are released.
 
 The exact farm location remains private. Normal handover points are Riversdale or Albertinia. Any exception requires owner review.
+
+Delivery estimates are owner-reviewed exceptions, not a default offer. The owner may override route, fee, timing, animal suitability for transport, or whether delivery can happen at all.
 
 ## Hostile Or Low-Trust Conversation Rule
 
