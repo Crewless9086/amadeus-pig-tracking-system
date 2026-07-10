@@ -1,6 +1,11 @@
 import json
 from datetime import date, datetime
-from psycopg.types.json import Json
+try:
+    from psycopg.types.json import Json
+except ModuleNotFoundError:
+    class Json:
+        def __init__(self, value):
+            self.value = value
 
 from modules.orders import order_supabase_write
 from modules.pig_weights.pig_weights_utils import to_clean_string, to_float
