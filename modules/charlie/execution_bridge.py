@@ -51,6 +51,7 @@ from modules.charlie.mission_quality import (
     repo_test_command_memory,
     score_mission_quality,
 )
+from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.source_map import (
     implementation_source_packet,
     validate_implementation_inspection,
@@ -1460,6 +1461,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
+    runner_preflight = runner_environment_preflight(require_browser=bool(ui_contract.get("ui_related")))
     model_assignment = choose_agent_model(
         agent=agent,
         mission_type=mission.get("mission_type", ""),
@@ -1484,6 +1486,9 @@ Partial recovery contract:
 
 Repo test command memory:
 {json.dumps(test_command_memory, indent=2)}
+
+Runner environment preflight:
+{json.dumps(runner_preflight, indent=2)}
 
 Mission:
 {mission.get("raw_text", "")}

@@ -6,6 +6,7 @@
 
 ## 2026-07-09
 
+- Added the SAM Live Stock durable `next_action` contract for inbound Chatwoot decisions, while preserving owner gates for customer send, quote send, reservation, payment, and stock movement.
 - Added CHARLIE queue discipline: owner-facing queues and local runner pickup must treat `owner_work` as actionable, while system smoke tests, validation/canary/no-op checks, placeholder relay records, and low-signal intake must not crowd out real owner missions.
 - Clarified the Pig Allocation rule that active pre-wean tagless piglets should stay under litter/weaning attention and must not appear as Pig Allocation `Needs Data` or Herdmaster missing-data alerts until weaning, tagging, or weight capture creates actionable allocation evidence.
 

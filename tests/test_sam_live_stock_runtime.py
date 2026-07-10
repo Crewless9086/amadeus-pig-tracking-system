@@ -276,9 +276,121 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("piglets", decision["suggested_reply_text"])
         self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
 
+    def test_durable_next_action_acceptance_scenarios_are_table_driven(self):
+        complete_intake = {
+            "success": True,
+            "conversation_id": "1478",
+            "known_fields": {
+                "collection_location": "Albertinia",
+                "payment_method": "Cash",
+                "order_commitment": True,
+            },
+            "items": [{
+                "item_key": "item_1",
+                "quantity": 3,
+                "category": "Piglet",
+                "weight_range": "7_to_9_Kg",
+                "sex": "Any",
+                "status": "active",
+            }],
+        }
+        quote_intake = {
+            **complete_intake,
+            "draft_order_id": "ORD-2026-12BCCC",
+            "known_fields": {**complete_intake["known_fields"], "quote_requested": True},
+        }
+        availability_rows = [
+            {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Piglet", "current_weight_kg": 8},
+            {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Piglet", "current_weight_kg": 8},
+            {"pig_id": "PIG-3", "sex": "Male", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Piglet", "current_weight_kg": 8},
+        ]
+        scenarios = [
+            {
+                "name": "location",
+                "message": "Where are u guys pls",
+                "intake": {"success": True, "known_fields": {}, "items": []},
+                "availability": [],
+                "expected_next_action": "answer_location",
+            },
+            {
+                "name": "ad_business",
+                "message": "Can you tell me more about your business?",
+                "intake": {"success": True, "known_fields": {}, "items": []},
+                "availability": [],
+                "expected_next_action": "answer_general_info",
+            },
+            {
+                "name": "pictures",
+                "message": "Can you send me pictures of your pigs?",
+                "intake": {"success": True, "known_fields": {}, "items": []},
+                "availability": [],
+                "expected_next_action": "prepare_picture_response",
+            },
+            {
+                "name": "price",
+                "message": "What is the price for them?",
+                "intake": complete_intake,
+                "availability": availability_rows,
+                "expected_next_action": "answer_price",
+            },
+            {
+                "name": "michaels_collection_timing",
+                "message": "Michaels here, Friday afternoon collection is fine.",
+                "intake": complete_intake,
+                "availability": availability_rows,
+                "expected_next_action": "prepare_draft_order",
+            },
+            {
+                "name": "quote_request",
+                "message": "Please send me the quote.",
+                "intake": quote_intake,
+                "availability": availability_rows,
+                "expected_next_action": "prepare_quote",
+            },
+            {
+                "name": "natural_close",
+                "message": "Thanks, have a good day.",
+                "intake": complete_intake,
+                "availability": availability_rows,
+                "expected_next_action": "no_reply_needed",
+            },
+        ]
+
+        with patch.object(
+            sam_live_stock_runtime,
+            "resolve_live_stock_price_rule",
+            return_value={
+                "found": True,
+                "unit_price": 450,
+                "source": "test_price_book",
+                "price_category": "Piglet",
+            },
+        ):
+            for scenario in scenarios:
+                with self.subTest(scenario=scenario["name"]):
+                    result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                        inbound_payload(content=scenario["message"], sender={"name": "Michaels"}),
+                        environ={},
+                        intake_context_loader=lambda _conversation_id, current=scenario: current["intake"],
+                        conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+                        availability_loader=lambda current=scenario: current["availability"],
+                        owner_example_loader=lambda *_args, **_kwargs: {"success": True, "examples": []},
+                    )
+
+                    decision = result["sam_decision"]
+                    self.assertEqual(status_code, 200)
+                    self.assertEqual(decision["next_action"], scenario["expected_next_action"])
+                    self.assertIn(decision["next_action"], sam_live_stock_runtime.SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS)
+                    self.assertFalse(result["sent"])
+                    self.assertFalse(result["sends_customer_message"])
+                    self.assertFalse(result["calls_chatwoot"])
+                    self.assertFalse(result["reserves_stock"])
+                    self.assertFalse(result["changes_stock"])
+
     def test_decision_uses_intake_planner_missing_and_next_action(self):
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="Please send me the quote", sender={"name": "Michaels"}),
+            environ={},
             intake_context_loader=lambda _conversation_id: {
                 "success": True,
                 "conversation_id": "1478",
@@ -302,7 +414,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         decision = result["sam_decision"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(decision["next_action"], "create_draft_then_quote")
+        self.assertEqual(decision["next_action"], "prepare_draft_order")
+        self.assertEqual(decision["internal_next_action"], "create_draft_then_quote")
         self.assertEqual(decision["missing_fields"], ["draft_order_id"])
         self.assertEqual(decision["conversation_plan"]["missing_fields"], decision["missing_fields"])
         self.assertEqual(decision["conversation_stage"], "quote")
@@ -310,6 +423,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_decision_uses_intake_context_draft_order_for_cross_turn_quote(self):
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="Please send me the quote", sender={"name": "Michaels"}),
+            environ={},
             intake_context_loader=lambda _conversation_id: {
                 "success": True,
                 "conversation_id": "1478",
@@ -330,13 +444,17 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [],
+            owner_example_loader=lambda *_args, **_kwargs: {"success": True, "examples": []},
         )
 
         decision = result["sam_decision"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(decision["next_action"], "generate_quote")
+        self.assertEqual(decision["next_action"], "prepare_quote")
+        self.assertEqual(decision["internal_next_action"], "generate_quote")
         self.assertEqual(decision["missing_fields"], [])
         self.assertEqual(decision["owner_action_packet"]["order_id"], "ORD-2026-12BCCC")
+        self.assertEqual(decision["owner_action_packet"]["next_action"], "prepare_quote")
+        self.assertEqual(decision["owner_action_packet"]["internal_next_action"], "generate_quote")
         self.assertEqual(decision["owner_action_packet"]["status"], "ready_for_owner_quote_prepare")
 
     def test_quote_next_action_draft_explains_owner_review_quote_step(self):
@@ -457,7 +575,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         bundle = decision["owner_action_packet"]
         self.assertEqual(status_code, 200)
         self.assertEqual(decision["draft_order"]["status"], "sam_live_stock_draft_order_created")
-        self.assertEqual(decision["next_action"], "generate_quote")
+        self.assertEqual(decision["next_action"], "prepare_quote")
+        self.assertEqual(decision["internal_next_action"], "generate_quote")
         self.assertEqual(bundle["status"], "ready_for_owner_quote_prepare")
         self.assertEqual(bundle["order_id"], "ORD-2026-12BCCC")
         self.assertIn("/api/orders/ORD-2026-12BCCC/quote/prepare-send", bundle["routes"]["quote_prepare"]["route"])
@@ -499,7 +618,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         decision = result["sam_decision"]
         bundle = decision["owner_action_packet"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(decision["next_action"], "sync_lines")
+        self.assertEqual(decision["next_action"], "update_draft_order")
+        self.assertEqual(decision["internal_next_action"], "sync_lines")
         self.assertEqual(decision["conversation_stage"], "draft_order")
         self.assertEqual(bundle["status"], "ready_for_owner_sync_lines")
         self.assertEqual(bundle["order_id"], "ORD-2026-NOQUOTE")
@@ -1502,7 +1622,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                     "status": "active",
                 }],
             },
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [],
+            owner_example_loader=lambda *_args, **_kwargs: {"success": True, "examples": []},
         )
 
         decision = result["sam_decision"]

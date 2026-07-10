@@ -17,6 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
+from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -113,6 +114,11 @@ def watch_for_mission(
     interval_seconds = max(5, int(interval_seconds or 60))
     if notify:
         preflight = _notification_preflight()
+        if not preflight["success"]:
+            write_runner_heartbeat(preflight)
+            return preflight, 503
+    if execute_codex:
+        preflight = runner_environment_preflight()
         if not preflight["success"]:
             write_runner_heartbeat(preflight)
             return preflight, 503
@@ -359,6 +365,19 @@ def _retryable_queue_error(result, status_code):
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    loaded, _load_status = get_mission(mission_id) if mission_id else ({}, 400)
+    mission = loaded.get("mission") if isinstance(loaded, dict) and isinstance(loaded.get("mission"), dict) else {}
+    preflight = runner_environment_preflight(require_browser=_mission_requires_browser_preflight(mission))
+    if not preflight["success"]:
+        preflight["mission_id"] = mission_id
+        write_runner_heartbeat(preflight)
+        if notify:
+            _send_blocked_notification(
+                "CHARLIE runner preflight failed",
+                f"Mission {mission_id} was not executed because the local runner environment is not ready. {preflight.get('recommended_action')}",
+                mission_id=mission_id,
+            )
+        return preflight, 503
     result, status_code = run_agent_execution_bridge_v2(
         mission_id=mission_id,
         execute_codex=True,
@@ -376,6 +395,16 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
                 mission_id=mission_id,
             )
     return result, status_code
+
+
+def _mission_requires_browser_preflight(mission):
+    mission = mission if isinstance(mission, dict) else {}
+    haystack = " ".join([
+        str(mission.get("title") or ""),
+        str(mission.get("mission_type") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    return any(term in haystack for term in ("ui", "frontend", "dashboard", "visual", "browser", "screenshot", "family tree"))
 
 
 def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):

@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from modules.documents.document_service import (
     DOCUMENT_TYPE_HEALTH_DECLARATION,
@@ -44,6 +44,13 @@ REQUIRED_MOVEMENT_DOC_SETTINGS = [
     "business_email",
     "document_logo_path",
 ]
+
+
+FARM_DRIVER_DEFAULTS = {
+    "driver_name": "Hendrik Anton Niewuendyk",
+    "driver_id": "6310255087089",
+    "driver_phone": "084-567-9327",
+}
 
 
 def generate_removal_certificate_for_order(order_id, form_data=None, created_by="App"):
@@ -142,7 +149,34 @@ def _generate_movement_document(order_id, document_type, form_data=None, created
 
 
 def _render_removal_certificate_pdf(pdf_path, settings, order, lines, pen_groups, document_ref, generated_at, form_data):
-    story, styles = _base_story(pdf_path, settings, "REMOVAL CERTIFICATE", document_ref, generated_at)
+    story = []
+    _append_removal_certificate_copy(
+        story,
+        settings,
+        order,
+        lines,
+        document_ref,
+        generated_at,
+        _movement_copy_form_data(form_data, order, "client"),
+        "CLIENT - MOVEMENT COPY",
+    )
+    story.append(PageBreak())
+    _append_removal_certificate_copy(
+        story,
+        settings,
+        order,
+        lines,
+        document_ref,
+        generated_at,
+        _movement_copy_form_data(form_data, order, "farm_driver"),
+        "FARM DRIVER - MOVEMENT COPY",
+    )
+    _build_doc(pdf_path, story)
+
+
+def _append_removal_certificate_copy(story, settings, order, lines, document_ref, generated_at, form_data, copy_label):
+    header_story, styles = _base_story(None, settings, "REMOVAL CERTIFICATE", document_ref, generated_at, copy_label)
+    story.extend(header_story)
     normal = styles["Normal"]
     small = styles["Small"]
     subheading = styles["Subheading"]
@@ -177,7 +211,6 @@ def _render_removal_certificate_pdf(pdf_path, settings, order, lines, pen_groups
     story.append(_movement_signature_table(settings, form_data, include_driver=True))
     story.append(Spacer(1, 2 * mm))
     story.append(Paragraph("No prices, payment information, or private customer notes are shown on this certificate.", small))
-    _build_doc(pdf_path, story)
 
 
 def _render_health_declaration_pdf(pdf_path, settings, order, lines, pen_groups, document_ref, generated_at, form_data):
@@ -212,7 +245,7 @@ def _render_health_declaration_pdf(pdf_path, settings, order, lines, pen_groups,
     _build_doc(pdf_path, story)
 
 
-def _base_story(pdf_path, settings, title, document_ref, generated_at):
+def _base_story(pdf_path, settings, title, document_ref, generated_at, copy_label="NO PRICES - MOVEMENT COPY"):
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle("Small", parent=styles["Normal"], fontSize=8, leading=10))
     styles.add(ParagraphStyle("Subheading", parent=styles["Normal"], fontSize=11, leading=13, fontName="Helvetica-Bold"))
@@ -232,7 +265,7 @@ def _base_story(pdf_path, settings, title, document_ref, generated_at):
     ])
     header_right = [
         Paragraph(f"<b>{_xml(title)}</b>", heading),
-        Paragraph("<b>NO PRICES - MOVEMENT COPY</b>", styles["Subheading"]),
+        Paragraph(f"<b>{_xml(copy_label)}</b>", styles["Subheading"]),
         Paragraph(f"<b>Ref:</b> {_xml(document_ref)}", styles["Normal"]),
         Paragraph(f"<b>Generated:</b> {generated_at.strftime('%d %b %Y %H:%M')}", styles["Small"]),
     ]
@@ -396,6 +429,36 @@ def _clean_form_data(form_data):
         "client_phone", "client_address", "route_notes", "movement_reason",
     }
     return {key: _safe(value)[:300] for key, value in dict(form_data or {}).items() if key in allowed}
+
+
+def _movement_copy_form_data(form_data, order, copy_kind):
+    data = dict(form_data or {})
+    if copy_kind == "client":
+        for key in (
+            "driver_name",
+            "driver_id",
+            "driver_phone",
+            "vehicle_registration",
+            "trailer_registration",
+            "destination_address",
+            "route_notes",
+            "client_name",
+            "client_id",
+            "client_phone",
+            "client_address",
+        ):
+            data[key] = ""
+        data["movement_reason"] = data.get("movement_reason") or "Sale / transfer of ownership"
+        return data
+
+    if copy_kind == "farm_driver":
+        for key, value in FARM_DRIVER_DEFAULTS.items():
+            data[key] = _safe(data.get(key)) or value
+        data["destination_address"] = _safe(data.get("destination_address")) or _safe(order.get("collection_location"))
+        data["movement_reason"] = data.get("movement_reason") or "Sale / transfer of ownership"
+        return data
+
+    return data
 
 
 def _movement_document_notes(document_type, order, lines, pen_groups, form_data):
