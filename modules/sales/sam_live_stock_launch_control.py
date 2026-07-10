@@ -428,6 +428,7 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Conversation: {conversation_id or 'unknown'}",
         f"Intent: {_owner_card_intent_summary(decision)}",
         f"Stage: {_owner_card_stage_summary(decision)}",
+        f"Open order/quote: {_owner_card_open_order_quote_summary(decision)}",
         f"Next: {_owner_card_next_action_summary(decision)}",
         f"Prepared: {_owner_card_prepared_action_summary(decision)}",
         f"Wants: {_owner_card_fact_summary(facts)}",
@@ -468,9 +469,12 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         edit_button,
         {"text": "Keep Human", "callback_data": f"sam_live_review_human:{review_event_id or conversation_id}"},
     ])
+    keyboard.append([{"text": "No Reply Needed", "callback_data": f"sam_live_review_no_reply:{review_event_id or conversation_id}"}])
+    prepared_buttons = _owner_card_prepared_action_buttons(decision, review_event_id or conversation_id)
+    keyboard.extend(prepared_buttons)
     keyboard.append([{"text": "Close", "callback_data": f"sam_live_review_close:{review_event_id or conversation_id}"}])
     return {
-        "version": "sam_live_stock_owner_review_packet_v1",
+        "version": "sam_live_stock_owner_review_packet_v2",
         "type": "owner_review_send_candidate",
         "review_event_id": review_event_id,
         "conversation_id": conversation_id,
@@ -565,7 +569,16 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
-    if action["action"] in {"review_approve_send", "review_edit", "review_human", "review_close"}:
+    if action["action"] in {
+        "review_approve_send",
+        "review_edit",
+        "review_human",
+        "review_close",
+        "review_no_reply",
+        "review_prepare_draft_order",
+        "review_prepare_quote",
+        "review_picture_reply",
+    }:
         loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
         if load_status >= 400 or not loaded.get("success"):
             return _callback_result(action["action"], loaded, load_status, escalation_id)
@@ -594,6 +607,16 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
                 "recommended_next": "Edit/send the reply in Chatwoot, or keep this conversation in HUMAN mode.",
                 **AUTHORITY_FLAGS,
             }, 200
+        if action["action"] == "review_no_reply":
+            return {
+                "success": True,
+                "status": "sam_live_stock_review_no_reply_needed",
+                "action": "review_no_reply",
+                "review_event_id": escalation_id,
+                "conversation_id": _clean(conversation_id, 100),
+                "recommended_next": "No customer reply was sent. Keep this thread closed or continue manually in Chatwoot if the customer writes again.",
+                **AUTHORITY_FLAGS,
+            }, 200
         if action["action"] == "review_human":
             takeover, status = apply_sam_live_stock_chatwoot_takeover(
                 conversation_id,
@@ -603,6 +626,8 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
                 chatwoot_writer=chatwoot_writer,
             )
             return _callback_result("review_human", takeover, status, escalation_id)
+        if action["action"] in {"review_prepare_draft_order", "review_prepare_quote", "review_picture_reply"}:
+            return _prepared_review_callback_result(action["action"], escalation_id, conversation_id, event, decision_json)
         if action["action"] == "review_close":
             return {
                 "success": True,
@@ -914,6 +939,10 @@ def _callback_action(callback_data):
         "sam_live_review_approve": "review_approve_send",
         "sam_live_review_edit": "review_edit",
         "sam_live_review_human": "review_human",
+        "sam_live_review_no_reply": "review_no_reply",
+        "sam_live_review_draft_order": "review_prepare_draft_order",
+        "sam_live_review_quote": "review_prepare_quote",
+        "sam_live_review_picture": "review_picture_reply",
         "sam_live_review_close": "review_close",
         "approve_send": "approve_send",
         "close": "close",
@@ -1069,6 +1098,23 @@ def _owner_card_next_action_summary(decision):
     return action.replace("_", " ") if action else "owner review"
 
 
+def _owner_card_open_order_quote_summary(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    order_id = _clean(packet.get("order_id"), 100)
+    routes = packet.get("routes") if isinstance(packet.get("routes"), dict) else {}
+    quote_prepare = routes.get("quote_prepare") if isinstance(routes.get("quote_prepare"), dict) else {}
+    quote_route = _clean(quote_prepare.get("route"), 200)
+    if order_id and quote_route:
+        return f"{order_id}; quote ready for owner prepare"
+    if order_id:
+        return order_id
+    draft_packet = decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {}
+    if draft_packet.get("draft_ready"):
+        return "draft order ready to prepare"
+    return "none"
+
+
 def _owner_card_prepared_action_summary(decision):
     decision = decision if isinstance(decision, dict) else {}
     packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
@@ -1085,6 +1131,54 @@ def _owner_card_prepared_action_summary(decision):
     if detail:
         summary = f"{summary} ({detail})"
     return summary
+
+
+def _owner_card_prepared_action_buttons(decision, target_id):
+    decision = decision if isinstance(decision, dict) else {}
+    target_id = _clean(target_id, 120)
+    if not target_id:
+        return []
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    next_action = _clean(packet.get("next_action") or decision.get("next_action"), 80)
+    internal_next = _clean(packet.get("internal_next_action") or decision.get("internal_next_action"), 80)
+    status = _clean(packet.get("status"), 100)
+    draft_ready = bool(packet.get("draft_order_ready"))
+    rows = []
+    if next_action in {"prepare_draft_order", "update_draft_order"} or internal_next in {"create_draft", "create_draft_then_quote", "sync_lines"} or draft_ready:
+        label = "Update Draft Order" if next_action == "update_draft_order" or internal_next == "sync_lines" else "Prepare Draft Order"
+        rows.append([{"text": label, "callback_data": f"sam_live_review_draft_order:{target_id}"}])
+    if next_action in {"prepare_quote", "generate_quote"} or internal_next in {"generate_quote", "update_draft_then_quote"} or status == "ready_for_owner_quote_prepare":
+        rows.append([{"text": "Prepare Quote", "callback_data": f"sam_live_review_quote:{target_id}"}])
+    if next_action == "prepare_picture_response":
+        rows.append([{"text": "Send Picture Reply", "callback_data": f"sam_live_review_picture:{target_id}"}])
+    return rows
+
+
+def _prepared_review_callback_result(action, review_event_id, conversation_id, event, decision):
+    decision = decision if isinstance(decision, dict) else {}
+    packet = decision.get("owner_action_packet") if isinstance(decision.get("owner_action_packet"), dict) else {}
+    routes = packet.get("routes") if isinstance(packet.get("routes"), dict) else {}
+    status_map = {
+        "review_prepare_draft_order": "sam_live_stock_review_draft_order_prepared_for_owner",
+        "review_prepare_quote": "sam_live_stock_review_quote_prepared_for_owner",
+        "review_picture_reply": "sam_live_stock_review_picture_reply_prepared_for_owner",
+    }
+    next_map = {
+        "review_prepare_draft_order": "Use the owner order screen/API route to prepare or update the draft order. This callback does not create or update an order.",
+        "review_prepare_quote": "Use the owner quote prepare route to review the latest quote. This callback does not create, send, or confirm a quote.",
+        "review_picture_reply": "Select or attach the approved farm picture in Chatwoot, then send manually. This callback does not send a customer message or media.",
+    }
+    return {
+        "success": True,
+        "status": status_map.get(action, "sam_live_stock_review_prepared_action_ready"),
+        "action": action,
+        "review_event_id": _clean(review_event_id, 120),
+        "conversation_id": _clean(conversation_id, 100),
+        "prepared_action": packet,
+        "routes": routes,
+        "recommended_next": next_map.get(action, "Continue through the owner-approved backend surface."),
+        **AUTHORITY_FLAGS,
+    }, 200
 
 
 def _owner_card_flags(event, review, decision):
