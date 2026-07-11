@@ -62,6 +62,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - This foundation makes no Claude/Fable/GLM/OpenRouter calls, sends no live Telegram messages unless explicitly enabled/configured, and performs no production data writes.
 - `scripts/verify_mission.ps1` is the local final gate for this layer and refuses forbidden staged files such as `.env`, `.claude/`, `external_sources/`, `screenshots/`, `static/assets/`, `test-results/`, and `planning/Prompts.md`.
 - Trust starts in `watch` tier in `loop/memory/trust.tsv`; later layers must earn `queue` or `auto` via logged deterministic passes.
+- MISSION-LOOP-5 adds the owner Telegram `/next` button flow on top of the foundation. It prepares `planning/CODEX_CHAT.md` only; it does not start Codex, schedule work, auto-merge, call model APIs, or perform production writes.
 
 ## Active Branches / PRs
 

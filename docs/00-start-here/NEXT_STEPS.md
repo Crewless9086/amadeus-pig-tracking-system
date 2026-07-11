@@ -64,8 +64,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P2 Current Build
 
-- MISSION-LOOP-1/4 foundation branch `mission-loop-foundation`: contract, verify script, trust ledger utility, budget placeholder, safe Telegram notification stub, and NEXT_STEPS/CODEX_CHAT local helper. No live model APIs, no live Telegram buttons, no scheduler, no production data writes.
-- Next mission-loop layer after merge: live Telegram button flow only after foundation tests and `scripts/verify_mission.ps1` pass; keep Claude/Fable/GLM/OpenRouter integration deferred until budget gates are explicit.
+- MISSION-LOOP-1/4 foundation: contract, verify script, trust ledger utility, budget placeholder, safe Telegram notification stub, and NEXT_STEPS/CODEX_CHAT local helper. No live model APIs, no scheduler, no production data writes.
+- MISSION-LOOP-5 active: live Telegram `/next` button flow reads `NEXT_STEPS.md`, sends top-five mission buttons, writes the selected mission into `planning/CODEX_CHAT.md`, and confirms the selection. No model APIs, no scheduler, no auto-merge.
+- Next mission-loop layer after Loop 5: owner-approved mission start/runner handoff only after button flow tests and `scripts/verify_mission.ps1` pass; keep Claude/Fable/GLM/OpenRouter integration deferred until budget gates are explicit.
 - CHARLIE-RELAY-0: safe owner-only Telegram build relay foundation. Scope: policy, webhook secret, owner allowlist, `/status`, `/next`, `/mission`, optional CODEX_CHAT intake write, tests, and plan doc. No dangerous runtime authority.
 - CHARLIE-RELAY-1/3 active: add owner notification helper and durable Supabase mission queue so Telegram mission intake is not dependent on Render filesystem writes.
 - CHARLIE-RELAY-4 active: shared mission protocol and safe command-console decisions. Telegram and `planning/CODEX_CHAT.md` must follow `CHARLIE_MISSION_PROTOCOL.md`.

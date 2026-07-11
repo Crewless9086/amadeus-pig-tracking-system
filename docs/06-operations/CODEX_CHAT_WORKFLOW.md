@@ -53,3 +53,12 @@ The generated mission file contains:
 - No Telegram buttons are wired in this layer.
 - No model API calls are made.
 
+## Telegram Button Layer
+
+Loop 5 wires the same local workflow to the owner Telegram command `/next`:
+
+- `/next` lists the top five missions from `NEXT_STEPS.md`;
+- each inline button carries only a small local option number;
+- selecting a button calls the same archive-and-write behavior as the local helper;
+- the bot confirms that `planning/CODEX_CHAT.md` was updated;
+- no Codex run starts from the button itself.
