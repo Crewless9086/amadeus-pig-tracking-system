@@ -254,6 +254,13 @@ def handle_update(
                 telegram.answer_callback_query(callback_id, "Not authorized.")
             return ButtonFlowResult(ok=False, action="ignored", reason="unauthorized_user")
         if data.startswith(charlie_mission_telegram.CALLBACK_PREFIX):
+            if callback_id:
+                try:
+                    telegram.answer_callback_query(callback_id, "Processing CHARLIE action...")
+                except Exception:
+                    # Telegram callback acknowledgements expire quickly. The mission
+                    # action and owner-visible result must still continue safely.
+                    pass
             try:
                 from modules.charlie import mission_store, runner_control
 
@@ -266,17 +273,16 @@ def handle_update(
                 )
                 runner = (runner_status_loader or runner_control.runner_status)(include_git=False, include_ledger=False)
             except Exception as exc:
-                if callback_id:
-                    telegram.answer_callback_query(callback_id, "Mission action failed.")
+                telegram.send_message(chat_id, "CHARLIE mission action failed safely. No unconfirmed action was retried.")
                 return ButtonFlowResult(False, "mission_action_failed", reason=exc.__class__.__name__)
-            if callback_id:
-                telegram.answer_callback_query(callback_id, "Mission updated." if result.ok else "Mission action refused.")
             if mission:
                 telegram.send_message(
                     chat_id,
                     charlie_mission_telegram.mission_card_text(mission, runner),
                     reply_markup=charlie_mission_telegram.mission_keyboard(mission),
                 )
+            elif not result.ok:
+                telegram.send_message(chat_id, f"CHARLIE mission action refused: {result.reason or 'current state does not allow it'}." )
             return ButtonFlowResult(result.ok, result.action, result.reason, selected_title=result.mission_id)
 
         if not data.startswith(CALLBACK_PREFIX):
