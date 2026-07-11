@@ -7,17 +7,22 @@ def plan_live_stock_next_action(intake_context=None, facts=None, order_state=Non
     order_state = order_state if isinstance(order_state, dict) else {}
     intake, items = _planner_inputs(intake_context, facts, order_state)
     computed = _compute_intake_state(intake, items)
+    intent_plan = _intent_plan(facts, intake_context, computed)
     return {
-        "version": "sam_live_stock_next_action_plan_v1",
+        "version": "sam_live_stock_next_action_plan_v2",
         "goal": _goal_from_items(items, facts),
-        "stage": _stage_from_computed(computed),
-        "next_action": computed.get("next_action") or "ask_missing_field",
+        "stage": intent_plan.get("stage") or _stage_from_computed(computed),
+        "next_action": intent_plan.get("next_action") or computed.get("next_action") or "ask_missing_field",
+        "message_intent": facts.get("message_intent") or "unclear",
+        "customer_language": facts.get("customer_language") or "unknown",
         "missing_fields": list(computed.get("missing_fields") or []),
         "ready_for_draft": bool(computed.get("ready_for_draft")),
         "ready_for_quote": bool(computed.get("ready_for_quote")),
         "intake_status": computed.get("intake_status") or "Open",
         "planner_source": "order_intake_service._compute_intake_state",
         "owner_gate_required": True,
+        "plan_reason": intent_plan.get("reason") or "order_intake_state",
+        "asked_fields": list((intake_context.get("known_fields") or {}).get("asked_fields") or []) if isinstance(intake_context.get("known_fields"), dict) else [],
         "order_state": {
             "draft_order_id": _clean(
                 order_state.get("draft_order_id")
@@ -26,6 +31,40 @@ def plan_live_stock_next_action(intake_context=None, facts=None, order_state=Non
             ),
         },
     }
+
+
+def _intent_plan(facts, intake_context, computed):
+    intent = str(facts.get("message_intent") or "").strip().lower()
+    draft_order_id = (
+        intake_context.get("draft_order_id")
+        or ((intake_context.get("known_fields") or {}).get("draft_order_id") if isinstance(intake_context.get("known_fields"), dict) else "")
+    )
+    mapping = {
+        "social_acknowledgement": ("follow_up", "no_reply_needed"),
+        "social_close": ("follow_up", "no_reply_needed"),
+        "location_question": ("qualified", "answer_location"),
+        "picture_request": ("qualified", "prepare_picture_response"),
+        "delivery_question": ("qualified", "answer_delivery_policy"),
+        "timing_or_collection": ("collection", "confirm_collection"),
+        "breeding_request": ("stock_selection", "propose_breeding_stock_mix"),
+    }
+    transaction_action = str(computed.get("next_action") or "")
+    if transaction_action in {
+        "create_draft",
+        "sync_lines",
+        "create_draft_then_quote",
+        "update_draft_then_quote",
+        "generate_quote",
+    }:
+        return {}
+    if intent in mapping:
+        stage, action = mapping[intent]
+        return {"stage": stage, "next_action": action, "reason": f"message_intent:{intent}"}
+    if intent == "order_change" and draft_order_id:
+        return {"stage": "draft_order", "next_action": "update_draft_order", "reason": "message_intent:order_change_with_open_draft"}
+    if intent == "price_question" and not computed.get("missing_fields") and transaction_action in {"", "ask_missing_field"}:
+        return {"stage": "qualified", "next_action": "answer_price", "reason": "message_intent:price_question_with_complete_facts"}
+    return {}
 
 
 def _planner_inputs(intake_context, facts, order_state):

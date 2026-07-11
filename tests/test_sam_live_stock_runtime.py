@@ -26,6 +26,58 @@ def inbound_payload(**overrides):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_afrikaans_location_question_gets_afrikaans_farm_answer(self):
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Waar is julle asseblief?"),
+            environ={},
+            intake_context_loader=lambda _conversation_id: {"success": False, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+        self.assertEqual(status, 200)
+        decision = result["sam_decision"]
+        self.assertEqual(decision["facts"]["customer_language"], "afrikaans")
+        self.assertIn("Riversdal", decision["suggested_reply_text"])
+        self.assertIn("Afhaal", decision["suggested_reply_text"])
+
+    def test_voice_note_transcript_drives_live_stock_understanding(self):
+        payload = inbound_payload(content="", attachments=[{
+            "file_type": "audio",
+            "data_url": "https://example.test/voice.ogg",
+            "content_type": "audio/ogg",
+        }])
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            payload,
+            environ={},
+            voice_transcriber=lambda *_args: {"status": "transcribed", "transcript": "Ek soek drie varkies vir Vrydag"},
+            intake_context_loader=lambda _conversation_id: {"success": False, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+        self.assertEqual(status, 200)
+        decision = result["sam_decision"]
+        self.assertEqual(decision["input_understanding"]["voice"]["status"], "transcribed")
+        self.assertEqual(decision["facts"]["customer_language"], "afrikaans")
+        self.assertEqual(decision["facts"]["message_intent"], "buying_intent")
+
+    def test_image_only_message_is_processed_but_media_facts_remain_untrusted(self):
+        payload = inbound_payload(content="", attachments=[{
+            "file_type": "image",
+            "data_url": "https://example.test/pig.jpg",
+            "content_type": "image/jpeg",
+        }])
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            payload,
+            environ={},
+            image_classifier=lambda *_args: {"classification": "customer_pig_image"},
+            intake_context_loader=lambda _conversation_id: {"success": False, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+        self.assertEqual(status, 200)
+        decision = result["sam_decision"]
+        self.assertTrue(decision["input_understanding"]["images"])
+        self.assertFalse(decision["input_understanding"]["images"][0]["facts_trusted"])
     def test_authorize_webhook_is_default_off_and_token_gated(self):
         allowed, denied = sam_live_stock_runtime.authorize_sam_live_stock_webhook({}, environ={})
 
