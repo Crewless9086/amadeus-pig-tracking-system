@@ -65,6 +65,9 @@ Render deploys from `main` unless the service configuration says otherwise.
 - MISSION-LOOP-5/6 add the owner Telegram `/next` button flow and local live relay. `/next` reads live Supabase `charlie_missions` first and falls back to `NEXT_STEPS.md` only when Supabase is unavailable or empty; the current CODEX_CHAT write is a manual transitional handoff, not primary mission state.
 - MISSION-LOOP-6 adds the deterministic model budget gate skeleton. GPT-5.6 Sol/Terra/Luna routing is planned but disabled; no model APIs are called by the relay or mission loop.
 - MISSION-LOOP-6.5 alignment sets the architecture rule: Supabase CHARLIE CORE is authoritative, Telegram controls CORE, `CODEX_CHAT.md` is manual/debug fallback only, and Loop 7A must use Supabase `mission_id` action cards instead of file-first handoffs.
+- MISSION-LOOP-7 adds Supabase `mission_id` action cards, state revalidation, owner-safe mission decisions, blocked/review return actions, and runner/queue visibility. Live mission selection no longer writes CODEX_CHAT.
+- MISSION-LOOP-8A/B adds an opt-in Windows Scheduled Task installer for the local relay plus richer `/status`, `/queue`, and `/blocked` health reporting.
+- MISSION-LOOP-8C/D connects trust and budget policy to a deterministic GPT-5.6 routing recommendation. Live model calls remain disabled; Loop 8E is not implemented.
 
 ## Active Branches / PRs
 

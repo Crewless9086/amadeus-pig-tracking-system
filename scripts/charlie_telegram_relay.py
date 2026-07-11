@@ -222,18 +222,35 @@ def _mark_or_skip_duplicate(update: Mapping[str, Any], state: RelayRuntimeState 
     return None
 
 
-def status_text(config: RelayConfig) -> str:
+def status_text(config: RelayConfig, runner: Mapping[str, Any] | None = None, counts: Mapping[str, int] | None = None) -> str:
     relay_state = "enabled" if config.enabled else "disabled"
-    return "\n".join(
-        [
+    lines = [
             "CHARLIE relay status",
             f"Relay: {relay_state}",
             f"Allowed owners configured: {len(config.allowed_user_ids)}",
             "Actions: /next reads live Supabase CHARLIE missions first.",
-            "Current selection behavior writes a manual CODEX_CHAT handoff only until Loop 7A mission_id action cards.",
             "No Codex run, shell command, model API, scheduler, or auto-merge is enabled.",
         ]
-    )
+    if runner:
+        lines.extend([
+            f"Runner: {runner.get('status', 'unknown')}",
+            f"Heartbeat age: {runner.get('age_seconds') if runner.get('age_seconds') is not None else 'unknown'}s",
+            f"Active mission: {runner.get('last_mission_id') or 'none'}",
+            f"Current agent: {runner.get('current_agent') or 'none'}",
+        ])
+    if counts:
+        lines.append("Queue: " + ", ".join(f"{key}={value}" for key, value in sorted(counts.items())))
+    return "\n".join(lines)
+
+
+def _queue_snapshot(mission_loader: Any) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    payload, status_code = mission_loader(status="owner_queue", limit=100, compact=True)
+    missions = list((payload or {}).get("missions") or []) if status_code < 400 else []
+    counts: dict[str, int] = {}
+    for mission in missions:
+        status = str((mission or {}).get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return counts, missions
 
 
 def handle_relay_update(
@@ -244,6 +261,8 @@ def handle_relay_update(
     next_steps_path: Path = codex_next_steps.DEFAULT_NEXT_STEPS,
     codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
     state: RelayRuntimeState | None = None,
+    mission_loader: Any | None = None,
+    runner_status_loader: Any | None = None,
 ) -> RelayResult:
     config = load_config(environ)
     validation = validate_config(config)
@@ -279,6 +298,11 @@ def handle_relay_update(
     text = _message_text(update)
     chat_id = _chat_id_from_update(update)
     command = text.lower().split(maxsplit=1)[0] if text else ""
+    if mission_loader is None or runner_status_loader is None:
+        from modules.charlie import mission_store, runner_control
+
+        mission_loader = mission_loader or mission_store.list_missions
+        runner_status_loader = runner_status_loader or runner_control.runner_status
 
     if command == "/start":
         telegram.send_message(
@@ -287,8 +311,19 @@ def handle_relay_update(
         )
         return RelayResult(ok=True, action="start_sent")
     if command == "/status":
-        telegram.send_message(chat_id, status_text(config))
+        counts, _missions = _queue_snapshot(mission_loader)
+        runner = runner_status_loader(include_git=False, include_ledger=False)
+        telegram.send_message(chat_id, status_text(config, runner, counts))
         return RelayResult(ok=True, action="status_sent")
+    if command in {"/queue", "/blocked"}:
+        counts, missions = _queue_snapshot(mission_loader)
+        if command == "/blocked":
+            missions = [mission for mission in missions if str(mission.get("status") or "") == "blocked"]
+        lines = ["CHARLIE QUEUE", ", ".join(f"{key}={value}" for key, value in sorted(counts.items())) or "Queue empty"]
+        for mission in missions[:10]:
+            lines.append(f"- {mission.get('status')}: {mission.get('title') or mission.get('mission_id')} [{mission.get('mission_id')}]")
+        telegram.send_message(chat_id, "\n".join(lines))
+        return RelayResult(ok=True, action="queue_sent")
     if command == "/next":
         result = build_relay_telegram_buttons.handle_update(
             update,
@@ -303,7 +338,7 @@ def handle_relay_update(
         )
         return RelayResult(ok=result.ok, action=result.action, reason=result.reason)
 
-    telegram.send_message(chat_id, "Unknown CHARLIE command. Use /next or /status.")
+    telegram.send_message(chat_id, "Unknown CHARLIE command. Use /next, /status, /queue, or /blocked.")
     return RelayResult(ok=True, action="unknown_command")
 
 

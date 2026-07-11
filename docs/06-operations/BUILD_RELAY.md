@@ -55,7 +55,7 @@ CHARLIE CORE and Supabase `charlie_missions` are the primary mission system. Tel
 - `planning/CODEX_CHAT.md` is manual/local/debug handoff only.
 - Loop 7A must move Telegram callbacks to Supabase `mission_id` action cards. New primary features must not write CODEX_CHAT as their normal path.
 
-## Loop 5 Button Flow
+## Loop 7 Supabase Mission Control
 
 `scripts/build_relay_telegram_buttons.py` adds the safe `/next` owner flow:
 
@@ -63,11 +63,11 @@ CHARLIE CORE and Supabase `charlie_missions` are the primary mission system. Tel
 2. The handler reads the Supabase `charlie_missions` owner queue first.
 3. If Supabase is unavailable or empty, it falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the fallback.
 4. It sends the top five mission options as inline buttons.
-5. Owner clicks one option.
-6. Current transitional behavior writes a manual `planning/CODEX_CHAT.md` handoff through `scripts/codex_next_steps.py`.
-7. The bot sends a confirmation.
+5. Owner clicks one mission.
+6. The callback resolves a compact token to the live Supabase `mission_id`, reloads current mission state, and opens an action card.
+7. The card exposes only actions legal for that current state. Every write uses existing `mission_store` status/review functions and their compare-and-set protections.
 
-This layer still does not run Codex, start a scheduler, merge PRs, call model APIs, or perform production data writes. The CODEX_CHAT write is a transitional manual handoff, not the future primary mission-control path.
+Live Supabase selections do not write CODEX_CHAT. Fallback documentation options remain read-only; CODEX_CHAT is only an explicit manual/debug handoff.
 
 The handler is testable through injected clients. Unit tests never send real Telegram messages.
 
@@ -98,9 +98,22 @@ python scripts/charlie_telegram_relay.py
 Supported commands:
 
 - `/start` confirms the relay is online.
-- `/status` shows relay safety status.
+- `/status` shows relay, runner heartbeat, current agent, active mission, and queue counts.
+- `/queue` shows current owner-queue missions.
+- `/blocked` shows blocked missions.
 - `/next` reads the live Supabase `charlie_missions` owner queue first and sends the top five actionable missions as buttons.
-- Button selection currently writes a manual `planning/CODEX_CHAT.md` handoff and confirms. Loop 7A replaces this with Supabase `mission_id` action cards.
+- Button selection opens a Supabase mission action card. New missions can be approved/paused/rejected; active missions are observe-only; blocked and review-ready missions can be returned through the existing review store; final approval remains owner-only.
+
+## Always-On Local Relay
+
+`scripts/install_charlie_telegram_relay_task.ps1` installs an opt-in Windows Scheduled Task that starts the relay at owner logon and restarts it after failures. The task runs only the relay process; it does not grant Telegram shell execution and does not start Codex.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_charlie_telegram_relay_task.ps1
+Start-ScheduledTask -TaskName "CHARLIE Telegram Relay"
+```
+
+The existing relay lock prevents a scheduled and manually-started relay from running together.
 
 Safety boundaries:
 
@@ -119,15 +132,15 @@ Safety boundaries:
 
 If Supabase is unavailable or the live owner queue is empty, `/next` falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the message as `Source: fallback docs menu`. The fallback is only a backup; the live mission queue is the preferred source of truth.
 
-## GPT-5.6 Family Alignment
+## Loop 8 Trust, Budget, And Model Routing Dry Run
 
-GPT-5.6 routing is planned but disabled. Sol, Terra, and Luna are future support modules behind the budget gate and trust ledger. Loop 6.5 performs alignment only; no live model calls are allowed.
+`scripts/model_routing_plan.py` now produces deterministic routing recommendations. It does not import a provider SDK or make a model call. Every decision keeps `live_call_allowed=false`; red-zone work is blocked before model selection, and future activation must pass both the trust ledger and budget guard.
 
 - GPT-5.6 Luna: future cheap triage, summaries, log compression, and low-risk classification.
 - GPT-5.6 Terra: future balanced mission planning, normal PR review, and medium-risk guidance.
 - GPT-5.6 Sol: future high-risk architecture, security, Supabase migration review, and repeated P0 failure analysis.
 
-No Telegram action triggers GPT-5.6, Claude, Fable, GLM, OpenRouter, or any other model provider in Loop 6.5. Future model calls must pass the budget gate, trust ledger, owner authority rules, and the final verify gate.
+No Telegram action triggers GPT-5.6, Claude, Fable, GLM, OpenRouter, or any other model provider. Loop 8E live activation is deliberately not implemented.
 
 ## Duplicate Message Troubleshooting
 

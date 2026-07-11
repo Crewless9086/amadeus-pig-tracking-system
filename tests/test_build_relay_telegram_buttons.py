@@ -188,21 +188,14 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
             self.assertEqual(len(archived), 1)
             self.assertIn("old owner note", archived[0].read_text(encoding="utf-8"))
 
-    def test_callback_writes_live_mission_to_codex_chat(self):
+    def test_live_menu_uses_mission_id_action_callback_not_codex_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex_chat = root / "CODEX_CHAT.md"
             client = FakeTelegramClient()
 
             result = build_relay_telegram_buttons.handle_update(
-                {
-                    "callback_query": {
-                        "id": "cb1",
-                        "data": "charlie_next:1",
-                        "from": {"id": 1001},
-                        "message": {"chat": {"id": 1001}},
-                    }
-                },
+                {"message": {"text": "/next", "from": {"id": 1001}, "chat": {"id": 1001}}},
                 environ=enabled_env(),
                 client=client,
                 codex_chat_path=codex_chat,
@@ -210,11 +203,9 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
             )
 
             self.assertTrue(result.ok)
-            self.assertEqual(result.action, "selected_mission")
-            written = codex_chat.read_text(encoding="utf-8")
-            self.assertIn("BLOCKED: Fix SAM live stock useful replies", written)
-            self.assertIn("Manual transitional CODEX_CHAT handoff selected through CHARLIE Telegram /next from supabase_charlie_missions.", written)
-            self.assertIn("Manual CODEX_CHAT handoff updated", client.messages[0]["text"])
+            callback = client.messages[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+            self.assertTrue(callback.startswith("cm:open:"))
+            self.assertFalse(codex_chat.exists())
 
     def test_loop_6_5_docs_mark_supabase_primary_and_gpt_5_6_disabled(self):
         contract = Path("docs/06-operations/MISSION_LOOP_CONTRACT.md").read_text(encoding="utf-8")

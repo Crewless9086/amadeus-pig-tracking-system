@@ -108,6 +108,8 @@ GPT-5.6 routing is planned but disabled. Sol, Terra, and Luna are future support
 - Red-zone tasks still require owner approval regardless of model recommendation.
 - No full-repo prompt is sent to GPT-5.6 by default; future calls must use scoped mission specs, relevant files, diffs, logs, and exact questions.
 
+Loop 8 adds recommendation-only routing. `live_call_allowed` must remain false until a separately approved Loop 8E implementation proves provider configuration, budget enforcement, trust enforcement, scoped context, and owner authority. Telegram mission actions may never bypass these gates.
+
 ## Confidence Gate
 
 The owner requested a 98% confidence gate for this foundation layer. A mission may be recommended for merge only when:
