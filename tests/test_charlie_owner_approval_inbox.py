@@ -4,6 +4,7 @@ from unittest.mock import patch
 from app import app
 from modules.charlie.owner_approval_inbox import (
     list_owner_approval_inbox,
+    list_sam_meat_learning_owner_review_items,
     list_sam_live_stock_runtime_owner_review_items,
     normalize_owner_approval_item,
     record_owner_approval_decision,
@@ -59,6 +60,61 @@ class _RuntimeReviewCursor:
 class _RuntimeReviewConnection:
     def __init__(self, rows):
         self.cursor_instance = _RuntimeReviewCursor(rows)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def cursor(self):
+        return self.cursor_instance
+
+
+class _MeatLearningCursor:
+    def __init__(self, rows):
+        self.rows = rows
+        self.description = []
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params or {}))
+        self.description = [
+            _Column("learning_event_id"),
+            _Column("lead_id"),
+            _Column("chatwoot_conversation_id"),
+            _Column("channel"),
+            _Column("source_agent"),
+            _Column("event_source"),
+            _Column("event_type"),
+            _Column("customer_message_excerpt"),
+            _Column("sam_reply_excerpt"),
+            _Column("customer_wanted_json"),
+            _Column("captured_facts_json"),
+            _Column("missing_facts_json"),
+            _Column("objections_json"),
+            _Column("confusion_signals_json"),
+            _Column("sam_misses_json"),
+            _Column("conversion_signal"),
+            _Column("improvement_suggestion"),
+            _Column("campaign_source"),
+            _Column("recorded_by"),
+            _Column("created_at"),
+        ]
+
+    def fetchall(self):
+        return list(self.rows)
+
+
+class _MeatLearningConnection:
+    def __init__(self, rows):
+        self.cursor_instance = _MeatLearningCursor(rows)
 
     def __enter__(self):
         return self
@@ -165,6 +221,49 @@ class CharlieOwnerApprovalInboxTests(unittest.TestCase):
         self.assertFalse(item["decision_supported"])
         self.assertFalse(item["authority"]["sends_customer_message"])
         self.assertIn("owner_send_required", item["risk_flags"])
+
+    def test_lists_sam_meat_learning_events_as_read_only_review_cards(self):
+        connection = _MeatLearningConnection([(
+            "MSCL-1",
+            "LEAD-1",
+            "2402",
+            "chatwoot_whatsapp",
+            "sam_meat_backend",
+            "chatwoot_inbound",
+            "sam_inbound_observation",
+            "Half carcass Set A Riversdale delivery please.",
+            "You are in the right place. Can I confirm the delivery address?",
+            {"product_type": "half_carcass"},
+            {"product_type": "half_carcass", "cut_set": "Set A"},
+            ["delivery_address"],
+            ["delivery_or_location"],
+            [],
+            ["missed_delivery_intent"],
+            "needs_followup",
+            "Sam should keep collecting missing facts before owner review: delivery_address.",
+            "inbound_chatwoot",
+            "sales_conversation_learning_loop",
+            "2026-07-08T06:00:00+00:00",
+        )])
+
+        result, status_code = list_sam_meat_learning_owner_review_items(
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        item = result["items"][0]
+        self.assertEqual(item["approval_id"], "MSCL-1")
+        self.assertEqual(item["source_type"], "sam_meat_controlled_reply")
+        self.assertEqual(item["source_agent"], "sam_meat_backend")
+        self.assertEqual(item["runtime_source"], "meat_sales_conversation_learning_events")
+        self.assertEqual(item["source_ref"], "2402")
+        self.assertFalse(item["decision_supported"])
+        self.assertFalse(item["authority"]["sends_customer_message"])
+        self.assertFalse(item["authority"]["creates_quote"])
+        self.assertFalse(item["authority"]["reserves_stock"])
+        self.assertIn("missing:delivery_address", item["risk_flags"])
+        self.assertIn("sam_miss:missed_delivery_intent", item["risk_flags"])
 
     @patch("modules.charlie.owner_approval_inbox.update_mission_vault")
     @patch("modules.charlie.owner_approval_inbox.get_mission")

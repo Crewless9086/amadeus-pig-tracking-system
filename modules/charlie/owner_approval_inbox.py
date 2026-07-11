@@ -99,6 +99,16 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
         configured = False
     if runtime_status < 400:
         items.extend(runtime_result.get("items", []))
+    meat_result, meat_status = list_sam_meat_learning_owner_review_items(
+        limit=limit_per_status,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    source_statuses["meat_sales_conversation_learning_events"] = meat_status
+    if meat_status == 503 and meat_result.get("configured") is False and not items:
+        configured = False
+    if meat_status < 400:
+        items.extend(meat_result.get("items", []))
     items = sorted(items, key=_item_sort_key)
     pending_count = sum(1 for item in items if item.get("status") in {"pending", "send_back"})
     return {
@@ -118,6 +128,128 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
             "reservation/farm-write gates must execute separately after exact owner approval."
         ),
     }, 200
+
+
+def list_sam_meat_learning_owner_review_items(limit=12, database_url=None, connect_factory=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured", "items": []}, 503
+    try:
+        if connect_factory:
+            connection_context = connect_factory(database_url)
+        else:
+            import psycopg
+            connection_context = psycopg.connect(database_url, connect_timeout=5)
+        with connection_context as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        learning_event_id,
+                        lead_id,
+                        chatwoot_conversation_id,
+                        channel,
+                        source_agent,
+                        event_source,
+                        event_type,
+                        customer_message_excerpt,
+                        sam_reply_excerpt,
+                        customer_wanted_json,
+                        captured_facts_json,
+                        missing_facts_json,
+                        objections_json,
+                        confusion_signals_json,
+                        sam_misses_json,
+                        conversion_signal,
+                        improvement_suggestion,
+                        campaign_source,
+                        recorded_by,
+                        created_at
+                    from public.meat_sales_conversation_learning_events
+                    where coalesce(customer_message_excerpt, '') <> ''
+                       or coalesce(sam_reply_excerpt, '') <> ''
+                       or coalesce(improvement_suggestion, '') <> ''
+                       or jsonb_array_length(coalesce(missing_facts_json, '[]'::jsonb)) > 0
+                       or jsonb_array_length(coalesce(sam_misses_json, '[]'::jsonb)) > 0
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+                columns = [column.name for column in cursor.description]
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sam_meat_learning_owner_review_items_failed",
+            "error_type": exc.__class__.__name__,
+            "items": [],
+        }, 503
+    items = [
+        owner_approval_item_from_sam_meat_learning_event(dict(zip(columns, row)))
+        for row in rows
+    ]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "items": [item for item in items if item.get("approval_id")],
+    }, 200
+
+
+def owner_approval_item_from_sam_meat_learning_event(event):
+    event = event if isinstance(event, dict) else {}
+    reply = _clean(event.get("sam_reply_excerpt"), 2500)
+    message = _clean(event.get("customer_message_excerpt"), 500)
+    suggestion = _clean(event.get("improvement_suggestion"), 500)
+    title_parts = ["SAM Meat conversation review"]
+    lead_id = _clean(event.get("lead_id"), 80)
+    if lead_id:
+        title_parts.append(lead_id)
+    item = normalize_owner_approval_item({
+        "approval_id": event.get("learning_event_id"),
+        "source_type": "sam_meat_controlled_reply",
+        "source_agent": event.get("source_agent") or "SAM Meat",
+        "title": " - ".join(title_parts),
+        "status": "pending",
+        "action_label": suggestion or "Review SAM Meat learning evidence",
+        "exact_action": (
+            "Review the saved SAM Meat conversation learning evidence. This inbox card is "
+            "read-only; use the meat sales owner/customer send and money-path gates for any "
+            "customer reply, quote, payment, reservation, fulfilment, or rule change."
+        ),
+        "exact_text": reply,
+        "editable_text": reply,
+        "target_label": lead_id or event.get("chatwoot_conversation_id"),
+        "source_ref": event.get("chatwoot_conversation_id") or lead_id,
+        "conversation_id": event.get("chatwoot_conversation_id"),
+        "risk_flags": _sam_meat_learning_risk_flags(event, message),
+        "forbidden_actions": [
+            "Inbox review does not send the customer message.",
+            "No quote, invoice, payment confirmation, reservation, stock, Chatwoot, prompt, rule, or farm lifecycle write from this card.",
+        ],
+        "created_at": _iso(event.get("created_at")),
+        "updated_at": _iso(event.get("created_at")),
+    }, {
+        "mission_id": "",
+        "status": "runtime_review",
+        "title": "SAM Meat conversation learning",
+    })
+    item.update({
+        "mission_id": "",
+        "mission_title": "SAM Meat conversation learning",
+        "mission_status": "runtime_review",
+        "decision_supported": False,
+        "runtime_source": "meat_sales_conversation_learning_events",
+        "learning_event_id": _clean(event.get("learning_event_id"), 120),
+        "lead_id": lead_id,
+        "customer_message_excerpt": message,
+        "conversion_signal": _clean(event.get("conversion_signal"), 80),
+        "improvement_suggestion": suggestion,
+    })
+    return item
 
 
 def list_sam_live_stock_runtime_owner_review_items(limit=12, database_url=None, connect_factory=None):
@@ -478,10 +610,34 @@ def _sam_live_stock_review_risk_flags(event, facts, message):
     return flags
 
 
+def _sam_meat_learning_risk_flags(event, message):
+    flags = []
+    if message:
+        flags.append("customer_message_captured")
+    for key, prefix in (
+        ("missing_facts_json", "missing"),
+        ("objections_json", "objection"),
+        ("confusion_signals_json", "confusion"),
+        ("sam_misses_json", "sam_miss"),
+    ):
+        for value in _json_list(event.get(key))[:4]:
+            flags.append(f"{prefix}:{_clean(value, 80)}")
+    signal = _clean(event.get("conversion_signal"), 80)
+    if signal:
+        flags.append(f"conversion:{signal}")
+    return flags
+
+
 def _json_dict(value):
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _json_list(value):
+    if isinstance(value, list):
+        return value
+    return []
 
 
 def _iso(value):
