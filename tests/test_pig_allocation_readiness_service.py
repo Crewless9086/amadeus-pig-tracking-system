@@ -308,6 +308,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "days_since_weight": 2,
                     "weight_band": "10_to_14_Kg",
                     "wean_date": "2026-06-01",
+                    "withdrawal_clear": "Yes",
+                    "media_references": [{"type": "photo", "reference": "/pigs/pig-weaner.jpg"}],
                 },
                 {
                     "pig_id": "PIG-NEWBORN",
@@ -341,6 +343,24 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "weight_band": "90_to_94_Kg",
                     "wean_date": "2026-03-01",
                 },
+                {
+                    "pig_id": "PIG-WITHDRAWAL", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 15,
+                    "latest_weight_date": "2026-06-22", "days_since_weight": 2,
+                    "wean_date": "2026-06-01", "withdrawal_clear": "No",
+                },
+                {
+                    "pig_id": "PIG-STALE", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-05-01", "days_since_weight": 58,
+                    "wean_date": "2026-06-01", "withdrawal_clear": "Yes",
+                },
+                {
+                    "pig_id": "PIG-HEALTH-HOLD", "status": "Active", "on_farm": "Yes",
+                    "purpose": "Sale", "calculated_stage": "Weaner", "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-06-22", "days_since_weight": 2,
+                    "wean_date": "2026-06-01", "health_status": "Injured - hold",
+                },
             ],
         }
 
@@ -351,10 +371,15 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-WEANER"]["available_for_sale"], "Yes")
         self.assertTrue(by_id["PIG-WEANER"]["live_stock_sale_eligible"])
         self.assertEqual(by_id["PIG-WEANER"]["sale_category"], "Weaner Piglets")
+        self.assertEqual(by_id["PIG-WEANER"]["latest_weight_date"], "2026-06-22")
+        self.assertEqual(by_id["PIG-WEANER"]["media_references"][0]["type"], "photo")
         self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
         self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-STALE"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-HEALTH-HOLD"]["available_for_sale"], "No")
 
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{

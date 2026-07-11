@@ -3783,9 +3783,11 @@ def _sales_availability_from_supabase_allocation():
     if not _allocation_is_supabase(allocation):
         return None
 
+    thresholds = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        eligibility = _live_stock_sale_eligibility(pig)
+        eligibility = _live_stock_sale_eligibility(pig, thresholds)
+        withdrawal_clear = eligibility.get("withdrawal_clear") or _live_stock_withdrawal_clear(pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3800,13 +3802,22 @@ def _sales_availability_from_supabase_allocation():
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
-            "withdrawal_clear": "",
+            "withdrawal_clear": withdrawal_clear,
+            "current_withdrawal_end_date": pig.get("current_withdrawal_end_date", ""),
+            "health_status": pig.get("health_status", ""),
+            "medical_status": pig.get("medical_status", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
             "purpose": pig.get("purpose", ""),
             "available_for_sale": "Yes" if eligibility["eligible"] else "No",
             "live_stock_sale_eligible": eligibility["eligible"],
             "live_stock_sale_reason": eligibility["reason"],
+            "latest_weight_date": pig.get("latest_weight_date", ""),
+            "days_since_weight": pig.get("days_since_weight"),
+            "litter_id": pig.get("litter_id", ""),
+            "mother_id": pig.get("mother_id", ""),
+            "father_id": pig.get("father_id", ""),
+            "media_references": _live_stock_media_references(pig),
             "sale_category": eligibility["sale_category"],
             "suggested_price_category": eligibility["suggested_price_category"],
             "sales_notes": eligibility["status"],
@@ -3816,7 +3827,8 @@ def _sales_availability_from_supabase_allocation():
     return sales_rows
 
 
-def _live_stock_sale_eligibility(pig):
+def _live_stock_sale_eligibility(pig, thresholds=None):
+    thresholds = thresholds or {}
     status = to_clean_string(pig.get("status", ""))
     normalized_status = status.lower()
     on_farm = to_clean_string(pig.get("on_farm", "")).lower()
@@ -3827,6 +3839,13 @@ def _live_stock_sale_eligibility(pig):
     animal_type = to_clean_string(pig.get("animal_type", ""))
     calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
     latest_weight_kg = to_float(pig.get("latest_weight_kg"))
+    latest_weight_date = to_clean_string(pig.get("latest_weight_date", ""))
+    days_since_weight = to_float(pig.get("days_since_weight"))
+    stale_weight_days = to_float(thresholds.get("stale_weight_days", STALE_WEIGHT_DAYS))
+    withdrawal_clear = _live_stock_withdrawal_clear(pig)
+    health_status = to_clean_string(pig.get("health_status", "")).lower()
+    medical_status = to_clean_string(pig.get("medical_status", "")).lower()
+    hold_status = to_clean_string(pig.get("hold_status", pig.get("sale_hold_status", ""))).lower()
     wean_date = to_clean_string(pig.get("wean_date", ""))
 
     if normalized_status != "active" or normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES}:
@@ -3839,8 +3858,20 @@ def _live_stock_sale_eligibility(pig):
         return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
         return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
+    if withdrawal_clear == "No":
+        return _live_stock_sale_block("withdrawal_hold", "Pig is blocked by a withdrawal or medical hold.", withdrawal_clear)
+    if any(token in health_status for token in ("sick", "injured", "quarantine", "hold")):
+        return _live_stock_sale_block("health_hold", "Pig health status blocks SAM Live stock sales.", withdrawal_clear)
+    if any(token in medical_status for token in ("withdrawal", "follow-up hold", "quarantine", "hold")):
+        return _live_stock_sale_block("medical_hold", "Pig medical status blocks SAM Live stock sales.", withdrawal_clear)
+    if hold_status in {"hold", "held", "yes", "true", "medical", "health", "withdrawal"}:
+        return _live_stock_sale_block("sale_hold", "Pig is held from sale by source truth.", withdrawal_clear)
     if latest_weight_kg is None:
-        return _live_stock_sale_block("missing_weight", "Latest weight is required before SAM can quote live stock.")
+        return _live_stock_sale_block("missing_weight", "Latest weight is required before SAM can quote live stock.", withdrawal_clear)
+    if not latest_weight_date or days_since_weight is None:
+        return _live_stock_sale_block("missing_weight_date", "Latest weight date is required before SAM can quote live stock.", withdrawal_clear)
+    if stale_weight_days is not None and days_since_weight > stale_weight_days:
+        return _live_stock_sale_block("stale_weight", f"Latest weight is {int(days_since_weight)} days old, beyond the {int(stale_weight_days)} day stale-weight rule.", withdrawal_clear)
     if latest_weight_kg < LIVE_STOCK_MIN_SALE_WEIGHT_KG:
         return _live_stock_sale_block("below_sale_weight", "Newborn or very light piglets are not sold while still with the sow.")
     if _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
@@ -3851,15 +3882,16 @@ def _live_stock_sale_eligibility(pig):
         return _live_stock_sale_block("price_band_missing", "No live-stock price band matched the latest weight.")
     return {
         "eligible": True,
-        "reason": "Purpose = Sale, active/on-farm, not reserved, weaned or sale-stage, and current weight maps to a live-stock price band.",
+        "reason": "Purpose = Sale, active/on-farm, not reserved, withdrawal clear, fresh latest weight, weaned or sale-stage, and current weight maps to a live-stock price band.",
         "status": "SAM Live sale-ready",
         "sale_category": category,
         "weight_band": derived_band,
         "suggested_price_category": f"{category}|{derived_band}",
+        "withdrawal_clear": withdrawal_clear,
     }
 
 
-def _live_stock_sale_block(code, reason):
+def _live_stock_sale_block(code, reason, withdrawal_clear=None):
     return {
         "eligible": False,
         "reason": reason,
@@ -3867,7 +3899,28 @@ def _live_stock_sale_block(code, reason):
         "sale_category": "Not SAM Live Sale Ready",
         "weight_band": "",
         "suggested_price_category": code,
+        "withdrawal_clear": withdrawal_clear or "",
     }
+
+
+def _live_stock_withdrawal_clear(pig):
+    explicit = to_clean_string(pig.get("withdrawal_clear", ""))
+    if explicit:
+        return "Yes" if explicit.lower() in {"yes", "true", "1", "clear"} else "No"
+    withdrawal_end = to_clean_string(pig.get("current_withdrawal_end_date", pig.get("withdrawal_end_date", "")))
+    if withdrawal_end:
+        parsed_end = parse_sheet_date(withdrawal_end)
+        if not parsed_end:
+            return "No"
+        return "Yes" if parsed_end <= datetime.now().date() else "No"
+    return "Yes"
+
+
+def _live_stock_media_references(pig):
+    references = pig.get("media_references")
+    if isinstance(references, list):
+        return [item for item in references if item]
+    return []
 
 
 def _is_breeding_or_retained_stage(animal_type, calculated_stage):
@@ -3956,6 +4009,7 @@ def _sales_availability_by_pig(rows, columns):
             continue
         lookup[pig_id] = {
             "available_for_sale": to_clean_string(row.get(columns["available_for_sale"], "")),
+            "withdrawal_clear": to_clean_string(row.get(columns["withdrawal_clear"], "")),
             "reserved_status": to_clean_string(row.get(columns["reserved_status"], "")),
             "reserved_for_order_id": to_clean_string(row.get(columns["reserved_for_order_id"], "")),
             "sale_category": to_clean_string(row.get(columns["sale_category"], "")),
@@ -4532,6 +4586,11 @@ def get_pig_allocation_readiness(today=None):
             "suggested_purpose_reason": suggested_purpose["suggested_purpose_reason"],
             "suggested_purpose_confidence": suggested_purpose["suggested_purpose_confidence"],
             "available_for_sale": sales_meta.get("available_for_sale", ""),
+            "withdrawal_clear": sales_meta.get("withdrawal_clear", to_clean_string(row.get("Withdrawal_Clear", ""))),
+            "current_withdrawal_end_date": format_date_for_json(row.get("Current_Withdrawal_End_Date", "")),
+            "health_status": to_clean_string(row.get("Health_Status", "")),
+            "medical_status": to_clean_string(row.get("Medical_Status", "")),
+            "media_references": row.get("Media_References", []) if isinstance(row.get("Media_References", []), list) else [],
             "reserved_status": sales_meta.get("reserved_status", ""),
             "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
             "sale_category": sales_meta.get("sale_category", ""),
