@@ -89,7 +89,7 @@ Supported commands:
 
 - `/start` confirms the relay is online.
 - `/status` shows relay safety status.
-- `/next` sends the top five missions from `NEXT_STEPS.md` as buttons.
+- `/next` reads the live Supabase `charlie_missions` owner queue first and sends the top five actionable missions as buttons.
 - Button selection writes the chosen mission into `planning/CODEX_CHAT.md` and confirms.
 
 Safety boundaries:
@@ -106,6 +106,8 @@ Safety boundaries:
 - Codex is not started;
 - no model APIs are called;
 - no scheduler, auto-merge, production data write, or customer send is enabled.
+
+If Supabase is unavailable or the live owner queue is empty, `/next` falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the message as `Source: fallback docs menu`. The fallback is only a backup; the live mission queue is the preferred source of truth.
 
 ## Duplicate Message Troubleshooting
 
