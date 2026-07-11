@@ -308,6 +308,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "days_since_weight": 2,
                     "weight_band": "10_to_14_Kg",
                     "wean_date": "2026-06-01",
+                    "withdrawal_clear": "Yes",
+                    "media_references": [{"type": "photo", "reference": "/media/pigs/pig-weaner.jpg"}],
                 },
                 {
                     "pig_id": "PIG-NEWBORN",
@@ -341,6 +343,55 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "weight_band": "90_to_94_Kg",
                     "wean_date": "2026-03-01",
                 },
+                {
+                    "pig_id": "PIG-WITHDRAWAL",
+                    "tag_number": "10",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Growing",
+                    "calculated_stage": "Weaner",
+                    "latest_weight_kg": 15,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "15_to_19_Kg",
+                    "wean_date": "2026-06-01",
+                    "withdrawal_clear": "No",
+                },
+                {
+                    "pig_id": "PIG-STALE",
+                    "tag_number": "11",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Growing",
+                    "calculated_stage": "Weaner",
+                    "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-05-01",
+                    "days_since_weight": 58,
+                    "weight_band": "15_to_19_Kg",
+                    "wean_date": "2026-06-01",
+                    "withdrawal_clear": "Yes",
+                },
+                {
+                    "pig_id": "PIG-HEALTH-HOLD",
+                    "tag_number": "12",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Growing",
+                    "calculated_stage": "Weaner",
+                    "latest_weight_kg": 18,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "15_to_19_Kg",
+                    "wean_date": "2026-06-01",
+                    "withdrawal_clear": "Yes",
+                    "health_status": "Treatment hold",
+                },
             ],
         }
 
@@ -351,10 +402,21 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-WEANER"]["available_for_sale"], "Yes")
         self.assertTrue(by_id["PIG-WEANER"]["live_stock_sale_eligible"])
         self.assertEqual(by_id["PIG-WEANER"]["sale_category"], "Weaner Piglets")
+        self.assertEqual(by_id["PIG-WEANER"]["withdrawal_clear"], "Yes")
+        self.assertEqual(by_id["PIG-WEANER"]["latest_weight_date"], "2026-06-22")
+        self.assertEqual(by_id["PIG-WEANER"]["days_since_weight"], 2)
+        self.assertEqual(by_id["PIG-WEANER"]["media_references"][0]["reference"], "/media/pigs/pig-weaner.jpg")
         self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
         self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")
+        self.assertEqual(by_id["PIG-WITHDRAWAL"]["withdrawal_clear"], "No")
+        self.assertIn("withdrawal", by_id["PIG-WITHDRAWAL"]["live_stock_sale_reason"].lower())
+        self.assertEqual(by_id["PIG-STALE"]["available_for_sale"], "No")
+        self.assertIn("stale-weight", by_id["PIG-STALE"]["live_stock_sale_reason"])
+        self.assertEqual(by_id["PIG-HEALTH-HOLD"]["available_for_sale"], "No")
+        self.assertIn("health status", by_id["PIG-HEALTH-HOLD"]["live_stock_sale_reason"])
 
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{
@@ -653,6 +715,218 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-ACTIONABLE"]["readiness_bucket"], "Needs Data")
         self.assertEqual(result["summary"]["total"], 1)
         self.assertEqual(result["summary"]["buckets"]["Needs Data"], 1)
+
+    def test_herdmaster_allocation_alert_packet_covers_required_categories_without_writes(self):
+        allocation = {
+            "success": True,
+            "generated_date": "2026-06-28",
+            "thresholds": {
+                "fresh_weight_days": 14,
+                "stale_weight_days": 30,
+                "meat_target_min_kg": 60,
+                "meat_target_max_kg": 80,
+                "slaughter_target_min_kg": 80,
+                "meat_window_expiring_buffer_kg": 5,
+            },
+            "pigs": [
+                {
+                    "pig_id": "PIG-MISSING",
+                    "tag_number": "",
+                    "sex": "",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Needs Data",
+                    "readiness_reason": "Missing tag, sex, weight before allocation can be trusted.",
+                    "latest_weight_kg": None,
+                    "days_since_weight": None,
+                },
+                {
+                    "pig_id": "PIG-PURPOSE",
+                    "tag_number": "11",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Classification",
+                    "suggested_purpose": "Grow Out",
+                    "suggested_purpose_reason": "Purpose is unknown; current data supports keeping this pig growing.",
+                    "suggested_purpose_confidence": "Medium",
+                    "latest_weight_kg": 35,
+                    "days_since_weight": 4,
+                    "days_since_wean": 20,
+                },
+                {
+                    "pig_id": "PIG-MEAT",
+                    "tag_number": "12",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Meat Candidate",
+                    "latest_weight_kg": 70,
+                    "latest_weight_date": "2026-06-25",
+                    "days_since_weight": 3,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+                {
+                    "pig_id": "PIG-EXPIRING",
+                    "tag_number": "13",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Meat Candidate",
+                    "latest_weight_kg": 76,
+                    "days_since_weight": 3,
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                },
+                {
+                    "pig_id": "PIG-SLAUGHTER",
+                    "tag_number": "14",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Slaughter Candidate",
+                    "readiness_reason": "Weight is in the first planned slaughter-candidate range.",
+                    "latest_weight_kg": 82,
+                    "days_since_weight": 3,
+                    "meat_window_status": "Past meat window",
+                    "abattoir_window_status": "In abattoir window",
+                },
+                {
+                    "pig_id": "PIG-SLOW",
+                    "tag_number": "15",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Livestock Candidate",
+                    "growth_class": "Slow",
+                    "growth_reason": "Lifetime ADG is 0.150 kg/day, below 0.200 kg/day.",
+                    "average_daily_gain_kg": 0.15,
+                    "latest_weight_kg": 30,
+                    "days_since_weight": 3,
+                },
+                {
+                    "pig_id": "PIG-BREED",
+                    "tag_number": "16",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Retain / Breeding Candidate",
+                    "suggested_purpose": "Breeding Review",
+                    "suggested_purpose_reason": "Growth and litter quality justify reviewing retention.",
+                    "growth_class": "Exceptional",
+                    "litter_quality": "Good",
+                    "litter_survival_rate": 0.9,
+                    "latest_weight_kg": 66,
+                    "days_since_weight": 3,
+                },
+                {
+                    "pig_id": "PIG-STALE",
+                    "tag_number": "17",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Meat Candidate",
+                    "latest_weight_kg": 68,
+                    "latest_weight_date": "2026-05-01",
+                    "days_since_weight": 58,
+                    "meat_window_status": "In meat window",
+                },
+                {
+                    "pig_id": "PIG-CONFLICT",
+                    "tag_number": "18",
+                    "sex": "Female",
+                    "status": "Sold",
+                    "on_farm": "Yes",
+                    "purpose": "Sale",
+                    "readiness_bucket": "Exited",
+                    "available_for_sale": "Yes",
+                    "latest_weight_kg": 75,
+                    "days_since_weight": 3,
+                },
+            ],
+        }
+
+        with patch.object(pig_weights_service, "append_row") as append_row, \
+                patch.object(pig_weights_service, "batch_update_rows_by_id") as update_rows, \
+                patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id") as update_pigs:
+            packet = pig_weights_service.build_herdmaster_pig_allocation_alerts(allocation, today=date(2026, 6, 28))
+
+        categories = {alert["category"] for alert in packet["alerts"]}
+        self.assertTrue(packet["success"])
+        self.assertTrue(packet["owner_safe"])
+        self.assertTrue(packet["reproducible"])
+        self.assertFalse(packet["persistent"])
+        self.assertFalse(packet["writes_to_sheets"])
+        self.assertFalse(packet["writes_to_supabase"])
+        self.assertFalse(packet["writes_orders"])
+        self.assertFalse(packet["writes_sales"])
+        self.assertFalse(packet["writes_slaughter"])
+        self.assertEqual(
+            {
+                "Missing Data",
+                "Purpose Review Due",
+                "Meat Window Entered",
+                "Meat Window Expiring / Past",
+                "Slaughter Candidate",
+                "Slow Grower Feed Risk",
+                "Breeding Candidate",
+                "Stale Weight",
+                "Sold/Exited Data Conflict",
+            },
+            categories,
+        )
+        conflict = next(alert for alert in packet["alerts"] if alert["category"] == "Sold/Exited Data Conflict")
+        self.assertEqual(conflict["severity"], "Critical")
+        self.assertIn("no_pig_lifecycle_write", conflict["forbidden_actions"])
+        self.assertIn("status", conflict["source_fields"])
+        self.assertGreaterEqual(packet["summary"]["severities"]["High"], 1)
+        append_row.assert_not_called()
+        update_rows.assert_not_called()
+        update_pigs.assert_not_called()
+
+    def test_allocation_readiness_includes_reproducible_herdmaster_alert_packet(self):
+        overview_rows = [{
+            "Pig_ID": "PIG-ALERT",
+            "Tag_Number": "",
+            "Animal_Type": "Grower",
+            "Sex": "",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Unknown",
+            "Current_Pen_ID": "PEN-1",
+            "Current_Weight_Kg": "",
+            "Last_Weight_Date": "",
+            "Age_Days": "75",
+        }]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Grower Pen"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 28))
+
+        self.assertIn("herdmaster_alerts", result)
+        self.assertEqual(result["herdmaster_alerts"]["alert_contract"], "herdmaster_pig_allocation_alerts_v1")
+        self.assertFalse(result["herdmaster_alerts"]["writes_to_sheets"])
+        self.assertFalse(result["herdmaster_alerts"]["writes_to_supabase"])
+        self.assertEqual(result["pigs"][0]["herdmaster_alert_count"], 2)
+        self.assertEqual(
+            {alert["category"] for alert in result["pigs"][0]["herdmaster_alerts"]},
+            {"Missing Data", "Stale Weight"},
+        )
 
     def test_purpose_review_queue_filters_unknown_purpose_and_keeps_litter_focus(self):
         allocation_result = {

@@ -44,7 +44,7 @@ function formatNumber(value, decimals = 2) {
 function buildSalesCard(pig) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
-  card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
+  card.href = `/sales-dashboard?pig_id=${encodeURIComponent(pig.pig_id)}`;
 
   const topRow = document.createElement("div");
   topRow.className = "pig-list-top";
@@ -55,7 +55,7 @@ function buildSalesCard(pig) {
 
   const action = document.createElement("div");
   action.className = "pig-list-action";
-  action.textContent = "Open Profile →";
+  action.textContent = "Open Sales Dashboard";
 
   topRow.appendChild(tag);
   topRow.appendChild(action);
@@ -71,7 +71,9 @@ function buildSalesCard(pig) {
 
   const salesInfo = document.createElement("div");
   salesInfo.className = "sales-meta-grid";
+  const latestWeightDate = pig.latest_weight_date || pig.last_weight_date || "No weight date";
   salesInfo.innerHTML = `
+    <div><span class="history-label">Latest Weight Date</span><span class="history-value">${latestWeightDate}</span></div>
     <div><span class="history-label">Stage</span><span class="history-value">${pig.calculated_stage || "—"}</span></div>
     <div><span class="history-label">Purpose</span><span class="history-value">${pig.purpose || "—"}</span></div>
     <div><span class="history-label">Available</span><span class="history-value">${pig.available_for_sale || "—"}</span></div>

@@ -1,8 +1,8 @@
 # Herdmaster Pig Allocation Alert Rules
 
-Status: draft authority for owner review before implementation.
+Status: active v1 read-only authority.
 
-Purpose: define the source-of-truth rules and implementation design pack for future Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, and owner-gated until a later approved build creates code and tests.
+Purpose: define the source-of-truth rules and implementation contract for Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, reproducible from Pig Allocation readiness, and owner-gated.
 
 ## Source Of Truth
 
@@ -29,7 +29,7 @@ Markdown docs define rules and review boundaries. Runtime data defines live pig 
 
 ## Implementation Boundary
 
-Future alerts should build on the existing read-only Pig Allocation surface:
+Alerts build on the existing read-only Pig Allocation surface:
 
 - route: `/pig-allocation`;
 - API: `/api/pig-weights/pig-allocation-readiness`;
@@ -39,7 +39,7 @@ Future alerts should build on the existing read-only Pig Allocation surface:
 
 The alert layer must not create a second allocation engine. It should consume or extend the same canonical allocation packet: readiness bucket, reason, latest weight, days since weight, growth class, meat/abattoir timing, litter quality, suggested purpose, suggested-purpose reason, confidence, current links, and source metadata.
 
-No migration is required for the first alert build unless a later mission adds stored alert acknowledgements, owner decisions, or alert history.
+No migration is required for v1. Stored alert acknowledgements, owner decisions, or alert history require a later owner-approved migration mission.
 
 ## Alert Categories
 
@@ -113,7 +113,7 @@ The first implementation should:
 
 ## Test And Evidence Expectations
 
-Future builds must record exact commands and results. Minimum focused coverage:
+Builds must record exact commands and results. Minimum focused coverage:
 
 - missing data blocks allocation confidence;
 - purpose review due follows the 14-day post-wean rule;
@@ -124,6 +124,15 @@ Future builds must record exact commands and results. Minimum focused coverage:
 - sold/exited conflict is Critical and blocks action;
 - future sow replacement remains advisory only until data rules are approved;
 - no alert path writes to Sheets, Supabase, orders, sales, slaughter, reservations, or lifecycle records.
+
+## Active V1 Implementation
+
+The v1 backend implementation lives in `modules/pig_weights/pig_weights_service.py` and exposes a reproducible read-only packet through:
+
+- `/api/pig-weights/pig-allocation-readiness` under `herdmaster_alerts`;
+- `/api/pig-weights/pig-allocation-alerts` as a companion alert endpoint.
+
+Each alert carries `category`, `severity`, `confidence`, `reason`, `source_fields`, `owner_action`, `forbidden_actions`, `pig_id`, and no-write flags. The packet summarizes counts by severity and category, is marked `persistent: false`, and must not create, update, or delete farm, sale, order, slaughter, reservation, customer, public-post, or migration records.
 
 ## Open Design Issues
 

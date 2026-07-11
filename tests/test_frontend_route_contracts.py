@@ -1608,7 +1608,6 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="pig_pen_filter"', template)
         self.assertIn('id="pig_weight_filter"', template)
         self.assertIn('id="pig_stage_filter"', template)
-
         self.assertIn("populateFilters", js)
         self.assertIn("renderTotals", js)
         self.assertIn("pigPenFilter.addEventListener", js)
@@ -1629,6 +1628,16 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".pig-list-detail-grid", css)
         self.assertIn(".pig-list-hover-detail", css)
         self.assertIn(".pigs-dashboard-page .pig-list-card:focus-visible", css)
+
+    def test_sales_availability_cards_show_sam_stock_truth_context(self):
+        js = Path("static/js/salesAvailability.js").read_text(encoding="utf-8")
+
+        self.assertIn("Latest Weight Date", js)
+        self.assertIn("latestWeightDate", js)
+        self.assertIn("pig.latest_weight_date || pig.last_weight_date", js)
+        self.assertIn("card.href = `/sales-dashboard?pig_id=${encodeURIComponent(pig.pig_id)}`", js)
+        self.assertIn("Open Sales Dashboard", js)
+        self.assertNotIn("card.href = `/pig/${encodeURIComponent(pig.pig_id)}`", js)
 
     def test_mating_board_uses_section_aware_sorting(self):
         js = Path("static/js/matings.js").read_text(encoding="utf-8")
@@ -2157,7 +2166,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@app.route("/pig-allocation")', app_source)
         self.assertIn('render_template("pig-allocation.html")', app_source)
         self.assertIn('@pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])', routes)
+        self.assertIn('@pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])', routes)
         self.assertIn("get_pig_allocation_readiness", service)
+        self.assertIn("build_herdmaster_pig_allocation_alerts", service)
+        self.assertIn("herdmaster_alerts", service)
         self.assertIn("writes_to_sheets", service)
         self.assertIn("writes_to_supabase", service)
         self.assertIn("DEFAULT_ALLOCATION_SETTINGS", service)

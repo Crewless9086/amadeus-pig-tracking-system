@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-11
+
+- Activated Herdmaster Pig Allocation Alert Engine v1 as a read-only, reproducible backend alert packet built from Pig Allocation readiness, with companion API exposure, no persistence/migration, and explicit no-write/owner-gated boundaries.
+
 ## 2026-07-10
 
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
