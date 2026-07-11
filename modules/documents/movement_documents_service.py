@@ -53,25 +53,27 @@ FARM_DRIVER_DEFAULTS = {
 }
 
 
-def generate_removal_certificate_for_order(order_id, form_data=None, created_by="App"):
+def generate_removal_certificate_for_order(order_id, form_data=None, created_by="App", revision_fingerprint=""):
     return _generate_movement_document(
         order_id,
         document_type=DOCUMENT_TYPE_REMOVAL_CERTIFICATE,
         form_data=form_data or {},
         created_by=created_by,
+        revision_fingerprint=revision_fingerprint,
     )
 
 
-def generate_health_declaration_for_order(order_id, form_data=None, created_by="App"):
+def generate_health_declaration_for_order(order_id, form_data=None, created_by="App", revision_fingerprint=""):
     return _generate_movement_document(
         order_id,
         document_type=DOCUMENT_TYPE_HEALTH_DECLARATION,
         form_data=form_data or {},
         created_by=created_by,
+        revision_fingerprint=revision_fingerprint,
     )
 
 
-def _generate_movement_document(order_id, document_type, form_data=None, created_by="App"):
+def _generate_movement_document(order_id, document_type, form_data=None, created_by="App", revision_fingerprint=""):
     order_id = _safe(order_id)
     created_by = _safe(created_by) or "App"
     form_data = _clean_form_data(form_data or {})
@@ -129,7 +131,7 @@ def _generate_movement_document(order_id, document_type, form_data=None, created
         "File_Name": file_name,
         "Created_At": generated_at.strftime("%d %b %Y %H:%M"),
         "Created_By": created_by,
-        "Notes": _movement_document_notes(document_type, order, enriched_lines, pen_groups, form_data),
+        "Notes": _movement_document_notes(document_type, order, enriched_lines, pen_groups, form_data, revision_fingerprint=revision_fingerprint),
     }
     append_order_document(document_record)
     return {
@@ -461,15 +463,19 @@ def _movement_copy_form_data(form_data, order, copy_kind):
     return data
 
 
-def _movement_document_notes(document_type, order, lines, pen_groups, form_data):
-    return f"{document_type}_Metadata: " + json.dumps({
+def _movement_document_notes(document_type, order, lines, pen_groups, form_data, revision_fingerprint=""):
+    payload = {
         "worker_safe": True,
         "contains_prices": False,
         "contains_payment_details": False,
         "pig_count": len(lines),
         "pen_count": len(pen_groups),
         "form_fields": sorted([key for key, value in form_data.items() if value]),
-    }, sort_keys=True, separators=(",", ":"))
+    }
+    revision_fingerprint = _safe(revision_fingerprint)
+    if revision_fingerprint:
+        payload["revision_fingerprint"] = revision_fingerprint
+    return f"{document_type}_Metadata: " + json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 def _request_summary(order):
