@@ -1,8 +1,8 @@
 # Herdmaster Pig Allocation Alert Rules
 
-Status: draft authority for owner review before implementation.
+Status: active authority for the first read-only Herdmaster Pig Allocation alert implementation.
 
-Purpose: define the source-of-truth rules and implementation design pack for future Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, and owner-gated until a later approved build creates code and tests.
+Purpose: define the source-of-truth rules and implementation design pack for Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, owner-gated, and tested for owner review.
 
 ## Source Of Truth
 
@@ -99,17 +99,17 @@ Owner approval is mandatory before:
 - applying migrations or adding stored alert history;
 - using alerts to drive automated farm lifecycle writes.
 
-## First Build Design
+## First Build Implementation
 
-The first implementation should:
+The first implementation:
 
-1. Add an advisory alert packet to Pig Allocation readiness or a small companion read-only service.
-2. Compute alerts from the same canonical allocation rows and thresholds already used by Pig Allocation.
-3. Return per-alert `category`, `severity`, `confidence`, `reason`, `source_fields`, `owner_action`, `forbidden_actions`, and `pig_id`.
-4. Summarize counts by severity and category.
-5. Keep UI actions read-only: review, filter, inspect pig, open purpose-review packet.
-6. Add focused unit tests for every alert category, stale/conflict downgrades, and no-write flags.
-7. Add frontend contract tests only if the alert UI is changed.
+1. Adds `/api/pig-weights/pig-allocation-alerts` as an owner-read-guarded, read-only companion API.
+2. Computes pig alerts from the same canonical allocation rows and thresholds already used by Pig Allocation.
+3. Adds separate `litter_alerts` from litter/weaning attention so pre-wean tagless piglets stay out of Pig Allocation missing-data alerts.
+4. Returns per-alert `category`, `severity`, `confidence`, `reason`, `source_fields`, `owner_action`, `forbidden_actions`, and pig or litter identifiers.
+5. Summarizes counts by severity and category.
+6. Keeps all alert actions advisory. The packet does not write sheets, Supabase, orders, sales, slaughter, reservations, stock, customer messages, public posts, or farm lifecycle records.
+7. Uses focused tests for alert categories, owner-read guard coverage, litter attention inclusion, and no-write flags.
 
 ## Test And Evidence Expectations
 
