@@ -3735,6 +3735,7 @@ def _sales_availability_from_supabase_allocation():
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
         eligibility = _live_stock_sale_eligibility(pig)
+        withdrawal_clear = _live_stock_withdrawal_clear(pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3749,7 +3750,8 @@ def _sales_availability_from_supabase_allocation():
             "current_pen_id": pig.get("current_pen_id", ""),
             "status": pig.get("status", ""),
             "on_farm": pig.get("on_farm", ""),
-            "withdrawal_clear": "",
+            "withdrawal_clear": withdrawal_clear,
+            "current_withdrawal_end_date": pig.get("current_withdrawal_end_date", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
             "purpose": pig.get("purpose", ""),
@@ -3759,10 +3761,28 @@ def _sales_availability_from_supabase_allocation():
             "sale_category": eligibility["sale_category"],
             "suggested_price_category": eligibility["suggested_price_category"],
             "sales_notes": eligibility["status"],
+            "litter_id": pig.get("litter_id", ""),
+            "mother_id": pig.get("mother_id", ""),
+            "father_id": pig.get("father_id", ""),
+            "sow_pig_id": pig.get("sow_pig_id", ""),
+            "sow_tag_number": pig.get("sow_tag_number", ""),
+            "boar_pig_id": pig.get("boar_pig_id", ""),
+            "boar_tag_number": pig.get("boar_tag_number", ""),
+            "media_references": pig.get("media_references", []) if isinstance(pig.get("media_references"), list) else [],
             "source": "supabase_allocation_readiness",
         })
 
     return sales_rows
+
+
+def _live_stock_withdrawal_clear(pig):
+    withdrawal_clear = to_clean_string(pig.get("withdrawal_clear", ""))
+    if withdrawal_clear:
+        return withdrawal_clear
+    withdrawal_end_date = to_clean_string(pig.get("current_withdrawal_end_date", ""))
+    if withdrawal_end_date:
+        return "No"
+    return "No"
 
 
 def _live_stock_sale_eligibility(pig):
@@ -3773,6 +3793,7 @@ def _live_stock_sale_eligibility(pig):
     normalized_purpose = purpose.lower().replace("-", "_").replace(" ", "_")
     reserved_status = to_clean_string(pig.get("reserved_status", "")).lower()
     reserved_for_order_id = to_clean_string(pig.get("reserved_for_order_id", ""))
+    withdrawal_clear = _live_stock_withdrawal_clear(pig).lower()
     animal_type = to_clean_string(pig.get("animal_type", ""))
     calculated_stage = to_clean_string(pig.get("calculated_stage", ""))
     latest_weight_kg = to_float(pig.get("latest_weight_kg"))
@@ -3794,6 +3815,8 @@ def _live_stock_sale_eligibility(pig):
         return _live_stock_sale_block("below_sale_weight", "Newborn or very light piglets are not sold while still with the sow.")
     if _is_unweaned_newborn_or_suckling(animal_type, calculated_stage, wean_date):
         return _live_stock_sale_block("not_weaned", "Piglets still with the sow are not sold through SAM Live.")
+    if withdrawal_clear != "yes":
+        return _live_stock_sale_block("withdrawal_not_clear", "Pig does not have source-backed withdrawal clearance for SAM Live stock sales.")
 
     category, derived_band = _live_stock_sale_category_for_weight(latest_weight_kg)
     if not category:
@@ -4467,6 +4490,9 @@ def get_pig_allocation_readiness(today=None):
             "sow_tag_number": litter_quality["sow_tag_number"],
             "boar_pig_id": litter_quality["boar_pig_id"],
             "boar_tag_number": litter_quality["boar_tag_number"],
+            "withdrawal_clear": to_clean_string(row.get("Withdrawal_Clear", "")),
+            "current_withdrawal_end_date": format_date_for_json(row.get("Current_Withdrawal_End_Date", "")),
+            "media_references": [],
             "litter_quality": litter_quality["litter_quality"],
             "litter_quality_reason": litter_quality["litter_quality_reason"],
             "litter_survival_rate": litter_quality["litter_survival_rate"],
