@@ -107,6 +107,7 @@ from modules.sales.conversation_learning import (
     build_owner_review_learning_event,
     list_sales_conversation_learning_events,
     record_sales_conversation_learning_event,
+    live_stock_learning_scorecard,
 )
 from modules.sales.beacon_campaign import (
     build_beacon_campaign_publish_packet,
@@ -854,6 +855,15 @@ def meat_sales_conversation_learning_list():
         limit=request.args.get("limit", 50),
         lead_id=request.args.get("lead_id", ""),
     )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/live-stock-learning/scorecard", methods=["GET"])
+def live_stock_conversation_learning_scorecard():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = live_stock_learning_scorecard(limit=request.args.get("limit", 500))
     return jsonify(result), status_code
 
 

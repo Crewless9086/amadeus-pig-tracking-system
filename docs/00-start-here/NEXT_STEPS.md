@@ -56,6 +56,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P1 Money Path
 
+- SAM Live Stock controlled production pilot: collect at least 100 evaluated turns across at least 20 complete conversations; target 100% stock/price accuracy, at least 95% next-action/language/relevance, at least 90% human voice, and zero unsafe commitments before any narrow auto-send decision.
+- Enable `SAM_LIVE_STOCK_VOICE_TRANSCRIPTION_ENABLED` and `SAM_LIVE_STOCK_IMAGE_UNDERSTANDING_ENABLED` only after owner accepts OpenAI media processing/cost. Media is not stored and image facts remain untrusted.
+
 - OP-001 Meat Lead Creation And Qualification: build-ready at 96%; read-only Supabase inspection proved weak owner-labeled chats are current lead rows with unknown product and missing facts.
 - OP-003 Meat Planning Weight Window Settings: planning-ready at 96%; owner defaults are 60-80kg meat and 80kg+ abattoir/cull, including heavy culls.
 - OP-007 Sales Dashboard Meat-Ready Stock Visibility: build-ready at 96%; read-only dashboard and allocation sources were confirmed.

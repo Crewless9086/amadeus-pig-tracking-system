@@ -20,6 +20,8 @@ from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_pro
 from modules.sales.sam_pricing import resolve_live_stock_price_rule
 from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, classify_sam_sales_lane
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
+from modules.sales.sam_live_stock_understanding import understand_live_stock_inbound
+from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 
 
 WEBHOOK_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED"
@@ -56,6 +58,9 @@ SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS = {
     "update_draft_order",
     "prepare_quote",
     "prepare_picture_response",
+    "answer_delivery_policy",
+    "confirm_collection",
+    "propose_breeding_stock_mix",
     "no_reply_needed",
     "escalate",
 }
@@ -95,6 +100,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "owner_example_retrieval_default": "enabled_unless_env_is_false",
         "meat_public_offer_enabled": _meat_public_offer_enabled(source),
         "meat_public_offer_env": MEAT_PUBLIC_OFFER_ENABLED_ENV,
+        "media": media_policy(source),
         "api_key_env": OPENAI_API_KEY_ENV,
         "llm_default_model": DEFAULT_LLM_MODEL,
         "read_only": True,
@@ -130,6 +136,8 @@ def handle_sam_live_stock_chatwoot_inbound(
     draft_order_syncer=None,
     llm_drafter=None,
     owner_example_loader=None,
+    voice_transcriber=None,
+    image_classifier=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -145,7 +153,20 @@ def handle_sam_live_stock_chatwoot_inbound(
             **_authority_flags(),
         }, 200
 
+    understanding = understand_live_stock_inbound(
+        inbound,
+        payload,
+        voice_transcriber=voice_transcriber or (lambda attachment, body: transcribe_chatwoot_voice(attachment, body, environ=source)),
+        image_classifier=image_classifier or (lambda attachment, body: classify_chatwoot_image(attachment, body, environ=source)),
+    )
+    inbound["original_content"] = inbound.get("content") or ""
+    inbound["content"] = understanding.get("effective_text") or inbound.get("content") or ""
+    inbound["understanding"] = understanding
+
     facts = extract_live_stock_facts(inbound["content"], inbound)
+    facts["customer_language"] = understanding.get("language") or "unknown"
+    facts["message_intent"] = understanding.get("message_intent") or "unclear"
+    facts["media_review_required"] = bool(understanding.get("requires_media_review"))
     context_packet = load_live_stock_read_context(
         inbound,
         facts,
@@ -263,7 +284,8 @@ def parse_chatwoot_inbound(payload):
         return _ignored("ignored_non_incoming_message", event, message_type, content, conversation_id, customer_name, channel)
     if event and event not in {"message_created", "conversation_created"}:
         return _ignored("ignored_non_message_event", event, message_type, content, conversation_id, customer_name, channel)
-    if not content:
+    attachments = payload.get("attachments") if isinstance(payload.get("attachments"), list) else []
+    if not content and not attachments:
         return _ignored("ignored_empty_message", event, message_type, content, conversation_id, customer_name, channel)
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
     return {
@@ -281,6 +303,7 @@ def parse_chatwoot_inbound(payload):
         "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
         "conversation_custom_attributes": custom_attributes,
+        "attachments": attachments,
     }
 
 
@@ -648,6 +671,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
             "sales_lane": LANE_FARM_GENERAL,
             "lane_confidence": route["confidence"],
             "facts": facts,
+            "input_understanding": inbound.get("understanding") or {},
             "missing_fields": [],
             "read_context": {
                 "prior_context_source": (context_packet.get("prior_context") if isinstance(context_packet.get("prior_context"), dict) else {}).get("source", ""),
@@ -713,6 +737,8 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         inbound,
         environ or {},
         owner_example_loader=owner_example_loader,
+        facts=facts,
+        conversation_plan=conversation_plan,
     )
     fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet, conversation_plan)
     llm_draft = _build_llm_reply_draft_if_enabled(
@@ -728,6 +754,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         environ or {},
         drafter=llm_drafter,
         owner_correction_examples=owner_correction_examples,
+        conversation_plan=conversation_plan,
     )
     reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
     reply_source = llm_draft.get("reply_source") if llm_draft.get("used") else "deterministic_read_only_guard"
@@ -746,6 +773,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "sales_lane": route["lane"],
         "lane_confidence": route["confidence"],
         "facts": facts,
+        "input_understanding": inbound.get("understanding") or {},
         "missing_fields": missing,
         "conversation_plan": conversation_plan,
         "next_action": durable_action,
@@ -805,7 +833,7 @@ def build_live_stock_intake_payload(inbound, facts, decision=None):
         "customer_name": _clean(inbound.get("customer_name"), 120),
         "customer_phone": _clean(inbound.get("customer_phone"), 80),
         "customer_channel": _clean(inbound.get("channel"), 80),
-        "customer_language": "",
+        "customer_language": _clean(facts.get("customer_language"), 40),
         "updated_by": "Sam Live Stock",
         "patch": {key: value for key, value in patch.items() if value not in ("", None)},
         "items": [item] if item else [],
@@ -1130,6 +1158,15 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
         return "prepare_draft_order"
     if internal_action == "sync_lines":
         return "update_draft_order"
+    if internal_action in {
+        "answer_location",
+        "prepare_picture_response",
+        "answer_delivery_policy",
+        "confirm_collection",
+        "propose_breeding_stock_mix",
+        "no_reply_needed",
+    }:
+        return internal_action
     if price_answer_packet.get("can_answer_price") and (facts.get("quote_requested") or _asks_quote(text)):
         return "answer_price"
     if missing or internal_action == "ask_missing_field":
@@ -1392,6 +1429,12 @@ def build_live_stock_owner_action_packet(order_id="", conversation_id="", docume
             "document_id": document_id,
             "conversation_id": conversation_id,
             "rule": "Only after owner confirms the latest sendable quote.",
+        },
+        "sales_pack_prepare": {
+            "allowed_for_sam_auto": False,
+            "route": f"/api/orders/{order_id}/sales-pack/prepare" if order_id else "",
+            "method": "POST",
+            "rule": "Owner-gated preparation only. Generates or reuses quote, loading sheet, removal certificate, and health declaration; sends nothing.",
         },
     }
 
@@ -1697,24 +1740,6 @@ def build_sam_live_stock_go_live_checklist(environ=None):
         "ready_for_public_launch": False,
         "launch_rule": "Public launch needs owner-confirmed pricing, Beacon compliant post, controlled Chatwoot smoke, and owner command visibility.",
     }
-    try:
-        writer = intake_writer or update_intake_state
-        result = writer(validation["cleaned_data"])
-        return {
-            "attempted": True,
-            "success": bool((result or {}).get("success")),
-            "status": "sam_live_stock_intake_written" if (result or {}).get("success") else "sam_live_stock_intake_write_failed",
-            "result": result,
-            "payload": payload,
-        }
-    except Exception as exc:
-        return {
-            "attempted": True,
-            "success": False,
-            "status": "sam_live_stock_intake_write_exception",
-            "error": _clean(str(exc), 240),
-            "payload": payload,
-        }
 
 
 def _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet=None, conversation_plan=None):
@@ -1727,7 +1752,11 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
             )
         return "Just so I help you correctly: are you asking about live pigs, farm information, or slaughter help?"
     if facts.get("breeding_interest"):
-        return "I can note that, but breeding or replacement animals need farm review before anything is promised."
+        return _localized_reply(
+            facts,
+            "I understand this is for breeding. I can prepare a suitable female-and-male mix and check the recorded relationships, but the farm must review the exact animals before we promise them.",
+            "Ek verstaan dit is vir teel. Ek kan 'n geskikte vroulike-en-manlike groep voorberei en die aangetekende verwantskappe nagaan, maar die plaas moet die presiese diere goedkeur voordat ons hulle belowe.",
+        )
     if facts.get("reservation_requested"):
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
     action_reply = _reply_for_next_action(facts, conversation_plan, price_answer_packet)
@@ -1752,6 +1781,39 @@ def _reply_for_next_action(facts, plan, packet):
     facts = facts if isinstance(facts, dict) else {}
     plan = plan if isinstance(plan, dict) else {}
     action = str(plan.get("next_action") or "").strip()
+    if action == "no_reply_needed":
+        return ""
+    if action == "answer_location":
+        return _localized_reply(
+            facts,
+            "We are based in the Riversdale area. Collections are arranged with the farm once the order details are confirmed. What type of pig are you looking for?",
+            "Ons is in die Riversdal-omgewing. Afhaal word met die plaas gereël sodra die bestelling se besonderhede bevestig is. Watter tipe vark soek jy?",
+        )
+    if action == "prepare_picture_response":
+        return _localized_reply(
+            facts,
+            "I can send the right farm photos. Which group would you like to see: piglets, weaners, growers, finishers, or the bigger pigs?",
+            "Ek kan die regte plaasfoto's stuur. Watter groep wil jy sien: varkies, speenvarke, groeivarke, slagvarke, of die groter varke?",
+        )
+    if action == "answer_delivery_policy":
+        return _localized_reply(
+            facts,
+            "Collection from the farm is the standard option. If you need delivery, send the drop-off town or location and I can prepare a distance-based estimate for owner review before anything is promised.",
+            "Afhaal by die plaas is die standaard opsie. As jy aflewering nodig het, stuur die dorp of aflaaiplek en ek kan 'n afstand-gebaseerde skatting vir eienaar-goedkeuring voorberei voordat enigiets belowe word.",
+        )
+    if action == "confirm_collection":
+        timing = _clean(facts.get("timing"), 120) or "That time"
+        return _localized_reply(
+            facts,
+            f"{_sentence_case(timing)} can work as a collection option. I will keep the order details together and have the farm confirm the final collection time before we lock it in.",
+            f"{_sentence_case(timing)} kan as 'n afhaalopsie werk. Ek hou die bestelling se besonderhede bymekaar en laat die plaas die finale afhaaltyd bevestig voordat ons dit vasmaak.",
+        )
+    if action == "propose_breeding_stock_mix":
+        return _localized_reply(
+            facts,
+            "I can prepare the requested breeding mix and check the recorded relationships so the proposed male is not closely related to the females. The owner will review the exact animals before anything is confirmed.",
+            "Ek kan die gevraagde teelgroep voorberei en die aangetekende verwantskappe nagaan sodat die voorgestelde mannetjie nie naby verwant aan die wyfies is nie. Die eienaar sal die presiese diere nagaan voordat enigiets bevestig word.",
+        )
     if action in {"create_draft_then_quote", "update_draft_then_quote", "generate_quote"}:
         price = _price_answer_reply(facts, packet)
         if price:
@@ -1763,6 +1825,11 @@ def _reply_for_next_action(facts, plan, packet):
     if action in {"create_draft", "sync_lines"}:
         return "I have enough detail to prepare the draft order for owner review. Nothing is reserved or sent until the farm approves it."
     return ""
+
+
+def _localized_reply(facts, english, afrikaans):
+    language = str((facts or {}).get("customer_language") or "").lower()
+    return afrikaans if language == "afrikaans" else english
 
 
 def _farm_general_reply(inbound, source):
@@ -1780,20 +1847,38 @@ def _farm_general_reply(inbound, source):
     customer_name = _first_name((inbound or {}).get("customer_name"))
     greeting = f"Hi {customer_name}, " if customer_name else "Hi, "
     text = _normal_text((inbound or {}).get("content"))
+    language = str(((inbound or {}).get("understanding") or {}).get("language") or "english").lower()
     products = _farm_product_menu_summary(knowledge, source)
     if _asks_about_business(text):
+        if language == "afrikaans":
+            return (
+                f"{greeting}ons is Amadeus Plaas in die Riversdal-omgewing. "
+                "Ons help met lewende varke, plaas-afhaal en algemene plaasvrae. Vleisverkope is nog nie oop nie. "
+                "Sê vir my waarna jy soek en wanneer jy dit nodig het, dan help ek met die regte volgende stap."
+            )
         return (
             f"{greeting}we are Amadeus Farm in the Riversdale area. "
             f"{products} "
             "Tell me what you are interested in and roughly when you need it, then I can help with the right next step."
         )
     if _asks_for_pictures_or_ad(text):
+        if language == "afrikaans":
+            return (
+                f"{greeting}ek kan die regte plaasfoto's voorberei. "
+                "Sê net watter groep jy wil sien: varkies, speenvarke, groeivarke, slagvarke, of groter varke."
+            )
         return (
             f"{greeting}we are Amadeus Farm in the Riversdale area. "
             f"{products} "
             "If you want photos, tell me which group you want to see - piglets, weaners, growers, finishers, or bigger pigs - and I will line up the right farm pictures for owner review."
         )
     if _asks_location_question(text):
+        if language == "afrikaans":
+            return (
+                f"{greeting}ons is in die Riversdal-omgewing. "
+                "Afhaal word met die plaas gereël sodra die bestelling se besonderhede bevestig is. "
+                "Sê vir my waarna jy soek en wanneer jy wil afhaal."
+            )
         followup = (
             "Tell me what you need and when you would like to collect, and I will help from there."
             if "collection" in location.lower()
@@ -1994,6 +2079,7 @@ def _build_llm_reply_draft_if_enabled(
     *,
     drafter=None,
     owner_correction_examples=None,
+    conversation_plan=None,
 ):
     source = source if isinstance(source, dict) else {}
     if not _truthy(source.get(LLM_ENABLED_ENV)):
@@ -2016,6 +2102,7 @@ def _build_llm_reply_draft_if_enabled(
             fallback_reply,
             owner_correction_examples=owner_correction_examples,
             meat_public_offer_enabled=_meat_public_offer_enabled(source),
+            conversation_plan=conversation_plan,
         ),
         source,
     )
@@ -2036,7 +2123,7 @@ def _build_llm_reply_draft_if_enabled(
     }
 
 
-def _load_owner_correction_examples(inbound, source, owner_example_loader=None):
+def _load_owner_correction_examples(inbound, source, owner_example_loader=None, facts=None, conversation_plan=None):
     source = source if isinstance(source, dict) else {}
     if not _owner_example_retrieval_enabled(source):
         return []
@@ -2052,9 +2139,19 @@ def _load_owner_correction_examples(inbound, source, owner_example_loader=None):
             conversation_id=(inbound or {}).get("conversation_id") or "",
             limit=3,
             customer_message=(inbound or {}).get("content") or "",
+            customer_language=(facts or {}).get("customer_language") or "",
+            conversation_stage=(conversation_plan or {}).get("stage") or "",
+            reply_class=(facts or {}).get("message_intent") or "",
         )
     except TypeError:
-        result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
+        try:
+            result, _status = loader(
+                conversation_id=(inbound or {}).get("conversation_id") or "",
+                limit=3,
+                customer_message=(inbound or {}).get("content") or "",
+            )
+        except TypeError:
+            result, _status = loader((inbound or {}).get("conversation_id") or "", 3)
     except Exception:
         return []
     examples = result.get("examples") if isinstance(result, dict) else []
@@ -2073,6 +2170,7 @@ def _llm_reply_context_packet(
     fallback_reply,
     owner_correction_examples=None,
     meat_public_offer_enabled=False,
+    conversation_plan=None,
 ):
     context_packet = context_packet if isinstance(context_packet, dict) else {}
     availability = context_packet.get("availability") if isinstance(context_packet.get("availability"), dict) else {}
@@ -2095,6 +2193,8 @@ def _llm_reply_context_packet(
             "Use only stock and price facts in this JSON. Do not invent animals, prices, reservations, delivery promises, paperwork, or payment status.",
             "Sound like a helpful farm person on WhatsApp, not a system message. Keep it warm, plain, and practical.",
             "Acknowledge the customer's latest message before asking or answering.",
+            "Reply in customer_language. For mixed Afrikaans and English, follow the customer's dominant wording and keep South African phrasing natural.",
+            "Use conversation_plan.next_action as the purpose of the reply. Do not restart discovery when the plan already identifies the next action.",
             "When quantity, weight band, timing, and price are known, state them plainly. Do not defer to a later check when the supplied context already has the facts.",
             "If a detail is missing, ask only one useful question.",
             "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
@@ -2111,6 +2211,9 @@ def _llm_reply_context_packet(
         },
         "route": route,
         "facts": facts if isinstance(facts, dict) else {},
+        "customer_language": (facts or {}).get("customer_language") or "unknown",
+        "message_intent": (facts or {}).get("message_intent") or "unclear",
+        "conversation_plan": conversation_plan if isinstance(conversation_plan, dict) else {},
         "missing_fields": missing if isinstance(missing, list) else [],
         "blockers": blockers if isinstance(blockers, list) else [],
         "match_packet": match_packet if isinstance(match_packet, dict) else {},

@@ -136,6 +136,7 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
     sam_draft = _clean(latest_review_event.get("sam_reply_excerpt"), 1800)
     customer_message = _clean(latest_review_event.get("customer_message_excerpt"), 1200)
     facts = _dict(latest_review_event.get("facts_json"))
+    decision = _dict(latest_review_event.get("decision_json"))
     review_event_id = _clean(latest_review_event.get("review_event_id"), 120)
     review_created_at = _clean(latest_review_event.get("created_at"), 80)
     outbound_created_at = _clean(outbound.get("created_at") or outbound.get("last_inbound_at"), 80)
@@ -174,6 +175,9 @@ def build_live_stock_owner_reply_learning_event(outbound, latest_review_event=No
             "owner_reply_created_at": outbound_created_at,
             "review_reply_delta_seconds": age_seconds,
             "stale_review_link": stale_review_link,
+            "customer_language": _clean(facts.get("customer_language"), 40),
+            "conversation_stage": _clean(decision.get("conversation_stage") or (decision.get("conversation_plan") or {}).get("stage"), 80),
+            "reply_class": _clean(facts.get("message_intent") or "unclear", 80),
         },
         "missing_facts": _list((latest_review_event.get("decision_json") or {}).get("missing_fields") if isinstance(latest_review_event.get("decision_json"), dict) else []),
         "objections": _objections(owner_reply),
@@ -383,13 +387,16 @@ def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=N
     }, 200
 
 
-def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None, customer_message=""):
+def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_url=None, customer_message="", customer_language="", conversation_stage="", reply_class=""):
     try:
         limit = max(1, min(int(limit), 10))
     except (TypeError, ValueError):
         limit = 3
     conversation_id = _clean(conversation_id, 120)
     customer_message = _clean(customer_message, 1200)
+    customer_language = _clean(customer_language, 40)
+    conversation_stage = _clean(conversation_stage, 80)
+    reply_class = _clean(reply_class, 80)
     candidate_limit = min(max(limit * 6, limit), 30)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -454,6 +461,9 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
         rows,
         current_customer_message=customer_message,
         current_conversation_id=conversation_id,
+        customer_language=customer_language,
+        conversation_stage=conversation_stage,
+        reply_class=reply_class,
     )
     return {
         "success": True,
@@ -494,6 +504,20 @@ def summarize_sales_conversation_learning(events):
             suggestions.append(suggestion)
     summary["top_improvement_suggestions"] = _top_values(suggestions, limit=5)
     return summary
+
+
+def live_stock_learning_scorecard(database_url=None, limit=500):
+    from modules.sales.sam_live_stock_evaluation import owner_learning_scorecard
+
+    payload, status_code = list_sales_conversation_learning_events(limit=limit, database_url=database_url)
+    if status_code >= 400:
+        return payload, status_code
+    return {
+        "success": True,
+        "status": "sam_live_stock_learning_scorecard_ready",
+        "scorecard": owner_learning_scorecard(payload.get("learning_events") or []),
+        **AUTHORITY_FLAGS,
+    }, 200
 
 
 def _event_params(payload):
@@ -588,7 +612,7 @@ def _owner_reply_example_from_row(row):
     }
 
 
-def _rank_owner_reply_example_rows(rows, current_customer_message="", current_conversation_id=""):
+def _rank_owner_reply_example_rows(rows, current_customer_message="", current_conversation_id="", customer_language="", conversation_stage="", reply_class=""):
     current_customer_message = _normal_reply(current_customer_message)
     current_conversation_id = _clean(current_conversation_id, 120)
     ranked = []
@@ -601,6 +625,13 @@ def _rank_owner_reply_example_rows(rows, current_customer_message="", current_co
             captured = _loads(captured, {})
         row_conversation_id = _clean(captured.get("chatwoot_conversation_id") or captured.get("conversation_id"), 120)
         same_conversation = bool(current_conversation_id and row_conversation_id == current_conversation_id)
+        if customer_language and _clean(captured.get("customer_language"), 40) == customer_language:
+            score += 0.12
+        if conversation_stage and _clean(captured.get("conversation_stage"), 80) == conversation_stage:
+            score += 0.10
+        if reply_class and _clean(captured.get("reply_class"), 80) == reply_class:
+            score += 0.18
+        score = round(min(score, 1.0), 3)
         ranked.append((score, same_conversation, -index, row + (score,)))
     ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     return [item[3] for item in ranked]

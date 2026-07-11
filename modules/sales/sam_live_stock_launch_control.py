@@ -18,6 +18,7 @@ from modules.sales.sam_live_stock_runtime import (
     review_sam_live_stock_conversation,
     send_owner_approved_live_stock_reply,
 )
+from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
 
 
 TELEGRAM_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED"
@@ -429,6 +430,8 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"SAM Live - {_clean(event.get('customer_name') or 'Unknown customer', 80)}",
         f"Conversation: {conversation_id or 'unknown'}",
         f"Intent: {_owner_card_intent_summary(decision)}",
+        f"Message type: {_clean(facts.get('message_intent') or 'unclear', 80).replace('_', ' ')}",
+        f"Language: {_clean(facts.get('customer_language') or 'unknown', 60).replace('_', ' ')}",
         f"Stage: {_owner_card_stage_summary(decision)}",
         f"Open order/quote: {_owner_card_open_order_quote_summary(decision)}",
         f"Next: {_owner_card_next_action_summary(decision)}",
@@ -441,6 +444,9 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Policy: learning {'on' if _truthy(source.get('SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED', '1')) else 'off'}; meat {'open' if _truthy(source.get('SAM_MEAT_PUBLIC_OFFER_ENABLED')) else 'locked'}",
     ]
     flags = _owner_card_flags(event, review, decision)
+    understanding = decision.get("input_understanding") if isinstance(decision.get("input_understanding"), dict) else {}
+    if understanding.get("requires_media_review"):
+        parts.append("Media: owner review required; media-derived facts are not trusted")
     if flags:
         parts.append(f"Flags: {flags}")
     if score < target:
@@ -568,7 +574,7 @@ def apply_sam_live_stock_chatwoot_takeover(conversation_id, mode="HUMAN", reason
         return {"success": False, "status": "sam_live_stock_chatwoot_takeover_failed", "error": _clean(str(exc), 240), "packet": packet, **AUTHORITY_FLAGS}, 502
 
 
-def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, chatwoot_writer=None, review_event_loader=None):
+def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, chatwoot_writer=None, review_event_loader=None, sales_pack_preparer=None):
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
@@ -581,6 +587,7 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
         "review_prepare_draft_order",
         "review_update_draft_order",
         "review_prepare_quote",
+        "review_prepare_sales_pack",
         "review_picture_reply",
     }
     if action["action"] in review_actions:
@@ -599,6 +606,41 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
             "review_picture_reply",
         }:
             return _prepared_review_callback_result(action["action"], escalation_id, event, decision_json, message), 200
+        if action["action"] == "review_prepare_sales_pack":
+            packet = decision_json.get("owner_action_packet") if isinstance(decision_json.get("owner_action_packet"), dict) else {}
+            order_id = _clean(packet.get("order_id"), 100)
+            if not order_id:
+                return {
+                    "success": False,
+                    "status": "sam_live_stock_sales_pack_order_required",
+                    "action": action["action"],
+                    "review_event_id": escalation_id,
+                    **AUTHORITY_FLAGS,
+                }, 400
+            try:
+                prepared = (sales_pack_preparer or prepare_live_stock_sales_pack)(
+                    order_id,
+                    {"created_by": payload.get("owner") or "telegram_owner"},
+                )
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "status": "sam_live_stock_sales_pack_prepare_failed",
+                    "error": _clean(str(exc), 240),
+                    "action": action["action"],
+                    "review_event_id": escalation_id,
+                    **AUTHORITY_FLAGS,
+                }, 500
+            return {
+                "success": bool(prepared.get("success")),
+                "status": prepared.get("status") or "sam_live_stock_sales_pack_prepared",
+                "action": action["action"],
+                "review_event_id": escalation_id,
+                "conversation_id": _clean(conversation_id, 100),
+                "sales_pack": prepared,
+                "recommended_next": "Review the quote and documents. No customer message was sent.",
+                **AUTHORITY_FLAGS,
+            }, 200 if prepared.get("success") else 400
         if action["action"] == "review_approve_send":
             send_result, status = send_owner_approved_live_stock_reply(
                 conversation_id,
@@ -958,6 +1000,7 @@ def _callback_action(callback_data):
         "sam_live_review_prepare_draft": "review_prepare_draft_order",
         "sam_live_review_update_draft": "review_update_draft_order",
         "sam_live_review_prepare_quote": "review_prepare_quote",
+        "sam_live_review_prepare_sales_pack": "review_prepare_sales_pack",
         "sam_live_review_picture": "review_picture_reply",
         "sam_live_review_close": "review_close",
         "approve_send": "approve_send",
@@ -1184,6 +1227,8 @@ def _owner_card_prepared_action_buttons(decision, callback_id):
         buttons.append([{"text": "Update Draft Order", "callback_data": f"sam_live_review_update_draft:{callback_id}"}])
     if status == "ready_for_owner_quote_prepare" or next_action == "prepare_quote" or internal_next_action in {"generate_quote", "update_draft_then_quote"}:
         buttons.append([{"text": "Prepare Quote", "callback_data": f"sam_live_review_prepare_quote:{callback_id}"}])
+    if _clean(packet.get("order_id"), 100):
+        buttons.append([{"text": "Prepare Full Sales Pack", "callback_data": f"sam_live_review_prepare_sales_pack:{callback_id}"}])
     if next_action == "prepare_picture_response" or internal_next_action == "prepare_picture_response":
         buttons.append([{"text": "Send Picture Reply", "callback_data": f"sam_live_review_picture:{callback_id}"}])
     return buttons

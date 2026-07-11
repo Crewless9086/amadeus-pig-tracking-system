@@ -62,6 +62,7 @@ from modules.orders.order_validation import (
     validate_sync_order_lines_payload,
 )
 from modules.orders.order_shadow_read import compare_shadow_order
+from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
 
 orders_bp = Blueprint("orders", __name__)
 logger = logging.getLogger(__name__)
@@ -506,6 +507,31 @@ def generate_loading_sheet(order_id):
             "order_id": order_id,
             "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
             "message": "Loading sheet generation failed unexpectedly.",
+        }), 500
+
+
+@orders_bp.route("/orders/<order_id>/sales-pack/prepare", methods=["POST"])
+def prepare_live_stock_order_sales_pack(order_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = prepare_live_stock_sales_pack(order_id, payload)
+        return jsonify(result), 200 if result.get("success") else 400
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "status": "sam_live_stock_sales_pack_invalid",
+            "order_id": order_id,
+            "errors": [str(exc)],
+            "customer_send_allowed": False,
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected live-stock sales-pack preparation failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "status": "sam_live_stock_sales_pack_failed",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "customer_send_allowed": False,
         }), 500
 
 
