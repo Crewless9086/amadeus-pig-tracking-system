@@ -631,6 +631,30 @@ def run_agent_execution_bridge_v2(
             )
         if agent == "builder":
             artifact = _auto_package_builder_changes(mission, artifact)
+            packaging = artifact.get("git_packaging") if isinstance(artifact.get("git_packaging"), dict) else {}
+            if _builder_packaging_is_terminal(packaging):
+                packaging_status = str(packaging.get("status") or "builder_packaging_failed").strip()
+                return _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    completed,
+                    stage_started,
+                    blocked_reason=(
+                        f"Builder packaging stopped at {packaging_status}; downstream test and review stages were not run "
+                        "against an unreviewable branch."
+                    ),
+                    artifact={
+                        **artifact,
+                        "next_action": "Repair the Builder branch/commit/PR packaging, then resume from Builder.",
+                        "return_to_stage": "builder",
+                    },
+                    artifacts=artifacts,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
             backflow_target = _resolve_agent_backflow_target(
@@ -4279,6 +4303,14 @@ def _builder_packaging_failed(artifact, result, status):
     return packaged
 
 
+def _builder_packaging_is_terminal(packaging):
+    packaging = packaging if isinstance(packaging, dict) else {}
+    status = str(packaging.get("status") or "").strip().lower()
+    if not packaging.get("attempted"):
+        return False
+    return status not in {"pr_created", "local_commit_ready"}
+
+
 def _builder_branch_name(mission):
     mission = mission if isinstance(mission, dict) else {}
     suffix = str(mission.get("mission_id") or "")[-8:].lower() or "mission"
@@ -4550,6 +4582,8 @@ def _block_agent_stage(
         "stdout_tail": artifact.get("stdout_tail", ""),
         "stderr_tail": artifact.get("stderr_tail", ""),
         "quality_gate": artifact.get("quality_gate", {}),
+        "implementation_source_map": artifact.get("implementation_source_map", {}),
+        "files_checked_against_source_map": artifact.get("files_inspected", []),
     }
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
@@ -4621,6 +4655,8 @@ def _block_agent_stage(
                 "agent_execution": _agent_execution_summary(ledger),
                 "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
                 "unresolved_blockers": unresolved,
+                "implementation_source_map": artifact.get("implementation_source_map", {}),
+                "files_checked_against_source_map": artifact.get("files_inspected", []),
                 "handoff_reports": {
                     stage_agent: stage_artifact.get("handoff_report", {})
                     for stage_agent, stage_artifact in artifacts.items()

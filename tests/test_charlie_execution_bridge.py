@@ -1735,6 +1735,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(packaged["git_packaging"]["status"], "branch_create_or_switch_failed")
         self.assertFalse(execution_bridge._artifact_pr_reference(packaged))
+        self.assertTrue(execution_bridge._builder_packaging_is_terminal(packaged["git_packaging"]))
+
+    def test_builder_packaging_accepts_reviewable_local_commit(self):
+        self.assertFalse(execution_bridge._builder_packaging_is_terminal({
+            "attempted": True,
+            "status": "local_commit_ready",
+        }))
 
     def test_auto_package_builder_changes_accepts_local_commit_when_pr_create_fails(self):
         calls = []
