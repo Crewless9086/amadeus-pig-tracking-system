@@ -361,24 +361,40 @@ def poll_loop(
 
     runtime_state = state or RelayRuntimeState.empty()
     while True:
-        updates = telegram.get_updates(offset=runtime_state.next_offset, timeout=poll_timeout)
+        try:
+            updates = telegram.get_updates(offset=runtime_state.next_offset, timeout=poll_timeout)
+        except Exception as exc:
+            print(
+                f"CHARLIE relay polling error; relay remains alive: {exc.__class__.__name__}",
+                file=sys.stderr,
+            )
+            if once:
+                return RelayResult(ok=False, action="poll_failed", reason=exc.__class__.__name__)
+            time.sleep(2)
+            continue
         max_update_id: int | None = None
         for update in updates:
             update_id = _update_id_from_update(update)
             if update_id is not None:
                 max_update_id = max(max_update_id or update_id, update_id)
-            handle_relay_update(
-                update,
-                environ={
-                    build_relay_notify.ENABLED_ENV: "1",
-                    build_relay_notify.TOKEN_ENV: config.token,
-                    build_relay_notify.USERS_ENV: ",".join(sorted(config.allowed_user_ids)),
-                },
-                client=telegram,
-                next_steps_path=next_steps_path,
-                codex_chat_path=codex_chat_path,
-                state=runtime_state,
-            )
+            try:
+                handle_relay_update(
+                    update,
+                    environ={
+                        build_relay_notify.ENABLED_ENV: "1",
+                        build_relay_notify.TOKEN_ENV: config.token,
+                        build_relay_notify.USERS_ENV: ",".join(sorted(config.allowed_user_ids)),
+                    },
+                    client=telegram,
+                    next_steps_path=next_steps_path,
+                    codex_chat_path=codex_chat_path,
+                    state=runtime_state,
+                )
+            except Exception as exc:
+                print(
+                    f"CHARLIE relay update failed and was skipped; relay remains alive: {exc.__class__.__name__}",
+                    file=sys.stderr,
+                )
         if max_update_id is not None:
             runtime_state.next_offset = max(runtime_state.next_offset or 0, max_update_id + 1)
         if once:
