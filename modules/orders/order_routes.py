@@ -473,6 +473,16 @@ def send_latest_quote_confirmed(order_id):
 @orders_bp.route("/orders/<order_id>/approved-livestock-revision", methods=["POST"])
 def approved_livestock_revision(order_id):
     payload = request.get_json(silent=True) or {}
+    authorization_errors = _validate_approved_livestock_revision_authorization(payload)
+    if authorization_errors:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": authorization_errors,
+            "owner_authorization_required": True,
+        }), 403
+
     sync_validation = validate_sync_order_lines_payload(payload)
     order_updates = payload.get("order_updates") if isinstance(payload.get("order_updates"), dict) else {}
     update_validation = {"is_valid": True, "errors": [], "cleaned_data": {}}
@@ -1173,6 +1183,55 @@ def _ensure_order_allows_quote_send(order):
         raise ValueError(f"Quote cannot be sent because order is {order_status}.")
     if approval_status == "Rejected":
         raise ValueError("Quote cannot be sent because order approval was rejected.")
+
+
+def _validate_approved_livestock_revision_authorization(payload):
+    if not isinstance(payload, dict):
+        return ["Owner/Oom Sakkie authorization is required for approved livestock order revisions."]
+
+    confirmation = str(
+        payload.get("owner_confirmation")
+        or payload.get("revision_confirmation")
+        or ""
+    ).strip()
+    authorization = payload.get("owner_authorization")
+    if not isinstance(authorization, dict):
+        authorization = {}
+
+    authorized_flag = (
+        _truthy(payload.get("owner_authorized"))
+        or _truthy(payload.get("revision_authorized"))
+        or _truthy(authorization.get("approved"))
+        or _truthy(authorization.get("owner_authorized"))
+    )
+    exact_confirmation = confirmation == "REVISE APPROVED LIVESTOCK ORDER"
+
+    if not authorized_flag and not exact_confirmation:
+        return [
+            "Owner/Oom Sakkie authorization is required for approved livestock order revisions. "
+            "Provide owner_authorized=true or owner_confirmation='REVISE APPROVED LIVESTOCK ORDER'."
+        ]
+
+    source = str(
+        payload.get("authorization_source")
+        or authorization.get("source")
+        or payload.get("confirmation_source")
+        or ""
+    ).strip()
+    if not source:
+        return ["authorization_source is required for approved livestock order revisions."]
+
+    changed_by = str(
+        payload.get("changed_by")
+        or payload.get("requested_by")
+        or authorization.get("authorized_by")
+        or ""
+    ).strip()
+    allowed_actors = {"Charl", "Owner", "Oom Sakkie", "CHARLIE"}
+    if changed_by not in allowed_actors:
+        return ["changed_by must identify Charl, Owner, CHARLIE, or Oom Sakkie for this approved-order revision."]
+
+    return []
 
 
 def _truthy(value):
