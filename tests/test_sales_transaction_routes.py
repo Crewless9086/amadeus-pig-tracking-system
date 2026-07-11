@@ -1824,6 +1824,19 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         new_lead.assert_not_called()
         escalation.assert_not_called()
 
+    @patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None)
+    @patch.object(sales_transaction_routes, "live_stock_learning_scorecard")
+    def test_live_stock_learning_scorecard_route_is_owner_read_only(self, scorecard, _guard):
+        scorecard.return_value = ({
+            "success": True,
+            "status": "sam_live_stock_learning_scorecard_ready",
+            "scorecard": {"captured_owner_replies": 12, "auto_send_enabled": False},
+        }, 200)
+        response = self.client.get("/api/sales/live-stock-learning/scorecard?limit=200")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["scorecard"]["auto_send_enabled"])
+        scorecard.assert_called_once_with(limit="200")
+
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
         with patch.object(
             sales_transaction_routes,

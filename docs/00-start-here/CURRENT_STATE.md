@@ -69,6 +69,16 @@ Render deploys from `main` unless the service configuration says otherwise.
 - MISSION-LOOP-8A/B adds an opt-in Windows Scheduled Task installer for the local relay plus richer `/status`, `/queue`, and `/blocked` health reporting.
 - MISSION-LOOP-8C/D connects trust and budget policy to a deterministic GPT-5.6 routing recommendation. Live model calls remain disabled; Loop 8E is not implemented.
 
+## SAM Live Stock Completion Program
+
+- `docs/06-operations/SAM_LIVE_STOCK_COMPLETION_PROGRAM.md` is the accepted completion contract and production graduation standard.
+- SAM now normalizes language, message intent, emoji-only acknowledgements, voice-note transcripts, and image classifications before planning. Image-derived facts remain untrusted and media is not stored.
+- The next-action planner gives durable order/quote state precedence over message wording, then handles location, pictures, delivery, collection, breeding, price, order changes, and natural closes.
+- LLM and deterministic replies are action-conditioned and language-aware; correction retrieval ranks by message similarity, language, stage, and reply class.
+- The owner can prepare a quote, loading sheet, removal certificate, and health declaration as one idempotent sales-pack action. This sends nothing and reserves nothing.
+- The owner-only learning scorecard and replay runner enforce production evidence thresholds. Autoreply remains off and no reply class can self-enable.
+- Live baseline at implementation time: 50 captured owner replies across 17 conversations. Historical rows do not yet contain the new reply-class metadata and do not justify autonomy graduation.
+
 ## Active Branches / PRs
 
 - PR #12 is merged into `main`.
