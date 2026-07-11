@@ -60,3 +60,45 @@ Enabled production usage is a later owner-approved layer. This foundation only p
 This layer still does not run Codex, start a scheduler, merge PRs, call model APIs, or perform production data writes. It only prepares the active mission file.
 
 The handler is testable through injected clients. Unit tests never send real Telegram messages.
+
+## Loop 6 Local Live Relay
+
+`scripts/charlie_telegram_relay.py` is the local smoke runner for `@CharlieCoreBot`.
+
+Required env:
+
+```powershell
+$env:CHARLIE_BUILD_RELAY_ENABLED = "1"
+$env:CHARLIE_BUILD_RELAY_BOT_TOKEN = "<telegram bot token>"
+$env:CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS = "<owner telegram user id>"
+```
+
+Run once without real sends:
+
+```powershell
+python scripts/charlie_telegram_relay.py --once --dry-run
+```
+
+Run local polling:
+
+```powershell
+python scripts/charlie_telegram_relay.py
+```
+
+Supported commands:
+
+- `/start` confirms the relay is online.
+- `/status` shows relay safety status.
+- `/next` sends the top five missions from `NEXT_STEPS.md` as buttons.
+- Button selection writes the chosen mission into `planning/CODEX_CHAT.md` and confirms.
+
+Safety boundaries:
+
+- only configured owner user IDs are allowed;
+- disabled relay exits safely;
+- enabled relay without token/user IDs fails safely;
+- token is read from env only and redacted from output;
+- no shell commands run;
+- Codex is not started;
+- no model APIs are called;
+- no scheduler, auto-merge, production data write, or customer send is enabled.

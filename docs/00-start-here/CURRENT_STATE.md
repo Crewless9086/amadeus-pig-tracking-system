@@ -63,6 +63,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - `scripts/verify_mission.ps1` is the local final gate for this layer and refuses forbidden staged files such as `.env`, `.claude/`, `external_sources/`, `screenshots/`, `static/assets/`, `test-results/`, and `planning/Prompts.md`.
 - Trust starts in `watch` tier in `loop/memory/trust.tsv`; later layers must earn `queue` or `auto` via logged deterministic passes.
 - MISSION-LOOP-5 adds the owner Telegram `/next` button flow on top of the foundation. It prepares `planning/CODEX_CHAT.md` only; it does not start Codex, schedule work, auto-merge, call model APIs, or perform production writes.
+- MISSION-LOOP-6 adds the local live Telegram relay smoke runner and deterministic model budget gate skeleton. The relay supports `/start`, `/status`, `/next`, and mission-selection callbacks for allowed owners only. The budget gate still keeps model APIs disabled by default.
 
 ## Active Branches / PRs
 

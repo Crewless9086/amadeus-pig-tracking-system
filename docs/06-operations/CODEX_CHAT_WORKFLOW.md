@@ -62,3 +62,9 @@ Loop 5 wires the same local workflow to the owner Telegram command `/next`:
 - selecting a button calls the same archive-and-write behavior as the local helper;
 - the bot confirms that `planning/CODEX_CHAT.md` was updated;
 - no Codex run starts from the button itself.
+
+## Live Relay Layer
+
+Loop 6 adds `scripts/charlie_telegram_relay.py`, a local runner that receives Telegram updates and routes `/start`, `/status`, `/next`, and mission-selection callbacks through the same workflow.
+
+The relay still only prepares the active mission file. It does not execute shell commands, run Codex, schedule missions, auto-merge, call model APIs, or write production data.

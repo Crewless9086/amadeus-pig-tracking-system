@@ -86,6 +86,8 @@ These files or paths must not be staged unless the mission explicitly approves t
 - Secrets must not be printed, committed, or sent to a model.
 - No broad Claude API spending is permitted by default.
 - Cheap models may be added later only as read-only triage or low-risk workers behind budget gates.
+- Future model integrations must pass `scripts/model_budget_guard.py` before any provider call is attempted.
+- If the budget file is missing, disabled, or over cap, model work must stop before any Claude/Fable/GLM/OpenRouter request.
 
 ## Confidence Gate
 
@@ -99,4 +101,3 @@ The owner requested a 98% confidence gate for this foundation layer. A mission m
 - remaining risks are documented.
 
 If confidence is below 98%, report `NO-GO` with exact blockers.
-

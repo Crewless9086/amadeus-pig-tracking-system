@@ -122,9 +122,11 @@ if ($hasPython) {
         Invoke-Check -Name "python compile: $py" -Command $python -Arguments @("-m", "py_compile", $py) | ForEach-Object { $checks.Add($_) | Out-Null }
     }
     $missionLoopTests = @(
+        "tests.test_charlie_telegram_relay",
         "tests.test_build_relay_notify",
         "tests.test_build_relay_telegram_buttons",
         "tests.test_codex_next_steps",
+        "tests.test_model_budget_guard",
         "tests.test_trust_log"
     )
     foreach ($test in $missionLoopTests) {
