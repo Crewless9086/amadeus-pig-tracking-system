@@ -231,7 +231,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Stock: 2 matches (W-1043 12.4kg, W-1051 13.1kg)", calls[0][2])
         self.assertIn("Price: R500 each - R1,000 total - source supabase", calls[0][2])
         self.assertIn("Missing: none", calls[0][2])
-        self.assertIn("Reply: Fact-aware fallback", calls[0][2])
+        self.assertIn("Draft source: Fact-aware fallback", calls[0][2])
         self.assertIn("Draft reply:", calls[0][2])
         self.assertIn("\n- 2 x Female Weaner", calls[0][2])
         buttons = calls[0][3]["inline_keyboard"]
@@ -322,7 +322,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
         packet = launch.build_sam_live_stock_owner_review_packet(event)
 
-        self.assertIn("Reply: Fallback - llm call failed", packet["telegram_packet"]["text"])
+        self.assertIn("Draft source: Fallback - llm call failed", packet["telegram_packet"]["text"])
         self.assertIn("Flags: LLM call failed", packet["telegram_packet"]["text"])
 
     def test_owner_review_card_hides_happy_path_llm_noise(self):
@@ -338,7 +338,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
         packet = launch.build_sam_live_stock_owner_review_packet(event)
 
-        self.assertIn("Reply: LLM draft", packet["telegram_packet"]["text"])
+        self.assertIn("Draft source: LLM draft", packet["telegram_packet"]["text"])
         self.assertNotIn("LLM llm reply draft used", packet["telegram_packet"]["text"])
         self.assertNotIn("llm live stock reply draft", packet["telegram_packet"]["text"])
 
@@ -358,7 +358,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
         packet = launch.build_sam_live_stock_owner_review_packet(event)
 
-        self.assertIn("Reply: Safety fallback - unsafe sales or discount language", packet["telegram_packet"]["text"])
+        self.assertIn("Draft source: Safety fallback - unsafe sales or discount language", packet["telegram_packet"]["text"])
         self.assertIn("LLM safety fallback: unsafe sales or discount language", packet["telegram_packet"]["text"])
 
     def test_telegram_cleanup_is_env_gated_and_targeted(self):
