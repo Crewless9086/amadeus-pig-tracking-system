@@ -572,6 +572,35 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
                 self.assertTrue(result["prepared_action"]["owner_gate_required"])
                 self.assertTrue(result["prepared_action"]["manual_review_required"])
 
+    def test_owner_callback_prepares_full_sales_pack_without_customer_send(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-PACK",
+            "chatwoot_conversation_id": "2401",
+            "decision_json": {"owner_action_packet": {"order_id": "ORD-1"}},
+        }
+        calls = []
+
+        def prepare(order_id, payload):
+            calls.append((order_id, payload))
+            return {
+                "success": True,
+                "status": "sam_live_stock_sales_pack_ready",
+                "customer_send_allowed": False,
+                "reserves_stock": False,
+            }
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_review_prepare_sales_pack:SAM-LIVE-REVIEW-PACK", "owner": "Charl"},
+            review_event_loader=lambda review_id: ({"success": True, "event": event}, 200),
+            sales_pack_preparer=prepare,
+            chatwoot_sender=lambda *args: self.fail("customer send must not execute"),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(calls, [("ORD-1", {"created_by": "Charl"})])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["reserves_stock"])
+
     def test_live_stock_reservation_plan_is_advisory(self):
         plan = launch.build_live_stock_reservation_plan(
             order_id="ORD-1",

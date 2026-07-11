@@ -6,6 +6,17 @@ from modules.orders import order_routes
 
 
 class OrderRoutesTests(unittest.TestCase):
+    @patch("modules.orders.order_routes.prepare_live_stock_sales_pack")
+    def test_prepare_sales_pack_route_returns_owner_gated_bundle(self, prepare):
+        prepare.return_value = {
+            "success": True,
+            "status": "sam_live_stock_sales_pack_ready",
+            "customer_send_allowed": False,
+        }
+        response = self.client.post("/api/orders/ORD-1/sales-pack/prepare", json={"created_by": "Owner"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["customer_send_allowed"])
+        prepare.assert_called_once_with("ORD-1", {"created_by": "Owner"})
     def setUp(self):
         app.testing = True
         self.client = app.test_client()
