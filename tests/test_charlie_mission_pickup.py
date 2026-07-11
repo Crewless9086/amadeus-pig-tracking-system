@@ -282,9 +282,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual(by_agent["source_mapper"]["status"], "complete")
         self.assertEqual(by_agent["source_mapper"]["findings"], "mapped")
-        self.assertEqual(by_agent["product_architect"]["status"], "pending")
-        self.assertEqual(by_agent["builder"]["status"], "complete")
-        self.assertEqual(by_agent["business_reviewer"]["status"], "active")
+        self.assertEqual(by_agent["product_architect"]["status"], "active")
+        self.assertEqual(by_agent["builder"]["status"], "pending")
+        self.assertEqual(by_agent["business_reviewer"]["status"], "pending")
         self.assertEqual(by_agent["product_reviewer"]["status"], "pending")
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
