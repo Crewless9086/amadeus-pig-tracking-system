@@ -2125,6 +2125,53 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_tester_source_gate_accepts_matched_code_and_test_paths_without_doc_citation(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["implementation_source_map"] = {
+            "matched_sections": [
+                {
+                    "key": "sam_live_stock_sales",
+                    "must_inspect_before_advice": True,
+                    "vault_docs": [
+                        "docs/09-vault-brain/02-agents/sales/SAM.md",
+                        "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+                    ],
+                    "code_paths": [
+                        "modules/sales/sam_live_stock_launch_control.py",
+                        "modules/oom_sakkie/telegram_direct.py",
+                    ],
+                    "tests": [
+                        "tests/test_sam_live_stock_launch_control.py",
+                        "tests/test_oom_sakkie_routes.py",
+                    ],
+                    "legacy_sources": [
+                        "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+                    ],
+                }
+            ],
+            "required_inspection_paths": [
+                "docs/09-vault-brain/02-agents/sales/SAM.md",
+                "docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md",
+                "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md",
+            ],
+        }
+        artifact["files_inspected"] = [
+            "modules/sales/sam_live_stock_launch_control.py",
+            "modules/oom_sakkie/telegram_direct.py",
+            "tests/test_sam_live_stock_launch_control.py",
+            "tests/test_oom_sakkie_routes.py",
+        ]
+        artifact["commands_run"] = [
+            "python -m unittest tests.test_sam_live_stock_launch_control tests.test_oom_sakkie_routes"
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_sam_live_stock_launch_control tests.test_oom_sakkie_routes", "status": "pass"}
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
         artifact = _successful_stage_payload("reviewer")
         artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}
@@ -2518,6 +2565,37 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(capture["fallback_reason"], "")
         self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales/beacon-media")
         self.assertEqual(len(capture["captures"]), 2)
+
+    @patch("modules.charlie.execution_bridge._probe_local_http_url", return_value={"ok": True, "status": "ok", "http_status": 200})
+    def test_visual_review_capture_infers_sales_dashboard_for_sales_availability_js(self, _probe):
+        seen_urls = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.charlie.execution_bridge.REVIEW_MEDIA_DIR", Path(tmp)):
+                def fake_runner(command, **_kwargs):
+                    seen_urls.append(command[-2])
+                    Path(command[-1]).write_bytes(b"fake png")
+                    return SimpleNamespace(returncode=0, stdout="screenshot saved", stderr="")
+
+                capture = execution_bridge._capture_visual_review_media(
+                    "CHARLIE-MISSION-HERDMASTER",
+                    {"url": "http://127.0.0.1:5000/charlie"},
+                    changed_files=["static/js/salesAvailability.js"],
+                    final_message="Herdmaster stock cards now show latest weight date.",
+                    run_subprocess=fake_runner,
+                )
+
+        self.assertTrue(capture["captured"])
+        self.assertEqual(capture["capture_source"], "local_preview")
+        self.assertEqual(capture["fallback_reason"], "")
+        self.assertEqual(capture["capture_url"], "http://127.0.0.1:5000/sales-dashboard")
+        self.assertEqual(seen_urls, [
+            "http://127.0.0.1:5000/sales-dashboard",
+            "http://127.0.0.1:5000/sales-dashboard",
+        ])
+        self.assertEqual(
+            capture["capture_url_recovery"]["changed_ui_preview_inference"]["status"],
+            "inferred_changed_ui_route",
+        )
 
     @patch("modules.charlie.execution_bridge._probe_local_http_url")
     def test_visual_review_capture_recovers_dead_preview_url_from_command_port(self, probe):
@@ -3183,6 +3261,95 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
 
         self.assertTrue(result["passed"])
+
+    def test_qa_quality_gate_treats_timeout_only_failure_as_advisory_with_pass_evidence(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = [
+            "tests.test_charlie_execution_bridge timed out after 120s.",
+            "tests.test_charlie_mission_pickup timed out after 120s.",
+        ]
+        artifact["qa_findings"] = [
+            "Changed-file regression evidence is incomplete because CHARLIE execution bridge and mission pickup test modules timed out.",
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_charlie_source_map", "status": "pass", "output": "Ran 16 tests in 0.307s OK"},
+            {"command": "python -m unittest tests.test_sam_live_stock_launch_control", "status": "pass", "output": "Ran 82 tests in 2.939s OK"},
+        ]
+        artifact["stdout_tail"] = "Focused suites passed. Ran 16 tests OK. Ran 82 tests OK."
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("timeout_advisory"), result)
+
+    def test_qa_quality_gate_still_blocks_real_failure_with_timeout_noise(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = [
+            "tests.test_charlie_execution_bridge timed out after 120s.",
+            "Prepared action can create an order without owner approval.",
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_charlie_source_map", "status": "pass", "output": "Ran 16 tests in 0.307s OK"},
+        ]
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"], result)
+
+    def test_tester_quality_gate_treats_broad_timeout_as_advisory_with_focused_pass_evidence(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["tests_run"] = [
+            {
+                "command": "python -m unittest tests.test_sam_live_stock_runtime tests.test_sam_live_stock_launch_control",
+                "status": "pass",
+                "result": "89 focused SAM Live Stock tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_charlie_mission_pickup",
+                "status": "fail",
+                "result": "broad CHARLIE runner suite timed out after 124 seconds",
+            },
+        ]
+        artifact["errors"] = [
+            "tests.test_charlie_mission_pickup timed out after 124 seconds.",
+            "Full CHARLIE core regression command timed out after 124 seconds.",
+        ]
+        artifact["stdout_tail"] = "Focused SAM suites passed. Ran 89 tests OK. Broad runner command timed out."
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("timeout_advisory"), result)
+        self.assertTrue(result.get("focused_tests_passed"), result)
+
+    def test_tester_quality_gate_still_blocks_real_safety_failure_with_timeout_noise(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["tests_run"] = [
+            {
+                "command": "python -m unittest tests.test_sam_live_stock_runtime",
+                "status": "pass",
+                "result": "focused tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_charlie_mission_pickup",
+                "status": "fail",
+                "result": "timed out after 124 seconds",
+            },
+        ]
+        artifact["errors"] = [
+            "tests.test_charlie_mission_pickup timed out after 124 seconds.",
+            "Owner-approved send path can create an order without owner approval.",
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
 
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")

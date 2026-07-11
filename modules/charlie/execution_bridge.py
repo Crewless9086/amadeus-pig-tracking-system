@@ -1525,6 +1525,9 @@ Partial recovery contract:
 Repo test command memory:
 {json.dumps(test_command_memory, indent=2)}
 
+Focused test budget:
+{_focused_test_budget_prompt(mission, agent, artifacts)}
+
 Runner environment preflight:
 {json.dumps(runner_preflight, indent=2)}
 
@@ -1577,6 +1580,7 @@ You must work like an interactive coding agent:
 - check the Vault Brain before opinion, and cite the docs you used
 - read relevant files
 - run focused commands when useful
+- prefer focused tests for the changed surface first; broad runner/full-suite timeouts are advisory only when focused evidence passes and no owner/customer/order/stock safety risk is present
 - patch only scoped files
 - recover from errors
 - record what you did and what remains
@@ -3238,6 +3242,14 @@ def _agent_quality_gate(agent, artifact):
         }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
+        if status != "pass" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+            return {
+                "passed": True,
+                "reason": "Tester timeout-only broad command issue treated as advisory because focused changed-surface tests passed.",
+                "timeout_advisory": True,
+                "focused_tests_passed": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
             if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs:
                 artifact.setdefault("warnings", []).append(
@@ -3252,6 +3264,13 @@ def _agent_quality_gate(agent, artifact):
     if agent == "qa_red_team":
         status = str(artifact.get("red_team_status") or "").strip().lower()
         risk = str(artifact.get("risk_rating") or "").strip().lower()
+        if status != "pass" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+            return {
+                "passed": True,
+                "reason": "QA/red-team timeout-only command issue treated as advisory because focused passing evidence is present.",
+                "timeout_advisory": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass":
             if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs and risk not in {"high", "critical"}:
                 artifact.setdefault("warnings", []).append(
@@ -3548,11 +3567,27 @@ def _implementation_source_quality_gate(agent, artifact):
             value = artifact.get(key)
             if isinstance(value, list):
                 values.extend(str(item or "").replace("\\", "/") for item in value)
-        required = set(source_map.get("required_inspection_paths") or [])
-        if not required.intersection(values):
+        valid_paths = set(str(path or "").replace("\\", "/") for path in source_map.get("required_inspection_paths") or [])
+        for section in source_map.get("matched_sections") or []:
+            if not isinstance(section, dict):
+                continue
+            for key in ("vault_docs", "code_paths", "tests", "legacy_sources", "app_routes", "migrations"):
+                items = section.get(key)
+                if isinstance(items, list):
+                    valid_paths.update(str(item or "").replace("\\", "/") for item in items if str(item or "").strip())
+        cited = set(path for path in values if path)
+        if not valid_paths.intersection(cited):
             return {
                 "passed": False,
                 "reason": f"{agent} did not cite any matched implementation source-map path.",
+                "required_inspection_paths_sample": sorted(set(source_map.get("required_inspection_paths") or []))[:12],
+                "valid_source_map_paths_sample": sorted(valid_paths)[:16],
+                "cited_paths_sample": sorted(cited)[:12],
+                "matched_source_sections": [
+                    section.get("key") or section.get("label")
+                    for section in source_map.get("matched_sections", [])
+                    if isinstance(section, dict)
+                ],
             }
     return {"passed": True, "reason": "implementation_source_gate_passed"}
 
@@ -3648,6 +3683,10 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if agent == "risk_agent" and field == "recommended_owner_decision" and decision == "pause":
             continue
         if decision and decision not in passing_values:
+            if field == "red_team_status" and _qa_timeout_only_failure_is_advisory(agent, artifact):
+                continue
+            if field == "test_status" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+                continue
             if field in {"test_status", "red_team_status"} and _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact):
                 errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else [])
                 bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else [])
@@ -3725,7 +3764,7 @@ def _qa_findings_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
 
 
 def _raw_judgement_tails_are_advisory(agent, artifact):
@@ -3733,7 +3772,116 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
         return False
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+    return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
+
+
+def _qa_timeout_only_failure_is_advisory(agent, artifact):
+    if agent != "qa_red_team" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("red_team_status") or "").strip().lower()
+    if status not in {"fail", "blocked"}:
+        return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _tester_timeout_only_failure_is_advisory(agent, artifact):
+    if agent != "tester" or not isinstance(artifact, dict):
+        return False
+    status = str(artifact.get("test_status") or "").strip().lower()
+    if status not in {"fail", "failed", "blocked"}:
+        return False
+    return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _timeout_only_failure_has_focused_pass_evidence(agent, artifact):
+    values = []
+    for key in ("errors", "bugs", "qa_findings", "tests_run"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            values.extend(str(item or "") for item in value if str(item or "").strip())
+        elif value:
+            values.append(str(value))
+    if not values:
+        return False
+    timeout_terms = ("timed out", "timeout", "tool timeout", "command timed out", "crossed the")
+    if not any(any(term in value.lower() for term in timeout_terms) for value in values):
+        return False
+    pseudo_pass_artifact = {**artifact, "red_team_status": "pass", "test_status": "pass", "risk_rating": "low"}
+    non_timeout_blockers = [
+        value for value in values
+        if not any(term in value.lower() for term in timeout_terms)
+        and (
+            _is_blocking_judgement_text(agent, pseudo_pass_artifact, value)
+            or any(term in value.lower() for term in (
+                "without owner approval",
+                "customer send",
+                "customer message",
+                "chatwoot write",
+                "create an order",
+                "creates an order",
+                "create quote",
+                "creates quote",
+                "reservation",
+                "reserve stock",
+                "payment",
+                "production write",
+                "changes stock",
+            ))
+        )
+    ]
+    if non_timeout_blockers:
+        return False
+    evidence_values = []
+    for key in ("tests_run", "test_evidence", "stdout_tail", "confidence_reason", "commands_run"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            evidence_values.extend(value)
+        elif value:
+            evidence_values.append(value)
+    return any(_artifact_test_evidence_passes(item) for item in evidence_values)
+
+
+def _focused_test_budget_prompt(mission, agent, artifacts):
+    mission = mission if isinstance(mission, dict) else {}
+    agent = str(agent or "").strip().lower()
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return "No special test-budget instructions for this agent."
+    changed = _mission_changed_files_from_artifacts(artifacts or {})
+    implementation_context = implementation_source_packet(mission)
+    matched_tests = []
+    for section in implementation_context.get("matched_sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for test_path in section.get("tests") or []:
+            text = str(test_path or "").strip()
+            if text and text not in matched_tests:
+                matched_tests.append(text)
+    profile = "focused"
+    haystack = " ".join([
+        str(mission.get("title") or ""),
+        str(mission.get("mission_type") or ""),
+        str(mission.get("raw_text") or ""),
+    ]).lower()
+    if any(term in haystack for term in ("runner", "charlie core", "mission pickup", "execution bridge", "workflow", "conveyor")):
+        profile = "standard"
+    if any(term in haystack for term in ("migration", "security", "auth", "payment", "customer send", "reserve stock", "merge", "deploy")):
+        profile = "full"
+    return json.dumps({
+        "version": "charlie_focused_test_budget_v1",
+        "profile": profile,
+        "rule": (
+            "Run focused changed-surface tests first and record them as focused_tests_passed when green. "
+            "Do not turn unrelated broad/full-suite timeouts into a blocker when focused tests pass and no real owner/customer/order/stock safety defect is present. "
+            "Real product, security, data, source-of-truth, customer-send, order/quote, reservation, payment, or deployment failures still block."
+        ),
+        "changed_files_from_upstream": changed[:16],
+        "source_map_matched_tests": matched_tests[:16],
+        "reporting": {
+            "tests_run": "List each focused and broad command separately with pass/fail/timeout.",
+            "test_status": "Use pass when focused required tests pass and any broad timeout is advisory only.",
+            "advisory_timeouts": "Record broad timeout details without send_back if no real blocker exists.",
+        },
+    }, indent=2)
 
 
 def _visual_review_notes_are_advisory(agent, artifact):
@@ -4559,7 +4707,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         mission=mission,
     )
     if _visual_review_blocks_owner_review(visual_review):
-        blocked_reason = visual_review.get("summary") or "UI mission visual review media was not captured."
+        blocked_reason = _visual_review_block_reason(visual_review)
         block_artifact = {
             **reviewer,
             "summary": blocked_reason,
@@ -4840,6 +4988,32 @@ def _visual_review_blocks_owner_review(visual_review):
     if capture.get("capture_source") != "local_preview":
         return True
     return not _visual_review_has_required_viewport_media(visual_review)
+
+
+def _visual_review_block_reason(visual_review):
+    visual_review = visual_review if isinstance(visual_review, dict) else {}
+    summary = str(visual_review.get("summary") or "UI mission visual review media was not captured.").strip()
+    capture = visual_review.get("capture") if isinstance(visual_review.get("capture"), dict) else {}
+    local_preview = visual_review.get("local_preview") if isinstance(visual_review.get("local_preview"), dict) else {}
+    failed = []
+    for item in capture.get("captures") or []:
+        if isinstance(item, dict) and not item.get("captured"):
+            failed.append({
+                "label": item.get("label"),
+                "status": item.get("status"),
+                "command": item.get("command"),
+                "stderr_tail": item.get("stderr_tail"),
+                "error_type": item.get("error_type"),
+            })
+    detail = {
+        "preview_url": local_preview.get("url") or capture.get("url") or "",
+        "capture_url": capture.get("capture_url") or "",
+        "fallback_reason": capture.get("fallback_reason") or "",
+        "capture_source": capture.get("capture_source") or "",
+        "capture_url_recovery": capture.get("capture_url_recovery") or {},
+        "failed_viewports": failed[:3],
+    }
+    return f"{summary} Visual capture diagnostics: {json.dumps(detail, ensure_ascii=False, default=str)[:1200]}"
 
 
 def _visual_review_has_required_viewport_media(visual_review):
@@ -5749,7 +5923,15 @@ def _capture_visual_review_media(
         if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
             fallback_reason = "preview_url_not_local"
         elif _is_control_dashboard_preview_url(preview_url) and not _preview_url_matches_changed_ui(preview_url, changed_files, final_message):
-            fallback_reason = "control_dashboard_preview_not_mission_visual"
+            inferred = _infer_changed_ui_preview_url(preview_url, changed_files, final_message)
+            if inferred.get("url"):
+                capture_url = inferred["url"]
+                recovery = {
+                    **recovery,
+                    "changed_ui_preview_inference": inferred,
+                }
+            else:
+                fallback_reason = "control_dashboard_preview_not_mission_visual"
 
     if fallback_reason:
         html_path = _write_visual_review_preview_html(
@@ -6044,6 +6226,31 @@ def _preview_url_matches_changed_ui(url, changed_files=None, final_message=""):
     if path == "/charlie":
         return any(token in text for token in ("templates/charlie.html", "charliemissioncontrol", "mission control", "/charlie"))
     return path != "/"
+
+
+def _infer_changed_ui_preview_url(preview_url, changed_files=None, final_message=""):
+    parsed = urlparse(str(preview_url or ""))
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return {"url": "", "status": "not_local_preview"}
+    files = " ".join(str(item or "").replace("\\", "/").lower() for item in (changed_files or []))
+    text = f"{files} {str(final_message or '').lower()}"
+    route = ""
+    if "salesavailability.js" in text or "sales availability" in text or "sales dashboard" in text:
+        route = "/sales-dashboard"
+    elif "templates/charlie" in text or "charliemissioncontrol" in text or "mission control" in text:
+        route = "/charlie"
+    if not route or route == (parsed.path.rstrip("/") or "/"):
+        return {"url": "", "status": "no_changed_route_inferred"}
+    candidate = parsed._replace(path=route, params="", query="", fragment="").geturl()
+    probe = _probe_local_http_url(candidate)
+    if not probe.get("ok"):
+        return {"url": "", "status": "inferred_route_not_reachable", "candidate_url": candidate, "probe": probe}
+    return {
+        "url": candidate,
+        "status": "inferred_changed_ui_route",
+        "source": "changed_files",
+        "probe": probe,
+    }
 
 
 def _write_visual_review_preview_html(

@@ -228,6 +228,29 @@ class CharlieSourceMapTests(unittest.TestCase):
             "docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json",
             packet["required_inspection_paths"],
         )
+
+    def test_sam_live_stock_telegram_quote_words_do_not_pull_meat_source_map(self):
+        mission = {
+            "mission_type": "feature build",
+            "title": "SAM Telegram Control Card v2",
+            "raw_text": (
+                "Build SAM Live Stock Telegram owner control cards with quote, Chatwoot, "
+                "prepared order actions, native Oom Sakkie callback buttons, and no n8n."
+            ),
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("sam_live_stock_sales", keys)
+        self.assertNotIn("sam_meat_sales", keys)
+        self.assertIn("modules/sales/sam_live_stock_runtime.py", packet["required_inspection_paths"])
+        self.assertIn("modules/sales/sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/telegram_direct.py", packet["required_inspection_paths"])
+        self.assertIn("modules/oom_sakkie/routes.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_sam_live_stock_launch_control.py", packet["required_inspection_paths"])
+        self.assertIn("tests/test_oom_sakkie_routes.py", packet["required_inspection_paths"])
+        self.assertNotIn("modules/sales/sam_meat_runtime.py", packet["required_inspection_paths"])
         self.assertIn("/api/order-intake/context", packet["required_routes"])
 
         missing_paths = [

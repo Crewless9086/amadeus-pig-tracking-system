@@ -4520,6 +4520,254 @@ def get_pig_allocation_readiness(today=None):
     }
 
 
+HERDMASTER_ALERT_FORBIDDEN_ACTIONS = [
+    "change_pig_lifecycle",
+    "change_pig_purpose",
+    "change_litter_records",
+    "create_order",
+    "create_quote",
+    "reserve_stock",
+    "book_slaughter",
+    "book_butcher",
+    "send_customer_message",
+    "post_publicly",
+]
+
+
+def _herdmaster_alert_base(category, severity, confidence, reason, owner_action, source_fields, pig):
+    return {
+        "category": category,
+        "severity": severity,
+        "confidence": confidence,
+        "reason": reason,
+        "source_fields": source_fields,
+        "owner_action": owner_action,
+        "forbidden_actions": HERDMASTER_ALERT_FORBIDDEN_ACTIONS,
+        "pig_id": pig.get("pig_id", ""),
+        "tag_number": pig.get("tag_number", ""),
+        "litter_id": pig.get("litter_id", ""),
+        "current_pen_id": pig.get("current_pen_id", ""),
+        "current_pen_name": pig.get("current_pen_name", ""),
+        "readiness_bucket": pig.get("readiness_bucket", ""),
+        "suggested_purpose": pig.get("suggested_purpose", ""),
+        "suggested_purpose_confidence": pig.get("suggested_purpose_confidence", ""),
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "writes_orders": False,
+        "writes_sales": False,
+        "writes_slaughter": False,
+        "sends_customer_message": False,
+        "posts_publicly": False,
+    }
+
+
+def _herdmaster_alerts_for_pig(pig, thresholds):
+    alerts = []
+    bucket = pig.get("readiness_bucket", "")
+    growth_class = pig.get("growth_class", "")
+    days_since_weight = pig.get("days_since_weight")
+    stale_weight_days = thresholds.get("stale_weight_days", STALE_WEIGHT_DAYS)
+    status = to_clean_string(pig.get("status", "")).lower()
+    on_farm = to_clean_string(pig.get("on_farm", "")).lower()
+
+    if status in {value.lower() for value in TERMINAL_PIG_STATUSES} and on_farm == "yes":
+        alerts.append(_herdmaster_alert_base(
+            "lifecycle_inconsistency",
+            "Critical",
+            "High",
+            "Pig has a terminal status but is still marked on farm.",
+            "Block allocation and reconcile lifecycle/on-farm state before sale, breeding, meat, or slaughter review.",
+            ["status", "on_farm", "readiness_bucket"],
+            pig,
+        ))
+    elif status == "active" and on_farm and on_farm != "yes":
+        alerts.append(_herdmaster_alert_base(
+            "lifecycle_inconsistency",
+            "Critical",
+            "High",
+            "Pig is active but is not marked on farm.",
+            "Reconcile active/on-farm state before any allocation or customer-facing availability decision.",
+            ["status", "on_farm", "readiness_bucket"],
+            pig,
+        ))
+
+    if days_since_weight is None:
+        alerts.append(_herdmaster_alert_base(
+            "stale_weight",
+            "High" if bucket in {"Meat Candidate", "Slaughter Candidate", "Retain / Breeding Candidate"} else "Medium",
+            "Low",
+            "Latest weight is missing, so readiness cannot be trusted.",
+            "Request weighing before making meat, slaughter, breeding, sale, or value decisions.",
+            ["latest_weight_kg", "latest_weight_date", "days_since_weight"],
+            pig,
+        ))
+    elif days_since_weight > stale_weight_days:
+        alerts.append(_herdmaster_alert_base(
+            "stale_weight",
+            "High" if bucket in {"Meat Candidate", "Slaughter Candidate", "Retain / Breeding Candidate"} else "Medium",
+            "Medium",
+            f"Latest weight is {days_since_weight} days old.",
+            "Request a fresh weight before making final readiness or value decisions.",
+            ["latest_weight_date", "days_since_weight", "readiness_bucket"],
+            pig,
+        ))
+
+    if bucket == "Needs Data":
+        alerts.append(_herdmaster_alert_base(
+            "missing_data",
+            "High",
+            "Medium",
+            pig.get("readiness_reason") or "Missing data blocks trusted allocation.",
+            "Complete source data before allocation, sale, meat, slaughter, or breeding action.",
+            ["readiness_bucket", "readiness_reason", "tag_number", "sex", "latest_weight_kg", "current_pen_id"],
+            pig,
+        ))
+
+    if bucket == "Needs Classification" or to_clean_string(pig.get("purpose", "")).lower() in {"", "unknown"}:
+        alerts.append(_herdmaster_alert_base(
+            "purpose_review_due",
+            "Medium",
+            pig.get("suggested_purpose_confidence") or "Medium",
+            pig.get("suggested_purpose_reason") or pig.get("readiness_reason") or "Purpose needs owner review.",
+            "Owner should approve, override, defer, or request Herdmaster recheck through purpose-review rails.",
+            ["purpose", "readiness_bucket", "suggested_purpose", "suggested_purpose_reason", "days_since_wean"],
+            pig,
+        ))
+
+    if growth_class in {"Extremely Slow", "Slow"}:
+        alerts.append(_herdmaster_alert_base(
+            "slow_grower",
+            "High" if growth_class == "Extremely Slow" else "Medium",
+            "Medium",
+            pig.get("growth_reason") or "Slow growth needs review.",
+            "Review health, feed, and live-sale/cull options before continuing grow-out.",
+            ["growth_class", "average_daily_gain_kg", "growth_reason", "animal_type"],
+            pig,
+        ))
+
+    if pig.get("meat_window_status") == "In meat window" or bucket == "Meat Candidate":
+        alerts.append(_herdmaster_alert_base(
+            "meat_window_candidate",
+            "High" if days_since_weight is not None and days_since_weight <= thresholds.get("fresh_weight_days", 14) else "Medium",
+            "High" if days_since_weight is not None and days_since_weight <= thresholds.get("fresh_weight_days", 14) else "Medium",
+            "Pig is in the 60-<80 kg meat window.",
+            "Review with Oom Sakkie/SAM for demand planning only; do not promise availability or reserve stock.",
+            ["latest_weight_kg", "latest_weight_date", "meat_window_status", "readiness_bucket"],
+            pig,
+        ))
+
+    if bucket == "Slaughter Candidate" or pig.get("abattoir_window_status") == "In abattoir window" or pig.get("meat_window_status") == "Past meat window":
+        alerts.append(_herdmaster_alert_base(
+            "slaughter_candidate",
+            "High",
+            "Medium" if days_since_weight is None or days_since_weight > stale_weight_days else "High",
+            "Pig is in or past the abattoir/slaughter planning window.",
+            "Owner must approve any slaughter or butcher planning; this alert does not book or confirm anything.",
+            ["latest_weight_kg", "abattoir_window_status", "meat_window_status", "readiness_bucket"],
+            pig,
+        ))
+
+    if bucket == "Retain / Breeding Candidate" or pig.get("suggested_purpose") == "Breeding Review":
+        alerts.append(_herdmaster_alert_base(
+            "breeding_candidate",
+            "Medium",
+            pig.get("suggested_purpose_confidence") or "Medium",
+            pig.get("suggested_purpose_reason") or "Growth/litter signal supports breeding review.",
+            "Owner should decide retention before meat, slaughter, or live-sale allocation.",
+            ["growth_class", "litter_quality", "suggested_purpose", "suggested_purpose_reason"],
+            pig,
+        ))
+
+    return alerts
+
+
+def _herdmaster_litter_alert(item):
+    severity = "High" if item.get("action_type") in {"record_post_wean_weight", "review_purpose"} else "Medium"
+    return {
+        "category": "weaning_attention",
+        "severity": severity,
+        "confidence": "High",
+        "reason": item.get("reason", ""),
+        "source_fields": ["litter_id", "litter_status", "wean_date", "action_type", "active_pig_count"],
+        "owner_action": item.get("recommended_action") or "Review litter/weaning attention before allocation decisions.",
+        "forbidden_actions": HERDMASTER_ALERT_FORBIDDEN_ACTIONS,
+        "litter_id": item.get("litter_id", ""),
+        "sow_tag_number": item.get("sow_tag_number", ""),
+        "wean_date": item.get("wean_date", ""),
+        "litter_status": item.get("litter_status", ""),
+        "action_type": item.get("action_type", ""),
+        "active_pig_count": item.get("active_pig_count", 0),
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "writes_orders": False,
+        "writes_sales": False,
+        "writes_slaughter": False,
+        "sends_customer_message": False,
+        "posts_publicly": False,
+    }
+
+
+def _herdmaster_alert_summary(alerts, litter_alerts):
+    by_severity = {}
+    by_category = {}
+    for alert in list(alerts) + list(litter_alerts):
+        severity = alert.get("severity", "Medium")
+        category = alert.get("category", "unknown")
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+        by_category[category] = by_category.get(category, 0) + 1
+    return {
+        "total_alerts": len(alerts) + len(litter_alerts),
+        "pig_alerts": len(alerts),
+        "litter_alerts": len(litter_alerts),
+        "by_severity": by_severity,
+        "by_category": by_category,
+    }
+
+
+def get_herdmaster_pig_allocation_alerts(today=None, allocation=None, litter_attention=None, litter_limit=10):
+    today = today or datetime.now().date()
+    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)
+    thresholds = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
+    pig_alerts = []
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        pig_alerts.extend(_herdmaster_alerts_for_pig(pig, thresholds))
+
+    if not isinstance(litter_attention, dict):
+        litter_attention = get_litter_attention_summary(limit=litter_limit, today=today)
+    litter_alerts = [
+        _herdmaster_litter_alert(item)
+        for item in litter_attention.get("items", [])
+        if isinstance(item, dict)
+    ]
+
+    return {
+        "success": True,
+        "generated_date": today.isoformat(),
+        "owner_agent": "Herdmaster",
+        "status": "owner_review_required",
+        "source": "pig_allocation_readiness_and_litter_attention",
+        "allocation_source": allocation.get("source", ""),
+        "summary": _herdmaster_alert_summary(pig_alerts, litter_alerts),
+        "alerts": pig_alerts,
+        "pig_alerts": pig_alerts,
+        "litter_alerts": litter_alerts,
+        "business_rules": {
+            "advisory_only": True,
+            "owner_approval_required": True,
+            "pre_wean_tagless_piglets_stay_in_litter_attention": True,
+            "no_customer_or_public_send": True,
+        },
+        "forbidden_actions": HERDMASTER_ALERT_FORBIDDEN_ACTIONS,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "writes_orders": False,
+        "writes_sales": False,
+        "writes_slaughter": False,
+        "sends_customer_message": False,
+        "posts_publicly": False,
+    }
+
+
 def get_meat_ready_stock_summary(today=None, allocation=None, price_entries=None):
     today = today or datetime.now().date()
     allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)

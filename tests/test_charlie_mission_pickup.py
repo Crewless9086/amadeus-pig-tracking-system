@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts import charlie_mission_pickup
@@ -40,6 +41,63 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def setUp(self):
+        self._base_branch_env_patcher = patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": ""})
+        self._base_branch_env_patcher.start()
+        self.addCleanup(self._base_branch_env_patcher.stop)
+        if not self._testMethodName.startswith("test_ensure_base_branch"):
+            self._base_branch_guard_patcher = patch(
+                "scripts.charlie_mission_pickup._ensure_base_branch",
+                return_value={
+                    "success": True,
+                    "status": "base_branch_not_required_outside_runner_worktree",
+                    "current_branch": "test",
+                },
+            )
+            self._base_branch_guard_patcher.start()
+            self.addCleanup(self._base_branch_guard_patcher.stop)
+
+    @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
+    @patch("scripts.charlie_mission_pickup.subprocess.run")
+    def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run):
+        def fake_run(command, **_kwargs):
+            if command == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="charlie/some-mission\n", stderr="")
+            if command == ["git", "switch", "charlie-runner-clean-base"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="branch already checked out elsewhere")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        run.side_effect = fake_run
+
+        result = charlie_mission_pickup._ensure_base_branch()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "base_branch_switch_failed")
+        self.assertEqual(result["current_branch"], "charlie/some-mission")
+        self.assertIn("will not pick another mission", result["recommended_action"])
+
+    @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
+    @patch("scripts.charlie_mission_pickup.subprocess.run")
+    def test_ensure_base_branch_verifies_switch_result(self, run):
+        calls = {"branch": 0}
+
+        def fake_run(command, **_kwargs):
+            if command == ["git", "branch", "--show-current"]:
+                calls["branch"] += 1
+                branch = "charlie/some-mission" if calls["branch"] == 1 else "charlie-runner-clean-base"
+                return SimpleNamespace(returncode=0, stdout=f"{branch}\n", stderr="")
+            if command == ["git", "switch", "charlie-runner-clean-base"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        run.side_effect = fake_run
+
+        result = charlie_mission_pickup._ensure_base_branch()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "base_branch_restored")
+        self.assertEqual(result["previous_branch"], "charlie/some-mission")
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_pickup_reports_no_available_mission(self, list_owner_work_missions):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": []}, 200)

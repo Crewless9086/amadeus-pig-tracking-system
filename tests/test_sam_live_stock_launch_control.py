@@ -278,10 +278,16 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("No Reply Needed", labels)
         self.assertIn("Prepare Quote", labels)
         self.assertIn("Close", labels)
+        self.assertNotIn("Prepare Draft Order", labels)
 
-        decision["owner_action_packet"]["next_action"] = "prepare_draft_order"
-        decision["owner_action_packet"]["internal_next_action"] = "create_draft"
-        decision["owner_action_packet"]["draft_order_ready"] = True
+        decision["owner_action_packet"].update({
+            "next_action": "prepare_draft_order",
+            "internal_next_action": "create_draft",
+            "status": "ready_for_owner_prepare",
+            "label": "Prepare draft order",
+            "order_id": "",
+            "draft_order_ready": True,
+        })
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
         labels = [
             button["text"]
@@ -300,7 +306,12 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         ]
         self.assertIn("Update Draft Order", labels)
 
-        decision["owner_action_packet"]["next_action"] = "prepare_picture_response"
+        decision["owner_action_packet"].update({
+            "next_action": "prepare_picture_response",
+            "internal_next_action": "prepare_picture_response",
+            "status": "owner_review",
+            "label": "Prepare picture reply",
+        })
         decision["next_action"] = "prepare_picture_response"
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
         labels = [
