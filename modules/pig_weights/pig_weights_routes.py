@@ -1,5 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request
 
+from modules.auth.owner_access import require_owner_read_access
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
@@ -109,6 +110,9 @@ def pig_allocation_readiness():
 
 @pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])
 def pig_allocation_alerts():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(get_herdmaster_pig_allocation_alerts_data())
 
 

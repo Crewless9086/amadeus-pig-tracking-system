@@ -621,6 +621,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         controller_source = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
 
         self.assertIn('@pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])', routes_source)
+        self.assertIn("require_owner_read_access", routes_source)
+        self.assertIn("denied = require_owner_read_access()", routes_source)
         self.assertIn("get_herdmaster_pig_allocation_alerts_data", routes_source)
         self.assertIn("get_herdmaster_pig_allocation_alerts()", controller_source)
 
