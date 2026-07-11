@@ -56,6 +56,13 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 Render deploys from `main` unless the service configuration says otherwise.
 
+## Mission Loop Foundation
+
+- Branch `mission-loop-foundation` adds the local CHARLIE Mission Loop foundation: mission contract, Windows verify gate, trust ledger skeleton, budget guard placeholder, safe Build Relay notification stub, and NEXT_STEPS-to-CODEX_CHAT helper.
+- This foundation makes no Claude/Fable/GLM/OpenRouter calls, sends no live Telegram messages unless explicitly enabled/configured, and performs no production data writes.
+- `scripts/verify_mission.ps1` is the local final gate for this layer and refuses forbidden staged files such as `.env`, `.claude/`, `external_sources/`, `screenshots/`, `static/assets/`, `test-results/`, and `planning/Prompts.md`.
+- Trust starts in `watch` tier in `loop/memory/trust.tsv`; later layers must earn `queue` or `auto` via logged deterministic passes.
+
 ## Active Branches / PRs
 
 - PR #12 is merged into `main`.
