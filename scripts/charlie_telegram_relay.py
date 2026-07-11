@@ -27,6 +27,8 @@ from typing import Any, Mapping
 from scripts import build_relay_notify, build_relay_telegram_buttons, codex_next_steps
 
 DEFAULT_LOCK_FILE = Path(".charlie_runner/telegram_relay.lock")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LOCAL_ENV_FILE = REPO_ROOT / ".env"
 
 
 @dataclass(frozen=True)
@@ -129,6 +131,18 @@ class DryRunTelegramClient:
 
     def get_updates(self, offset: int | None = None, timeout: int = 30) -> list[dict[str, Any]]:
         return []
+
+
+def load_local_env(path: Path = LOCAL_ENV_FILE, load_dotenv_func: Any | None = None) -> bool:
+    """Load local relay env without overriding explicit shell variables."""
+    if not path.exists():
+        return False
+    if load_dotenv_func is None:
+        try:
+            from dotenv import load_dotenv as load_dotenv_func
+        except Exception:
+            return False
+    return bool(load_dotenv_func(path, override=False))
 
 
 def load_config(environ: Mapping[str, str] | None = None) -> RelayConfig:
@@ -337,6 +351,8 @@ def poll_loop(
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_local_env()
+
     parser = argparse.ArgumentParser(description="Run the local CHARLIE Telegram relay smoke runner.")
     parser.add_argument("--update-json", type=Path, help="Handle one update JSON file instead of polling.")
     parser.add_argument("--next-steps", type=Path, default=codex_next_steps.DEFAULT_NEXT_STEPS)

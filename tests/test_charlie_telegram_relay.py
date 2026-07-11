@@ -374,6 +374,21 @@ class CharlieTelegramRelayTests(unittest.TestCase):
             self.assertEqual(blocked.action, "lock_active")
             self.assertFalse(lock_path.exists())
 
+    def test_load_local_env_uses_dotenv_without_overriding_shell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text("DATABASE_URL=postgresql://example\n", encoding="utf-8")
+            calls = []
+
+            def fake_load_dotenv(path, override=False):
+                calls.append((path, override))
+                return True
+
+            loaded = charlie_telegram_relay.load_local_env(env_path, load_dotenv_func=fake_load_dotenv)
+
+            self.assertTrue(loaded)
+            self.assertEqual(calls, [(env_path, False)])
+
 
 if __name__ == "__main__":
     unittest.main()
