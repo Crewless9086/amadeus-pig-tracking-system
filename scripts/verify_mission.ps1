@@ -123,6 +123,7 @@ if ($hasPython) {
     }
     $missionLoopTests = @(
         "tests.test_build_relay_notify",
+        "tests.test_build_relay_telegram_buttons",
         "tests.test_codex_next_steps",
         "tests.test_trust_log"
     )
@@ -186,4 +187,3 @@ if ($Json) {
     Write-Host ("Checks run: " + ($checks -join ", "))
     Write-Host ("Changed files considered: " + $changedArray.Count)
 }
-

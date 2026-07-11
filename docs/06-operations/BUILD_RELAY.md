@@ -46,3 +46,17 @@ python scripts/build_relay_notify.py DONE --mission-id MISSION-123 --title "Foun
 
 Enabled production usage is a later owner-approved layer. This foundation only proves the format, redaction, and guard behavior.
 
+## Loop 5 Button Flow
+
+`scripts/build_relay_telegram_buttons.py` adds the safe `/next` owner flow:
+
+1. Owner sends `/next`.
+2. The handler reads `docs/00-start-here/NEXT_STEPS.md`.
+3. It sends the top five P0/P1/P2 mission options as inline buttons.
+4. Owner clicks one option.
+5. The selected option is written to `planning/CODEX_CHAT.md` through `scripts/codex_next_steps.py`.
+6. The bot sends a confirmation.
+
+This layer still does not run Codex, start a scheduler, merge PRs, call model APIs, or perform production data writes. It only prepares the active mission file.
+
+The handler is testable through injected clients. Unit tests never send real Telegram messages.
