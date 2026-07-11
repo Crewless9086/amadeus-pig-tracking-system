@@ -185,6 +185,48 @@ class OrderSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(result["Order_ID"], "ORD-1")
 
+    def test_sync_preserves_draft_guard_unless_explicit_approved_revision(self):
+        data = {
+            "requested_items": [requested_item("primary_1")],
+            "changed_by": "Tester",
+        }
+
+        with patch.object(order_line_sync, "_get_order_master_row", return_value=draft_order(Order_Status="Approved")):
+            with self.assertRaises(ValueError) as exc:
+                order_line_sync.sync_order_lines_from_request("ORD-1", data)
+
+        self.assertIn("Only draft orders", str(exc.exception))
+
+    def test_sync_allows_approved_order_only_with_revision_flag(self):
+        order_lines = [line("OL-OLD", "primary_1", pig_id="PIG-OLD", status="Reserved")]
+
+        def records_for(sheet_name):
+            if sheet_name == order_line_sync.SALES_AVAILABILITY_SHEET:
+                return [pig("PIG-NEW", "012", "Male")]
+            if sheet_name == order_line_sync.ORDER_LINES_SHEET:
+                return order_lines
+            raise AssertionError(f"Unexpected get_all_records call for {sheet_name}")
+
+        with patch.object(order_line_sync, "_get_order_master_row", return_value=draft_order(Order_Status="Approved")), \
+             patch.object(order_line_sync, "_build_sales_pricing_lookup", return_value={("Grower Pigs", "40_to_44_Kg"): 1500}), \
+             patch.object(order_line_sync, "get_all_records", side_effect=records_for), \
+             patch.object(order_line_sync, "append_row") as append_row, \
+             patch.object(order_line_sync, "_update_sheet_row_by_id") as update_row:
+            result = order_line_sync.sync_order_lines_from_request(
+                "ORD-1",
+                {
+                    "requested_items": [requested_item("primary_1")],
+                    "changed_by": "Tester",
+                    "allow_approved_revision": True,
+                },
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["order_status"], "Approved")
+        self.assertEqual(result["matched_total"], 1)
+        update_row.assert_called_once()
+        append_row.assert_called_once()
+
     def test_append_order_line_falls_back_when_supabase_insert_fails(self):
         with patch.object(order_line_sync.order_supabase_write, "supabase_order_writes_available", return_value=True), \
              patch.object(order_line_sync.order_supabase_write, "insert_order_line", side_effect=RuntimeError("offline")), \

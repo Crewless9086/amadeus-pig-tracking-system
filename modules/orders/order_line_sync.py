@@ -458,6 +458,7 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     changed_by = str(cleaned_data.get("changed_by", "App")).strip() or "App"
     requested_items = cleaned_data.get("requested_items", [])
     cancel_order_if_no_matches = cleaned_data.get("cancel_order_if_no_matches") is True
+    allow_approved_revision = cleaned_data.get("allow_approved_revision") is True
 
     if not isinstance(requested_items, list) or len(requested_items) == 0:
         raise ValueError("requested_items must be a non-empty list.")
@@ -467,7 +468,7 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         raise ValueError("Order not found.")
 
     order_status = to_clean_string(order_row.get("Order_Status", ""))
-    if order_status not in ("Draft", ""):
+    if order_status not in ("Draft", "") and not (allow_approved_revision and order_status == "Approved"):
         raise ValueError("Only draft orders can sync order lines.")
 
     pricing_lookup = _build_sales_pricing_lookup()

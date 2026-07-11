@@ -33,6 +33,7 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 - Draft creation and line sync must happen through backend APIs.
 - `send_for_approval` requires Draft status, customer name, payment method, collection location, and at least one active line.
 - Approval may attempt auto-reservation, but reservation warnings do not roll back the approval automatically.
+- Approved live-stock orders may be revised only through the explicit approved livestock revision action. Normal line sync remains draft-only; the revision action must update the order header/lines, reserve current active lines, regenerate required documents with an idempotency fingerprint, send owner paperwork only, and prepare customer quote send context unless a separate confirmed owner send payload is present.
 - Rejection/customer cancellation must cancel/release linked non-terminal lines and write status-log evidence.
 - Completed orders and terminal records must be protected from unsafe approval/rejection/cancellation changes.
 - Quote/document sending must use backend-prepared document state and the outbound document-delivery path.

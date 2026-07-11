@@ -83,6 +83,7 @@ from modules.oom_sakkie.patch_proposal_store import (
 )
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
+from modules.orders.approved_revision_service import revise_approved_livestock_order
 from modules.oom_sakkie.sales_campaign_store import (
     get_sales_lead_preorder_contract,
     get_sales_lead_customer_followup_draft,
@@ -263,6 +264,26 @@ def oom_sakkie_telegram_exposure_preflight():
     if denied:
         return denied
     return jsonify(telegram_gateway_exposure_preflight()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/orders/<order_id>/approved-livestock-revision", methods=["POST"])
+def oom_sakkie_approved_livestock_revision(order_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = revise_approved_livestock_order(order_id, payload)
+        result["oom_sakkie_action"] = True
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "oom_sakkie_action": True,
+            "order_id": order_id,
+            "errors": [str(exc)],
+        }), 400
 
 
 @oom_sakkie_bp.route("/oom-sakkie/tools", methods=["GET"])

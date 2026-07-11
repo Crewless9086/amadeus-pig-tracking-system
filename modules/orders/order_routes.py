@@ -27,6 +27,7 @@ from modules.orders.order_service import (
     sync_order_lines_from_request,
     create_order_with_lines,
 )
+from modules.orders.approved_revision_service import revise_approved_livestock_order
 from modules.documents.quote_service import (
     auto_generate_quote_if_ready,
     auto_generate_quote_if_ready_with_retry,
@@ -326,6 +327,22 @@ def complete(order_id):
         return jsonify({
             "success": False,
             "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/approved-livestock-revision", methods=["POST"])
+def approved_livestock_revision(order_id):
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        result = revise_approved_livestock_order(order_id, payload)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": [str(exc)],
         }), 400
 
 

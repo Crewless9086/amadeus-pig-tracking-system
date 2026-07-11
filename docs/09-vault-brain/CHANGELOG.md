@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-11
+
+- Added the approved live-stock order revision rule: normal order line sync remains draft-only, while the explicit Oom Sakkie/backend approved livestock revision action may correct sale-readiness evidence, revise approved lines, reserve current selected pigs, regenerate idempotent paperwork, send owner paperwork, and only prepare customer quote sending unless separately confirmed by the owner.
+
 ## 2026-07-10
 
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.

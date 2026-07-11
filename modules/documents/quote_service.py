@@ -65,8 +65,8 @@ REQUIRED_QUOTE_SETTINGS = [
 QUOTE_FINGERPRINT_PREFIX = "Quote_Fingerprint:"
 
 
-def auto_generate_quote_if_ready(order_id, created_by="App"):
-    readiness = get_quote_readiness(order_id)
+def auto_generate_quote_if_ready(order_id, created_by="App", allow_approved_revision=False, revision_fingerprint=""):
+    readiness = get_quote_readiness(order_id, allow_approved_revision=allow_approved_revision)
 
     if not readiness["quote_ready"]:
         return {
@@ -82,7 +82,10 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
         }
 
     latest = get_latest_non_voided_quote(order_id)
-    if latest and _document_has_fingerprint(latest, readiness["fingerprint"]):
+    revision_fingerprint = str(revision_fingerprint or "").strip()
+    if latest and _document_has_fingerprint(latest, readiness["fingerprint"]) and (
+        not revision_fingerprint or _document_has_revision_fingerprint(latest, revision_fingerprint)
+    ):
         return {
             "success": True,
             "action": "auto_generate_quote_if_ready",
@@ -99,6 +102,7 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
         order_id,
         created_by=created_by,
         quote_fingerprint=readiness["fingerprint"],
+        revision_fingerprint=revision_fingerprint,
     )
 
     return {
@@ -118,8 +122,15 @@ def auto_generate_quote_if_ready_with_retry(
     order_id,
     created_by="App",
     retry_delays=(3, 7),
+    allow_approved_revision=False,
+    revision_fingerprint="",
 ):
-    result = auto_generate_quote_if_ready(order_id, created_by=created_by)
+    result = auto_generate_quote_if_ready(
+        order_id,
+        created_by=created_by,
+        allow_approved_revision=allow_approved_revision,
+        revision_fingerprint=revision_fingerprint,
+    )
     if result.get("quote_ready"):
         return result
 
@@ -129,7 +140,12 @@ def auto_generate_quote_if_ready_with_retry(
         if missing and missing.isdisjoint(retryable_missing):
             break
         time.sleep(delay)
-        result = auto_generate_quote_if_ready(order_id, created_by=created_by)
+        result = auto_generate_quote_if_ready(
+            order_id,
+            created_by=created_by,
+            allow_approved_revision=allow_approved_revision,
+            revision_fingerprint=revision_fingerprint,
+        )
         if result.get("quote_ready"):
             result["retried"] = True
             result["retry_delay_seconds"] = delay
@@ -138,7 +154,7 @@ def auto_generate_quote_if_ready_with_retry(
     return result
 
 
-def get_quote_readiness(order_id):
+def get_quote_readiness(order_id, allow_approved_revision=False):
     order_id = str(order_id or "").strip()
     detail = _get_quote_order_detail(order_id)
     if not detail:
@@ -153,7 +169,8 @@ def get_quote_readiness(order_id):
     lines = _active_lines(detail["lines"])
     missing_fields = []
 
-    if str(order.get("order_status", "")).strip() != "Draft":
+    order_status = str(order.get("order_status", "")).strip()
+    if order_status != "Draft" and not (allow_approved_revision and order_status == "Approved"):
         missing_fields.append("draft_status")
     if not str(order.get("customer_name", "")).strip():
         missing_fields.append("customer_name")
@@ -192,7 +209,7 @@ def generate_quote_for_order(order_id, created_by="App"):
     return _generate_quote_for_order(order_id, created_by=created_by)
 
 
-def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint=""):
+def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint="", revision_fingerprint=""):
     order_id = str(order_id or "").strip()
     created_by = str(created_by or "").strip() or "App"
 
@@ -282,7 +299,7 @@ def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint=""):
         "File_Name": file_name,
         "Created_At": created_at,
         "Created_By": created_by,
-        "Notes": _quote_notes(order, settings, quote_fingerprint),
+        "Notes": _quote_notes(order, settings, quote_fingerprint, revision_fingerprint=revision_fingerprint),
     }
     append_order_document(document_record)
 
@@ -346,15 +363,18 @@ def _to_float_or_zero(value):
         return 0.0
 
 
-def _quote_notes(order, settings, quote_fingerprint):
+def _quote_notes(order, settings, quote_fingerprint, revision_fingerprint=""):
     notes = _draft_note_if_needed(order, settings)
     quote_fingerprint = str(quote_fingerprint or "").strip()
-    if not quote_fingerprint:
-        return notes
-    fingerprint_note = f"{QUOTE_FINGERPRINT_PREFIX} {quote_fingerprint}"
-    if notes:
-        return f"{notes} | {fingerprint_note}"
-    return fingerprint_note
+    parts = [notes] if notes else []
+    if quote_fingerprint:
+        parts.append(f"{QUOTE_FINGERPRINT_PREFIX} {quote_fingerprint}")
+    revision_fingerprint = str(revision_fingerprint or "").strip()
+    if revision_fingerprint:
+        parts.append(f"Revision_Fingerprint: {revision_fingerprint}")
+    if not parts:
+        return ""
+    return " | ".join(parts)
 
 
 def _document_has_fingerprint(document, quote_fingerprint):
@@ -363,6 +383,14 @@ def _document_has_fingerprint(document, quote_fingerprint):
         return False
     notes = str(document.get("Notes", "")).strip()
     return f"{QUOTE_FINGERPRINT_PREFIX} {quote_fingerprint}" in notes
+
+
+def _document_has_revision_fingerprint(document, revision_fingerprint):
+    revision_fingerprint = str(revision_fingerprint or "").strip()
+    if not revision_fingerprint:
+        return False
+    notes = str(document.get("Notes", "")).strip()
+    return f"Revision_Fingerprint: {revision_fingerprint}" in notes
 
 
 def _document_summary(document):
