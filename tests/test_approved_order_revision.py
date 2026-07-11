@@ -96,7 +96,8 @@ class ApprovedOrderRevisionTests(unittest.TestCase):
              patch.object(approved_order_revision, "reserve_order_lines", return_value={"success": True, "reserved_pig_count": 5}) as reserve, \
              patch.object(approved_order_revision, "send_loading_sheet_to_owner_telegram", return_value={"success": True}) as send_owner, \
              patch.object(approved_order_revision, "write_order_status_log") as status_log, \
-             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=False):
+             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=False), \
+             patch.object(approved_order_revision, "_revision_document_lock_already_logged", return_value=False):
             result = approved_order_revision.revise_approved_livestock_order(
                 "ORD-2026-12BCCC",
                 revision_payload(5),
@@ -113,7 +114,8 @@ class ApprovedOrderRevisionTests(unittest.TestCase):
         self.assertEqual(sync_lines.call_args.args[1]["allowed_order_statuses"], ("Approved",))
         reserve.assert_called_once_with("ORD-2026-12BCCC")
         self.assertEqual(send_owner.call_count, 4)
-        status_log.assert_called_once()
+        self.assertEqual(status_log.call_count, 2)
+        self.assertTrue(result["lock_status_log"]["success"])
 
     def test_repeated_revision_skips_matching_line_sync_and_documents(self):
         generators = {
@@ -130,7 +132,8 @@ class ApprovedOrderRevisionTests(unittest.TestCase):
              patch.object(approved_order_revision, "reserve_order_lines", return_value={"success": True, "reserved_pig_count": 5}), \
              patch.object(approved_order_revision, "send_loading_sheet_to_owner_telegram") as send_owner, \
              patch.object(approved_order_revision, "write_order_status_log"), \
-             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=True):
+             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=True), \
+             patch.object(approved_order_revision, "_revision_document_lock_already_logged", return_value=True):
             result = approved_order_revision.revise_approved_livestock_order(
                 "ORD-2026-12BCCC",
                 revision_payload(5),
@@ -143,6 +146,71 @@ class ApprovedOrderRevisionTests(unittest.TestCase):
         generators["loading_sheet_generator"].assert_not_called()
         send_owner.assert_not_called()
         self.assertTrue(all(item["skipped"] for item in result["documents"]))
+
+    def test_revision_stops_before_documents_when_lock_write_fails(self):
+        generators = {
+            "quote_generator": Mock(),
+            "loading_sheet_generator": Mock(),
+            "removal_certificate_generator": Mock(),
+            "health_declaration_generator": Mock(),
+            "quote_send_preparer": Mock(),
+            "document_lookup": lambda order_id: [],
+        }
+        with patch.object(approved_order_revision, "get_order_detail", side_effect=[approved_detail(4), approved_detail(4)]), \
+             patch.object(approved_order_revision, "update_order", return_value={"success": True}), \
+             patch.object(approved_order_revision, "sync_order_lines_from_request", return_value={"success": True, "fulfillment_status": "complete"}), \
+             patch.object(approved_order_revision, "reserve_order_lines", return_value={"success": True, "reserved_pig_count": 5}), \
+             patch.object(approved_order_revision, "send_loading_sheet_to_owner_telegram") as send_owner, \
+             patch.object(approved_order_revision, "write_order_status_log", side_effect=RuntimeError("log unavailable")), \
+             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=False), \
+             patch.object(approved_order_revision, "_revision_document_lock_already_logged", return_value=False):
+            result = approved_order_revision.revise_approved_livestock_order(
+                "ORD-2026-12BCCC",
+                revision_payload(5),
+                **generators,
+            )
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["idempotency_blocked"])
+        self.assertEqual(result["reason"], "revision_document_lock_write_failed")
+        generators["quote_generator"].assert_not_called()
+        generators["loading_sheet_generator"].assert_not_called()
+        send_owner.assert_not_called()
+        generators["quote_send_preparer"].assert_not_called()
+
+    def test_revision_stops_when_lock_exists_without_completion(self):
+        generators = {
+            "quote_generator": Mock(),
+            "loading_sheet_generator": Mock(),
+            "removal_certificate_generator": Mock(),
+            "health_declaration_generator": Mock(),
+            "quote_send_preparer": Mock(),
+            "document_lookup": lambda order_id: [],
+        }
+        with patch.object(approved_order_revision, "get_order_detail", side_effect=[approved_detail(5), approved_detail(5)]), \
+             patch.object(approved_order_revision, "update_order", return_value={"success": True}) as update_order, \
+             patch.object(approved_order_revision, "sync_order_lines_from_request") as sync_lines, \
+             patch.object(approved_order_revision, "reserve_order_lines", return_value={"success": True, "reserved_pig_count": 5}) as reserve, \
+             patch.object(approved_order_revision, "send_loading_sheet_to_owner_telegram") as send_owner, \
+             patch.object(approved_order_revision, "write_order_status_log") as status_log, \
+             patch.object(approved_order_revision, "_revision_fingerprint_already_logged", return_value=False), \
+             patch.object(approved_order_revision, "_revision_document_lock_already_logged", return_value=True):
+            result = approved_order_revision.revise_approved_livestock_order(
+                "ORD-2026-12BCCC",
+                revision_payload(5),
+                **generators,
+            )
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["idempotency_blocked"])
+        self.assertEqual(result["reason"], "revision_document_lock_without_completion")
+        update_order.assert_not_called()
+        sync_lines.assert_not_called()
+        reserve.assert_not_called()
+        generators["quote_generator"].assert_not_called()
+        generators["loading_sheet_generator"].assert_not_called()
+        send_owner.assert_not_called()
+        status_log.assert_not_called()
 
 
 if __name__ == "__main__":

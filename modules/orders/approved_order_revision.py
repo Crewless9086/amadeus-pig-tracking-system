@@ -19,6 +19,7 @@ from services.google_sheets_service import get_all_records
 
 
 REVISION_FINGERPRINT_PREFIX = "Approved_Order_Revision_Fingerprint:"
+REVISION_LOCK_PREFIX = "Approved_Order_Revision_Document_Lock:"
 REVISION_DOCUMENT_TYPES = (
     DOCUMENT_TYPE_QUOTE,
     DOCUMENT_TYPE_LOADING_SHEET,
@@ -67,8 +68,40 @@ def revise_approved_livestock_order(
 
     correction_summary = _correction_summary(correction)
     revision_fingerprint = _revision_fingerprint(order_id, requested_items, order_updates, correction_summary, movement_form_data)
-    documents_before = document_lookup(order_id) or []
     already_applied = _revision_fingerprint_already_logged(order_id, revision_fingerprint)
+    document_lock_exists = _revision_document_lock_already_logged(order_id, revision_fingerprint)
+
+    if document_lock_exists and not already_applied and not force:
+        return {
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "changed_by": changed_by,
+            "revision_fingerprint": revision_fingerprint,
+            "already_applied": False,
+            "idempotency_blocked": True,
+            "reason": "revision_document_lock_without_completion",
+            "order_update": None,
+            "sale_readiness_correction": correction_summary,
+            "line_sync": None,
+            "reservation": None,
+            "documents": [],
+            "owner_telegram": {
+                "requested": send_owner_telegram,
+                "results": [],
+            },
+            "customer_quote_send": {
+                "prepared_only": False,
+                "sent": False,
+                "owner_instruction_required": True,
+                "prepare_result": None,
+            },
+            "status_log": {
+                "success": False,
+                "warning": "A previous revision wrote the document-generation lock but did not record completion. Review existing order documents before retrying with force.",
+            },
+            "message": "Approved livestock order revision stopped before any further writes because idempotency state is incomplete.",
+        }
 
     updates_result = None
     if order_updates:
@@ -98,6 +131,45 @@ def revise_approved_livestock_order(
 
     reserve_result = reserve_order_lines(order_id)
 
+    lock_log_result = None
+    if not already_applied or force:
+        lock_log_result = _write_revision_document_lock(
+            order_id=order_id,
+            changed_by=changed_by,
+            revision_fingerprint=revision_fingerprint,
+            line_sync_result=line_sync_result,
+            reserve_result=reserve_result,
+            correction_summary=correction_summary,
+        )
+        if not lock_log_result.get("success"):
+            return {
+                "success": False,
+                "action": "revise_approved_livestock_order",
+                "order_id": order_id,
+                "changed_by": changed_by,
+                "revision_fingerprint": revision_fingerprint,
+                "already_applied": False,
+                "idempotency_blocked": True,
+                "reason": "revision_document_lock_write_failed",
+                "order_update": updates_result,
+                "sale_readiness_correction": correction_summary,
+                "line_sync": line_sync_result,
+                "reservation": reserve_result,
+                "documents": [],
+                "owner_telegram": {
+                    "requested": send_owner_telegram,
+                    "results": [],
+                },
+                "customer_quote_send": {
+                    "prepared_only": False,
+                    "sent": False,
+                    "owner_instruction_required": True,
+                    "prepare_result": None,
+                },
+                "status_log": lock_log_result,
+                "message": "Approved livestock order revision stopped before document generation because the idempotency lock could not be recorded.",
+            }
+
     documents = []
     if already_applied and not force:
         document_results = {
@@ -114,6 +186,45 @@ def revise_approved_livestock_order(
 
     for doc_type in REVISION_DOCUMENT_TYPES:
         documents.append(_document_result_summary(doc_type, document_results.get(doc_type) or {}))
+
+    status_log_result = _write_revision_log(
+        order_id=order_id,
+        changed_by=changed_by,
+        revision_fingerprint=revision_fingerprint,
+        line_sync_result=line_sync_result,
+        reserve_result=reserve_result,
+        correction_summary=correction_summary,
+        already_applied=already_applied and not force,
+    )
+    if not status_log_result.get("success"):
+        return {
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "changed_by": changed_by,
+            "revision_fingerprint": revision_fingerprint,
+            "already_applied": False,
+            "idempotency_blocked": True,
+            "reason": "revision_completion_log_write_failed",
+            "order_update": updates_result,
+            "sale_readiness_correction": correction_summary,
+            "line_sync": line_sync_result,
+            "reservation": reserve_result,
+            "documents": documents,
+            "owner_telegram": {
+                "requested": send_owner_telegram,
+                "results": [],
+            },
+            "customer_quote_send": {
+                "prepared_only": False,
+                "sent": False,
+                "owner_instruction_required": True,
+                "prepare_result": None,
+            },
+            "status_log": status_log_result,
+            "lock_status_log": lock_log_result,
+            "message": "Approved livestock order revision generated documents but stopped before owner/customer send preparation because the completion fingerprint could not be recorded. Review documents before retrying with force.",
+        }
 
     owner_telegram_results = []
     if send_owner_telegram:
@@ -134,16 +245,6 @@ def revise_approved_livestock_order(
             conversation_id=to_clean_string(payload.get("conversation_id", "")),
             requested_by=changed_by,
         )
-
-    status_log_result = _write_revision_log(
-        order_id=order_id,
-        changed_by=changed_by,
-        revision_fingerprint=revision_fingerprint,
-        line_sync_result=line_sync_result,
-        reserve_result=reserve_result,
-        correction_summary=correction_summary,
-        already_applied=already_applied and not force,
-    )
 
     return {
         "success": True,
@@ -168,6 +269,7 @@ def revise_approved_livestock_order(
             "prepare_result": quote_prepare_result,
         },
         "status_log": status_log_result,
+        "lock_status_log": lock_log_result,
         "message": "Approved livestock order revision completed. Customer quote send is prepared only and still requires owner confirmation.",
     }
 
@@ -250,16 +352,17 @@ def _revision_fingerprint(order_id, requested_items, order_updates, correction_s
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _documents_have_revision_fingerprint(documents, revision_fingerprint):
-    needle = f"{REVISION_FINGERPRINT_PREFIX} {revision_fingerprint}"
-    for document in documents or []:
-        if needle in str(document.get("Notes", "")):
-            return True
-    return False
-
-
 def _revision_fingerprint_already_logged(order_id, revision_fingerprint):
     needle = f"{REVISION_FINGERPRINT_PREFIX} {revision_fingerprint}"
+    return _status_log_contains_note(order_id, needle)
+
+
+def _revision_document_lock_already_logged(order_id, revision_fingerprint):
+    needle = f"{REVISION_LOCK_PREFIX} {revision_fingerprint}"
+    return _status_log_contains_note(order_id, needle)
+
+
+def _status_log_contains_note(order_id, needle):
     try:
         if order_supabase_read.supabase_order_reads_available():
             logs = order_supabase_read.list_order_status_logs()
@@ -314,6 +417,41 @@ def _write_revision_log(
         f"reserved_count={reserve_result.get('reserved_pig_count', '')}; "
         f"correction_recorded={correction_summary.get('recorded')}; "
         f"already_applied={already_applied}"
+    )
+    try:
+        write_order_status_log(
+            order_id=order_id,
+            old_status="Approved | Approved",
+            new_status="Approved | Approved",
+            changed_by=changed_by,
+            change_source="Oom Sakkie",
+            notes=notes,
+        )
+    except Exception as exc:
+        return {
+            "success": False,
+            "warning": str(exc),
+        }
+    return {
+        "success": True,
+        "revision_fingerprint": revision_fingerprint,
+    }
+
+
+def _write_revision_document_lock(
+    order_id,
+    changed_by,
+    revision_fingerprint,
+    line_sync_result,
+    reserve_result,
+    correction_summary,
+):
+    notes = (
+        f"{REVISION_LOCK_PREFIX} {revision_fingerprint}; "
+        f"approved livestock order revision document-generation lock; "
+        f"line_sync={line_sync_result.get('fulfillment_status', line_sync_result.get('reason', 'unknown'))}; "
+        f"reserved_count={reserve_result.get('reserved_pig_count', '')}; "
+        f"correction_recorded={correction_summary.get('recorded')}"
     )
     try:
         write_order_status_log(
