@@ -152,6 +152,9 @@ def pigs():
 
 @pig_weights_bp.route("/sales-availability", methods=["GET"])
 def sales_availability():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(list_sales_availability())
 
 

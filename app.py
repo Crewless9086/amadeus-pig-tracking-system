@@ -56,6 +56,9 @@ def pigs_page():
 
 @app.route("/sales-availability")
 def sales_availability_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("sales-availability.html")
 
 

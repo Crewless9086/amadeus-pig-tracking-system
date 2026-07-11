@@ -1,11 +1,51 @@
 from pathlib import Path
 import json
+import os
 import unittest
+from unittest.mock import patch
 
 from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_sales_availability_page_rejects_unauthenticated_remote_request(self):
+        from app import app
+
+        owner_env = {
+            "OWNER_ACCESS_ENABLED": "true",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "false",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "s" * 32,
+        }
+        with patch.dict(os.environ, owner_env, clear=False):
+            response = app.test_client().get(
+                "/sales-availability",
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/owner/login", response.headers["Location"])
+
+    def test_sales_availability_api_rejects_unauthenticated_remote_request(self):
+        from app import app
+
+        owner_env = {
+            "OWNER_ACCESS_ENABLED": "true",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "false",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "s" * 32,
+        }
+        with patch.dict(os.environ, owner_env, clear=False):
+            response = app.test_client().get(
+                "/api/pig-weights/sales-availability",
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_read_access_denied")
+
     def test_charlie_mission_control_page_contract(self):
         template = Path("templates/charlie.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControl.js").read_text(encoding="utf-8")
