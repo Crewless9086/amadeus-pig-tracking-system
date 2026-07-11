@@ -606,6 +606,18 @@ def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage="
     sequence = [str(item.get("agent") or "").strip().lower() for item in planned]
     target = resume_stage if resume_stage in sequence else ""
     target_index = sequence.index(target) if target else None
+    if target_index is not None:
+        earliest_missing = next(
+            (
+                index
+                for index in range(target_index)
+                if str(current.get(sequence[index], {}).get("status") or "").strip().lower() != "complete"
+            ),
+            None,
+        )
+        if earliest_missing is not None:
+            target_index = earliest_missing
+            target = sequence[target_index]
     merged = []
     for index, item in enumerate(planned):
         agent = sequence[index]
