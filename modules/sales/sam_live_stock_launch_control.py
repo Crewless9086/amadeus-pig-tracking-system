@@ -434,7 +434,8 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Stock: {_owner_card_stock_summary(decision)}",
         f"Price: {_owner_card_price_summary(decision)}",
         f"Missing: {_owner_card_missing_summary(decision)}",
-        f"Reply: {_owner_card_reply_source_summary(decision)}",
+        f"Draft source: {_owner_card_reply_source_summary(decision)}",
+        f"Policy: learning {'on' if _truthy(source.get('SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED', '1')) else 'off'}; meat {'open' if _truthy(source.get('SAM_MEAT_PUBLIC_OFFER_ENABLED')) else 'locked'}",
     ]
     flags = _owner_card_flags(event, review, decision)
     if flags:

@@ -78,6 +78,28 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(policy["owner_example_retrieval_env"], "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED")
         self.assertTrue(policy["intake_write_enabled"])
 
+    def test_policy_defaults_llm_model_and_owner_example_retrieval_on(self):
+        policy = sam_live_stock_runtime.sam_live_stock_webhook_policy(environ={
+            "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN": "test-sam-live-stock-token-32-chars",
+            "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+            "OPENAI_API_KEY": "test-key",
+        })
+
+        self.assertTrue(policy["llm_configured"])
+        self.assertTrue(policy["llm_enabled"])
+        self.assertEqual(policy["llm_default_model"], "gpt-4.1-mini")
+        self.assertTrue(policy["owner_example_retrieval_enabled"])
+        self.assertEqual(policy["owner_example_retrieval_default"], "enabled_unless_env_is_false")
+        self.assertFalse(policy["meat_public_offer_enabled"])
+
+    def test_policy_can_explicitly_disable_owner_example_retrieval(self):
+        policy = sam_live_stock_runtime.sam_live_stock_webhook_policy(environ={
+            "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED": "0",
+        })
+
+        self.assertFalse(policy["owner_example_retrieval_enabled"])
+
     def test_parse_chatwoot_inbound_ignores_outbound_messages(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(message_type="outgoing"))
 
@@ -260,6 +282,33 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("Riversdale", decision["suggested_reply_text"])
         self.assertIn("what you are interested in", decision["suggested_reply_text"])
         self.assertNotIn("are you looking for live pigs, pork", decision["suggested_reply_text"])
+
+    def test_general_farm_reply_does_not_publicly_offer_meat_until_enabled(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you tell me more about your business?", sender={"name": "Rudolf Kriel"}),
+            environ={"SAM_MEAT_PUBLIC_OFFER_ENABLED": "0"},
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertIn("Live pig sales", reply)
+        self.assertIn("Meat sales are not open yet", reply)
+        self.assertNotIn("Half carcass", reply)
+        self.assertNotIn("freezer", reply.lower())
+
+    def test_general_farm_reply_can_offer_meat_when_public_gate_enabled(self):
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you tell me more about your business?", sender={"name": "Rudolf Kriel"}),
+            environ={"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"},
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+        )
+
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertIn("Meat sales", reply)
 
     def test_general_picture_question_gets_specific_picture_followup(self):
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -702,7 +751,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertNotIn("message_type", history[0])
         self.assertEqual(result["sam_decision"]["read_context"]["chatwoot_history"]["message_count"], 4)
 
-    def test_llm_context_includes_owner_correction_examples_when_enabled(self):
+    def test_llm_context_includes_owner_correction_examples_by_default(self):
         calls = []
         owner_example_calls = []
 
@@ -728,7 +777,6 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             environ={
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
                 "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
-                "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED": "1",
                 "OPENAI_API_KEY": "test-key",
             },
             intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
@@ -747,6 +795,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("Riversdale", examples[0]["owner_reply_excerpt"])
         self.assertEqual(examples[0]["example_relevance_score"], 1.0)
         self.assertIn("owner_correction_examples", calls[0][0])
+        self.assertFalse(calls[0][0]["meat_public_offer_enabled"])
         self.assertEqual(owner_example_calls[0]["customer_message"], "How much for 1 piglet?")
 
     def test_llm_payload_long_history_remains_valid_json_with_rules(self):
