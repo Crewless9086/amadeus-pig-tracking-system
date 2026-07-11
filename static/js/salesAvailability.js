@@ -44,7 +44,11 @@ function formatNumber(value, decimals = 2) {
 function buildSalesCard(pig) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
-  card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
+  const params = new URLSearchParams({
+    return_to: "/sales-dashboard",
+    return_label: "Back to Sales Dashboard",
+  });
+  card.href = `/pig/${encodeURIComponent(pig.pig_id)}?${params.toString()}`;
 
   const topRow = document.createElement("div");
   topRow.className = "pig-list-top";

@@ -2218,6 +2218,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Latest Weight Date", js)
         self.assertIn("pig.last_weight_date", js)
         self.assertIn("No weight date", js)
+        self.assertIn('return_to: "/sales-dashboard"', js)
+        self.assertIn('return_label: "Back to Sales Dashboard"', js)
 
     def test_purpose_review_page_is_herdmaster_owner_approval_queue(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
