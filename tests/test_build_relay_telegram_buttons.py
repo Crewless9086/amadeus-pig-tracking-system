@@ -39,6 +39,31 @@ def enabled_env():
     }
 
 
+def live_loader(status="", limit=5, compact=True):
+    return {
+        "success": True,
+        "status": "ok",
+        "missions": [
+            {
+                "mission_id": "CHARLIE-MISSION-BLOCKED-001",
+                "status": "blocked",
+                "title": "Fix SAM live stock useful replies",
+                "raw_text": "",
+            },
+            {
+                "mission_id": "CHARLIE-MISSION-READY-002",
+                "status": "pr_ready",
+                "title": "Review loading sheet release",
+                "raw_text": "",
+            },
+        ],
+    }, 200
+
+
+def empty_live_loader(status="", limit=5, compact=True):
+    return {"success": True, "status": "ok", "missions": []}, 200
+
+
 class BuildRelayTelegramButtonsTests(unittest.TestCase):
     def test_disabled_flow_does_nothing(self):
         client = FakeTelegramClient()
@@ -70,9 +95,48 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
             self.assertEqual(result.action, "sent_next_menu")
             self.assertEqual(len(client.messages), 1)
             self.assertIn("CHARLIE NEXT MISSIONS", client.messages[0]["text"])
+            self.assertIn("Source: fallback docs menu", client.messages[0]["text"])
             keyboard = client.messages[0]["reply_markup"]["inline_keyboard"]
             self.assertEqual(len(keyboard), 5)
             self.assertEqual(keyboard[0][0]["callback_data"], "charlie_next:1")
+
+    def test_next_prefers_live_supabase_mission_queue(self):
+        client = FakeTelegramClient()
+
+        result = build_relay_telegram_buttons.handle_update(
+            {"message": {"text": "/next", "from": {"id": 1001}, "chat": {"id": 1001}}},
+            environ=enabled_env(),
+            client=client,
+            option_source_loader=live_loader,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.action, "sent_next_menu")
+        text = client.messages[0]["text"]
+        self.assertIn("Source: live Supabase CHARLIE mission queue", text)
+        self.assertIn("[P0] BLOCKED: Fix SAM live stock useful replies", text)
+        self.assertIn("[P0] PR_READY: Review loading sheet release", text)
+        self.assertNotIn("Fix SAM useful livestock replies", text)
+        keyboard = client.messages[0]["reply_markup"]["inline_keyboard"]
+        self.assertEqual(len(keyboard), 2)
+
+    def test_next_falls_back_to_docs_when_live_queue_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            next_steps = Path(tmp) / "NEXT_STEPS.md"
+            next_steps.write_text(NEXT_STEPS, encoding="utf-8")
+            client = FakeTelegramClient()
+
+            result = build_relay_telegram_buttons.handle_update(
+                {"message": {"text": "/next", "from": {"id": 1001}, "chat": {"id": 1001}}},
+                environ=enabled_env(),
+                client=client,
+                next_steps_path=next_steps,
+                option_source_loader=empty_live_loader,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertIn("Source: fallback docs menu", client.messages[0]["text"])
+            self.assertIn("Fix SAM useful livestock replies", client.messages[0]["text"])
 
     def test_unauthorized_next_is_ignored(self):
         client = FakeTelegramClient()
@@ -109,6 +173,7 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
                 client=client,
                 next_steps_path=next_steps,
                 codex_chat_path=codex_chat,
+                option_source_loader=empty_live_loader,
             )
 
             self.assertTrue(result.ok)
@@ -120,6 +185,33 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
             archived = list((root / ".archive").glob("*.CODEX_CHAT.md"))
             self.assertEqual(len(archived), 1)
             self.assertIn("old owner note", archived[0].read_text(encoding="utf-8"))
+
+    def test_callback_writes_live_mission_to_codex_chat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex_chat = root / "CODEX_CHAT.md"
+            client = FakeTelegramClient()
+
+            result = build_relay_telegram_buttons.handle_update(
+                {
+                    "callback_query": {
+                        "id": "cb1",
+                        "data": "charlie_next:1",
+                        "from": {"id": 1001},
+                        "message": {"chat": {"id": 1001}},
+                    }
+                },
+                environ=enabled_env(),
+                client=client,
+                codex_chat_path=codex_chat,
+                option_source_loader=live_loader,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.action, "selected_mission")
+            written = codex_chat.read_text(encoding="utf-8")
+            self.assertIn("BLOCKED: Fix SAM live stock useful replies", written)
+            self.assertIn("Selected through CHARLIE Telegram /next from supabase_charlie_missions.", written)
 
     def test_invalid_callback_does_not_write_codex_chat(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -142,6 +234,7 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
                 client=client,
                 next_steps_path=next_steps,
                 codex_chat_path=codex_chat,
+                option_source_loader=empty_live_loader,
             )
 
             self.assertFalse(result.ok)
@@ -172,4 +265,3 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

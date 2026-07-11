@@ -23,6 +23,18 @@ from scripts import build_relay_notify, codex_next_steps
 
 
 CALLBACK_PREFIX = "charlie_next:"
+LIVE_SOURCE = "supabase_charlie_missions"
+FALLBACK_SOURCE = "next_steps_fallback"
+STATUS_PRIORITY = {
+    "blocked": "P0",
+    "pr_ready": "P0",
+    "release_approved": "P0",
+    "release_in_progress": "P0",
+    "in_progress": "P0",
+    "approved": "P1",
+    "new": "P1",
+    "paused": "P2",
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,13 @@ class ButtonFlowResult:
             "selected_option": self.selected_option,
             "selected_title": self.selected_title,
         }
+
+
+@dataclass(frozen=True)
+class OptionSource:
+    options: list[codex_next_steps.MissionOption]
+    source: str
+    status: str = "ok"
 
 
 class TelegramButtonClient:
@@ -98,8 +117,12 @@ def _keyboard_for_options(options: list[codex_next_steps.MissionOption]) -> dict
     return {"inline_keyboard": rows}
 
 
-def _options_message(options: list[codex_next_steps.MissionOption]) -> str:
+def _options_message(options: list[codex_next_steps.MissionOption], source: str = FALLBACK_SOURCE) -> str:
     lines = ["CHARLIE NEXT MISSIONS", "Select one mission to write into CODEX_CHAT."]
+    if source == LIVE_SOURCE:
+        lines.append("Source: live Supabase CHARLIE mission queue")
+    else:
+        lines.append("Source: fallback docs menu (Supabase unavailable or empty)")
     for option in options:
         lines.append(f"{option.index}. [{option.priority}] {option.title}")
     lines.append("")
@@ -114,6 +137,73 @@ def _client_from_env(environ: Mapping[str, str]) -> TelegramButtonClient:
     return TelegramButtonClient(token)
 
 
+def _mission_title(mission: Mapping[str, Any]) -> str:
+    title = str(mission.get("title") or "").strip()
+    raw_text = str(mission.get("raw_text") or "").strip()
+    mission_id = str(mission.get("mission_id") or "").strip()
+    status = str(mission.get("status") or "").strip().lower()
+    headline = title or raw_text or mission_id or "Untitled mission"
+    if len(headline) > 130:
+        headline = headline[:127].rstrip() + "..."
+    short_id = mission_id[-12:] if len(mission_id) > 12 else mission_id
+    prefix = f"{status.upper()}: " if status else ""
+    suffix = f" ({short_id})" if short_id else ""
+    return f"{prefix}{headline}{suffix}"
+
+
+def _missions_to_options(missions: list[Mapping[str, Any]], limit: int = 5) -> list[codex_next_steps.MissionOption]:
+    options: list[codex_next_steps.MissionOption] = []
+    for mission in missions[:limit]:
+        status = str(mission.get("status") or "").strip().lower()
+        priority = STATUS_PRIORITY.get(status, "P2")
+        title = _mission_title(mission)
+        options.append(codex_next_steps.MissionOption(len(options) + 1, priority, title, f"{mission.get('mission_id', '')}"))
+    return options
+
+
+def load_next_options(
+    *,
+    next_steps_path: Path = codex_next_steps.DEFAULT_NEXT_STEPS,
+    limit: int = 5,
+    mission_loader: Any | None = None,
+) -> OptionSource:
+    loader = mission_loader
+    if loader is None:
+        try:
+            from modules.charlie import mission_store
+
+            loader = mission_store.list_missions
+        except Exception:
+            loader = None
+
+    if loader is not None:
+        try:
+            payload, status_code = loader(status="owner_queue", limit=limit, compact=True)
+            missions = list((payload or {}).get("missions") or [])
+            if status_code == 200 and missions:
+                return OptionSource(_missions_to_options(missions, limit=limit), LIVE_SOURCE, "ok")
+        except Exception:
+            pass
+
+    return OptionSource(codex_next_steps.read_options(next_steps_path, limit=limit), FALLBACK_SOURCE, "fallback")
+
+
+def write_option_to_codex_chat(
+    option: codex_next_steps.MissionOption,
+    *,
+    codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
+    owner_intent: str = "",
+    archive: bool = True,
+) -> Path | None:
+    codex_chat_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_path = codex_next_steps.archive_existing(codex_chat_path) if archive else None
+    codex_chat_path.write_text(
+        codex_next_steps.render_code_chat(option, owner_intent=owner_intent),
+        encoding="utf-8",
+    )
+    return archive_path
+
+
 def handle_update(
     update: Mapping[str, Any],
     *,
@@ -121,6 +211,7 @@ def handle_update(
     client: Any | None = None,
     next_steps_path: Path = codex_next_steps.DEFAULT_NEXT_STEPS,
     codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
+    option_source_loader: Any | None = None,
 ) -> ButtonFlowResult:
     env = dict(os.environ if environ is None else environ)
     if not _is_enabled(env):
@@ -137,8 +228,8 @@ def handle_update(
             return ButtonFlowResult(ok=False, action="ignored", reason="unauthorized_user")
         if text.lower().split(maxsplit=1)[0] != "/next":
             return ButtonFlowResult(ok=True, action="ignored", reason="not_next_command")
-        options = codex_next_steps.read_options(next_steps_path, limit=5)
-        telegram.send_message(chat_id, _options_message(options), reply_markup=_keyboard_for_options(options))
+        source = load_next_options(next_steps_path=next_steps_path, limit=5, mission_loader=option_source_loader)
+        telegram.send_message(chat_id, _options_message(source.options, source.source), reply_markup=_keyboard_for_options(source.options))
         return ButtonFlowResult(ok=True, action="sent_next_menu")
 
     if "callback_query" in update:
@@ -165,11 +256,14 @@ def handle_update(
             return ButtonFlowResult(ok=False, action="invalid_callback", reason="invalid_option")
 
         try:
-            option, archive_path = codex_next_steps.write_selected_mission(
-                option_number,
-                next_steps_path=next_steps_path,
+            source = load_next_options(next_steps_path=next_steps_path, limit=5, mission_loader=option_source_loader)
+            if option_number < 1 or option_number > len(source.options):
+                raise ValueError(f"Invalid option {option_number}; expected 1-{len(source.options)}")
+            option = source.options[option_number - 1]
+            archive_path = write_option_to_codex_chat(
+                option,
                 codex_chat_path=codex_chat_path,
-                owner_intent="Selected through CHARLIE Telegram /next.",
+                owner_intent=f"Selected through CHARLIE Telegram /next from {source.source}.",
             )
         except (FileNotFoundError, ValueError) as exc:
             if callback_id:
