@@ -111,6 +111,7 @@ class CharlieTelegramRelayTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.action, "status_sent")
+        self.assertIn("reads live Supabase CHARLIE missions first", client.messages[0]["text"])
         self.assertIn("No Codex run", client.messages[0]["text"])
 
     def test_start_works(self):
@@ -152,7 +153,7 @@ class CharlieTelegramRelayTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(result.action, "selected_mission")
             self.assertIn("Fix SAM livestock reply usefulness", codex_chat.read_text(encoding="utf-8"))
-            self.assertEqual(client.answers[0]["text"], "Mission written to CODEX_CHAT.")
+            self.assertEqual(client.answers[0]["text"], "Manual handoff written.")
 
     def test_invalid_callback_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

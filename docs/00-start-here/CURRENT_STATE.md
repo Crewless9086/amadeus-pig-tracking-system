@@ -58,12 +58,13 @@ Render deploys from `main` unless the service configuration says otherwise.
 
 ## Mission Loop Foundation
 
-- Branch `mission-loop-foundation` adds the local CHARLIE Mission Loop foundation: mission contract, Windows verify gate, trust ledger skeleton, budget guard placeholder, safe Build Relay notification stub, and NEXT_STEPS-to-CODEX_CHAT helper.
-- This foundation makes no Claude/Fable/GLM/OpenRouter calls, sends no live Telegram messages unless explicitly enabled/configured, and performs no production data writes.
+- Branch `mission-loop-foundation` adds the local CHARLIE Mission Loop foundation: mission contract, Windows verify gate, trust ledger skeleton, budget guard placeholder, safe Build Relay notification stub, and manual NEXT_STEPS-to-CODEX_CHAT fallback helper.
+- This foundation makes no Claude/Fable/GLM/OpenRouter/GPT-5.6 calls, sends no live Telegram messages unless explicitly enabled/configured, and performs no production data writes.
 - `scripts/verify_mission.ps1` is the local final gate for this layer and refuses forbidden staged files such as `.env`, `.claude/`, `external_sources/`, `screenshots/`, `static/assets/`, `test-results/`, and `planning/Prompts.md`.
 - Trust starts in `watch` tier in `loop/memory/trust.tsv`; later layers must earn `queue` or `auto` via logged deterministic passes.
-- MISSION-LOOP-5 adds the owner Telegram `/next` button flow on top of the foundation. It prepares `planning/CODEX_CHAT.md` only; it does not start Codex, schedule work, auto-merge, call model APIs, or perform production writes.
-- MISSION-LOOP-6 adds the local live Telegram relay smoke runner and deterministic model budget gate skeleton. The relay supports `/start`, `/status`, `/next`, and mission-selection callbacks for allowed owners only. The budget gate still keeps model APIs disabled by default.
+- MISSION-LOOP-5/6 add the owner Telegram `/next` button flow and local live relay. `/next` reads live Supabase `charlie_missions` first and falls back to `NEXT_STEPS.md` only when Supabase is unavailable or empty; the current CODEX_CHAT write is a manual transitional handoff, not primary mission state.
+- MISSION-LOOP-6 adds the deterministic model budget gate skeleton. GPT-5.6 Sol/Terra/Luna routing is planned but disabled; no model APIs are called by the relay or mission loop.
+- MISSION-LOOP-6.5 alignment sets the architecture rule: Supabase CHARLIE CORE is authoritative, Telegram controls CORE, `CODEX_CHAT.md` is manual/debug fallback only, and Loop 7A must use Supabase `mission_id` action cards instead of file-first handoffs.
 
 ## Active Branches / PRs
 
