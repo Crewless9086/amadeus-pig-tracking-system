@@ -1,8 +1,8 @@
 """Telegram button flow for the CHARLIE Mission Loop.
 
 This module handles the Loop 5 owner flow:
-- /next reads NEXT_STEPS.md and sends the top five mission options as buttons.
-- a button callback writes the selected mission into CODEX_CHAT.md and confirms.
+- /next reads live Supabase CHARLIE missions first, with NEXT_STEPS.md as fallback.
+- the current callback writes a manual CODEX_CHAT handoff as a transitional bridge.
 
 It does not run Codex, call model APIs, schedule work, merge PRs, or perform
 production data writes.
@@ -118,7 +118,7 @@ def _keyboard_for_options(options: list[codex_next_steps.MissionOption]) -> dict
 
 
 def _options_message(options: list[codex_next_steps.MissionOption], source: str = FALLBACK_SOURCE) -> str:
-    lines = ["CHARLIE NEXT MISSIONS", "Select one mission to write into CODEX_CHAT."]
+    lines = ["CHARLIE NEXT MISSIONS", "Select one live mission for CHARLIE CORE handoff."]
     if source == LIVE_SOURCE:
         lines.append("Source: live Supabase CHARLIE mission queue")
     else:
@@ -126,7 +126,8 @@ def _options_message(options: list[codex_next_steps.MissionOption], source: str 
     for option in options:
         lines.append(f"{option.index}. [{option.priority}] {option.title}")
     lines.append("")
-    lines.append("No Codex run starts from this button. It only prepares the active mission file.")
+    lines.append("No Codex run starts from this button.")
+    lines.append("Current Loop 6.5 behavior: writes a manual CODEX_CHAT handoff only; Loop 7A will use mission_id action cards.")
     return build_relay_notify.redact_secrets("\n".join(lines))
 
 
@@ -188,7 +189,7 @@ def load_next_options(
     return OptionSource(codex_next_steps.read_options(next_steps_path, limit=limit), FALLBACK_SOURCE, "fallback")
 
 
-def write_option_to_codex_chat(
+def write_manual_codex_handoff(
     option: codex_next_steps.MissionOption,
     *,
     codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
@@ -260,10 +261,10 @@ def handle_update(
             if option_number < 1 or option_number > len(source.options):
                 raise ValueError(f"Invalid option {option_number}; expected 1-{len(source.options)}")
             option = source.options[option_number - 1]
-            archive_path = write_option_to_codex_chat(
+            archive_path = write_manual_codex_handoff(
                 option,
                 codex_chat_path=codex_chat_path,
-                owner_intent=f"Selected through CHARLIE Telegram /next from {source.source}.",
+                owner_intent=f"Manual transitional CODEX_CHAT handoff selected through CHARLIE Telegram /next from {source.source}.",
             )
         except (FileNotFoundError, ValueError) as exc:
             if callback_id:
@@ -271,13 +272,13 @@ def handle_update(
             return ButtonFlowResult(ok=False, action="selection_failed", reason=str(exc))
 
         if callback_id:
-            telegram.answer_callback_query(callback_id, "Mission written to CODEX_CHAT.")
+            telegram.answer_callback_query(callback_id, "Manual handoff written.")
         archive_line = f"\nArchived previous CODEX_CHAT: {archive_path}" if archive_path else ""
         telegram.send_message(
             chat_id,
             build_relay_notify.redact_secrets(
                 f"CHARLIE mission selected\nOption: {option.index}\nPriority: {option.priority}\nMission: {option.title}"
-                f"\nCODEX_CHAT updated: {codex_chat_path}{archive_line}"
+                f"\nManual CODEX_CHAT handoff updated: {codex_chat_path}{archive_line}"
             ),
         )
         return ButtonFlowResult(

@@ -64,10 +64,10 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P2 Current Build
 
-- MISSION-LOOP-1/4 foundation: contract, verify script, trust ledger utility, budget placeholder, safe Telegram notification stub, and NEXT_STEPS/CODEX_CHAT local helper. No live model APIs, no scheduler, no production data writes.
-- MISSION-LOOP-5 merged: Telegram `/next` button flow reads `NEXT_STEPS.md`, sends top-five mission buttons, writes the selected mission into `planning/CODEX_CHAT.md`, and confirms the selection. No model APIs, no scheduler, no auto-merge.
-- MISSION-LOOP-6 active: local live Telegram relay smoke runner plus deterministic model budget gate skeleton. No model APIs, no scheduler, no Codex auto-run from Telegram.
-- Next mission-loop layer after Loop 6: either Loop 7A local Codex runner pickup from CODEX_CHAT, or Loop 7B cheap model triage only after the budget gate is enforced.
+- MISSION-LOOP-1/4 foundation: contract, verify script, trust ledger utility, budget placeholder, safe Telegram notification stub, and manual NEXT_STEPS/CODEX_CHAT fallback helper. No live model APIs, no scheduler, no production data writes.
+- MISSION-LOOP-5/6 merged: Telegram `/next` reads live Supabase `charlie_missions` first, falls back to `NEXT_STEPS.md` only when Supabase is unavailable or empty, and currently writes a manual transitional `planning/CODEX_CHAT.md` handoff. No model APIs, no scheduler, no auto-merge.
+- MISSION-LOOP-6.5 active: align docs/tests/naming so Supabase CHARLIE CORE is the authoritative mission system; CODEX_CHAT is manual/debug fallback only; GPT-5.6 Sol/Terra/Luna routing is planned but disabled behind budget and trust gates.
+- Next mission-loop layer after Loop 6.5: Loop 7A Supabase `mission_id` Telegram action cards and owner-safe mission actions. Do not build new primary workflow around CODEX_CHAT.
 - CHARLIE-RELAY-0: safe owner-only Telegram build relay foundation. Scope: policy, webhook secret, owner allowlist, `/status`, `/next`, `/mission`, optional CODEX_CHAT intake write, tests, and plan doc. No dangerous runtime authority.
 - CHARLIE-RELAY-1/3 active: add owner notification helper and durable Supabase mission queue so Telegram mission intake is not dependent on Render filesystem writes.
 - CHARLIE-RELAY-4 active: shared mission protocol and safe command-console decisions. Telegram and `planning/CODEX_CHAT.md` must follow `CHARLIE_MISSION_PROTOCOL.md`.

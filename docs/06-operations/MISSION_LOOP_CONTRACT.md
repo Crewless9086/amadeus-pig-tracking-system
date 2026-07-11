@@ -7,12 +7,15 @@ This contract defines the foundation rules for running CHARLIE mission-loop work
 ## Operating Model
 
 - Codex is the primary builder.
-- CHARLIE Build Relay is the mission controller.
+- CHARLIE CORE and the Supabase `charlie_missions` store are the authoritative mission system.
+- CHARLIE Build Relay is the owner remote-control layer for CHARLIE CORE, not a parallel mission system.
 - Telegram is the owner remote-control channel.
-- `docs/00-start-here/NEXT_STEPS.md` is the mission menu.
-- `planning/CODEX_CHAT.md` is the active mission file.
+- `docs/00-start-here/NEXT_STEPS.md` is planning backlog and fallback menu only when Supabase is unavailable or empty.
+- `planning/CODEX_CHAT.md` is manual/local/debug handoff only, not the primary mission state.
 - `docs/00-start-here/CURRENT_STATE.md` is current truth.
 - Scripts and tests are the final gate. No model may claim a mission is done unless the verify gate passes.
+- Mission Loop must not create a parallel mission system. Supabase CHARLIE CORE mission state is authoritative.
+- File-based mission handoffs are fallback/manual only and may not be used as the default action path once Supabase mission context is available.
 
 ## Authority Levels
 
@@ -88,6 +91,22 @@ These files or paths must not be staged unless the mission explicitly approves t
 - Cheap models may be added later only as read-only triage or low-risk workers behind budget gates.
 - Future model integrations must pass `scripts/model_budget_guard.py` before any provider call is attempted.
 - If the budget file is missing, disabled, or over cap, model work must stop before any Claude/Fable/GLM/OpenRouter request.
+
+## GPT-5.6 Family Alignment
+
+GPT-5.6 routing is planned but disabled. Sol, Terra, and Luna are future support modules behind the budget gate and trust ledger. Loop 6.5 performs alignment only; no live model calls are allowed.
+
+- GPT-5.6 Luna is the future cheap triage/summariser for docs summaries, log compression, mission triage, and low-risk status classification.
+- GPT-5.6 Terra is the future balanced planner/reviewer for normal mission planning, normal PR review, and medium-risk implementation guidance.
+- GPT-5.6 Sol is reserved for high-value reasoning: architecture, security/auth review, Supabase migration review, repeated P0 failure analysis, and complex code review.
+- Codex remains the primary builder.
+- Supabase CHARLIE CORE remains the source of truth.
+- Telegram remains the owner remote-control channel.
+- No model may approve its own work.
+- The verify script remains the final gate.
+- Trust ledger tier and budget guard approval are required before any future live model call.
+- Red-zone tasks still require owner approval regardless of model recommendation.
+- No full-repo prompt is sent to GPT-5.6 by default; future calls must use scoped mission specs, relevant files, diffs, logs, and exact questions.
 
 ## Confidence Gate
 

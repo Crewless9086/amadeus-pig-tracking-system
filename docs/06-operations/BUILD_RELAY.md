@@ -46,18 +46,28 @@ python scripts/build_relay_notify.py DONE --mission-id MISSION-123 --title "Foun
 
 Enabled production usage is a later owner-approved layer. This foundation only proves the format, redaction, and guard behavior.
 
+## Mission Source Of Truth
+
+CHARLIE CORE and Supabase `charlie_missions` are the primary mission system. Telegram relay features must control or inspect that mission state instead of creating a second file-first workflow.
+
+- `/next` reads the live Supabase owner queue first.
+- `docs/00-start-here/NEXT_STEPS.md` is fallback/planning only when Supabase is unavailable or empty.
+- `planning/CODEX_CHAT.md` is manual/local/debug handoff only.
+- Loop 7A must move Telegram callbacks to Supabase `mission_id` action cards. New primary features must not write CODEX_CHAT as their normal path.
+
 ## Loop 5 Button Flow
 
 `scripts/build_relay_telegram_buttons.py` adds the safe `/next` owner flow:
 
 1. Owner sends `/next`.
-2. The handler reads `docs/00-start-here/NEXT_STEPS.md`.
-3. It sends the top five P0/P1/P2 mission options as inline buttons.
-4. Owner clicks one option.
-5. The selected option is written to `planning/CODEX_CHAT.md` through `scripts/codex_next_steps.py`.
-6. The bot sends a confirmation.
+2. The handler reads the Supabase `charlie_missions` owner queue first.
+3. If Supabase is unavailable or empty, it falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the fallback.
+4. It sends the top five mission options as inline buttons.
+5. Owner clicks one option.
+6. Current transitional behavior writes a manual `planning/CODEX_CHAT.md` handoff through `scripts/codex_next_steps.py`.
+7. The bot sends a confirmation.
 
-This layer still does not run Codex, start a scheduler, merge PRs, call model APIs, or perform production data writes. It only prepares the active mission file.
+This layer still does not run Codex, start a scheduler, merge PRs, call model APIs, or perform production data writes. The CODEX_CHAT write is a transitional manual handoff, not the future primary mission-control path.
 
 The handler is testable through injected clients. Unit tests never send real Telegram messages.
 
@@ -90,7 +100,7 @@ Supported commands:
 - `/start` confirms the relay is online.
 - `/status` shows relay safety status.
 - `/next` reads the live Supabase `charlie_missions` owner queue first and sends the top five actionable missions as buttons.
-- Button selection writes the chosen mission into `planning/CODEX_CHAT.md` and confirms.
+- Button selection currently writes a manual `planning/CODEX_CHAT.md` handoff and confirms. Loop 7A replaces this with Supabase `mission_id` action cards.
 
 Safety boundaries:
 
@@ -108,6 +118,16 @@ Safety boundaries:
 - no scheduler, auto-merge, production data write, or customer send is enabled.
 
 If Supabase is unavailable or the live owner queue is empty, `/next` falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the message as `Source: fallback docs menu`. The fallback is only a backup; the live mission queue is the preferred source of truth.
+
+## GPT-5.6 Family Alignment
+
+GPT-5.6 routing is planned but disabled. Sol, Terra, and Luna are future support modules behind the budget gate and trust ledger. Loop 6.5 performs alignment only; no live model calls are allowed.
+
+- GPT-5.6 Luna: future cheap triage, summaries, log compression, and low-risk classification.
+- GPT-5.6 Terra: future balanced mission planning, normal PR review, and medium-risk guidance.
+- GPT-5.6 Sol: future high-risk architecture, security, Supabase migration review, and repeated P0 failure analysis.
+
+No Telegram action triggers GPT-5.6, Claude, Fable, GLM, OpenRouter, or any other model provider in Loop 6.5. Future model calls must pass the budget gate, trust ledger, owner authority rules, and the final verify gate.
 
 ## Duplicate Message Troubleshooting
 

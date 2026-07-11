@@ -229,7 +229,8 @@ def status_text(config: RelayConfig) -> str:
             "CHARLIE relay status",
             f"Relay: {relay_state}",
             f"Allowed owners configured: {len(config.allowed_user_ids)}",
-            "Actions: /next prepares CODEX_CHAT only.",
+            "Actions: /next reads live Supabase CHARLIE missions first.",
+            "Current selection behavior writes a manual CODEX_CHAT handoff only until Loop 7A mission_id action cards.",
             "No Codex run, shell command, model API, scheduler, or auto-merge is enabled.",
         ]
     )
