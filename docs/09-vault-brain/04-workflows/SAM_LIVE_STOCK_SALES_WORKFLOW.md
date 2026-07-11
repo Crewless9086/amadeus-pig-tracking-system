@@ -28,7 +28,7 @@ Mixed meat/live-stock language must clarify before proceeding. Example: `I want 
 5. Load existing conversation/order-intake memory when the backend runtime exists.
 6. Read current availability from backend source truth.
 7. Prepare advisory next action, owner packet, or safe draft reply.
-8. If all facts, full availability, and active pricing are present, SAM may create a draft order through the backend order rail.
+8. If all facts, full availability, and active pricing are present, SAM may create a draft order through the backend order rail, or update the existing `draft_order_id` when conversation memory already has one.
 9. Backend/owner gates decide whether reservation, quote, customer send, or payment-dependent actions may happen.
 10. Append learning evidence after blocked, unclear, rejected, or corrected outcomes.
 11. If the customer becomes hostile, repeatedly demands the exact farm location, calls the farm a scam, or aggressively challenges pricing, SAM should close politely, stop replying, and escalate/log the conversation for owner visibility.
@@ -51,6 +51,7 @@ Before a live-stock draft order can be prepared:
 ## Hard Gates
 
 - Draft order auto-create is allowed only when the draft gate passes.
+- Existing `draft_order_id` must be reused and line-synced; repeated qualified conversation turns must not create duplicate draft orders.
 - No automatic stock reservation.
 - No customer may be told a pig is held unless backend reservation succeeds.
 - Price source is `public.sales_pricing`, inherited from `SALES_PRICING`, edited through `/sales/sam-pricing`, and resolved by effective date.

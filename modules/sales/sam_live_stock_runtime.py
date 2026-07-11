@@ -12,6 +12,7 @@ from modules.orders.order_intake_service import (
     update_intake_state,
     validate_intake_update_payload,
 )
+from modules.orders.order_line_sync import sync_order_lines_from_request
 from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
 from modules.pig_weights.pig_weights_service import get_sales_availability
@@ -126,6 +127,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     availability_loader=None,
     intake_writer=None,
     draft_order_creator=None,
+    draft_order_syncer=None,
     llm_drafter=None,
     owner_example_loader=None,
 ):
@@ -206,6 +208,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         decision,
         source,
         draft_order_creator=draft_order_creator,
+        draft_order_syncer=draft_order_syncer,
     )
     if draft_order.get("attempted"):
         decision["draft_order"] = draft_order
@@ -221,6 +224,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         if not draft_order.get("success"):
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
+            _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decision, draft_order)
     return {
         "success": True,
         "status": "sam_live_stock_read_only_processed",
@@ -230,7 +234,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         "policy": policy,
         **_authority_flags(
             writes_order_intake=bool(intake_write.get("success")),
-            creates_order=bool(draft_order.get("success")),
+            creates_order=bool(draft_order.get("success") and draft_order.get("created_order")),
         ),
     }, 200
 
@@ -936,6 +940,38 @@ def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, dra
     )
 
 
+def _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decision, draft_order):
+    draft_order = draft_order if isinstance(draft_order, dict) else {}
+    order_id = _clean(draft_order.get("reused_draft_order_id"), 100)
+    if not order_id:
+        return
+    status = _clean(draft_order.get("status"), 120)
+    if status != "sam_live_stock_draft_order_sync_stale_stock":
+        return
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
+    plan = {
+        **plan,
+        "next_action": "sync_lines",
+        "stage": "draft_order",
+        "order_state": {**order_state, "draft_order_id": order_id},
+    }
+    decision["conversation_plan"] = plan
+    decision["next_action"] = "sync_lines"
+    decision["conversation_stage"] = "draft_order"
+    packet = build_live_stock_prepared_owner_action_bundle(
+        inbound,
+        facts,
+        plan,
+        decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {},
+        decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
+    )
+    packet["status"] = "blocked_until_stock_revalidated"
+    packet["label"] = "Recheck draft order stock"
+    packet["detail"] = "Latest draft-order line sync was not fully fulfilled. Recheck stock before preparing a quote."
+    decision["owner_action_packet"] = packet
+
+
 def write_live_stock_draft_order_link_to_intake(inbound, facts, draft_order, decision=None, intake_writer=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
@@ -1215,7 +1251,14 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
     }
 
 
-def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=None, draft_order_creator=None):
+def create_live_stock_draft_order_if_enabled(
+    inbound,
+    facts,
+    decision,
+    environ=None,
+    draft_order_creator=None,
+    draft_order_syncer=None,
+):
     source = environ if environ is not None else os.environ
     if not _truthy(source.get(DRAFT_ORDER_CREATE_ENABLED_ENV)):
         return {"attempted": False, "success": False, "status": "sam_live_stock_draft_order_create_disabled"}
@@ -1235,8 +1278,53 @@ def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=N
             "status": "sam_live_stock_draft_order_not_ready",
             "packet": packet,
         }
+    existing_draft_order_id = _existing_draft_order_id_from_decision(decision)
     order_validation = validate_new_order_payload(packet["order_payload"])
     sync_validation = validate_sync_order_lines_payload(packet["sync_payload"])
+    if existing_draft_order_id and not sync_validation.get("is_valid"):
+        return {
+            "attempted": True,
+            "success": False,
+            "status": "sam_live_stock_draft_order_validation_failed",
+            "errors": list(sync_validation.get("errors") or []),
+            "packet": packet,
+            "existing_draft_order_id": existing_draft_order_id,
+        }
+    if existing_draft_order_id:
+        try:
+            syncer = draft_order_syncer or sync_order_lines_from_request
+            result = syncer(existing_draft_order_id, sync_validation["cleaned_data"])
+            sync_success = bool((result or {}).get("success"))
+            complete_fulfillment = (result or {}).get("complete_fulfillment")
+            if sync_success and complete_fulfillment is not True:
+                return {
+                    "attempted": True,
+                    "success": False,
+                    "status": "sam_live_stock_draft_order_sync_stale_stock",
+                    "result": result,
+                    "packet": packet,
+                    "created_order": False,
+                    "reused_draft_order_id": existing_draft_order_id,
+                }
+            return {
+                "attempted": True,
+                "success": sync_success,
+                "status": "sam_live_stock_draft_order_synced" if sync_success else "sam_live_stock_draft_order_sync_failed",
+                "result": result,
+                "packet": packet,
+                "created_order": False,
+                "reused_draft_order_id": existing_draft_order_id,
+            }
+        except Exception as exc:
+            return {
+                "attempted": True,
+                "success": False,
+                "status": "sam_live_stock_draft_order_sync_exception",
+                "error": _clean(str(exc), 240),
+                "packet": packet,
+                "created_order": False,
+                "reused_draft_order_id": existing_draft_order_id,
+            }
     if not order_validation.get("is_valid") or not sync_validation.get("is_valid"):
         return {
             "attempted": True,
@@ -1254,6 +1342,7 @@ def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=N
             "status": "sam_live_stock_draft_order_created" if (result or {}).get("success") else "sam_live_stock_draft_order_create_failed",
             "result": result,
             "packet": packet,
+            "created_order": bool((result or {}).get("success")),
         }
     except Exception as exc:
         return {
@@ -1263,6 +1352,13 @@ def create_live_stock_draft_order_if_enabled(inbound, facts, decision, environ=N
             "error": _clean(str(exc), 240),
             "packet": packet,
         }
+
+
+def _existing_draft_order_id_from_decision(decision):
+    decision = decision if isinstance(decision, dict) else {}
+    plan = decision.get("conversation_plan") if isinstance(decision.get("conversation_plan"), dict) else {}
+    order_state = plan.get("order_state") if isinstance(plan.get("order_state"), dict) else {}
+    return _clean(order_state.get("draft_order_id") or order_state.get("order_id"), 100)
 
 
 def build_live_stock_owner_action_packet(order_id="", conversation_id="", document_id=""):

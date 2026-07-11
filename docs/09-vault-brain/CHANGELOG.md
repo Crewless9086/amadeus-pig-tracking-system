@@ -3,6 +3,7 @@
 ## 2026-07-10
 
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
+- Clarified the SAM Live Stock draft-order workflow: when conversation memory already has a `draft_order_id`, SAM must reuse it and sync draft lines instead of creating a duplicate draft order before quote preparation.
 
 ## 2026-07-09
 
