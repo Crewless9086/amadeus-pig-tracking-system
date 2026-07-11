@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CHARLIE Agent Workforce</title>
+  <style>
+    :root {
+      --ink: #171a18;
+      --muted: #69736d;
+      --line: #d9dfdb;
+      --paper: #f4f6f3;
+      --surface: #ffffff;
+      --green: #176b4b;
+      --green-soft: #e2f1e9;
+      --amber: #a9620a;
+      --amber-soft: #fff0d8;
+      --red: #a43c34;
+      --red-soft: #f9e7e4;
+      --blue: #2d657b;
+      --blue-soft: #e2eff4;
+      --charcoal: #202724;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    button, a { font: inherit; }
+    button { cursor: pointer; }
+    .app {
+      height: 100vh;
+      min-height: 720px;
+      display: grid;
+      grid-template-rows: 64px 76px minmax(0, 1fr) 42px;
+      overflow: hidden;
+    }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
+      align-items: center;
+      gap: 20px;
+      padding: 0 22px;
+      color: #fff;
+      background: var(--charcoal);
+      border-bottom: 3px solid #e8b44c;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-mark {
+      width: 34px; height: 34px; display: grid; place-items: center;
+      border-radius: 6px; background: #e8b44c; color: var(--charcoal); font-weight: 850; font-size: 13px;
+    }
+    .brand h1 { margin: 0; font-size: 17px; line-height: 1.1; }
+    .brand p { margin: 3px 0 0; color: #bfc9c3; font-size: 11px; }
+    .view-tabs { display: flex; align-items: center; gap: 4px; }
+    .view-tabs a {
+      color: #cfd8d3; text-decoration: none; padding: 8px 12px; border-radius: 5px; font-size: 12px; font-weight: 700;
+    }
+    .view-tabs a.active { color: #fff; background: rgba(255,255,255,.12); }
+    .top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+    .icon-button, .text-button {
+      border: 1px solid rgba(255,255,255,.22); color: #fff; background: transparent; border-radius: 5px; min-height: 34px;
+    }
+    .icon-button { width: 36px; font-size: 18px; }
+    .text-button { padding: 0 11px; font-size: 12px; font-weight: 750; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #e8b44c; display: inline-block; margin-right: 6px; }
+    .summary-strip {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--surface); border-bottom: 1px solid var(--line);
+    }
+    .summary-item { padding: 13px 20px; border-right: 1px solid var(--line); min-width: 0; }
+    .summary-item:last-child { border-right: 0; }
+    .summary-label { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .summary-value { margin-top: 4px; font-size: 22px; font-weight: 800; line-height: 1; }
+    .summary-note { margin-top: 4px; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .workspace {
+      min-height: 0; display: grid; grid-template-columns: minmax(250px, 28%) minmax(440px, 46%) minmax(280px, 26%);
+      background: var(--surface);
+    }
+    .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+    .panel:last-child { border-right: 0; }
+    .panel-head { min-height: 62px; padding: 14px 17px 10px; border-bottom: 1px solid var(--line); }
+    .panel-head-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .panel-title { margin: 0; font-size: 13px; font-weight: 850; }
+    .panel-sub { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .small-badge { padding: 4px 7px; border-radius: 4px; background: #edf0ee; font-size: 9px; font-weight: 850; white-space: nowrap; }
+    .agent-list { min-height: 0; overflow: auto; padding: 7px 0; }
+    .agent-row {
+      width: 100%; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid #edf0ee; background: #fff;
+      display: grid; grid-template-columns: 42px minmax(0, 1fr) 54px; gap: 10px; align-items: center; padding: 9px 13px; text-align: left;
+    }
+    .agent-row:hover { background: #f7f9f7; }
+    .agent-row.active { border-left-color: var(--green); background: var(--green-soft); }
+    .agent-avatar { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: #e8ece9; }
+    .agent-avatar.fallback { display: grid; place-items: center; color: #fff; background: var(--blue); font-size: 12px; font-weight: 850; }
+    .agent-name { font-size: 12px; font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-meta { margin-top: 3px; color: var(--muted); font-size: 9px; text-transform: uppercase; font-weight: 750; }
+    .mini-track { margin-top: 6px; height: 4px; background: #e5e9e6; overflow: hidden; border-radius: 2px; }
+    .mini-track span { display: block; height: 100%; background: var(--green); }
+    .agent-score { text-align: right; font-size: 12px; font-weight: 850; }
+    .agent-score small { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; font-weight: 700; }
+    .map-wrap { flex: 1; min-height: 0; overflow: auto; padding: 15px 20px 20px; background: #f7f9f7; }
+    .system-map { min-height: 100%; display: grid; grid-template-rows: auto auto auto auto; align-content: center; gap: 18px; }
+    .map-tier { position: relative; display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; }
+    .map-tier + .map-tier::before {
+      content: ""; position: absolute; width: 1px; height: 18px; background: #aeb8b2; top: -18px; left: 50%;
+    }
+    .map-node {
+      position: relative; min-width: 98px; max-width: 135px; min-height: 48px; border: 1px solid #ccd4cf; border-radius: 6px;
+      background: #fff; padding: 8px 9px; text-align: left; box-shadow: 0 2px 8px rgba(26, 37, 31, .05);
+    }
+    button.map-node:hover { border-color: var(--green); }
+    .map-node.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(23,107,75,.13); }
+    .map-node.command { background: var(--charcoal); color: #fff; border-color: var(--charcoal); min-width: 145px; }
+    .map-node.owner { background: #e8b44c; border-color: #d39d30; color: #241d10; }
+    .map-node.system { background: var(--blue-soft); border-color: #b9d2dc; }
+    .node-name { display: block; font-size: 10px; font-weight: 850; }
+    .node-state { display: block; margin-top: 3px; font-size: 8px; color: var(--muted); text-transform: uppercase; font-weight: 750; }
+    .map-node.command .node-state { color: #c5d0ca; }
+    .node-indicator { position: absolute; right: 7px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: #99a39d; }
+    .node-indicator.measured { background: #35a36f; }
+    .map-caption { text-align: center; color: var(--muted); font-size: 9px; max-width: 520px; margin: -4px auto 0; }
+    .detail-body { min-height: 0; overflow: auto; padding: 14px 16px 20px; }
+    .detail-hero { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 11px; align-items: center; }
+    .detail-hero .agent-avatar { width: 52px; height: 52px; }
+    .detail-name { margin: 0; font-size: 17px; line-height: 1.1; }
+    .detail-role { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .stage-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+    .stage-pill { padding: 5px 7px; border-radius: 4px; font-size: 9px; font-weight: 850; background: var(--blue-soft); color: var(--blue); }
+    .stage-pill.candidate { background: var(--amber-soft); color: var(--amber); }
+    .evidence-block { margin-top: 16px; }
+    .section-label { margin: 0 0 8px; color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
+    .large-score { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
+    .large-score strong { font-size: 28px; line-height: 1; }
+    .large-score span { color: var(--muted); font-size: 9px; text-align: right; }
+    .progress-track { height: 7px; margin-top: 8px; background: #e5e9e6; overflow: hidden; border-radius: 3px; }
+    .progress-track span { display: block; height: 100%; background: var(--green); }
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 12px; background: var(--line); border: 1px solid var(--line); }
+    .metric { background: #fff; padding: 9px; min-height: 54px; }
+    .metric-value { font-size: 14px; font-weight: 850; }
+    .metric-label { margin-top: 4px; color: var(--muted); font-size: 9px; }
+    .reply-list { display: grid; gap: 5px; }
+    .reply-row { border: 1px solid var(--line); background: #fff; padding: 8px; border-radius: 4px; }
+    .reply-top { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; font-weight: 800; }
+    .reply-meta { margin-top: 4px; color: var(--muted); font-size: 8px; }
+    .attention { padding: 9px 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); font-size: 9px; line-height: 1.45; }
+    .attention + .attention { margin-top: 5px; }
+    .authority { padding: 10px; background: #f0f3f1; font-size: 9px; color: #4c5751; line-height: 1.45; }
+    .empty { padding: 24px 16px; color: var(--muted); text-align: center; font-size: 11px; }
+    .footer {
+      display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 18px;
+      border-top: 1px solid var(--line); background: #edf0ee; color: #59635e; font-size: 9px;
+    }
+    .footer-status { display: flex; gap: 16px; white-space: nowrap; overflow: hidden; }
+    .footer strong { color: var(--ink); }
+    .loading-mask { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(244,246,243,.88); z-index: 20; }
+    .loading-mask.hidden { display: none; }
+    .loading-card { padding: 17px 20px; background: #fff; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; font-weight: 750; }
+    @media (max-width: 1050px) {
+      .app { height: auto; min-height: 100vh; overflow: auto; grid-template-rows: auto auto auto auto; }
+      .topbar { grid-template-columns: 1fr auto; padding: 12px 16px; }
+      .view-tabs { grid-column: 1 / -1; order: 3; }
+      .summary-strip { grid-template-columns: repeat(3, 1fr); }
+      .workspace { grid-template-columns: minmax(230px, 34%) 1fr; min-height: 900px; }
+      .panel.detail-panel { grid-column: 1 / -1; min-height: 420px; border-top: 1px solid var(--line); }
+      .footer { min-height: 42px; flex-wrap: wrap; padding: 8px 14px; }
+    }
+    @media (max-width: 700px) {
+      .topbar { grid-template-columns: 1fr; }
+      .top-actions { justify-content: flex-start; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .summary-item { padding: 10px 13px; }
+      .workspace { display: block; min-height: 0; }
+      .panel { min-height: 430px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .map-wrap { min-height: 520px; }
+      .footer-status { flex-wrap: wrap; white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">AI</div>
+        <div><h1>CHARLIE CORE</h1><p>Agent Workforce & Training</p></div>
+      </div>
+      <nav class="view-tabs" aria-label="CHARLIE views">
+        <a href="/charlie-v2">Missions</a>
+        <a class="active" href="/charlie-agents">Workforce</a>
+      </nav>
+      <div class="top-actions">
+        <span id="sourceStatus" class="text-button"><span class="status-dot"></span>Loading evidence</span>
+        <button id="refreshBtn" class="icon-button" title="Refresh workforce evidence" aria-label="Refresh">&#8635;</button>
+      </div>
+    </header>
+
+    <section id="summaryStrip" class="summary-strip" aria-label="Workforce summary"></section>
+
+    <section class="workspace">
+      <aside class="panel">
+        <div class="panel-head">
+          <div class="panel-head-row"><h2 class="panel-title">Agent Roster</h2><span id="rosterCount" class="small-badge">0 agents</span></div>
+          <p class="panel-sub">Measured evidence only. Select an agent for detail.</p>
+        </div>
+        <div id="agentList" class="agent-list"></div>
+      </aside>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-head-row"><h2 class="panel-title">System Map</h2><span class="small-badge">Live connections</span></div>
+          <p class="panel-sub">Owner control, agent teams, and authoritative systems.</p>
+        </div>
+        <div class="map-wrap">
+          <div id="systemMap" class="system-map"></div>
+        </div>
+      </section>
+
+      <aside class="panel detail-panel">
+        <div class="panel-head">
+          <div class="panel-head-row"><h2 class="panel-title">Training & Trust</h2><span id="detailState" class="small-badge">Select agent</span></div>
+          <p class="panel-sub">Evidence, blockers, graduation and authority.</p>
+        </div>
+        <div id="detailBody" class="detail-body"></div>
+      </aside>
+    </section>
+
+    <footer class="footer">
+      <div id="footerStatus" class="footer-status"></div>
+      <div id="lastUpdated">Not updated</div>
+    </footer>
+  </main>
+  <div id="loadingMask" class="loading-mask"><div class="loading-card">Loading workforce evidence...</div></div>
+  <script src="{{ url_for('static', filename='js/charlieAgentWorkforce.js', v='20260711-v1') }}"></script>
+</body>
+</html>

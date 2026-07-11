@@ -154,6 +154,14 @@ def charlie_v2_page():
     return render_template("charlie-v2.html")
 
 
+@app.route("/charlie-agents")
+def charlie_agents_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("charlie-agents.html")
+
+
 @app.route("/assets/<path:filename>")
 def public_assets(filename):
     return send_from_directory(Path(app.static_folder) / "assets", filename)
