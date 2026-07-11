@@ -31,6 +31,8 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 ## Lifecycle Rules
 
 - Draft creation and line sync must happen through backend APIs.
+- Approved live-stock order revisions must use a dedicated owner/Oom Sakkie backend action. That action must require explicit owner/Oom Sakkie authorization before mutation (`owner_authorized=true` or exact `owner_confirmation='REVISE APPROVED LIVESTOCK ORDER'`, with `authorization_source` and a trusted `changed_by` actor). After that gate, it may update the approved order request, resync active lines under the explicit approved-order revision status override, reserve the corrected active lines, regenerate current paperwork, and prepare a customer quote send packet, but customer sending still requires a separate owner confirmation.
+- Approved-order revision actions must be idempotent: repeated correction requests should detect already-matching active lines and logged revision fingerprints instead of silently duplicating pigs or paperwork.
 - `send_for_approval` requires Draft status, customer name, payment method, collection location, and at least one active line.
 - Approval may attempt auto-reservation, but reservation warnings do not roll back the approval automatically.
 - Rejection/customer cancellation must cancel/release linked non-terminal lines and write status-log evidence.
