@@ -1631,6 +1631,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".pig-list-hover-detail", css)
         self.assertIn(".pigs-dashboard-page .pig-list-card:focus-visible", css)
 
+    def test_sales_availability_cards_show_current_sam_stock_truth(self):
+        js = Path("static/js/salesAvailability.js").read_text(encoding="utf-8")
+
+        self.assertIn("Latest Weight Date", js)
+        self.assertIn("pig.latest_weight_date || pig.last_weight_date", js)
+        self.assertIn("/sales-dashboard?pig_id=", js)
+        self.assertIn("Open Sales Dashboard", js)
+
     def test_mating_board_uses_section_aware_sorting(self):
         js = Path("static/js/matings.js").read_text(encoding="utf-8")
 
