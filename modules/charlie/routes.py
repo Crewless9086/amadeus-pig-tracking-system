@@ -68,6 +68,8 @@ LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 AGENT_WORKFORCE_CACHE = {"expires_at": 0.0, "packet": None}
 AGENT_WORKFORCE_CACHE_SECONDS = 30
+MISSION_CONTROL_CACHE = {"expires_at": 0.0, "packet": None}
+MISSION_CONTROL_CACHE_SECONDS = 15
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -359,6 +361,44 @@ def charlie_build_relay_command_center_route():
     }
     response["autonomy_readiness"] = autonomy_readiness_packet(response)
     return jsonify(response), 200
+
+
+@charlie_bp.route("/charlie/build-relay/mission-control", methods=["GET"])
+def charlie_mission_control_snapshot_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    refresh = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
+    now = time.monotonic()
+    if not refresh and MISSION_CONTROL_CACHE.get("packet") and now < float(MISSION_CONTROL_CACHE.get("expires_at") or 0):
+        return jsonify({**MISSION_CONTROL_CACHE["packet"], "cache": "fresh"}), 200
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        summary_future = pool.submit(mission_status_summary)
+        queue_future = pool.submit(_dashboard_owner_queue, 100)
+        summary, summary_status = summary_future.result()
+        owner_queue, queue_status = queue_future.result()
+    statuses = [summary_status, queue_status]
+    if max(statuses) >= 400:
+        return jsonify({"success": False, "status": "mission_control_snapshot_unavailable", "statuses": statuses}), 503
+    raw_buckets = _mission_status_buckets(owner_queue.get("missions", []))
+    packet = {
+        "success": True,
+        "status": "mission_control_snapshot_ready",
+        "counts": summary.get("counts", {}),
+        "buckets": {
+            "active": [*raw_buckets.get("in_progress", []), *raw_buckets.get("release_in_progress", [])],
+            "new": raw_buckets.get("new", []),
+            "approved": raw_buckets.get("approved", []),
+            "review": [*raw_buckets.get("pr_ready", []), *raw_buckets.get("release_approved", [])],
+            "blocked": raw_buckets.get("blocked", []),
+        },
+        "source": "supabase_charlie_missions",
+        "authoritative": True,
+        "source_statuses": statuses,
+        "cache": "refreshed",
+    }
+    MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})
+    return jsonify(packet), 200
 
 
 @charlie_bp.route("/charlie/agent-workforce", methods=["GET"])
@@ -719,12 +759,17 @@ def _dashboard_owner_work_status_queue(status, limit=1):
 def _dashboard_owner_work_buckets(status_limits):
     buckets = {}
     statuses = []
-    for status, limit in status_limits:
-        result, status_code = _dashboard_owner_work_status_queue(status, limit=limit)
+    requests = list(status_limits or [])
+    if not requests:
+        return buckets, [200]
+    with ThreadPoolExecutor(max_workers=min(len(requests), 6)) as pool:
+        futures = [pool.submit(_dashboard_owner_work_status_queue, status, limit=limit) for status, limit in requests]
+        results = [future.result() for future in futures]
+    for (status, _limit), (result, status_code) in zip(requests, results):
         statuses.append(status_code)
         if status_code < 400:
             buckets[status] = result.get("missions", [])
-    return buckets, statuses or [200]
+    return buckets, statuses
 
 
 def _dashboard_owner_queue(limit=8):
