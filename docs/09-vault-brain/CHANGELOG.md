@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-12
+
+- Defined the Herdmaster/Pig Allocation read model as SAM Live Stock's authoritative stock context: current withdrawal/follow-up holds, health/held state, breeding/family context, fresh latest-weight evidence, reservation/availability state, and canonical-only media references now gate matching and draft/quote preparation; missing canonical media remains empty rather than invented.
+
 ## 2026-07-11
 
 - Marked the first Herdmaster Pig Allocation alert automation as implemented: `/api/pig-weights/pig-allocation-alerts` is owner-read-guarded, read-only, advisory, includes pig plus litter/weaning alerts, and remains blocked from farm lifecycle, customer, public, order, sales, slaughter, reservation, stock, and migration writes.
