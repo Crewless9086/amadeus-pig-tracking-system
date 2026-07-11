@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from scripts import build_relay_notify, codex_next_steps
+from scripts import build_relay_notify, charlie_mission_telegram, codex_next_steps
 
 
 CALLBACK_PREFIX = "charlie_next:"
@@ -103,14 +103,18 @@ def _authorized(user_id: object, environ: Mapping[str, str]) -> bool:
     return bool(allowed and str(user_id) in allowed)
 
 
-def _keyboard_for_options(options: list[codex_next_steps.MissionOption]) -> dict[str, Any]:
+def _keyboard_for_options(options: list[codex_next_steps.MissionOption], source: str = FALLBACK_SOURCE) -> dict[str, Any]:
     rows = []
     for option in options:
         rows.append(
             [
                 {
                     "text": f"{option.index}. {option.priority} - {option.title[:52]}",
-                    "callback_data": f"{CALLBACK_PREFIX}{option.index}",
+                    "callback_data": (
+                        charlie_mission_telegram.mission_callback(option.source_line, "open")
+                        if source == LIVE_SOURCE and option.source_line
+                        else f"{CALLBACK_PREFIX}{option.index}"
+                    ),
                 }
             ]
         )
@@ -118,7 +122,7 @@ def _keyboard_for_options(options: list[codex_next_steps.MissionOption]) -> dict
 
 
 def _options_message(options: list[codex_next_steps.MissionOption], source: str = FALLBACK_SOURCE) -> str:
-    lines = ["CHARLIE NEXT MISSIONS", "Select one live mission for CHARLIE CORE handoff."]
+    lines = ["CHARLIE NEXT MISSIONS", "Select a live mission to open its CHARLIE CORE action card."]
     if source == LIVE_SOURCE:
         lines.append("Source: live Supabase CHARLIE mission queue")
     else:
@@ -126,8 +130,7 @@ def _options_message(options: list[codex_next_steps.MissionOption], source: str 
     for option in options:
         lines.append(f"{option.index}. [{option.priority}] {option.title}")
     lines.append("")
-    lines.append("No Codex run starts from this button.")
-    lines.append("Current Loop 6.5 behavior: writes a manual CODEX_CHAT handoff only; Loop 7A will use mission_id action cards.")
+    lines.append("No Codex run starts from this button. Supabase mission state remains authoritative.")
     return build_relay_notify.redact_secrets("\n".join(lines))
 
 
@@ -213,6 +216,11 @@ def handle_update(
     next_steps_path: Path = codex_next_steps.DEFAULT_NEXT_STEPS,
     codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
     option_source_loader: Any | None = None,
+    mission_list_loader: Any | None = None,
+    mission_get_loader: Any | None = None,
+    mission_status_updater: Any | None = None,
+    mission_review_updater: Any | None = None,
+    runner_status_loader: Any | None = None,
 ) -> ButtonFlowResult:
     env = dict(os.environ if environ is None else environ)
     if not _is_enabled(env):
@@ -230,7 +238,7 @@ def handle_update(
         if text.lower().split(maxsplit=1)[0] != "/next":
             return ButtonFlowResult(ok=True, action="ignored", reason="not_next_command")
         source = load_next_options(next_steps_path=next_steps_path, limit=5, mission_loader=option_source_loader)
-        telegram.send_message(chat_id, _options_message(source.options, source.source), reply_markup=_keyboard_for_options(source.options))
+        telegram.send_message(chat_id, _options_message(source.options, source.source), reply_markup=_keyboard_for_options(source.options, source.source))
         return ButtonFlowResult(ok=True, action="sent_next_menu")
 
     if "callback_query" in update:
@@ -245,6 +253,32 @@ def handle_update(
             if callback_id:
                 telegram.answer_callback_query(callback_id, "Not authorized.")
             return ButtonFlowResult(ok=False, action="ignored", reason="unauthorized_user")
+        if data.startswith(charlie_mission_telegram.CALLBACK_PREFIX):
+            try:
+                from modules.charlie import mission_store, runner_control
+
+                result, mission = charlie_mission_telegram.handle_callback(
+                    data,
+                    list_loader=mission_list_loader or mission_store.list_missions,
+                    get_loader=mission_get_loader or mission_store.get_mission,
+                    status_updater=mission_status_updater or mission_store.update_mission_status,
+                    review_updater=mission_review_updater or mission_store.record_mission_review_decision,
+                )
+                runner = (runner_status_loader or runner_control.runner_status)(include_git=False, include_ledger=False)
+            except Exception as exc:
+                if callback_id:
+                    telegram.answer_callback_query(callback_id, "Mission action failed.")
+                return ButtonFlowResult(False, "mission_action_failed", reason=exc.__class__.__name__)
+            if callback_id:
+                telegram.answer_callback_query(callback_id, "Mission updated." if result.ok else "Mission action refused.")
+            if mission:
+                telegram.send_message(
+                    chat_id,
+                    charlie_mission_telegram.mission_card_text(mission, runner),
+                    reply_markup=charlie_mission_telegram.mission_keyboard(mission),
+                )
+            return ButtonFlowResult(result.ok, result.action, result.reason, selected_title=result.mission_id)
+
         if not data.startswith(CALLBACK_PREFIX):
             if callback_id:
                 telegram.answer_callback_query(callback_id, "Unknown CHARLIE action.")
