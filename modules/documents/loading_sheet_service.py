@@ -45,7 +45,7 @@ REQUIRED_LOADING_SHEET_SETTINGS = [
 ]
 
 
-def generate_loading_sheet_for_order(order_id, created_by="App"):
+def generate_loading_sheet_for_order(order_id, created_by="App", revision_fingerprint=""):
     order_id = str(order_id or "").strip()
     created_by = str(created_by or "").strip() or "App"
     detail = get_order_detail(order_id)
@@ -120,7 +120,7 @@ def generate_loading_sheet_for_order(order_id, created_by="App"):
         "File_Name": file_name,
         "Created_At": created_at,
         "Created_By": created_by,
-        "Notes": _loading_sheet_notes(order, enriched_lines, pen_groups),
+        "Notes": _loading_sheet_notes(order, enriched_lines, pen_groups, revision_fingerprint=revision_fingerprint),
     }
     append_order_document(document_record)
 
@@ -444,7 +444,7 @@ def _pen_label(line):
     return name or pen_id or "Unknown pen"
 
 
-def _loading_sheet_notes(order, lines, pen_groups):
+def _loading_sheet_notes(order, lines, pen_groups, revision_fingerprint=""):
     payload = {
         "worker_safe": True,
         "contains_prices": False,
@@ -453,6 +453,9 @@ def _loading_sheet_notes(order, lines, pen_groups):
         "pen_count": len(pen_groups),
         "customer": _safe(order.get("customer_name")),
     }
+    revision_fingerprint = _safe(revision_fingerprint)
+    if revision_fingerprint:
+        payload["revision_fingerprint"] = revision_fingerprint
     return "Loading_Sheet_Metadata: " + json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 

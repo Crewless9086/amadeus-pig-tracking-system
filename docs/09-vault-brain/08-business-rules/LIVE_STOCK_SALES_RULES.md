@@ -12,6 +12,7 @@ Status: Current authority for SAM Live Stock Sales.
 - SAM may auto-create a draft order only after the live-stock lane is confirmed, required facts are present, backend availability can fully satisfy the request, and active pricing is resolved.
 - No customer may be told an animal is held unless backend reservation succeeds.
 - No payment may be confirmed from POP alone.
+- Approved order revisions are allowed only through the explicit Oom Sakkie/backend approved livestock revision action. The action may correct owner-approved weight/purpose evidence through existing farm rails, revise approved order lines, reserve the corrected selected pigs, regenerate quote/loading/removal/health paperwork idempotently, and send owner paperwork. Customer quote sending remains owner-gated and must be prepared first unless a separate confirmed owner-send payload is present.
 - Breeding/replacement animals are not part of the normal live-stock sale lane.
 - Only pigs with purpose `Sale` and source-truth sale availability may be sold through SAM Live Stock.
 - No sold, exited, reserved, terminal, off-farm, withdrawal-blocked, or source-conflicted animal may be offered.
