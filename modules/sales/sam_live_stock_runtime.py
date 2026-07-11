@@ -31,6 +31,7 @@ AGENT_V3_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_MODEL"
 LLM_URL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_TIMEOUT_SECONDS"
 OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED"
+MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 INTAKE_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_INTAKE_WRITE_ENABLED"
 DRAFT_ORDER_CREATE_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_DRAFT_ORDER_CREATE_ENABLED"
 OWNER_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED"
@@ -40,6 +41,7 @@ CHATWOOT_TOKEN_ENV = "CHATWOOT_API_ACCESS_TOKEN"
 CHATWOOT_TOKEN_FALLBACK_ENV = "CHATWOOT_API_TOKEN"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
+DEFAULT_LLM_MODEL = "gpt-4.1-mini"
 MIN_TOKEN_CHARS = 32
 
 RUNTIME_VERSION = "sam_live_stock_read_only_v1"
@@ -87,9 +89,13 @@ def sam_live_stock_webhook_policy(environ=None):
         "draft_order_create_env": DRAFT_ORDER_CREATE_ENABLED_ENV,
         "owner_approved_send_enabled": _truthy(source.get(OWNER_SEND_ENABLED_ENV)),
         "owner_approved_send_env": OWNER_SEND_ENABLED_ENV,
-        "owner_example_retrieval_enabled": _truthy(source.get(OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV)),
+        "owner_example_retrieval_enabled": _owner_example_retrieval_enabled(source),
         "owner_example_retrieval_env": OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV,
+        "owner_example_retrieval_default": "enabled_unless_env_is_false",
+        "meat_public_offer_enabled": _meat_public_offer_enabled(source),
+        "meat_public_offer_env": MEAT_PUBLIC_OFFER_ENABLED_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
+        "llm_default_model": DEFAULT_LLM_MODEL,
         "read_only": True,
         "writes_allowed": False,
         "customer_send_allowed": False,
@@ -1623,7 +1629,7 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
                 "Thanks, I can note the payment message, but POP does not make live animals yours until the farm confirms the bank receipt "
                 "and the owner approves the animals on the system."
             )
-        return "Just so I help you correctly: are you looking for live pigs, pork for the freezer, or slaughter help?"
+        return "Just so I help you correctly: are you asking about live pigs, farm information, or slaughter help?"
     if facts.get("breeding_interest"):
         return "I can note that, but breeding or replacement animals need farm review before anything is promised."
     if facts.get("reservation_requested"):
@@ -1678,7 +1684,7 @@ def _farm_general_reply(inbound, source):
     customer_name = _first_name((inbound or {}).get("customer_name"))
     greeting = f"Hi {customer_name}, " if customer_name else "Hi, "
     text = _normal_text((inbound or {}).get("content"))
-    products = _farm_product_menu_summary(knowledge)
+    products = _farm_product_menu_summary(knowledge, source)
     if _asks_about_business(text):
         return (
             f"{greeting}we are Amadeus Farm in the Riversdale area. "
@@ -1692,24 +1698,33 @@ def _farm_general_reply(inbound, source):
             "If you want photos, tell me which group you want to see - piglets, weaners, growers, finishers, or bigger pigs - and I will line up the right farm pictures for owner review."
         )
     if _asks_location_question(text):
+        followup = (
+            "Tell me what you need and when you would like to collect, and I will help from there."
+            if "collection" in location.lower()
+            else "Collections are arranged with the farm once the order details are confirmed. Tell me what you need and when you would like to collect, and I will help from there."
+        )
         return (
             f"{greeting}{location} "
-            "Collections are arranged with the farm once the order details are confirmed. "
-            "Tell me what you need and when you would like to collect, and I will help from there."
+            f"{followup}"
         )
     return (
         f"{greeting}{location} "
-        "If you are asking about live pigs, pork for the freezer, or farm collections, send me what you need and I will help from there."
+        "If you are asking about live pigs, farm collections, or the farm itself, send me what you need and I will help from there."
     )
 
 
-def _farm_product_menu_summary(knowledge):
+def _farm_product_menu_summary(knowledge, source=None):
     items = (knowledge if isinstance(knowledge, dict) else {}).get("product_menu")
+    meat_open = _meat_public_offer_enabled(source)
     if not isinstance(items, list):
-        return "We can help with live pig enquiries, pork freezer options when the meat lane is open, and general farm questions."
+        return _farm_product_menu_fallback(meat_open)
     labels = []
     for item in items[:4]:
         if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip().lower()
+        label_text = str(item.get("label") or "").strip().lower()
+        if not meat_open and ("meat" in key or "pork" in label_text or "meat" in label_text):
             continue
         label = _clean(item.get("label"), 80)
         summary = _clean(item.get("summary"), 140)
@@ -1718,8 +1733,16 @@ def _farm_product_menu_summary(knowledge):
         elif label:
             labels.append(label)
     if not labels:
-        return "We can help with live pig enquiries, pork freezer options when the meat lane is open, and general farm questions."
+        return _farm_product_menu_fallback(meat_open)
+    if not meat_open:
+        labels.append("Meat sales are not open yet.")
     return " ".join(labels)
+
+
+def _farm_product_menu_fallback(meat_open):
+    if meat_open:
+        return "We can help with live pig enquiries, meat preorder questions, and general farm questions."
+    return "We can help with live pig enquiries, piglet, weaner, grower and finisher groups, farm location, and collection questions. Meat sales are not open yet."
 
 
 def _asks_location_question(text):
@@ -1738,6 +1761,13 @@ def _asks_location_question(text):
             "location",
             "located",
             "province",
+            "waar is julle",
+            "waar is jy",
+            "waar is u",
+            "waar",
+            "ligging",
+            "adres",
+            "provinsie",
             "directions",
         ),
     )
@@ -1758,6 +1788,10 @@ def _asks_about_business(text):
             "what are you selling",
             "your ad",
             "your advert",
+            "jou advertensie",
+            "vertel my meer",
+            "wat verkoop julle",
+            "wat doen julle",
         ),
     )
 
@@ -1771,6 +1805,10 @@ def _asks_for_pictures_or_ad(text):
             "pictures",
             "photos",
             "pics",
+            "foto",
+            "fotos",
+            "prentjie",
+            "prentjies",
             "big ones",
             "small ones",
         ),
@@ -1881,6 +1919,7 @@ def _build_llm_reply_draft_if_enabled(
             price_answer_packet,
             fallback_reply,
             owner_correction_examples=owner_correction_examples,
+            meat_public_offer_enabled=_meat_public_offer_enabled(source),
         ),
         source,
     )
@@ -1903,7 +1942,7 @@ def _build_llm_reply_draft_if_enabled(
 
 def _load_owner_correction_examples(inbound, source, owner_example_loader=None):
     source = source if isinstance(source, dict) else {}
-    if not _truthy(source.get(OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV)):
+    if not _owner_example_retrieval_enabled(source):
         return []
     loader = owner_example_loader
     if loader is None:
@@ -1937,6 +1976,7 @@ def _llm_reply_context_packet(
     price_answer_packet,
     fallback_reply,
     owner_correction_examples=None,
+    meat_public_offer_enabled=False,
 ):
     context_packet = context_packet if isinstance(context_packet, dict) else {}
     availability = context_packet.get("availability") if isinstance(context_packet.get("availability"), dict) else {}
@@ -1957,12 +1997,17 @@ def _llm_reply_context_packet(
         "rules": [
             "Write one concise WhatsApp reply in the farm owner's voice.",
             "Use only stock and price facts in this JSON. Do not invent animals, prices, reservations, delivery promises, paperwork, or payment status.",
+            "Sound like a helpful farm person on WhatsApp, not a system message. Keep it warm, plain, and practical.",
+            "Acknowledge the customer's latest message before asking or answering.",
+            "When quantity, weight band, timing, and price are known, state them plainly. Do not defer to a later check when the supplied context already has the facts.",
             "If a detail is missing, ask only one useful question.",
             "Do not say animals are reserved, held, booked, available, discounted, cheap, or payment confirmed.",
+            "Do not offer pork, meat, freezer packs, carcasses, cuts, or meat delivery unless meat_public_offer_enabled is true.",
             "Do not share exact farm pins or exact private farm location.",
             "Never create orders, quotes, reservations, or commands.",
             "owner_correction_examples are past cases where the owner rewrote a similar draft; mirror the owner's phrasing and structure, not the rejected draft. If none are clearly similar to this customer's question, ignore them.",
         ],
+        "meat_public_offer_enabled": bool(meat_public_offer_enabled),
         "inbound": {
             "conversation_id": (inbound or {}).get("conversation_id") or "",
             "customer_name": (inbound or {}).get("customer_name") or "",
@@ -2016,7 +2061,10 @@ def _llm_reply_payload(context_packet, source):
         "You are SAM Live Stock's reply drafter for Amadeus Farm. "
         "Return JSON only with keys reply_text, confidence, notes. "
         "Draft a customer WhatsApp reply using only the supplied context. "
+        "Write like a practical farm owner on WhatsApp: warm, direct, short, and human. "
+        "Use the supplied learned owner corrections as style guidance when they are relevant. "
         "Never promise availability, reservation, delivery, paperwork, payment, order creation, or exact farm location. "
+        "Do not offer meat, pork, freezer packs, carcasses, cuts, or meat delivery unless the context says meat_public_offer_enabled is true. "
         "The owner will review before anything is sent."
     )
     return _with_supported_temperature({
@@ -2888,7 +2936,7 @@ def _send_chatwoot_message(conversation_id, message, source):
 
 
 def _configured_model(source):
-    return str(source.get(AGENT_V3_MODEL_ENV) or source.get(LLM_MODEL_ENV) or "").strip()
+    return str(source.get(AGENT_V3_MODEL_ENV) or source.get(LLM_MODEL_ENV) or DEFAULT_LLM_MODEL).strip()
 
 
 def _timeout(source):
@@ -2987,6 +3035,20 @@ def _blank(value):
 
 def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _explicitly_false(value):
+    return str(value or "").strip().lower() in {"0", "false", "no", "off"}
+
+
+def _owner_example_retrieval_enabled(source):
+    source = source if isinstance(source, dict) else {}
+    return not _explicitly_false(source.get(OWNER_EXAMPLE_RETRIEVAL_ENABLED_ENV))
+
+
+def _meat_public_offer_enabled(source):
+    source = source if isinstance(source, dict) else {}
+    return _truthy(source.get(MEAT_PUBLIC_OFFER_ENABLED_ENV))
 
 
 def _clean(value, limit):

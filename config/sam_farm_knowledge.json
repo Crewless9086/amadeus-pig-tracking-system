@@ -5,8 +5,8 @@
     "farm_name": "Amadeus Farm",
     "agent_name": "Sam",
     "short_intro": "Hi, I am Sam from Amadeus Farm.",
-    "one_line_story": "We are a small farm building a traceable, practical pork preorder system around honest farming, planned runs, and personal service.",
-    "location_summary": "Riversdale area, with nearby delivery planning handled per farm run. Collection is not offered as a normal public option yet.",
+    "one_line_story": "We are a small farm helping customers with live pig enquiries, practical farm information, and traceable planned farm systems.",
+    "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
     "google_maps_url": "",
     "service_areas": [
       "Riversdale",
@@ -29,14 +29,14 @@
   },
   "product_menu": [
     {
-      "key": "meat_sales",
-      "label": "Pork meat sales",
-      "summary": "Half carcass, full carcass, and cut-set preorder options."
+      "key": "meat_sales_guarded",
+      "label": "Meat sales",
+      "summary": "Not open publicly yet; the owner will confirm when the pilot is ready."
     },
     {
       "key": "live_sales",
       "label": "Live pig sales",
-      "summary": "Live pig interest can be captured and handed to the correct sales path."
+      "summary": "Piglets, weaners, growers, finishers, and larger live pigs can be handled through the live-stock sales path."
     },
     {
       "key": "farm_info",
@@ -64,7 +64,7 @@
     "Set D": "Slow-Cook Family Roast Pack: larger roasting cuts, shoulder, mixed chops, mince or stew meat, and soup bones for slow cooking, roasting, and family meals."
   },
   "faq": {
-    "where_are_you_based": "We are based around the Riversdale area. Delivery is planned around each farm run.",
+    "where_are_you_based": "We are based around the Riversdale area in the Western Cape. Collection details are arranged once the farm confirms the order details.",
     "why_deposit": "The deposit holds your place in the preorder run and helps the farm plan slaughter, cutting, packing, and delivery properly.",
     "when_is_booking_final": "A booking is not final until the farm confirms the run and the required money reflects in the farm account.",
     "can_i_visit": "Farm visits are not handled as an automatic chat promise. Sam should capture the request and hand it to the farm for review."

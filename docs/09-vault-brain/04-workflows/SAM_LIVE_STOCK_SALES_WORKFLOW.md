@@ -119,6 +119,21 @@ Until that full escalation rail is live, first public launch must remain closely
 
 ## Controlled Launch Backend Surface
 
+## Media Intake Backlog
+
+Current SAM Live Stock runtime is text-first. Voice notes, customer photos, screenshots, and emoji-only messages must not be treated as understood sales facts until a media intake layer exists.
+
+Required future mission:
+
+- download approved Chatwoot media attachments through backend-authenticated rails;
+- transcribe voice notes before routing;
+- classify photos/screenshots without exposing private media publicly;
+- attach transcript/media summary to the decision packet;
+- keep customer sends, quote sends, reservations, payments, and stock movement owner-gated;
+- add tests for Afrikaans voice notes, unclear photos, emoji-only replies, and media privacy.
+
+Until then, media-only messages should be owner-visible and may trigger a practical clarification, but they must not create orders, reserve pigs, quote, or promise stock.
+
 The backend-native controlled launch surface should expose:
 
 - policy route for current env gates;

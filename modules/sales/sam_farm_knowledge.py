@@ -13,8 +13,8 @@ DEFAULT_KNOWLEDGE = {
         "farm_name": "Amadeus Farm",
         "agent_name": "Sam",
         "short_intro": "Hi, I am Sam from Amadeus Farm.",
-        "one_line_story": "We help customers with planned farm pork preorders and related farm sales questions.",
-        "location_summary": "Riversdale area, with delivery planned per farm run.",
+        "one_line_story": "We help customers with live pig enquiries, farm collection questions, and practical farm information.",
+        "location_summary": "Riversdale area, with collection details arranged once the farm confirms the order details.",
         "google_maps_url": "",
         "service_areas": ["Riversdale"],
     },
@@ -23,9 +23,9 @@ DEFAULT_KNOWLEDGE = {
         "frustration_acknowledgement": "I hear you. I will keep this practical.",
     },
     "product_menu": [
-        {"key": "meat_sales", "label": "Pork meat sales", "summary": "Half carcass, full carcass, and cut-set preorder options."},
-        {"key": "live_sales", "label": "Live pig sales", "summary": "Live pig interest can be captured."},
+        {"key": "live_sales", "label": "Live pig sales", "summary": "Piglets, weaners, growers, finishers, and larger live pigs can be handled through the live-stock sales path."},
         {"key": "farm_info", "label": "Farm information", "summary": "Farm story, location, and general questions."},
+        {"key": "meat_sales_guarded", "label": "Meat sales", "summary": "Not open publicly yet; the owner will confirm when the pilot is ready."},
     ],
     "meat_sales": {
         "positioning": "Pre-booked Amadeus Farm pork for freezer buyers.",
