@@ -5,6 +5,7 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_stock_totals,
     get_meat_ready_stock_summary,
     get_pig_allocation_readiness,
+    get_herdmaster_pig_allocation_alerts,
     get_purpose_review_queue,
     apply_purpose_review_decisions,
     build_purpose_review_recheck,
@@ -82,6 +83,10 @@ def get_sales_dashboard_data():
 
 def get_pig_allocation_readiness_data():
     return get_pig_allocation_readiness()
+
+
+def get_pig_allocation_alerts_data():
+    return get_herdmaster_pig_allocation_alerts()
 
 
 def get_purpose_review_queue_data(litter_id: str = ""):

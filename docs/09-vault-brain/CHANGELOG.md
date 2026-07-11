@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-11
+
+- Marked the first Herdmaster Pig Allocation alert automation as implemented: `/api/pig-weights/pig-allocation-alerts` is owner-read-guarded, read-only, advisory, includes pig plus litter/weaning alerts, and remains blocked from farm lifecycle, customer, public, order, sales, slaughter, reservation, stock, and migration writes.
+
 ## 2026-07-10
 
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.

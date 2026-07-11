@@ -920,6 +920,160 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["valuation_status"], "pricing_not_configured")
         self.assertIsNone(row["estimated_value"])
         self.assertEqual(result["summary"]["pricing_not_configured_count"], 1)
+
+    def test_herdmaster_alerts_surface_pig_and_litter_readiness_without_writes(self):
+        allocation = {
+            "source": "supabase_canonical",
+            "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30},
+            "pigs": [
+                {
+                    "pig_id": "PIG-MISSING",
+                    "tag_number": "",
+                    "sex": "",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Data",
+                    "readiness_reason": "Missing tag, sex, weight before allocation can be trusted.",
+                    "suggested_purpose": "Needs Review",
+                    "suggested_purpose_reason": "Complete missing data.",
+                    "suggested_purpose_confidence": "Low",
+                    "days_since_weight": None,
+                },
+                {
+                    "pig_id": "PIG-MEAT",
+                    "tag_number": "21",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Meat Candidate",
+                    "meat_window_status": "In meat window",
+                    "latest_weight_kg": 70,
+                    "latest_weight_date": "2026-06-28",
+                    "days_since_weight": 2,
+                },
+                {
+                    "pig_id": "PIG-SLOW",
+                    "tag_number": "22",
+                    "animal_type": "Grower",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Livestock Candidate",
+                    "growth_class": "Slow",
+                    "average_daily_gain_kg": 0.18,
+                    "growth_reason": "Lifetime ADG is 0.180 kg/day.",
+                    "days_since_weight": 12,
+                },
+                {
+                    "pig_id": "PIG-CULL",
+                    "tag_number": "23",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Slaughter Candidate",
+                    "abattoir_window_status": "In abattoir window",
+                    "latest_weight_kg": 84,
+                    "days_since_weight": 4,
+                },
+                {
+                    "pig_id": "PIG-BREED",
+                    "tag_number": "24",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Breeding",
+                    "readiness_bucket": "Retain / Breeding Candidate",
+                    "suggested_purpose": "Breeding Review",
+                    "suggested_purpose_reason": "Growth and litter quality justify retention review.",
+                    "suggested_purpose_confidence": "Medium",
+                    "growth_class": "Exceptional",
+                    "litter_quality": "Good",
+                    "days_since_weight": 3,
+                },
+                {
+                    "pig_id": "PIG-CONFLICT",
+                    "tag_number": "25",
+                    "status": "Sold",
+                    "on_farm": "Yes",
+                    "readiness_bucket": "Exited",
+                    "days_since_weight": 10,
+                },
+            ],
+        }
+        litter_attention = {
+            "count": 1,
+            "items": [{
+                "litter_id": "LIT-WEAN",
+                "litter_status": "Weaned",
+                "wean_date": "2026-06-01",
+                "reason": "Post-wean weight needed",
+                "action_type": "record_post_wean_weight",
+                "recommended_action": "Record post-wean weights before purpose review.",
+                "active_pig_count": 6,
+            }],
+        }
+
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            today=date(2026, 7, 1),
+            allocation=allocation,
+            litter_attention=litter_attention,
+        )
+
+        categories = {alert["category"] for alert in result["pig_alerts"]}
+        self.assertTrue(result["success"])
+        self.assertEqual(result["owner_agent"], "Herdmaster")
+        self.assertIn("missing_data", categories)
+        self.assertIn("purpose_review_due", categories)
+        self.assertIn("stale_weight", categories)
+        self.assertIn("meat_window_candidate", categories)
+        self.assertIn("slow_grower", categories)
+        self.assertIn("slaughter_candidate", categories)
+        self.assertIn("breeding_candidate", categories)
+        self.assertIn("lifecycle_inconsistency", categories)
+        self.assertEqual(result["litter_alerts"][0]["category"], "weaning_attention")
+        self.assertEqual(result["summary"]["litter_alerts"], 1)
+        self.assertEqual(result["summary"]["by_severity"]["Critical"], 1)
+        self.assertTrue(result["business_rules"]["owner_approval_required"])
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+        self.assertFalse(result["writes_orders"])
+        self.assertFalse(result["writes_sales"])
+        self.assertFalse(result["writes_slaughter"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["posts_publicly"])
+        for alert in result["pig_alerts"] + result["litter_alerts"]:
+            self.assertIn("send_customer_message", alert["forbidden_actions"])
+            self.assertFalse(alert["writes_to_sheets"])
+            self.assertFalse(alert["writes_to_supabase"])
+
+    def test_pig_allocation_alert_route_uses_owner_read_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        service_result = {"success": True, "summary": {"total_alerts": 0}, "alerts": []}
+        with patch.object(pig_weights_routes, "require_owner_read_access", return_value=None) as guard, \
+             patch.object(pig_weights_routes, "get_pig_allocation_alerts_data", return_value=service_result) as get_alerts:
+            response = app.test_client().get("/api/pig-weights/pig-allocation-alerts")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        guard.assert_called_once()
+        get_alerts.assert_called_once()
+
+    def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
+        from pathlib import Path
+
+        routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
+        controller = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
+        service = Path("modules/pig_weights/pig_weights_service.py").read_text(encoding="utf-8")
+
+        self.assertIn('@pig_weights_bp.route("/pig-allocation-alerts", methods=["GET"])', routes)
+        self.assertIn("require_owner_read_access()", routes)
+        self.assertIn("get_pig_allocation_alerts_data", controller)
+        self.assertIn("get_herdmaster_pig_allocation_alerts", service)
+        self.assertIn('"owner_agent": "Herdmaster"', service)
+        self.assertIn('"writes_orders": False', service)
+        self.assertIn('"sends_customer_message": False', service)
 class MeatPlanningServiceTests(unittest.TestCase):
     def test_meat_planning_groups_allocation_signals_without_writes(self):
         allocation_result = {
