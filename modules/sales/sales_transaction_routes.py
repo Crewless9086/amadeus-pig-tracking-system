@@ -81,6 +81,7 @@ from modules.sales.sam_live_stock_runtime import (
     send_owner_approved_live_stock_reply,
 )
 from modules.sales.sam_live_stock_launch_control import (
+    _telegram_send_message,
     apply_sam_live_stock_chatwoot_takeover,
     build_live_stock_reservation_plan,
     build_sam_live_stock_launch_readiness,
@@ -96,6 +97,7 @@ from modules.sales.sam_live_stock_launch_control import (
     send_sam_live_stock_owner_review_telegram,
     send_sam_live_stock_telegram_escalation,
 )
+from modules.sales.sam_live_stock_graduation import notify_new_graduation_candidates
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_pricing import (
@@ -462,6 +464,23 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
     }, latest_event)
     learning, learning_status = record_sales_conversation_learning_event(event)
+    graduation_notification = {"attempted": False, "status": "learning_event_not_created"}
+    if learning.get("success") and int(learning.get("created_count") or 0):
+        try:
+            graduation_notification = notify_new_graduation_candidates(
+                scorecard_loader=lambda: live_stock_learning_scorecard(limit=500),
+                event_recorder=record_sales_conversation_learning_event,
+                telegram_sender=_telegram_send_message,
+            )
+        except Exception as exc:
+            graduation_notification = {
+                "success": False,
+                "attempted": True,
+                "status": "graduation_notification_failed_safely",
+                "error_type": exc.__class__.__name__,
+                "auto_send_enabled": False,
+                "sends_customer_message": False,
+            }
     return {
         "success": learning.get("success") is True,
         "attempted": True,
@@ -472,6 +491,7 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "latest_review_status": latest.get("status"),
         "latest_review_status_code": latest_status,
         "learning_event_id": learning.get("learning_event_id", ""),
+        "graduation_notification": graduation_notification,
         "chatwoot_conversation_id": inbound.get("conversation_id"),
         "source": "sam_live_stock_owner_reply_capture",
         "processed": False,

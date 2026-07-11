@@ -1,4 +1,6 @@
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_from_directory
@@ -55,6 +57,8 @@ from modules.charlie.owner_approval_inbox import (
     list_owner_approval_inbox,
     record_owner_approval_decision,
 )
+from modules.charlie.agent_workforce import build_agent_workforce_packet
+from modules.sales.conversation_learning import live_stock_learning_scorecard
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -62,6 +66,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
 LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
+AGENT_WORKFORCE_CACHE = {"expires_at": 0.0, "packet": None}
+AGENT_WORKFORCE_CACHE_SECONDS = 30
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -353,6 +359,42 @@ def charlie_build_relay_command_center_route():
     }
     response["autonomy_readiness"] = autonomy_readiness_packet(response)
     return jsonify(response), 200
+
+
+@charlie_bp.route("/charlie/agent-workforce", methods=["GET"])
+def charlie_agent_workforce_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    refresh = str(request.args.get("refresh") or "").strip().lower() in {"1", "true", "yes"}
+    now = time.monotonic()
+    if not refresh and AGENT_WORKFORCE_CACHE.get("packet") and now < float(AGENT_WORKFORCE_CACHE.get("expires_at") or 0):
+        return jsonify({**AGENT_WORKFORCE_CACHE["packet"], "cache": "fresh"}), 200
+    limit = request.args.get("limit", 500)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        mission_future = pool.submit(mission_status_summary)
+        learning_future = pool.submit(live_stock_learning_scorecard, limit=limit)
+        mission_summary, mission_status = mission_future.result()
+        sam_learning, sam_status = learning_future.result()
+    runner = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
+    packet = build_agent_workforce_packet(
+        mission_summary=mission_summary if mission_status < 400 else {},
+        runner=runner,
+        sam_learning=sam_learning if sam_status < 400 else {
+            "success": False,
+            "status": sam_learning.get("status", "scorecard_unavailable"),
+            "scorecard": {},
+        },
+    )
+    packet["sources"] = {
+        "charlie_missions": {"status_code": mission_status, "authoritative": True},
+        "sam_live_stock_learning": {"status_code": sam_status, "authoritative": True},
+        "agent_registry": {"status_code": 200, "authoritative": True},
+        "trust_ledger": {"status_code": 200, "authoritative": True},
+    }
+    packet["cache"] = "refreshed"
+    AGENT_WORKFORCE_CACHE.update({"expires_at": time.monotonic() + AGENT_WORKFORCE_CACHE_SECONDS, "packet": packet})
+    return jsonify(packet), 200
 
 
 @charlie_bp.route("/charlie/core/vault-health", methods=["GET"])
