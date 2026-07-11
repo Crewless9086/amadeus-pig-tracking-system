@@ -38,6 +38,11 @@ class FakeRelayClient:
         return updates
 
 
+class FailingPollClient(FakeRelayClient):
+    def get_updates(self, offset=None, timeout=30):
+        raise TimeoutError("temporary Telegram timeout")
+
+
 def enabled_env():
     return {
         "CHARLIE_BUILD_RELAY_ENABLED": "1",
@@ -216,6 +221,18 @@ class CharlieTelegramRelayTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.action, "poll_once_complete")
         self.assertIn("CHARLIE relay status", client.messages[0]["text"])
+
+    def test_poll_error_is_contained_and_reported_without_secret(self):
+        result = charlie_telegram_relay.poll_loop(
+            environ=enabled_env(),
+            client=FailingPollClient(),
+            once=True,
+            poll_timeout=1,
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.action, "poll_failed")
+        self.assertEqual(result.reason, "TimeoutError")
+        self.assertNotIn(enabled_env()["CHARLIE_BUILD_RELAY_BOT_TOKEN"], result.reason)
 
     def test_same_update_id_processed_twice_sends_once(self):
         client = FakeRelayClient()
