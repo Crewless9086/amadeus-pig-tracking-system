@@ -3,6 +3,7 @@
 
   const API = {
     commandCenter: "/api/charlie/build-relay/command-center",
+    missionControl: "/api/charlie/build-relay/mission-control",
     runner: "/api/charlie/build-relay/runner/status",
     policy: "/api/charlie/build-relay/policy",
     missions: "/api/charlie/build-relay/missions",
@@ -28,6 +29,7 @@
     lastUpdated: null,
     polling: true,
     loading: false,
+    initialized: false,
   };
 
   const el = {
@@ -44,6 +46,9 @@
     workflowPanel: document.getElementById("workflowPanel"),
     actionPanel: document.getElementById("actionPanel"),
     systemStrip: document.getElementById("systemStrip"),
+    missionSummaryStrip: document.getElementById("missionSummaryStrip"),
+    queueHealthChip: document.getElementById("queueHealthChip"),
+    activeAgentChip: document.getElementById("activeAgentChip"),
     newMissionDrawer: document.getElementById("newMissionDrawer"),
     newMissionForm: document.getElementById("newMissionForm"),
     newMissionResult: document.getElementById("newMissionResult"),
@@ -158,22 +163,40 @@
     if (state.loading) return;
     state.loading = true;
     try {
-      const [summary, runner, policy] = await Promise.all([
-        fetchJson(API.summary, { timeoutMs: 18000 }).catch(() => null),
-        fetchJson(API.runner, { timeoutMs: 18000 }).catch(() => state.runner || {}),
+      el.refreshBtn.disabled = true;
+      el.queueRefreshBtn.disabled = true;
+      const runnerPromise = fetchJson(API.runner, { timeoutMs: 18000 }).then((runner) => {
+        state.runner = runner;
+        if (state.initialized) {
+          renderHeader();
+          renderActionPanel();
+          renderStrip();
+        }
+      }).catch(() => null);
+      const [snapshot, policy] = await Promise.all([
+        fetchJson(API.missionControl, { timeoutMs: 18000 }).catch(() => null),
         fetchJson(API.policy, { timeoutMs: 18000 }).catch(() => ({ charlie_build_relay: state.policy || {} })),
       ]);
-      if (summary && summary.counts) state.counts = summary.counts;
-      state.runner = runner;
+      if (snapshot && snapshot.counts) state.counts = snapshot.counts;
+      if (snapshot && snapshot.buckets) state.buckets = mergeBuckets(state.buckets, snapshot.buckets);
       state.policy = policy.charlie_build_relay || {};
-      await refreshTab(state.activeTab);
+      if (!state.initialized && !(state.buckets[state.activeTab] || []).length) {
+        const usefulTab = firstUsefulTab();
+        if (usefulTab !== state.activeTab) {
+          state.activeTab = usefulTab;
+        }
+      }
       state.lastUpdated = new Date();
       ensureSelection();
+      state.initialized = true;
       render();
+      void runnerPromise;
     } catch (error) {
       renderError(error);
     } finally {
       state.loading = false;
+      el.refreshBtn.disabled = false;
+      el.queueRefreshBtn.disabled = false;
     }
   }
 
@@ -223,11 +246,10 @@
   async function refreshTab(tabId) {
     const tab = tabs.find((item) => item.id === tabId);
     if (!tab) return;
-    const loaded = [];
-    for (const status of tab.statuses) {
-      const data = await fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 });
-      loaded.push(...(data.missions || []));
-    }
+    const results = await Promise.all(tab.statuses.map((status) => (
+      fetchJson(`${API.missions}?status=${encodeURIComponent(status)}&compact=1&limit=30`, { timeoutMs: 18000 })
+    )));
+    const loaded = results.flatMap((data) => data.missions || []);
     state.buckets[tabId] = dedupe(loaded);
   }
 
@@ -267,11 +289,40 @@
 
   function render() {
     renderHeader();
+    renderMissionSummary();
     renderTabs();
     renderQueue();
     renderWorkflow();
     renderActionPanel();
     renderStrip();
+  }
+
+  function firstUsefulTab() {
+    const preference = ["blocked", "review", "active", "new", "approved", "done"];
+    return preference.find((tabId) => countForTab(tabs.find((tab) => tab.id === tabId)) > 0) || "active";
+  }
+
+  function renderMissionSummary() {
+    const mission = selectedMission();
+    const activeCount = Number(state.counts.in_progress || 0) + Number(state.counts.release_in_progress || 0);
+    const reviewCount = Number(state.counts.pr_ready || 0) + Number(state.counts.release_approved || 0);
+    const blockedCount = Number(state.counts.blocked || 0);
+    const approvedCount = Number(state.counts.approved || 0);
+    const currentAgent = mission ? stageLabel(mission) : (activeCount ? "Loading active mission" : "None");
+    const items = [
+      ["Active", activeCount, currentAgent],
+      ["Approved queue", approvedCount, approvedCount ? "waiting for runner" : "queue clear"],
+      ["Owner review", reviewCount, reviewCount ? "decision required" : "no review backlog"],
+      ["Blocked", blockedCount, blockedCount ? "attention required" : "no blocked missions"],
+      ["Selected progress", mission ? `${progressPct(mission)}%` : "--", mission ? titleOf(mission) : "no mission selected"],
+    ];
+    el.missionSummaryStrip.innerHTML = items.map(([label, value, note]) => `<div class="summary-item" title="${escapeAttr(note)}">
+      <div class="summary-label">${escapeHtml(label)}</div><div class="summary-value">${escapeHtml(value)}</div><div class="summary-note">${escapeHtml(note)}</div>
+    </div>`).join("");
+    el.queueHealthChip.className = `chip ${blockedCount ? "red" : reviewCount ? "purple" : "green"}`;
+    el.queueHealthChip.textContent = blockedCount ? `${blockedCount} blocked` : reviewCount ? `${reviewCount} review` : "Queue healthy";
+    el.activeAgentChip.className = `chip ${mission && ["blocked"].includes(text(mission.status).toLowerCase()) ? "red" : mission ? "green" : ""}`;
+    el.activeAgentChip.textContent = mission ? cleanAgentName(stageLabel(mission)) : "No agent";
   }
 
   function renderHeader() {
@@ -314,6 +365,7 @@
   }
 
   function countForTab(tab) {
+    if (!tab) return 0;
     if (state.buckets[tab.id]) return state.buckets[tab.id].length;
     return tab.statuses.reduce((total, status) => total + Number(state.counts[status] || 0), 0);
   }
@@ -400,7 +452,7 @@
     if (["active", "running", "in_progress"].includes(raw)) cls = "active";
     if (raw === "blocked" || text(mission.status).toLowerCase() === "blocked" && text(stage.agent).toLowerCase() === text(stageLabel(mission)).toLowerCase()) cls = "blocked";
     if (text(mission.status).toLowerCase() === "pr_ready" && text(stage.agent).toLowerCase().includes("review")) cls = "review";
-    return `<div class="stage ${cls}">
+    return `<div class="stage ${cls}" title="${escapeAttr(text(stage.findings, "No findings yet."))}">
       <div>
         <div class="stage-name">${escapeHtml(cleanAgentName(stage.agent))}</div>
         <div class="stage-state">${escapeHtml(raw || "pending")}</div>
@@ -425,7 +477,7 @@
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
         ${actionButtons(mission)}
         ${runnerBox()}
-        ${field("Raw Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}
+        <details class="disclosure"><summary>Mission brief and review context</summary><div>${field("Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}</div></details>
       </div>`;
   }
 
@@ -478,14 +530,9 @@
     const visibility = scope === "render_cannot_see_laptop_runner"
       ? "Render can read mission status from Supabase, but it cannot see the local laptop process heartbeat. Use the local status command for runner truth."
       : text(runner.local_runner_visibility_note, "Local runner heartbeat is visible here.");
-    return `<div class="field">
-      <label>Runner</label>
-      <strong>${escapeHtml(label)}</strong>
-      <span class="muted">${escapeHtml(visibility)}</span>
-      <span class="muted">${escapeHtml(text(runner.next_action, text(local.next_action, "Start local runner before expecting approved missions to run.")))}</span>
-      <code>${escapeHtml(command)}</code>
-      <button data-copy-command="${escapeAttr(command)}">Copy Runner Command</button>
-    </div>`;
+    return `<details class="disclosure"><summary>Runner · ${escapeHtml(label)}</summary><div>
+      <div class="field"><span class="muted">${escapeHtml(visibility)}</span><span class="muted">${escapeHtml(text(runner.next_action, text(local.next_action, "Start local runner before expecting approved missions to run.")))}</span><code>${escapeHtml(command)}</code><button data-copy-command="${escapeAttr(command)}">Copy Runner Command</button></div>
+    </div></details>`;
   }
 
   function renderStrip() {
@@ -560,6 +607,11 @@
 
   function renderError(error) {
     const message = text(error && error.message, "Unable to load CHARLIE Mission Control.");
+    if (state.initialized && allLoadedMissions().length) {
+      el.lastUpdatedChip.className = "chip red";
+      el.lastUpdatedChip.textContent = `Refresh failed · ${message}`;
+      return;
+    }
     el.queueList.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
     el.workflowPanel.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
     el.actionPanel.innerHTML = `<div class="notice">${escapeHtml(message)}</div>`;
@@ -581,10 +633,14 @@
     await refreshAll();
   }
 
-  async function recordReviewDecision(decision) {
+  async function recordReviewDecision(decision, options = {}) {
     const mission = selectedMission();
     if (!mission) return;
-    const targetStage = text(stageLabel(mission), "builder");
+    if (decision === "send_back" && !options.confirmed) {
+      openSendBackDrawer(mission);
+      return;
+    }
+    const targetStage = text(options.targetStage, text(stageLabel(mission), "builder"));
     const confirmed = decision === "approve_final_release"
       ? window.confirm(`Approve final review for ${titleOf(mission)}? This records owner approval; it does not run shell commands from the browser.`)
       : true;
@@ -595,10 +651,25 @@
       body: JSON.stringify({
         decision,
         target_stage: targetStage,
-        comments: `Owner recorded ${decision} from CHARLIE Mission Control v2.`,
+        comments: text(options.comments, `Owner recorded ${decision} from CHARLIE Mission Control.`),
       }),
     });
     await refreshAll();
+  }
+
+  function openSendBackDrawer(mission) {
+    const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
+    const agents = Array.from(new Set(workflow.map((item) => text(item.agent)).filter(Boolean)));
+    const fallback = text(stageLabel(mission), "builder");
+    if (!agents.includes(fallback)) agents.unshift(fallback);
+    el.reviewDrawerTitle.textContent = `Send Back ${shortId(mission)}`;
+    el.reviewDrawerBody.innerHTML = `<div class="notice">Return this mission with a clear reason. CHARLIE will preserve this instruction in the review packet.</div>
+      <div class="form-grid">
+        <label>Return to stage<select id="sendBackStage">${agents.map((agent) => `<option value="${escapeAttr(agent)}">${escapeHtml(cleanAgentName(agent))}</option>`).join("")}</select></label>
+        <label>What must be corrected<textarea id="sendBackComments" required placeholder="State the exact issue and expected correction."></textarea></label>
+        <button class="warn" data-confirm-send-back>Send Back to Agent</button>
+      </div>`;
+    openDrawer(el.reviewDrawer);
   }
 
   async function openReviewDrawer() {
@@ -610,12 +681,14 @@
     try {
       const data = await fetchJson(`${API.missions}/${encodeURIComponent(mission.mission_id)}/review?compact=1`, { timeoutMs: 25000 });
       const packet = data.review_packet || data.packet || data || {};
+      const tests = Array.isArray(packet.test_evidence) ? packet.test_evidence : [];
       el.reviewDrawerBody.innerHTML = `
         ${field("Mission", `${titleOf(mission)} | ${shortId(mission)}`)}
         ${field("Status", statusLabel(mission.status))}
         ${field("Summary", text(packet.summary, text(packet.blocked_reason, "No review summary returned.")))}
         ${field("Recommended", text(packet.recommended_next_action, "No recommendation recorded."))}
         ${field("Blocked agent", text(packet.blocked_agent, "n/a"))}
+        <details class="disclosure"><summary>Test evidence (${tests.length})</summary><div>${tests.length ? tests.map((item, index) => field(`Evidence ${index + 1}`, typeof item === "string" ? item : JSON.stringify(item))).join("") : '<div class="notice">No test evidence was recorded.</div>'}</div></details>
         <div class="button-grid">
           <button class="ok" data-review-decision="approve_final_release">Approve Final</button>
           <button class="warn" data-review-decision="send_back">Send Back</button>
@@ -687,7 +760,23 @@
       }
       const reviewDecision = event.target.closest("[data-review-decision]");
       if (reviewDecision) {
-        await recordReviewDecision(reviewDecision.dataset.reviewDecision);
+        const decisionValue = reviewDecision.dataset.reviewDecision;
+        if (decisionValue === "send_back") {
+          openSendBackDrawer(selectedMission());
+          return;
+        }
+        await recordReviewDecision(decisionValue);
+        closeDrawers();
+        return;
+      }
+      if (event.target.closest("[data-confirm-send-back]")) {
+        const comments = text(document.getElementById("sendBackComments") && document.getElementById("sendBackComments").value);
+        const targetStage = text(document.getElementById("sendBackStage") && document.getElementById("sendBackStage").value, "builder");
+        if (!comments) {
+          document.getElementById("sendBackComments").focus();
+          return;
+        }
+        await recordReviewDecision("send_back", { confirmed: true, comments, targetStage });
         closeDrawers();
         return;
       }

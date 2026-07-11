@@ -996,6 +996,29 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertIn("sam-live-stock", {agent["id"] for agent in data["agents"]})
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes._dashboard_owner_queue")
+    @patch("modules.charlie.routes.mission_status_summary")
+    def test_mission_control_snapshot_returns_all_compact_status_buckets(
+        self, mission_summary, owner_queue, _owner_access
+    ):
+        charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
+        mission_summary.return_value = ({"success": True, "counts": {"blocked": 1, "new": 2}}, 200)
+        owner_queue.return_value = ({"success": True, "missions": [
+            {"mission_id": "NEW-1", "status": "new"},
+            {"mission_id": "ACTIVE-1", "status": "in_progress"},
+            {"mission_id": "BLOCK-1", "status": "blocked"},
+        ]}, 200)
+
+        response = self.client.get("/api/charlie/build-relay/mission-control")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["authoritative"])
+        self.assertEqual(data["source"], "supabase_charlie_missions")
+        self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
+        self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
+
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_core_readiness_route_returns_stage_percentages(self, get_mission, _owner_access):
         get_mission.return_value = ({

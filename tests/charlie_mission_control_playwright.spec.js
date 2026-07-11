@@ -1,0 +1,71 @@
+const { test, expect } = require("@playwright/test");
+
+const blockedMission = {
+  mission_id: "CHARLIE-MISSION-UI-1",
+  title: "Herdmaster allocation alert engine",
+  raw_text: "Build a deterministic owner-safe alert engine.",
+  status: "blocked",
+  urgency: "P1",
+  approval_level: "LEVEL 3",
+  mission_type: "system improvement",
+  queue_class: "owner_work",
+  agent_workflow: [
+    { agent: "planner", status: "complete", findings: "Plan complete." },
+    { agent: "builder", status: "blocked", findings: "PR evidence is missing." },
+    { agent: "tester", status: "pending", findings: "Waiting for corrected build." },
+  ],
+  metadata: {
+    review_packet: {
+      summary: "Builder stopped before owner review.",
+      blocked_agent: "builder",
+      blocked_reason: "PR evidence is missing.",
+      recommended_next_action: "Return to builder with the missing evidence requirement.",
+      test_evidence: ["Focused unit tests passed."],
+    },
+  },
+};
+
+test("mission cockpit loads useful evidence and send-back requires owner comments", async ({ page }) => {
+  let reviewRequest = null;
+  await page.route("**/api/charlie/build-relay/mission-control**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      success: true,
+      counts: { blocked: 1, new: 3, pr_ready: 0, approved: 0, done: 8 },
+      buckets: { active: [], new: [], approved: [], review: [], blocked: [blockedMission] },
+    }),
+  }));
+  await page.route("**/api/charlie/build-relay/runner/status**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, local_runner_scope: "render_cannot_see_laptop_runner", local_runner: {} }),
+  }));
+  await page.route("**/api/charlie/build-relay/policy**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ success: true, charlie_build_relay: { enabled: true } }),
+  }));
+  await page.route("**/api/charlie/build-relay/missions/CHARLIE-MISSION-UI-1/review", async (route) => {
+    if (route.request().method() === "POST") reviewRequest = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+  });
+
+  await page.goto("/charlie-v2");
+  await expect(page.getByText("Herdmaster allocation alert engine").first()).toBeVisible();
+  await expect(page.getByText("PR evidence is missing.").first()).toBeVisible();
+  await expect(page.getByText("builder", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Send Back", exact: true }).click();
+  await expect(page.getByText("What must be corrected")).toBeVisible();
+  await page.locator("#sendBackComments").fill("Attach the PR and rerun the focused tests.");
+  await page.locator("#sendBackStage").selectOption("builder");
+  await page.getByRole("button", { name: "Send Back to Agent" }).click();
+
+  expect(reviewRequest).toEqual(expect.objectContaining({
+    decision: "send_back",
+    target_stage: "builder",
+    comments: "Attach the PR and rerun the focused tests.",
+  }));
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

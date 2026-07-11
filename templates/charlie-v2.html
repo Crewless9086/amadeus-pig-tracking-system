@@ -3,577 +3,170 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CHARLIE CORE Mission Control v2</title>
+  <title>CHARLIE CORE Mission Control</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg: #050a0f;
-      --panel: #0b1520;
-      --panel-2: #0f1d2a;
-      --line: #1d3952;
-      --line-soft: rgba(79, 161, 220, 0.22);
-      --text: #f2f7fb;
-      --muted: #9fb0bf;
-      --blue: #39a8ff;
-      --green: #30d176;
-      --amber: #ffc43d;
-      --red: #ff5454;
-      --purple: #a46cff;
-      --button: #1766d2;
-      --button-2: #1f3752;
+      --ink: #171a18; --muted: #68726c; --line: #d9dfdb; --paper: #f4f6f3; --surface: #fff;
+      --charcoal: #202724; --green: #176b4b; --green-soft: #e2f1e9; --amber: #a9620a;
+      --amber-soft: #fff0d8; --red: #a43c34; --red-soft: #f9e7e4; --blue: #2d657b;
+      --blue-soft: #e2eff4; --purple: #70508b; --purple-soft: #eee8f2;
     }
-
     * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--text);
-      font-family: Inter, "Segoe UI", Arial, sans-serif;
-      letter-spacing: 0;
-    }
-
-    button, input, select, textarea {
-      font: inherit;
-    }
-
-    button {
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: var(--button-2);
-      color: var(--text);
-      cursor: pointer;
-      min-height: 38px;
-    }
-
-    button:hover { border-color: var(--blue); }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-
-    .app {
-      height: 100vh;
-      display: grid;
-      grid-template-rows: 72px minmax(0, 1fr) 70px;
-      overflow: hidden;
-      background:
-        linear-gradient(rgba(38, 143, 218, 0.055) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(38, 143, 218, 0.055) 1px, transparent 1px),
-        var(--bg);
-      background-size: 64px 64px;
-    }
-
-    .topbar {
-      display: grid;
-      grid-template-columns: 320px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 16px;
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--line-soft);
-      background: rgba(6, 12, 19, 0.94);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .brand-mark {
-      width: 42px;
-      height: 42px;
-      border: 1px solid var(--blue);
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      color: var(--blue);
-      font-weight: 800;
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 20px;
-      line-height: 1.1;
-    }
-
-    .brand p, .panel-sub, .muted {
-      margin: 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .top-status {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .top-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      min-height: 28px;
-      padding: 4px 9px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      color: var(--text);
-      background: rgba(13, 27, 39, 0.9);
-      font-size: 13px;
-      white-space: nowrap;
-    }
-
-    .chip.green { color: var(--green); border-color: rgba(48, 209, 118, 0.45); }
-    .chip.amber { color: var(--amber); border-color: rgba(255, 196, 61, 0.45); }
-    .chip.red { color: var(--red); border-color: rgba(255, 84, 84, 0.45); }
-    .chip.purple { color: var(--purple); border-color: rgba(164, 108, 255, 0.45); }
-
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-      display: inline-block;
-    }
-
-    .workspace {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: 330px minmax(520px, 1fr) 330px;
-      gap: 14px;
-      padding: 14px 20px;
-      overflow: hidden;
-    }
-
-    .panel {
-      min-height: 0;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(10, 22, 33, 0.92);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 14px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .panel-title {
-      margin: 0;
-      font-size: 16px;
-      line-height: 1.2;
-    }
-
-    .queue-actions {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .primary {
-      background: var(--button);
-      border-color: #2d7de0;
-      font-weight: 700;
-    }
-
-    .tabs {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-      padding: 0 14px 12px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .tab {
-      min-height: 34px;
-      padding: 5px 7px;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .tab.active {
-      color: var(--text);
-      border-color: var(--blue);
-      background: rgba(57, 168, 255, 0.12);
-    }
-
-    .queue-list {
-      overflow: auto;
-      padding: 10px 12px 14px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .mission-card {
-      text-align: left;
-      padding: 11px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(8, 17, 27, 0.95);
-      color: var(--text);
-      min-height: 132px;
-      display: grid;
-      gap: 8px;
-      overflow: hidden;
-    }
-
-    .mission-card.selected {
-      border-color: var(--amber);
-      box-shadow: 0 0 0 1px rgba(255, 196, 61, 0.25) inset;
-    }
-
-    .mission-card-title {
-      font-weight: 800;
-      font-size: 14px;
-      line-height: 1.2;
-      overflow-wrap: anywhere;
-    }
-
-    .mission-card-meta {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .reason {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.25;
-      max-height: 31px;
-      overflow: hidden;
-    }
-
-    .bar {
-      height: 7px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.09);
-      overflow: hidden;
-    }
-
-    .bar > span {
-      display: block;
-      height: 100%;
-      background: var(--blue);
-      width: 0%;
-    }
-
-    .status-new .bar > span, .status-approved .bar > span { background: var(--amber); }
-    .status-in_progress .bar > span, .status-release_in_progress .bar > span { background: var(--blue); }
-    .status-pr_ready .bar > span, .status-release_approved .bar > span { background: var(--purple); }
-    .status-blocked .bar > span { background: var(--red); }
-    .status-done .bar > span, .status-deployed .bar > span, .status-merged .bar > span { background: var(--green); }
-
-    .center-body, .action-body {
-      min-height: 0;
-      overflow: auto;
-      padding: 14px;
-    }
-
-    .mission-hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 14px;
-      align-items: start;
-      margin-bottom: 14px;
-    }
-
-    .mission-hero h2 {
-      margin: 0 0 6px;
-      font-size: 22px;
-      line-height: 1.15;
-      overflow-wrap: anywhere;
-    }
-
-    .mission-stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      margin: 10px 0 14px;
-    }
-
-    .metric {
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-      padding: 10px;
-      background: rgba(5, 12, 19, 0.72);
-      min-width: 0;
-    }
-
-    .metric b {
-      display: block;
-      font-size: 18px;
-      margin-top: 4px;
-      overflow-wrap: anywhere;
-    }
-
-    .timeline {
-      display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(110px, 1fr);
-      gap: 8px;
-      overflow-x: auto;
-      padding: 6px 0 12px;
-    }
-
-    .stage {
-      min-height: 118px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      background: rgba(5, 12, 19, 0.74);
-      display: grid;
-      align-content: space-between;
-      gap: 8px;
-    }
-
-    .stage.complete { border-color: rgba(48, 209, 118, 0.55); }
-    .stage.active { border-color: rgba(255, 196, 61, 0.78); background: rgba(83, 62, 8, 0.28); }
-    .stage.blocked { border-color: rgba(255, 84, 84, 0.7); }
-    .stage.review { border-color: rgba(164, 108, 255, 0.7); }
-
-    .stage-name {
-      font-weight: 800;
-      font-size: 13px;
-      line-height: 1.15;
-      overflow-wrap: anywhere;
-    }
-
-    .stage-state {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-
-    .evidence {
-      display: grid;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .evidence-row {
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-      padding: 10px;
-      background: rgba(5, 12, 19, 0.62);
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
-      overflow-wrap: anywhere;
-    }
-
-    .summary-block {
-      display: grid;
-      gap: 10px;
-    }
-
-    .summary-title {
-      font-size: 18px;
-      margin: 0;
-      line-height: 1.2;
-      overflow-wrap: anywhere;
-    }
-
-    .field {
-      display: grid;
-      gap: 3px;
-      padding: 10px;
-      border: 1px solid var(--line-soft);
-      border-radius: 8px;
-      background: rgba(5, 12, 19, 0.62);
-    }
-
-    .field label {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .field strong, .field code {
-      overflow-wrap: anywhere;
-    }
-
-    .button-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .wide { grid-column: 1 / -1; }
-    .danger { border-color: rgba(255, 84, 84, 0.55); color: #ffd8d8; }
-    .warn { border-color: rgba(255, 196, 61, 0.65); color: #ffe8a7; }
-    .ok { border-color: rgba(48, 209, 118, 0.6); color: #c8f7dc; }
-
-    .system-strip {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 10px;
-      padding: 10px 20px 14px;
-      border-top: 1px solid var(--line-soft);
-      background: rgba(6, 12, 19, 0.94);
-    }
-
-    .strip-item {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 9px 11px;
-      min-width: 0;
-      background: rgba(10, 22, 33, 0.8);
-    }
-
-    .strip-item span {
-      color: var(--muted);
-      font-size: 12px;
-      display: block;
-    }
-
-    .strip-item b {
-      display: block;
-      font-size: 15px;
-      margin-top: 3px;
-      overflow-wrap: anywhere;
-    }
-
-    .drawer {
-      position: fixed;
-      inset: 0;
-      display: none;
-      background: rgba(0, 0, 0, 0.58);
-      z-index: 20;
-      align-items: stretch;
-      justify-content: flex-end;
-    }
-
+    html, body { height: 100%; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+    button, input, textarea, select, a { font: inherit; }
+    button { cursor: pointer; }
+    .app { width: 100%; height: 100vh; min-height: 720px; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 64px 76px minmax(0, 1fr) 42px; overflow: hidden; }
+    .topbar { display: grid; grid-template-columns: minmax(230px, 1fr) auto minmax(250px, 1fr); align-items: center; gap: 18px; padding: 0 22px; color: #fff; background: var(--charcoal); border-bottom: 3px solid #e8b44c; }
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 6px; background: #e8b44c; color: var(--charcoal); font-weight: 850; font-size: 13px; }
+    .brand h1 { margin: 0; font-size: 17px; line-height: 1.1; }
+    .brand p { margin: 3px 0 0; color: #bfc9c3; font-size: 11px; }
+    .view-tabs { display: flex; align-items: center; gap: 4px; }
+    .view-tabs a { color: #cfd8d3; text-decoration: none; padding: 8px 12px; border-radius: 5px; font-size: 12px; font-weight: 750; }
+    .view-tabs a.active { color: #fff; background: rgba(255,255,255,.12); }
+    .top-status { display: flex; justify-content: flex-end; align-items: center; gap: 7px; min-width: 0; }
+    .chip { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; min-height: 28px; padding: 5px 8px; border: 1px solid #d5dbd7; border-radius: 4px; background: #eef1ef; color: #445049; font-size: 9px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar .chip { color: #eef4f0; background: transparent; border-color: rgba(255,255,255,.2); }
+    .chip.green { color: #d9f3e5; border-color: rgba(69,185,130,.45); background: rgba(23,107,75,.22); }
+    .chip.amber { color: #ffe4b4; border-color: rgba(232,180,76,.42); background: rgba(169,98,10,.2); }
+    .chip.red { color: #ffd7d2; border-color: rgba(216,92,82,.45); background: rgba(164,60,52,.22); }
+    .chip.purple { color: #f1e4fa; border-color: rgba(174,132,204,.45); background: rgba(112,80,139,.3); }
+    .dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #e8b44c; }
+    .green .dot { background: #45b982; } .red .dot { background: #d85c52; }
+    .icon-button { width: 34px; height: 30px; border: 1px solid rgba(255,255,255,.22); color: #fff; background: transparent; border-radius: 5px; font-size: 17px; }
+    .summary-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: #fff; border-bottom: 1px solid var(--line); }
+    .summary-item { padding: 13px 20px; border-right: 1px solid var(--line); min-width: 0; }
+    .summary-item:last-child { border-right: 0; }
+    .summary-label { color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
+    .summary-value { margin-top: 4px; font-size: 22px; font-weight: 850; line-height: 1; }
+    .summary-note { margin-top: 4px; color: var(--muted); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .workspace { min-height: 0; display: grid; grid-template-columns: minmax(270px, 29%) minmax(460px, 45%) minmax(290px, 26%); background: #fff; }
+    .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+    .panel:last-child { border-right: 0; }
+    .panel-head { min-height: 62px; padding: 13px 16px 10px; border-bottom: 1px solid var(--line); }
+    .panel-head-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .panel-title { margin: 0; font-size: 13px; font-weight: 850; }
+    .panel-sub { margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .queue-toolbar { display: flex; gap: 7px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+    button, .button { min-height: 32px; border: 1px solid #cdd5d0; border-radius: 5px; padding: 6px 10px; color: var(--ink); background: #fff; font-size: 10px; font-weight: 800; }
+    button:hover { border-color: var(--green); }
+    button.primary { color: #fff; background: var(--green); border-color: var(--green); }
+    button.ok { color: #fff; background: var(--green); border-color: var(--green); }
+    button.warn { color: #6f4309; background: var(--amber-soft); border-color: #efc886; }
+    button.danger { color: #7f2e28; background: var(--red-soft); border-color: #e2b0ab; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .tabs { display: flex; gap: 3px; overflow-x: auto; padding: 0 12px 9px; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+    .tab { flex: 0 0 auto; min-height: 27px; padding: 4px 7px; border-color: transparent; background: transparent; color: var(--muted); font-size: 9px; }
+    .tab b { margin-left: 3px; color: var(--ink); }
+    .tab.active { color: var(--green); border-color: #b8d6c7; background: var(--green-soft); }
+    .queue-list { min-height: 0; overflow: auto; padding: 0; }
+    .mission-card { width: 100%; min-height: 91px; display: block; padding: 10px 13px; border: 0; border-bottom: 1px solid #edf0ee; border-left: 3px solid transparent; border-radius: 0; text-align: left; background: #fff; }
+    .mission-card:hover { background: #f8faf8; }
+    .mission-card.selected { border-left-color: var(--green); background: var(--green-soft); }
+    .mission-card-title { margin-bottom: 6px; font-size: 11px; line-height: 1.25; font-weight: 850; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mission-card-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
+    .bar { height: 5px; margin: 7px 0 5px; overflow: hidden; border-radius: 2px; background: #e4e9e6; }
+    .bar span { display: block; height: 100%; background: var(--green); }
+    .reason { margin-top: 6px; color: #58635d; font-size: 9px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .center-body, .action-body { min-height: 0; overflow: auto; padding: 14px 16px 20px; }
+    .center-body { background: #f7f9f7; }
+    .mission-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .mission-hero h2 { margin: 0; font-size: 18px; line-height: 1.16; }
+    .muted { color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .mission-stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; border: 1px solid var(--line); background: var(--line); gap: 1px; }
+    .metric { min-width: 0; min-height: 54px; padding: 9px; background: #fff; }
+    .metric span { display: block; text-transform: uppercase; font-size: 8px; }
+    .metric b { display: block; margin-top: 5px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timeline { display: flex; gap: 7px; margin-top: 17px; padding-bottom: 7px; overflow-x: auto; scrollbar-width: thin; }
+    .stage { position: relative; flex: 0 0 112px; min-height: 67px; padding: 9px; border: 1px solid #d5dbd7; border-top: 3px solid #aab4ae; border-radius: 5px; background: #fff; }
+    .stage.complete { border-top-color: var(--green); background: #f7fbf8; }
+    .stage.active { border-top-color: #e8b44c; background: var(--amber-soft); }
+    .stage.blocked { border-top-color: var(--red); background: var(--red-soft); }
+    .stage.review { border-top-color: var(--purple); background: var(--purple-soft); }
+    .stage-name { font-size: 9px; font-weight: 850; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stage-state { margin-top: 5px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
+    .stage .muted { display: block; margin-top: 7px; max-height: 27px; overflow: hidden; }
+    .evidence { margin-top: 13px; border-top: 1px solid var(--line); }
+    .evidence-row { padding: 9px 1px; border-bottom: 1px solid var(--line); font-size: 9px; line-height: 1.4; }
+    .evidence-row strong { display: inline-block; min-width: 85px; }
+    .summary-block { display: grid; gap: 10px; }
+    .summary-title { margin: 0; font-size: 15px; line-height: 1.2; }
+    .field { display: grid; gap: 4px; padding: 9px 10px; background: #f1f4f2; }
+    .field label { color: var(--muted); font-size: 8px; font-weight: 850; text-transform: uppercase; }
+    .field strong { font-size: 10px; line-height: 1.35; }
+    .field code { display: block; overflow-wrap: anywhere; color: #445049; font-size: 8px; line-height: 1.35; }
+    .button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .button-grid .wide { grid-column: 1 / -1; }
+    .notice { padding: 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #67420d; font-size: 9px; line-height: 1.45; }
+    details.disclosure { border: 1px solid var(--line); background: #fff; }
+    details.disclosure summary { padding: 9px 10px; cursor: pointer; color: #4e5a53; font-size: 9px; font-weight: 800; }
+    details.disclosure > div { padding: 0 10px 10px; }
+    .system-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--line); background: #edf0ee; }
+    .strip-item { display: flex; align-items: center; gap: 6px; padding: 0 15px; border-right: 1px solid var(--line); font-size: 8px; white-space: nowrap; overflow: hidden; }
+    .strip-item span { color: var(--muted); text-transform: uppercase; }
+    .strip-item b { overflow: hidden; text-overflow: ellipsis; }
+    .drawer { position: fixed; inset: 0; z-index: 30; display: none; justify-content: flex-end; background: rgba(20,27,23,.45); }
     .drawer.open { display: flex; }
-
-    .drawer-panel {
-      width: min(560px, 100vw);
-      background: #08121c;
-      border-left: 1px solid var(--line);
-      padding: 18px;
-      overflow: auto;
-      display: grid;
-      align-content: start;
-      gap: 14px;
-    }
-
-    .drawer-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .form-grid {
-      display: grid;
-      gap: 10px;
-    }
-
-    input, select, textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #07101a;
-      color: var(--text);
-      padding: 10px;
-    }
-
-    textarea { min-height: 120px; resize: vertical; }
-
-    .notice {
-      border: 1px solid rgba(255, 196, 61, 0.45);
-      border-radius: 8px;
-      padding: 10px;
-      background: rgba(83, 62, 8, 0.22);
-      color: #ffe8a7;
-      font-size: 13px;
-      line-height: 1.35;
-    }
-
+    .drawer-panel { width: min(520px, 100%); height: 100%; overflow: auto; padding: 18px; background: #fff; box-shadow: -10px 0 30px rgba(20,27,23,.18); }
+    .drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+    .form-grid { display: grid; gap: 11px; margin-top: 15px; }
+    .form-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 800; }
+    input, textarea, select { width: 100%; border: 1px solid #cbd3ce; border-radius: 4px; padding: 8px 9px; color: var(--ink); background: #fff; }
+    textarea { min-height: 92px; resize: vertical; }
     .hidden { display: none !important; }
-
-    @media (max-width: 1180px) {
-      .app { height: auto; min-height: 100vh; overflow: auto; grid-template-rows: auto auto auto; }
-      .topbar, .workspace, .system-strip { grid-template-columns: 1fr; }
-      .workspace { overflow: visible; }
-      .panel { min-height: 360px; }
+    @media (max-width: 1100px) {
+      .app { height: auto; min-height: 100vh; overflow: auto; grid-template-rows: auto auto auto auto; }
+      .topbar { grid-template-columns: 1fr auto; padding: 12px 16px; }
+      .view-tabs { grid-column: 1 / -1; order: 3; }
+      .summary-strip { grid-template-columns: repeat(3, 1fr); }
+      .workspace { grid-template-columns: minmax(260px, 35%) 1fr; min-height: 920px; }
+      .action-panel { grid-column: 1 / -1; min-height: 430px; border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 720px) {
+      .topbar { grid-template-columns: 1fr; }
+      .top-status { justify-content: flex-start; flex-wrap: wrap; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .summary-item { padding: 10px 13px; }
+      .workspace { display: block; min-height: 0; }
+      .app > * { min-width: 0; max-width: 100%; }
+      .panel { min-height: 470px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .mission-stats { grid-template-columns: 1fr 1fr; }
+      .system-strip { grid-template-columns: 1fr 1fr; min-height: 80px; }
+      .strip-item { min-height: 38px; }
     }
   </style>
 </head>
 <body>
   <main class="app">
     <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">AI</div>
-        <div>
-          <h1>CHARLIE CORE</h1>
-          <p>Mission Control v2</p>
-        </div>
-      </div>
+      <div class="brand"><div class="brand-mark">AI</div><div><h1>CHARLIE CORE</h1><p>Mission Control</p></div></div>
+      <nav class="view-tabs" aria-label="CHARLIE views"><a class="active" href="/charlie-v2">Missions</a><a href="/charlie-agents">Workforce</a></nav>
       <div class="top-status">
         <span id="runnerChip" class="chip amber"><span class="dot"></span>Runner loading</span>
         <span id="telegramChip" class="chip amber"><span class="dot"></span>Telegram loading</span>
-        <span id="lastUpdatedChip" class="chip">Last update --</span>
-      </div>
-      <div class="top-actions">
-        <button id="refreshBtn">Refresh</button>
-        <a class="chip" href="/charlie-agents">Workforce</a>
-        <a class="chip" href="/charlie">Old UI</a>
+        <span id="lastUpdatedChip" class="chip">Updated --</span>
+        <button id="refreshBtn" class="icon-button" title="Refresh mission evidence" aria-label="Refresh">&#8635;</button>
       </div>
     </header>
 
+    <section id="missionSummaryStrip" class="summary-strip" aria-label="Mission summary"></section>
+
     <section class="workspace">
       <aside class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Mission Queue</h2>
-            <p class="panel-sub">Title-first queue, owner actions only.</p>
-          </div>
-        </div>
-        <div class="queue-actions">
-          <button id="newMissionBtn" class="primary">+ New Mission</button>
-          <button id="queueRefreshBtn" title="Refresh queue">Refresh</button>
-        </div>
+        <div class="panel-head"><div class="panel-head-row"><h2 class="panel-title">Mission Queue</h2><span id="queueHealthChip" class="chip">Loading</span></div><p class="panel-sub">Select a mission. Counts remain visible across every status.</p></div>
+        <div class="queue-toolbar"><button id="newMissionBtn" class="primary">+ New Mission</button><button id="queueRefreshBtn" title="Refresh queue">Refresh</button></div>
         <div id="tabs" class="tabs"></div>
         <div id="queueList" class="queue-list"><div class="notice">Loading mission queue...</div></div>
       </aside>
 
       <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Workflow</h2>
-            <p id="workflowSub" class="panel-sub">Select a mission to inspect the execution path.</p>
-          </div>
-          <span id="selectedStatusChip" class="chip">No mission</span>
-        </div>
-        <div id="workflowPanel" class="center-body"><div class="notice">Loading workflow data...</div></div>
+        <div class="panel-head"><div class="panel-head-row"><h2 class="panel-title">Execution Flow</h2><span id="selectedStatusChip" class="chip">No mission</span></div><p id="workflowSub" class="panel-sub">Select a mission to inspect agents and progress.</p></div>
+        <div id="workflowPanel" class="center-body"><div class="notice">Loading workflow evidence...</div></div>
       </section>
 
-      <aside class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">Owner Action</h2>
-            <p class="panel-sub">Only owner-gated mission decisions.</p>
-          </div>
-        </div>
+      <aside class="panel action-panel">
+        <div class="panel-head"><div class="panel-head-row"><h2 class="panel-title">Owner Decision</h2><span id="activeAgentChip" class="chip">No agent</span></div><p class="panel-sub">Only actions allowed by the mission's current state.</p></div>
         <div id="actionPanel" class="action-body"><div class="notice">Loading owner actions...</div></div>
       </aside>
     </section>
@@ -581,49 +174,25 @@
     <footer id="systemStrip" class="system-strip"></footer>
   </main>
 
-  <div id="newMissionDrawer" class="drawer" aria-hidden="true">
-    <div class="drawer-panel">
-      <div class="drawer-head">
-        <h2 class="panel-title">New Mission</h2>
-        <button data-close-drawer>Close</button>
-      </div>
-      <form id="newMissionForm" class="form-grid">
-        <label>Title<input name="title" required maxlength="180" placeholder="Short mission title"></label>
-        <label>Mission brief<textarea name="raw_text" required placeholder="What CHARLIE must do, why, and acceptance criteria."></textarea></label>
-        <label>Urgency
-          <select name="urgency">
-            <option>P0</option>
-            <option>P1</option>
-            <option selected>P2</option>
-            <option>P3</option>
-          </select>
-        </label>
-        <label>Approval level
-          <select name="approval_level">
-            <option>LEVEL 1</option>
-            <option>LEVEL 2</option>
-            <option selected>LEVEL 3</option>
-            <option>LEVEL 4</option>
-          </select>
-        </label>
-        <label>Mission type<input name="mission_type" value="feature build"></label>
-        <label>Desired outcome<textarea name="desired_outcome" placeholder="Optional outcome summary."></textarea></label>
-        <button class="primary" type="submit">Create Mission</button>
-      </form>
-      <div id="newMissionResult" class="notice hidden"></div>
-    </div>
-  </div>
+  <div id="newMissionDrawer" class="drawer" aria-hidden="true"><div class="drawer-panel">
+    <div class="drawer-head"><h2 class="panel-title">New Mission</h2><button data-close-drawer>Close</button></div>
+    <form id="newMissionForm" class="form-grid">
+      <label>Title<input name="title" required maxlength="180" placeholder="Short mission title"></label>
+      <label>Mission brief<textarea name="raw_text" required placeholder="What CHARLIE must do, why, and acceptance criteria."></textarea></label>
+      <label>Urgency<select name="urgency"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
+      <label>Approval level<select name="approval_level"><option>LEVEL 1</option><option>LEVEL 2</option><option selected>LEVEL 3</option><option>LEVEL 4</option></select></label>
+      <label>Mission type<input name="mission_type" value="feature build"></label>
+      <label>Desired outcome<textarea name="desired_outcome" placeholder="Optional outcome summary."></textarea></label>
+      <button class="primary" type="submit">Create Mission</button>
+    </form>
+    <div id="newMissionResult" class="notice hidden"></div>
+  </div></div>
 
-  <div id="reviewDrawer" class="drawer" aria-hidden="true">
-    <div class="drawer-panel">
-      <div class="drawer-head">
-        <h2 id="reviewDrawerTitle" class="panel-title">Mission Review</h2>
-        <button data-close-drawer>Close</button>
-      </div>
-      <div id="reviewDrawerBody" class="summary-block"></div>
-    </div>
-  </div>
+  <div id="reviewDrawer" class="drawer" aria-hidden="true"><div class="drawer-panel">
+    <div class="drawer-head"><h2 id="reviewDrawerTitle" class="panel-title">Mission Review</h2><button data-close-drawer>Close</button></div>
+    <div id="reviewDrawerBody" class="summary-block"></div>
+  </div></div>
 
-  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260709-runner-truth') }}"></script>
+  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260711-mission-control-refresh') }}"></script>
 </body>
 </html>
