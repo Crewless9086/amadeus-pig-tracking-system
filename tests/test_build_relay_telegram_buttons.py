@@ -32,6 +32,12 @@ class FakeTelegramClient:
         self.answers.append({"id": callback_query_id, "text": text})
 
 
+class ExpiredCallbackClient(FakeTelegramClient):
+    def answer_callback_query(self, callback_query_id, text=""):
+        self.answers.append({"id": callback_query_id, "text": text})
+        raise TimeoutError("callback expired")
+
+
 def enabled_env():
     return {
         "CHARLIE_BUILD_RELAY_ENABLED": "1",
@@ -278,6 +284,44 @@ class BuildRelayTelegramButtonsTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason, "unknown_callback")
         self.assertEqual(client.answers[0]["text"], "Unknown CHARLIE action.")
+
+    def test_expired_callback_ack_does_not_block_mission_card(self):
+        mission = {
+            "mission_id": "MISSION-ONE",
+            "title": "Review mission",
+            "status": "pr_ready",
+            "metadata": {},
+        }
+        client = ExpiredCallbackClient()
+
+        def list_loader(**_kwargs):
+            return {"missions": [mission]}, 200
+
+        def get_loader(_mission_id):
+            return {"mission": mission}, 200
+
+        result = build_relay_telegram_buttons.handle_update(
+            {
+                "callback_query": {
+                    "id": "expired-callback",
+                    "data": build_relay_telegram_buttons.charlie_mission_telegram.mission_callback("MISSION-ONE", "open"),
+                    "from": {"id": 1001},
+                    "message": {"chat": {"id": 1001}},
+                }
+            },
+            environ=enabled_env(),
+            client=client,
+            mission_list_loader=list_loader,
+            mission_get_loader=get_loader,
+            mission_status_updater=lambda *_args, **_kwargs: ({"status": "ok"}, 200),
+            mission_review_updater=lambda *_args, **_kwargs: ({"status": "ok"}, 200),
+            runner_status_loader=lambda **_kwargs: {"status": "runner_active"},
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.action, "mission_opened")
+        self.assertEqual(len(client.messages), 1)
+        self.assertIn("CHARLIE MISSION", client.messages[0]["text"])
 
 
 if __name__ == "__main__":
