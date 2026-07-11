@@ -96,6 +96,39 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("\n- 2 x Female", event["sam_reply_excerpt"])
         self.assertIn("\n- Estimated total", event["sam_reply_excerpt"])
 
+    def test_owner_review_card_surfaces_delivery_estimate_fields(self):
+        inbound, facts, decision = review_inputs("Can you deliver to Albertinia? It is 30 km one way.")
+        facts.update({
+            "transport_expectation": "delivery_requested",
+            "delivery_destination": "Albertinia",
+            "delivery_one_way_km": 30,
+        })
+        decision["delivery_estimate_packet"] = {
+            "delivery_requested": True,
+            "destination": "Albertinia",
+            "one_way_km": 30,
+            "delivery_fee_estimate": 600,
+            "total_with_livestock_and_delivery": 1600,
+            "owner_override_warning": "Delivery is an owner-reviewed estimate only.",
+        }
+        event = launch.build_sam_live_stock_review_event(
+            inbound,
+            facts,
+            decision,
+            {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+        )
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+        text = packet["telegram_packet"]["text"]
+
+        self.assertIn("Delivery requested: yes", text)
+        self.assertIn("Delivery destination: Albertinia", text)
+        self.assertIn("One-way km: 30 km", text)
+        self.assertIn("Delivery estimate: R600", text)
+        self.assertIn("Total incl delivery: R1,600", text)
+        self.assertIn("Owner override: Delivery is an owner-reviewed estimate only.", text)
+        self.assertIn("Flags: delivery estimate owner review", text)
+
     def test_record_review_event_requires_database_url(self):
         inbound, facts, decision = review_inputs()
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision)

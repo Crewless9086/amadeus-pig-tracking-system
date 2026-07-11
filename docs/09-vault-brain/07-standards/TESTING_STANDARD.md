@@ -48,6 +48,12 @@ For live operational paths, include at least one failure/edge case where practic
 - service unavailable or not configured;
 - user sends vague/short input.
 
+## Timeout Handling
+
+Timeouts are evidence, not automatic pass or automatic fail. A broad CHARLIE runner or full-suite timeout may be treated as advisory only when focused tests for the changed safety surface pass and the timeout has no direct owner/customer/order/stock risk.
+
+Real safety failures still block even if they appear beside timeout noise. Customer sends, Chatwoot writes, order/quote execution, stock reservation, production data writes, migrations, payments, public posts, farm lifecycle changes, auth failures, and source-of-truth failures must not be downgraded to advisory because another command timed out.
+
 ## Source References
 
 - `docs/06-operations/TESTING_CHECKLIST.md`

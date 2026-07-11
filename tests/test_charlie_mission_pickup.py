@@ -41,6 +41,20 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def setUp(self):
+        if self._testMethodName.startswith("test_ensure_base_branch"):
+            return
+        patcher = patch(
+            "scripts.charlie_mission_pickup._ensure_base_branch",
+            return_value={
+                "success": True,
+                "status": "base_branch_test_isolated",
+                "base_branch": "charlie-runner-clean-base",
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
     def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run):
