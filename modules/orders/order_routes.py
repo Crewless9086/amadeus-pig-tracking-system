@@ -27,6 +27,7 @@ from modules.orders.order_service import (
     sync_order_lines_from_request,
     create_order_with_lines,
 )
+from modules.orders.approved_order_revision import revise_approved_livestock_order
 from modules.documents.quote_service import (
     auto_generate_quote_if_ready,
     auto_generate_quote_if_ready_with_retry,
@@ -467,6 +468,64 @@ def send_latest_quote_confirmed(order_id):
             "conversation_id": conversation_id,
             "errors": [str(exc)],
         }), 400
+
+
+@orders_bp.route("/orders/<order_id>/approved-livestock-revision", methods=["POST"])
+def approved_livestock_revision(order_id):
+    payload = request.get_json(silent=True) or {}
+    sync_validation = validate_sync_order_lines_payload(payload)
+    order_updates = payload.get("order_updates") if isinstance(payload.get("order_updates"), dict) else {}
+    update_validation = {"is_valid": True, "errors": [], "cleaned_data": {}}
+    if order_updates:
+        update_validation = validate_update_order_payload(order_updates)
+
+    errors = []
+    if not sync_validation["is_valid"]:
+        errors.extend(sync_validation["errors"])
+    if not update_validation["is_valid"]:
+        errors.extend([f"order_updates.{item}" for item in update_validation["errors"]])
+
+    if errors:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": errors,
+        }), 400
+
+    cleaned_payload = dict(payload)
+    cleaned_payload["requested_items"] = sync_validation["cleaned_data"]["requested_items"]
+    cleaned_payload["changed_by"] = sync_validation["cleaned_data"]["changed_by"]
+    cleaned_payload["order_updates"] = update_validation["cleaned_data"]
+
+    try:
+        result = revise_approved_livestock_order(
+            order_id,
+            cleaned_payload,
+            quote_generator=auto_generate_quote_if_ready,
+            loading_sheet_generator=generate_loading_sheet_for_order,
+            removal_certificate_generator=generate_removal_certificate_for_order,
+            health_declaration_generator=generate_health_declaration_for_order,
+            quote_send_preparer=_prepare_latest_quote_send_context,
+            document_lookup=get_order_documents,
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": [str(exc)],
+        }), 400
+    except Exception as exc:
+        logger.exception("Unexpected approved livestock revision failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "action": "revise_approved_livestock_order",
+            "order_id": order_id,
+            "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
+            "message": "Approved livestock order revision failed unexpectedly.",
+        }), 500
 
 
 @orders_bp.route("/orders/<order_id>/invoice", methods=["POST"])

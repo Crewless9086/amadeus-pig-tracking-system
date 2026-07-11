@@ -153,8 +153,8 @@ def get_quote_readiness(order_id):
     lines = _active_lines(detail["lines"])
     missing_fields = []
 
-    if str(order.get("order_status", "")).strip() != "Draft":
-        missing_fields.append("draft_status")
+    if str(order.get("order_status", "")).strip() not in {"Draft", "Approved"}:
+        missing_fields.append("active_order_status")
     if not str(order.get("customer_name", "")).strip():
         missing_fields.append("customer_name")
     if str(order.get("payment_method", "")).strip() not in ("Cash", "EFT"):

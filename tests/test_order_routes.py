@@ -717,6 +717,61 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertFalse(payload["success"])
         self.assertIn("requested_items is required", payload["errors"][0])
 
+    def test_approved_livestock_revision_route_validates_and_calls_service(self):
+        service_result = {
+            "success": True,
+            "action": "revise_approved_livestock_order",
+            "order_id": "ORD-2026-12BCCC",
+            "customer_quote_send": {"sent": False, "owner_instruction_required": True},
+        }
+        payload = {
+            "changed_by": "Oom Sakkie",
+            "requested_items": [{
+                "request_item_key": "michaels-piglets",
+                "category": "Piglet",
+                "weight_range": "7_to_9_Kg",
+                "sex": "Any",
+                "quantity": 5,
+            }],
+            "order_updates": {
+                "requested_quantity": 5,
+                "requested_category": "Piglet",
+                "requested_weight_range": "7_to_9_Kg",
+                "requested_sex": "Any",
+            },
+            "sale_readiness_correction": {
+                "tag_number": "104",
+                "weight_kg": 8.4,
+                "purpose": "Sale",
+            },
+        }
+
+        with patch.object(order_routes, "revise_approved_livestock_order", return_value=service_result) as revise:
+            response = self.client.post(
+                "/api/orders/ORD-2026-12BCCC/approved-livestock-revision",
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        revise.assert_called_once()
+        self.assertEqual(revise.call_args.args[0], "ORD-2026-12BCCC")
+        cleaned = revise.call_args.args[1]
+        self.assertEqual(cleaned["requested_items"][0]["quantity"], 5)
+        self.assertEqual(cleaned["order_updates"]["requested_quantity"], 5.0)
+
+    def test_approved_livestock_revision_route_returns_400_for_invalid_payload(self):
+        response = self.client.post(
+            "/api/orders/ORD-2026-12BCCC/approved-livestock-revision",
+            json={"requested_items": []},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["action"], "revise_approved_livestock_order")
+        self.assertIn("requested_items is required", payload["errors"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
