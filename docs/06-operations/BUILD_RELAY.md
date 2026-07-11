@@ -98,7 +98,24 @@ Safety boundaries:
 - disabled relay exits safely;
 - enabled relay without token/user IDs fails safely;
 - token is read from env only and redacted from output;
+- polling advances Telegram offset to the highest processed `update_id + 1`;
+- the running process remembers processed `update_id` and `callback_query.id` values so duplicate Telegram delivery does not duplicate messages;
+- callback queries are acknowledged once with `answerCallbackQuery`;
+- a local lock file prevents accidentally running two relay processes at the same time;
 - no shell commands run;
 - Codex is not started;
 - no model APIs are called;
 - no scheduler, auto-merge, production data write, or customer send is enabled.
+
+## Duplicate Message Troubleshooting
+
+Run only one relay process at a time. The local runner uses `.charlie_runner/telegram_relay.lock` to block a second process. If the relay is stopped with `Ctrl+C`, the lock is removed automatically.
+
+If duplicate Telegram messages appear:
+
+1. Stop the relay with `Ctrl+C`.
+2. Check that no second `python scripts/charlie_telegram_relay.py` process is still running.
+3. If no relay is running but `.charlie_runner/telegram_relay.lock` remains, remove that stale lock file.
+4. Start the relay again.
+
+Duplicate updates from Telegram should be skipped in-process by `update_id`, and duplicate button callbacks should be skipped by `callback_query.id`.

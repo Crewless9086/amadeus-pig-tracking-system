@@ -13,8 +13,10 @@ scheduler, merge PRs, or write production data.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -23,6 +25,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from scripts import build_relay_notify, build_relay_telegram_buttons, codex_next_steps
+
+DEFAULT_LOCK_FILE = Path(".charlie_runner/telegram_relay.lock")
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,51 @@ class RelayResult:
 
     def as_dict(self) -> dict[str, Any]:
         return {"ok": self.ok, "action": self.action, "reason": self.reason}
+
+
+@dataclass
+class RelayRuntimeState:
+    processed_update_ids: set[int]
+    processed_callback_ids: set[str]
+    next_offset: int | None = None
+    duplicates_skipped: int = 0
+
+    @classmethod
+    def empty(cls) -> "RelayRuntimeState":
+        return cls(processed_update_ids=set(), processed_callback_ids=set())
+
+
+class RelayInstanceLock:
+    def __init__(self, path: Path = DEFAULT_LOCK_FILE) -> None:
+        self.path = path
+        self._fd: int | None = None
+
+    def acquire(self) -> RelayResult:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self._fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            payload = f"pid={os.getpid()}\nstarted_at={int(time.time())}\n"
+            os.write(self._fd, payload.encode("utf-8"))
+            atexit.register(self.release)
+            return RelayResult(ok=True, action="lock_acquired")
+        except FileExistsError:
+            return RelayResult(
+                ok=False,
+                action="lock_active",
+                reason=f"Another relay appears active via {self.path}. Stop it or remove stale lock after confirming no relay is running.",
+            )
+
+    def release(self) -> None:
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = None
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 class TelegramRelayClient(build_relay_telegram_buttons.TelegramButtonClient):
@@ -123,6 +172,42 @@ def _is_authorized(update: Mapping[str, Any], config: RelayConfig) -> bool:
     return str(_user_id_from_update(update)) in config.allowed_user_ids
 
 
+def _callback_id_from_update(update: Mapping[str, Any]) -> str:
+    if "callback_query" not in update:
+        return ""
+    return str(((update.get("callback_query") or {}).get("id") or ""))
+
+
+def _update_id_from_update(update: Mapping[str, Any]) -> int | None:
+    if "update_id" not in update:
+        return None
+    try:
+        return int(update["update_id"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_or_skip_duplicate(update: Mapping[str, Any], state: RelayRuntimeState | None) -> RelayResult | None:
+    if state is None:
+        return None
+    update_id = _update_id_from_update(update)
+    callback_id = _callback_id_from_update(update)
+    if update_id is not None and update_id in state.processed_update_ids:
+        state.duplicates_skipped += 1
+        print(f"CHARLIE relay duplicate update skipped: update_id={update_id}", file=sys.stderr)
+        return RelayResult(ok=True, action="duplicate_skipped", reason="duplicate_update_id")
+    if callback_id and callback_id in state.processed_callback_ids:
+        state.duplicates_skipped += 1
+        print("CHARLIE relay duplicate callback skipped", file=sys.stderr)
+        return RelayResult(ok=True, action="duplicate_skipped", reason="duplicate_callback_id")
+    if update_id is not None:
+        state.processed_update_ids.add(update_id)
+        state.next_offset = max(state.next_offset or 0, update_id + 1)
+    if callback_id:
+        state.processed_callback_ids.add(callback_id)
+    return None
+
+
 def status_text(config: RelayConfig) -> str:
     relay_state = "enabled" if config.enabled else "disabled"
     return "\n".join(
@@ -143,6 +228,7 @@ def handle_relay_update(
     client: Any | None = None,
     next_steps_path: Path = codex_next_steps.DEFAULT_NEXT_STEPS,
     codex_chat_path: Path = codex_next_steps.DEFAULT_CODEX_CHAT,
+    state: RelayRuntimeState | None = None,
 ) -> RelayResult:
     config = load_config(environ)
     validation = validate_config(config)
@@ -150,6 +236,10 @@ def handle_relay_update(
         return validation
 
     telegram = client or TelegramRelayClient(config.token)
+    duplicate = _mark_or_skip_duplicate(update, state)
+    if duplicate is not None:
+        return duplicate
+
     if not _is_authorized(update, config):
         if "callback_query" in update:
             callback_id = str(((update.get("callback_query") or {}).get("id") or ""))
@@ -211,6 +301,7 @@ def poll_loop(
     once: bool = False,
     dry_run: bool = False,
     poll_timeout: int = 30,
+    state: RelayRuntimeState | None = None,
 ) -> RelayResult:
     config = load_config(environ)
     validation = validate_config(config)
@@ -218,12 +309,14 @@ def poll_loop(
         return validation
     telegram = client or (DryRunTelegramClient() if dry_run else TelegramRelayClient(config.token))
 
-    offset: int | None = None
+    runtime_state = state or RelayRuntimeState.empty()
     while True:
-        updates = telegram.get_updates(offset=offset, timeout=poll_timeout)
+        updates = telegram.get_updates(offset=runtime_state.next_offset, timeout=poll_timeout)
+        max_update_id: int | None = None
         for update in updates:
-            if "update_id" in update:
-                offset = int(update["update_id"]) + 1
+            update_id = _update_id_from_update(update)
+            if update_id is not None:
+                max_update_id = max(max_update_id or update_id, update_id)
             handle_relay_update(
                 update,
                 environ={
@@ -234,7 +327,10 @@ def poll_loop(
                 client=telegram,
                 next_steps_path=next_steps_path,
                 codex_chat_path=codex_chat_path,
+                state=runtime_state,
             )
+        if max_update_id is not None:
+            runtime_state.next_offset = max(runtime_state.next_offset or 0, max_update_id + 1)
         if once:
             return RelayResult(ok=True, action="poll_once_complete")
         time.sleep(1)
@@ -247,6 +343,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--codex-chat", type=Path, default=codex_next_steps.DEFAULT_CODEX_CHAT)
     parser.add_argument("--once", action="store_true", help="Poll once and exit.")
     parser.add_argument("--dry-run", action="store_true", help="Do not send real Telegram messages while polling.")
+    parser.add_argument("--no-lock", action="store_true", help="Skip the single-instance lock guard.")
+    parser.add_argument("--lock-file", type=Path, default=DEFAULT_LOCK_FILE)
     parser.add_argument("--json", action="store_true", help="Print result as JSON.")
     args = parser.parse_args(argv)
 
@@ -257,22 +355,40 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2) if args.json else build_relay_notify.redact_secrets(str(payload)))
         return 0 if validation.ok else 2
 
-    if args.update_json:
-        update = json.loads(args.update_json.read_text(encoding="utf-8"))
-        client = DryRunTelegramClient() if args.dry_run else None
-        result = handle_relay_update(
-            update,
-            client=client,
-            next_steps_path=args.next_steps,
-            codex_chat_path=args.codex_chat,
-        )
-    else:
-        result = poll_loop(
-            next_steps_path=args.next_steps,
-            codex_chat_path=args.codex_chat,
-            once=args.once,
-            dry_run=args.dry_run,
-        )
+    instance_lock: RelayInstanceLock | None = None
+    if not args.no_lock:
+        instance_lock = RelayInstanceLock(args.lock_file)
+        lock_result = instance_lock.acquire()
+        if not lock_result.ok:
+            payload = lock_result.as_dict()
+            print(json.dumps(payload, indent=2) if args.json else build_relay_notify.redact_secrets(str(payload)))
+            return 2
+
+    try:
+        state = RelayRuntimeState.empty()
+        if args.update_json:
+            update = json.loads(args.update_json.read_text(encoding="utf-8"))
+            client = DryRunTelegramClient() if args.dry_run else None
+            result = handle_relay_update(
+                update,
+                client=client,
+                next_steps_path=args.next_steps,
+                codex_chat_path=args.codex_chat,
+                state=state,
+            )
+        else:
+            result = poll_loop(
+                next_steps_path=args.next_steps,
+                codex_chat_path=args.codex_chat,
+                once=args.once,
+                dry_run=args.dry_run,
+                state=state,
+            )
+    except KeyboardInterrupt:
+        result = RelayResult(ok=True, action="stopped", reason="keyboard_interrupt")
+    finally:
+        if instance_lock is not None:
+            instance_lock.release()
 
     payload = result.as_dict()
     print(json.dumps(payload, indent=2) if args.json else build_relay_notify.redact_secrets(str(payload)))
@@ -281,4 +397,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

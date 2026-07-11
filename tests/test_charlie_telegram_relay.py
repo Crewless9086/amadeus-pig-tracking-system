@@ -23,6 +23,7 @@ class FakeRelayClient:
         self.messages = []
         self.answers = []
         self.updates = list(updates or [])
+        self.offsets = []
 
     def send_message(self, chat_id, text, reply_markup=None):
         self.messages.append({"chat_id": str(chat_id), "text": text, "reply_markup": reply_markup})
@@ -31,6 +32,7 @@ class FakeRelayClient:
         self.answers.append({"id": callback_query_id, "text": text})
 
     def get_updates(self, offset=None, timeout=30):
+        self.offsets.append(offset)
         updates = self.updates
         self.updates = []
         return updates
@@ -213,6 +215,164 @@ class CharlieTelegramRelayTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.action, "poll_once_complete")
         self.assertIn("CHARLIE relay status", client.messages[0]["text"])
+
+    def test_same_update_id_processed_twice_sends_once(self):
+        client = FakeRelayClient()
+        state = charlie_telegram_relay.RelayRuntimeState.empty()
+        update = {
+            "update_id": 10,
+            "message": {"text": "/status", "from": {"id": 1001}, "chat": {"id": 1001}},
+        }
+
+        first = charlie_telegram_relay.handle_relay_update(update, environ=enabled_env(), client=client, state=state)
+        second = charlie_telegram_relay.handle_relay_update(update, environ=enabled_env(), client=client, state=state)
+
+        self.assertEqual(first.action, "status_sent")
+        self.assertEqual(second.action, "duplicate_skipped")
+        self.assertEqual(second.reason, "duplicate_update_id")
+        self.assertEqual(len(client.messages), 1)
+        self.assertEqual(state.duplicates_skipped, 1)
+
+    def test_same_callback_id_processed_twice_sends_once_and_ack_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            next_steps = root / "NEXT_STEPS.md"
+            codex_chat = root / "CODEX_CHAT.md"
+            next_steps.write_text(NEXT_STEPS, encoding="utf-8")
+            client = FakeRelayClient()
+            state = charlie_telegram_relay.RelayRuntimeState.empty()
+            update = {
+                "update_id": 20,
+                "callback_query": {
+                    "id": "cb-repeat",
+                    "data": "charlie_next:1",
+                    "from": {"id": 1001},
+                    "message": {"chat": {"id": 1001}},
+                },
+            }
+            repeated_with_new_update_id = {**update, "update_id": 21}
+
+            first = charlie_telegram_relay.handle_relay_update(
+                update,
+                environ=enabled_env(),
+                client=client,
+                next_steps_path=next_steps,
+                codex_chat_path=codex_chat,
+                state=state,
+            )
+            second = charlie_telegram_relay.handle_relay_update(
+                repeated_with_new_update_id,
+                environ=enabled_env(),
+                client=client,
+                next_steps_path=next_steps,
+                codex_chat_path=codex_chat,
+                state=state,
+            )
+
+            self.assertEqual(first.action, "selected_mission")
+            self.assertEqual(second.action, "duplicate_skipped")
+            self.assertEqual(second.reason, "duplicate_callback_id")
+            self.assertEqual(len(client.answers), 1)
+            self.assertEqual(len(client.messages), 1)
+
+    def test_polling_offset_advances_to_max_update_id_plus_one(self):
+        client = FakeRelayClient(
+            updates=[
+                {"update_id": 30, "message": {"text": "/status", "from": {"id": 1001}, "chat": {"id": 1001}}},
+                {"update_id": 32, "message": {"text": "/status", "from": {"id": 1001}, "chat": {"id": 1001}}},
+                {"update_id": 32, "message": {"text": "/status", "from": {"id": 1001}, "chat": {"id": 1001}}},
+            ]
+        )
+        state = charlie_telegram_relay.RelayRuntimeState.empty()
+
+        result = charlie_telegram_relay.poll_loop(
+            environ=enabled_env(),
+            client=client,
+            once=True,
+            poll_timeout=1,
+            state=state,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(state.next_offset, 33)
+        self.assertEqual(client.offsets, [None])
+        self.assertEqual(len(client.messages), 2)
+        self.assertEqual(state.duplicates_skipped, 1)
+
+    def test_duplicate_callback_does_not_rewrite_codex_chat_twice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            next_steps = root / "NEXT_STEPS.md"
+            codex_chat = root / "CODEX_CHAT.md"
+            next_steps.write_text(NEXT_STEPS, encoding="utf-8")
+            client = FakeRelayClient()
+            state = charlie_telegram_relay.RelayRuntimeState.empty()
+            update = {
+                "update_id": 40,
+                "callback_query": {
+                    "id": "cb-once",
+                    "data": "charlie_next:1",
+                    "from": {"id": 1001},
+                    "message": {"chat": {"id": 1001}},
+                },
+            }
+
+            charlie_telegram_relay.handle_relay_update(
+                update,
+                environ=enabled_env(),
+                client=client,
+                next_steps_path=next_steps,
+                codex_chat_path=codex_chat,
+                state=state,
+            )
+            first_content = codex_chat.read_text(encoding="utf-8")
+            charlie_telegram_relay.handle_relay_update(
+                {**update, "update_id": 41},
+                environ=enabled_env(),
+                client=client,
+                next_steps_path=next_steps,
+                codex_chat_path=codex_chat,
+                state=state,
+            )
+
+            self.assertEqual(codex_chat.read_text(encoding="utf-8"), first_content)
+            self.assertEqual(len(client.messages), 1)
+
+    def test_unauthorized_duplicate_update_does_not_spam(self):
+        client = FakeRelayClient()
+        state = charlie_telegram_relay.RelayRuntimeState.empty()
+        update = {
+            "update_id": 50,
+            "callback_query": {
+                "id": "bad-owner",
+                "data": "charlie_next:1",
+                "from": {"id": 999},
+                "message": {"chat": {"id": 999}},
+            },
+        }
+
+        first = charlie_telegram_relay.handle_relay_update(update, environ=enabled_env(), client=client, state=state)
+        second = charlie_telegram_relay.handle_relay_update(update, environ=enabled_env(), client=client, state=state)
+
+        self.assertFalse(first.ok)
+        self.assertEqual(second.action, "duplicate_skipped")
+        self.assertEqual(len(client.answers), 1)
+        self.assertEqual(client.messages, [])
+
+    def test_instance_lock_blocks_second_relay_and_releases_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "relay.lock"
+            first = charlie_telegram_relay.RelayInstanceLock(lock_path)
+            second = charlie_telegram_relay.RelayInstanceLock(lock_path)
+
+            acquired = first.acquire()
+            blocked = second.acquire()
+            first.release()
+
+            self.assertTrue(acquired.ok)
+            self.assertFalse(blocked.ok)
+            self.assertEqual(blocked.action, "lock_active")
+            self.assertFalse(lock_path.exists())
 
 
 if __name__ == "__main__":
