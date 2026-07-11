@@ -2,6 +2,8 @@
 
 ## 2026-07-10
 
+- Marked Herdmaster Pig Allocation alerts v1 as implemented as a read-only packet/API (`/api/pig-weights/pig-allocation-alerts`) that consumes Pig Allocation readiness and remains blocked from lifecycle, purpose, sales, slaughter, reservation, payment, customer-send, public-post, migration, or farm-record writes.
+- Extended the Herdmaster alert packet rule to include read-only `litter_alerts` from existing litter attention summary for weaning attention, post-wean weight gaps, litter purpose review, newborn health attention, and lifecycle/count inconsistencies.
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 
 ## 2026-07-09

@@ -1,8 +1,8 @@
 # Herdmaster Pig Allocation Alert Rules
 
-Status: draft authority for owner review before implementation.
+Status: v1 read-only alert packet implemented; advisory authority remains owner-gated.
 
-Purpose: define the source-of-truth rules and implementation design pack for future Herdmaster Pig Allocation alerts. These alerts are advisory, read-only, and owner-gated until a later approved build creates code and tests.
+Purpose: define the source-of-truth rules and implementation design pack for Herdmaster Pig Allocation alerts. V1 alerts are advisory, read-only, and owner-gated. They convert Pig Allocation readiness signals into deterministic alert packets and must not change pig, litter, purpose, lifecycle, sales, slaughter, reservation, payment, customer, or public-post records.
 
 ## Source Of Truth
 
@@ -29,15 +29,17 @@ Markdown docs define rules and review boundaries. Runtime data defines live pig 
 
 ## Implementation Boundary
 
-Future alerts should build on the existing read-only Pig Allocation surface:
+V1 alerts build on the existing read-only Pig Allocation and litter attention surfaces:
 
 - route: `/pig-allocation`;
 - API: `/api/pig-weights/pig-allocation-readiness`;
+- alert API: `/api/pig-weights/pig-allocation-alerts`;
+- litter attention source: `get_litter_attention_summary`;
 - purpose review APIs: `/api/pig-weights/purpose-review`, `/api/pig-weights/purpose-review/apply`, `/api/pig-weights/purpose-review/recheck`;
 - implementation files: `modules/pig_weights/pig_weights_service.py`, `templates/pig-allocation.html`, `static/js/pigAllocation.js`;
 - focused test file: `tests/test_pig_allocation_readiness_service.py`.
 
-The alert layer must not create a second allocation engine. It should consume or extend the same canonical allocation packet: readiness bucket, reason, latest weight, days since weight, growth class, meat/abattoir timing, litter quality, suggested purpose, suggested-purpose reason, confidence, current links, and source metadata.
+The alert layer must not create a second allocation or litter engine. It should consume or extend the same canonical allocation packet: readiness bucket, reason, latest weight, days since weight, growth class, meat/abattoir timing, litter quality, suggested purpose, suggested-purpose reason, confidence, current links, and source metadata. It may also include a separate `litter_alerts` section adapted from the existing litter attention summary for weaning attention, post-wean weight gaps, litter purpose review, newborn health attention, and litter lifecycle/count inconsistencies.
 
 No migration is required for the first alert build unless a later mission adds stored alert acknowledgements, owner decisions, or alert history.
 
@@ -54,6 +56,7 @@ No migration is required for the first alert build unless a later mission adds s
 | Breeding Candidate | Good or exceptional growth plus good litter/sow/boar signal, current purpose says breeding/retention, or Herdmaster review suggests retention before meat/slaughter. | Medium; High for rare strong replacement candidates. | Owner decides retention. Alert cannot create mating plans, change purpose, or remove from sale/meat pool automatically. |
 | Stale Weight | Latest weight is older than `30 days` or missing. | Medium; High when the stale weight is being used for value, meat, slaughter, or breeding decisions. | Owner may request weighing. Alert must degrade confidence and block final allocation confidence. |
 | Sold/Exited Data Conflict | Pig appears sold, slaughtered, dead, removed, off-farm, or linked to an exit while another read model still shows active/available/on-farm. | Critical. | Owner/admin reconciliation is required. Alert must block allocation, marketing, slaughter, breeding, and customer-facing availability until resolved. |
+| Litter/Weaning Attention | Existing litter attention summary reports weaning due/overdue, post-wean weight needed, litter purpose review due, newborn health attention, or litter lifecycle/count inconsistency. | Medium by default; High for due/overdue weaning, newborn health, or count/lifecycle inconsistency. | Owner reviews the litter workflow. Alert cannot mark weaned, change counts, capture medical records, assign tags, change purpose, or update pig/litter lifecycle automatically. |
 | Future Sow Replacement | Future alert for replacement planning using sow age/parity, litter outcomes, daughter quality, health, and breeding records once the data contract is approved. | Medium by default. | Owner decides replacement strategy. Alert cannot retire, replace, mate, cull, or reclassify sow/gilt records. |
 
 Pre-wean tagless piglets are not Pig Allocation `Missing Data` alerts. They stay in litter/weaning attention until weaning, tagging, or weight capture creates actionable allocation evidence.
