@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-11",
+  "policy": {
+    "live_model_api_calls_enabled": false,
+    "broad_claude_api_usage_enabled": false,
+    "auto_reload_enabled": false,
+    "telegram_live_sends_enabled": false
+  },
+  "caps": {
+    "daily_external_model_usd": 0,
+    "per_mission_external_model_usd": 0,
+    "budget_breach_action": "wake_owner"
+  },
+  "notes": [
+    "Placeholder budget guard only.",
+    "No provider keys are stored here.",
+    "Claude/Fable/OpenRouter/GLM integrations are later phases and must add explicit budget checks before use."
+  ]
+}
+
