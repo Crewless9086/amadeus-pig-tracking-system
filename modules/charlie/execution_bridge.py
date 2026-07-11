@@ -1261,6 +1261,7 @@ def run_release_execution(
     if completed.returncode != 0:
         reconciliation = _reconcile_merged_pr(pr_reference, runner)
         merge_result["reconciliation"] = reconciliation
+        release_failure = _classify_release_merge_failure(merge_result)
         if reconciliation.get("merged"):
             merge_result["reconciled_as_merged"] = True
             return _complete_release_merge(
@@ -1280,7 +1281,16 @@ def run_release_execution(
                     "mode": "merge_pr",
                     "release_packet_path": release_packet_path,
                     "merge_result": merge_result,
-                    "status": "release_pr_merge_failed",
+                    "status": release_failure["status"],
+                    "failure_class": release_failure["failure_class"],
+                    "recommended_next_action": release_failure["recommended_next_action"],
+                },
+                "review_packet": {
+                    "review_status": release_failure["status"],
+                    "blocked_reason": release_failure["owner_reason"],
+                    "recommended_next_action": release_failure["recommended_next_action"],
+                    "release_packet_path": release_packet_path,
+                    "release_failure": release_failure,
                 }
             },
             notes="Local release bridge recorded failed PR merge result.",
@@ -1290,25 +1300,29 @@ def run_release_execution(
         update_mission_status(
             mission_id,
             "blocked",
-            owner_decision="Local release bridge failed to merge the approved PR.",
+            owner_decision=release_failure["owner_reason"],
             event_type="status_changed",
-            notes="gh pr merge returned a non-zero exit code.",
+            notes=release_failure["recommended_next_action"],
             metadata={
                 "script": "scripts/charlie_release_bridge.py",
                 "release_packet_path": release_packet_path,
                 "release_mode": "merge_pr",
                 "returncode": completed.returncode,
+                "release_failure_class": release_failure["failure_class"],
+                "pr_reference": pr_reference,
             },
             database_url=database_url,
             connect_factory=connect_factory,
         )
         return {
             "success": False,
-            "status": "release_pr_merge_failed",
+            "status": release_failure["status"],
             "mission_id": mission_id,
             "mission_status": "blocked",
             "release_packet_path": release_packet_path,
             "merge_result": merge_result,
+            "failure_class": release_failure["failure_class"],
+            "recommended_next_action": release_failure["recommended_next_action"],
         }, 502
 
     return _complete_release_merge(
@@ -1391,6 +1405,30 @@ def _complete_release_merge(
         "verify_result": verify_result,
         "visual_review_cleanup": cleanup_result,
     }, 200
+
+
+def _classify_release_merge_failure(merge_result):
+    merge_result = merge_result if isinstance(merge_result, dict) else {}
+    stderr = str(merge_result.get("stderr") or "")
+    stdout = str(merge_result.get("stdout") or "")
+    combined = f"{stderr}\n{stdout}".lower()
+    pr_reference = str(merge_result.get("pr_reference") or "").strip()
+    if any(marker in combined for marker in ("merge conflicts", "merge conflict", "not mergeable", "cannot be merged")):
+        return {
+            "status": "release_pr_merge_conflict",
+            "failure_class": "release_conflict",
+            "owner_reason": "Release bridge could not merge the approved PR because GitHub reports merge conflicts.",
+            "recommended_next_action": (
+                f"Rebase or recreate PR {pr_reference} onto current main, resolve conflicts, rerun focused tests, "
+                "then approve release again. The mission review itself remains approved."
+            ).strip(),
+        }
+    return {
+        "status": "release_pr_merge_failed",
+        "failure_class": "release_merge_failed",
+        "owner_reason": "Local release bridge failed to merge the approved PR.",
+        "recommended_next_action": "Inspect the release packet stderr/stdout, repair the PR or release command, then rerun release.",
+    }
 
 
 def build_codex_execution_prompt(mission):
@@ -2804,6 +2842,11 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
             "test_evidence": event.get("tests_run") or [],
             "quality_gate": event.get("quality_gate") or {},
             "next_action": event.get("next_action") or "",
+            "pr_url": event.get("pr_url") or "",
+            "pr_number": event.get("pr_number") or "",
+            "branch_name": event.get("branch_name") or "",
+            "commit_sha": event.get("commit_sha") or "",
+            "links": {"pr": event.get("pr_url") or ""},
             "confidence": event.get("confidence") or "96%",
             "confidence_reason": (
                 event.get("confidence_reason")
@@ -3196,14 +3239,28 @@ def _agent_quality_gate(agent, artifact):
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
         if status != "pass":
-            return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
+            if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs:
+                artifact.setdefault("warnings", []).append(
+                    f"Tester self-reported test_status={status or 'missing'}, but focused test evidence passed and only recovered setup issues were present."
+                )
+                artifact["test_status"] = "pass"
+                status = "pass"
+            else:
+                return {"passed": False, "reason": f"Tester reported test_status={status or 'missing'}."}
         if errors or bugs:
             return {"passed": False, "reason": "Tester reported errors or bugs."}
     if agent == "qa_red_team":
         status = str(artifact.get("red_team_status") or "").strip().lower()
         risk = str(artifact.get("risk_rating") or "").strip().lower()
         if status != "pass":
-            return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
+            if _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact) and not errors and not bugs and risk not in {"high", "critical"}:
+                artifact.setdefault("warnings", []).append(
+                    f"QA/red-team self-reported red_team_status={status or 'missing'}, but focused test evidence passed and no blocking findings remained."
+                )
+                artifact["red_team_status"] = "pass"
+                status = "pass"
+            else:
+                return {"passed": False, "reason": f"QA/red-team reported red_team_status={status or 'missing'}."}
         if risk in {"high", "critical"}:
             return {"passed": False, "reason": f"QA/red-team risk rating is {risk}."}
         if errors or bugs:
@@ -3330,6 +3387,34 @@ def _artifact_test_evidence_passes(item):
     if any(word in text for word in ("failed", "failure", "error", "traceback")):
         return False
     return status == "pass" or " ok" in text or "tests ok" in text or "passed" in text or "no whitespace errors" in text
+
+
+def _artifact_has_passing_test_collection(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    evidence = []
+    for key in ("tests_run", "test_evidence"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            evidence.extend(value)
+        elif value:
+            evidence.append(value)
+    if not evidence:
+        return False
+    return any(_artifact_test_evidence_passes(item) for item in evidence)
+
+
+def _has_only_recovered_process_issues(agent, artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    raw_items = []
+    for key in ("errors", "bugs"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            raw_items.extend(value)
+        elif value:
+            raw_items.append(value)
+    if not raw_items:
+        return False
+    return all(_is_recovered_command_process_issue(agent, artifact, item) for item in raw_items)
 
 
 def _parse_confidence_value(value):
@@ -3563,6 +3648,12 @@ def _judgement_evidence_quality_gate(agent, artifact):
         if agent == "risk_agent" and field == "recommended_owner_decision" and decision == "pause":
             continue
         if decision and decision not in passing_values:
+            if field in {"test_status", "red_team_status"} and _artifact_has_passing_test_collection(artifact) and _has_only_recovered_process_issues(agent, artifact):
+                errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") if isinstance(artifact.get("errors"), list) else [])
+                bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else [])
+                risk = str(artifact.get("risk_rating") or "").strip().lower()
+                if not errors and not bugs and risk not in {"high", "critical"}:
+                    continue
             return {
                 "passed": False,
                 "reason": f"{agent} recorded non-passing {field}={decision}.",
@@ -3848,6 +3939,35 @@ def _is_resolved_pr_process_issue(agent, artifact, value):
     )
 
 
+def _is_recovered_command_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not _artifact_has_passing_test_collection(artifact):
+        return False
+    text = _artifact_text(value).lower()
+    recovered_terms = (
+        "reran",
+        "re-run",
+        "rerun",
+        "recovered",
+        "recaptured",
+        "passed",
+    )
+    setup_terms = (
+        "powershell invocation",
+        "quoted executable",
+        "call operator",
+        "parser error",
+        "viewport-size",
+        "networkidle timed out",
+        "async cards loaded",
+        "explicit wait",
+        "case-insensitive",
+        "text-transform",
+    )
+    return any(term in text for term in recovered_terms) and any(term in text for term in setup_terms)
+
+
 def _blocking_artifact_items(agent, artifact, values):
     if not isinstance(values, list):
         values = [values] if values else []
@@ -3856,6 +3976,8 @@ def _blocking_artifact_items(agent, artifact, values):
         if _is_non_blocking_local_pytest_issue(agent, artifact, value):
             continue
         if _is_resolved_pr_process_issue(agent, artifact, value):
+            continue
+        if _is_recovered_command_process_issue(agent, artifact, value):
             continue
         blocking.append(value)
     return blocking

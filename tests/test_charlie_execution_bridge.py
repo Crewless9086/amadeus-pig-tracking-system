@@ -2047,6 +2047,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"], result)
         self.assertIn("test_status=fail", result["reason"])
 
+    def test_tester_gate_treats_recovered_setup_errors_as_advisory_when_tests_pass(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "fail"
+        artifact["errors"] = [
+            "Initial browser text assertion looked for exact mixed-case 'Latest Weight Date' in visible text, but CSS text-transform exposed it as uppercase; reran against case-insensitive visible text and rendered HTML.",
+            "Initial npx screenshots captured /sales-availability before async cards loaded; recaptured with an explicit .pig-list-card wait.",
+        ]
+        artifact["bugs"] = []
+        artifact["tests_run"] = [
+            {"command": "node --check static/js/salesAvailability.js", "status": "pass"},
+            {"command": "python -m unittest tests.test_frontend_route_contracts", "result": "Ran 40 tests OK"},
+        ]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["test_status"], "pass")
+        self.assertTrue(artifact.get("warnings"))
+
     def test_planner_source_gate_accepts_exact_pig_allocation_source_map_paths(self):
         artifact = _successful_stage_payload("planner")
         artifact["implementation_source_map"] = {
@@ -3295,6 +3314,42 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         release_packet = update_vault.call_args.args[1]["release_packet"]
         self.assertEqual(release_packet["status"], "release_pr_merge_failed")
         self.assertEqual(release_packet["merge_result"]["stderr"], "merge failed")
+
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_run_release_execution_classifies_merge_conflict(self, get_mission, update_vault, update_status):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        mission["metadata"] = {"review_packet": {"links": {"pr": "https://github.com/org/repo/pull/56"}}}
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        def fake_runner(command, **_kwargs):
+            if command[:4] == ["gh", "pr", "merge", "56"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="GraphQL: Pull Request has merge conflicts")
+            if command[:4] == ["gh", "pr", "view", "56"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps({"state": "OPEN"}), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected command")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_release_execution(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+                merge_pr=True,
+                run_subprocess=fake_runner,
+            )
+
+        self.assertEqual(status_code, 502)
+        self.assertEqual(result["status"], "release_pr_merge_conflict")
+        self.assertEqual(result["failure_class"], "release_conflict")
+        release_packet = update_vault.call_args.args[1]["release_packet"]
+        self.assertEqual(release_packet["status"], "release_pr_merge_conflict")
+        self.assertEqual(release_packet["failure_class"], "release_conflict")
+        review_packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(review_packet["review_status"], "release_pr_merge_conflict")
+        self.assertIn("rebase", review_packet["recommended_next_action"].lower())
 
     @patch("modules.charlie.execution_bridge._wait_for_release_verification", return_value={"verified": False, "status": "verify_url_not_provided", "attempts": 1})
     @patch("modules.charlie.execution_bridge.update_mission_status")

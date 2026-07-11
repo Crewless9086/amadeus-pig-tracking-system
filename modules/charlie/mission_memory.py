@@ -59,6 +59,10 @@ def build_memory_event(agent, event_type, summary="", attempt=1, artifact=None, 
         "risks": _clean_list(artifact.get("risk_notes") or artifact.get("risks") or artifact.get("qa_findings"), 12, 260),
         "next_action": _clean(artifact.get("next_action") or artifact.get("recommended_owner_decision"), 500),
         "artifact_path": _clean(artifact.get("artifact_path"), 260),
+        "pr_url": _clean(artifact.get("pr_url") or _link_value(artifact, "pr"), 260),
+        "pr_number": _clean(artifact.get("pr_number"), 40),
+        "branch_name": _clean(artifact.get("branch_name"), 160),
+        "commit_sha": _clean(artifact.get("commit_sha"), 80),
         "recovery": recovery,
         "metadata": metadata,
     }
@@ -404,6 +408,11 @@ def _list(value):
 def _clean(value, limit=MAX_TEXT):
     text = str(value or "").strip()
     return text[:limit]
+
+
+def _link_value(artifact, key):
+    links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
+    return links.get(key) or ""
 
 
 def _int(value, default):
