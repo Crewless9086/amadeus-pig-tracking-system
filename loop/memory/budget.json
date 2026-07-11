@@ -10,6 +10,22 @@
   "caps": {
     "daily_external_model_usd": 0,
     "per_mission_external_model_usd": 0,
+    "daily_limit_usd": 0,
+    "mission_limit_usd": 0,
+    "provider_limits": {
+      "claude": 0,
+      "fable": 0,
+      "glm": 0,
+      "openrouter": 0,
+      "cheap": 0
+    },
+    "stage_limits": {
+      "triage": 0,
+      "conductor": 0,
+      "worker": 0,
+      "verifier": 0
+    },
+    "hard_stop_on_budget_breach": true,
     "budget_breach_action": "wake_owner"
   },
   "notes": [
@@ -18,4 +34,3 @@
     "Claude/Fable/OpenRouter/GLM integrations are later phases and must add explicit budget checks before use."
   ]
 }
-
