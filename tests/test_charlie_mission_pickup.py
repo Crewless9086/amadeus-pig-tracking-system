@@ -263,6 +263,30 @@ class CharlieMissionPickupTests(unittest.TestCase):
         update_vault.assert_not_called()
         update_status.assert_not_called()
 
+    def test_resume_workflow_inserts_required_agents_and_preserves_completed_evidence(self):
+        current = [
+            {"agent": "source_mapper", "status": "complete", "findings": "mapped"},
+            {"agent": "builder", "status": "complete", "findings": "built"},
+            {"agent": "business_reviewer", "status": "blocked"},
+        ]
+        planned = [
+            {"agent": "source_mapper", "status": "active"},
+            {"agent": "product_architect", "status": "pending"},
+            {"agent": "builder", "status": "pending"},
+            {"agent": "business_reviewer", "status": "pending"},
+            {"agent": "product_reviewer", "status": "pending"},
+        ]
+
+        merged = charlie_mission_pickup._merge_resumable_workflow(current, planned, resume_stage="business_reviewer")
+        by_agent = {item["agent"]: item for item in merged}
+
+        self.assertEqual(by_agent["source_mapper"]["status"], "complete")
+        self.assertEqual(by_agent["source_mapper"]["findings"], "mapped")
+        self.assertEqual(by_agent["product_architect"]["status"], "pending")
+        self.assertEqual(by_agent["builder"]["status"], "complete")
+        self.assertEqual(by_agent["business_reviewer"]["status"], "active")
+        self.assertEqual(by_agent["product_reviewer"]["status"], "pending")
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):

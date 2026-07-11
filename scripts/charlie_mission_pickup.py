@@ -541,8 +541,7 @@ def _refresh_core_plan_for_pickup(mission):
         return {"refreshed": False, "reason": "mission_id_missing"}
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
-    if review_packet.get("return_to_stage") or review_packet.get("blocked_agent"):
-        return {"refreshed": False, "reason": "resume_marker_present"}
+    resume_stage = str(review_packet.get("return_to_stage") or review_packet.get("blocked_agent") or "").strip().lower()
     current_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
     current_truth = current_core.get("project_truth") if isinstance(current_core.get("project_truth"), dict) else {}
     plan = build_core_plan(mission)
@@ -563,8 +562,13 @@ def _refresh_core_plan_for_pickup(mission):
         and current_truth.get("workflow_right_sized") == planned_truth.get("workflow_right_sized")
     ):
         return {"refreshed": False, "reason": "workflow_already_current", "pipeline_profile": planned_truth.get("pipeline_profile", "")}
+    refreshed_workflow = _merge_resumable_workflow(
+        mission.get("agent_workflow"),
+        plan.get("agent_workflow"),
+        resume_stage=resume_stage,
+    )
     payload = {
-        "agent_workflow": plan.get("agent_workflow", []),
+        "agent_workflow": refreshed_workflow,
         "mission_context_pack": {
             "version": plan.get("version", ""),
             "agent_order": planned_agents,
@@ -586,7 +590,42 @@ def _refresh_core_plan_for_pickup(mission):
         "pipeline_profile": planned_truth.get("pipeline_profile", ""),
         "workflow_right_sized": planned_truth.get("workflow_right_sized", False),
         "agent_count": len(planned_agents),
+        "resume_stage": resume_stage,
     }
+
+
+def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage=""):
+    current = {
+        str(item.get("agent") or "").strip().lower(): item
+        for item in (current_workflow if isinstance(current_workflow, list) else [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip()
+    }
+    planned = [dict(item) for item in (planned_workflow if isinstance(planned_workflow, list) else []) if isinstance(item, dict)]
+    if not planned:
+        return []
+    sequence = [str(item.get("agent") or "").strip().lower() for item in planned]
+    target = resume_stage if resume_stage in sequence else ""
+    target_index = sequence.index(target) if target else None
+    merged = []
+    for index, item in enumerate(planned):
+        agent = sequence[index]
+        previous = current.get(agent, {})
+        previous_status = str(previous.get("status") or "").strip().lower()
+        if target_index is not None:
+            status = "complete" if index < target_index and previous_status == "complete" else ("active" if index == target_index else "pending")
+        else:
+            status = previous_status if previous_status in {"complete", "active", "pending"} else str(item.get("status") or "pending")
+        merged_item = {**item, "status": status}
+        if previous_status == "complete":
+            for key in ("findings", "handoff_to", "completed_at"):
+                if previous.get(key):
+                    merged_item[key] = previous[key]
+        merged.append(merged_item)
+    if target_index is None and not any(item.get("status") == "active" for item in merged):
+        first_pending = next((item for item in merged if item.get("status") == "pending"), None)
+        if first_pending:
+            first_pending["status"] = "active"
+    return merged
 
 
 def _write_execution_lease(mission_id):
