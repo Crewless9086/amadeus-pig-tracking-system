@@ -759,24 +759,41 @@ def get_allocation_input_rows(connect_factory=None):
     current_rows = _current_state_rows(connect_factory=connect_factory)
     medical_rows = _fetch_all(
         """
-        select distinct on (pig_id)
-            pig_id, treatment_type, reason_for_treatment, withdrawal_end_date,
-            follow_up_required, follow_up_date
-        from public.pig_medical_events
-        order by pig_id, treatment_date desc, created_at desc, medical_event_id desc
+        with latest_event as (
+            select distinct on (pig_id)
+                pig_id, treatment_type, reason_for_treatment
+            from public.pig_medical_events
+            order by pig_id, treatment_date desc, created_at desc, medical_event_id desc
+        ), active_holds as (
+            select
+                pig_id,
+                max(withdrawal_end_date) filter (
+                    where withdrawal_end_date > current_date
+                ) as current_withdrawal_end_date,
+                bool_or(
+                    follow_up_required is true
+                    and (follow_up_date is null or follow_up_date >= current_date)
+                ) as follow_up_hold
+            from public.pig_medical_events
+            group by pig_id
+        )
+        select
+            latest_event.pig_id,
+            latest_event.treatment_type,
+            latest_event.reason_for_treatment,
+            active_holds.current_withdrawal_end_date,
+            active_holds.follow_up_hold
+        from latest_event
+        join active_holds using (pig_id)
         """,
         connect_factory=connect_factory,
     )
     medical_by_pig = {row["pig_id"]: row for row in medical_rows}
-    today = date.today()
     for row in current_rows:
         medical = medical_by_pig.get(row.get("pig_id"), {})
-        withdrawal_end = medical.get("withdrawal_end_date")
-        follow_up_date = medical.get("follow_up_date")
-        withdrawal_hold = isinstance(withdrawal_end, date) and withdrawal_end > today
-        follow_up_hold = bool(medical.get("follow_up_required")) and (
-            not isinstance(follow_up_date, date) or follow_up_date >= today
-        )
+        withdrawal_end = medical.get("current_withdrawal_end_date")
+        withdrawal_hold = isinstance(withdrawal_end, date)
+        follow_up_hold = bool(medical.get("follow_up_hold"))
         row["current_withdrawal_end_date"] = withdrawal_end
         row["medical_status"] = "Withdrawal hold" if withdrawal_hold else "Follow-up hold" if follow_up_hold else "Clear"
         row["health_status"] = _text(medical.get("reason_for_treatment") or medical.get("treatment_type"))
