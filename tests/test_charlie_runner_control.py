@@ -162,6 +162,21 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_already_active")
         popen.assert_not_called()
 
+    @patch("modules.charlie.runner_control.write_runner_heartbeat")
+    @patch("modules.charlie.runner_control.runner_status")
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_start_runner_launches_supervisor(self, popen, status, write_heartbeat):
+        status.return_value = {"active": False, "status": "runner_not_started", "orphan_processes": []}
+        popen.return_value.pid = 4321
+        write_heartbeat.side_effect = lambda _result, path: Path(path).write_text('{"pid": 0}', encoding="utf-8")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
+            result, status_code = runner_control.start_runner()
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["pid"], 4321)
+        command = popen.call_args.args[0]
+        self.assertTrue(command[-1].endswith("charlie_runner_supervisor.py"))
+
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")
     def test_start_runner_does_not_start_duplicate_when_orphaned(self, popen, status):
@@ -177,9 +192,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_orphaned_existing_process")
         popen.assert_not_called()
 
-    @patch("modules.charlie.runner_control.os.kill")
+    @patch("modules.charlie.runner_control._stop_process_tree")
     @patch("modules.charlie.runner_control.runner_status")
-    def test_stop_runner_stops_orphaned_processes(self, status, kill):
+    def test_stop_runner_stops_orphaned_processes(self, status, stop_tree):
         status.return_value = {
             "pid": None,
             "orphan_processes": [{"pid": 1234}, {"pid": 5678}],
@@ -190,7 +205,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "runner_stop_requested")
         self.assertEqual(result["pids"], [1234, 5678])
-        self.assertEqual(kill.call_count, 2)
+        self.assertEqual(stop_tree.call_count, 2)
 
     @patch("modules.charlie.runner_control._git_worktree_prune", return_value={"status": "ok", "returncode": 0})
     @patch("modules.charlie.runner_control.stop_runner")

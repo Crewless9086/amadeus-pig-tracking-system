@@ -11,6 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_DIR = REPO_ROOT / ".charlie_runner"
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
+SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
+SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
 STALE_SECONDS = 120
 RUNNER_COMMAND = [
     str(REPO_ROOT / "venv" / "Scripts" / "python.exe"),
@@ -25,6 +27,10 @@ RUNNER_COMMAND = [
     "https://amadeus-pig-tracking-system.onrender.com/charlie",
     "--interval-seconds",
     "30",
+]
+SUPERVISOR_COMMAND = [
+    str(REPO_ROOT / "venv" / "Scripts" / "python.exe"),
+    str(REPO_ROOT / "scripts" / "charlie_runner_supervisor.py"),
 ]
 
 
@@ -48,6 +54,8 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         if payload.get("last_result_status") == "codex_running":
             payload["last_result_status"] = "codex_final_artifact_seen"
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
+    supervisor = _read_json(SUPERVISOR_PATH) if heartbeat_path == HEARTBEAT_PATH else {}
+    supervisor_alive = _pid_alive(supervisor.get("pid"))
     if code_stale and process_alive and heartbeat_fresh:
         status = "runner_code_stale"
         next_action = "Restart the local CHARLIE runner because main changed after this runner process started."
@@ -92,6 +100,10 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "notification_title": payload.get("notification_title", ""),
         "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {},
         "orphan_processes": orphan_processes,
+        "supervisor_active": supervisor_alive,
+        "supervisor_status": supervisor.get("status", ""),
+        "supervisor_pid": supervisor.get("pid"),
+        "supervisor_restart_count": int(supervisor.get("restart_count") or 0),
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
         "command": _display_command(),
@@ -142,10 +154,12 @@ def start_runner():
     if status.get("orphan_processes"):
         return {"success": False, "status": "runner_orphaned_existing_process", "runner": status}, 409
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
-    python_path = RUNNER_COMMAND[0]
+    if SUPERVISOR_STOP_PATH.exists():
+        SUPERVISOR_STOP_PATH.unlink()
+    python_path = SUPERVISOR_COMMAND[0]
     if not Path(python_path).exists():
         python_path = sys.executable
-    command = [python_path, *RUNNER_COMMAND[1:]]
+    command = [python_path, *SUPERVISOR_COMMAND[1:]]
     with LOG_PATH.open("ab") as log:
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         process = subprocess.Popen(
@@ -171,20 +185,30 @@ def start_runner():
 
 def stop_runner():
     status = runner_status()
+    RUNNER_DIR.mkdir(parents=True, exist_ok=True)
+    SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     pids = [status.get("pid")]
+    pids.append(status.get("supervisor_pid"))
     pids.extend(process.get("pid") for process in status.get("orphan_processes", []))
     pids = [int(pid) for pid in pids if str(pid or "").isdigit()]
     if not pids:
         return {"success": True, "status": "runner_not_started", "runner": status}, 200
     stopped = []
     try:
-        for pid in pids:
-            os.kill(pid, signal.SIGTERM)
+        for pid in sorted(set(pids)):
+            _stop_process_tree(pid)
             stopped.append(pid)
     except OSError:
         if not stopped:
             return {"success": True, "status": "runner_already_stopped", "runner": status}, 200
     return {"success": True, "status": "runner_stop_requested", "pids": stopped}, 200
+
+
+def _stop_process_tree(pid):
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15)
+        return
+    os.kill(pid, signal.SIGTERM)
 
 
 def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
