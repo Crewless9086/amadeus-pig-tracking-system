@@ -93,6 +93,7 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
     accepted = []
     unknown_quantity = 0
     incompatible_records = 0
+    units_by_category = {}
     compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
     for row in rows if isinstance(rows, list) else []:
         if str(row.get("status") or row.get("intake_status") or "").strip().lower() in excluded_statuses:
@@ -120,9 +121,12 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
             if not item_categories or "" in item_categories or not item_categories.issubset(compatible_categories):
                 incompatible_records += 1
                 continue
+            for item in demand_items:
+                item_category = _normalized_category(item.get("category") or item.get("weight_range"))
+                units_by_category[item_category] = units_by_category.get(item_category, 0) + _quantity(item)
         units += sum(_quantity(item) for item in demand_items)
         accepted.append(identity)
-    return {"qualified_units": units, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "source_ids": sorted(accepted)}
+    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "source_ids": sorted(accepted)}
 
 
 def _fingerprint(lane, category, source_ids):
@@ -181,11 +185,30 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "unclassified") for pig in eligible})
     live_demand = _deduplicated_demand(live_intakes, "live_stock", categories)
     for category in ["live_stock"]:
-        pigs = eligible
-        verified = len(pigs)
-        operational_reserve = 1 if verified else 0
-        safety_buffer = ceil(verified * 0.10) if verified else 0
-        available_after_buffers = max(0, verified - operational_reserve - safety_buffer)
+        demanded_categories = set(live_demand["qualified_units_by_category"])
+        pigs = [pig for pig in eligible if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) in demanded_categories]
+        supply_by_category = {}
+        for pig in pigs:
+            pig_category = _normalized_category(pig.get("sale_category") or pig.get("weight_band"))
+            supply_by_category[pig_category] = supply_by_category.get(pig_category, 0) + 1
+        capacity_by_category = {}
+        for demanded_category, demanded_units in live_demand["qualified_units_by_category"].items():
+            category_verified = supply_by_category.get(demanded_category, 0)
+            category_reserve = 1 if category_verified else 0
+            category_buffer = ceil(category_verified * 0.10) if category_verified else 0
+            category_available = max(0, category_verified - category_reserve - category_buffer)
+            capacity_by_category[demanded_category] = {
+                "qualified_demand": demanded_units,
+                "verified_available": category_verified,
+                "operational_reserve": category_reserve,
+                "safety_buffer": category_buffer,
+                "available_after_buffers": category_available,
+                "demand_cap": min(demanded_units, category_available),
+            }
+        verified = sum(item["verified_available"] for item in capacity_by_category.values())
+        operational_reserve = sum(item["operational_reserve"] for item in capacity_by_category.values())
+        safety_buffer = sum(item["safety_buffer"] for item in capacity_by_category.values())
+        available_after_buffers = sum(item["available_after_buffers"] for item in capacity_by_category.values())
         blockers = []
         if not source_ok:
             blockers.append("supabase_allocation_readiness_unavailable")
@@ -201,8 +224,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("incompatible_live_stock_demand")
         if not live_demand["qualified_units"]:
             blockers.append("no_quantified_uncommitted_live_stock_demand")
-        cap = min(live_demand["qualified_units"], available_after_buffers) if not blockers else 0
-        capacity = {"verified_available": verified, "eligible_categories": categories, "existing_commitments": 0, "operational_reserve": operational_reserve, "safety_buffer": safety_buffer, "available_after_buffers": available_after_buffers, "demand_cap": cap, "formula": "min(qualified_demand, max(0, verified_available - existing_commitments - operational_reserve - safety_buffer))"}
+        cap = sum(item["demand_cap"] for item in capacity_by_category.values()) if not blockers else 0
+        capacity = {"verified_available": verified, "eligible_categories": categories, "demanded_categories": sorted(demanded_categories), "capacity_by_category": capacity_by_category, "existing_commitments": 0, "operational_reserve": operational_reserve, "safety_buffer": safety_buffer, "available_after_buffers": available_after_buffers, "demand_cap": cap, "formula": "sum_by_compatible_category(min(qualified_demand, max(0, verified_available - existing_commitments - operational_reserve - safety_buffer)))"}
         source_ids = [str(pig.get("pig_id")) for pig in pigs if pig.get("pig_id")] + live_demand["source_ids"]
         cards.append(_card(lane="live_stock", category=category, now=now, observed_at=observed_at, demand=live_demand, capacity=capacity, blockers=blockers, risks=["owner_review_required", "availability_can_change_before_reservation"], source_ids=source_ids))
 
