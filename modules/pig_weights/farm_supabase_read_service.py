@@ -748,11 +748,48 @@ def _allocation_overview_row(row):
         "Litter_ID": _text(row.get("litter_id")),
         "Mother_Pig_ID": _text(row.get("mother_pig_id")),
         "Father_Pig_ID": _text(row.get("father_pig_id")),
+        "Current_Withdrawal_End_Date": _date_text(row.get("current_withdrawal_end_date")),
+        "Withdrawal_Clear": _text(row.get("withdrawal_clear")),
     }
+
+
+def _withdrawal_status_by_pig(connect_factory=None, today=None):
+    today = today or date.today()
+    rows = _fetch_all(
+        """
+        select pig_id, product_name, withdrawal_end_date
+        from public.pig_medical_events
+        where withdrawal_end_date is not null
+        order by pig_id, withdrawal_end_date desc nulls last, created_at desc, medical_event_id desc
+        """,
+        connect_factory=connect_factory,
+    )
+    status = {}
+    for row in rows:
+        pig_id = _text(row.get("pig_id"))
+        if not pig_id or pig_id in status:
+            continue
+        withdrawal_end_date = row.get("withdrawal_end_date")
+        compare_date = withdrawal_end_date.date() if isinstance(withdrawal_end_date, datetime) else withdrawal_end_date
+        clear = "Yes"
+        if compare_date and compare_date >= today:
+            clear = "No"
+        status[pig_id] = {
+            "current_withdrawal_end_date": withdrawal_end_date,
+            "withdrawal_clear": clear,
+            "last_product_name": _text(row.get("product_name")),
+        }
+    return status
 
 
 def get_allocation_input_rows(connect_factory=None):
     current_rows = _current_state_rows(connect_factory=connect_factory)
+    withdrawal_lookup = _withdrawal_status_by_pig(connect_factory=connect_factory)
+    for row in current_rows:
+        pig_id = _text(row.get("pig_id"))
+        withdrawal = withdrawal_lookup.get(pig_id, {"current_withdrawal_end_date": "", "withdrawal_clear": "Yes"})
+        row["current_withdrawal_end_date"] = withdrawal.get("current_withdrawal_end_date", "")
+        row["withdrawal_clear"] = withdrawal.get("withdrawal_clear", "Yes")
     weight_rows = _fetch_all(
         """
         select pig_id, weight_date, weight_kg

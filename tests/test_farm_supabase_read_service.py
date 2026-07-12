@@ -167,6 +167,63 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(result["history"][0]["withdrawal_end_date"], "2026-06-29")
         self.assertEqual(result["history"][0]["follow_up_required"], "No")
 
+    def test_allocation_input_rows_attach_current_withdrawal_status(self):
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            if "from public.pig_current_state state" in sql:
+                return [
+                    {
+                        "pig_id": "PIG-CLEAR",
+                        "tag_number": "11",
+                        "status": "Active",
+                        "on_farm": True,
+                        "animal_type": "Weaner",
+                        "sex": "Female",
+                        "date_of_birth": date(2026, 5, 1),
+                        "litter_id": "LIT-1",
+                        "purpose": "Sale",
+                        "current_weight_kg": 18,
+                        "last_weight_date": date(2026, 6, 22),
+                        "current_pen_id": "PEN-1",
+                        "current_pen_name": "Weaner Pen",
+                    },
+                    {
+                        "pig_id": "PIG-HOLD",
+                        "tag_number": "12",
+                        "status": "Active",
+                        "on_farm": True,
+                        "animal_type": "Weaner",
+                        "sex": "Male",
+                        "date_of_birth": date(2026, 5, 1),
+                        "litter_id": "LIT-1",
+                        "purpose": "Sale",
+                        "current_weight_kg": 18,
+                        "last_weight_date": date(2026, 6, 22),
+                        "current_pen_id": "PEN-1",
+                        "current_pen_name": "Weaner Pen",
+                    },
+                ]
+            if "from public.pig_medical_events" in sql:
+                return [{
+                    "pig_id": "PIG-HOLD",
+                    "product_name": "Dewormer",
+                    "withdrawal_end_date": date.today() + timedelta(days=3),
+                }]
+            if "from public.pig_weight_events" in sql:
+                return []
+            if "from public.litters" in sql:
+                return []
+            if "from public.pens" in sql:
+                return []
+            return []
+
+        with patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all):
+            result = farm_supabase_read_service.get_allocation_input_rows()
+
+        by_id = {row["Pig_ID"]: row for row in result["overview_rows"]}
+        self.assertEqual(by_id["PIG-CLEAR"]["Withdrawal_Clear"], "Yes")
+        self.assertEqual(by_id["PIG-HOLD"]["Withdrawal_Clear"], "No")
+        self.assertTrue(by_id["PIG-HOLD"]["Current_Withdrawal_End_Date"])
+
     def test_latest_weight_and_weights_by_date_map_supabase_rows(self):
         def fake_fetch_one(sql, params=(), connect_factory=None):
             return {

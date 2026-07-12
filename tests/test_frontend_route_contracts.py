@@ -1956,6 +1956,15 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('href="/sales/meat-leads"', template)
         self.assertIn('href="/sales/meat-leads"', dashboard)
 
+    def test_sales_availability_cards_show_latest_weight_date_and_return_to_sales_dashboard(self):
+        js = Path("static/js/salesAvailability.js").read_text(encoding="utf-8")
+
+        self.assertIn("Latest Weight Date", js)
+        self.assertIn("pig.last_weight_date", js)
+        self.assertIn('encodeURIComponent("/sales-dashboard")', js)
+        self.assertIn('encodeURIComponent("Back to Sales Dashboard")', js)
+        self.assertNotIn('encodeURIComponent("/charlie")', js)
+
     def test_litter_detail_has_weaning_day_workflow_panel(self):
         routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
         controller = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
