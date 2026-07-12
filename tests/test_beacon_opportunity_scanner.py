@@ -88,6 +88,36 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['demand_cap'], 3)
         self.assertEqual(live['status'], 'ready_for_owner_review')
 
+    def test_category_match_with_weight_mismatch_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 3, 'category': 'Grower', 'weight_range': '10-14 kg'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+        self.assertIn('incompatible_live_stock_weight_requirement', live['blockers'])
+
+    def test_weight_range_boundaries_are_inclusive(self):
+        pigs = [eligible_pig(f'P{i}') for i in range(5)]
+        pigs[0]['latest_weight_kg'] = 30
+        pigs[1]['latest_weight_kg'] = 40
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 2, 'category': 'Grower', 'weight_range': '30_to_40_Kg'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['capacity_calculation']['verified_available'], 5)
+        self.assertEqual(live['demand_cap'], 2)
+
+    def test_contradictory_or_unparseable_weight_requirement_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        for weight_range in ('40-30 kg', 'heavy grower'):
+            with self.subTest(weight_range=weight_range):
+                intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 2, 'category': 'Grower', 'weight_range': weight_range}]}]
+                result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+                live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+                self.assertEqual(live['demand_cap'], 0)
+                self.assertIn('invalid_live_stock_weight_requirement', live['blockers'])
+
     def test_route_is_owner_guarded(self):
         app.testing = True
         denied = ({'success': False, 'status': 'owner_access_required'}, 401)
