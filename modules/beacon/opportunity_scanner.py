@@ -84,6 +84,7 @@ def _row_demand_items(row):
         "quantity": _quantity(row),
         "category": row.get("category") or interest.get("category"),
         "weight_range": row.get("weight_range") or interest.get("weight_range"),
+        "sex": row.get("sex") or row.get("requested_sex") or interest.get("sex") or interest.get("requested_sex"),
     }]
 
 
@@ -109,6 +110,22 @@ def _pig_matches_weight(pig, bounds):
     return bounds[0] <= weight <= bounds[1]
 
 
+def _normalized_sex(value):
+    text = str(value or "").strip().lower()
+    aliases = {
+        "male": "male", "males": "male", "boar": "male", "boars": "male",
+        "female": "female", "females": "female", "gilt": "female", "gilts": "female",
+        "sow": "female", "sows": "female",
+        "any": "any", "any sex": "any", "no preference": "any", "either": "any",
+    }
+    return aliases.get(text, "")
+
+
+def _pig_matches_sex(pig, requested_sex):
+    pig_sex = _normalized_sex(pig.get("sex"))
+    return bool(pig_sex) and (requested_sex == "any" or pig_sex == requested_sex)
+
+
 def _deduplicated_demand(rows, lane, compatible_categories=None):
     excluded_statuses = {"closed", "not_interested", "cancelled", "fulfilled", "expired"}
     seen = set()
@@ -117,6 +134,7 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
     unknown_quantity = 0
     incompatible_records = 0
     invalid_weight_records = 0
+    invalid_sex_records = 0
     units_by_category = {}
     requirements = []
     compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
@@ -154,7 +172,13 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
                     parsed_items = []
                     break
                 item_category = _normalized_category(item.get("category"))
-                parsed_items.append({"category": item_category, "quantity": _quantity(item), "weight_bounds_kg": bounds})
+                raw_sex = item.get("sex") or item.get("requested_sex")
+                requested_sex = _normalized_sex(raw_sex) if str(raw_sex or "").strip() else "any"
+                if not requested_sex:
+                    invalid_sex_records += 1
+                    parsed_items = []
+                    break
+                parsed_items.append({"category": item_category, "quantity": _quantity(item), "weight_bounds_kg": bounds, "sex": requested_sex})
             if not parsed_items:
                 continue
             for parsed_item in parsed_items:
@@ -163,7 +187,7 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
                 requirements.append(parsed_item)
         units += sum(_quantity(item) for item in demand_items)
         accepted.append(identity)
-    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "requirements": requirements, "source_ids": sorted(accepted)}
+    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "invalid_sex_records": invalid_sex_records, "requirements": requirements, "source_ids": sorted(accepted)}
 
 
 def _fingerprint(lane, category, source_ids):
@@ -230,7 +254,7 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             category_pigs = [pig for pig in pigs if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) == demanded_category]
             matched_ids = set()
             for requirement in [item for item in live_demand["requirements"] if item["category"] == demanded_category]:
-                matches = [pig for pig in category_pigs if _pig_matches_weight(pig, requirement["weight_bounds_kg"])]
+                matches = [pig for pig in category_pigs if _pig_matches_weight(pig, requirement["weight_bounds_kg"]) and _pig_matches_sex(pig, requirement["sex"])]
                 if not matches:
                     weight_mismatch_records += 1
                 for pig in matches:
@@ -269,6 +293,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("incompatible_live_stock_demand")
         if live_demand["invalid_weight_records"]:
             blockers.append("invalid_live_stock_weight_requirement")
+        if live_demand["invalid_sex_records"]:
+            blockers.append("invalid_live_stock_sex_requirement")
         if weight_mismatch_records:
             blockers.append("incompatible_live_stock_weight_requirement")
         if not live_demand["qualified_units"]:

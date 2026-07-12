@@ -9,8 +9,8 @@ from modules.sales import sales_transaction_routes
 NOW = datetime(2026, 7, 12, 12, tzinfo=timezone.utc)
 
 
-def eligible_pig(pig_id='P1', category='Grower'):
-    return {'pig_id': pig_id, 'status': 'Active', 'on_farm': 'Yes', 'purpose': 'Sale', 'reserved_status': '', 'reserved_for_order_id': '', 'animal_type': category, 'calculated_stage': category, 'latest_weight_kg': 35, 'latest_weight_date': '2026-07-12', 'days_since_weight': 0, 'withdrawal_clear': 'Yes', 'health_status': 'Healthy', 'medical_status': 'Clear', 'wean_date': '2026-05-01', 'sale_category': category}
+def eligible_pig(pig_id='P1', category='Grower', sex='Male'):
+    return {'pig_id': pig_id, 'status': 'Active', 'on_farm': 'Yes', 'purpose': 'Sale', 'reserved_status': '', 'reserved_for_order_id': '', 'animal_type': category, 'calculated_stage': category, 'latest_weight_kg': 35, 'latest_weight_date': '2026-07-12', 'days_since_weight': 0, 'withdrawal_clear': 'Yes', 'health_status': 'Healthy', 'medical_status': 'Clear', 'wean_date': '2026-05-01', 'sale_category': category, 'sex': sex}
 
 
 class BeaconOpportunityScannerTests(unittest.TestCase):
@@ -91,6 +91,53 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
     def test_category_match_with_weight_mismatch_fails_closed(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
         intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 3, 'category': 'Grower', 'weight_range': '10-14 kg'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+        self.assertIn('incompatible_live_stock_weight_requirement', live['blockers'])
+
+    def test_same_category_and_weight_with_sex_mismatch_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}', sex='Male') for i in range(5)]}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 3, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'Female'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+        self.assertIn('incompatible_live_stock_weight_requirement', live['blockers'])
+
+    def test_production_item_shape_matches_category_weight_and_sex(self):
+        pigs = [eligible_pig('M1', sex='Male')] + [eligible_pig(f'F{i}', sex='Female') for i in range(4)]
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'item_key': 'live_stock_primary', 'quantity': 2, 'category': 'Grower', 'weight_range': '30_to_40_Kg', 'sex': 'Female', 'status': 'active'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['capacity_calculation']['verified_available'], 4)
+        self.assertEqual(live['demand_cap'], 2)
+
+    @patch('modules.beacon.opportunity_scanner.list_sam_live_stock_open_intakes')
+    def test_production_adapter_output_is_matched_by_category_weight_and_sex(self, list_intakes):
+        list_intakes.return_value = ({'success': True, 'open_intakes': [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'item_key': 'live_stock_primary', 'quantity': 2, 'category': 'Grower', 'weight_range': '30_to_40_Kg', 'sex': 'Female', 'status': 'active'}]}]}, 200)
+        pigs = [eligible_pig('M1', sex='Male')] + [eligible_pig(f'F{i}', sex='Female') for i in range(4)]
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        result = build_beacon_opportunity_cards(allocation=allocation, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['capacity_calculation']['verified_available'], 4)
+        self.assertEqual(live['demand_cap'], 2)
+        list_intakes.assert_called_once_with(limit=100)
+
+    def test_uninterpretable_sex_requirement_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 2, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'unknown'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('invalid_live_stock_sex_requirement', live['blockers'])
+
+    def test_missing_supply_sex_fails_closed_even_for_any_preference(self):
+        pigs = [eligible_pig(f'P{i}', sex='') for i in range(5)]
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 2, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'Any'}]}]
         result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
         live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
         self.assertEqual(live['demand_cap'], 0)
