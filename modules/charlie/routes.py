@@ -61,6 +61,7 @@ from modules.charlie.owner_approval_inbox import (
 )
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.sales.conversation_learning import live_stock_learning_scorecard
+from modules.beacon.workforce import beacon_workforce_scorecard
 
 
 charlie_bp = Blueprint("charlie", __name__)
@@ -413,13 +414,15 @@ def charlie_agent_workforce_route():
     if not refresh and AGENT_WORKFORCE_CACHE.get("packet") and now < float(AGENT_WORKFORCE_CACHE.get("expires_at") or 0):
         return jsonify({**AGENT_WORKFORCE_CACHE["packet"], "cache": "fresh"}), 200
     limit = request.args.get("limit", 500)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         mission_future = pool.submit(mission_status_summary)
         learning_future = pool.submit(live_stock_learning_scorecard, limit=limit)
         analyst_future = pool.submit(analyst_scorecard, limit=50)
+        beacon_future = pool.submit(beacon_workforce_scorecard, limit=limit)
         mission_summary, mission_status = mission_future.result()
         sam_learning, sam_status = learning_future.result()
         analyst_learning, analyst_status = analyst_future.result()
+        beacon_learning = beacon_future.result()
     runner = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
     packet = build_agent_workforce_packet(
         mission_summary=mission_summary if mission_status < 400 else {},
@@ -434,11 +437,13 @@ def charlie_agent_workforce_route():
             "status": analyst_learning.get("status", "analyst_scorecard_unavailable"),
             "scorecard": {},
         },
+        beacon_learning=beacon_learning,
     )
     packet["sources"] = {
         "charlie_missions": {"status_code": mission_status, "authoritative": True},
         "sam_live_stock_learning": {"status_code": sam_status, "authoritative": True},
         "charlie_improvement_analyst": {"status_code": analyst_status, "authoritative": True},
+        "beacon_marketing_evidence": {"status_code": 200 if beacon_learning.get("success") else 503, "authoritative": True},
         "agent_registry": {"status_code": 200, "authoritative": True},
         "trust_ledger": {"status_code": 200, "authoritative": True},
     }

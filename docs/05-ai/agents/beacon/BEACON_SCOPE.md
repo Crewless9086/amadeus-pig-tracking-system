@@ -2,9 +2,9 @@
 
 ## Status
 
-Logged on 2026-06-17.
+Logged on 2026-06-17. Operational status corrected on 2026-07-12.
 
-Beacon is planned as a controlled media, campaign, and demand-generation agent. The current implementation is only the Phase 11N meat launch draft packet. Full social-media control, scheduling, asset ingestion, ad spend, and performance optimization are future gated phases.
+Beacon is the Amadeus Marketing Department Leader. The live foundation includes a private Supabase media library, owner review, campaign and publish packets, manual performance evidence, boost recommendations, and exact owner-confirmed Facebook text/image posting. Scheduling, paid-spend execution, automatic performance ingestion, creative-provider execution, and controlled campaign automation remain gated future phases.
 
 ## One-Line Definition
 
@@ -105,6 +105,26 @@ These can start as backend modules under one Beacon agent. They do not need sepa
 | Beacon Media Librarian | Receives photos/videos, tags them, checks safety, scores quality, and queues owner approval. |
 | Beacon Scheduler | Schedules approved posts within approved channel and spend rules. |
 | Beacon Performance Analyst | Reads campaign results and recommends stop/change/boost/reuse actions. |
+
+These modules form Beacon's team. Beacon owns the target and final recommendation; specialist modules do not become independent public-posting agents.
+
+## Creative Studio Providers
+
+Beacon may eventually use controlled external creative providers, but generated output must return to the private Beacon media library before public use.
+
+- **ElevenLabs:** preferred first provider to evaluate for voiceovers, narration, sound design and its broader image/video creative tooling. The provider is already represented in the agent registry, but no Beacon production voice or creative execution authority is configured. Product reference: `https://elevenlabs.io/docs/overview/capabilities/image-video`.
+- **Happy Horse 1.0:** experimental provider candidate for text-to-video, image-to-video, reference-guided video, prompt-based editing and joint audio/video generation. Provider identity, commercial terms, privacy, API stability and output quality must be verified before integration.
+
+Creative provider flow:
+
+1. Beacon Creative prepares a campaign-specific brief from approved brand and sale facts.
+2. Only approved source assets are supplied to the provider.
+3. Generated variants return to `beacon-raw-intake` with provider, prompt, cost and source-asset lineage.
+4. Beacon Media Librarian checks animal/product fidelity, privacy, safety, brand quality and disclosure needs.
+5. Owner approves public use.
+6. Beacon may attach the approved variant only to an approved campaign packet.
+
+No provider may post, schedule, spend, read customer conversations, receive secrets, or bypass media approval.
 
 ## Authority Model
 
@@ -232,13 +252,15 @@ Beacon must avoid:
 
 ### Beacon 1 - Scope And Draft Packet
 
-Status: current foundation.
+Status: complete foundation.
 
 - Log full Beacon scope.
 - Keep Phase 11N meat launch packet as draft-only.
 - No posting or spend automation.
 
 ### Beacon 2 - Media Library Foundation
+
+Status: live supervised foundation.
 
 - Add asset records.
 - Support owner-approved upload/drop source.
@@ -248,37 +270,47 @@ Status: current foundation.
 
 ### Beacon 3 - Opportunity Scanner
 
+Status: partial packet support; continuous scanner not built.
+
 - Read upcoming pigs/meat readiness.
 - Identify sale-stream opportunities.
 - Produce campaign opportunities with risks and demand caps.
 
 ### Beacon 4 - Campaign Planner
 
+Status: partial owner-review packet support; target/calendar loop not built.
+
 - Combine opportunity, channel, copy, asset suggestion, timing, and spend cap.
 - Produce owner-review campaign plans.
 
 ### Beacon 5 - Manual Posting Phase
+
+Status: built; production evidence sample remains too small.
 
 - Owner still posts manually or approves exact packet.
 - Beacon records what was used and links inbound leads to campaign source.
 
 ### Beacon 6 - Scheduled Posting Phase
 
+Status: not built.
+
 - Add channel integrations only after rules are explicit.
 - Beacon schedules approved posts inside approved limits.
 
 ### Beacon 7 - Paid Promotion And Optimization
+
+Status: recommendation packet only; Meta insights ingestion and spend execution disabled.
 
 - Add Meta/ads metrics and spend caps.
 - Recommend stop/change/boost/reuse based on qualified lead and conversion data.
 
 ### Beacon 8 - Controlled Automation
 
+Status: not built.
+
 - Trusted campaign types run automatically inside approved rules.
 - Exceptions return to owner review.
 
 ## Current Next Step
 
-Do not build full Beacon automation yet.
-
-The immediate money-first next step remains the Sales Conversation Learning Loop, because Beacon needs lead-quality and conversion feedback before it can optimize campaigns properly.
+Build the production evidence loop next: opportunity scanner, campaign targets/calendar, approved scheduling, Meta/performance ingestion, Sam lead attribution, Ledger revenue/spend attribution, and weekly owner recommendations. Keep spend and reusable campaign authority owner-gated until production evidence supports graduation.

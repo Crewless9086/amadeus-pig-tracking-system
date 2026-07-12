@@ -149,6 +149,11 @@
     .attention { padding: 9px 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); font-size: 9px; line-height: 1.45; }
     .attention + .attention { margin-top: 5px; }
     .authority { padding: 10px; background: #f0f3f1; font-size: 9px; color: #4c5751; line-height: 1.45; }
+    .capability-list { display: grid; gap: 5px; }
+    .capability-list span { padding: 7px 9px; border: 1px solid var(--line); background: #fff; font-size: 9px; }
+    .agent-links { display: flex; flex-wrap: wrap; gap: 6px; }
+    .agent-links a { padding: 7px 9px; border-radius: 4px; color: #fff; background: var(--green); text-decoration: none; font-size: 9px; font-weight: 800; }
+    .agent-links a:hover { background: #10563c; }
     .empty { padding: 24px 16px; color: var(--muted); text-align: center; font-size: 11px; }
     .footer {
       display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 18px;
@@ -233,6 +238,6 @@
     </footer>
   </main>
   <div id="loadingMask" class="loading-mask"><div class="loading-card">Loading workforce evidence...</div></div>
-  <script src="{{ url_for('static', filename='js/charlieAgentWorkforce.js', v='20260711-v1') }}"></script>
+  <script src="{{ url_for('static', filename='js/charlieAgentWorkforce.js', v='20260712-beacon') }}"></script>
 </body>
 </html>

@@ -2,6 +2,15 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## Beacon Marketing Department Evidence - 2026-07-12
+
+- Beacon is the Marketing Department Leader, with Strategy, Creative, Media Librarian, Scheduler, and Performance specialist modules under her.
+- `/charlie-agents` reads live Beacon media, Facebook execution, manual-post, and campaign-performance evidence and excludes smoke-test rows from production metrics.
+- Current production evidence is one approved asset and one owner-confirmed Facebook campaign post, with no production performance rows or qualified-lead attribution yet. The current Workforce evidence score is 33%, labelled `owner_approved_posting`.
+- `/sales/beacon-media` remains the operating workspace for media review, campaign packets, exact owner-confirmed Facebook posting, manual performance evidence, and boost recommendations.
+- ElevenLabs and Happy Horse 1.0 are planned creative-provider candidates only. No provider call, spend, scheduling, or public-use authority is enabled.
+- Six owner-gated Beacon growth missions are stored in CHARLIE CORE for governance/targets, opportunity scanning, creative providers, campaign scheduling, attribution/finance, and optimization.
+
 ## Production State
 
 `origin/main` currently includes:

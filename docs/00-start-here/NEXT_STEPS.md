@@ -2,6 +2,17 @@
 
 This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
+## Beacon Marketing Department Roadmap - Owner Approval Queue
+
+1. `CHARLIE-MISSION-0AFC18F12C5CFA64` - Marketing operating contract, brand kit and targets.
+2. `CHARLIE-MISSION-47C615183E54E430` - Fulfilment-aware opportunity scanner.
+3. `CHARLIE-MISSION-64E13E6D891DAD8A` - ElevenLabs and Happy Horse creative-studio provider evaluation.
+4. `CHARLIE-MISSION-2F55383E1FA0715F` - Owner-rule campaign calendar and scheduler.
+5. `CHARLIE-MISSION-AE07E79AAFEF7728` - Meta insights, SAM lead and revenue attribution.
+6. `CHARLIE-MISSION-BD1FB9CC86FD0069` - Marketing command brief and optimization loop.
+
+These missions are `new`, not approved for automatic execution. Public posting remains exact-owner-confirmed; scheduling, paid spend and creative-provider calls remain disabled.
+
 ## P0 Operational / Live Issues
 
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.

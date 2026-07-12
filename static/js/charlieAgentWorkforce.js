@@ -108,6 +108,7 @@
       [{ id: "owner", name: "Charl", type: "owner", state: "Founder / human authority" }],
       [{ id: "charlie", name: "CHARLIE", type: "command", state: "Private digital executive" }],
       ["charlie-core", "oom-sakkie", "fred", "ledger", "beacon"].map((id) => nodeFromAgent(agents.get(id))),
+      ["beacon-strategy", "beacon-creative", "beacon-media", "beacon-scheduler", "beacon-performance"].map((id) => nodeFromAgent(agents.get(id))),
       ["codex-builder", "review-qa", "sam-live-stock", "sam-meat", "herdmaster"].map((id) => nodeFromAgent(agents.get(id))),
       [
         { id: "supabase", name: "Supabase", type: "system", state: "Source of truth" },
@@ -162,6 +163,8 @@
       ${replyClasses(agent)}
       <section class="evidence-block"><h4 class="section-label">Current attention</h4>${attention(agent)}</section>
       <section class="evidence-block"><h4 class="section-label">Owner action</h4><div class="authority"><strong>${esc(agent.owner_action || "No action required")}</strong></div></section>
+      ${capabilities(agent)}
+      ${agentLinks(agent)}
       <section class="evidence-block"><h4 class="section-label">Authority boundary</h4><div class="authority">${esc(agent.authority_boundary)}</div></section>`;
   }
 
@@ -169,7 +172,20 @@
     let value = metric.value;
     let target = metric.target;
     if (metric.kind === "rate") { value = pct(value); target = target == null ? null : pct(target); }
+    if (metric.kind === "currency") { value = `R${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
     return `<div class="metric" title="${target == null ? "Observed value" : `Target: ${esc(target)}`}"><div class="metric-value">${esc(value)}</div><div class="metric-label">${esc(metric.label)}${target == null ? "" : ` · target ${esc(target)}`}</div></div>`;
+  }
+
+  function capabilities(agent) {
+    const rows = agent.capabilities || [];
+    if (!rows.length) return "";
+    return `<section class="evidence-block"><h4 class="section-label">Operational capability</h4><div class="capability-list">${rows.map((row) => `<span>${esc(row)}</span>`).join("")}</div></section>`;
+  }
+
+  function agentLinks(agent) {
+    const rows = agent.links || [];
+    if (!rows.length) return "";
+    return `<section class="evidence-block"><h4 class="section-label">Workspace</h4><div class="agent-links">${rows.map((row) => `<a href="${esc(row.href)}">${esc(row.label)}</a>`).join("")}</div></section>`;
   }
 
   function replyClasses(agent) {

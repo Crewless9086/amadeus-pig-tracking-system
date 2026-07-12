@@ -49,6 +49,21 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
                     "stage": "proposal_ready",
                 },
             },
+            beacon_learning={
+                "success": True,
+                "status": "beacon_workforce_scorecard_ready",
+                "scorecard": {
+                    "stage": "owner_approved_posting",
+                    "progress_percent": 34,
+                    "approved_assets": 1,
+                    "production_posts_sent": 1,
+                    "production_performance_events": 0,
+                    "qualified_buyer_leads": 0,
+                    "tracked_spend_zar": 0,
+                    "media_review_backlog": 0,
+                    "scheduling_enabled": False,
+                },
+            },
         )
 
         self.assertTrue(packet["success"])
@@ -62,6 +77,11 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         self.assertTrue(analyst["evidence"]["measured"])
         self.assertEqual(analyst["candidate_count"], 1)
         self.assertEqual(analyst["owner_action"], "Review ANALYST proposals")
+        beacon = next(agent for agent in packet["agents"] if agent["id"] == "beacon")
+        self.assertEqual(beacon["team"], "Marketing")
+        self.assertEqual(beacon["evidence"]["progress_percent"], 34)
+        self.assertEqual(beacon["stage"], "owner_approved_posting")
+        self.assertTrue(beacon["links"])
 
     def test_unmeasured_agents_report_not_measured_instead_of_fake_percent(self):
         packet = build_agent_workforce_packet(registry={"agents": []})
@@ -84,6 +104,11 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         self.assertEqual(agents["fred"]["team"], "Private Transfers")
         self.assertIn("client-facing transport", agents["fred"]["role"].lower())
         self.assertNotIn("finance", agents["fred"]["role"].lower())
+        self.assertIn(("beacon", "beacon-strategy"), connections)
+        self.assertIn(("beacon", "beacon-creative"), connections)
+        self.assertIn(("beacon", "beacon-media"), connections)
+        self.assertIn(("beacon", "beacon-scheduler"), connections)
+        self.assertIn(("beacon", "beacon-performance"), connections)
 
 
 if __name__ == "__main__":

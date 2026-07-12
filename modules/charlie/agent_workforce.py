@@ -26,7 +26,12 @@ WORKFORCE_DEFINITIONS = (
     {"id": "herdmaster", "name": "Herdmaster", "team": "Farm", "role": "Pig, litter, breeding, weaning and health intelligence.", "stage": "planned", "registry_id": "herdmaster"},
     {"id": "fred", "name": "FRED", "team": "Private Transfers", "role": "Planned client-facing transport enquiry and booking agent for Amadeus Private Transfers.", "stage": "planned"},
     {"id": "ledger", "name": "Ledger", "team": "Business", "role": "Sales, money, opportunities and business-readiness intelligence.", "stage": "planned", "registry_id": "ledger"},
-    {"id": "beacon", "name": "Beacon", "team": "Business", "role": "Owner-reviewed public content and demand generation.", "stage": "planned", "registry_id": "beacon"},
+    {"id": "beacon", "name": "Beacon", "team": "Marketing", "role": "Marketing department leader for profitable demand, brand control, campaigns, media and performance learning.", "stage": "owner_approved_posting", "registry_id": "beacon", "links": [{"label": "Marketing workspace", "href": "/sales/beacon-media"}]},
+    {"id": "beacon-strategy", "name": "Beacon Strategy", "team": "Marketing", "role": "Detects fulfilable sales opportunities and sets channel, audience, target and campaign direction.", "stage": "foundation_ready"},
+    {"id": "beacon-creative", "name": "Beacon Creative", "team": "Marketing", "role": "Creates brand-controlled copy and owner-reviewed image, audio and video briefs.", "stage": "draft_ready"},
+    {"id": "beacon-media", "name": "Beacon Media Librarian", "team": "Marketing", "role": "Catalogues, scores and protects approved campaign media and usage history.", "stage": "live_supervised", "links": [{"label": "Media library", "href": "/sales/beacon-media"}]},
+    {"id": "beacon-scheduler", "name": "Beacon Scheduler", "team": "Marketing", "role": "Future owner-rule-gated campaign calendar and publishing coordinator.", "stage": "planned"},
+    {"id": "beacon-performance", "name": "Beacon Performance", "team": "Marketing", "role": "Measures spend, qualified leads, conversion and profitable campaign outcomes.", "stage": "evidence_gathering", "links": [{"label": "Performance evidence", "href": "/sales/beacon-media"}]},
 )
 
 
@@ -37,6 +42,13 @@ CONNECTIONS = (
     ("charlie", "fred", "commands business"),
     ("charlie", "ledger", "coordinates"),
     ("charlie", "beacon", "coordinates"),
+    ("beacon", "beacon-strategy", "leads"),
+    ("beacon", "beacon-creative", "leads"),
+    ("beacon", "beacon-media", "leads"),
+    ("beacon", "beacon-scheduler", "leads"),
+    ("beacon", "beacon-performance", "leads"),
+    ("beacon", "sam-live-stock", "measures demand quality"),
+    ("beacon", "ledger", "shares spend and revenue"),
     ("charlie-core", "codex-builder", "dispatches"),
     ("charlie-core", "analyst", "observed by"),
     ("charlie-core", "review-qa", "gates"),
@@ -63,6 +75,7 @@ def build_agent_workforce_packet(
     runner: Mapping[str, Any] | None = None,
     sam_learning: Mapping[str, Any] | None = None,
     analyst_learning: Mapping[str, Any] | None = None,
+    beacon_learning: Mapping[str, Any] | None = None,
     registry: Mapping[str, Any] | None = None,
     trust_entries: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -70,6 +83,7 @@ def build_agent_workforce_packet(
     runner = dict(runner or {})
     sam_learning = dict(sam_learning or {})
     analyst_learning = dict(analyst_learning or {})
+    beacon_learning = dict(beacon_learning or {})
     registry = dict(registry or load_agent_registry())
     trust_entries = dict(trust_entries or load_trust_ledger())
     registry_by_id = {str(item.get("agent_id")): item for item in registry.get("agents", []) if isinstance(item, Mapping)}
@@ -98,6 +112,8 @@ def build_agent_workforce_packet(
             item.update(_trust_evidence("mission_loop_foundation", trust_entries, "Shared mission verification evidence"))
         elif item["id"] == "sam-live-stock":
             item.update(_sam_evidence(scorecard, sam_learning))
+        elif item["id"] == "beacon":
+            item.update(_beacon_evidence(beacon_learning))
         agents.append(item)
 
     measured = [agent for agent in agents if agent["evidence"]["measured"]]
@@ -208,6 +224,46 @@ def _charlie_evidence(counts: Mapping[str, Any], runner: Mapping[str, Any], trus
     if blocked_count:
         evidence["blockers"] = [f"{blocked_count} mission{'s' if blocked_count != 1 else ''} blocked"]
     return evidence
+
+
+def _beacon_evidence(beacon_learning: Mapping[str, Any]) -> dict[str, Any]:
+    scorecard = beacon_learning.get("scorecard") if isinstance(beacon_learning.get("scorecard"), Mapping) else {}
+    posts = int(scorecard.get("production_posts_sent") or 0)
+    performance = int(scorecard.get("production_performance_events") or 0)
+    approved_assets = int(scorecard.get("approved_assets") or 0)
+    qualified = int(scorecard.get("qualified_buyer_leads") or 0)
+    blockers = []
+    if performance < 10:
+        blockers.append(f"{10 - performance} more production campaign measurements needed for learning")
+    if approved_assets < 10:
+        blockers.append(f"{10 - approved_assets} more approved brand assets needed")
+    if not scorecard.get("scheduling_enabled"):
+        blockers.append("Owner-rule campaign scheduling is not enabled")
+    return {
+        "stage": scorecard.get("stage") or "foundation_ready",
+        "evidence": {
+            "measured": bool(beacon_learning.get("success") or scorecard),
+            "progress_percent": int(scorecard.get("progress_percent") or 0),
+            "label": "Marketing operating evidence",
+        },
+        "metrics": [
+            _metric("Approved assets", approved_assets, 10, "count"),
+            _metric("Published campaigns", posts, 10, "count"),
+            _metric("Measured campaigns", performance, 10, "count"),
+            _metric("Qualified leads", qualified, 20, "count"),
+            _metric("Tracked spend", float(scorecard.get("tracked_spend_zar") or 0), None, "currency"),
+            _metric("Review backlog", int(scorecard.get("media_review_backlog") or 0), 0, "count"),
+        ],
+        "blockers": blockers,
+        "owner_action": "Build the production campaign evidence loop",
+        "source_status": beacon_learning.get("status") or "beacon_scorecard_unknown",
+        "capabilities": [
+            "Owner-approved Facebook text/image posting",
+            "Private approved-media library",
+            "Campaign draft and publish packets",
+            "Manual performance and boost recommendations",
+        ],
+    }
 
 
 def _analyst_evidence(analyst_learning: Mapping[str, Any]) -> dict[str, Any]:
