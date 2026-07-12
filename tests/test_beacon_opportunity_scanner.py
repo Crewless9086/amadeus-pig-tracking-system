@@ -16,7 +16,7 @@ def eligible_pig(pig_id='P1'):
 class BeaconOpportunityScannerTests(unittest.TestCase):
     def test_live_cap_is_demand_and_buffer_bounded(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
-        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 9}], meat_leads=[], now=NOW)
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 9, 'category': 'Grower'}], meat_leads=[], now=NOW)
         live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
         self.assertEqual(live['demand_cap'], 3)
         self.assertEqual(live['status'], 'ready_for_owner_review')
@@ -30,7 +30,7 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
 
     def test_future_dated_allocation_evidence_fails_closed(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-14', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
-        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3}], meat_leads=[], now=NOW)
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3, 'category': 'Grower'}], meat_leads=[], now=NOW)
         live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
         self.assertEqual(live['demand_cap'], 0)
         self.assertEqual(live['status'], 'blocked')
@@ -40,7 +40,7 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
     def test_any_unknown_live_demand_quantity_fails_closed(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
         intakes = [
-            {'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3},
+            {'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3, 'category': 'Grower'},
             {'conversation_id': 'C2', 'intake_status': 'Open'},
         ]
         result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
@@ -59,6 +59,23 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(meat['demand_summary']['qualified_units'], 4)
         self.assertEqual(meat['demand_cap'], 0)
         self.assertIn('butcher_loop_not_proven', meat['blockers'])
+
+    def test_incompatible_live_stock_category_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 3, 'category': 'Weaner'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['demand_summary']['incompatible_records'], 1)
+        self.assertIn('incompatible_live_stock_demand', live['blockers'])
+
+    def test_production_intake_item_shape_supplies_quantity_and_category(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 3, 'category': 'Grower'}]}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 3)
+        self.assertEqual(live['status'], 'ready_for_owner_review')
 
     def test_route_is_owner_guarded(self):
         app.testing = True

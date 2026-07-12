@@ -799,8 +799,22 @@ def list_sam_live_stock_open_intakes(limit=25, *, database_url=None):
                         next_action,
                         last_customer_message,
                         notes,
-                        updated_at
-                    from public.order_intakes
+                        updated_at,
+                        coalesce((
+                            select jsonb_agg(jsonb_build_object(
+                                'item_key', item.item_key,
+                                'quantity', item.quantity,
+                                'category', item.category,
+                                'weight_range', item.weight_range,
+                                'sex', item.sex,
+                                'intent_type', item.intent_type
+                            ) order by item.created_at, item.item_key)
+                            from public.order_intake_items item
+                            where item.intake_id = intake.intake_id
+                              and lower(coalesce(item.status, 'active')) = 'active'
+                              and item.removed_at is null
+                        ), '[]'::jsonb) as items
+                    from public.order_intakes intake
                     where intake_status in ('Open', 'Ready_For_Draft', 'Ready_For_Quote')
                     and coalesce(notes, '') ilike '%%sam_live_stock%%'
                     order by updated_at desc nulls last, created_at desc
@@ -1355,6 +1369,16 @@ def _open_intake_row(row):
             missing = [missing] if missing else []
     if not isinstance(missing, list):
         missing = []
+    items = row.get("items")
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except Exception:
+            items = []
+    if not isinstance(items, list):
+        items = []
+    items = [item for item in items if isinstance(item, dict)]
+    total_quantity = sum(_positive_int(item.get("quantity")) for item in items)
     return {
         "intake_id": _clean(row.get("intake_id"), 100),
         "conversation_id": _clean(row.get("conversation_id"), 100),
@@ -1366,11 +1390,21 @@ def _open_intake_row(row):
         "quote_requested": bool(row.get("quote_requested")),
         "order_commitment": bool(row.get("order_commitment")),
         "missing_fields": missing,
+        "quantity": total_quantity or None,
+        "items": items,
         "next_action": _clean(row.get("next_action"), 120),
         "last_customer_message": _clean(row.get("last_customer_message"), 500),
         "notes": _clean(row.get("notes"), 500),
         "updated_at": str(row.get("updated_at") or ""),
     }
+
+
+def _positive_int(value):
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def _owner_links():
