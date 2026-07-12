@@ -2288,10 +2288,6 @@ def _apply_meat_pilot_defaults(facts):
 
 
 def _record_delivery_address_if_ready(lead_id, inbound, facts):
-    return {"recorded": False, "status": "controlled_mode_blocked"}
-
-
-def _disabled_record_delivery_address_if_ready(lead_id, inbound, facts):
     lead_id = _clean(lead_id, 100)
     if not lead_id or facts.get("delivery_or_collection") != "delivery":
         return {"recorded": False, "status": "not_delivery"}
