@@ -270,6 +270,21 @@ class OrderLifecycleServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Only Approved orders"):
                 order_lifecycle.complete_order("ORD-1")
 
+    def test_completed_order_retries_projection_without_lifecycle_writes(self):
+        row = draft_order(Order_Status="Completed", Approval_Status="Approved")
+        projection = {"success": True, "sale_id": "SALE-ONE", "item_count": 5}
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=row), \
+             patch.object(order_lifecycle.order_supabase_write, "supabase_order_writes_available", return_value=True), \
+             patch.object(order_lifecycle, "project_completed_order_to_sale", return_value=projection) as project, \
+             patch.object(order_lifecycle, "_update_sheet_row_by_id") as update_order, \
+             patch.object(order_lifecycle, "_write_order_status_log") as write_log:
+            result = order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+        self.assertEqual(result["pigs_marked_sold"], 0)
+        self.assertEqual(result["sales_projection"], projection)
+        project.assert_called_once_with("ORD-1", changed_by="Tester")
+        update_order.assert_not_called()
+        write_log.assert_not_called()
+
     def test_complete_order_requires_active_lines(self):
         approved_row = draft_order(Order_Status="Approved", Approval_Status="Approved")
         rows = [

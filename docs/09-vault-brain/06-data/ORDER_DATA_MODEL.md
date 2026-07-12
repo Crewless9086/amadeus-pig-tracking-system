@@ -42,6 +42,9 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 ## Sales Transaction Rules
 
 - `gross_total`, `deductions_total`, and `net_total` must be explicit values.
+- Every Completed Supabase-backed order reconciles to exactly one sales transaction keyed by `linked_order_id`; repeated completion is projection-only and does not repeat pig lifecycle or status-log writes.
+- Projection atomically reconciles only Collected lines by `(sale_id, order_line_id)`. Slaughter/abattoir context takes stream precedence, then meat/carcass/pork, otherwise Livestock.
+- Collected line snapshots form `gross_total`; order `final_total` forms `net_total` when present and the difference is explicit deductions. An unexplained final total above line snapshots blocks projection. POP or unknown payment evidence remains `Unpaid`.
 - Do not calculate income from pig count alone.
 - Slaughter/abattoir sales may be recorded without a normal customer order.
 - Meat/carcass sales should use the same transaction family once the meat workflow is ready.
