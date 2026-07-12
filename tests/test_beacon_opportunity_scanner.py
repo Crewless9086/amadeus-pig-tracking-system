@@ -106,6 +106,20 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['capacity_calculation']['verified_available'], 0)
         self.assertIn('incompatible_live_stock_weight_requirement', live['blockers'])
 
+    def test_partial_same_category_sex_supply_fails_closed(self):
+        pigs = [eligible_pig('F1', sex='Female')] + [eligible_pig(f'M{i}', sex='Male') for i in range(9)]
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        intakes = [
+            {'conversation_id': 'C1', 'intake_status': 'Open', 'items': [
+                {'quantity': 5, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'Female'},
+                {'quantity': 5, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'Male'},
+            ]},
+        ]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('incompatible_live_stock_weight_requirement', live['blockers'])
+
     def test_production_item_shape_matches_category_weight_and_sex(self):
         pigs = [eligible_pig('M1', sex='Male')] + [eligible_pig(f'F{i}', sex='Female') for i in range(4)]
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}

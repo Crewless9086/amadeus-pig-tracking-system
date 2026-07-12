@@ -252,10 +252,11 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
         weight_mismatch_records = 0
         for demanded_category in demanded_categories:
             category_pigs = [pig for pig in pigs if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) == demanded_category]
+            category_requirements = [item for item in live_demand["requirements"] if item["category"] == demanded_category]
             matched_ids = set()
-            for requirement in [item for item in live_demand["requirements"] if item["category"] == demanded_category]:
+            for requirement in category_requirements:
                 matches = [pig for pig in category_pigs if _pig_matches_weight(pig, requirement["weight_bounds_kg"]) and _pig_matches_sex(pig, requirement["sex"])]
-                if not matches:
+                if not matches or (len(category_requirements) > 1 and len(matches) < requirement["quantity"]):
                     weight_mismatch_records += 1
                 for pig in matches:
                     matched_ids.add(str(pig.get("pig_id")))
