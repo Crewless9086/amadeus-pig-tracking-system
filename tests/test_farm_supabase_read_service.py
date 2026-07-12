@@ -418,6 +418,39 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(inputs["litter_rows"][0]["Born_Alive"], 10.0)
         self.assertEqual(inputs["pen_lookup"]["PEN-1"]["pen_name"], "Grower Pen")
 
+    def test_allocation_inputs_keep_older_active_withdrawal_when_latest_event_is_clear(self):
+        current_rows = [{
+            "pig_id": "PIG-1",
+            "status": "Active",
+            "on_farm": True,
+            "purpose": "Sale",
+        }]
+        medical_sql = ""
+
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            nonlocal medical_sql
+            if "from latest_event" in sql:
+                medical_sql = sql
+                return [{
+                    "pig_id": "PIG-1",
+                    "treatment_type": "Routine check",
+                    "reason_for_treatment": "Clear",
+                    "current_withdrawal_end_date": date(2026, 7, 20),
+                    "follow_up_hold": False,
+                }]
+            return []
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=current_rows), \
+             patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all):
+            inputs = farm_supabase_read_service.get_allocation_input_rows()
+
+        overview = inputs["overview_rows"][0]
+        self.assertIn("max(withdrawal_end_date)", medical_sql)
+        self.assertIn("withdrawal_end_date > current_date", medical_sql)
+        self.assertEqual(overview["Current_Withdrawal_End_Date"], "2026-07-20")
+        self.assertEqual(overview["Medical_Status"], "Withdrawal hold")
+        self.assertEqual(overview["Health_Status"], "Clear")
+
     def test_litter_overview_and_detail_map_supabase_rows(self):
         litters = [{
             "litter_id": "LIT-1",

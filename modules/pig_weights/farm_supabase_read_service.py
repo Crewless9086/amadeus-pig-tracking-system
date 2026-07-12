@@ -748,11 +748,58 @@ def _allocation_overview_row(row):
         "Litter_ID": _text(row.get("litter_id")),
         "Mother_Pig_ID": _text(row.get("mother_pig_id")),
         "Father_Pig_ID": _text(row.get("father_pig_id")),
+        "Current_Withdrawal_End_Date": _date_text(row.get("current_withdrawal_end_date")),
+        "Health_Status": _text(row.get("health_status")),
+        "Medical_Status": _text(row.get("medical_status")),
+        "Media_References": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
     }
 
 
 def get_allocation_input_rows(connect_factory=None):
     current_rows = _current_state_rows(connect_factory=connect_factory)
+    medical_rows = _fetch_all(
+        """
+        with latest_event as (
+            select distinct on (pig_id)
+                pig_id, treatment_type, reason_for_treatment
+            from public.pig_medical_events
+            order by pig_id, treatment_date desc, created_at desc, medical_event_id desc
+        ), active_holds as (
+            select
+                pig_id,
+                max(withdrawal_end_date) filter (
+                    where withdrawal_end_date > current_date
+                ) as current_withdrawal_end_date,
+                bool_or(
+                    follow_up_required is true
+                    and (follow_up_date is null or follow_up_date >= current_date)
+                ) as follow_up_hold
+            from public.pig_medical_events
+            group by pig_id
+        )
+        select
+            latest_event.pig_id,
+            latest_event.treatment_type,
+            latest_event.reason_for_treatment,
+            active_holds.current_withdrawal_end_date,
+            active_holds.follow_up_hold
+        from latest_event
+        join active_holds using (pig_id)
+        """,
+        connect_factory=connect_factory,
+    )
+    medical_by_pig = {row["pig_id"]: row for row in medical_rows}
+    for row in current_rows:
+        medical = medical_by_pig.get(row.get("pig_id"), {})
+        withdrawal_end = medical.get("current_withdrawal_end_date")
+        withdrawal_hold = isinstance(withdrawal_end, date)
+        follow_up_hold = bool(medical.get("follow_up_hold"))
+        row["current_withdrawal_end_date"] = withdrawal_end
+        row["medical_status"] = "Withdrawal hold" if withdrawal_hold else "Follow-up hold" if follow_up_hold else "Clear"
+        row["health_status"] = _text(medical.get("reason_for_treatment") or medical.get("treatment_type"))
+        # No canonical animal-media table exists yet. Keep the contract explicit and empty;
+        # SAM must never invent a reference from notes or customer uploads.
+        row["media_references"] = []
     weight_rows = _fetch_all(
         """
         select pig_id, weight_date, weight_kg
