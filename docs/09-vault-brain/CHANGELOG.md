@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-12
+
+- Added the SAM Live Stock collection-first delivery policy: customer-requested transport may be estimated at R20.00 per one-way kilometre for farm round-trip recovery, with distance/source/status, destination, eligibility, owner-override audit fields, and mandatory owner review.
+
 ## 2026-07-11
 
 - Marked the first Herdmaster Pig Allocation alert automation as implemented: `/api/pig-weights/pig-allocation-alerts` is owner-read-guarded, read-only, advisory, includes pig plus litter/weaning alerts, and remains blocked from farm lifecycle, customer, public, order, sales, slaughter, reservation, stock, and migration writes.
