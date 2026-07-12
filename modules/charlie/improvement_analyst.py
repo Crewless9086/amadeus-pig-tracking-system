@@ -77,7 +77,7 @@ def analyze_improvement_opportunities(missions):
     missions = [mission for mission in missions if isinstance(mission, dict)]
     buckets = {area: _empty_bucket(area) for area in TARGET_AREAS}
     for mission in missions:
-        evidence_texts = _mission_evidence_texts(mission)
+        evidence_texts = _mission_improvement_evidence_texts(mission)
         combined = " ".join(evidence_texts).lower()
         if not combined:
             continue
@@ -287,6 +287,26 @@ def generate_and_store_proposals(limit=50, max_proposals=5, database_url=None, c
         return loaded, status_code
     proposals = analyze_improvement_opportunities(loaded.get("missions", []))[:max(1, min(int(max_proposals or 5), 10))]
     existing_by_id = _existing_proposals_by_id(database_url=database_url, connect_factory=connect_factory)
+    current_ids = {proposal["proposal_id"] for proposal in proposals}
+    superseded = []
+    for proposal_id, existing in existing_by_id.items():
+        if proposal_id in current_ids or existing.get("status") not in {"pending", "pending_owner_review"}:
+            continue
+        artifact_id = existing.get("artifact_id")
+        if not artifact_id:
+            continue
+        stale = dict(existing)
+        stale["status"] = "superseded"
+        stale["superseded_reason"] = "Current structured mission evidence no longer meets the recurrence threshold."
+        stale["lifecycle_updated_at"] = datetime.now(timezone.utc).isoformat()
+        saved, saved_status = vault_store.update_artifact_content(
+            artifact_id,
+            stale,
+            summary=stale.get("recommendation", ""),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        superseded.append({"proposal_id": proposal_id, "success": saved_status < 400 and saved.get("success", False)})
     writes = []
     for proposal in proposals:
         proposal = _merge_existing_proposal_decision(proposal, existing_by_id.get(proposal["proposal_id"]))
@@ -322,6 +342,7 @@ def generate_and_store_proposals(limit=50, max_proposals=5, database_url=None, c
         "proposal_count": len(proposals),
         "proposals": proposals,
         "writes": writes,
+        "superseded": superseded,
         "execution_boundary": _execution_boundary(),
     }, 200
 
@@ -588,7 +609,7 @@ def _validation_assessment(proposal, missions, improvement_mission):
 
 def _mission_matches_area(mission, area):
     config = TARGET_AREAS.get(area) or {}
-    combined = " ".join(_mission_evidence_texts(mission)).lower()
+    combined = " ".join(_mission_improvement_evidence_texts(mission)).lower()
     return any(keyword in combined for keyword in config.get("keywords", []))
 
 
@@ -773,6 +794,28 @@ def _mission_evidence_texts(mission):
             values.extend(str(item) for item in value)
     for item in mission.get("agent_workflow", []) if isinstance(mission.get("agent_workflow"), list) else []:
         if isinstance(item, dict):
+            values.append(item.get("findings", ""))
+    return [_clean(value, 800) for value in values if _clean(value, 800)]
+
+
+def _mission_improvement_evidence_texts(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    disposition = review_packet.get("block_disposition") if isinstance(review_packet.get("block_disposition"), dict) else {}
+    values = [
+        mission.get("owner_decision", ""),
+        review_packet.get("blocked_reason", ""),
+        disposition.get("block_class", ""),
+        disposition.get("responsible_stage", ""),
+    ]
+    for key in ("errors", "bugs", "unresolved_blockers", "backflow_events"):
+        value = review_packet.get(key)
+        if isinstance(value, list):
+            values.extend(str(item) for item in value)
+        elif value:
+            values.append(value)
+    for item in mission.get("agent_workflow", []) if isinstance(mission.get("agent_workflow"), list) else []:
+        if isinstance(item, dict) and str(item.get("status") or "").lower() == "blocked":
             values.append(item.get("findings", ""))
     return [_clean(value, 800) for value in values if _clean(value, 800)]
 

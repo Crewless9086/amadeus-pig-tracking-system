@@ -27,7 +27,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                 "mission_id": "MISSION-2",
                 "status": "pr_ready",
                 "title": "Dashboard review",
-                "metadata": {"review_packet": {"findings": ["Dashboard did not show test evidence."], "test_evidence": ["python -m unittest failed first."]}},
+                "metadata": {"review_packet": {"errors": ["Dashboard regression: test evidence missing from owner review."]}},
             },
         ]
 
@@ -85,7 +85,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                     "mission_id": "MISSION-2",
                     "status": "pr_ready",
                     "title": "Regression evidence",
-                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                    "metadata": {"review_packet": {"errors": ["Tests failed because regression evidence is missing."]}},
                 },
                 {
                     "mission_id": "MISSION-1",
@@ -120,7 +120,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                     "mission_id": "MISSION-2",
                     "status": "pr_ready",
                     "title": "Regression evidence",
-                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                    "metadata": {"review_packet": {"errors": ["Tests failed because regression evidence is missing."]}},
                 },
                 {
                     "mission_id": "MISSION-1",
@@ -165,7 +165,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                     "mission_id": "MISSION-2",
                     "status": "pr_ready",
                     "title": "Regression evidence",
-                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                    "metadata": {"review_packet": {"errors": ["Tests failed because regression evidence is missing."]}},
                 },
             ],
         }, 200)
@@ -200,7 +200,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                     "mission_id": "MISSION-2",
                     "status": "pr_ready",
                     "title": "Regression evidence",
-                    "metadata": {"review_packet": {"findings": ["Missing regression test evidence."]}},
+                    "metadata": {"review_packet": {"errors": ["Tests failed because regression evidence is missing."]}},
                 },
             ],
         }, 200)
