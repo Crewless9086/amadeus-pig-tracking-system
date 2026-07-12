@@ -57,6 +57,70 @@ class CharlieMissionPickupTests(unittest.TestCase):
             self._base_branch_guard_patcher.start()
             self.addCleanup(self._base_branch_guard_patcher.stop)
 
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup._owner_queue_missions")
+    def test_reconcile_green_blocked_pr_moves_to_owner_review(self, owner_queue, update_vault, update_status):
+        blocked = {
+            **MISSION,
+            "status": "blocked",
+            "metadata": {
+                "charlie_core": {"project_truth": {"workflow_template": "software_build"}},
+                "review_packet": {"links": {"pr": "https://github.com/example/repo/pull/12"}},
+            },
+        }
+        owner_queue.return_value = ([blocked], 200)
+        update_vault.return_value = ({"success": True}, 200)
+        update_status.return_value = ({"success": True}, 200)
+
+        def fake_runner(*_args, **_kwargs):
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"number":12,"url":"https://github.com/example/repo/pull/12","state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc123","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
+                stderr="",
+            )
+
+        result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
+
+        self.assertEqual(result["changed_count"], 1)
+        self.assertEqual(update_status.call_args.args[1], "pr_ready")
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["review_status"], "ready_for_owner_review")
+        self.assertEqual(packet["tested_revision"], "abc123")
+
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup._owner_queue_missions")
+    def test_reconcile_conflicting_pr_queues_publisher_recovery(self, owner_queue, update_vault, update_status):
+        blocked = {
+            **MISSION,
+            "status": "blocked",
+            "metadata": {"review_packet": {"links": {"pr": "https://github.com/example/repo/pull/13"}}},
+        }
+        owner_queue.return_value = ([blocked], 200)
+        update_vault.return_value = ({"success": True}, 200)
+        update_status.return_value = ({"success": True}, 200)
+
+        def fake_runner(*_args, **_kwargs):
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"number":13,"state":"OPEN","mergeable":"CONFLICTING","headRefOid":"def456","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
+                stderr="",
+            )
+
+        result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
+
+        self.assertEqual(result["changed_count"], 1)
+        self.assertEqual(update_status.call_args.args[1], "approved")
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["return_to_stage"], "publisher")
+        self.assertEqual(packet["review_status"], "internal_recovery_queued")
+
+    def test_browser_preflight_is_capability_only_by_default(self):
+        self.assertFalse(charlie_mission_pickup._mission_requires_browser_preflight({
+            "metadata": {"charlie_core": {"project_truth": {"workflow_template": "ui_product_build"}}},
+        }))
+
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
     def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run):

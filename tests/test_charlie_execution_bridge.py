@@ -783,8 +783,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
             ledger = json.loads(Path(result["agent_ledger_path"]).read_text(encoding="utf-8"))
 
-        self.assertEqual(status_code, 504)
-        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(status_code, 202)
+        self.assertEqual(result["status"], "agent_stage_recovery_queued")
+        self.assertEqual(result["mission_status"], "approved")
+        self.assertEqual(result["block_disposition"]["block_class"], "evidence_repair_required")
         self.assertIn("after contract retry", result["blocked_reason"])
         self.assertEqual(len(ledger["contract_retries"]), 1)
         vault_metadata = update_vault.call_args.args[1]
@@ -915,7 +917,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 run_subprocess=nonzero_runner,
             )
 
-        self.assertEqual(status_code, 504)
+        self.assertEqual(status_code, 202)
         self.assertEqual(calls["count"], 1)
 
     def test_review_agent_parse_fallback_never_recommends_approval(self):
@@ -923,6 +925,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(artifact["contract_parse_fallback"])
         self.assertEqual(artifact["recommended_owner_decision"], "send_back")
+
+    def test_revision_gate_rejects_review_of_wrong_pr_head(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["expected_revision"] = "abc123"
+        artifact["tested_revision"] = "def456"
+
+        result = execution_bridge._revision_evidence_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("wrong revision", result["reason"])
+
+    def test_revision_gate_accepts_full_sha_for_short_builder_sha(self):
+        result = execution_bridge._revision_evidence_quality_gate("reviewer", {
+            "expected_revision": "abc1234",
+            "tested_revision": "abc1234ffffeeee",
+        })
+
+        self.assertTrue(result["passed"])
 
     def test_council_synthesis_parsed_artifact_gets_contract_defaults(self):
         final = """Council-approved build brief:
@@ -1126,13 +1146,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 run_subprocess=timeout_runner,
             )
 
-        self.assertEqual(status_code, 504)
-        self.assertEqual(result["status"], "agent_stage_blocked")
-        self.assertEqual(result["mission_status"], "blocked")
+        self.assertEqual(status_code, 202)
+        self.assertEqual(result["status"], "agent_stage_recovery_queued")
+        self.assertEqual(result["mission_status"], "approved")
         update_status.assert_called()
-        self.assertEqual(update_status.call_args.args[1], "blocked")
+        self.assertEqual(update_status.call_args.args[1], "approved")
         vault_metadata = update_vault.call_args.args[1]
-        self.assertEqual(vault_metadata["review_packet"]["review_status"], "agent_blocked")
+        self.assertEqual(vault_metadata["review_packet"]["review_status"], "internal_recovery_queued")
         self.assertIn(
             "agent_stage_runner_exception",
             json.dumps(vault_metadata["review_packet"]).lower(),
@@ -3179,8 +3199,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 artifacts={"qa_red_team": artifact},
             )
 
-        self.assertEqual(status_code, 504)
-        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(status_code, 202)
+        self.assertEqual(result["status"], "agent_stage_recovery_queued")
         packet = update_vault.call_args.args[1]["review_packet"]
         self.assertEqual(packet["blocked_agent"], "qa_red_team")
         self.assertEqual(packet["blocked_reason"], "QA/red-team reported red_team_status=fail.")
@@ -3191,6 +3211,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packet["blocked_summary"]["blocked_at"], "qa_red_team")
         self.assertEqual(packet["blocked_summary"]["send_back_attempts"], 2)
         self.assertTrue(packet["unresolved_blockers"])
+        self.assertEqual(packet["review_status"], "internal_recovery_queued")
+        self.assertEqual(packet["block_disposition"]["responsible_stage"], "builder")
+        self.assertEqual(update_status.call_args.args[1], "approved")
         self.assertTrue(any(
             "Owner mutation route requires stronger access gate." in item.get("finding", "")
             for item in packet["unresolved_blockers"]
