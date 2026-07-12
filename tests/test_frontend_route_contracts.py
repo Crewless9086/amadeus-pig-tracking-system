@@ -1713,6 +1713,24 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("safeInternalReturnPath", weight_js)
         self.assertIn("updateBackLinkFromQuery", weight_js)
 
+    def test_family_tree_has_breeding_decision_context(self):
+        template = Path("templates/family-tree.html").read_text(encoding="utf-8")
+        js = Path("static/js/familyTree.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="family_tree_decision_panel"', template)
+        self.assertIn("Breeding Summary", template)
+        self.assertIn('id="family_tree_litter_rows"', template)
+        self.assertIn('id="family_tree_quality_flags"', template)
+        self.assertIn("/api/pig-weights/breeding-analytics/${encodeURIComponent(pigId)}", js)
+        self.assertIn("renderBreedingDecision", js)
+        self.assertIn("renderLitterOutcomes", js)
+        self.assertIn("resetFamilyTreeUi", js)
+        self.assertIn("familyTreeDecisionPanel.classList.add", js)
+        self.assertNotIn('method: "POST"', js)
+        self.assertIn(".family-decision-metrics", css)
+        self.assertIn(".family-outcome-row", css)
+
     def test_breeding_analytics_page_is_read_only_kpi_overview(self):
         template = Path("templates/breeding-analytics.html").read_text(encoding="utf-8")
         js = Path("static/js/breedingAnalytics.js").read_text(encoding="utf-8")

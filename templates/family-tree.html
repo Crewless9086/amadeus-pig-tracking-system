@@ -23,6 +23,74 @@
 
       <div id="family_tree_message" class="message-box hidden"></div>
 
+      <section id="family_tree_decision_panel" class="family-decision-panel hidden" aria-live="polite">
+        <div class="family-decision-header">
+          <div>
+            <span id="family_tree_decision_kicker" class="summary-kicker">Breeding decision view</span>
+            <h2 id="family_tree_decision_title">Breeding Summary</h2>
+            <p id="family_tree_decision_subtitle">Loading breeding performance...</p>
+          </div>
+          <a id="family_tree_breeding_detail_link" href="#" class="button-link button-link-secondary">Open Breeding Detail</a>
+        </div>
+
+        <div class="family-decision-metrics">
+          <div class="summary-metric">
+            <span>Matings</span>
+            <strong id="family_tree_mating_count">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Litters</span>
+            <strong id="family_tree_litter_count">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Born Alive</span>
+            <strong id="family_tree_born_alive_total">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Weaned</span>
+            <strong id="family_tree_weaned_total">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Survival</span>
+            <strong id="family_tree_survival_pct">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Open Matings</span>
+            <strong id="family_tree_open_count">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Repeat Services</span>
+            <strong id="family_tree_repeat_service_count">-</strong>
+          </div>
+          <div class="summary-metric">
+            <span>Data Flags</span>
+            <strong id="family_tree_quality_count">-</strong>
+          </div>
+        </div>
+
+        <div class="family-decision-grid">
+          <div class="family-decision-list">
+            <div class="section-title-row">
+              <div>
+                <h3>Recent Litter Outcomes</h3>
+                <p id="family_tree_litter_summary">No litter outcomes loaded yet.</p>
+              </div>
+            </div>
+            <div id="family_tree_litter_rows" class="family-outcome-list"></div>
+          </div>
+
+          <div class="family-decision-list">
+            <div class="section-title-row">
+              <div>
+                <h3>Breeding Data Quality</h3>
+                <p>Flags that should be checked before making a breeding assumption.</p>
+              </div>
+            </div>
+            <div id="family_tree_quality_flags" class="family-quality-list"></div>
+          </div>
+        </div>
+      </section>
+
       <div class="family-tree-section">
         <div class="family-tree-row family-tree-parents">
           <div id="family_tree_mother"></div>
