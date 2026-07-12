@@ -140,6 +140,19 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['demand_cap'], 2)
         list_intakes.assert_called_once_with(limit=100)
 
+    @patch('modules.beacon.opportunity_scanner.list_sam_live_stock_open_intakes')
+    def test_production_adapter_structured_weight_evidence_fails_closed(self, list_intakes):
+        for weight_range in ({'min': 30, 'max': 40}, [30, 40]):
+            with self.subTest(weight_range=weight_range):
+                list_intakes.return_value = ({'success': True, 'open_intakes': [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'item_key': 'live_stock_primary', 'quantity': 2, 'category': 'Grower', 'weight_range': weight_range, 'sex': 'Female', 'status': 'active'}]}]}, 200)
+                allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}', sex='Female') for i in range(5)]}
+                result = build_beacon_opportunity_cards(allocation=allocation, meat_leads=[], now=NOW)
+                live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+                self.assertEqual(live['demand_cap'], 0)
+                self.assertEqual(live['status'], 'blocked')
+                self.assertEqual(live['demand_summary']['invalid_weight_records'], 1)
+                self.assertIn('invalid_live_stock_weight_requirement', live['blockers'])
+
     def test_uninterpretable_sex_requirement_fails_closed(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
         intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'quantity': 2, 'category': 'Grower', 'weight_range': '30-40 kg', 'sex': 'unknown'}]}]

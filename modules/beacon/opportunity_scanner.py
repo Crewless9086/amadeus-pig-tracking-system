@@ -89,7 +89,11 @@ def _row_demand_items(row):
 
 
 def _weight_bounds(value):
-    text = str(value or "").strip().lower().replace("_", " ")
+    if value is None:
+        return None, False
+    if not isinstance(value, str):
+        return None, True
+    text = value.strip().lower().replace("_", " ")
     if not text:
         return None, False
     numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", text)]
