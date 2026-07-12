@@ -53,6 +53,12 @@ class BeaconMarketingOperatingContractTests(unittest.TestCase):
         self.assertEqual(calculate_kpi(3, 12), {"status": "calculated", "value": 0.25})
         self.assertEqual(calculate_kpi(3, 0), {"status": "not_available_zero_denominator", "value": None})
 
+    def test_non_finite_kpi_evidence_is_invalid(self):
+        cases = (("nan", 1), ("inf", 1), ("-inf", 1), (1, "nan"), (1, "inf"), (1, "-inf"))
+        for numerator, denominator in cases:
+            with self.subTest(numerator=numerator, denominator=denominator):
+                self.assertEqual(calculate_kpi(numerator, denominator), {"status": "invalid_evidence", "value": None})
+
     @patch("modules.sales.sales_transaction_routes.require_owner_read_access", return_value=None)
     def test_get_route_is_owner_guarded_and_read_only(self, guard):
         client = app.test_client()

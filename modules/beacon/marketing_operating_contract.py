@@ -101,6 +101,8 @@ def calculate_kpi(numerator, denominator):
         denominator = float(denominator)
     except (TypeError, ValueError):
         return {"status": "invalid_evidence", "value": None}
+    if not isfinite(numerator) or not isfinite(denominator):
+        return {"status": "invalid_evidence", "value": None}
     if denominator <= 0:
         return {"status": "not_available_zero_denominator", "value": None}
     return {"status": "calculated", "value": round(numerator / denominator, 4)}
