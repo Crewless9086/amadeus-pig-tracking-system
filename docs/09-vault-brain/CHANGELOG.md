@@ -2,6 +2,7 @@
 
 ## 2026-07-12
 
+- Required live-stock Beacon opportunity caps to match canonical animal sex to SAM demand sex preference and fail closed on invalid or missing sex evidence.
 - Hardened Beacon's live-stock opportunity scanner to read quantified category/weight demand from active Supabase order-intake items and fail closed when demand is missing or incompatible with eligible supply.
 - Added Beacon's Supabase-first, owner-review opportunity scanner contract: separate meat/live-stock cards, freshness and provenance, quantified-demand deduplication, conservative live-stock caps, zero meat cap in controlled mode, and no execution authority.
 - Added Beacon's owner-review marketing operating contract with proposed brand/channel rules, KPI formulas, fulfilment-capped targets, approval tiers, and no execution authority.
