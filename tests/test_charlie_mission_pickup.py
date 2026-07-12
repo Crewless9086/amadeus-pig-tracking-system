@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import charlie_mission_pickup
 
@@ -56,6 +56,40 @@ class CharlieMissionPickupTests(unittest.TestCase):
             )
             self._base_branch_guard_patcher.start()
             self.addCleanup(self._base_branch_guard_patcher.stop)
+
+    def test_restore_mission_branch_for_resume_fetches_switches_and_fast_forwards(self):
+        mission = {
+            "metadata": {
+                "review_packet": {
+                    "agent_artifacts": {
+                        "builder": {"branch_name": "feature/beacon-opportunity-scanner"},
+                    },
+                },
+            },
+        }
+        commands = []
+
+        def run(command):
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "mission_branch_restored")
+        self.assertEqual(commands, [
+            ["git", "fetch", "origin", "feature/beacon-opportunity-scanner"],
+            ["git", "switch", "feature/beacon-opportunity-scanner"],
+            ["git", "merge", "--ff-only", "origin/feature/beacon-opportunity-scanner"],
+        ])
+
+    def test_restore_mission_branch_for_resume_rejects_unsafe_branch(self):
+        mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "../unsafe"}}}}}
+
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=Mock())
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_mission_branch_name")
 
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")

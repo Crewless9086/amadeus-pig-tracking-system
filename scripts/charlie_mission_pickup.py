@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -631,6 +632,16 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             mission = refreshed["mission"]
             codex_chat_preview = _codex_chat_content(mission)
 
+    branch_restore = _restore_mission_branch_for_resume(mission)
+    if not branch_restore.get("success"):
+        return {
+            **branch_restore,
+            "status": "mission_branch_restore_failed",
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+            "next_action": "Restore the packaged mission branch before resuming review stages.",
+        }, 409
+
     updated, update_status = update_mission_status(
         mission_id,
         "in_progress",
@@ -665,7 +676,38 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
         "mission_status": "in_progress",
         "execution_lease": lease,
         "workflow_refresh": refresh,
+        "branch_restore": branch_restore,
     }, 200
+
+
+def _restore_mission_branch_for_resume(mission, run_subprocess=None):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
+    builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
+    branch_name = str(builder.get("branch_name") or (builder.get("git_packaging") or {}).get("branch_name") or "").strip()
+    if not branch_name:
+        return {"success": True, "status": "mission_branch_not_required", "branch_name": ""}
+    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,180}", branch_name) or branch_name.startswith(("-", "/")) or ".." in branch_name:
+        return {"success": False, "status": "invalid_mission_branch_name", "branch_name": branch_name[:180]}
+    run = run_subprocess or _run_git_command
+    fetched = run(["git", "fetch", "origin", branch_name])
+    if fetched.returncode != 0:
+        return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
+    switched = run(["git", "switch", branch_name])
+    if switched.returncode != 0:
+        switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
+    if switched.returncode != 0:
+        return {"success": False, "status": "mission_branch_switch_failed", "branch_name": branch_name, "stderr": (switched.stderr or "")[-500:]}
+    fast_forward = run(["git", "merge", "--ff-only", f"origin/{branch_name}"])
+    if fast_forward.returncode != 0:
+        return {"success": False, "status": "mission_branch_fast_forward_failed", "branch_name": branch_name, "stderr": (fast_forward.stderr or "")[-500:]}
+    return {"success": True, "status": "mission_branch_restored", "branch_name": branch_name}
+
+
+def _run_git_command(command):
+    return subprocess.run(command, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60)
 
 
 def _refresh_core_plan_for_pickup(mission):
