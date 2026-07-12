@@ -415,7 +415,7 @@ def _existing_proposals_by_id(database_url=None, connect_factory=None):
         proposal = _proposal_from_artifact(artifact)
         proposal_id = _clean(proposal.get("proposal_id", ""), 160)
         if proposal_id:
-            proposals[proposal_id] = proposal
+            proposals.setdefault(proposal_id, proposal)
     return proposals
 
 
@@ -435,6 +435,8 @@ def _merge_existing_proposal_decision(proposal, existing):
         "validation",
         "problem_fingerprint",
         "lifecycle_updated_at",
+        "record_mission_id",
+        "mission_id",
     ]:
         if existing.get(key):
             preserved[key] = existing[key]
@@ -456,8 +458,13 @@ def list_improvement_proposals(status="", limit=20, database_url=None, connect_f
         return result, status_code
     clean_status = _clean(status, 40)
     proposals = []
+    seen_proposal_ids = set()
     for artifact in result.get("artifacts", []):
         proposal = _proposal_from_artifact(artifact)
+        proposal_id = proposal.get("proposal_id")
+        if proposal_id in seen_proposal_ids:
+            continue
+        seen_proposal_ids.add(proposal_id)
         if clean_status and proposal.get("status") != clean_status:
             continue
         proposals.append(proposal)

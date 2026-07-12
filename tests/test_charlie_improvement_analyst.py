@@ -319,6 +319,20 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertEqual(result["scorecard"]["effective_improvements"], 1)
         self.assertEqual(result["scorecard"]["stage"], "proposal_ready")
 
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    def test_list_proposals_deduplicates_legacy_artifacts_by_proposal_id(self, list_artifacts):
+        list_artifacts.return_value = ({"success": True, "status": "ok", "artifacts": [
+            {"artifact_id": "NEW", "mission_id": "M2", "content": {"proposal_id": "P-SAME", "status": "pending"}},
+            {"artifact_id": "OLD", "mission_id": "M1", "content": {"proposal_id": "P-SAME", "status": "pending"}},
+        ]}, 200)
+
+        from modules.charlie.improvement_analyst import list_improvement_proposals
+        result, status = list_improvement_proposals(limit=20)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["proposals"]), 1)
+        self.assertEqual(result["proposals"][0]["artifact_id"], "NEW")
+
     @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
     @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
     @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
