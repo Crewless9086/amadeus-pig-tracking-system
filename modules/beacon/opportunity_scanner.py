@@ -117,7 +117,7 @@ def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks
         "demand_summary": demand,
         "capacity_calculation": capacity,
         "provenance": {"source_ids": sorted(source_ids), "observed_at": observed_at.isoformat() if observed_at else ""},
-        "freshness": {"maximum_age_hours": FRESHNESS_HOURS, "fresh": observed_at is not None and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)},
+        "freshness": {"maximum_age_hours": FRESHNESS_HOURS, "fresh": observed_at is not None and observed_at <= now <= observed_at + timedelta(hours=FRESHNESS_HOURS)},
         "risks": sorted(set(risks)),
         "blockers": sorted(set(blockers)),
         "confidence": 0.98 if status != "blocked" else 0.0,
@@ -137,9 +137,10 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
         result, status = list_sales_leads(limit=100, status_filter="launch_test")
         meat_leads = result.get("sales_leads", []) if status == 200 and result.get("success") else None
 
-    observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"), end_of_day=True)
+    observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"))
     source_ok = allocation.get("source") == "supabase_canonical"
-    fresh = observed_at is not None and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)
+    evidence_in_future = observed_at is not None and observed_at > now
+    fresh = observed_at is not None and not evidence_in_future and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)
     eligible = []
     for pig in allocation.get("pigs", []) if source_ok else []:
         if _live_stock_sale_eligibility(pig, allocation.get("thresholds", {})).get("eligible"):
@@ -159,8 +160,12 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("supabase_allocation_readiness_unavailable")
         if not fresh:
             blockers.append("stale_or_missing_allocation_evidence")
+        if evidence_in_future:
+            blockers.append("future_dated_allocation_evidence")
         if live_intakes is None:
             blockers.append("sam_live_stock_demand_unavailable")
+        if live_demand["unknown_quantity_records"]:
+            blockers.append("unknown_live_stock_demand_quantity")
         if not live_demand["qualified_units"]:
             blockers.append("no_quantified_uncommitted_live_stock_demand")
         cap = min(live_demand["qualified_units"], available_after_buffers) if not blockers else 0
