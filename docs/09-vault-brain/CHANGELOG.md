@@ -2,6 +2,7 @@
 
 ## 2026-07-12
 
+- Added Beacon's owner-review marketing operating contract with proposed brand/channel rules, KPI formulas, fulfilment-capped targets, approval tiers, and no execution authority.
 - Added the completed-order sales projection contract: database-enforced linked-sale identity, atomic collected-line reconciliation, explicit totals, and conservative payment mapping.
 - Clarified the executive hierarchy as Charl -> CHARLIE -> CORE and business/farm command layers: CHARLIE is Charl's private digital executive, while CORE is the existing CHARLIE CORE mission engine.
 - Corrected FRED's canonical role to the planned client-facing enquiry and booking agent for Amadeus Private Transfers; FRED is not Finance, farm records, or general farm operations.
