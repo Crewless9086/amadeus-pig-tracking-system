@@ -1085,6 +1085,24 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         guard.assert_called_once()
         get_alerts.assert_called_once()
 
+    def test_sensitive_stock_truth_routes_fail_closed_at_owner_read_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        denied = ({"success": False, "status": "owner_read_access_denied"}, 403)
+        with patch.object(pig_weights_routes, "require_owner_read_access", return_value=denied) as guard, \
+             patch.object(pig_weights_routes, "get_pig_allocation_readiness_data") as get_readiness, \
+             patch.object(pig_weights_routes, "list_sales_availability") as get_availability:
+            client = app.test_client()
+            readiness = client.get("/api/pig-weights/pig-allocation-readiness")
+            availability = client.get("/api/pig-weights/sales-availability")
+
+        self.assertEqual(readiness.status_code, 403)
+        self.assertEqual(availability.status_code, 403)
+        self.assertEqual(guard.call_count, 2)
+        get_readiness.assert_not_called()
+        get_availability.assert_not_called()
+
     def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
         from pathlib import Path
 

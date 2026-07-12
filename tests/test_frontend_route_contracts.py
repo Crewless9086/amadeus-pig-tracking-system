@@ -1638,6 +1638,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("pig.latest_weight_date || pig.last_weight_date", js)
         self.assertIn("/sales-dashboard?pig_id=", js)
         self.assertIn("Open Sales Dashboard", js)
+        self.assertIn("appendSalesField", js)
+        self.assertNotIn("salesInfo.innerHTML", js)
 
     def test_mating_board_uses_section_aware_sorting(self):
         js = Path("static/js/matings.js").read_text(encoding="utf-8")
