@@ -44,7 +44,11 @@ function formatNumber(value, decimals = 2) {
 function buildSalesCard(pig) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
-  card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
+  const params = new URLSearchParams({
+    return_to: "/sales-dashboard",
+    return_label: "Back to Sales Dashboard",
+  });
+  card.href = `/pig/${encodeURIComponent(pig.pig_id)}?${params.toString()}`;
 
   const topRow = document.createElement("div");
   topRow.className = "pig-list-top";
@@ -81,6 +85,11 @@ function buildSalesCard(pig) {
     <div><span class="history-label">Pen</span><span class="history-value">${pig.current_pen_id || "—"}</span></div>
     <div class="sales-meta-wide"><span class="history-label">SAM Live Rule</span><span class="history-value">${pig.live_stock_sale_reason || pig.sales_notes || "—"}</span></div>
   `;
+  const latestWeightDate = document.createElement("div");
+  latestWeightDate.innerHTML =
+    `<span class="history-label">Latest Weight Date</span><span class="history-value">${pig.last_weight_date || "No weight date"}</span>`;
+  const priceCategory = [...salesInfo.children].find((item) => item.textContent.includes("Price Category"));
+  salesInfo.insertBefore(latestWeightDate, priceCategory || salesInfo.lastElementChild);
 
   card.appendChild(topRow);
   card.appendChild(meta);
