@@ -550,7 +550,8 @@ def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
     )
     if observation_status >= 400:
         return observations_result, observation_status
-    proposals = proposals_result.get("proposals", [])
+    all_proposals = proposals_result.get("proposals", [])
+    proposals = [proposal for proposal in all_proposals if proposal.get("status") != "superseded"]
     observations = observations_result.get("artifacts", [])
     accepted = [proposal for proposal in proposals if proposal.get("status") not in {"pending", "pending_owner_review", "rejected"}]
     validated = [proposal for proposal in proposals if str(proposal.get("status") or "").startswith("validated_")]
@@ -565,6 +566,7 @@ def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
             "pending_proposals": len(pending),
             "accepted_proposals": len(accepted),
             "rejected_proposals": len([proposal for proposal in proposals if proposal.get("status") == "rejected"]),
+            "superseded_proposals": len([proposal for proposal in all_proposals if proposal.get("status") == "superseded"]),
             "improvement_missions": len([proposal for proposal in proposals if proposal.get("sent_to_mission_id")]),
             "validated_improvements": len(validated),
             "effective_improvements": len(effective),

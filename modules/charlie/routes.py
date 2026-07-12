@@ -272,7 +272,7 @@ def charlie_build_relay_command_center_route():
     local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
     if detailed:
         vault_health, _vault_health_status = vault_tables_health()
-        improvements, _improvements_status = list_improvement_proposals(limit=8)
+        improvements, _improvements_status = list_improvement_proposals(status="pending", limit=8)
     else:
         vault_health = {
             "success": True,
