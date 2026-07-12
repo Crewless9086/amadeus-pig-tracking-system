@@ -2440,6 +2440,51 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_parallel_risk_planning_findings_continue_to_builder(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "changed_files": [],
+            "bugs": ["No database-enforced idempotent order-to-sales upsert exists yet."],
+            "next_action": "Council and Planner must carry mandatory mitigations into Builder acceptance tests.",
+        })
+
+        result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result["deferred_blocker"])
+        self.assertIn("deferred_planning_risk", result["reason"])
+
+    def test_parallel_risk_present_unauthorized_send_still_blocks(self):
+        artifact = _successful_stage_payload("risk_agent")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "changed_files": [],
+            "bugs": ["Mission attempted customer send without owner approval."],
+            "next_action": "Builder must repair the route.",
+        })
+
+        result = execution_bridge._parallel_read_only_quality_gate("risk_agent", artifact)
+
+        self.assertFalse(result["passed"])
+
+    def test_tester_defers_screenshot_runtime_only_block_to_visual_qa(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "blocked",
+            "tests_run": [{"command": "python -m unittest focused", "result": "pass", "summary": "73 tests passed"}],
+            "errors": [
+                "Browser-control discovery exposed no node_repl js runtime.",
+                "No real screenshots could be captured for the preview URL.",
+            ],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result["visual_evidence_deferred"])
+
     def test_non_ui_risk_agent_visual_pause_is_not_a_judgement_block(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
