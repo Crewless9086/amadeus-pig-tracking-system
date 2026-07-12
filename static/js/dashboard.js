@@ -216,6 +216,8 @@ function renderIrrigation() {
 
 function renderFarmSummary() {
   const summary = state.farm?.summary || {};
+  const salesMetrics = summary.sales_metrics || state.farm?.sales_metrics || {};
+  const salesMetricsReady = salesMetrics.status === "ok" || salesMetrics.status === "configured";
   setText("herd_total", numberOrDash(summary.on_farm_pigs));
   setText("herd_sows", numberOrDash(summary.sows));
   setText("herd_boars", numberOrDash(summary.boars));
@@ -228,16 +230,18 @@ function renderFarmSummary() {
   setText("outcome_slaughtered", numberOrDash(summary.lifecycle_slaughtered_this_month));
   setText("outcome_dead", numberOrDash(summary.lifecycle_dead_this_month));
   setText("outcome_removed", numberOrDash(summary.lifecycle_removed_this_month));
-  setText("sales_available", numberOrDash(summary.available_for_sale_pigs));
-  setText("sales_reserved", numberOrDash(summary.reserved_pigs));
-  setText("sales_livestock", `${numberOrDash(summary.livestock_sales_this_month ?? 0)} / ${money(summary.livestock_sales_value_this_month)}`);
-  setText("sales_slaughter", `${numberOrDash(summary.slaughter_sales_this_month ?? 0)} / ${money(summary.slaughter_sales_value_this_month)}`);
-  setText("sales_meat", `${numberOrDash(summary.meat_sales_this_month ?? 0)} / ${money(summary.meat_sales_value_this_month)}`);
+  const metricText = (key) => salesMetricsReady ? numberOrDash(salesMetrics[key]) : "Unavailable";
+  setText("sales_open_reserved_orders", metricText("open_reserved_orders"));
+  setText("sales_open_reserved_pigs", metricText("open_reserved_pigs"));
+  setText("sales_live_ready", metricText("live_sale_ready"));
+  setText("sales_meat_window", metricText("meat_window"));
+  setText("sales_slaughter_cull_ready", metricText("slaughter_cull_ready"));
+  setText("sales_recent_value", salesMetricsReady ? money(salesMetrics.recent_sales_value) : "Unavailable");
   setText(
     "sales_source_note",
-    summary.sales_transaction_summary_configured
-      ? "Monthly sales use Supabase transaction count / net value."
-      : "Monthly sales transaction source is not configured here."
+    salesMetricsReady
+      ? `${salesMetrics.report_month || "Current month"} · ${salesMetrics.source || "Backend source truth"}`
+      : "Sales readiness source is unavailable; no stock or reservation zero is assumed."
   );
 
   const litterItems = state.farm?.litter_attention?.items || [];

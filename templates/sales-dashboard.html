@@ -12,7 +12,7 @@
       <div class="page-header page-header-with-link">
         <div>
           <h1>Sales Overview</h1>
-          <p id="sales_overview_period_label">Sales totals, transaction history, and stock availability.</p>
+          <p id="sales_overview_period_label">Sales readiness, open reservations, and transaction history.</p>
         </div>
         <div class="ops-header-actions">
           <a href="/sales/meat-leads">Meat Leads</a>
@@ -79,7 +79,7 @@
 
       <section class="sales-overview-summary">
         <article class="sales-total-card sales-total-card-main">
-          <span>Total Sales</span>
+          <span>Filtered Sales Value</span>
           <strong id="sales_total_value">R0.00</strong>
           <small id="sales_total_count">0 transactions</small>
         </article>
@@ -132,13 +132,19 @@
       <section class="sales-overview-section">
         <div class="page-header section-header-compact">
           <div>
-            <h2>Available Stock</h2>
-            <p>Current pig-level stock summary from the existing availability view.</p>
+            <h2>Sales Readiness</h2>
+            <p id="sales_readiness_source">Loading current backend sales metrics...</p>
           </div>
         </div>
 
-        <div id="sales_totals_grid" class="sales-stock-total-grid"></div>
-        <div id="sales_summary_list" class="sales-stock-summary-list"></div>
+        <div class="sales-stock-total-grid" id="sales_readiness_board">
+          <article class="sales-stock-card"><span>Open Reserved Orders</span><strong id="readiness_reserved_orders">--</strong><small>Orders with an open reserved line</small></article>
+          <article class="sales-stock-card"><span>Open Reserved Pigs</span><strong id="readiness_reserved_pigs">--</strong><small>Pigs on open reserved lines</small></article>
+          <article class="sales-stock-card"><span>Live-sale Ready</span><strong id="readiness_live_sale">--</strong><small>Purpose-qualified live-sale stock</small></article>
+          <article class="sales-stock-card"><span>Meat Window</span><strong id="readiness_meat_window">--</strong><small>Current meat-planning window</small></article>
+          <article class="sales-stock-card"><span>Slaughter/Cull Ready</span><strong id="readiness_slaughter_cull">--</strong><small>Slaughter or approved cull candidates</small></article>
+          <article class="sales-stock-card sales-total-card-main"><span>Sales Value This Month</span><strong id="readiness_recent_value">--</strong><small id="readiness_recent_period">Current month</small></article>
+        </div>
       </section>
     </div>
   </div>

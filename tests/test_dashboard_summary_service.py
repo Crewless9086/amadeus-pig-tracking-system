@@ -70,6 +70,42 @@ def dashboard_records(sheet_name):
 
 
 class DashboardSummaryServiceTests(unittest.TestCase):
+    def test_open_reservations_use_line_status_and_exclude_collected_lines(self):
+        captured = {}
+
+        def fetch_one(query, connect_factory=None):
+            captured["query"] = query
+            return {"open_reserved_orders": 2, "open_reserved_pigs": 3}
+
+        with patch.object(farm_supabase_read_service, "_fetch_one", side_effect=fetch_one):
+            result = farm_supabase_read_service.get_open_reservation_counts()
+
+        normalized_query = " ".join(captured["query"].split())
+        self.assertIn("where line_status = 'Reserved'", normalized_query)
+        self.assertNotIn("reserved_status", normalized_query)
+        self.assertEqual(result, {"open_reserved_orders": 2, "open_reserved_pigs": 3})
+
+    def test_sales_metrics_separate_readiness_lanes(self):
+        allocation = {
+            "source": "supabase_canonical",
+            "pigs": [
+                {"pig_id": "LIVE", "status": "Active", "on_farm": "Yes", "purpose": "Sale", "animal_type": "Weaner", "calculated_stage": "Weaner", "latest_weight_kg": 30, "wean_date": "2026-05-01", "readiness_bucket": "Livestock Candidate"},
+                {"pig_id": "MEAT", "status": "Active", "on_farm": "Yes", "purpose": "Meat", "latest_weight_kg": 70, "readiness_bucket": "Meat Candidate"},
+                {"pig_id": "CULL", "status": "Active", "on_farm": "Yes", "purpose": "Slaughter", "latest_weight_kg": 110, "readiness_bucket": "Slaughter Candidate"},
+                {"pig_id": "RES", "status": "Active", "on_farm": "Yes", "purpose": "Sale", "latest_weight_kg": 35, "reserved_status": "Reserved", "readiness_bucket": "Allocated"},
+            ],
+        }
+        transactions = {"configured": True, "status": "ok", "totals": {"net_total": 4321.0}}
+        with patch.object(farm_supabase_read_service, "get_open_reservation_counts", return_value={"open_reserved_orders": 1, "open_reserved_pigs": 1}):
+            metrics = pig_weights_service.get_sales_metrics(date(2026, 5, 20), allocation, transactions)
+
+        self.assertEqual(metrics["open_reserved_orders"], 1)
+        self.assertEqual(metrics["open_reserved_pigs"], 1)
+        self.assertEqual(metrics["live_sale_ready"], 1)
+        self.assertEqual(metrics["meat_window"], 1)
+        self.assertEqual(metrics["slaughter_cull_ready"], 1)
+        self.assertEqual(metrics["recent_sales_value"], 4321.0)
+
     def test_supabase_dashboard_summary_counts_current_state_and_monthly_exits(self):
         rows = [
             {

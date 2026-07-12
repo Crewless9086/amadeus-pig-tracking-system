@@ -448,6 +448,9 @@ def get_dashboard_summary():
             "meat_sales_this_month": meat_transactions.get("transaction_count", 0),
             "meat_sales_value_this_month": meat_transactions.get("net_total", 0.0),
         })
+        supabase_summary["sales_metrics"] = get_sales_metrics(
+            today=now.date(), transaction_summary=transaction_summary
+        )
         return supabase_summary
 
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -573,6 +576,54 @@ def get_dashboard_summary():
         "available_for_sale_pigs": available_for_sale_count,
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,
+        "sales_metrics": _unavailable_sales_metrics(now.date()),
+    }
+
+
+def _unavailable_sales_metrics(today, source="supabase_sales_sources_unavailable"):
+    return {
+        "status": "unavailable", "source": source,
+        "report_month": today.strftime("%B %Y"),
+        "open_reserved_orders": None, "open_reserved_pigs": None,
+        "live_sale_ready": None, "meat_window": None,
+        "slaughter_cull_ready": None, "recent_sales_value": None,
+    }
+
+
+def get_sales_metrics(today=None, allocation=None, transaction_summary=None):
+    today = today or datetime.now().date()
+    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)
+    if not _allocation_is_supabase(allocation):
+        return _unavailable_sales_metrics(today, "supabase_allocation_readiness_unavailable")
+    try:
+        reservation_counts = farm_supabase_read_service.get_open_reservation_counts()
+    except Exception:
+        return _unavailable_sales_metrics(today, "supabase_order_lines_unavailable")
+    if transaction_summary is None:
+        transaction_summary, _status_code = get_monthly_sales_transaction_summary(today)
+    if not transaction_summary.get("configured") or transaction_summary.get("status") != "ok":
+        return _unavailable_sales_metrics(today, "supabase_sales_transactions_unavailable")
+
+    live_sale_ready = meat_window = slaughter_cull_ready = 0
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        if _live_stock_sale_eligibility(pig)["eligible"]:
+            live_sale_ready += 1
+        classification = _meat_ready_classification(pig)["category_key"]
+        if classification == "meat_window_candidate":
+            meat_window += 1
+        elif classification == "abattoir_cull_candidate":
+            slaughter_cull_ready += 1
+
+    return {
+        "status": "ok",
+        "source": "Supabase order lines, allocation readiness, and sales transactions",
+        "report_month": today.strftime("%B %Y"),
+        "open_reserved_orders": reservation_counts["open_reserved_orders"],
+        "open_reserved_pigs": reservation_counts["open_reserved_pigs"],
+        "live_sale_ready": live_sale_ready,
+        "meat_window": meat_window,
+        "slaughter_cull_ready": slaughter_cull_ready,
+        "recent_sales_value": transaction_summary.get("totals", {}).get("net_total", 0.0),
     }
 
 

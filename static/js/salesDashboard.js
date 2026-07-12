@@ -9,8 +9,7 @@ const toFilter = document.getElementById("sales_to_filter");
 const resetFiltersButton = document.getElementById("reset_sales_filters");
 const transactionsBody = document.getElementById("sales_transactions_body");
 const transactionsCount = document.getElementById("sales_transactions_count");
-const totalsGrid = document.getElementById("sales_totals_grid");
-const summaryList = document.getElementById("sales_summary_list");
+const readinessSource = document.getElementById("sales_readiness_source");
 const meatReadyStockList = document.getElementById("meat_ready_stock_list");
 
 let allTransactions = [];
@@ -127,12 +126,9 @@ async function loadStockAvailability() {
     if (!response.ok || !data.success) {
       throw new Error("Failed to load stock availability.");
     }
-    renderStockAvailability(data.totals || [], data.summary || []);
-    renderMeatReadyStock(data.meat_ready_stock || {});
+    renderSalesReadiness(data.sales_metrics || {});
   } catch (error) {
-    totalsGrid.innerHTML = '<div class="empty-state"><div>Could not load available stock.</div></div>';
-    summaryList.innerHTML = "";
-    if (meatReadyStockList) meatReadyStockList.innerHTML = "";
+    renderSalesReadiness({ status: "unavailable" });
   }
 }
 
@@ -236,28 +232,19 @@ function renderTransactions(rows) {
   }).join("");
 }
 
-function renderStockAvailability(totals, summary) {
-  totalsGrid.innerHTML = totals.length
-    ? totals.map((item) => `
-      <div class="sales-stock-card">
-        <span>${item.sale_category}</span>
-        <strong>${item.qty_available}</strong>
-        <small>Male ${item.male_qty} / Female ${item.female_qty} / Castrated ${item.castrated_male_qty}</small>
-      </div>
-    `).join("")
-    : '<div class="empty-state"><div>No sales totals available.</div></div>';
-
-  summaryList.innerHTML = summary.length
-    ? summary.slice(0, 12).map((item) => `
-      <div class="sales-stock-row">
-        <strong>${item.sale_category}</strong>
-        <span>${item.weight_band || "-"}</span>
-        <span>${item.qty_available} available</span>
-        <span>${item.price_range || "-"}</span>
-        <span>${item.status || "-"}</span>
-      </div>
-    `).join("")
-    : '<div class="empty-state"><div>No weight band summary available.</div></div>';
+function renderSalesReadiness(metrics) {
+  const ready = metrics.status === "ok" || metrics.status === "configured";
+  const count = (key) => ready ? Number(metrics[key] || 0).toLocaleString() : "Unavailable";
+  document.getElementById("readiness_reserved_orders").textContent = count("open_reserved_orders");
+  document.getElementById("readiness_reserved_pigs").textContent = count("open_reserved_pigs");
+  document.getElementById("readiness_live_sale").textContent = count("live_sale_ready");
+  document.getElementById("readiness_meat_window").textContent = count("meat_window");
+  document.getElementById("readiness_slaughter_cull").textContent = count("slaughter_cull_ready");
+  document.getElementById("readiness_recent_value").textContent = ready ? money(metrics.recent_sales_value) : "Unavailable";
+  document.getElementById("readiness_recent_period").textContent = metrics.report_month || "Current month";
+  readinessSource.textContent = ready
+    ? `Current metrics from ${metrics.source || "backend source truth"}.`
+    : "Sales readiness source is unavailable; no stock or reservation zero is assumed.";
 }
 
 
