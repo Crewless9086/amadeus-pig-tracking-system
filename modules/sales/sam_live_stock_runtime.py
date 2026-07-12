@@ -2711,9 +2711,21 @@ def _availability_public_row(row):
         "tag_number": _clean(row.get("tag_number"), 80),
         "sex": _clean(row.get("sex"), 40),
         "current_weight_kg": row.get("current_weight_kg"),
+        "last_weight_date": _clean(row.get("last_weight_date"), 40),
         "weight_band": _clean(row.get("weight_band"), 80),
         "sale_category": _clean(row.get("sale_category"), 120),
         "suggested_price_category": _clean(row.get("suggested_price_category"), 120),
+        "live_stock_sale_reason": _clean(row.get("live_stock_sale_reason"), 240),
+        "litter_id": _clean(row.get("litter_id"), 80),
+        "mother_pig_id": _clean(row.get("mother_pig_id"), 80),
+        "father_pig_id": _clean(row.get("father_pig_id"), 80),
+        "sow_pig_id": _clean(row.get("sow_pig_id"), 80),
+        "sow_tag_number": _clean(row.get("sow_tag_number"), 80),
+        "boar_pig_id": _clean(row.get("boar_pig_id"), 80),
+        "boar_tag_number": _clean(row.get("boar_tag_number"), 80),
+        "family_context": row.get("family_context") if isinstance(row.get("family_context"), dict) else {},
+        "media_references": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
+        "media_reference_status": _clean(row.get("media_reference_status") or "not_configured", 80),
     }
 
 
