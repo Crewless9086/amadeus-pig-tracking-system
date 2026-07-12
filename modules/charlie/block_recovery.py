@@ -146,10 +146,10 @@ def _introduced_by_current_diff(text, artifact, scope):
 
 
 def _evidence_route(agent, text):
-    if "source" in text or "vault" in text or "doctrine" in text:
-        return "source_mapper"
     if "visual" in text or "screenshot" in text or "review media" in text:
         return "visual_qa_reviewer"
+    if "source" in text or "vault" in text or "doctrine" in text:
+        return "source_mapper"
     return agent or "evidence_reviewer"
 
 
