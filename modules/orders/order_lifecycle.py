@@ -15,6 +15,7 @@ from modules.orders.order_status_log import write_order_status_log
 from modules.orders.order_reservation import reserve_order_lines
 from modules.orders.order_line_sync import _cancel_order_lines
 from modules.orders import order_supabase_write
+from modules.orders.order_sales_projection import project_completed_order_to_sale
 
 
 ORDER_MASTER_SHEET = "ORDER_MASTER"
@@ -589,6 +590,18 @@ def complete_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(order_row.get("Order_Status", ""))
     old_approval = to_clean_string(order_row.get("Approval_Status", ""))
 
+    if old_status == "Completed":
+        if not order_supabase_write.supabase_order_writes_available():
+            raise ValueError("Completed order sales reconciliation requires the Supabase order backend.")
+        projection = project_completed_order_to_sale(order_id, changed_by=changed_by)
+        return {
+            "success": True,
+            "message": "Completed order sales transaction reconciled.",
+            "order_id": order_id,
+            "pigs_marked_sold": 0,
+            "sales_projection": projection,
+        }
+
     if old_status != "Approved":
         raise ValueError(f"Only Approved orders can be completed. Current status: {old_status}.")
 
@@ -676,9 +689,12 @@ def complete_order(order_id: str, changed_by: str = "App"):
         notes=f"Order completed - {len(active_lines)} pig(s) marked as sold",
     )
 
-    return {
+    result = {
         "success": True,
         "message": "Order completed successfully.",
         "order_id": order_id,
         "pigs_marked_sold": len(active_lines),
     }
+    if order_supabase_write.supabase_order_writes_available():
+        result["sales_projection"] = project_completed_order_to_sale(order_id, changed_by=changed_by)
+    return result
