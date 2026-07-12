@@ -170,7 +170,17 @@ def handle_sam_meat_chatwoot_inbound(
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     lane_route = classify_sam_sales_lane(inbound["content"])
     live_stock_context = _conversation_live_stock_context(inbound.get("conversation_id"))
-    if lane_route.get("lane") == LANE_LIVE_STOCK or live_stock_context.get("active"):
+    context_errors = []
+    try:
+        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
+    except Exception as exc:
+        lead_context = {}
+        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
+    explicit_live_stock = lane_route.get("lane") == LANE_LIVE_STOCK and (
+        not lead_context.get("lead_id") or _message_explicitly_requests_live_stock(inbound.get("content"))
+    )
+    stale_or_ambiguous_live_stock = live_stock_context.get("active") and not lead_context.get("lead_id")
+    if explicit_live_stock or stale_or_ambiguous_live_stock:
         decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route, live_stock_context)
         return {
             "success": True,
@@ -209,12 +219,6 @@ def handle_sam_meat_chatwoot_inbound(
             },
             **_authority_flags(False, False),
         }, 200
-    context_errors = []
-    try:
-        lead_context = _conversation_lead_context(inbound.get("conversation_id"))
-    except Exception as exc:
-        lead_context = {}
-        context_errors.append(_integration_failure("conversation_lead_context_failed", exc))
     prior_context = _merge_inbound_attribute_context(lead_context, inbound)
     facts = _merge_prior_context(facts, prior_context)
     try:
@@ -2124,6 +2128,17 @@ def _conversation_lead_context(conversation_id):
         "interest": interest,
         "latest_event": _latest_event_type(lead),
     }
+
+
+def _message_explicitly_requests_live_stock(message):
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.search(
+        r"\b(live\s+pig(?:s|lets)?|piglets?|weaners?|sows?|boars?|gilts?|breeding\s+pig(?:s)?|"
+        r"female\s+pig(?:s|lets)?|male\s+pig(?:s|lets)?)\b",
+        text,
+    ))
 
 
 def _merge_inbound_attribute_context(prior_context, inbound):

@@ -647,6 +647,37 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertEqual(calls, {"record": 0, "send": 0})
 
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_active_meat_lead_wins_over_stale_live_stock_intake_for_meat_followup(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-MEAT",
+                "interest": {"product_type": "half_carcass", "cut_set": "Set A", "location": "Riversdale"},
+            },
+        }, 200)
+        mock_record.return_value = ({"success": True, "lead_id": "OSK-SALES-LEAD-MEAT", "contract": {}}, 201)
+        mock_contract.return_value = ({"success": True, "contract": {"contract_status": "needs_owner_confirmation"}}, 200)
+
+        with patch.object(sam_meat_runtime, "get_intake_context", return_value={
+            "success": True,
+            "lookup_status": "single_match",
+            "intake_id": "STALE-LIVE-STOCK",
+            "intake": {"Notes": "source=sam_live_stock_stage_4"},
+            "items": [{"Status": "active", "Category": "Weaner", "Quantity": 2}],
+        }):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="The delivery address is 12 Test Street, Riversdale."),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "processed")
+        self.assertEqual(result["prior_context"]["lead_id"], "OSK-SALES-LEAD-MEAT")
+        self.assertEqual(result["facts"]["product_type"], "half_carcass")
+
     def test_family_set_recommendation_without_prior_context_is_specific(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Which set is best for a family of 3?",
