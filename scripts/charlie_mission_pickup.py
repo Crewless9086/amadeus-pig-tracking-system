@@ -3,6 +3,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,8 @@ from scripts.charlie_notify import _format_message, main as notify_main
 
 
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
+ANALYST_THREAD = None
+ANALYST_THREAD_LOCK = threading.Lock()
 RECOVERED_STALE_MISSIONS = set()
 BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
@@ -478,7 +481,7 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
         timeout_seconds=timeout_seconds,
     )
     if result.get("mission_status") in {"pr_ready", "blocked", "rejected"}:
-        result["analyst"] = _run_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
+        result["analyst"] = _queue_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
     if notify:
         if status_code < 400 and result.get("mission_status") == "pr_ready":
             _send_review_ready_notification(result)
@@ -523,7 +526,7 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
         result["status"] = "release_waiting_for_explicit_mode"
         result["next_action"] = "Restart runner with --auto-close-no-release or --auto-merge-pr for automatic release handling."
     if result.get("mission_status") in {"done", "merged", "deployed", "blocked"}:
-        result["analyst"] = _run_analyst_cycle(mission_id, "release_terminal", notify=notify)
+        result["analyst"] = _queue_analyst_cycle(mission_id, "release_terminal", notify=notify)
     if notify:
         if status_code < 400 and result.get("mission_status") in {"done", "merged", "deployed"}:
             _send_done_notification(result)
@@ -536,6 +539,21 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
                 mission_id=mission_id,
             )
     return result, status_code
+
+
+def _queue_analyst_cycle(mission_id, trigger, notify=False):
+    global ANALYST_THREAD
+    with ANALYST_THREAD_LOCK:
+        if ANALYST_THREAD is not None and ANALYST_THREAD.is_alive():
+            return {"success": True, "status": "analyst_cycle_already_running", "mission_id": mission_id}
+        ANALYST_THREAD = threading.Thread(
+            target=_run_analyst_cycle,
+            args=(mission_id, trigger, notify),
+            name="charlie-improvement-analyst",
+            daemon=True,
+        )
+        ANALYST_THREAD.start()
+    return {"success": True, "status": "analyst_cycle_queued", "mission_id": mission_id, "trigger": trigger}
 
 
 def _run_analyst_cycle(mission_id, trigger, notify=False):

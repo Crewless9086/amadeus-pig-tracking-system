@@ -121,6 +121,17 @@ class CharlieMissionPickupTests(unittest.TestCase):
             "metadata": {"charlie_core": {"project_truth": {"workflow_template": "ui_product_build"}}},
         }))
 
+    @patch("scripts.charlie_mission_pickup.threading.Thread")
+    def test_analyst_cycle_is_queued_without_blocking_runner(self, thread):
+        fake_thread = SimpleNamespace(is_alive=lambda: False, start=lambda: None)
+        thread.return_value = fake_thread
+        charlie_mission_pickup.ANALYST_THREAD = None
+
+        result = charlie_mission_pickup._queue_analyst_cycle("MISSION-1", "mission_terminal")
+
+        self.assertEqual(result["status"], "analyst_cycle_queued")
+        thread.assert_called_once()
+
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
     def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run):

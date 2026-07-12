@@ -277,7 +277,7 @@ def analyze_mission_replay(mission):
     }, 200
 
 
-def generate_and_store_proposals(limit=50, database_url=None, connect_factory=None):
+def generate_and_store_proposals(limit=50, max_proposals=5, database_url=None, connect_factory=None):
     loaded, status_code = mission_store.list_missions(
         limit=limit,
         database_url=database_url,
@@ -285,7 +285,7 @@ def generate_and_store_proposals(limit=50, database_url=None, connect_factory=No
     )
     if status_code >= 400:
         return loaded, status_code
-    proposals = analyze_improvement_opportunities(loaded.get("missions", []))
+    proposals = analyze_improvement_opportunities(loaded.get("missions", []))[:max(1, min(int(max_proposals or 5), 10))]
     existing_by_id = _existing_proposals_by_id(database_url=database_url, connect_factory=connect_factory)
     writes = []
     for proposal in proposals:
