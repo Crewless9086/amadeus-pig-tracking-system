@@ -9,8 +9,8 @@ from modules.sales import sales_transaction_routes
 NOW = datetime(2026, 7, 12, 12, tzinfo=timezone.utc)
 
 
-def eligible_pig(pig_id='P1'):
-    return {'pig_id': pig_id, 'status': 'Active', 'on_farm': 'Yes', 'purpose': 'Sale', 'reserved_status': '', 'reserved_for_order_id': '', 'animal_type': 'Grower', 'calculated_stage': 'Grower', 'latest_weight_kg': 35, 'latest_weight_date': '2026-07-12', 'days_since_weight': 0, 'withdrawal_clear': 'Yes', 'health_status': 'Healthy', 'medical_status': 'Clear', 'wean_date': '2026-05-01', 'sale_category': 'Grower'}
+def eligible_pig(pig_id='P1', category='Grower'):
+    return {'pig_id': pig_id, 'status': 'Active', 'on_farm': 'Yes', 'purpose': 'Sale', 'reserved_status': '', 'reserved_for_order_id': '', 'animal_type': category, 'calculated_stage': category, 'latest_weight_kg': 35, 'latest_weight_date': '2026-07-12', 'days_since_weight': 0, 'withdrawal_clear': 'Yes', 'health_status': 'Healthy', 'medical_status': 'Clear', 'wean_date': '2026-05-01', 'sale_category': category}
 
 
 class BeaconOpportunityScannerTests(unittest.TestCase):
@@ -68,6 +68,17 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['demand_cap'], 0)
         self.assertEqual(live['demand_summary']['incompatible_records'], 1)
         self.assertIn('incompatible_live_stock_demand', live['blockers'])
+
+    def test_mixed_supply_counts_and_buffers_only_compatible_category(self):
+        pigs = [eligible_pig('G1')] + [eligible_pig(f'F{i}', 'Finisher') for i in range(4)]
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': pigs}
+        intakes = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3, 'category': 'Grower'}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['capacity_calculation']['verified_available'], 1)
+        self.assertEqual(live['capacity_calculation']['capacity_by_category']['grower']['verified_available'], 1)
+        self.assertEqual(live['status'], 'blocked')
 
     def test_production_intake_item_shape_supplies_quantity_and_category(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
