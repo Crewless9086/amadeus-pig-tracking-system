@@ -1788,11 +1788,17 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         sequence.append(next_agent)
     for default in _workflow_defaults_for_sequence(sequence):
         known.setdefault(default["agent"], dict(default))
+    if agent:
+        agent_defaults = _workflow_defaults_for_sequence([agent])
+        known.setdefault(agent, dict(agent_defaults[0]) if agent_defaults else {
+            "agent": agent,
+            "status": "pending",
+            "handoff_to": "",
+        })
     if next_agent and next_agent in known:
         known[agent]["handoff_to"] = next_agent
     if not agent:
         return [known[name] for name in sequence]
-    known.setdefault(agent, _workflow_defaults_for_sequence([agent])[0])
     known[agent]["status"] = step_status
     if findings:
         known[agent]["findings"] = findings

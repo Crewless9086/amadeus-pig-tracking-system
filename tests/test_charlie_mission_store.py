@@ -80,6 +80,22 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(by_agent["unexpected_specialist"]["handoff_to"], "frontend_design_implementer")
         self.assertIn("frontend_design_implementer", by_agent)
 
+    def test_update_workflow_items_adds_optional_parallel_agents_missing_from_stored_workflow(self):
+        for agent in ("risk_agent", "visual_reference_interpreter"):
+            with self.subTest(agent=agent):
+                updated = _update_workflow_items(
+                    [{"agent": "source_mapper", "status": "complete"}],
+                    agent,
+                    "complete",
+                    "Parallel review completed.",
+                    "builder",
+                )
+
+                by_agent = {item["agent"]: item for item in updated}
+                self.assertEqual(by_agent[agent]["status"], "complete")
+                self.assertEqual(by_agent[agent]["handoff_to"], "builder")
+                self.assertIn("builder", by_agent)
+
     @patch("modules.charlie.mission_store.update_mission_vault")
     @patch("modules.charlie.mission_store.get_mission")
     def test_reviewer_complete_does_not_mark_pr_ready_without_review_packet(self, get_mission_mock, update_vault_mock):
