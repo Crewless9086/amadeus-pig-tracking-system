@@ -2626,9 +2626,34 @@ def _run_parallel_read_only_agents(
 
 
 def _parallel_read_only_quality_gate(agent, artifact):
+    if _risk_agent_has_present_red_zone_violation(agent, artifact):
+        present_quality = _agent_quality_gate(agent, artifact)
+        if not present_quality.get("passed"):
+            return present_quality
+        return {
+            "passed": False,
+            "reason": "risk_agent recorded a present red-zone authority violation.",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    if _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+        return {
+            "passed": True,
+            "reason": "parallel_read_only_deferred_planning_risk",
+            "deferred_blocker": True,
+            "deferred_reason": "Risk findings were assigned to downstream Council, Planner, Architect, or Builder stages.",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     quality = _agent_quality_gate(agent, artifact)
     if quality.get("passed"):
         return quality
+    if _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+        return {
+            "passed": True,
+            "reason": f"parallel_read_only_deferred_planning_risk: {quality.get('reason', '')}",
+            "deferred_blocker": True,
+            "deferred_reason": quality.get("reason", ""),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     if _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
         return {
             "passed": True,
@@ -2638,6 +2663,75 @@ def _parallel_read_only_quality_gate(agent, artifact):
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
     return quality
+
+
+def _risk_agent_findings_belong_to_downstream_planning(agent, artifact):
+    if agent != "risk_agent" or not isinstance(artifact, dict):
+        return False
+    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    if _has_release_relevant_changes(changed_files):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in [
+            artifact.get("summary"),
+            artifact.get("next_action"),
+            artifact.get("recommended_owner_decision"),
+            *_artifact_value_list(artifact.get("risks")),
+            *_artifact_value_list(artifact.get("risk_notes")),
+            *_artifact_value_list(artifact.get("bugs")),
+            *_artifact_value_list(artifact.get("errors")),
+            *_artifact_value_list(artifact.get("required_mitigations")),
+        ]
+    ).lower()
+    if _risk_agent_has_present_red_zone_violation(agent, artifact):
+        return False
+    downstream_terms = (
+        "council",
+        "planner",
+        "architect",
+        "builder",
+        "must implement",
+        "should implement",
+        "add negative tests",
+        "acceptance tests",
+        "mandatory mitigations",
+        "before owner review",
+    )
+    return any(term in text for term in downstream_terms)
+
+
+def _risk_agent_has_present_red_zone_violation(agent, artifact):
+    if agent != "risk_agent" or not isinstance(artifact, dict):
+        return False
+    text = " ".join(
+        str(value or "")
+        for value in [
+            artifact.get("summary"),
+            artifact.get("next_action"),
+            *_artifact_value_list(artifact.get("risks")),
+            *_artifact_value_list(artifact.get("risk_notes")),
+            *_artifact_value_list(artifact.get("bugs")),
+            *_artifact_value_list(artifact.get("errors")),
+        ]
+    ).lower()
+    present_violation_terms = (
+        "attempted production data write",
+        "production data write without owner",
+        "attempted customer send",
+        "unauthorized customer send",
+        "attempted public post",
+        "payment without owner",
+        "attempted payment",
+        "reserve stock without owner",
+        "attempted reserve stock",
+        "attempted merge",
+        "attempted deploy",
+        "attempted migration",
+        "secret leak",
+        "credentials exposed",
+    )
+    return any(term in text for term in present_violation_terms)
 
 
 def _read_only_block_is_downstream_evidence_only(agent, artifact, quality):
@@ -3255,6 +3349,14 @@ def _agent_quality_gate(agent, artifact):
     ui_quality = _ui_agent_quality_gate(agent, artifact)
     if not ui_quality["passed"]:
         return ui_quality
+    if agent == "tester" and _tester_visual_capture_environment_only_is_advisory(artifact):
+        return {
+            "passed": True,
+            "reason": "Tester functional checks passed; screenshot-only environment limitation deferred to the dedicated Visual QA gate.",
+            "visual_evidence_deferred": True,
+            "focused_tests_passed": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     judgement_quality = _judgement_evidence_quality_gate(agent, artifact)
     if not judgement_quality["passed"]:
         return judgement_quality
@@ -3266,6 +3368,14 @@ def _agent_quality_gate(agent, artifact):
         }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
+        if status != "pass" and _tester_visual_capture_environment_only_is_advisory(artifact):
+            return {
+                "passed": True,
+                "reason": "Tester functional checks passed; screenshot-only environment limitation deferred to the dedicated Visual QA gate.",
+                "visual_evidence_deferred": True,
+                "focused_tests_passed": True,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
         if status != "pass" and _tester_timeout_only_failure_is_advisory(agent, artifact):
             return {
                 "passed": True,
@@ -3815,6 +3925,31 @@ def _tester_timeout_only_failure_is_advisory(agent, artifact):
     if status not in {"fail", "failed", "blocked"}:
         return False
     return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
+
+
+def _tester_visual_capture_environment_only_is_advisory(artifact):
+    if not isinstance(artifact, dict) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    bugs = _artifact_value_list(artifact.get("bugs"))
+    if bugs:
+        return False
+    errors = [_artifact_text(item).lower() for item in _artifact_value_list(artifact.get("errors"))]
+    if not errors:
+        return False
+    visual_environment_terms = (
+        "browser-control",
+        "browser control",
+        "browser runtime",
+        "browser list",
+        "node_repl",
+        "screenshot permission",
+        "screenshots unless explicitly approved",
+        "could not capture screenshot",
+        "no real screenshots",
+        "preview url",
+        "preview server",
+    )
+    return all(any(term in error for term in visual_environment_terms) for error in errors)
 
 
 def _timeout_only_failure_has_focused_pass_evidence(agent, artifact):
