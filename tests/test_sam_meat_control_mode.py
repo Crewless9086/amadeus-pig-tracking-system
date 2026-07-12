@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from modules.sales.beacon_campaign import execute_beacon_facebook_page_post
 from modules.sales.meat_documents import (
@@ -28,6 +28,10 @@ class SamMeatControlModeTests(unittest.TestCase):
         self.assertFalse(policy["customer_public_output_enabled"])
         self.assertEqual(policy["blockers"], ["butcher_loop_not_proven"])
 
+    @patch.dict("os.environ", {
+        "MEAT_INSTRUCTION_SEND_ENABLED": "1",
+        "MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED": "1",
+    }, clear=False)
     def test_direct_service_bypasses_are_denied(self):
         sender = Mock()
         calls = [
@@ -36,8 +40,8 @@ class SamMeatControlModeTests(unittest.TestCase):
             generate_meat_deposit_pro_forma_pdf("lead", database_url="postgresql://unused"),
             generate_meat_final_invoice_pdf("lead", database_url="postgresql://unused"),
             create_carcass_reservation_from_lead("lead", {"pig_id": "pig"}, database_url="postgresql://unused"),
-            record_carcass_reservation_event("lead", {"event_type": "reservation_cancelled"}, database_url="postgresql://unused"),
-            record_meat_deposit_event("lead", {"reservation_id": "r"}, database_url="postgresql://unused"),
+            record_carcass_reservation_event("lead", {"reservation_id": "r", "event_type": "reservation_cancelled", "reason": "owner request"}, database_url="postgresql://unused"),
+            record_meat_deposit_event("lead", {"reservation_id": "r", "amount": 100, "payment_reference": "EFT-1"}, database_url="postgresql://unused"),
             build_meat_instruction_drafts("lead", database_url="postgresql://unused"),
             approve_meat_instruction_draft("lead", "draft", database_url="postgresql://unused"),
             send_approved_meat_instruction("lead", "draft", database_url="postgresql://unused", sender=sender),

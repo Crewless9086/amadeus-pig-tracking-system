@@ -2390,10 +2390,6 @@ def _record_deposit_instruction_event(lead_id, message, reference, estimate):
 
 
 def _record_pop_if_ready(inbound, prior_context, source):
-    return {"recorded": False, "detected": False, "status": "controlled_mode_blocked"}
-
-
-def _disabled_record_pop_if_ready(inbound, prior_context, source):
     if not _pop_or_payment_proof_intent(inbound.get("content")):
         return {"recorded": False, "detected": False, "status": "not_payment_proof"}
     prior_context = prior_context if isinstance(prior_context, dict) else {}

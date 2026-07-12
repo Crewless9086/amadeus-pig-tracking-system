@@ -194,9 +194,6 @@ def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=Non
 
 
 def record_meat_deposit_event(lead_id, payload=None, database_url=None):
-    denial = controlled_mode_denial("record_deposit_or_payment_event")
-    if denial:
-        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     reservation_id = _clean(payload.get("reservation_id"), 100)
@@ -221,6 +218,8 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
         return {"success": False, "status": "deposit_reference_required", **_authority(False)}, 400
     if event_type == "pop_received_unverified" and not payment_reference:
         return {"success": False, "status": "pop_reference_required", **_authority(False)}, 400
+    if event_type != "pop_received_unverified":
+        return controlled_mode_denial("record_deposit_or_payment_event")
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
@@ -275,9 +274,6 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
 
 
 def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
-    denial = controlled_mode_denial("record_reservation_event")
-    if denial:
-        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     reservation_id = _clean(payload.get("reservation_id"), 100)
@@ -288,6 +284,9 @@ def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
     event_type = _clean(payload.get("event_type") or "reservation_cancelled", 80)
     if event_type not in {"reservation_cancelled", "reservation_reinstated", "reservation_note"}:
         return {"success": False, "status": "invalid_reservation_event_type", **_authority(False)}, 400
+    if event_type == "reservation_cancelled" and not _clean(payload.get("reason"), 500):
+        return {"success": False, "status": "reservation_cancel_reason_required", **_authority(False)}, 400
+    return controlled_mode_denial("record_reservation_event")
     if event_type == "reservation_cancelled" and not _clean(payload.get("reason"), 500):
         return {"success": False, "status": "reservation_cancel_reason_required", **_authority(False)}, 400
     database_url = _db_url(database_url)
@@ -448,15 +447,13 @@ def approve_meat_instruction_draft(lead_id, instruction_draft_id, payload=None, 
 
 
 def send_approved_meat_instruction(lead_id, instruction_draft_id, payload=None, database_url=None, sender=None):
-    denial = controlled_mode_denial("send_abattoir_butcher_instruction")
-    if denial:
-        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     instruction_draft_id = _clean(instruction_draft_id, 120)
     message = _clean(payload.get("message") or payload.get("approved_message"), 1200)
     if not _env_truthy(os.getenv(MEAT_INSTRUCTION_SEND_ENABLED_ENV)):
         return {"success": False, "status": "meat_instruction_send_disabled", "sent": False, **_authority(False)}, 503
+    return controlled_mode_denial("send_abattoir_butcher_instruction")
     if not message:
         return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
     database_url = _db_url(database_url)
