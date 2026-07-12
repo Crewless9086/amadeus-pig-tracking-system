@@ -105,6 +105,9 @@ def sales_dashboard():
 
 @pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])
 def pig_allocation_readiness():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(get_pig_allocation_readiness_data())
 
 
@@ -152,6 +155,9 @@ def pigs():
 
 @pig_weights_bp.route("/sales-availability", methods=["GET"])
 def sales_availability():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(list_sales_availability())
 
 

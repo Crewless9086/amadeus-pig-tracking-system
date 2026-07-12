@@ -26,12 +26,29 @@ function clearSalesMessage() {
 }
 
 function renderSummaryCard(label, value) {
-  return `
-    <div class="detail-card">
-      <span class="detail-label">${label}</span>
-      <span class="detail-value">${value}</span>
-    </div>
-  `;
+  const card = document.createElement("div");
+  card.className = "detail-card";
+  const labelElement = document.createElement("span");
+  labelElement.className = "detail-label";
+  labelElement.textContent = label;
+  const valueElement = document.createElement("span");
+  valueElement.className = "detail-value";
+  valueElement.textContent = value;
+  card.append(labelElement, valueElement);
+  return card;
+}
+
+function appendSalesField(container, label, value, wide = false) {
+  const field = document.createElement("div");
+  if (wide) field.className = "sales-meta-wide";
+  const labelElement = document.createElement("span");
+  labelElement.className = "history-label";
+  labelElement.textContent = label;
+  const valueElement = document.createElement("span");
+  valueElement.className = "history-value";
+  valueElement.textContent = value || "—";
+  field.append(labelElement, valueElement);
+  container.appendChild(field);
 }
 
 function formatNumber(value, decimals = 2) {
@@ -72,17 +89,15 @@ function buildSalesCard(pig) {
   const salesInfo = document.createElement("div");
   salesInfo.className = "sales-meta-grid";
   const latestWeightDate = pig.latest_weight_date || pig.last_weight_date || "No weight date";
-  salesInfo.innerHTML = `
-    <div><span class="history-label">Latest Weight Date</span><span class="history-value">${latestWeightDate}</span></div>
-    <div><span class="history-label">Stage</span><span class="history-value">${pig.calculated_stage || "—"}</span></div>
-    <div><span class="history-label">Purpose</span><span class="history-value">${pig.purpose || "—"}</span></div>
-    <div><span class="history-label">Available</span><span class="history-value">${pig.available_for_sale || "—"}</span></div>
-    <div><span class="history-label">Reserved</span><span class="history-value">${pig.reserved_status || "—"}</span></div>
-    <div><span class="history-label">Withdrawal Clear</span><span class="history-value">${pig.withdrawal_clear || "—"}</span></div>
-    <div><span class="history-label">Price Category</span><span class="history-value">${pig.suggested_price_category || "—"}</span></div>
-    <div><span class="history-label">Pen</span><span class="history-value">${pig.current_pen_id || "—"}</span></div>
-    <div class="sales-meta-wide"><span class="history-label">SAM Live Rule</span><span class="history-value">${pig.live_stock_sale_reason || pig.sales_notes || "—"}</span></div>
-  `;
+  appendSalesField(salesInfo, "Latest Weight Date", latestWeightDate);
+  appendSalesField(salesInfo, "Stage", pig.calculated_stage);
+  appendSalesField(salesInfo, "Purpose", pig.purpose);
+  appendSalesField(salesInfo, "Available", pig.available_for_sale);
+  appendSalesField(salesInfo, "Reserved", pig.reserved_status);
+  appendSalesField(salesInfo, "Withdrawal Clear", pig.withdrawal_clear);
+  appendSalesField(salesInfo, "Price Category", pig.suggested_price_category);
+  appendSalesField(salesInfo, "Pen", pig.current_pen_id);
+  appendSalesField(salesInfo, "SAM Live Rule", pig.live_stock_sale_reason || pig.sales_notes, true);
 
   card.appendChild(topRow);
   card.appendChild(meta);
@@ -155,12 +170,12 @@ function updateSummary(pigs) {
   const saleReady = pigs.filter(p => p.available_for_sale === "Yes" && p.withdrawal_clear === "Yes").length;
   const reserved = pigs.filter(p => p.reserved_status === "Reserved").length;
 
-  salesSummary.innerHTML = `
-    ${renderSummaryCard("Total Records", total)}
-    ${renderSummaryCard("Available For Sale", available)}
-    ${renderSummaryCard("Commercially Clear", saleReady)}
-    ${renderSummaryCard("Reserved", reserved)}
-  `;
+  salesSummary.replaceChildren(
+    renderSummaryCard("Total Records", total),
+    renderSummaryCard("Available For Sale", available),
+    renderSummaryCard("Commercially Clear", saleReady),
+    renderSummaryCard("Reserved", reserved),
+  );
 }
 
 function filterSales() {
