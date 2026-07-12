@@ -53,6 +53,20 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         self.assertIsNone(herdmaster["evidence"]["progress_percent"])
         self.assertEqual(herdmaster["evidence"]["label"], "Not measured")
 
+    def test_packet_preserves_executive_core_and_transport_boundaries(self):
+        packet = build_agent_workforce_packet(registry={"agents": []})
+        agents = {agent["id"]: agent for agent in packet["agents"]}
+        connections = {(row["from"], row["to"]) for row in packet["map"]["connections"]}
+
+        self.assertEqual(agents["charlie"]["name"], "CHARLIE")
+        self.assertIn("private digital executive", agents["charlie"]["role"].lower())
+        self.assertEqual(agents["charlie-core"]["name"], "CORE")
+        self.assertIn(("owner", "charlie"), connections)
+        self.assertIn(("charlie", "charlie-core"), connections)
+        self.assertEqual(agents["fred"]["team"], "Private Transfers")
+        self.assertIn("client-facing transport", agents["fred"]["role"].lower())
+        self.assertNotIn("finance", agents["fred"]["role"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
