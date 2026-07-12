@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from math import isfinite
 
 
 CONTRACT_VERSION = "beacon_marketing_operating_contract_v1"
@@ -49,7 +50,11 @@ def build_fulfilment_target(evidence=None, now=None):
         "source_id", "observed_at", "unit", "verified_available",
         "existing_commitments", "operational_reserve", "safety_buffer",
     )
-    missing = [key for key in required if evidence.get(key) in (None, "")]
+    missing = [
+        key for key in required
+        if evidence.get(key) is None
+        or (isinstance(evidence.get(key), str) and not evidence.get(key).strip())
+    ]
     errors = [f"missing_{key}" for key in missing]
     observed_at = _utc(evidence.get("observed_at"))
     if evidence.get("observed_at") and observed_at is None:
@@ -66,7 +71,9 @@ def build_fulfilment_target(evidence=None, now=None):
     for key in ("verified_available", "existing_commitments", "operational_reserve", "safety_buffer"):
         try:
             values[key] = float(evidence.get(key))
-            if values[key] < 0:
+            if not isfinite(values[key]):
+                errors.append(f"invalid_{key}")
+            elif values[key] < 0:
                 errors.append(f"negative_{key}")
         except (TypeError, ValueError):
             if key not in missing:

@@ -29,6 +29,21 @@ class BeaconMarketingOperatingContractTests(unittest.TestCase):
             self.assertEqual(target["demand_ceiling"], 0)
         self.assertIn("stale_fulfilment_evidence", stale["errors"])
 
+    def test_non_finite_numeric_evidence_fails_closed(self):
+        base = {"source_id": "fresh", "observed_at": "2026-07-12T10:00:00Z", "unit": "pigs", "verified_available": 10, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0}
+        for value in ("nan", "inf", "-inf"):
+            target = build_fulfilment_target(dict(base, verified_available=value), now="2026-07-12T12:00:00Z")
+            self.assertEqual(target["status"], "blocked")
+            self.assertEqual(target["demand_ceiling"], 0)
+            self.assertIn("invalid_verified_available", target["errors"])
+
+    def test_whitespace_only_source_and_unit_fail_closed(self):
+        target = build_fulfilment_target({"source_id": "  ", "observed_at": "2026-07-12T10:00:00Z", "unit": "\t", "verified_available": 10, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0}, now="2026-07-12T12:00:00Z")
+        self.assertEqual(target["status"], "blocked")
+        self.assertEqual(target["demand_ceiling"], 0)
+        self.assertIn("missing_source_id", target["errors"])
+        self.assertIn("missing_unit", target["errors"])
+
     def test_allowlist_unknown_stream_and_kpi_math(self):
         contract = build_beacon_marketing_operating_contract("live_stock")
         self.assertFalse(contract["channel_policy"]["unknown_channels_allowed"])
