@@ -3402,6 +3402,37 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result.get("timeout_advisory"), result)
         self.assertTrue(result.get("focused_tests_passed"), result)
 
+    def test_tester_quality_gate_keeps_pass_when_timeout_is_only_reported_error(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "pass"
+        artifact["tests_run"] = [
+            {
+                "command": "python -m unittest tests.test_farm_supabase_read_service tests.test_pig_allocation_readiness_service",
+                "status": "pass",
+                "result": "49 tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_frontend_route_contracts",
+                "status": "pass",
+                "result": "39 tests passed",
+            },
+            {
+                "command": "python -m unittest tests.test_frontend_route_contracts tests.test_sam_live_stock_runtime",
+                "status": "timeout_advisory",
+                "result": "Runner outer timeout after 124 seconds; no assertion failure observed",
+            },
+        ]
+        artifact["errors"] = [
+            "The combined tests.test_frontend_route_contracts tests.test_sam_live_stock_runtime command exceeded the runner's 124-second outer timeout before returning results."
+        ]
+        artifact["stdout_tail"] = "Focused verification passed: 88 tests and JavaScript syntax checks succeeded."
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("timeout_advisory"), result)
+        self.assertTrue(result.get("focused_tests_passed"), result)
+
     def test_tester_quality_gate_still_blocks_real_safety_failure_with_timeout_noise(self):
         artifact = _successful_stage_payload("tester")
         artifact["test_status"] = "fail"

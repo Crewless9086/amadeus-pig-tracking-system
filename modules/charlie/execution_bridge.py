@@ -3383,6 +3383,7 @@ def _agent_quality_gate(agent, artifact):
         }
     if agent == "tester":
         status = str(artifact.get("test_status") or "").strip().lower()
+        timeout_advisory = _tester_timeout_only_failure_is_advisory(agent, artifact, allow_pass_status=True)
         if status != "pass" and _tester_visual_capture_environment_only_is_advisory(artifact):
             return {
                 "passed": True,
@@ -3391,7 +3392,7 @@ def _agent_quality_gate(agent, artifact):
                 "focused_tests_passed": True,
                 "checked_at": datetime.now(timezone.utc).isoformat(),
             }
-        if status != "pass" and _tester_timeout_only_failure_is_advisory(agent, artifact):
+        if timeout_advisory:
             return {
                 "passed": True,
                 "reason": "Tester timeout-only broad command issue treated as advisory because focused changed-surface tests passed.",
@@ -3933,11 +3934,14 @@ def _qa_timeout_only_failure_is_advisory(agent, artifact):
     return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
 
 
-def _tester_timeout_only_failure_is_advisory(agent, artifact):
+def _tester_timeout_only_failure_is_advisory(agent, artifact, allow_pass_status=False):
     if agent != "tester" or not isinstance(artifact, dict):
         return False
     status = str(artifact.get("test_status") or "").strip().lower()
-    if status not in {"fail", "failed", "blocked"}:
+    allowed_statuses = {"fail", "failed", "blocked"}
+    if allow_pass_status:
+        allowed_statuses.add("pass")
+    if status not in allowed_statuses:
         return False
     return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
 
