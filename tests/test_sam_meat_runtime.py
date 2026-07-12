@@ -966,16 +966,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["send_status"], "sent")
-        self.assertTrue(result["document_sent"])
-        self.assertEqual(result["document_send_status"], "estimated_quote_sent")
+        self.assertEqual(result["send_status"], "controlled_mode_owner_review_required")
+        self.assertFalse(result["document_sent"])
+        self.assertEqual(result["document_send_status"], "not_requested")
         self.assertTrue(result["sam_decision"]["document_send_requested"])
         self.assertIn("preparing your estimated quote", result["sam_decision"]["reply_text"])
-        mock_document_send.assert_called_once()
-        self.assertEqual(mock_document_send.call_args.args[0], "OSK-SALES-LEAD-PROGRESSED")
-        self.assertEqual(mock_document_send.call_args.args[1]["conversation_id"], "1808")
-        self.assertNotIn("force_resend", mock_document_send.call_args.args[1])
-        self.assertEqual(mock_document_send.call_args.kwargs["chatwoot_sender"], document_sender)
+        mock_document_send.assert_not_called()
+        sender.assert_not_called()
 
     @patch("modules.sales.sam_meat_runtime.send_meat_estimated_quote_to_chatwoot")
     @patch("modules.sales.sam_meat_runtime.build_meat_estimated_quote_packet")
@@ -1025,13 +1022,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["send_status"], "sent")
+        self.assertEqual(result["send_status"], "controlled_mode_owner_review_required")
         self.assertTrue(result["sam_decision"]["document_send_requested"])
         self.assertTrue(result["sam_decision"]["document_force_resend_requested"])
         self.assertIn("preparing your estimated quote", result["sam_decision"]["reply_text"])
         self.assertNotIn("farm must confirm", result["sam_decision"]["reply_text"])
-        mock_document_send.assert_called_once()
-        self.assertTrue(mock_document_send.call_args.args[1]["force_resend"])
+        mock_document_send.assert_not_called()
+        sender.assert_not_called()
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
@@ -1556,14 +1553,9 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertTrue(result["booking_confirmation"]["recorded"])
-        self.assertIn("noted your confirmation", result["sam_decision"]["reply_text"])
-        mock_confirmation.assert_called_once()
-        self.assertEqual(mock_confirmation.call_args.args[0], "OSK-SALES-LEAD-PROGRESSED")
-        self.assertEqual(
-            mock_confirmation.call_args.args[1]["customer_confirmation"],
-            "Yes, please proceed with the final booking review.",
-        )
+        self.assertFalse(result["booking_confirmation"]["recorded"])
+        self.assertEqual(result["booking_confirmation"]["status"], "controlled_mode_blocked")
+        mock_confirmation.assert_not_called()
 
     @patch("modules.sales.sam_meat_runtime.record_sales_lead_event")
     @patch("modules.sales.sam_meat_runtime.record_customer_booking_confirmation")
@@ -1640,15 +1632,11 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertIn("Account name: Amadeus Farm", result["sam_decision"]["reply_text"])
-        self.assertIn("Reference: RESSED", result["sam_decision"]["reply_text"])
-        self.assertIn("about R1,300.00", result["sam_decision"]["reply_text"])
-        self.assertEqual(
-            result["sam_decision"]["deposit_payment_instruction"]["status"],
-            "deposit_payment_instruction_ready",
-        )
+        self.assertNotIn("Account name: Amadeus Farm", result["sam_decision"]["reply_text"])
+        self.assertEqual(result["booking_confirmation"]["status"], "controlled_mode_blocked")
+        self.assertNotIn("deposit_payment_instruction", result["sam_decision"])
         event_types = [call.args[1]["event_type"] for call in mock_event.call_args_list]
-        self.assertIn("deposit_followup_needed", event_types)
+        self.assertNotIn("deposit_followup_needed", event_types)
 
     @patch("modules.sales.sam_meat_runtime.record_meat_deposit_event")
     @patch("modules.sales.sam_meat_runtime.get_meat_ops_status")
