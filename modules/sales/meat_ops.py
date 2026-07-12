@@ -7,6 +7,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -121,6 +122,9 @@ def build_meat_payment_gate(reservations, deposits):
 
 
 def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("create_carcass_reservation")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
@@ -190,6 +194,9 @@ def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=Non
 
 
 def record_meat_deposit_event(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("record_deposit_or_payment_event")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     reservation_id = _clean(payload.get("reservation_id"), 100)
@@ -268,6 +275,9 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
 
 
 def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("record_reservation_event")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     reservation_id = _clean(payload.get("reservation_id"), 100)
@@ -325,6 +335,9 @@ def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
 
 
 def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("build_abattoir_butcher_instructions")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     database_url = _db_url(database_url)
@@ -376,6 +389,9 @@ def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
 
 
 def approve_meat_instruction_draft(lead_id, instruction_draft_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("approve_abattoir_butcher_instruction")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     instruction_draft_id = _clean(instruction_draft_id, 120)
@@ -432,6 +448,9 @@ def approve_meat_instruction_draft(lead_id, instruction_draft_id, payload=None, 
 
 
 def send_approved_meat_instruction(lead_id, instruction_draft_id, payload=None, database_url=None, sender=None):
+    denial = controlled_mode_denial("send_abattoir_butcher_instruction")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     instruction_draft_id = _clean(instruction_draft_id, 120)

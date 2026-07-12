@@ -9,6 +9,7 @@ from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_cont
 from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.meat_reconciliation import get_meat_reconciliation_status
 from services.database_service import DATABASE_URL_ENV
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
 FULFILLMENT_EVENT_TYPES = {
@@ -129,6 +130,9 @@ def build_dad_booking_packet(lead_id, payload=None, database_url=None):
 
 
 def record_meat_fulfillment_event(lead_id, payload=None, database_url=None):
+    denial = controlled_mode_denial("record_fulfillment_event")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     event_type = _clean(payload.get("event_type"), 100)
@@ -318,6 +322,9 @@ def approve_meat_journey_notification(lead_id, payload=None, database_url=None):
 
 
 def send_meat_journey_notification(lead_id, payload=None, database_url=None, sender=None):
+    denial = controlled_mode_denial("send_customer_journey_notification")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     message = _clean(payload.get("message"), 1600)

@@ -8,6 +8,7 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
@@ -751,6 +752,8 @@ def facebook_posting_policy(environ=None):
 
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None):
     payload = payload if isinstance(payload, dict) else {}
+    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch":
+        return controlled_mode_denial("publish_meat_campaign")
     policy = facebook_posting_policy(environ=environ)
     params = _facebook_post_params(payload, policy)
     validation_error = _facebook_post_validation_error(params, policy)

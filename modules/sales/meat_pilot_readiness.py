@@ -2,9 +2,11 @@ from modules.oom_sakkie.sales_campaign_store import list_sales_leads, get_sales_
 from modules.sales.meat_documents import build_meat_estimated_quote_packet
 from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.meat_template_pack import meat_whatsapp_template_pack
+from modules.sales.sam_meat_control_mode import sam_meat_control_policy
 
 
 def get_meat_pilot_readiness(limit=12, status_filter="launch_test"):
+    control_policy = sam_meat_control_policy()
     leads_result, leads_status = list_sales_leads(limit=limit, status_filter=status_filter)
     if leads_status >= 400:
         return leads_result, leads_status
@@ -48,6 +50,7 @@ def get_meat_pilot_readiness(limit=12, status_filter="launch_test"):
         "creates_order": False,
         "changes_stock": False,
         "customer_public_output_enabled": False,
+        "control_policy": control_policy,
     }, 200
 
 
@@ -242,7 +245,7 @@ def _summary(rows, templates):
     highest = max([row["stage_percent"] for row in active] or [0])
     template_bonus = 8 if templates.get("all_configured") else 0
     pilot_percent = min(90, max(70 if active else 60, highest + template_bonus))
-    next_gate = "run_small_live_client_test" if pilot_percent >= 85 else "finish_template_and_payment_gates_before_public_boost"
+    next_gate = "prove_complete_butcher_loop_and_obtain_owner_approval"
     return {
         "lead_count": len(rows),
         "active_lead_count": len(active),

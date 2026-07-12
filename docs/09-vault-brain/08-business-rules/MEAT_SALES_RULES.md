@@ -2,6 +2,10 @@
 
 ## Non-Negotiables
 
+- SAM Meat is in fail-closed `interest_capture_only` mode until the owner proves the complete slaughter, abattoir, butcher, cuts, packing, pricing, cold-chain/quality, and exception loop and explicitly approves graduation.
+- In this mode, SAM may capture structured meat interest and prepare owner-review reply wording only. Customer/document sends, actionable quotes, payment progression, reservations, bookings, butcher instructions, fulfilment, public launch, orders, stock changes, and farm lifecycle writes are blocked at server-side service boundaries.
+- Missing, partial, malformed, stale, unavailable, or conflicting readiness evidence is not proof. Environment flags, owner authentication, pilot percentages, deposit state, or carcass assembly cannot independently unlock the mode.
+
 - EFT only.
 - VAT registered, VAT number `4510286224`.
 - Prices are VAT-inclusive.

@@ -8,6 +8,7 @@
 - Added the canonical live-stock order pricing rule: Orders automatically snapshot active Supabase pricing from Herdmaster-backed pig classification, repair blank prices before first quote generation, and never silently reprice an existing positive line.
 - Defined the Herdmaster/Pig Allocation read model as SAM Live Stock's authoritative stock context: current withdrawal/follow-up holds, health/held state, breeding/family context, fresh latest-weight evidence, reservation/availability state, and canonical-only media references now gate matching and draft/quote preparation; missing canonical media remains empty rather than invented.
 - Added the SAM Live Stock collection-first delivery policy: customer-requested transport may be estimated at R20.00 per one-way kilometre for farm round-trip recovery, with distance/source/status, destination, eligibility, owner-override audit fields, and mandatory owner review.
+- Put SAM Meat into fail-closed `interest_capture_only` mode until the complete butcher loop is proven and explicitly owner-approved; only structured interest capture and owner-review reply preparation remain permitted.
 
 ## 2026-07-11
 
