@@ -2,6 +2,7 @@
 
 ## 2026-07-12
 
+- Added Beacon's Supabase-first, owner-review opportunity scanner contract: separate meat/live-stock cards, freshness and provenance, quantified-demand deduplication, conservative live-stock caps, zero meat cap in controlled mode, and no execution authority.
 - Added Beacon's owner-review marketing operating contract with proposed brand/channel rules, KPI formulas, fulfilment-capped targets, approval tiers, and no execution authority.
 - Added the completed-order sales projection contract: database-enforced linked-sale identity, atomic collected-line reconciliation, explicit totals, and conservative payment mapping.
 - Clarified the executive hierarchy as Charl -> CHARLIE -> CORE and business/farm command layers: CHARLIE is Charl's private digital executive, while CORE is the existing CHARLIE CORE mission engine.
