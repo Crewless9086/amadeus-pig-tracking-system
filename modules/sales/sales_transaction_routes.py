@@ -130,6 +130,7 @@ from modules.beacon.media_library import (
     register_beacon_media_asset,
     upload_beacon_media_asset,
 )
+from modules.beacon.marketing_operating_contract import build_beacon_marketing_operating_contract
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -705,6 +706,20 @@ def meat_document_delivery_status_webhook():
 @sales_bp.route("/beacon/media-policy", methods=["GET"])
 def beacon_media_policy():
     return jsonify(beacon_media_storage_policy()), 200
+
+
+@sales_bp.route("/beacon/marketing-operating-contract", methods=["GET"])
+def beacon_marketing_operating_contract():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        result = build_beacon_marketing_operating_contract(
+            sale_stream=request.args.get("sale_stream", "meat"),
+        )
+    except ValueError as exc:
+        return jsonify({"success": False, "status": str(exc), "authority": {"posts_publicly": False, "spends_money": False, "sends_customer_messages": False}}), 400
+    return jsonify(result), 200
 
 
 @sales_bp.route("/beacon/media-assets", methods=["GET", "POST"])
