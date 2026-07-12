@@ -62,12 +62,38 @@ def _quantity(row):
         return 0
 
 
-def _deduplicated_demand(rows, lane):
+def _normalized_category(value):
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "piglet": "piglet", "piglets": "piglet",
+        "weaner": "weaner", "weaners": "weaner",
+        "grower": "grower", "growers": "grower",
+        "finisher": "finisher", "finishers": "finisher",
+        "ready_for_slaughter": "finisher", "slaughter_ready": "finisher",
+    }
+    return aliases.get(text, text)
+
+
+def _row_demand_items(row):
+    items = row.get("items") if isinstance(row.get("items"), list) else []
+    if items:
+        return [item for item in items if isinstance(item, dict)]
+    interest = row.get("interest") if isinstance(row.get("interest"), dict) else {}
+    return [{
+        "quantity": _quantity(row),
+        "category": row.get("category") or interest.get("category"),
+        "weight_range": row.get("weight_range") or interest.get("weight_range"),
+    }]
+
+
+def _deduplicated_demand(rows, lane, compatible_categories=None):
     excluded_statuses = {"closed", "not_interested", "cancelled", "fulfilled", "expired"}
     seen = set()
     units = 0
     accepted = []
     unknown_quantity = 0
+    incompatible_records = 0
+    compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
     for row in rows if isinstance(rows, list) else []:
         if str(row.get("status") or row.get("intake_status") or "").strip().lower() in excluded_statuses:
             continue
@@ -85,13 +111,18 @@ def _deduplicated_demand(rows, lane):
         if not identity or identity in seen:
             continue
         seen.add(identity)
-        quantity = _quantity(row)
-        if not quantity:
+        demand_items = _row_demand_items(row)
+        if any(not _quantity(item) for item in demand_items):
             unknown_quantity += 1
             continue
-        units += quantity
+        if lane == "live_stock":
+            item_categories = {_normalized_category(item.get("category") or item.get("weight_range")) for item in demand_items}
+            if not item_categories or "" in item_categories or not item_categories.issubset(compatible_categories):
+                incompatible_records += 1
+                continue
+        units += sum(_quantity(item) for item in demand_items)
         accepted.append(identity)
-    return {"qualified_units": units, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "source_ids": sorted(accepted)}
+    return {"qualified_units": units, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "source_ids": sorted(accepted)}
 
 
 def _fingerprint(lane, category, source_ids):
@@ -147,8 +178,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             eligible.append(pig)
 
     cards = []
-    live_demand = _deduplicated_demand(live_intakes, "live_stock")
     categories = sorted({str(pig.get("sale_category") or pig.get("weight_band") or "unclassified") for pig in eligible})
+    live_demand = _deduplicated_demand(live_intakes, "live_stock", categories)
     for category in ["live_stock"]:
         pigs = eligible
         verified = len(pigs)
@@ -166,6 +197,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("sam_live_stock_demand_unavailable")
         if live_demand["unknown_quantity_records"]:
             blockers.append("unknown_live_stock_demand_quantity")
+        if live_demand["incompatible_records"]:
+            blockers.append("incompatible_live_stock_demand")
         if not live_demand["qualified_units"]:
             blockers.append("no_quantified_uncommitted_live_stock_demand")
         cap = min(live_demand["qualified_units"], available_after_buffers) if not blockers else 0

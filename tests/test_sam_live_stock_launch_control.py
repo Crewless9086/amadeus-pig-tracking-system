@@ -62,6 +62,16 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
 
 
 class SamLiveStockLaunchControlTests(unittest.TestCase):
+    def test_open_intake_row_exposes_canonical_item_demand_facts(self):
+        row = launch._open_intake_row({
+            "intake_id": "INTAKE-1",
+            "conversation_id": "2401",
+            "intake_status": "Open",
+            "items": [{"item_key": "weaner", "quantity": 2, "category": "Weaner", "weight_range": "10-14 kg"}],
+        })
+        self.assertEqual(row["quantity"], 2)
+        self.assertEqual(row["items"][0]["category"], "Weaner")
+
     def test_review_event_is_append_only_no_authority_shape(self):
         inbound, facts, decision = review_inputs()
         review = {"score": 98, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"}
