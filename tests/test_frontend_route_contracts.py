@@ -1791,18 +1791,16 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("event.preventDefault()", js)
         self.assertIn("submitButtons.forEach", js)
 
-    def test_dashboard_labels_monthly_sales_as_exits_not_income(self):
+    def test_dashboard_uses_backend_sales_readiness_metrics(self):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
 
-        self.assertIn("Monthly Sales", template)
-        self.assertIn("Livestock Sales", template)
-        self.assertIn("Slaughter Sales", template)
-        self.assertNotIn('"Sales This Month"', js)
-        self.assertIn("livestock_sales_this_month", js)
-        self.assertIn("slaughter_sales_this_month", js)
-        self.assertIn("meat_sales_this_month", js)
-        self.assertIn("slaughter_sales_value_this_month", js)
+        self.assertIn("Sales Readiness", template)
+        self.assertIn("Sales Value This Month", template)
+        self.assertIn("summary.sales_metrics", js)
+        self.assertIn("open_reserved_orders", js)
+        self.assertIn("slaughter_cull_ready", js)
+        self.assertNotIn("available_for_sale_pigs", js)
 
     def test_dashboard_uses_wide_operational_template_and_existing_read_apis(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
@@ -1955,6 +1953,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("selected_year", js)
         self.assertIn('href="/sales/meat-leads"', template)
         self.assertIn('href="/sales/meat-leads"', dashboard)
+        for label in (
+            "Open Reserved Orders", "Open Reserved Pigs", "Live-sale Ready",
+            "Meat Window", "Slaughter/Cull Ready", "Sales Value This Month",
+        ):
+            self.assertIn(label, template)
+            self.assertIn(label, dashboard)
+        self.assertNotIn(">Available<", dashboard)
+        self.assertNotIn(">Reserved<", dashboard)
+        self.assertNotIn("<h2>Available Stock</h2>", template)
+        self.assertIn("data.sales_metrics", js)
+        self.assertIn('status: "unavailable"', js)
 
     def test_litter_detail_has_weaning_day_workflow_panel(self):
         routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")

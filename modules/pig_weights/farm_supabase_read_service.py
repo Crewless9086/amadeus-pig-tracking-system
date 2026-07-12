@@ -294,18 +294,24 @@ def _dashboard_rows(connect_factory=None):
     )
 
 
-def _reserved_pig_count(connect_factory=None):
+def get_open_reservation_counts(connect_factory=None):
     row = _fetch_one(
         """
-        select count(distinct pig_id) as reserved_pig_count
+        select count(distinct order_id) as open_reserved_orders,
+               count(distinct nullif(pig_id, '')) as open_reserved_pigs
         from public.order_lines
-        where reserved_status = 'Reserved'
-          and nullif(pig_id, '') is not null
-          and coalesce(line_status, '') not in ('Cancelled', 'Released')
+        where line_status = 'Reserved'
         """,
         connect_factory=connect_factory,
     )
-    return int(row.get("reserved_pig_count") or 0) if row else 0
+    return {
+        "open_reserved_orders": int(row.get("open_reserved_orders") or 0) if row else 0,
+        "open_reserved_pigs": int(row.get("open_reserved_pigs") or 0) if row else 0,
+    }
+
+
+def _reserved_pig_count(connect_factory=None):
+    return get_open_reservation_counts(connect_factory=connect_factory)["open_reserved_pigs"]
 
 
 def get_dashboard_summary(today=None, connect_factory=None):

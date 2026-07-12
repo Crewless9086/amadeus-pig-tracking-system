@@ -4,6 +4,7 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_stock_summary,
     get_sales_stock_totals,
     get_meat_ready_stock_summary,
+    get_sales_metrics,
     get_pig_allocation_readiness,
     get_herdmaster_pig_allocation_alerts,
     get_purpose_review_queue,
@@ -75,8 +76,7 @@ def get_dashboard_data():
 def get_sales_dashboard_data():
     return {
         "success": True,
-        "totals": get_sales_stock_totals(),
-        "summary": get_sales_stock_summary(),
+        "sales_metrics": get_sales_metrics(),
         "meat_ready_stock": get_meat_ready_stock_summary(),
     }
 
