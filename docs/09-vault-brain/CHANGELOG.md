@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-12
+
+- Clarified the executive hierarchy as Charl -> CHARLIE -> CORE and business/farm command layers: CHARLIE is Charl's private digital executive, while CORE is the existing CHARLIE CORE mission engine.
+- Corrected FRED's canonical role to the planned client-facing enquiry and booking agent for Amadeus Private Transfers; FRED is not Finance, farm records, or general farm operations.
+
 ## 2026-07-11
 
 - Marked the first Herdmaster Pig Allocation alert automation as implemented: `/api/pig-weights/pig-allocation-alerts` is owner-read-guarded, read-only, advisory, includes pig plus litter/weaning alerts, and remains blocked from farm lifecycle, customer, public, order, sales, slaughter, reservation, stock, and migration writes.

@@ -7,7 +7,7 @@ Status: owner-approved structure draft, pending file-by-file owner review.
 ```text
 Charl
 +-- CHARLIE
-    +-- CHARLIE CORE
+    +-- CORE (internal/runtime name: CHARLIE CORE)
     |   +-- Planner
     |   +-- Architect
     |   +-- Builder
@@ -34,8 +34,8 @@ Charl
     |   |       +-- Ledger
     |   |
     |   +-- Amadeus Private Transfers
-    |       +-- CEO: FRED
-    |       +-- future booking, dispatch, payment, and support agents
+    |       +-- Client booking agent: FRED
+    |       +-- future operations, dispatch, payment, and support agents
     |
     +-- Shared Departments
         +-- Marketing
@@ -61,9 +61,13 @@ Business environments own operations and direct customer/commercial execution fo
 
 Shared departments support every business environment and must not be buried inside one environment.
 
-CHARLIE CORE is the workflow/pro system under CHARLIE. CHARLIE CORE builds, tests, reviews, and releases work; it is not the owner-facing AI identity.
+CORE is the agentic workflow and execution system under CHARLIE. Its existing internal/runtime name remains CHARLIE CORE. CORE builds, tests, reviews, repairs, and releases work; it is not the owner-facing AI identity.
 
-CHARLIE is the owner command layer and the AI interface Charl speaks to.
+CHARLIE is Charl's private digital self: the highest AI command identity, conversational interface, and cross-system commander. CHARLIE alone is designed for Charl's private access.
+
+Oom Sakkie is the always-available conversational farm command layer for approved farm managers. Oom Sakkie oversees farm operations and farm agents, but does not inherit CHARLIE's private, personal, or business-wide authority.
+
+FRED belongs to the separate Amadeus Private Transfers business environment. FRED is the planned client-facing transport enquiry and booking agent, not a finance agent and not a farm-records agent.
 
 The Vault Brain is the operating manual used by CHARLIE, CHARLIE CORE, and every agent.
 

@@ -4,6 +4,8 @@
 
 `/charlie-agents` is the owner-only operational view for agent training, trust, dependencies, and graduation evidence. It complements `/charlie-v2`:
 
+The organogram authority chain is `Charl -> CHARLIE -> CORE and business/farm command layers`. CHARLIE is Charl's private digital executive. CORE is the user-facing name for the existing CHARLIE CORE mission engine; internal identifiers remain unchanged. Oom Sakkie is the farm managers' conversational command layer. FRED is the planned client-facing booking agent for Amadeus Private Transfers and is not a finance or farm-records agent.
+
 - Mission Control shows queued and running work.
 - Agent Workforce shows who performs the work, which systems they depend on, and what evidence supports greater autonomy.
 
