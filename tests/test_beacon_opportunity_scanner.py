@@ -28,6 +28,29 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
         self.assertEqual(live['demand_cap'], 0)
         self.assertIn('supabase_allocation_readiness_unavailable', live['blockers'])
 
+    def test_future_dated_allocation_evidence_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-14', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3}], meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['status'], 'blocked')
+        self.assertFalse(live['freshness']['fresh'])
+        self.assertIn('future_dated_allocation_evidence', live['blockers'])
+
+    def test_any_unknown_live_demand_quantity_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        intakes = [
+            {'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 3},
+            {'conversation_id': 'C2', 'intake_status': 'Open'},
+        ]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=intakes, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_summary']['qualified_units'], 3)
+        self.assertEqual(live['demand_summary']['unknown_quantity_records'], 1)
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['status'], 'blocked')
+        self.assertIn('unknown_live_stock_demand_quantity', live['blockers'])
+
     def test_meat_cap_is_zero_in_controlled_mode(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'pigs': []}
         leads = [{'lead_id': 'L1', 'chatwoot_conversation_id': 'C1', 'status': 'interested', 'interest': {'quantity': 4, 'sam_intake_lane': 'meat_preorder'}}]
