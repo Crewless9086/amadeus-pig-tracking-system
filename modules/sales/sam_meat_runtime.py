@@ -34,6 +34,7 @@ from modules.sales.meat_documents import (
     send_meat_estimated_quote_to_chatwoot,
 )
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
+from modules.sales.sam_meat_control_mode import sam_meat_control_policy
 from modules.sales.chatwoot_hygiene import (
     HYGIENE_ENABLED_ENV,
     sync_sam_meat_chatwoot_hygiene,
@@ -155,6 +156,7 @@ def handle_sam_meat_chatwoot_inbound(
     llm_reply_rewriter=None,
 ):
     source = environ if environ is not None else os.environ
+    control_policy = sam_meat_control_policy()
     inbound = parse_chatwoot_inbound(payload)
     if not inbound["processable"]:
         return {
@@ -345,7 +347,7 @@ def handle_sam_meat_chatwoot_inbound(
     document_sent = False
     send_status = "autoreply_not_enabled"
     document_send_status = "not_requested"
-    if decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
+    if decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)) and control_policy["customer_public_output_enabled"]:
         if inbound["whatsapp_window_state"] != "open":
             send_status = "whatsapp_window_not_open"
             document_send_status = "whatsapp_window_not_open"
@@ -380,6 +382,8 @@ def handle_sam_meat_chatwoot_inbound(
                 send_status = "chatwoot_send_failed"
                 document_send_status = "skipped_autoreply_failed"
                 _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_failed", decision["reply_text"], send_result)
+    elif decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
+        send_status = "controlled_mode_owner_review_required"
 
     status_code = 200 if record_status in {200, 201, 400} else record_status
     result = {
@@ -2191,6 +2195,10 @@ def _latest_event_type(lead):
 
 
 def _record_booking_confirmation_if_ready(inbound, prior_context):
+    return {"recorded": False, "status": "controlled_mode_blocked"}
+
+
+def _disabled_record_booking_confirmation_if_ready(inbound, prior_context):
     prior_context = prior_context if isinstance(prior_context, dict) else {}
     lead_id = _clean(prior_context.get("lead_id"), 100)
     if not lead_id:
@@ -2280,6 +2288,10 @@ def _apply_meat_pilot_defaults(facts):
 
 
 def _record_delivery_address_if_ready(lead_id, inbound, facts):
+    return {"recorded": False, "status": "controlled_mode_blocked"}
+
+
+def _disabled_record_delivery_address_if_ready(lead_id, inbound, facts):
     lead_id = _clean(lead_id, 100)
     if not lead_id or facts.get("delivery_or_collection") != "delivery":
         return {"recorded": False, "status": "not_delivery"}
@@ -2382,6 +2394,10 @@ def _record_deposit_instruction_event(lead_id, message, reference, estimate):
 
 
 def _record_pop_if_ready(inbound, prior_context, source):
+    return {"recorded": False, "detected": False, "status": "controlled_mode_blocked"}
+
+
+def _disabled_record_pop_if_ready(inbound, prior_context, source):
     if not _pop_or_payment_proof_intent(inbound.get("content")):
         return {"recorded": False, "detected": False, "status": "not_payment_proof"}
     prior_context = prior_context if isinstance(prior_context, dict) else {}

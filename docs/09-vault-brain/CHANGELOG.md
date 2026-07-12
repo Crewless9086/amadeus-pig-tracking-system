@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-12
+
+- Put SAM Meat into fail-closed `interest_capture_only` mode until the complete butcher loop is proven and explicitly owner-approved; only structured interest capture and owner-review reply preparation remain permitted.
+
 ## 2026-07-11
 
 - Marked the first Herdmaster Pig Allocation alert automation as implemented: `/api/pig-weights/pig-allocation-alerts` is owner-read-guarded, read-only, advisory, includes pig plus litter/weaning alerts, and remains blocked from farm lifecycle, customer, public, order, sales, slaughter, reservation, stock, and migration writes.

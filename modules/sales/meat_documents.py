@@ -3,6 +3,7 @@ import hmac
 import json
 import mimetypes
 import os
+from modules.sales.sam_meat_control_mode import controlled_mode_denial
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -233,6 +234,9 @@ def build_estimated_quote_packet_from_contract(lead, contract, price_entries=Non
 
 
 def generate_meat_estimated_quote_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_estimated_quote_pdf")
+    if denial:
+        return denial
     packet, status_code = build_meat_estimated_quote_packet(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return packet, status_code
@@ -263,6 +267,9 @@ def generate_meat_estimated_quote_pdf(lead_id, payload=None, environ=None, datab
 
 
 def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, database_url=None, chatwoot_sender=None):
+    denial = controlled_mode_denial("send_estimated_quote")
+    if denial:
+        return denial
     payload = payload if isinstance(payload, dict) else {}
     source = environ if environ is not None else os.environ
     lead_id = _clean(lead_id, 100)
@@ -672,6 +679,9 @@ def normalize_meat_document_delivery_status_payload(payload):
 
 
 def generate_meat_deposit_pro_forma_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_deposit_pro_forma")
+    if denial:
+        return denial
     quote_packet, status_code = build_meat_estimated_quote_packet(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return quote_packet, status_code
@@ -759,6 +769,9 @@ def build_final_invoice_packet_from_reconciliation(lead_id, payload=None, enviro
 
 
 def generate_meat_final_invoice_pdf(lead_id, payload=None, environ=None, database_url=None):
+    denial = controlled_mode_denial("generate_final_invoice")
+    if denial:
+        return denial
     packet, status_code = build_final_invoice_packet_from_reconciliation(lead_id, payload, environ=environ, database_url=database_url)
     if status_code >= 400:
         return packet, status_code
