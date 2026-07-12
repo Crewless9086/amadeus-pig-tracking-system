@@ -234,6 +234,10 @@ def update_order(order_id: str, cleaned_data: dict):
         update_map["Notes"] = cleaned_data["notes"]
         updated_fields.append("notes")
 
+    if "conversation_id" in cleaned_data:
+        update_map["Conversation_ID"] = str(cleaned_data["conversation_id"]).strip()
+        updated_fields.append("conversation_id")
+
     if "payment_method" in cleaned_data:
         pm = str(cleaned_data["payment_method"]).strip()
         if pm not in ("Cash", "EFT"):

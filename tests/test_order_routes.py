@@ -119,6 +119,18 @@ class OrderRoutesTests(unittest.TestCase):
             "errors": ["Terminal orders cannot be updated."],
         })
 
+    def test_update_order_route_accepts_saved_conversation_id(self):
+        service_result = {"success": True, "order_id": "ORD-1", "updated_fields": ["conversation_id"]}
+        with patch.object(order_routes, "update_order", return_value=service_result) as update:
+            response = self.client.patch(
+                "/api/master/orders/ORD-1",
+                json={"conversation_id": "1871", "changed_by": "Tester"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        self.assertEqual(update.call_args.args[1]["conversation_id"], "1871")
+
     def test_create_order_line_route_validates_payload_and_returns_created(self):
         service_result = {
             "success": True,

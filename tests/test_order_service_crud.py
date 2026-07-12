@@ -116,6 +116,17 @@ class OrderCrudServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No valid order fields"):
                 order_write.update_order("ORD-1", {"changed_by": "Tester"})
 
+    def test_update_order_saves_conversation_id_beyond_draft(self):
+        with patch.object(order_write, "_get_order_master_row", return_value={"Order_ID": "ORD-1", "Order_Status": "Approved"}), \
+             patch.object(order_write, "_update_sheet_row_by_id") as update_row:
+            result = order_write.update_order(
+                "ORD-1",
+                {"conversation_id": "1871", "changed_by": "Tester"},
+            )
+
+        self.assertEqual(result["updated_fields"], ["conversation_id"])
+        self.assertEqual(update_row.call_args.args[2]["Conversation_ID"], "1871")
+
     def test_create_order_line_appends_available_pig_with_defaults(self):
         with patch.object(order_write, "get_available_pigs_for_orders", return_value=[available_pig()]), \
              patch.object(order_write, "get_all_records", return_value=[]), \

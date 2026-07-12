@@ -156,7 +156,11 @@
         <div class="document-control-row">
           <div class="form-group document-conversation-field">
             <label for="document_conversation_id">Chatwoot Conversation ID</label>
-            <input id="document_conversation_id" name="document_conversation_id" type="text" />
+            <div class="saved-conversation-control">
+              <input id="document_conversation_id" name="document_conversation_id" type="text" placeholder="Enter once for this order" />
+              <button id="save_conversation_id_btn" type="button" class="small-action-button">Save</button>
+            </div>
+            <span class="field-helper">Saved to this order and reused for document sends.</span>
           </div>
 
           <div class="form-actions compact-actions document-actions">

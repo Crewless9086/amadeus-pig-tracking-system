@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", function () {
   setupOrderLineForm(orderId);
   setupOrderActions(orderId);
   setupDocumentActions(orderId);
+  setupConversationIdSave(orderId);
 });
 
 function showElement(element) {
@@ -157,10 +158,45 @@ function applyDocumentActionVisibility(order, documents) {
   setVisibleDisabled(loadingSheetBtn, invoiceEligible && !terminal, terminal);
   setVisibleDisabled(removalBtn, invoiceEligible && !terminal, terminal);
   setVisibleDisabled(healthBtn, invoiceEligible && !terminal, terminal);
-  if (conversationInput) {
-    const field = conversationInput.closest(".document-conversation-field");
-    if (field) field.classList.toggle("hidden", !conversationInput.value && !order.conversation_id);
-  }
+}
+
+function setupConversationIdSave(orderId) {
+  const button = document.getElementById("save_conversation_id_btn");
+  const input = document.getElementById("document_conversation_id");
+  const messageBox = document.getElementById("document_action_message");
+  if (!button || !input) return;
+  button.addEventListener("click", async () => {
+    const conversationId = input.value.trim();
+    if (!conversationId) {
+      messageBox.classList.remove("hidden", "message-success");
+      messageBox.classList.add("message-error");
+      messageBox.textContent = "Enter the Chatwoot Conversation ID first.";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Saving...";
+    try {
+      const response = await fetch(`/api/master/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, changed_by: "App" }),
+      });
+      const result = await response.json();
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      if (!response.ok || !result.success) {
+        throw new Error((result.errors || [result.message || "Save failed."]).join(" "));
+      }
+      messageBox.classList.add("message-success");
+      messageBox.textContent = `Conversation ${conversationId} saved to this order.`;
+      await loadOrderDetail(orderId);
+    } catch (error) {
+      messageBox.classList.add("message-error");
+      messageBox.textContent = error.message || "Conversation ID could not be saved.";
+    } finally {
+      button.disabled = false;
+      button.textContent = "Save";
+    }
+  });
 }
 
 function setVisibleDisabled(element, visible, disabled) {

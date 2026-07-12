@@ -214,6 +214,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.saved-conversation-control {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  gap: 8px;
+}
+
+.saved-conversation-control .small-action-button {
+  min-width: 68px;
+}
+
 @media (max-width: 900px) {
   .order-detail-shell { padding: 0; }
   .order-detail-card { border: 0; border-radius: 0; padding: 18px 14px 28px; }

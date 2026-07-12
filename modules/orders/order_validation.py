@@ -214,6 +214,7 @@ def validate_update_order_payload(payload: dict):
         "notes",
         "changed_by",
         "payment_method",
+        "conversation_id",
     }
 
     for key in payload.keys():
@@ -285,6 +286,13 @@ def validate_update_order_payload(payload: dict):
         else:
             cleaned_data["payment_method"] = pm
 
+    if "conversation_id" in payload:
+        conversation_id = str(payload.get("conversation_id", "")).strip()
+        if len(conversation_id) > 100:
+            errors.append("conversation_id must be 100 characters or fewer.")
+        else:
+            cleaned_data["conversation_id"] = conversation_id
+
     cleaned_data["changed_by"] = str(payload.get("changed_by", "App")).strip() or "App"
 
     updatable_fields_present = any(
@@ -297,6 +305,7 @@ def validate_update_order_payload(payload: dict):
             "collection_location",
             "notes",
             "payment_method",
+            "conversation_id",
         )
     )
 
