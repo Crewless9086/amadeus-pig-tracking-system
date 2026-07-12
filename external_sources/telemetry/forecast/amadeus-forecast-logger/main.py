@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -29,7 +30,9 @@ HEADERS = [
     "lon",
 ]
 
-OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_URL = os.getenv("OPEN_METEO_API_URL", "https://api.open-meteo.com/v1/forecast").strip()
+OPEN_METEO_API_KEY = os.getenv("OPEN_METEO_API_KEY", "").strip()
+OPEN_METEO_MAX_RETRIES = max(0, int(os.getenv("OPEN_METEO_MAX_RETRIES", "2")))
 
 AMADEUS_BACKEND_URL = os.getenv("AMADEUS_BACKEND_URL", "").strip().rstrip("/")
 TELEMETRY_INGEST_API_KEY = os.getenv("TELEMETRY_INGEST_API_KEY", "").strip()
@@ -83,6 +86,10 @@ def get_or_create_ws(spreadsheet: gspread.Spreadsheet, title: str, rows: int = 2
         return spreadsheet.add_worksheet(title=title, rows=str(rows), cols=str(cols))
 
 
+class ForecastProviderRateLimited(RuntimeError):
+    pass
+
+
 def fetch_open_meteo_daily(lat: float, lon: float, tz: str, days: int) -> dict:
     params = {
         "latitude": lat,
@@ -98,10 +105,32 @@ def fetch_open_meteo_daily(lat: float, lon: float, tz: str, days: int) -> dict:
             "precipitation_probability_max",
         ]),
     }
-    response = requests.get(OPEN_METEO_URL, params=params, timeout=30)
-    if response.status_code != 200:
-        raise RuntimeError(f"Open-Meteo non-200: {response.status_code} {response.text[:200]}")
-    return response.json()
+    if OPEN_METEO_API_KEY:
+        params["apikey"] = OPEN_METEO_API_KEY
+
+    for attempt in range(OPEN_METEO_MAX_RETRIES + 1):
+        response = requests.get(OPEN_METEO_URL, params=params, timeout=30)
+        if response.status_code == 200:
+            return response.json()
+
+        response_excerpt = response.text[:200]
+        if response.status_code == 429:
+            if "daily api request limit exceeded" in response.text.lower():
+                raise ForecastProviderRateLimited("Open-Meteo daily request limit exceeded")
+            if attempt < OPEN_METEO_MAX_RETRIES:
+                retry_after = response.headers.get("Retry-After", "")
+                delay = int(retry_after) if retry_after.isdigit() else 2 ** attempt
+                time.sleep(min(max(delay, 1), 30))
+                continue
+            raise ForecastProviderRateLimited("Open-Meteo request rate limited")
+
+        if response.status_code >= 500 and attempt < OPEN_METEO_MAX_RETRIES:
+            time.sleep(min(2 ** attempt, 30))
+            continue
+
+        raise RuntimeError(f"Open-Meteo non-200: {response.status_code} {response_excerpt}")
+
+    raise RuntimeError("Open-Meteo request failed without a response")
 
 
 def build_rows(data: dict, lat: float, lon: float, tz: str) -> list[list]:
@@ -200,7 +229,17 @@ def main():
     tz = env_required("TIMEZONE")
     days = int(os.getenv("DAYS", "10"))
 
-    data = fetch_open_meteo_daily(lat=lat, lon=lon, tz=tz, days=days)
+    try:
+        data = fetch_open_meteo_daily(lat=lat, lon=lon, tz=tz, days=days)
+    except ForecastProviderRateLimited as exc:
+        print(json.dumps({
+            "success": False,
+            "status": "provider_rate_limited",
+            "provider": "open_meteo",
+            "existing_forecast_preserved": True,
+            "error": str(exc),
+        }))
+        return
     rows = build_rows(data=data, lat=lat, lon=lon, tz=tz)
 
     google_sheets_written = False
