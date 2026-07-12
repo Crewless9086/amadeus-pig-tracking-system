@@ -22,6 +22,10 @@
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 - Clarified the SAM Live Stock draft-order workflow: when conversation memory already has a `draft_order_id`, SAM must reuse it and sync draft lines instead of creating a duplicate draft order before quote preparation.
 
+## 2026-07-12
+
+- Tightened the BEACON fulfilment-aware opportunity scanner rule so live-stock demand caps count only eligible animals whose fresh current weight falls inclusively within any supplied requested weight range; contradictory, unparseable, or category-plus-weight mismatched demand now fails closed.
+
 ## 2026-07-09
 
 - Added the SAM Live Stock durable `next_action` contract for inbound Chatwoot decisions, while preserving owner gates for customer send, quote send, reservation, payment, and stock movement.

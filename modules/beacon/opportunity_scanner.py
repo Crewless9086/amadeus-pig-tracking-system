@@ -3,6 +3,7 @@
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
 from math import ceil
+import re
 
 from modules.oom_sakkie.sales_campaign_store import list_sales_leads
 from modules.pig_weights.pig_weights_service import (
@@ -86,6 +87,28 @@ def _row_demand_items(row):
     }]
 
 
+def _weight_bounds(value):
+    text = str(value or "").strip().lower().replace("_", " ")
+    if not text:
+        return None, False
+    numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", text)]
+    if len(numbers) == 1:
+        return (numbers[0], numbers[0]), True
+    if len(numbers) != 2 or numbers[0] > numbers[1]:
+        return None, True
+    return (numbers[0], numbers[1]), True
+
+
+def _pig_matches_weight(pig, bounds):
+    if bounds is None:
+        return True
+    try:
+        weight = float(pig.get("latest_weight_kg"))
+    except (TypeError, ValueError):
+        return False
+    return bounds[0] <= weight <= bounds[1]
+
+
 def _deduplicated_demand(rows, lane, compatible_categories=None):
     excluded_statuses = {"closed", "not_interested", "cancelled", "fulfilled", "expired"}
     seen = set()
@@ -93,7 +116,9 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
     accepted = []
     unknown_quantity = 0
     incompatible_records = 0
+    invalid_weight_records = 0
     units_by_category = {}
+    requirements = []
     compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
     for row in rows if isinstance(rows, list) else []:
         if str(row.get("status") or row.get("intake_status") or "").strip().lower() in excluded_statuses:
@@ -117,16 +142,28 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
             unknown_quantity += 1
             continue
         if lane == "live_stock":
-            item_categories = {_normalized_category(item.get("category") or item.get("weight_range")) for item in demand_items}
+            item_categories = {_normalized_category(item.get("category")) for item in demand_items}
             if not item_categories or "" in item_categories or not item_categories.issubset(compatible_categories):
                 incompatible_records += 1
                 continue
+            parsed_items = []
             for item in demand_items:
-                item_category = _normalized_category(item.get("category") or item.get("weight_range"))
-                units_by_category[item_category] = units_by_category.get(item_category, 0) + _quantity(item)
+                bounds, supplied = _weight_bounds(item.get("weight_range"))
+                if supplied and bounds is None:
+                    invalid_weight_records += 1
+                    parsed_items = []
+                    break
+                item_category = _normalized_category(item.get("category"))
+                parsed_items.append({"category": item_category, "quantity": _quantity(item), "weight_bounds_kg": bounds})
+            if not parsed_items:
+                continue
+            for parsed_item in parsed_items:
+                item_category = parsed_item["category"]
+                units_by_category[item_category] = units_by_category.get(item_category, 0) + parsed_item["quantity"]
+                requirements.append(parsed_item)
         units += sum(_quantity(item) for item in demand_items)
         accepted.append(identity)
-    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "source_ids": sorted(accepted)}
+    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "requirements": requirements, "source_ids": sorted(accepted)}
 
 
 def _fingerprint(lane, category, source_ids):
@@ -188,9 +225,17 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
         demanded_categories = set(live_demand["qualified_units_by_category"])
         pigs = [pig for pig in eligible if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) in demanded_categories]
         supply_by_category = {}
-        for pig in pigs:
-            pig_category = _normalized_category(pig.get("sale_category") or pig.get("weight_band"))
-            supply_by_category[pig_category] = supply_by_category.get(pig_category, 0) + 1
+        weight_mismatch_records = 0
+        for demanded_category in demanded_categories:
+            category_pigs = [pig for pig in pigs if _normalized_category(pig.get("sale_category") or pig.get("weight_band")) == demanded_category]
+            matched_ids = set()
+            for requirement in [item for item in live_demand["requirements"] if item["category"] == demanded_category]:
+                matches = [pig for pig in category_pigs if _pig_matches_weight(pig, requirement["weight_bounds_kg"])]
+                if not matches:
+                    weight_mismatch_records += 1
+                for pig in matches:
+                    matched_ids.add(str(pig.get("pig_id")))
+            supply_by_category[demanded_category] = len(matched_ids)
         capacity_by_category = {}
         for demanded_category, demanded_units in live_demand["qualified_units_by_category"].items():
             category_verified = supply_by_category.get(demanded_category, 0)
@@ -222,6 +267,10 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("unknown_live_stock_demand_quantity")
         if live_demand["incompatible_records"]:
             blockers.append("incompatible_live_stock_demand")
+        if live_demand["invalid_weight_records"]:
+            blockers.append("invalid_live_stock_weight_requirement")
+        if weight_mismatch_records:
+            blockers.append("incompatible_live_stock_weight_requirement")
         if not live_demand["qualified_units"]:
             blockers.append("no_quantified_uncommitted_live_stock_demand")
         cap = sum(item["demand_cap"] for item in capacity_by_category.values()) if not blockers else 0
