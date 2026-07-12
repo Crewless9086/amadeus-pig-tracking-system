@@ -833,7 +833,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_handle_inbound_autoreply_sends_and_records_audit_events(self, mock_record, mock_contract, mock_fulfillment, mock_event):
+    def test_handle_inbound_autoreply_is_blocked_in_controlled_mode(self, mock_record, mock_contract, mock_fulfillment, mock_event):
         mock_record.return_value = ({
             "success": True,
             "status": "ok",
@@ -862,12 +862,12 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(status_code, 200)
-        self.assertTrue(result["sent"])
-        self.assertTrue(result["sends_customer_message"])
-        self.assertTrue(result["calls_chatwoot"])
-        sender.assert_called_once()
-        event_types = [call.args[1]["event_type"] for call in mock_event.call_args_list]
-        self.assertEqual(event_types, ["sam_meat_autoreply_attempted", "sam_meat_autoreply_sent"])
+        self.assertFalse(result["sent"] )
+        self.assertFalse(result["sends_customer_message"] )
+        self.assertFalse(result["calls_chatwoot"] )
+        self.assertEqual(result["send_status"], "controlled_mode_owner_review_required")
+        sender.assert_not_called()
+        mock_event.assert_not_called()
 
     @patch("modules.sales.sam_meat_runtime.sync_sam_meat_chatwoot_hygiene")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")

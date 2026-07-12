@@ -130,12 +130,11 @@ def build_dad_booking_packet(lead_id, payload=None, database_url=None):
 
 
 def record_meat_fulfillment_event(lead_id, payload=None, database_url=None):
-    denial = controlled_mode_denial("record_fulfillment_event")
-    if denial:
-        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     event_type = _clean(payload.get("event_type"), 100)
+    if event_type != "delivery_address_captured":
+        return controlled_mode_denial("record_fulfillment_event")
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
     if event_type not in FULFILLMENT_EVENT_TYPES:
@@ -322,14 +321,12 @@ def approve_meat_journey_notification(lead_id, payload=None, database_url=None):
 
 
 def send_meat_journey_notification(lead_id, payload=None, database_url=None, sender=None):
-    denial = controlled_mode_denial("send_customer_journey_notification")
-    if denial:
-        return denial
     payload = payload if isinstance(payload, dict) else {}
     lead_id = _clean(lead_id, 100)
     message = _clean(payload.get("message"), 1600)
     if not _env_truthy(os.getenv(JOURNEY_NOTIFICATION_SEND_ENABLED_ENV)):
         return {"success": False, "status": "meat_journey_notification_send_disabled", "sent": False, **_authority(False)}, 503
+    return controlled_mode_denial("send_customer_journey_notification")
     if not message:
         return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
     database_url = _db_url(database_url)
