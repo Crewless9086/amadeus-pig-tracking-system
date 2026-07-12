@@ -421,8 +421,23 @@ def explicit_non_ui_requested(text):
 def classify_workflow_template(mission_type="", raw_text=""):
     haystack = f"{mission_type} {raw_text}".lower()
     explicit_non_ui = explicit_non_ui_requested(haystack)
-    if not explicit_non_ui and re.search(r"\b(ui|frontend|dashboard|visual|page|browser|screen|interface|command center|control room)\b", haystack):
+    explicit_ui = re.search(
+        r"\b(ui|frontend|dashboard|page|browser|screen|interface|command center|control room)\b",
+        haystack,
+    )
+    visual_ui = (
+        re.search(r"\bvisual\b.{0,50}\b(layout|screen|page|interface|ui|frontend|dashboard)\b", haystack)
+        or re.search(r"\b(layout|screen|page|interface|ui|frontend|dashboard)\b.{0,50}\bvisual\b", haystack)
+    )
+    if not explicit_non_ui and (explicit_ui or visual_ui):
         return "ui_product_build"
+    implementation_request = re.search(
+        r"\b(build|implement|develop|code|create|fix|repair|upgrade)\b.{0,120}"
+        r"\b(scanner|api|backend|service|module|data model|database reader|endpoint)\b",
+        haystack,
+    )
+    if implementation_request:
+        return "software_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():
         if template_id == "ui_product_build":
             continue

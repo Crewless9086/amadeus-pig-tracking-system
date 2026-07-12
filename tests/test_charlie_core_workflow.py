@@ -58,6 +58,31 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
             "system_improvement",
         )
 
+    def test_beacon_brand_governance_does_not_route_to_ui_workflow(self):
+        self.assertEqual(
+            classify_workflow_template(
+                "marketing governance",
+                "Define approved brand voice and visual rules, KPI definitions, owner tiers and channel boundaries.",
+            ),
+            "system_improvement",
+        )
+
+    def test_beacon_scanner_build_uses_implementation_workflow(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-BEACON-SCANNER",
+            "title": "BEACON Fulfilment-Aware Opportunity Scanner",
+            "raw_text": "Build a Supabase-first scanner that detects safe livestock and meat marketing opportunities.",
+            "mission_type": "marketing intelligence",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertLess(agents.index("builder"), agents.index("tester"))
+
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
