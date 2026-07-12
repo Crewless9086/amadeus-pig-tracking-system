@@ -36,6 +36,8 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 - Historical line prices must not change when `SALES_PRICING` changes later.
 - `ORDER_STATUS_LOG` / `order_status_logs` is append-only for normal operations.
 - Documents preserve VAT/payment snapshots; invoices must not recalculate totals independently from the selected quote.
+- A live-stock delivery-option packet is advisory pre-quote metadata, not proof of an accepted order or delivery commitment. Its contract includes customer request, eligibility/reason, destination address/place/town/area/coordinates/maps URL/notes, one-way kilometres, distance source, rate/rate source, estimated charge, fee source, status, and owner-override approval/amount/rate/reason/source.
+- Delivery-option fields remain in backend packets until a separately approved persistence migration defines their Supabase owner. Missing distance evidence must not become a zero charge.
 
 ## Lifecycle Rules
 

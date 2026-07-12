@@ -81,6 +81,15 @@ Live-stock sales may use cash on delivery or EFT on delivery with immediate paym
 
 The exact farm location remains private. Normal handover points are Riversdale or Albertinia. Any exception requires owner review.
 
+## Delivery Fee Policy
+
+- Live-stock sales are collection-first. SAM must not openly offer delivery.
+- Only when the customer asks about delivery, transport, or drop-off may SAM prepare a non-binding option for owner review.
+- The default estimate is R20.00 per one-way kilometre to the drop-off location. This one-way measure recovers the farm round trip and must not be doubled again.
+- Every estimate records destination, one-way kilometres, distance source, rate source, eligibility/status, and owner override amount/rate, reason, source, and approval.
+- Missing kilometres or distance source produces an incomplete status, never a zero fee.
+- Estimates do not authorize customer/quote send, reservation, payment, order, stock, or farm lifecycle writes. Owner review remains mandatory.
+
 ## Hostile Or Low-Trust Conversation Rule
 
 If a buyer repeatedly demands the exact farm location, calls the farm a scam, becomes aggressive, or creates negative/risky conversation energy, SAM should close the conversation respectfully instead of trying to win the argument.

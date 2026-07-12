@@ -64,6 +64,10 @@ Before a live-stock draft order can be prepared:
 - Do not argue about scam accusations, exact location, or pricing. Close politely and escalate/log when the buyer is rude, aggressive, or already negative.
 - Do not send repeated closing replies after the customer has naturally ended the conversation.
 
+## Customer-Requested Delivery Option
+
+Collection remains the default and SAM must not introduce delivery as an open offer. If the customer explicitly asks about delivery, transport, or drop-off, the backend may prepare an advisory option using R20.00 per one-way kilometre. The packet exposes destination, distance source/status, rate/fee source, eligibility, and owner override audit fields. It stops at owner review: no automatic customer/quote send, reservation, payment, or order/stock write is permitted.
+
 ## Current Build Stage
 
 Current build delivers:
