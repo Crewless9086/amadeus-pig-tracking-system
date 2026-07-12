@@ -40,6 +40,8 @@ Generated fallback screenshots must be labelled as generated packets, not live s
 
 Test evidence must include exact commands and results.
 
+For PR-backed missions it must also include the expected PR head SHA and the exact tested SHA. Tests from a base branch, stale branch, or different PR are not evidence for the current mission.
+
 "Looks good" is not evidence.
 
 ## Release Evidence
@@ -78,3 +80,5 @@ A review packet is weak if the owner cannot answer these quickly:
 - What happens if I approve it?
 
 If those answers are missing, Brain Guard should block review-ready status.
+
+Brain Guard blocking means internal evidence repair unless the packet identifies an explicit owner decision or red-zone approval. Environment failures, branch conflicts, stale revisions, missing evidence, and unrelated findings must not be presented as owner decisions.

@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", function () {
   setupOrderLineForm(orderId);
   setupOrderActions(orderId);
   setupDocumentActions(orderId);
+  setupConversationIdSave(orderId);
 });
 
 function showElement(element) {
@@ -152,11 +153,125 @@ function applyDocumentActionVisibility(order, documents) {
     conversationInput.value = order.conversation_id || "";
   }
 
-  if (quoteBtn) quoteBtn.disabled = terminal;
-  if (invoiceBtn) invoiceBtn.disabled = !invoiceEligible || !hasQuote;
-  if (loadingSheetBtn) loadingSheetBtn.disabled = terminal;
-  if (removalBtn) removalBtn.disabled = terminal;
-  if (healthBtn) healthBtn.disabled = terminal;
+  setVisibleDisabled(quoteBtn, !terminal, terminal);
+  setVisibleDisabled(invoiceBtn, invoiceEligible && hasQuote, !invoiceEligible || !hasQuote);
+  setVisibleDisabled(loadingSheetBtn, invoiceEligible && !terminal, terminal);
+  setVisibleDisabled(removalBtn, invoiceEligible && !terminal, terminal);
+  setVisibleDisabled(healthBtn, invoiceEligible && !terminal, terminal);
+}
+
+function setupConversationIdSave(orderId) {
+  const button = document.getElementById("save_conversation_id_btn");
+  const input = document.getElementById("document_conversation_id");
+  const messageBox = document.getElementById("document_action_message");
+  if (!button || !input) return;
+  button.addEventListener("click", async () => {
+    const conversationId = input.value.trim();
+    if (!conversationId) {
+      messageBox.classList.remove("hidden", "message-success");
+      messageBox.classList.add("message-error");
+      messageBox.textContent = "Enter the Chatwoot Conversation ID first.";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Saving...";
+    try {
+      const response = await fetch(`/api/master/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, changed_by: "App" }),
+      });
+      const result = await response.json();
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      if (!response.ok || !result.success) {
+        throw new Error((result.errors || [result.message || "Save failed."]).join(" "));
+      }
+      messageBox.classList.add("message-success");
+      messageBox.textContent = `Conversation ${conversationId} saved to this order.`;
+      await loadOrderDetail(orderId);
+    } catch (error) {
+      messageBox.classList.add("message-error");
+      messageBox.textContent = error.message || "Conversation ID could not be saved.";
+    } finally {
+      button.disabled = false;
+      button.textContent = "Save";
+    }
+  });
+}
+
+function setVisibleDisabled(element, visible, disabled) {
+  if (!element) return;
+  if (visible) showElement(element); else hideElement(element);
+  element.disabled = Boolean(disabled);
+}
+
+function applyOrderWorkspaceState(order, lines, documents) {
+  const title = document.getElementById("order_workspace_title");
+  const subtitle = document.getElementById("order_workspace_subtitle");
+  const nextAction = document.getElementById("order_next_action");
+  const readiness = document.getElementById("order_readiness_note");
+  const primary = document.getElementById("order_primary_actions");
+  const stageDescription = document.getElementById("order_stage_description");
+  const headerPanel = document.getElementById("order_header_panel");
+  const addLinePanel = document.getElementById("add_line_panel");
+  const status = (order.order_status || "").trim();
+  const activeLines = lines.filter(line => line.line_status !== "Cancelled");
+  const missingPrices = activeLines.filter(line => Number(line.unit_price || 0) <= 0);
+  const hasQuote = documents.some(doc => doc.document_type === "Quote" && doc.document_status !== "Voided");
+  const total = activeLines.reduce((sum, line) => sum + Number(line.unit_price || 0), 0);
+
+  if (title) title.textContent = order.customer_name || order.order_id || "Order";
+  if (subtitle) subtitle.textContent = `${order.order_id} · ${status || "Unknown"} · ${activeLines.length} animal${activeLines.length === 1 ? "" : "s"}`;
+  if (headerPanel) headerPanel.open = status === "Draft" && activeLines.length === 0;
+  if (addLinePanel) addLinePanel.classList.toggle("hidden", status !== "Draft");
+
+  let actionText = "Review order";
+  let note = `${activeLines.length} selected · ${formatMoney(total)}`;
+  let buttonLabel = "";
+  let buttonTarget = null;
+  if (status === "Draft") {
+    actionText = activeLines.length ? "Complete the draft and send for approval" : "Add the first animal";
+    buttonLabel = activeLines.length ? "Send for approval" : "Add animal";
+    buttonTarget = activeLines.length ? document.getElementById("send_for_approval_btn") : addLinePanel;
+  } else if (missingPrices.length) {
+    actionText = `Apply current prices to ${missingPrices.length} line${missingPrices.length === 1 ? "" : "s"} and generate the quote`;
+    note = "Prices will come from the active Supabase livestock price list.";
+    buttonLabel = "Price & generate quote";
+    buttonTarget = document.getElementById("generate_quote_btn");
+  } else if (!hasQuote && ["Approved", "Draft"].includes(status)) {
+    actionText = "Generate the customer quote";
+    note = `Pricing ready · ${formatMoney(total)}`;
+    buttonLabel = "Generate quote";
+    buttonTarget = document.getElementById("generate_quote_btn");
+  } else if (hasQuote && status === "Approved") {
+    actionText = "Review or send the generated documents";
+    note = `Quote ready · ${formatMoney(total)}`;
+    buttonLabel = "View documents";
+    buttonTarget = document.getElementById("order_documents_panel");
+  } else if (status === "Completed") {
+    actionText = "Order completed";
+    note = "Documents and history remain available.";
+  } else if (status === "Cancelled") {
+    actionText = "Order cancelled";
+    note = "This order is read-only.";
+  }
+
+  if (nextAction) nextAction.textContent = actionText;
+  if (readiness) readiness.textContent = note;
+  if (stageDescription) stageDescription.textContent = `${status || "Unknown"} stage · only valid workflow actions are visible.`;
+  if (primary) {
+    primary.innerHTML = buttonLabel ? `<button type="button" class="order-primary-button">${escapeHtml(buttonLabel)}</button>` : "";
+    const button = primary.querySelector("button");
+    if (button && buttonTarget) {
+      button.addEventListener("click", () => {
+        if (buttonTarget instanceof HTMLButtonElement) buttonTarget.click();
+        else {
+          buttonTarget.open = true;
+          buttonTarget.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    }
+  }
 }
 
 async function loadOrderDetail(orderId) {
@@ -179,6 +294,7 @@ async function loadOrderDetail(orderId) {
     applyOrderActionVisibility(order);
     populateOrderHeaderForm(order);
     applyDocumentActionVisibility(order, documents);
+    applyOrderWorkspaceState(order, lines, documents);
     renderDraftLinesSummary(lines);
     renderOrderDocuments(documents);
     renderOrderSummary(order, lines, documents);
@@ -794,6 +910,8 @@ function setupDocumentActions(orderId) {
   const quoteBtn = document.getElementById("generate_quote_btn");
   const invoiceBtn = document.getElementById("generate_invoice_btn");
   const loadingSheetBtn = document.getElementById("generate_loading_sheet_btn");
+  const removalBtn = document.getElementById("generate_removal_certificate_btn");
+  const healthBtn = document.getElementById("generate_health_declaration_btn");
 
   if (quoteBtn) {
     quoteBtn.addEventListener("click", async function () {
@@ -910,7 +1028,14 @@ async function runDocumentGeneration(url, orderId, successText, formData) {
       await loadOrderDetail(orderId);
     } else {
       messageBox.classList.add("message-error");
-      messageBox.textContent = (result.errors || [result.message || "Document generation failed."]).join(" ");
+      const missing = (result.missing_fields || []).map(field => field.replaceAll("_", " ")).join(", ");
+      const unresolved = (result.pricing?.unresolved || []).map(line => `tag ${line.tag_number || line.pig_id}: ${line.reason}`).join("; ");
+      messageBox.textContent = [
+        ...(result.errors || []),
+        result.message || "",
+        missing ? `Missing: ${missing}.` : "",
+        unresolved ? `Pricing attention: ${unresolved}.` : "",
+      ].filter(Boolean).join(" ") || "Document generation failed.";
     }
   } catch (error) {
     console.error("Document generation error:", error);

@@ -15,30 +15,32 @@ TRUST_LEDGER_PATH = REPO_ROOT / "loop" / "memory" / "trust.tsv"
 
 
 WORKFORCE_DEFINITIONS = (
-    {"id": "charlie-core", "name": "CHARLIE CORE", "team": "Command", "role": "Mission controller and owner-gated build workforce.", "stage": "live_supervised"},
+    {"id": "charlie", "name": "CHARLIE", "team": "Owner Command", "role": "Charl's private digital executive, conversational interface and cross-system commander.", "stage": "planned"},
+    {"id": "charlie-core", "name": "CORE", "team": "Execution", "role": "Owner-gated agentic mission engine for building, repairing, testing and upgrading systems.", "stage": "live_supervised"},
     {"id": "codex-builder", "name": "Codex Builder", "team": "Build", "role": "Primary repository builder under CHARLIE mission contracts.", "stage": "live_supervised"},
     {"id": "review-qa", "name": "Review & QA", "team": "Build", "role": "Deterministic tests, reviewer and red-team quality gates.", "stage": "live_supervised", "registry_id": "gatekeeper"},
     {"id": "sam-live-stock", "name": "SAM Live Stock", "team": "Sales", "role": "Owner-reviewed live-stock conversations, sales preparation and learning.", "stage": "evidence_gathering", "registry_id": "sam"},
     {"id": "sam-meat", "name": "SAM Meat Sales", "team": "Sales", "role": "Meat lead intake and future owner-reviewed sales workflow.", "stage": "built_not_live", "registry_id": "butcher"},
-    {"id": "oom-sakkie", "name": "Oom Sakkie", "team": "Command", "role": "Owner interface, farm brief, routing and approvals.", "stage": "live_supervised", "registry_id": "oom-sakkie"},
+    {"id": "oom-sakkie", "name": "Oom Sakkie", "team": "Farm Command", "role": "Farm managers' conversational AI with oversight of farm operations and farm agents.", "stage": "live_supervised", "registry_id": "oom-sakkie"},
     {"id": "herdmaster", "name": "Herdmaster", "team": "Farm", "role": "Pig, litter, breeding, weaning and health intelligence.", "stage": "planned", "registry_id": "herdmaster"},
-    {"id": "fred", "name": "FRED", "team": "Farm", "role": "Future farm records and operational support agent.", "stage": "planned"},
+    {"id": "fred", "name": "FRED", "team": "Private Transfers", "role": "Planned client-facing transport enquiry and booking agent for Amadeus Private Transfers.", "stage": "planned"},
     {"id": "ledger", "name": "Ledger", "team": "Business", "role": "Sales, money, opportunities and business-readiness intelligence.", "stage": "planned", "registry_id": "ledger"},
     {"id": "beacon", "name": "Beacon", "team": "Business", "role": "Owner-reviewed public content and demand generation.", "stage": "planned", "registry_id": "beacon"},
 )
 
 
 CONNECTIONS = (
-    ("owner", "charlie-core", "controls"),
+    ("owner", "charlie", "owns"),
+    ("charlie", "charlie-core", "commands"),
+    ("charlie", "oom-sakkie", "delegates farm command"),
+    ("charlie", "fred", "commands business"),
+    ("charlie", "ledger", "coordinates"),
+    ("charlie", "beacon", "coordinates"),
     ("charlie-core", "codex-builder", "dispatches"),
     ("charlie-core", "review-qa", "gates"),
-    ("charlie-core", "sam-live-stock", "observes"),
-    ("charlie-core", "sam-meat", "observes"),
-    ("charlie-core", "oom-sakkie", "coordinates"),
+    ("oom-sakkie", "sam-live-stock", "coordinates"),
+    ("oom-sakkie", "sam-meat", "coordinates"),
     ("oom-sakkie", "herdmaster", "routes"),
-    ("oom-sakkie", "fred", "routes"),
-    ("oom-sakkie", "ledger", "routes"),
-    ("oom-sakkie", "beacon", "routes"),
     ("sam-live-stock", "supabase", "reads facts"),
     ("sam-live-stock", "chatwoot", "receives"),
     ("sam-live-stock", "telegram", "owner review"),
@@ -46,7 +48,7 @@ CONNECTIONS = (
 
 
 SYSTEM_NODES = (
-    {"id": "owner", "name": "Owner", "kind": "owner"},
+    {"id": "owner", "name": "Charl", "kind": "owner"},
     {"id": "supabase", "name": "Supabase", "kind": "system"},
     {"id": "chatwoot", "name": "Chatwoot", "kind": "system"},
     {"id": "telegram", "name": "Telegram", "kind": "system"},
@@ -222,10 +224,11 @@ def _metric(label: str, value: Any, target: Any, kind: str) -> dict[str, Any]:
 
 def _default_boundary(agent_id: str) -> str:
     return {
+        "charlie": "Private to Charl. Future execution must use approved tools, audit trails and owner authority rules.",
         "charlie-core": "Coordinates missions and evidence. Owner approval remains required for red-zone actions.",
         "codex-builder": "May edit approved repository scope and run tests. Cannot approve its own work.",
         "review-qa": "May verify and block. Cannot deploy or override owner decisions.",
-        "fred": "Planned only; no production authority exists.",
+        "fred": "Planned client-facing transport booking agent only; no production booking, pricing, payment or dispatch authority exists yet.",
     }.get(agent_id, "No production authority is granted until an approved workflow defines it.")
 
 

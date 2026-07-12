@@ -14,6 +14,9 @@ class CharlieAgentWorkforceFrontendTests(unittest.TestCase):
         self.assertIn('id="detailBody"', template)
         self.assertIn("/api/charlie/agent-workforce", script)
         self.assertIn("Not measured", script)
+        self.assertIn('name: "CHARLIE"', script)
+        self.assertIn('name: "Charl"', script)
+        self.assertIn('["charlie-core", "oom-sakkie", "fred", "ledger", "beacon"]', script)
         self.assertNotIn("setInterval(() => { state.packet = null", script)
 
 

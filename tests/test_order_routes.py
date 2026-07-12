@@ -119,6 +119,18 @@ class OrderRoutesTests(unittest.TestCase):
             "errors": ["Terminal orders cannot be updated."],
         })
 
+    def test_update_order_route_accepts_saved_conversation_id(self):
+        service_result = {"success": True, "order_id": "ORD-1", "updated_fields": ["conversation_id"]}
+        with patch.object(order_routes, "update_order", return_value=service_result) as update:
+            response = self.client.patch(
+                "/api/master/orders/ORD-1",
+                json={"conversation_id": "1871", "changed_by": "Tester"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        self.assertEqual(update.call_args.args[1]["conversation_id"], "1871")
+
     def test_create_order_line_route_validates_payload_and_returns_created(self):
         service_result = {
             "success": True,
@@ -371,6 +383,21 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(payload["action"], "generate_quote")
         self.assertIn("RuntimeError: drive offline", payload["errors"][0])
+
+    def test_refresh_order_pricing_route_returns_resolution_result(self):
+        service_result = {
+            "success": True,
+            "status": "order_prices_ready",
+            "order_id": "ORD-1",
+            "updated_count": 2,
+            "estimated_total": 1400,
+        }
+        with patch.object(order_routes, "ensure_order_line_prices", return_value=service_result) as ensure:
+            response = self.client.post("/api/orders/ORD-1/pricing", json={"reprice": True})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        ensure.assert_called_once_with("ORD-1", reprice=True)
 
     def test_order_search_route_passes_query_and_returns_400_for_validation_error(self):
         service_result = {

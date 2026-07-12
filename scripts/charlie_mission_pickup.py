@@ -18,6 +18,7 @@ from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
+from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -142,6 +143,11 @@ def watch_for_mission(
             if recovery.get("recovered_count"):
                 recovery["checks"] = checks
                 write_runner_heartbeat(recovery)
+            if checks == 1 or checks % 5 == 0:
+                reconciliation = reconcile_blocked_pr_missions(notify=notify)
+                if reconciliation.get("changed_count"):
+                    reconciliation["checks"] = checks
+                    write_runner_heartbeat(reconciliation)
             cleanup_result = process_visual_review_cleanup_queue()
             if cleanup_result.get("processed_count"):
                 cleanup_result["checks"] = checks
@@ -219,6 +225,82 @@ def watch_for_mission(
                 "checks": checks,
             }, 200
         time.sleep(interval_seconds)
+
+
+def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
+    missions, status_code = _owner_queue_missions(statuses=("blocked",), limit=50)
+    if status_code >= 400:
+        return {"success": False, "status": "blocked_pr_reconciliation_unavailable", "changed_count": 0}
+    changed = []
+    skipped = []
+    for mission in missions:
+        mission_id = str(mission.get("mission_id") or "").strip()
+        reference = mission_pr_reference(mission)
+        if not mission_id or not reference:
+            skipped.append({"mission_id": mission_id, "reason": "pr_reference_missing"})
+            continue
+        pr_state = query_pr_state(reference, run_subprocess=run_subprocess)
+        decision = reconciliation_decision(mission, pr_state)
+        if decision.get("action") == "none":
+            skipped.append({"mission_id": mission_id, "reason": decision.get("reason")})
+            continue
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        review_packet = dict(metadata.get("review_packet") or {})
+        review_packet["github_reconciliation"] = {
+            "reason": decision.get("reason"),
+            "head_sha": decision.get("head_sha", ""),
+            "pr_reference": reference,
+            "action": decision.get("action"),
+        }
+        if decision.get("action") == "mark_pr_ready":
+            review_packet.update({
+                "review_status": "ready_for_owner_review",
+                "blocked_agent": "",
+                "blocked_reason": "",
+                "unresolved_blockers": [],
+                "tested_revision": decision.get("head_sha", ""),
+                "recommended_next_action": "Owner can review the green, mergeable PR and its evidence.",
+            })
+        elif decision.get("action") == "queue_recovery":
+            disposition = decision.get("disposition") or {}
+            review_packet.update({
+                "review_status": "internal_recovery_queued",
+                "block_disposition": disposition,
+                "return_to_stage": disposition.get("responsible_stage", "builder"),
+                "recommended_next_action": f"CORE will recover from {disposition.get('responsible_stage', 'builder')}; no owner action is required.",
+            })
+        update_mission_vault(
+            mission_id,
+            {"review_packet": review_packet},
+            notes=f"Runner reconciled blocked mission from authoritative GitHub PR state: {decision.get('reason')}.",
+        )
+        updated, updated_code = update_mission_status(
+            mission_id,
+            decision.get("target_status"),
+            owner_decision="" if decision.get("target_status") == "approved" else str(mission.get("owner_decision") or ""),
+            event_type="status_changed",
+            notes=f"GitHub reconciliation: {decision.get('reason')}.",
+            metadata={"github_reconciliation": True, "head_sha": decision.get("head_sha", "")},
+            expected_status="blocked",
+        )
+        if updated_code >= 400:
+            skipped.append({"mission_id": mission_id, "reason": updated.get("status", "status_update_failed")})
+            continue
+        changed.append({"mission_id": mission_id, **decision})
+        if notify and decision.get("target_status") == "pr_ready":
+            _send_notification(
+                "pr_ready",
+                "CHARLIE mission reconciled as review ready",
+                f"Mission {mission_id} has green checks on the exact PR head and is ready for owner review.",
+                mission_id=mission_id,
+            )
+    return {
+        "success": True,
+        "status": "blocked_pr_reconciliation_complete",
+        "changed_count": len(changed),
+        "changed": changed,
+        "skipped": skipped,
+    }
 
 
 def _active_mission():
@@ -399,6 +481,16 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
             _send_review_ready_notification(result)
         elif status_code < 400 and result.get("status") in {"codex_execution_completed", "agent_execution_completed"}:
             _send_review_ready_notification(result)
+        elif status_code < 400 and result.get("status") == "agent_stage_recovery_queued":
+            _send_notification(
+                "running",
+                "CHARLIE internal recovery queued",
+                (
+                    f"Mission {mission_id} hit {result.get('block_disposition', {}).get('block_class', 'a recoverable failure')}. "
+                    f"CORE queued recovery from {result.get('block_disposition', {}).get('responsible_stage', result.get('agent', 'the responsible stage'))}; no owner action is required."
+                ),
+                mission_id=mission_id,
+            )
         else:
             _send_blocked_notification(
                 "CHARLIE agent execution blocked",
@@ -409,13 +501,13 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
 
 
 def _mission_requires_browser_preflight(mission):
+    if str(os.environ.get("CHARLIE_REQUIRE_BROWSER_PREFLIGHT") or "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
     mission = mission if isinstance(mission, dict) else {}
-    haystack = " ".join([
-        str(mission.get("title") or ""),
-        str(mission.get("mission_type") or ""),
-        str(mission.get("raw_text") or ""),
-    ]).lower()
-    return any(term in haystack for term in ("ui", "frontend", "dashboard", "visual", "browser", "screenshot", "family tree"))
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    truth = core.get("project_truth") if isinstance(core.get("project_truth"), dict) else {}
+    return str(truth.get("workflow_template") or "").strip() == "ui_product_build"
 
 
 def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):

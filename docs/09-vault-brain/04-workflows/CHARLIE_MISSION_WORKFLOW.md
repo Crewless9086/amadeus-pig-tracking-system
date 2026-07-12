@@ -47,7 +47,7 @@ Each stage must produce structured evidence:
 - Reviewer: owner review packet and recommended decision.
 - All stages: `vault_sources_used`, commands/files inspected, and either Vault updates or a no-update reason when relevant.
 
-Missing artifacts block progress. Tester failure returns to Builder. Reviewer send-back returns to the named stage and preserves prior artifacts.
+Missing artifacts stop the current stage, but they do not automatically create owner work. CORE classifies each stop as branch repair, environment retry, evidence repair, stale-state reconciliation, implementation repair, owner decision, or red-zone approval. The first five route internally to the responsible stage. Only an explicit owner decision or red-zone approval may remain owner-blocked. Tester failure caused by the current diff returns to Builder; unrelated or pre-existing findings are recorded as advisory backlog. Reviewer send-back returns to the named stage and preserves prior artifacts.
 
 ## Queue Discipline
 
@@ -71,7 +71,7 @@ The runner checks:
 - Vault-sensitive changes to CHARLIE runtime, agent docs, or workflow docs include `vault_updates` or `no_vault_update_required`;
 - preserved upstream artifacts from old send-back runs are visible as warnings, not silent truth.
 
-If these checks fail, Brain Guard blocks owner review and the mission remains blocked until the responsible stage fixes the evidence or updates the Vault.
+Brain Guard validates the persisted workflow contract produced during planning. It must not reclassify a non-UI mission as UI during final review or invent agents that were not required by that contract. If evidence checks fail, CORE queues the responsible internal stage; the mission becomes owner-blocked only after the durable recovery cap is exhausted or an actual owner decision is required.
 
 ## Autonomy Boundary
 
@@ -100,11 +100,17 @@ Every inbox item must identify its source agent, source type, exact proposed act
 
 Telegram and `/charlie` record mission authority, but they do not execute shell commands directly. A local runner/Codex process must pick up and execute approved work.
 
-If an agent subprocess times out or crashes, CHARLIE must convert the failure into a blocked review packet with stdout/stderr excerpts, return code, changed files, and recovery guidance. A timed-out runner must not leave a mission silently stuck in `in_progress`.
+If an agent subprocess times out or crashes, CHARLIE must record stdout/stderr excerpts, return code, changed files, blocker class, responsible stage, and recovery guidance, then queue an internal environment retry. A timed-out runner must not leave a mission silently stuck in `in_progress` or create false owner work. Repeated identical failures become an honest owner block only after the durable recovery cap is exhausted.
 
 When a runner result moves a mission to `pr_ready`, the review-ready notification must key off the mission status rather than a narrow internal status string.
 
-Existing `in_progress` missions must not be blindly re-executed by the watch loop. Until durable leases are implemented, the runner may execute only missions it just picked up from `approved`; stale or blocked work requires an explicit recovery/send-back decision.
+Existing `in_progress` missions must not be blindly re-executed by the watch loop. The watchdog recovers stale runner ownership. The continuous runner also reconciles legacy blocked missions against authoritative GitHub PR state: green mergeable PRs become review-ready, conflicts route to Publisher, current-head check failures route to Builder, and missing UI media routes to Visual QA.
+
+## Revision And Finding Contracts
+
+Review and test evidence must identify the packaged PR head as `expected_revision` and the actual checked commit as `tested_revision`. A proven mismatch is a stale-state recovery event, never valid owner-review evidence.
+
+Every finding must record `scope_relation`, `introduced_by_current_diff`, `blocking`, `severity`, `evidence`, and `responsible_stage`. Findings outside the current diff cannot block that mission unless they prove an active red-zone safety breach.
 
 Provider-specific stages must use the provider-aware runner path. If Claude/Anthropic fails transiently, CHARLIE may fall back to the local Codex provider for that stage and must record the fallback in runner evidence instead of blocking only because the provider was unavailable.
 

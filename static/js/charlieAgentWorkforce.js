@@ -105,10 +105,10 @@
   function renderMap() {
     const agents = new Map((state.packet.agents || []).map((agent) => [agent.id, agent]));
     const tiers = [
-      [{ id: "owner", name: "Owner", type: "owner", state: "Final authority" }],
-      [{ id: "charlie-core", name: "CHARLIE CORE", type: "command" }],
-      ["codex-builder", "review-qa", "sam-live-stock", "sam-meat", "oom-sakkie"].map((id) => nodeFromAgent(agents.get(id))),
-      ["herdmaster", "fred", "ledger", "beacon"].map((id) => nodeFromAgent(agents.get(id))),
+      [{ id: "owner", name: "Charl", type: "owner", state: "Founder / human authority" }],
+      [{ id: "charlie", name: "CHARLIE", type: "command", state: "Private digital executive" }],
+      ["charlie-core", "oom-sakkie", "fred", "ledger", "beacon"].map((id) => nodeFromAgent(agents.get(id))),
+      ["codex-builder", "review-qa", "sam-live-stock", "sam-meat", "herdmaster"].map((id) => nodeFromAgent(agents.get(id))),
       [
         { id: "supabase", name: "Supabase", type: "system", state: "Source of truth" },
         { id: "chatwoot", name: "Chatwoot", type: "system", state: "Conversations" },
@@ -124,7 +124,7 @@
 
   function nodeFromAgent(agent) {
     if (!agent) return null;
-    return { id: agent.id, name: agent.name, type: agent.id === "charlie-core" ? "command" : "agent", state: title(agent.stage), measured: agent.evidence?.measured };
+    return { id: agent.id, name: agent.name, type: agent.id === "charlie" ? "command" : "agent", state: title(agent.stage), measured: agent.evidence?.measured };
   }
 
   function mapNode(node) {

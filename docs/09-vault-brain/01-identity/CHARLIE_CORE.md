@@ -1,8 +1,8 @@
-# CHARLIE CORE
+# CORE (Internal Name: CHARLIE CORE)
 
-CHARLIE CORE is the workflow/pro system under CHARLIE. It turns owner ideas into scoped, tested, reviewable, and releasable work.
+CORE is the agentic workflow and execution system under CHARLIE. Its established internal code, route, database, and documentation identifiers may continue to use `CHARLIE CORE`. It turns owner ideas into scoped, tested, reviewable, and releasable work.
 
-CHARLIE CORE is not the owner-facing AI identity. CHARLIE is the interface; CHARLIE CORE is the mission engine CHARLIE uses to get work done properly.
+CORE is not the owner-facing AI identity. CHARLIE is Charl's private digital executive and interface; CORE is the mission engine CHARLIE uses to build, repair, test, and upgrade systems.
 
 ## Target Standard
 

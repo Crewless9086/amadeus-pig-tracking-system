@@ -1,5 +1,14 @@
 # Order Data Model
 
+## Live-Stock Price Snapshot Rule
+
+- Herdmaster/farm data supplies the selected pig's current category, weight band, sex, weight, and availability truth.
+- SAM Pricing resolves the active Supabase `sales_pricing` rule for that classification.
+- Orders snapshot the resolved unit price onto the order line when the animal is added or before the first quote is generated.
+- A blank or zero-priced active line must be repaired from the current price list before quote generation; the owner must not be required to type routine prices.
+- Existing positive order-line prices remain frozen. Repricing requires an explicit owner action so an old quote cannot change silently.
+- If no matching active rule exists, quote generation fails closed and identifies the exact affected line and classification.
+
 Order source-of-truth includes orders, order lines, order intakes, order intake items, order documents, order status logs, and sales pricing where migrated.
 
 Backend owns order logic, validation, reservations, lifecycle changes, and safe writes.

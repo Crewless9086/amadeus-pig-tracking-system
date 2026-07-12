@@ -51,6 +51,7 @@ from modules.charlie.mission_quality import (
     repo_test_command_memory,
     score_mission_quality,
 )
+from modules.charlie.block_recovery import classify_block, normalize_findings
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.source_map import (
     implementation_source_packet,
@@ -1943,6 +1944,17 @@ def _agent_stage_instruction(agent):
             "Compare the finished UI screenshots and local preview against the owner reference media and UI concept. Block if the result is only a color change, "
             "misses the reference layout, hides buttons, overflows, or lacks desktop/mobile proof."
         )
+    if agent == "publisher":
+        return (
+            "Prepare the existing PR for owner review without merging. Query the authoritative PR head and checks. If it conflicts with main, fetch and rebase/update the mission branch, "
+            "auto-resolve additive changelog conflicts by preserving both entries, rerun focused tests, push the repaired branch, and record branch_name, commit_sha, pr_url, expected_revision, and tested_revision. "
+            "Semantic code conflicts must return to Builder; they are not owner decisions."
+        )
+    if agent in {"tester", "evidence_reviewer", "reviewer", "product_reviewer", "business_reviewer", "security_reviewer"}:
+        return (
+            "Review only the exact packaged PR head. Record expected_revision and tested_revision, classify every finding as current_diff, pre_existing, unrelated, or advisory, "
+            "and never block the mission for an unrelated/pre-existing finding. Query current PR checks before recommending owner review."
+        )
     return "Review diff, requirements, tests, safety gates, release notes, visual evidence for UI missions, and prepare owner review recommendation."
 
 
@@ -3335,6 +3347,9 @@ def _agent_quality_gate(agent, artifact):
     confidence_quality = _artifact_confidence_quality_gate(agent, artifact)
     if not confidence_quality["passed"]:
         return confidence_quality
+    revision_quality = _revision_evidence_quality_gate(agent, artifact)
+    if not revision_quality["passed"]:
+        return revision_quality
     if not commands and not _read_only_reviewer_has_upstream_evidence(agent, artifact):
         return {"passed": False, "reason": f"{agent} did not record commands_run evidence."}
     if not inspected:
@@ -4496,7 +4511,55 @@ def _inherit_pr_reference(agent, artifact, artifacts):
     inherited["links"] = merged_links
     inherited["pr_url"] = inherited.get("pr_url") or builder.get("pr_url") or merged_links.get("pr", "")
     inherited["pr_number"] = inherited.get("pr_number") or builder.get("pr_number") or ""
+    expected_revision = str(builder.get("commit_sha") or (builder.get("git_packaging") or {}).get("commit_sha") or "").strip()
+    if expected_revision:
+        inherited["expected_revision"] = inherited.get("expected_revision") or expected_revision
+        local_revision = _git_head_revision()
+        if local_revision and (local_revision.lower().startswith(expected_revision.lower()) or expected_revision.lower().startswith(local_revision.lower())):
+            inherited["tested_revision"] = inherited.get("tested_revision") or local_revision
     return inherited
+
+
+def _git_head_revision(run_subprocess=None):
+    runner = run_subprocess or subprocess.run
+    try:
+        completed = runner(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return str(completed.stdout or "").strip() if completed.returncode == 0 else ""
+
+
+def _revision_evidence_quality_gate(agent, artifact):
+    if agent not in {"tester", "qa_red_team", "visual_qa_reviewer", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return {"passed": True, "reason": "revision_evidence_not_required"}
+    expected = str(artifact.get("expected_revision") or "").strip().lower()
+    tested = str(artifact.get("tested_revision") or "").strip().lower()
+    if not expected:
+        return {"passed": True, "reason": "no_packaged_revision_yet"}
+    if not tested:
+        return {"passed": True, "reason": "revision_evidence_pending_final_reconciliation", "expected_revision": expected}
+    if not (tested.startswith(expected) or expected.startswith(tested)):
+        return {
+            "passed": False,
+            "reason": f"{agent} reviewed wrong revision: expected {expected}, tested {tested}.",
+            "expected_revision": expected,
+            "tested_revision": tested,
+        }
+    return {
+        "passed": True,
+        "reason": "exact_revision_verified",
+        "expected_revision": expected,
+        "tested_revision": tested,
+    }
 
 
 def _has_release_relevant_changes(changed_files):
@@ -4702,6 +4765,7 @@ def _block_agent_stage(
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     if artifact and agent not in artifacts:
         artifacts = {**artifacts, agent: artifact}
+    disposition = classify_block(agent, blocked_reason, artifact)
     unresolved = _artifact_issue_items(agent, artifact)
     if unresolved:
         ledger["unresolved_blockers"] = unresolved
@@ -4750,6 +4814,7 @@ def _block_agent_stage(
         stdout_text=getattr(completed, "stdout", "") or _read_text(paths["stdout_path"]),
         stderr_text=getattr(completed, "stderr", "") or _read_text(paths["stderr_path"]),
     )
+    full_recovery_packet["disposition"] = disposition
     _record_mission_memory_event(
         {"mission_id": mission_id},
         build_memory_event(
@@ -4790,6 +4855,7 @@ def _block_agent_stage(
                 "agent_execution": _agent_execution_summary(ledger),
                 "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
                 "unresolved_blockers": unresolved,
+                "normalized_findings": normalize_findings(unresolved, agent=agent, artifact=artifact),
                 "implementation_source_map": artifact.get("implementation_source_map", {}),
                 "files_checked_against_source_map": artifact.get("files_inspected", []),
                 "handoff_reports": {
@@ -4803,8 +4869,13 @@ def _block_agent_stage(
                 "recovery_packet": full_recovery_packet,
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
-                "recommended_next_action": artifact.get("next_action") or f"Send back to {_agent_backflow_target(agent, artifact, {'passed': False, 'reason': blocked_reason}) or 'builder'} with the unresolved blockers.",
-                "review_status": "agent_blocked",
+                "block_disposition": disposition,
+                "recommended_next_action": artifact.get("next_action") or (
+                    f"CORE will recover from {disposition['responsible_stage']}."
+                    if disposition["recoverable"]
+                    else f"Owner decision required at {agent}."
+                ),
+                "review_status": "internal_recovery_queued" if disposition["recoverable"] else "agent_blocked",
             },
         },
         notes="CHARLIE Agent Runner v2 recorded a blocked stage.",
@@ -4812,27 +4883,36 @@ def _block_agent_stage(
         connect_factory=connect_factory,
     )
     _record_execution_stage(mission_id, agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    next_status = "approved" if disposition["recoverable"] else "blocked"
+    owner_decision = "" if disposition["recoverable"] else f"CHARLIE Agent Runner v2 blocked at {agent}."
     blocked, blocked_status = update_mission_status(
         mission_id,
-        "blocked",
-        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        next_status,
+        owner_decision=owner_decision,
         event_type="status_changed",
         notes=blocked_reason,
-        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        metadata={
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "execution_id": execution_id,
+            "blocked_agent": agent,
+            "block_class": disposition["block_class"],
+            "recovery_stage": disposition["responsible_stage"],
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if blocked_status >= 400:
         return blocked, blocked_status
     return {
-        "success": False,
-        "status": "agent_stage_blocked",
+        "success": disposition["recoverable"],
+        "status": "agent_stage_recovery_queued" if disposition["recoverable"] else "agent_stage_blocked",
         "mission_id": mission_id,
-        "mission_status": "blocked",
+        "mission_status": next_status,
         "agent": agent,
         "blocked_reason": blocked_reason,
+        "block_disposition": disposition,
         "agent_ledger_path": str(ledger_path),
-    }, 504
+    }, 202 if disposition["recoverable"] else 504
 
 
 def _blocked_review_summary(agent, blocked_reason, ledger, artifact):
@@ -5339,14 +5419,10 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
             "Selected workflow has agents without loaded Vault doctrine files: "
             + ", ".join(f"{item['agent']} -> {item['path'] or 'no path'}" for item in missing_doctrine)
         )
-    ui_text = " ".join([
-        str(mission.get("mission_type") or ""),
-        str(mission.get("title") or ""),
-        str(mission.get("raw_text") or ""),
-    ])
-    if _is_ui_related_mission(mission.get("mission_type", ""), changed_files, ui_text):
+    workflow_contract = _authoritative_workflow_contract(mission, agent_sequence)
+    if workflow_contract["ui_related"]:
         for required_agent in ["product_architect", "product_reviewer", "evidence_reviewer"]:
-            if required_agent not in agent_sequence:
+            if required_agent in workflow_contract["required_agents"] and required_agent not in agent_sequence:
                 findings.append(f"UI/product mission workflow is missing required agent: {required_agent}.")
         if "builder" in agent_sequence and "product_architect" in agent_sequence:
             if agent_sequence.index("product_architect") > agent_sequence.index("builder"):
@@ -5395,12 +5471,45 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "preserved_legacy_artifacts": sorted(preserved),
         "source_coverage": source_coverage,
         "agent_sequence": agent_sequence,
+        "workflow_contract": workflow_contract,
         "missing_doctrine": missing_doctrine,
         "retrieval": retrieval,
         "owner_preferences": context.get("owner_preferences", {}),
         "vault_context_docs": [entry.get("path", "") for entry in context.get("docs", []) if isinstance(entry, dict)],
         "sensitive_changed_files": sensitive_changes,
         "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _authoritative_workflow_contract(mission, agent_sequence=None):
+    """Return the persisted planning contract; final gates must not reclassify it."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    project_truth = core.get("project_truth") if isinstance(core.get("project_truth"), dict) else {}
+    template = core.get("workflow_template") if isinstance(core.get("workflow_template"), dict) else {}
+    template_id = str(
+        project_truth.get("workflow_template")
+        or template.get("template_id")
+        or metadata.get("workflow_template")
+        or ""
+    ).strip()
+    sequence = [str(item or "").strip() for item in (agent_sequence or _mission_agent_sequence(mission)) if str(item or "").strip()]
+    required_agents = [str(item or "").strip() for item in (template.get("agent_order") or sequence) if str(item or "").strip()]
+    required_evidence = [str(item or "").strip() for item in (template.get("required_artifacts") or project_truth.get("required_artifacts") or []) if str(item or "").strip()]
+    ui_related = template_id == "ui_product_build"
+    if not template_id:
+        ui_related = all(agent in sequence for agent in ("product_architect", "product_reviewer"))
+    risk_level = str(project_truth.get("risk_level") or metadata.get("risk_level") or mission.get("approval_level") or "standard").strip()
+    return {
+        "version": "charlie_workflow_contract_v1",
+        "template_id": template_id or "persisted_sequence",
+        "required_agents": required_agents,
+        "optional_agents": [agent for agent in sequence if agent not in required_agents],
+        "required_evidence": required_evidence,
+        "ui_related": ui_related,
+        "risk_level": risk_level,
+        "authoritative": True,
     }
 
 
@@ -5436,6 +5545,7 @@ def _block_completed_agent_review(
     database_url=None,
     connect_factory=None,
 ):
+    disposition = classify_block(agent, blocked_reason, artifact)
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
     ledger["blocked_reason"] = blocked_reason
@@ -5451,6 +5561,7 @@ def _block_completed_agent_review(
         ledger=ledger,
         changed_files=artifact.get("changed_files") or _changed_files(),
     )
+    recovery_packet["disposition"] = disposition
     mission_quality = score_mission_quality(
         mission,
         {
@@ -5489,6 +5600,7 @@ def _block_completed_agent_review(
         "agent_execution": _agent_execution_summary(ledger),
         "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
         "unresolved_blockers": unresolved,
+        "normalized_findings": normalize_findings(unresolved, agent=agent, artifact=artifact),
         "handoff_reports": {
             stage_agent: stage_artifact.get("handoff_report", {})
             for stage_agent, stage_artifact in artifacts.items()
@@ -5500,8 +5612,13 @@ def _block_completed_agent_review(
         "mission_quality": mission_quality,
         "blocked_agent": agent,
         "blocked_reason": blocked_reason,
-        "recommended_next_action": artifact.get("next_action", "Send back and require captured Visual Review media before owner approval."),
-        "review_status": "agent_blocked",
+        "block_disposition": disposition,
+        "recommended_next_action": artifact.get("next_action") or (
+            f"CORE will recover from {disposition['responsible_stage']}."
+            if disposition["recoverable"]
+            else "Owner decision is required."
+        ),
+        "review_status": "internal_recovery_queued" if disposition["recoverable"] else "agent_blocked",
     }
     update_mission_vault(
         mission["mission_id"],
@@ -5511,27 +5628,35 @@ def _block_completed_agent_review(
         connect_factory=connect_factory,
     )
     _record_execution_stage(mission["mission_id"], agent, "blocked", blocked_reason, database_url=database_url, connect_factory=connect_factory)
+    next_status = "approved" if disposition["recoverable"] else "blocked"
     blocked, blocked_status = update_mission_status(
         mission["mission_id"],
-        "blocked",
-        owner_decision=f"CHARLIE Agent Runner v2 blocked at {agent}.",
+        next_status,
+        owner_decision="" if disposition["recoverable"] else f"CHARLIE Agent Runner v2 blocked at {agent}.",
         event_type="status_changed",
         notes=blocked_reason,
-        metadata={"agent_runner_version": AGENT_RUNNER_VERSION, "execution_id": execution_id, "blocked_agent": agent},
+        metadata={
+            "agent_runner_version": AGENT_RUNNER_VERSION,
+            "execution_id": execution_id,
+            "blocked_agent": agent,
+            "block_class": disposition["block_class"],
+            "recovery_stage": disposition["responsible_stage"],
+        },
         database_url=database_url,
         connect_factory=connect_factory,
     )
     if blocked_status >= 400:
         return blocked, blocked_status
     return {
-        "success": False,
-        "status": "agent_stage_blocked",
+        "success": disposition["recoverable"],
+        "status": "agent_stage_recovery_queued" if disposition["recoverable"] else "agent_stage_blocked",
         "mission_id": mission["mission_id"],
-        "mission_status": "blocked",
+        "mission_status": next_status,
         "agent": agent,
         "blocked_reason": blocked_reason,
+        "block_disposition": disposition,
         "agent_ledger_path": str(ledger_path),
-    }, 504
+    }, 202 if disposition["recoverable"] else 504
 
 
 def _collect_artifact_list(artifacts, key):
@@ -5585,6 +5710,8 @@ def _compact_agent_artifacts_for_review(artifacts):
         "contract_parse_fallback",
         "contract_retry_exhausted",
         "first_attempt_artifact_path",
+        "expected_revision",
+        "tested_revision",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
