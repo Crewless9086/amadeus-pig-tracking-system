@@ -139,6 +139,26 @@ class OrderCrudServiceTests(unittest.TestCase):
         self.assertEqual(row_values[10], "Not_Reserved")
         self.assertEqual(row_values[14], "primary_1")
 
+    def test_create_order_line_resolves_blank_price_automatically(self):
+        with patch.object(order_write, "get_available_pigs_for_orders", return_value=[available_pig()]), \
+             patch.object(order_write, "get_all_records", return_value=[]), \
+             patch.object(order_write, "generate_order_line_id", return_value="OL-1"), \
+             patch("modules.sales.sam_pricing.resolve_live_stock_price_rule", return_value={
+                 "found": True,
+                 "unit_price": 800,
+                 "source": "supabase",
+             }), \
+             patch.object(order_write, "append_row") as append_row:
+            result = order_write.create_order_line({
+                "order_id": "ORD-1",
+                "pig_id": "PIG-1",
+                "unit_price": None,
+                "notes": "",
+            })
+
+        self.assertTrue(result["success"])
+        self.assertEqual(append_row.call_args.args[1][8], 800)
+
     def test_create_order_line_blocks_unavailable_duplicate_and_reserved_pigs(self):
         with patch.object(order_write, "get_available_pigs_for_orders", return_value=[]):
             with self.assertRaisesRegex(ValueError, "not available"):

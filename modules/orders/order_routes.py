@@ -33,6 +33,7 @@ from modules.documents.quote_service import (
     auto_generate_quote_if_ready_with_retry,
     generate_quote_for_order,
 )
+from modules.orders.order_pricing import ensure_order_line_prices
 from modules.documents.invoice_service import generate_invoice_for_order
 from modules.documents.loading_sheet_service import (
     generate_loading_sheet_for_order,
@@ -356,6 +357,23 @@ def generate_quote(order_id):
             "order_id": order_id,
             "errors": [f"{exc.__class__.__name__}: {str(exc)[:240]}"],
             "message": "Quote generation failed unexpectedly. The order was not changed by this failed attempt.",
+        }), 500
+
+
+@orders_bp.route("/orders/<order_id>/pricing", methods=["POST"])
+def refresh_order_pricing(order_id):
+    payload = request.get_json(silent=True) or {}
+    reprice = bool(payload.get("reprice"))
+    try:
+        result = ensure_order_line_prices(order_id, reprice=reprice)
+        return jsonify(result), 200 if result.get("success") else 409
+    except Exception as exc:
+        logger.exception("Unexpected pricing refresh failure for order %s", order_id)
+        return jsonify({
+            "success": False,
+            "status": "order_pricing_failed",
+            "order_id": order_id,
+            "error_type": exc.__class__.__name__,
         }), 500
 
 

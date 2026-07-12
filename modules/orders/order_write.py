@@ -279,6 +279,20 @@ def create_order_line(cleaned_data: dict):
     if not pig:
         raise ValueError("Pig is not available for order selection.")
 
+    if cleaned_data.get("unit_price") is None:
+        from modules.sales.sam_pricing import resolve_live_stock_price_rule
+
+        price_rule = resolve_live_stock_price_rule(
+            pig.get("sale_category"),
+            pig.get("weight_band"),
+            pig.get("sex"),
+        )
+        if not price_rule.get("found") or price_rule.get("unit_price") is None:
+            raise ValueError(
+                f"No active price found for {pig.get('sale_category')} / {pig.get('weight_band')}."
+            )
+        cleaned_data = {**cleaned_data, "unit_price": float(price_rule["unit_price"])}
+
     existing_lines = (
         order_supabase_write.list_order_lines()
         if order_supabase_write.supabase_order_writes_available()

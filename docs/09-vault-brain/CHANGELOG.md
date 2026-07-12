@@ -4,6 +4,7 @@
 
 - Clarified the executive hierarchy as Charl -> CHARLIE -> CORE and business/farm command layers: CHARLIE is Charl's private digital executive, while CORE is the existing CHARLIE CORE mission engine.
 - Corrected FRED's canonical role to the planned client-facing enquiry and booking agent for Amadeus Private Transfers; FRED is not Finance, farm records, or general farm operations.
+- Added the canonical live-stock order pricing rule: Orders automatically snapshot active Supabase pricing from Herdmaster-backed pig classification, repair blank prices before first quote generation, and never silently reprice an existing positive line.
 
 ## 2026-07-11
 
