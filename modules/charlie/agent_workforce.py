@@ -17,6 +17,7 @@ TRUST_LEDGER_PATH = REPO_ROOT / "loop" / "memory" / "trust.tsv"
 WORKFORCE_DEFINITIONS = (
     {"id": "charlie", "name": "CHARLIE", "team": "Owner Command", "role": "Charl's private digital executive, conversational interface and cross-system commander.", "stage": "planned"},
     {"id": "charlie-core", "name": "CORE", "team": "Execution", "role": "Owner-gated agentic mission engine for building, repairing, testing and upgrading systems.", "stage": "live_supervised"},
+    {"id": "analyst", "name": "ANALYST", "team": "CORE Intelligence", "role": "Observes CORE outcomes, detects recurring weaknesses, proposes owner-gated improvements and validates whether they worked.", "stage": "observing"},
     {"id": "codex-builder", "name": "Codex Builder", "team": "Build", "role": "Primary repository builder under CHARLIE mission contracts.", "stage": "live_supervised"},
     {"id": "review-qa", "name": "Review & QA", "team": "Build", "role": "Deterministic tests, reviewer and red-team quality gates.", "stage": "live_supervised", "registry_id": "gatekeeper"},
     {"id": "sam-live-stock", "name": "SAM Live Stock", "team": "Sales", "role": "Owner-reviewed live-stock conversations, sales preparation and learning.", "stage": "evidence_gathering", "registry_id": "sam"},
@@ -37,6 +38,7 @@ CONNECTIONS = (
     ("charlie", "ledger", "coordinates"),
     ("charlie", "beacon", "coordinates"),
     ("charlie-core", "codex-builder", "dispatches"),
+    ("charlie-core", "analyst", "observed by"),
     ("charlie-core", "review-qa", "gates"),
     ("oom-sakkie", "sam-live-stock", "coordinates"),
     ("oom-sakkie", "sam-meat", "coordinates"),
@@ -60,12 +62,14 @@ def build_agent_workforce_packet(
     mission_summary: Mapping[str, Any] | None = None,
     runner: Mapping[str, Any] | None = None,
     sam_learning: Mapping[str, Any] | None = None,
+    analyst_learning: Mapping[str, Any] | None = None,
     registry: Mapping[str, Any] | None = None,
     trust_entries: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     mission_summary = dict(mission_summary or {})
     runner = dict(runner or {})
     sam_learning = dict(sam_learning or {})
+    analyst_learning = dict(analyst_learning or {})
     registry = dict(registry or load_agent_registry())
     trust_entries = dict(trust_entries or load_trust_ledger())
     registry_by_id = {str(item.get("agent_id")): item for item in registry.get("agents", []) if isinstance(item, Mapping)}
@@ -86,6 +90,8 @@ def build_agent_workforce_packet(
         })
         if item["id"] == "charlie-core":
             item.update(_charlie_evidence(counts, runner, trust_entries))
+        elif item["id"] == "analyst":
+            item.update(_analyst_evidence(analyst_learning))
         elif item["id"] == "codex-builder":
             item.update(_trust_evidence("mission_loop_foundation", trust_entries, "Mission-loop trust evidence"))
         elif item["id"] == "review-qa":
@@ -202,6 +208,38 @@ def _charlie_evidence(counts: Mapping[str, Any], runner: Mapping[str, Any], trus
     if blocked_count:
         evidence["blockers"] = [f"{blocked_count} mission{'s' if blocked_count != 1 else ''} blocked"]
     return evidence
+
+
+def _analyst_evidence(analyst_learning: Mapping[str, Any]) -> dict[str, Any]:
+    scorecard = analyst_learning.get("scorecard") if isinstance(analyst_learning.get("scorecard"), Mapping) else {}
+    observations = int(scorecard.get("observations") or 0)
+    proposals = int(scorecard.get("proposals_total") or 0)
+    validated = int(scorecard.get("validated_improvements") or 0)
+    effective = int(scorecard.get("effective_improvements") or 0)
+    progress = round(min(observations / 20, 1) * 45 + min(proposals / 5, 1) * 25 + min(validated / 3, 1) * 30)
+    blockers = []
+    if observations < 5:
+        blockers.append(f"{5 - observations} more terminal mission observations needed for an initial pattern sample")
+    if validated == 0:
+        blockers.append("No deployed improvement has completed post-change validation yet")
+    if not analyst_learning.get("success", True):
+        blockers.append("ANALYST scorecard source is unavailable")
+    return {
+        "stage": scorecard.get("stage") or "observing",
+        "evidence": {"measured": observations > 0, "progress_percent": progress if observations else None, "label": "Operational learning evidence" if observations else "Not measured"},
+        "metrics": [
+            _metric("Mission observations", observations, 20, "count"),
+            _metric("Proposals", proposals, 5, "count"),
+            _metric("Validated", validated, 3, "count"),
+            _metric("Effective", effective, None, "count"),
+            _metric("Effectiveness", float(scorecard.get("validated_effectiveness_rate") or 0), 0.75, "rate"),
+        ],
+        "candidate_count": int(scorecard.get("pending_proposals") or 0),
+        "blockers": blockers,
+        "owner_action": "Review ANALYST proposals" if int(scorecard.get("pending_proposals") or 0) else "No action required",
+        "source_status": analyst_learning.get("status") or "analyst_scorecard_unknown",
+        "last_analysis_at": scorecard.get("last_analysis_at") or "",
+    }
 
 
 def _trust_evidence(skill: str, trust_entries: Mapping[str, Any], label: str) -> dict[str, Any]:

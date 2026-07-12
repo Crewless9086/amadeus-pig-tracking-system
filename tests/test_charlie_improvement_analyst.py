@@ -8,6 +8,9 @@ from modules.charlie.improvement_analyst import (
     create_owner_gated_improvement_missions,
     generate_and_store_proposals,
     record_proposal_decision,
+    record_mission_observation,
+    analyst_scorecard,
+    refresh_proposal_lifecycle,
 )
 
 
@@ -249,24 +252,72 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
                     self.assertEqual(written_proposal[field], value)
 
     @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
+    @patch("modules.charlie.improvement_analyst.mission_store.record_mission")
     @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
     @patch("modules.charlie.improvement_analyst.vault_store.get_artifact")
-    def test_record_proposal_decision_approves_without_applying_change(self, get_artifact, update_artifact_content, write_owner_decision):
+    def test_record_proposal_decision_approves_as_owner_gated_mission(self, get_artifact, update_artifact_content, record_mission, write_owner_decision):
         get_artifact.return_value = (_artifact_payload(status="pending"), 200)
         update_artifact_content.return_value = ({"success": True, "status": "artifact_updated"}, 200)
+        record_mission.return_value = ({"stored": True, "status": "mission_recorded", "mission_id": "MISSION-IMPROVE-APPROVED"}, 201)
         write_owner_decision.return_value = ({"success": True, "status": "owner_decision_written"}, 200)
 
         result, status = record_proposal_decision("ARTIFACT-TESTS", "approve", comments="Agree.")
 
         self.assertEqual(status, 200)
         self.assertTrue(result["success"])
-        self.assertEqual(result["proposal_status"], "approved")
+        self.assertEqual(result["proposal_status"], "mission_created")
         self.assertEqual(result["decision"], "approve")
+        self.assertEqual(result["created_mission"]["mission_id"], "MISSION-IMPROVE-APPROVED")
         saved_proposal = update_artifact_content.call_args.args[1]
         self.assertFalse(saved_proposal["last_owner_decision"]["applies_automatically"])
         self.assertEqual(saved_proposal["decision_history"][-1]["comments"], "Agree.")
         write_owner_decision.assert_called_once()
         self.assertEqual(write_owner_decision.call_args.args[0], "MISSION-1")
+
+    @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
+    @patch("modules.charlie.improvement_analyst.mission_store.get_mission")
+    def test_terminal_mission_observation_is_stable_and_structured(self, get_mission, write_artifact):
+        get_mission.return_value = ({"success": True, "mission": {
+            "mission_id": "MISSION-OBS",
+            "status": "blocked",
+            "title": "Blocked mission",
+            "metadata": {"review_packet": {
+                "review_status": "agent_blocked",
+                "block_disposition": {"block_class": "owner_decision_required", "owner_required": True, "responsible_stage": "owner"},
+                "backflow_events": [{"from_agent": "reviewer", "to_agent": "builder"}],
+            }},
+        }}, 200)
+        write_artifact.return_value = ({"success": True, "status": "artifact_written"}, 200)
+
+        first, first_status = record_mission_observation("MISSION-OBS")
+        second, second_status = record_mission_observation("MISSION-OBS")
+
+        self.assertEqual(first_status, 200)
+        self.assertEqual(second_status, 200)
+        self.assertEqual(first["observation"]["fingerprint"], second["observation"]["fingerprint"])
+        self.assertEqual(first["observation"]["block_class"], "owner_decision_required")
+        self.assertTrue(first["observation"]["owner_required"])
+        self.assertEqual(write_artifact.call_args.kwargs["title"], first["observation"]["observation_id"])
+
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.list_improvement_proposals")
+    def test_analyst_scorecard_reports_observation_and_effectiveness(self, list_proposals, list_artifacts):
+        list_proposals.return_value = ({"success": True, "proposals": [
+            {"status": "pending", "proposal_id": "P1"},
+            {"status": "validated_effective", "proposal_id": "P2", "sent_to_mission_id": "M2"},
+        ]}, 200)
+        list_artifacts.return_value = ({"success": True, "artifacts": [
+            {"content": {"recorded_at": "2026-07-12T10:00:00+00:00"}},
+            {"content": {"recorded_at": "2026-07-12T11:00:00+00:00"}},
+        ]}, 200)
+
+        result, status = analyst_scorecard()
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["scorecard"]["observations"], 2)
+        self.assertEqual(result["scorecard"]["pending_proposals"], 1)
+        self.assertEqual(result["scorecard"]["effective_improvements"], 1)
+        self.assertEqual(result["scorecard"]["stage"], "proposal_ready")
 
     @patch("modules.charlie.improvement_analyst.vault_store.write_owner_decision")
     @patch("modules.charlie.improvement_analyst.vault_store.update_artifact_content")
@@ -295,7 +346,7 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         result, status = record_proposal_decision("ARTIFACT-TESTS", "send_to_mission", comments="Build this.")
 
         self.assertEqual(status, 200)
-        self.assertEqual(result["proposal_status"], "sent_to_mission")
+        self.assertEqual(result["proposal_status"], "mission_created")
         self.assertEqual(result["created_mission"]["mission_id"], "MISSION-IMPROVE-1")
         mission_payload = record_mission.call_args.args[0]
         self.assertEqual(mission_payload["metadata"]["proposal_label"], PROPOSAL_LABEL)

@@ -19,6 +19,7 @@ from modules.charlie.mission_store import get_mission, list_missions, list_owner
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
+from modules.charlie.improvement_analyst import run_operational_analyst
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -476,6 +477,8 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
         execute_codex=True,
         timeout_seconds=timeout_seconds,
     )
+    if result.get("mission_status") in {"pr_ready", "blocked", "rejected"}:
+        result["analyst"] = _run_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
     if notify:
         if status_code < 400 and result.get("mission_status") == "pr_ready":
             _send_review_ready_notification(result)
@@ -519,6 +522,8 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
         result, status_code = prepare_release_execution(mission_id=mission_id)
         result["status"] = "release_waiting_for_explicit_mode"
         result["next_action"] = "Restart runner with --auto-close-no-release or --auto-merge-pr for automatic release handling."
+    if result.get("mission_status") in {"done", "merged", "deployed", "blocked"}:
+        result["analyst"] = _run_analyst_cycle(mission_id, "release_terminal", notify=notify)
     if notify:
         if status_code < 400 and result.get("mission_status") in {"done", "merged", "deployed"}:
             _send_done_notification(result)
@@ -531,6 +536,25 @@ def process_release_approved_mission(mission_id, notify=False, auto_close_no_rel
                 mission_id=mission_id,
             )
     return result, status_code
+
+
+def _run_analyst_cycle(mission_id, trigger, notify=False):
+    try:
+        result, status_code = run_operational_analyst(mission_id=mission_id, trigger=trigger, limit=50)
+    except Exception as exc:
+        return {"success": False, "status": "analyst_cycle_failed", "error_type": exc.__class__.__name__}
+    if notify and status_code < 400 and result.get("new_proposals"):
+        strongest = sorted(result["new_proposals"], key=lambda item: int(item.get("weakness_score") or 0), reverse=True)[0]
+        _send_notification(
+            "needs_owner_approval",
+            "ANALYST found a CORE improvement",
+            (
+                f"{strongest.get('problem_detected', 'A recurring CORE weakness was detected')} "
+                f"Score: {strongest.get('weakness_score', 0)}. Review it in CORE or Workforce; nothing is applied automatically."
+            ),
+            mission_id=mission_id,
+        )
+    return {**result, "status_code": status_code}
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):

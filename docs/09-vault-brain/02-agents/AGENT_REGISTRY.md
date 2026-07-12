@@ -51,7 +51,7 @@ Confidence rule:
 | Business Reviewer | CHARLIE CORE / Review Board | CHARLIE CORE | Active review-board role | `charlie-core/BUSINESS_REVIEWER.md` |
 | Reviewer | CHARLIE CORE | CHARLIE CORE | Draft | `charlie-core/REVIEWER.md` |
 | Publisher | CHARLIE CORE | CHARLIE CORE | Active release-prep role | `charlie-core/PUBLISHER.md` |
-| Improvement Analyst | CHARLIE CORE | CHARLIE CORE | Active foundation | `charlie-core/IMPROVEMENT_ANALYST.md` |
+| Improvement Analyst | CHARLIE CORE | CHARLIE CORE | Active supervised operational loop | `charlie-core/IMPROVEMENT_ANALYST.md` |
 
 ## Business Environment Agents
 

@@ -14,7 +14,7 @@ Charl
     |   +-- Tester
     |   +-- QA Red Team
     |   +-- Reviewer
-    |   +-- Improvement Analyst
+    |   +-- ANALYST (standing CORE observation, proposal, and validation loop)
     |   +-- Brain Guard
     |
     +-- Business Environments

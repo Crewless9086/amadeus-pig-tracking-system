@@ -36,6 +36,19 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
                     },
                 },
             },
+            analyst_learning={
+                "success": True,
+                "status": "analyst_scorecard_ready",
+                "scorecard": {
+                    "observations": 12,
+                    "proposals_total": 3,
+                    "pending_proposals": 1,
+                    "validated_improvements": 1,
+                    "effective_improvements": 1,
+                    "validated_effectiveness_rate": 1.0,
+                    "stage": "proposal_ready",
+                },
+            },
         )
 
         self.assertTrue(packet["success"])
@@ -45,6 +58,10 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         self.assertEqual(sam["stage"], "graduation_candidate")
         self.assertFalse(packet["authority"]["auto_graduation"])
         self.assertTrue(packet["authority"]["owner_activation_required"])
+        analyst = next(agent for agent in packet["agents"] if agent["id"] == "analyst")
+        self.assertTrue(analyst["evidence"]["measured"])
+        self.assertEqual(analyst["candidate_count"], 1)
+        self.assertEqual(analyst["owner_action"], "Review ANALYST proposals")
 
     def test_unmeasured_agents_report_not_measured_instead_of_fake_percent(self):
         packet = build_agent_workforce_packet(registry={"agents": []})
@@ -63,6 +80,7 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         self.assertEqual(agents["charlie-core"]["name"], "CORE")
         self.assertIn(("owner", "charlie"), connections)
         self.assertIn(("charlie", "charlie-core"), connections)
+        self.assertIn(("charlie-core", "analyst"), connections)
         self.assertEqual(agents["fred"]["team"], "Private Transfers")
         self.assertIn("client-facing transport", agents["fred"]["role"].lower())
         self.assertNotIn("finance", agents["fred"]["role"].lower())

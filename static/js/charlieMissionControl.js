@@ -564,7 +564,7 @@
     if (!els.improvementsList) return;
     const proposals = Array.isArray(state.improvements) ? state.improvements : [];
     if (!proposals.length) {
-      els.improvementsList.innerHTML = '<p class="charlie-empty">No CHARLIE improvement proposals are waiting.</p>';
+      els.improvementsList.innerHTML = '<p class="charlie-empty">ANALYST is observing CORE. No improvement proposals currently need review.</p>';
       return;
     }
     els.improvementsList.innerHTML = proposals.slice(0, 8).map(improvementProposalMarkup).join("");
@@ -586,7 +586,7 @@
         <div class="charlie-mission-card-header">
           <div>
             <span class="status-pill">${escapeHtml(safeText(proposal.status || "pending"))}</span>
-            <h3>${escapeHtml(safeText(proposal.problem_detected || "CHARLIE improvement proposal"))}</h3>
+            <h3>${escapeHtml(safeText(proposal.problem_detected || "ANALYST improvement proposal"))}</h3>
           </div>
           <code>${escapeHtml(shortId(proposalId))}</code>
         </div>
@@ -606,9 +606,9 @@
           <textarea rows="3" data-improvement-comments placeholder="Optional owner note"></textarea>
         </label>
         <div class="charlie-mission-actions charlie-improvement-actions">
-          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="approve">Approve</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="approve">Approve as Mission</button>
           <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="reject">Reject</button>
-          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="send_to_mission">Send To Mission</button>
+          <button type="button" data-proposal-id="${escapeHtml(proposalId)}" data-improvement-decision="send_to_mission">Create Mission</button>
         </div>
       </article>
     `;
@@ -1553,14 +1553,14 @@
   }
 
   async function analyzeImprovements() {
-    setMessage("Analyzing CHARLIE improvement patterns...", "info");
+    setMessage("ANALYST is reviewing CORE mission evidence...", "info");
     try {
       await fetchJson("/api/charlie/core/improvements/analyze", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({limit: 50}),
       });
-      setMessage("Improvement proposals refreshed.", "success");
+      setMessage("ANALYST proposals refreshed.", "success");
       await loadMissions();
     } catch (error) {
       setMessage(error.message || "Improvement analysis was not recorded.", "error");

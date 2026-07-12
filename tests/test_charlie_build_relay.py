@@ -969,10 +969,11 @@ class CharlieBuildRelayTests(unittest.TestCase):
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.local_runner_status", return_value={"active": False, "status": "stopped"})
+    @patch("modules.charlie.routes.analyst_scorecard")
     @patch("modules.charlie.routes.live_stock_learning_scorecard")
     @patch("modules.charlie.routes.mission_status_summary")
     def test_agent_workforce_route_combines_authoritative_sources(
-        self, mission_summary, learning_scorecard, _runner, _owner_access
+        self, mission_summary, learning_scorecard, analyst, _runner, _owner_access
     ):
         mission_summary.return_value = ({"success": True, "counts": {"done": 4, "blocked": 1}}, 200)
         learning_scorecard.return_value = ({
@@ -984,6 +985,11 @@ class CharlieBuildRelayTests(unittest.TestCase):
                 "graduation": {"classes": {}},
             },
         }, 200)
+        analyst.return_value = ({
+            "success": True,
+            "status": "analyst_scorecard_ready",
+            "scorecard": {"observations": 4, "proposals_total": 1, "pending_proposals": 1},
+        }, 200)
 
         response = self.client.get("/api/charlie/agent-workforce")
         data = response.get_json()
@@ -994,6 +1000,8 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertTrue(data["sources"]["charlie_missions"]["authoritative"])
         self.assertFalse(data["authority"]["auto_graduation"])
         self.assertIn("sam-live-stock", {agent["id"] for agent in data["agents"]})
+        self.assertIn("analyst", {agent["id"] for agent in data["agents"]})
+        self.assertTrue(data["sources"]["charlie_improvement_analyst"]["authoritative"])
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes._dashboard_owner_queue")
