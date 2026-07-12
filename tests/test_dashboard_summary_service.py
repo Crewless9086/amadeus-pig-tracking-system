@@ -89,7 +89,7 @@ class DashboardSummaryServiceTests(unittest.TestCase):
         allocation = {
             "source": "supabase_canonical",
             "pigs": [
-                {"pig_id": "LIVE", "status": "Active", "on_farm": "Yes", "purpose": "Sale", "animal_type": "Weaner", "calculated_stage": "Weaner", "latest_weight_kg": 30, "wean_date": "2026-05-01", "readiness_bucket": "Livestock Candidate"},
+                {"pig_id": "LIVE", "status": "Active", "on_farm": "Yes", "purpose": "Sale", "animal_type": "Weaner", "calculated_stage": "Weaner", "latest_weight_kg": 30, "latest_weight_date": "2026-05-20", "days_since_weight": 0, "wean_date": "2026-05-01", "readiness_bucket": "Livestock Candidate"},
                 {"pig_id": "MEAT", "status": "Active", "on_farm": "Yes", "purpose": "Meat", "latest_weight_kg": 70, "readiness_bucket": "Meat Candidate"},
                 {"pig_id": "CULL", "status": "Active", "on_farm": "Yes", "purpose": "Slaughter", "latest_weight_kg": 110, "readiness_bucket": "Slaughter Candidate"},
                 {"pig_id": "RES", "status": "Active", "on_farm": "Yes", "purpose": "Sale", "latest_weight_kg": 35, "reserved_status": "Reserved", "readiness_bucket": "Allocated"},

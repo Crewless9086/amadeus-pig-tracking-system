@@ -18,6 +18,11 @@ class MeatDocumentTests(unittest.TestCase):
             "BANK_BRANCH_CODE": "250655",
             "BANK_ACCOUNT_TYPE": "Business account",
         }
+        self.control_mode_patch = patch.object(meat_documents, "controlled_mode_denial", return_value=None)
+        self.control_mode_patch.start()
+
+    def tearDown(self):
+        self.control_mode_patch.stop()
 
     def test_vat_inclusive_estimate_splits_vat_and_deposit(self):
         totals = meat_documents.calculate_estimated_quote_totals(

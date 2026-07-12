@@ -448,8 +448,9 @@ def get_dashboard_summary():
             "meat_sales_this_month": meat_transactions.get("transaction_count", 0),
             "meat_sales_value_this_month": meat_transactions.get("net_total", 0.0),
         })
+        allocation = get_pig_allocation_readiness(today=now.date(), allow_sheet_fallback=False)
         supabase_summary["sales_metrics"] = get_sales_metrics(
-            today=now.date(), transaction_summary=transaction_summary
+            today=now.date(), allocation=allocation, transaction_summary=transaction_summary
         )
         return supabase_summary
 
@@ -4470,7 +4471,7 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 
 
-def get_pig_allocation_readiness(today=None):
+def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
     today = today or datetime.now().date()
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -4483,7 +4484,7 @@ def get_pig_allocation_readiness(today=None):
         litter_rows = supabase_inputs.get("litter_rows", [])
         pen_lookup = supabase_inputs.get("pen_lookup", {})
         source = supabase_inputs.get("source", "supabase_canonical")
-    else:
+    elif allow_sheet_fallback:
         overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
         pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
         weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
@@ -4491,6 +4492,14 @@ def get_pig_allocation_readiness(today=None):
         litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
         pen_lookup = _build_pen_lookup()
         source = "google_sheets"
+    else:
+        return {
+            "source": "supabase_allocation_readiness_unavailable",
+            "pigs": [],
+            "counts": {},
+            "success": False,
+            "status": "supabase_allocation_readiness_unavailable",
+        }
     master_lookup = _build_pig_lookup(pig_master_rows, columns)
     latest_weights = _latest_weights_by_pig(weight_rows, columns)
     sales_lookup = _sales_availability_by_pig(sales_rows, columns)
