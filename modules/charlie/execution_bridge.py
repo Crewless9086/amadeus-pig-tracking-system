@@ -2147,13 +2147,16 @@ def _execution_start_agent(mission, agent_sequence=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
+    stale_resume_hint = bool(target)
     if target in agent_sequence:
         return target
     blocked_agent = str(review_packet.get("blocked_agent") or "").strip().lower()
+    stale_resume_hint = stale_resume_hint or bool(blocked_agent)
     if blocked_agent in agent_sequence:
         return blocked_agent
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     stage = str(vault.get("mission_stage") or "").strip().lower()
+    stale_resume_hint = stale_resume_hint or stage.startswith(("returned_to_", "blocked_at_"))
     if stage.startswith("returned_to_"):
         target = stage.replace("returned_to_", "", 1)
         if target in agent_sequence:
@@ -2165,6 +2168,16 @@ def _execution_start_agent(mission, agent_sequence=None):
     resume_agent = _resume_agent_after_completed_stage(stage, agent_sequence)
     if resume_agent:
         return resume_agent
+    workflow = mission.get("agent_workflow") if stale_resume_hint and isinstance(mission.get("agent_workflow"), list) else []
+    active_agent = next((
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+        if isinstance(item, dict)
+        and str(item.get("status") or "").strip().lower() == "active"
+        and str(item.get("agent") or "").strip().lower() in agent_sequence
+    ), "")
+    if active_agent:
+        return active_agent
     return agent_sequence[0]
 
 

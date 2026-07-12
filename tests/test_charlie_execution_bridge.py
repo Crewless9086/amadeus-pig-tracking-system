@@ -173,6 +173,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             [],
         )
 
+    def test_refreshed_workflow_uses_active_stage_when_stale_blocked_agent_was_removed(self):
+        mission = {
+            **MISSION,
+            "metadata": {"review_packet": {"blocked_agent": "business_reviewer"}},
+            "vault": {"mission_stage": "blocked_at_business_reviewer"},
+            "agent_workflow": [
+                {"agent": "source_mapper", "status": "complete"},
+                {"agent": "technical_architect", "status": "active"},
+                {"agent": "builder", "status": "pending"},
+            ],
+        }
+        sequence = ["source_mapper", "technical_architect", "builder", "tester"]
+
+        self.assertEqual(execution_bridge._execution_start_agent(mission, sequence), "technical_architect")
+
     def test_rerun_recovers_upstream_artifacts_from_mission_memory(self):
         # Stage 1 fix B (evidence threading): when the review packet has lost the
         # upstream agent artifacts across a runner session, a resumed downstream

@@ -767,6 +767,10 @@ def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage="
                 if previous.get(key):
                     merged_item[key] = previous[key]
         merged.append(merged_item)
+    active_indexes = [index for index, item in enumerate(merged) if item.get("status") == "active"]
+    if len(active_indexes) > 1:
+        for index in active_indexes[1:]:
+            merged[index]["status"] = "pending"
     if target_index is None and not any(item.get("status") == "active" for item in merged):
         first_pending = next((item for item in merged if item.get("status") == "pending"), None)
         if first_pending:

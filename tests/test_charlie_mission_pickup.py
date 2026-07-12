@@ -362,6 +362,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(by_agent["business_reviewer"]["status"], "pending")
         self.assertEqual(by_agent["product_reviewer"]["status"], "pending")
 
+    def test_refreshed_workflow_keeps_only_one_active_stage(self):
+        current = [
+            {"agent": "product_architect", "status": "active"},
+            {"agent": "technical_architect", "status": "active"},
+        ]
+        planned = [
+            {"agent": "product_architect", "status": "pending"},
+            {"agent": "technical_architect", "status": "pending"},
+            {"agent": "builder", "status": "pending"},
+        ]
+
+        merged = charlie_mission_pickup._merge_resumable_workflow(current, planned)
+
+        self.assertEqual([item["agent"] for item in merged if item["status"] == "active"], ["product_architect"])
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):
