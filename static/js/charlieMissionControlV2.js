@@ -90,6 +90,31 @@
     return metadata && typeof metadata.review_packet === "object" ? metadata.review_packet : {};
   }
 
+  function missionGovernance(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.mission_governance && typeof metadata.mission_governance === "object" ? metadata.mission_governance : {};
+  }
+
+  function missionFamily(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.mission_family && typeof metadata.mission_family === "object" ? metadata.mission_family : {};
+  }
+
+  function familyOrdered(missions) {
+    const rows = Array.from(missions || []);
+    const byId = new Map(rows.map((mission) => [mission.mission_id, mission]));
+    return rows.sort((left, right) => {
+      const leftFamily = missionFamily(left);
+      const rightFamily = missionFamily(right);
+      const leftRoot = leftFamily.root_mission_id || left.mission_id;
+      const rightRoot = rightFamily.root_mission_id || right.mission_id;
+      if (leftRoot !== rightRoot) return 0;
+      if (left.mission_id === leftRoot) return -1;
+      if (right.mission_id === rightRoot) return 1;
+      return Number(leftFamily.sequence || 999) - Number(rightFamily.sequence || 999);
+    });
+  }
+
   function progressPct(mission) {
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     if (!workflow.length) {
@@ -371,7 +396,7 @@
   }
 
   function renderQueue() {
-    const missions = dedupe(state.buckets[state.activeTab] || []);
+    const missions = familyOrdered(dedupe(state.buckets[state.activeTab] || []));
     if (!missions.length) {
       el.queueList.innerHTML = `<div class="notice">No ${escapeHtml(state.activeTab)} missions are visible. Use another tab or create a mission.</div>`;
       return;
@@ -379,8 +404,12 @@
     el.queueList.innerHTML = missions.map((mission) => {
       const status = text(mission.status, "unknown");
       const pct = progressPct(mission);
+      const governance = missionGovernance(mission);
+      const family = missionFamily(mission);
+      const matrixCounts = governance.acceptance_counts || {};
+      const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
-        <div class="mission-card-title">${escapeHtml(titleOf(mission))}</div>
+        <div class="mission-card-title">${familyLabel ? `<span class="family-tag">${escapeHtml(familyLabel)}</span>` : ""}${escapeHtml(titleOf(mission))}</div>
         <div class="mission-card-meta">
           <span>${escapeHtml(shortId(mission))} | ${escapeHtml(text(mission.approval_level, "LEVEL ?"))}</span>
           <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
@@ -390,6 +419,7 @@
           <span>${pct}%</span>
           <span>${escapeHtml(stageLabel(mission))}</span>
         </div>
+        <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
         <div class="reason">${escapeHtml(headlineReason(mission) || "No reason recorded yet.")}</div>
       </button>`;
     }).join("");
@@ -410,6 +440,7 @@
     el.selectedStatusChip.textContent = statusLabel(status);
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
+    const governance = missionGovernance(mission);
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
     el.workflowPanel.innerHTML = `
@@ -421,18 +452,32 @@
         <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
       </div>
       <div class="mission-stats">
-        ${metric("Progress", `${pct}%`)}
+        ${metric("Acceptance", `${Number(governance.acceptance_percent || 0)}%`)}
         ${metric("Current", stageLabel(mission))}
-        ${metric("Status", statusLabel(status))}
-        ${metric("Queue", text(mission.queue_class, "owner"))}
+        ${metric("Fixes", String(Number(governance.fix_count || 0)))}
+        ${metric("Review runs", String(Number(governance.review_runs || 0)))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
+      ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
       <div class="evidence">
         ${evidenceRow("Why this matters", text(review.summary, text(mission.raw_text, "No mission detail loaded.")))}
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
       </div>`;
+  }
+
+  function renderGovernanceSummary(governance, family) {
+    const matrix = Array.isArray(governance.acceptance_matrix) ? governance.acceptance_matrix : [];
+    const budget = governance.budget || {};
+    const children = family && Array.isArray(family.children) ? family.children : [];
+    if (!matrix.length) return "";
+    return `<section class="governance-block ${governance.cycling ? "cycling" : ""}">
+      <div class="governance-head"><strong>Acceptance Matrix</strong><span>${Number(governance.acceptance_counts && governance.acceptance_counts.passed || 0)}/${matrix.length} passed · ${Number(governance.backflow_count || 0)}/${Number(budget.mission_limit || 4)} correction budget · ${Number(governance.followup_count || 0)} follow-ups</span></div>
+      <div class="matrix-list">${matrix.map((row) => `<div class="matrix-row ${escapeAttr(text(row.status, "pending"))}" title="${escapeAttr(text(row.evidence_required, "Focused evidence required"))}"><span class="matrix-dot"></span><b>${escapeHtml(text(row.requirement, "Requirement"))}</b><span>${escapeHtml(statusLabel(row.status))}</span></div>`).join("")}</div>
+      ${governance.cycling ? '<div class="cycle-note">Correction budget reached. New non-red findings become linked follow-up missions instead of reopening this parent.</div>' : ""}
+      ${children.length ? `<div class="family-children"><strong>Linked follow-ups</strong>${children.map((child) => `<span>${escapeHtml(text(child.title, child.mission_id))} · ${escapeHtml(statusLabel(child.status))}</span>`).join("")}</div>` : ""}
+    </section>`;
   }
 
   function placeholderStages(mission) {
@@ -469,11 +514,15 @@
     }
     const status = text(mission.status, "unknown").toLowerCase();
     const review = missionReviewPacket(mission);
+    const governance = missionGovernance(mission);
+    const family = missionFamily(mission);
     el.actionPanel.innerHTML = `
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
         ${field("Mission", `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")}`)}
         ${field("State", `${statusLabel(status)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
+        ${field("Delivery", `${Number(governance.acceptance_percent || 0)}% matrix | ${Number(governance.fix_count || 0)} fixes | ${Number(governance.review_runs || 0)} reviews`)}
+        ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
         ${actionButtons(mission)}
         ${runnerBox()}

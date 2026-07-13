@@ -136,6 +136,28 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    @patch("modules.charlie.execution_bridge._record_mission_memory_event")
+    @patch("modules.charlie.execution_bridge.record_mission")
+    def test_bounded_discovery_records_owner_gated_child_mission(self, record_mission, record_memory):
+        record_mission.return_value = ({"stored": True, "status": "recorded", "mission_id": "CHARLIE-FOLLOWUP-1"}, 201)
+        decision = {
+            "followup_findings": [{
+                "summary": "Malformed threshold hardening discovered after the parent correction budget.",
+                "family": "input_validation",
+                "severity": "high",
+                "affected_paths": ["modules/beacon/opportunity_scanner.py"],
+            }],
+        }
+
+        recorded = execution_bridge._record_discovered_followups(MISSION, "qa_red_team", decision)
+
+        self.assertEqual(recorded[0]["mission_id"], "CHARLIE-FOLLOWUP-1")
+        child = record_mission.call_args.args[0]
+        self.assertEqual(child["status"], "new")
+        self.assertEqual(child["metadata"]["mission_family"]["parent_mission_id"], MISSION["mission_id"])
+        self.assertEqual(child["metadata"]["mission_family"]["finding_family"], "input_validation")
+        record_memory.assert_called_once()
+
     def test_blocked_packet_resume_starts_from_blocked_agent(self):
         mission = {
             **MISSION,

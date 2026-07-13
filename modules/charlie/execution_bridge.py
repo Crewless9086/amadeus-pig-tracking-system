@@ -24,6 +24,7 @@ from modules.charlie.mission_store import (
     all_agent_names,
     get_mission,
     list_missions,
+    record_mission,
     update_mission_status,
     update_mission_vault,
     update_mission_workflow_step,
@@ -50,6 +51,12 @@ from modules.charlie.mission_quality import (
     build_recovery_packet,
     repo_test_command_memory,
     score_mission_quality,
+)
+from modules.charlie.mission_governance import (
+    build_followup_missions,
+    ensure_acceptance_matrix,
+    evaluate_quality_failure,
+    update_acceptance_matrix,
 )
 from modules.charlie.block_recovery import classify_block, normalize_findings
 from modules.charlie.runner_preflight import runner_environment_preflight
@@ -229,6 +236,12 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
     )
     if status_code >= 400:
         return error, status_code
+
+    mission = _ensure_execution_governance(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
 
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -658,6 +671,39 @@ def run_agent_execution_bridge_v2(
                 )
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
+            governance_decision = evaluate_quality_failure(mission, agent, artifact, quality)
+            artifact["mission_governance_decision"] = governance_decision
+            if governance_decision["route"] == "continue_with_followups":
+                followups = _record_discovered_followups(
+                    mission,
+                    agent,
+                    governance_decision,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+                artifact["discovered_followup_missions"] = followups
+                quality = {
+                    "passed": True,
+                    "reason": governance_decision["reason"],
+                    "bounded_followup": True,
+                    "original_quality_gate": quality,
+                }
+            elif governance_decision["route"] == "owner_block":
+                return _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    completed,
+                    stage_started,
+                    blocked_reason=governance_decision["reason"],
+                    artifact={**artifact, "quality_gate": quality},
+                    artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
+        if not quality["passed"]:
             backflow_target = _resolve_agent_backflow_target(
                 _agent_backflow_target(agent, artifact, quality),
                 agent_sequence,
@@ -724,6 +770,7 @@ def run_agent_execution_bridge_v2(
                             "backflow_fingerprint": blocker_fingerprint,
                             "backflow_from": agent,
                             "backflow_to": backflow_target,
+                            "finding_family": _primary_finding_family(artifact),
                         },
                     ),
                     database_url=database_url,
@@ -759,6 +806,14 @@ def run_agent_execution_bridge_v2(
                 connect_factory=connect_factory,
             )
         artifact["quality_gate"] = quality
+        _record_acceptance_progress(
+            mission,
+            agent,
+            artifact,
+            passed=True,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
         _record_mission_memory_event(
@@ -1523,6 +1578,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     ui_contract = _ui_quality_contract_for_mission(mission)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
+    mission_governance = ensure_acceptance_matrix(mission)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
     runner_preflight = runner_environment_preflight(require_browser=bool(ui_contract.get("ui_related")))
     model_assignment = choose_agent_model(
@@ -1582,6 +1638,9 @@ Owner send-back comments:
 Mission memory from previous attempts and handoffs:
 {json.dumps(mission_memory, indent=2)[:5000]}
 
+Frozen acceptance matrix and discovery rules:
+{json.dumps(mission_governance, indent=2)[:7000]}
+
 Mission media/reference attachments:
 {_format_media_references(_mission_media_references(mission))}
 
@@ -1606,6 +1665,9 @@ You must work like an interactive coding agent:
 - read relevant files
 - run focused commands when useful
 - prefer focused tests for the changed surface first; broad runner/full-suite timeouts are advisory only when focused evidence passes and no owner/customer/order/stock safety risk is present
+- verify the frozen acceptance matrix; do not silently expand the parent mission when an adjacent improvement is discovered
+- label pre-existing or merge-base failures explicitly; they are follow-up evidence and do not fail the current mission
+- report new actionable discoveries with affected paths and reproduction evidence so CORE can create a linked child mission
 - patch only scoped files
 - recover from errors
 - record what you did and what remains
@@ -1631,6 +1693,78 @@ Every final JSON object is normalized into a CHARLIE handoff report with:
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
+
+
+def _ensure_execution_governance(mission, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    governance = ensure_acceptance_matrix(mission)
+    mission.setdefault("metadata", {})["mission_governance"] = governance
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_governance": governance},
+        notes="CHARLIE froze the mission acceptance matrix before execution.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return mission
+
+
+def _record_acceptance_progress(mission, agent, artifact, passed, database_url=None, connect_factory=None):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    governance = ensure_acceptance_matrix(mission, planner_artifact=artifact if agent == "planner" else None)
+    governance = update_acceptance_matrix(governance, agent, artifact, passed)
+    mission.setdefault("metadata", {})["mission_governance"] = governance
+    return update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_governance": governance},
+        notes=f"CHARLIE recorded {agent} acceptance-matrix evidence.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
+
+def _record_discovered_followups(mission, agent, decision, database_url=None, connect_factory=None):
+    recorded = []
+    for child in build_followup_missions(mission, decision.get("followup_findings", [])):
+        result, status_code = record_mission(
+            child,
+            source_context={"source": "charlie_discovery"},
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        child_id = result.get("mission_id") or child.get("mission_id")
+        item = {
+            "mission_id": child_id,
+            "title": child.get("title", ""),
+            "status": result.get("status", "record_failed"),
+            "finding_family": (child.get("metadata") or {}).get("mission_family", {}).get("finding_family", ""),
+            "created": status_code < 400 and result.get("status") != "duplicate_open_mission",
+        }
+        recorded.append(item)
+        _record_mission_memory_event(
+            mission,
+            build_memory_event(
+                agent,
+                "followup_discovered",
+                summary=f"Discovered follow-up {child_id}: {item['finding_family']}",
+                artifact={"next_action": "Owner may approve the linked child mission separately."},
+                metadata={
+                    "child_mission_id": child_id,
+                    "finding_family": item["finding_family"],
+                    "record_status": item["status"],
+                },
+            ),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+    return recorded
+
+
+def _primary_finding_family(artifact):
+    decision = artifact.get("mission_governance_decision") if isinstance(artifact, dict) and isinstance(artifact.get("mission_governance_decision"), dict) else {}
+    findings = decision.get("blocking_findings") if isinstance(decision.get("blocking_findings"), list) else []
+    return str(findings[0].get("family") or "implementation_defect") if findings and isinstance(findings[0], dict) else "implementation_defect"
 
 
 def _mission_changed_files_from_artifacts(artifacts):
@@ -1974,6 +2108,15 @@ def _agent_required_schema(agent):
         "confidence_reason": "evidence-backed reason citing source truth, tests, screenshots, logs, runtime data, or owner-approved context",
         "next_action": "next handoff",
     }
+    if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        base["acceptance_results"] = [
+            {
+                "id": "acceptance row id from the frozen matrix",
+                "status": "passed, failed, or pending",
+                "evidence": ["focused evidence for this row"],
+            }
+        ]
+        base["finding_contract"] = "Each bug/error/QA finding should state scope_relation, introduced_by_current_diff, affected file/path, severity, and whether it violates a named acceptance row or is adjacent follow-up work."
     if agent == "planner":
         base.update({
             "acceptance_criteria": [],
