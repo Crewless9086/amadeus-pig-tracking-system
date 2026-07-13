@@ -69,6 +69,8 @@
     .bar { height: 5px; margin: 7px 0 5px; overflow: hidden; border-radius: 2px; background: #e4e9e6; }
     .bar span { display: block; height: 100%; background: var(--green); }
     .reason { margin-top: 6px; color: #58635d; font-size: 9px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mission-card-runs { margin-top: 5px; color: var(--blue); font-size: 8px; font-weight: 800; }
+    .family-tag { display: inline-block; margin-right: 6px; padding: 2px 4px; border-radius: 3px; color: var(--purple); background: var(--purple-soft); font-size: 7px; text-transform: uppercase; vertical-align: 1px; }
     .center-body, .action-body { min-height: 0; overflow: auto; padding: 14px 16px 20px; }
     .center-body { background: #f7f9f7; }
     .mission-hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -79,6 +81,21 @@
     .metric span { display: block; text-transform: uppercase; font-size: 8px; }
     .metric b { display: block; margin-top: 5px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .timeline { display: flex; gap: 7px; margin-top: 17px; padding-bottom: 7px; overflow-x: auto; scrollbar-width: thin; }
+    .governance-block { margin-top: 14px; border: 1px solid var(--line); background: #fff; }
+    .governance-block.cycling { border-color: #efc886; }
+    .governance-head { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 9px; }
+    .governance-head span { color: var(--muted); text-align: right; }
+    .matrix-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .matrix-row { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #edf0ee; font-size: 8px; }
+    .matrix-row:nth-child(odd) { border-right: 1px solid #edf0ee; }
+    .matrix-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .matrix-row > span:last-child { color: var(--muted); text-transform: uppercase; font-size: 7px; }
+    .matrix-dot { width: 7px; height: 7px; border-radius: 50%; background: #aab4ae; }
+    .matrix-row.passed .matrix-dot { background: var(--green); }
+    .matrix-row.failed .matrix-dot { background: var(--red); }
+    .cycle-note { padding: 8px 10px; color: #6f4309; background: var(--amber-soft); font-size: 8px; line-height: 1.4; }
+    .family-children { display: grid; gap: 4px; padding: 9px 10px; border-top: 1px solid var(--line); font-size: 8px; }
+    .family-children span { color: var(--muted); }
     .stage { position: relative; flex: 0 0 112px; min-height: 67px; padding: 9px; border: 1px solid #d5dbd7; border-top: 3px solid #aab4ae; border-radius: 5px; background: #fff; }
     .stage.complete { border-top-color: var(--green); background: #f7fbf8; }
     .stage.active { border-top-color: #e8b44c; background: var(--amber-soft); }
@@ -132,6 +149,8 @@
       .app > * { min-width: 0; max-width: 100%; }
       .panel { min-height: 470px; border-right: 0; border-bottom: 1px solid var(--line); }
       .mission-stats { grid-template-columns: 1fr 1fr; }
+      .matrix-list { grid-template-columns: 1fr; }
+      .matrix-row:nth-child(odd) { border-right: 0; }
       .system-strip { grid-template-columns: 1fr 1fr; min-height: 80px; }
       .strip-item { min-height: 38px; }
     }
@@ -193,6 +212,6 @@
     <div id="reviewDrawerBody" class="summary-block"></div>
   </div></div>
 
-  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260711-mission-control-refresh') }}"></script>
+  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260713-acceptance-mission-families') }}"></script>
 </body>
 </html>

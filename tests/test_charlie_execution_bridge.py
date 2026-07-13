@@ -136,6 +136,28 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    @patch("modules.charlie.execution_bridge._record_mission_memory_event")
+    @patch("modules.charlie.execution_bridge.record_mission")
+    def test_bounded_discovery_records_owner_gated_child_mission(self, record_mission, record_memory):
+        record_mission.return_value = ({"stored": True, "status": "recorded", "mission_id": "CHARLIE-FOLLOWUP-1"}, 201)
+        decision = {
+            "followup_findings": [{
+                "summary": "Malformed threshold hardening discovered after the parent correction budget.",
+                "family": "input_validation",
+                "severity": "high",
+                "affected_paths": ["modules/beacon/opportunity_scanner.py"],
+            }],
+        }
+
+        recorded = execution_bridge._record_discovered_followups(MISSION, "qa_red_team", decision)
+
+        self.assertEqual(recorded[0]["mission_id"], "CHARLIE-FOLLOWUP-1")
+        child = record_mission.call_args.args[0]
+        self.assertEqual(child["status"], "new")
+        self.assertEqual(child["metadata"]["mission_family"]["parent_mission_id"], MISSION["mission_id"])
+        self.assertEqual(child["metadata"]["mission_family"]["finding_family"], "input_validation")
+        record_memory.assert_called_once()
+
     def test_blocked_packet_resume_starts_from_blocked_agent(self):
         mission = {
             **MISSION,
@@ -515,9 +537,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "execution_dry_run")
         self.assertIn("prompt_path", result)
 
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.get_mission")
-    def test_agent_runner_v2_defaults_to_dry_run(self, get_mission):
+    def test_agent_runner_v2_defaults_to_dry_run(self, get_mission, update_vault):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
 
         with tempfile.TemporaryDirectory() as tmp:
             result, status_code = execution_bridge.run_agent_execution_bridge_v2(
@@ -529,6 +553,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "agent_execution_dry_run")
         self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
         self.assertIn("ledger_path", result)
+        governance_write = update_vault.call_args.args[1]["mission_governance"]
+        self.assertTrue(governance_write["matrix_frozen"])
+        self.assertEqual(governance_write["matrix_source"], "mission_vault")
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")

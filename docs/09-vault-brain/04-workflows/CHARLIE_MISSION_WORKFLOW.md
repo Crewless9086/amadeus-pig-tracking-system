@@ -49,6 +49,23 @@ Each stage must produce structured evidence:
 
 Missing artifacts stop the current stage, but they do not automatically create owner work. CORE classifies each stop as branch repair, environment retry, evidence repair, stale-state reconciliation, implementation repair, owner decision, or red-zone approval. The first five route internally to the responsible stage. Only an explicit owner decision or red-zone approval may remain owner-blocked. Tester failure caused by the current diff returns to Builder; unrelated or pre-existing findings are recorded as advisory backlog. Reviewer send-back returns to the named stage and preserves prior artifacts.
 
+## Acceptance Matrix And Mission Families
+
+Before Builder starts, CORE freezes a machine-readable acceptance matrix from the owner mission, Mission Vault, and Planner evidence. Every row names the requirement, required evidence, focused test scope, verification stage, and current status. Tester and QA must verify this matrix; they may not silently expand the parent mission until no conceivable edge case remains.
+
+Review findings are classified as:
+
+- acceptance-matrix violations, which may return to Builder within the correction budget;
+- repeated semantic defect families, which share one family budget even when wording differs;
+- adjacent improvements, which become linked child missions in `new` state;
+- pre-existing or merge-base failures, which are advisory to the parent and may become linked child missions;
+- environment/time-budget findings, which are advisory or separate recovery work;
+- red-zone findings, which remain hard owner stops regardless of budget.
+
+The default correction budget is four automatic backflows per mission and two per semantic finding family. Once exhausted, new non-red findings become deduplicated child missions with `parent_mission_id`, `root_mission_id`, sequence, finding family, dependency, priority, and reproduction evidence. Child missions are never auto-approved. The owner decides whether they run.
+
+Parent missions become review-ready when their frozen matrix and focused mission-owned tests pass. Discovered work remains visible as a mission family without making delivery unbounded.
+
 ## Queue Discipline
 
 CHARLIE owner-facing queues, Telegram handoff views, command-center buckets, and local runner pickup must treat `owner_work` as the actionable queue class. System smoke tests, validation missions, canary/no-op checks, placeholder relay records, and low-signal intake are not owner work and must not crowd out real owner missions waiting for approval, pickup, review, or release handling.

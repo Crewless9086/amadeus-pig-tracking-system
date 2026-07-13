@@ -18,6 +18,7 @@ from modules.charlie.core_workflow import (
     evaluate_core_readiness,
 )
 from modules.charlie import vault_store
+from modules.charlie.mission_governance import ensure_acceptance_matrix
 
 
 MISSION_STATUSES = {
@@ -1576,6 +1577,12 @@ def _mission_metadata(raw_text, mission, source_context, metadata):
         },
         metadata,
     )
+    metadata.setdefault("mission_governance", ensure_acceptance_matrix({
+        **mission,
+        "raw_text": raw_text,
+        "metadata": metadata,
+        "vault": metadata.get("mission_vault", {}),
+    }))
     return metadata
 
 
@@ -1737,6 +1744,8 @@ def _mission_metadata_select(compact=False):
             )),
             'intake_quality', metadata_json->'intake_quality',
             'queue', metadata_json->'queue',
+            'mission_governance', metadata_json->'mission_governance',
+            'mission_family', metadata_json->'mission_family',
             'media_references', jsonb_path_query_array(
                 coalesce(metadata_json->'media_references', '[]'::jsonb),
                 '$[*] ? (@.media_type != "image")'

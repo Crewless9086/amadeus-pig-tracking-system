@@ -6,6 +6,18 @@ from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_charlie_v2_shows_acceptance_and_mission_family_progress(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        self.assertIn("Acceptance Matrix", script)
+        self.assertIn("correction budget", script)
+        self.assertIn("Linked follow-ups", script)
+        self.assertIn("missionGovernance", script)
+        self.assertIn("missionFamily", script)
+        self.assertIn("mission-card-runs", template)
+        self.assertIn("family-children", template)
+
     def test_charlie_mission_control_page_contract(self):
         template = Path("templates/charlie.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControl.js").read_text(encoding="utf-8")
