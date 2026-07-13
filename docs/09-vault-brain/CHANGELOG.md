@@ -114,3 +114,8 @@
 
 - Prevented generated implementation-defect follow-ups from inheriting read-only marketing or analysis pipelines.
 - Added workflow coverage requiring Builder, Tester, and QA before review.
+
+## 2026-07-14 - BEACON prepare-only campaign calendar
+
+- Added the owner-rule campaign calendar contract: reusable rule versions require exact owner approval, changes require reapproval, and inactive versions fail closed.
+- Defined prepared entries as immutable review evidence bound to approved media, exact copy, allowlisted channels, timezone windows, fresh demand caps, and pause evaluation, with no execution authority.
