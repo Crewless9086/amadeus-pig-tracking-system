@@ -14,6 +14,34 @@ def eligible_pig(pig_id='P1', category='Grower', sex='Male'):
 
 
 class BeaconOpportunityScannerTests(unittest.TestCase):
+    def test_invalid_stale_weight_threshold_values_fail_closed_before_eligibility(self):
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
+        invalid_values = (None, '14', float('nan'), float('inf'), 0, -1, True)
+        for stale_weight_days in invalid_values:
+            with self.subTest(stale_weight_days=stale_weight_days):
+                allocation = {
+                    'source': 'supabase_canonical',
+                    'generated_date': '2026-07-12',
+                    'thresholds': {'stale_weight_days': stale_weight_days},
+                    'pigs': [eligible_pig(f'P{i}') for i in range(5)],
+                }
+                with patch('modules.beacon.opportunity_scanner._live_stock_sale_eligibility') as eligibility:
+                    result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=demand, meat_leads=[], now=NOW)
+                live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+                eligibility.assert_not_called()
+                self.assertEqual(live['demand_cap'], 0)
+                self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+                self.assertEqual(live['status'], 'blocked')
+                self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
+
+    def test_missing_stale_weight_threshold_fails_closed(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=demand, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
+
     def test_malformed_allocation_pigs_and_thresholds_fail_closed(self):
         demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
         malformed_values = ((None, 'bad-thresholds'), ({}, None), ('not-pigs', []), ([eligible_pig(), None], 'bad-thresholds'))
