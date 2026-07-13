@@ -148,6 +148,49 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertTrue(budget["exhausted"])
         self.assertIn("input_validation", budget["exhausted_families"])
 
+    def test_historical_backflows_do_not_exhaust_a_new_builder_revision(self):
+        events = [
+            {"type": "agent_backflow", "metadata": {"finding_family": family}}
+            for family in ("input_validation", "supply_compatibility", "revision_evidence", "test_evidence")
+        ]
+        mission = mission_with_events(events)
+        mission["metadata"]["mission_memory"]["latest_by_agent"] = {
+            "builder": {"type": "agent_complete", "commit_sha": "new-revision"}
+        }
+
+        budget = backflow_budget(mission, [{"family": "access_authority"}])
+
+        self.assertFalse(budget["exhausted"])
+        self.assertEqual(budget["mission_total"], 0)
+        self.assertEqual(budget["historical_mission_total"], 4)
+        self.assertEqual(budget["revision_scope"], "new-revision")
+
+    def test_current_revision_backflows_still_exhaust_the_bounded_budget(self):
+        events = [
+            {
+                "type": "agent_backflow",
+                "metadata": {"finding_family": "access_authority", "revision_sha": "current-revision"},
+            },
+            {
+                "type": "agent_backflow",
+                "metadata": {"finding_family": "access_authority", "revision_sha": "current-revision"},
+            },
+            {
+                "type": "agent_backflow",
+                "metadata": {"finding_family": "access_authority", "revision_sha": "older-revision"},
+            },
+        ]
+        mission = mission_with_events(events)
+        mission["metadata"]["mission_memory"]["latest_by_agent"] = {
+            "builder": {"type": "agent_complete", "commit_sha": "current-revision"}
+        }
+
+        budget = backflow_budget(mission, [{"family": "access_authority"}])
+
+        self.assertTrue(budget["exhausted"])
+        self.assertEqual(budget["mission_total"], 2)
+        self.assertEqual(budget["historical_mission_total"], 3)
+
     def test_red_zone_never_becomes_followup_only(self):
         events = [{"type": "agent_backflow", "metadata": {"finding_family": "implementation_defect"}}] * 5
         decision = evaluate_quality_failure(
