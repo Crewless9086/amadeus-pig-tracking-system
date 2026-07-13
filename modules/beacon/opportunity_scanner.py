@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
-from math import ceil
+from math import ceil, isfinite
 import re
 
 from modules.oom_sakkie.sales_campaign_store import list_sales_leads
@@ -25,6 +25,22 @@ AUTHORITY = {
     "changes_stock": False,
     "writes_farm_lifecycle": False,
 }
+
+
+def _normalized_allocation_thresholds(value):
+    """Return eligibility-safe thresholds and whether source evidence is malformed."""
+    if not isinstance(value, dict):
+        return {}, True
+    raw_stale_weight_days = value.get("stale_weight_days")
+    if isinstance(raw_stale_weight_days, bool):
+        return {}, True
+    try:
+        stale_weight_days = float(raw_stale_weight_days)
+    except (TypeError, ValueError):
+        return {}, True
+    if not isfinite(stale_weight_days) or stale_weight_days <= 0:
+        return {}, True
+    return {**value, "stale_weight_days": stale_weight_days}, False
 
 
 def _utc(value, *, end_of_day=False):
@@ -260,11 +276,9 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     if isinstance(raw_pigs, list) and any(not isinstance(pig, dict) for pig in raw_pigs):
         malformed_allocation_pigs = True
     pigs_evidence = [pig for pig in raw_pigs if isinstance(pig, dict)] if isinstance(raw_pigs, list) else []
-    raw_thresholds = allocation.get("thresholds")
-    malformed_allocation_thresholds = not isinstance(raw_thresholds, dict)
-    thresholds = raw_thresholds if isinstance(raw_thresholds, dict) else {}
+    thresholds, malformed_allocation_thresholds = _normalized_allocation_thresholds(allocation.get("thresholds"))
     eligible = []
-    for pig in pigs_evidence if source_ok else []:
+    for pig in pigs_evidence if source_ok and not malformed_allocation_thresholds else []:
         if _live_stock_sale_eligibility(pig, thresholds).get("eligible"):
             eligible.append(pig)
 

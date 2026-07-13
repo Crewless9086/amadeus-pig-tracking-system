@@ -27,6 +27,56 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
                 self.assertIn('malformed_allocation_pigs_evidence', live['blockers'])
                 self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
 
+    def test_invalid_stale_weight_threshold_values_fail_closed(self):
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
+        invalid_thresholds = (
+            {},
+            {'fresh_weight_days': 14},
+            {'stale_weight_days': None},
+            {'stale_weight_days': ''},
+            {'stale_weight_days': 0},
+            {'stale_weight_days': -1},
+            {'stale_weight_days': True},
+            {'stale_weight_days': float('nan')},
+            {'stale_weight_days': float('inf')},
+            {'stale_weight_days': []},
+        )
+        for thresholds in invalid_thresholds:
+            with self.subTest(thresholds=thresholds):
+                allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': thresholds, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+                result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=demand, meat_leads=[], now=NOW)
+                live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+                self.assertEqual(live['demand_cap'], 0)
+                self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+                self.assertEqual(live['status'], 'blocked')
+                self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
+
+    def test_numeric_stale_weight_threshold_is_normalized_and_enforced(self):
+        pigs = [eligible_pig(f'P{i}') for i in range(5)]
+        for pig in pigs:
+            pig['days_since_weight'] = 15
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': '14'}, 'pigs': pigs}
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=demand, meat_leads=[], now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['capacity_calculation']['verified_available'], 0)
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertNotIn('malformed_allocation_thresholds_evidence', live['blockers'])
+
+    @patch('modules.beacon.opportunity_scanner.get_pig_allocation_readiness')
+    @patch('modules.beacon.opportunity_scanner.list_sales_leads')
+    @patch('modules.beacon.opportunity_scanner.list_sam_live_stock_open_intakes')
+    def test_production_allocation_adapter_invalid_threshold_fails_closed(self, list_intakes, list_leads, get_allocation):
+        get_allocation.return_value = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 'not-a-number'}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        list_intakes.return_value = ({'success': True, 'open_intakes': [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]}, 200)
+        list_leads.return_value = ({'success': True, 'sales_leads': []}, 200)
+        result = build_beacon_opportunity_cards(now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['status'], 'blocked')
+        self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
+        get_allocation.assert_called_once_with(today=NOW.date(), allow_sheet_fallback=False)
+
     def test_malformed_demand_rows_fail_closed_for_both_lanes(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
         malformed_rows = [None, 'bad-row', ['nested-row']]
