@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-13 - CHARLIE resolved test-note backflow hardening
+
+- Prevented corrected informational test-command notes with passing evidence from triggering unnecessary Builder backflow.
+- Kept current-diff and unresolved acceptance failures blocking.
+- Enforced one persisted active workflow stage so CORE execution and dashboard state stay aligned.
+
 ## 2026-07-13 - Beacon Creative Studio provider evaluation foundation
 
 - Added the private, owner-guarded Beacon Creative Studio evaluation contract for allowlisted ElevenLabs and Happy Horse 1.0 candidate identifiers.

@@ -3624,6 +3624,45 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"], result)
 
+    def test_tester_quality_gate_ignores_corrected_informational_command_note(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["tests_run"] = [{
+            "command": "python -m unittest tests.test_sam_farm_knowledge",
+            "status": "pass",
+            "result": "44/44 stress scenarios passing",
+        }]
+        artifact["errors"] = [{
+            "scope_relation": "tester command only",
+            "introduced_by_current_diff": False,
+            "affected_file/path": "modules/sales/sam_meat_stress.py:534",
+            "severity": "informational",
+            "acceptance_relation": "Does not violate acceptance-4dc264ae53",
+            "detail": "The unsupported argument was corrected and the subsequent run returned 44/44 passing.",
+        }]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_tester_quality_gate_keeps_current_diff_error_blocking(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["tests_run"] = [{
+            "command": "python -m unittest tests.test_sam_farm_knowledge",
+            "status": "pass",
+            "result": "focused tests passed",
+        }]
+        artifact["errors"] = [{
+            "scope_relation": "product implementation",
+            "introduced_by_current_diff": True,
+            "severity": "high",
+            "acceptance_relation": "Violates the public-copy acceptance criterion",
+            "detail": "The current diff still exposes internal pilot wording.",
+        }]
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["files_to_inspect"] = []
