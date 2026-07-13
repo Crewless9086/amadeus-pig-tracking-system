@@ -150,3 +150,7 @@ Correction budgets are evaluated against the current packaged Builder revision. 
 ### Implementation follow-up routing
 
 Generated follow-up missions for implementation defects, code defects, regressions, or failing tests must use a software-build workflow even when they inherit a planning, marketing, or analysis mission type from their parent. Pickup workflow refresh must provide Builder, Tester, and QA stages before review.
+
+### Review evidence classification
+
+Reviewer and Tester command mistakes that are explicitly informational, unrelated to the current diff, corrected, acceptance-neutral, and followed by passing focused evidence are advisory process notes. They must not trigger a product rebuild. Current-diff defects and unresolved acceptance failures remain blocking. Persisted workflows must expose no more than one active stage at a time.

@@ -96,6 +96,32 @@ class CharlieMissionStoreTests(unittest.TestCase):
                 self.assertEqual(by_agent[agent]["handoff_to"], "builder")
                 self.assertIn("builder", by_agent)
 
+    def test_update_workflow_items_enforces_single_active_stage(self):
+        workflow = [
+            {"agent": "technical_architect", "status": "active", "handoff_to": "builder"},
+            {"agent": "builder", "status": "pending", "handoff_to": "tester"},
+            {"agent": "tester", "status": "pending", "handoff_to": "qa_red_team"},
+        ]
+
+        updated = _update_workflow_items(workflow, "builder", "active", "Build resumed.", "tester")
+
+        active = [item["agent"] for item in updated if item.get("status") == "active"]
+        self.assertEqual(active, ["builder"])
+        by_agent = {item["agent"]: item for item in updated}
+        self.assertEqual(by_agent["technical_architect"]["status"], "pending")
+
+    def test_update_workflow_items_complete_activates_only_handoff(self):
+        workflow = [
+            {"agent": "technical_architect", "status": "active", "handoff_to": "builder"},
+            {"agent": "builder", "status": "active", "handoff_to": "tester"},
+            {"agent": "tester", "status": "pending", "handoff_to": "qa_red_team"},
+        ]
+
+        updated = _update_workflow_items(workflow, "builder", "complete", "Build complete.", "tester")
+
+        active = [item["agent"] for item in updated if item.get("status") == "active"]
+        self.assertEqual(active, ["tester"])
+
     @patch("modules.charlie.mission_store.update_mission_vault")
     @patch("modules.charlie.mission_store.get_mission")
     def test_reviewer_complete_does_not_mark_pr_ready_without_review_packet(self, get_mission_mock, update_vault_mock):

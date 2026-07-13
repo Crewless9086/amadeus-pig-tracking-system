@@ -4457,6 +4457,29 @@ def _is_recovered_command_process_issue(agent, artifact, value):
     return any(term in text for term in recovered_terms) and any(term in text for term in setup_terms)
 
 
+def _is_resolved_informational_process_issue(agent, artifact, value):
+    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not isinstance(value, dict) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    if value.get("introduced_by_current_diff") is not False:
+        return False
+    severity = str(value.get("severity") or "").strip().lower()
+    scope = str(value.get("scope_relation") or "").strip().lower()
+    acceptance = str(value.get("acceptance_relation") or "").strip().lower()
+    detail = " ".join((
+        _artifact_text(value),
+        str(value.get("detail") or ""),
+    )).lower()
+    return (
+        severity in {"informational", "info", "none"}
+        and any(term in scope for term in ("command", "tool", "test harness", "process"))
+        and any(term in acceptance for term in ("does not violate", "outside acceptance", "not acceptance"))
+        and any(term in detail for term in ("corrected", "retried", "reran", "resolved", "subsequent"))
+        and any(term in detail for term in ("pass", "passing", "succeeded", "green"))
+    )
+
+
 def _blocking_artifact_items(agent, artifact, values):
     if not isinstance(values, list):
         values = [values] if values else []
@@ -4467,6 +4490,8 @@ def _blocking_artifact_items(agent, artifact, values):
         if _is_resolved_pr_process_issue(agent, artifact, value):
             continue
         if _is_recovered_command_process_issue(agent, artifact, value):
+            continue
+        if _is_resolved_informational_process_issue(agent, artifact, value):
             continue
         blocking.append(value)
     return blocking

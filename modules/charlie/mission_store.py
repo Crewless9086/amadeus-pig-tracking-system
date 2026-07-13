@@ -1808,6 +1808,10 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
         known[agent]["handoff_to"] = next_agent
     if not agent:
         return [known[name] for name in sequence]
+    if step_status in {"active", "blocked", "complete"}:
+        for name in sequence:
+            if name != agent and known[name].get("status") == "active":
+                known[name]["status"] = "pending"
     known[agent]["status"] = step_status
     if findings:
         known[agent]["findings"] = findings
