@@ -1843,6 +1843,8 @@ def _return_workflow_to_stage(workflow, target_stage, comments):
                 known[agent]["findings"] = comments
         elif target_seen:
             known[agent]["status"] = "pending"
+        elif known[agent].get("status") == "active":
+            known[agent]["status"] = "pending"
     return [known[name] for name in sequence]
 
 

@@ -5,6 +5,7 @@
 - Prevented corrected informational test-command notes with passing evidence from triggering unnecessary Builder backflow.
 - Kept current-diff and unresolved acceptance failures blocking.
 - Enforced one persisted active workflow stage so CORE execution and dashboard state stay aligned.
+- Applied the same single-active invariant when an owner sends a mission back to a selected stage.
 
 ## 2026-07-13 - Beacon Creative Studio provider evaluation foundation
 
