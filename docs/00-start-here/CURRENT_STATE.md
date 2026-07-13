@@ -2,6 +2,14 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## CHARLIE CORE Bounded Mission Delivery - 2026-07-13
+
+- CORE freezes an acceptance matrix before Builder and records Tester/QA evidence against each row.
+- Automatic correction is bounded mission-wide and by semantic finding family; differently worded variants no longer bypass the loop cap indefinitely.
+- New non-red discoveries after the budget become deduplicated, owner-gated child missions linked to their parent/root mission. Red-zone findings remain hard owner stops.
+- Failures reproduced on `main` and advisory broad-suite timeouts no longer fail an unrelated parent mission.
+- `/charlie-v2` shows acceptance percentage, fixes, review runs, correction budget, cycling warnings, and linked mission-family work separately from workflow-stage progress.
+
 ## Beacon Marketing Department Evidence - 2026-07-12
 
 - Beacon is the Marketing Department Leader, with Strategy, Creative, Media Librarian, Scheduler, and Performance specialist modules under her.

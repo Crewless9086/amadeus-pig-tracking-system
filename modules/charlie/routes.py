@@ -42,6 +42,7 @@ from modules.charlie.mission_memory import (
     replay_packet,
 )
 from modules.charlie.mission_quality import score_mission_quality
+from modules.charlie.mission_governance import mission_governance_summary
 from modules.charlie.replay_stress import golden_example_candidate, stress_replay_mission
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
@@ -383,7 +384,8 @@ def charlie_mission_control_snapshot_route():
     statuses = [summary_status, queue_status]
     if max(statuses) >= 400:
         return jsonify({"success": False, "status": "mission_control_snapshot_unavailable", "statuses": statuses}), 503
-    raw_buckets = _mission_status_buckets(owner_queue.get("missions", []))
+    owner_missions = _attach_mission_family_children(owner_queue.get("missions", []))
+    raw_buckets = _mission_status_buckets(owner_missions)
     packet = {
         "success": True,
         "status": "mission_control_snapshot_ready",
@@ -402,6 +404,35 @@ def charlie_mission_control_snapshot_route():
     }
     MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})
     return jsonify(packet), 200
+
+
+def _attach_mission_family_children(missions):
+    missions = [dict(mission) for mission in (missions or []) if isinstance(mission, dict)]
+    by_id = {mission.get("mission_id"): mission for mission in missions if mission.get("mission_id")}
+    for mission in missions:
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+        parent = by_id.get(family.get("parent_mission_id"))
+        if not parent:
+            continue
+        parent_metadata = parent.setdefault("metadata", {})
+        parent_family = parent_metadata.get("mission_family") if isinstance(parent_metadata.get("mission_family"), dict) else {}
+        parent_family = dict(parent_family)
+        children = parent_family.get("children") if isinstance(parent_family.get("children"), list) else []
+        children = [item for item in children if isinstance(item, dict) and item.get("mission_id") != mission.get("mission_id")]
+        children.append({
+            "mission_id": mission.get("mission_id", ""),
+            "title": mission.get("title", ""),
+            "status": mission.get("status", ""),
+            "sequence": family.get("sequence"),
+            "finding_family": family.get("finding_family", ""),
+        })
+        parent_family.update({
+            "root_mission_id": family.get("root_mission_id") or parent.get("mission_id", ""),
+            "children": sorted(children, key=lambda item: (item.get("sequence") or 999, item.get("mission_id") or "")),
+        })
+        parent_metadata["mission_family"] = parent_family
+    return missions
 
 
 @charlie_bp.route("/charlie/agent-workforce", methods=["GET"])
@@ -883,6 +914,10 @@ def _mission_dashboard_summary(mission):
     compact_metadata = {}
     if compact_review_packet:
         compact_metadata["review_packet"] = compact_review_packet
+    compact_metadata["mission_governance"] = mission_governance_summary(mission)
+    mission_family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    if mission_family:
+        compact_metadata["mission_family"] = mission_family
     mission_memory = mission_memory_from_metadata(metadata)
     if mission_memory.get("events") or mission_memory.get("updated_at"):
         compact_metadata["mission_memory"] = {

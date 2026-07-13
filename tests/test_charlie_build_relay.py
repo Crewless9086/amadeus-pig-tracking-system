@@ -1026,6 +1026,25 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
         self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
 
+    def test_mission_family_children_stay_attached_to_parent_summary(self):
+        missions = [
+            {"mission_id": "PARENT", "status": "in_progress", "metadata": {}},
+            {"mission_id": "CHILD", "title": "Input validation follow-up", "status": "new", "metadata": {
+                "mission_family": {
+                    "parent_mission_id": "PARENT",
+                    "root_mission_id": "PARENT",
+                    "sequence": 1,
+                    "finding_family": "input_validation",
+                },
+            }},
+        ]
+
+        attached = charlie_routes._attach_mission_family_children(missions)
+        parent = next(item for item in attached if item["mission_id"] == "PARENT")
+
+        self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["mission_id"], "CHILD")
+        self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["finding_family"], "input_validation")
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_core_readiness_route_returns_stage_percentages(self, get_mission, _owner_access):

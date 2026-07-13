@@ -15,6 +15,21 @@ const blockedMission = {
     { agent: "tester", status: "pending", findings: "Waiting for corrected build." },
   ],
   metadata: {
+    mission_governance: {
+      acceptance_percent: 67,
+      acceptance_counts: { passed: 2, failed: 1, pending: 0 },
+      acceptance_matrix: [
+        { id: "scope", requirement: "Build the scoped alert engine", status: "passed", evidence_required: "Focused tests" },
+        { id: "evidence", requirement: "Attach reviewable PR evidence", status: "failed", evidence_required: "PR link and commit" },
+        { id: "authority", requirement: "Keep owner authority intact", status: "passed", evidence_required: "Authority invariant" },
+      ],
+      fix_count: 3,
+      review_runs: 4,
+      backflow_count: 2,
+      followup_count: 1,
+      cycling: false,
+      budget: { mission_limit: 4 },
+    },
     review_packet: {
       summary: "Builder stopped before owner review.",
       blocked_agent: "builder",
@@ -55,6 +70,8 @@ test("mission cockpit loads useful evidence and send-back requires owner comment
   await expect(page.getByText("Herdmaster allocation alert engine").first()).toBeVisible();
   await expect(page.getByText("PR evidence is missing.").first()).toBeVisible();
   await expect(page.getByText("builder", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Acceptance Matrix")).toBeVisible();
+  await expect(page.getByText("3 fixes", { exact: false }).first()).toBeVisible();
   await page.getByRole("button", { name: "Send Back", exact: true }).click();
   await expect(page.getByText("What must be corrected")).toBeVisible();
   await page.locator("#sendBackComments").fill("Attach the PR and rerun the focused tests.");

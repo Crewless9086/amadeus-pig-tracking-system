@@ -44,6 +44,10 @@ Tester failure sends the workflow back to Builder. Reviewer rejection or finding
 
 **Cross-session loop cap (Stage 1 reliability fix).** The per-run ledger backflow counter resets every runner session, so before this fix a repeated blocker could loop across restarts and churn overnight without ever landing. The hard-loop cap is now **mission-durable**: each backflow stamps its blocker fingerprint into durable mission memory, and the loop detector counts prior occurrences across all previous sessions (`_durable_backflow_fingerprint_count`). A blocker that repeats across sessions converts to an honest owner-review block with a recovery packet instead of an infinite retry.
 
+**Bounded discovery and mission families.** Exact-text fingerprints are not the only limit. CORE also groups findings into semantic families and applies a mission-wide correction budget. In-scope acceptance failures return to Builder while budget remains. New non-red hardening or adjacent work after the budget becomes a deduplicated child mission awaiting owner approval. Pre-existing failures that reproduce on `main` and broad-suite advisory timeouts do not fail the parent. Red-zone findings always stop for owner review.
+
+The acceptance matrix is frozen before Builder and updated by Tester/QA evidence. This gives the parent a finite completion boundary while preserving every actionable discovery.
+
 ## Dashboard Visibility
 
 The local runner heartbeat exposes:
@@ -58,6 +62,8 @@ The local runner heartbeat exposes:
 - elapsed/progress details where available
 
 The CHARLIE dashboard surfaces these fields in the Local Runner panel.
+
+Mission Control also separates acceptance completion from workflow position. It shows matrix rows, fixes completed, review runs, backflow budget, cycling warnings, and linked child missions so productive hardening is not mistaken for a frozen percentage.
 
 The dashboard also exposes a CHARLIE CORE Command Center with queue counts, review/blocked state, release state, deployed/merged state, live verification configuration, Vault version, and current runner boundary.
 
