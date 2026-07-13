@@ -156,3 +156,5 @@ Generated follow-up missions for implementation defects, code defects, regressio
 Reviewer and Tester command mistakes that are explicitly informational, unrelated to the current diff, corrected, acceptance-neutral, and followed by passing focused evidence are advisory process notes. They must not trigger a product rebuild. Current-diff defects and unresolved acceptance failures remain blocking. Persisted workflows must expose no more than one active stage at a time.
 
 Owner send-back normalization follows the same single-active-stage invariant: the selected return stage is active, downstream stages are pending, and stale upstream active markers are cleared without discarding completed evidence.
+
+Safety language such as `fail-closed` describes required protective behavior and is not itself failure evidence. Explicit failed tests, unresolved acceptance findings, and send-back decisions remain blocking.

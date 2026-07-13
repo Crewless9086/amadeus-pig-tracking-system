@@ -6,6 +6,7 @@
 - Kept current-diff and unresolved acceptance failures blocking.
 - Enforced one persisted active workflow stage so CORE execution and dashboard state stay aligned.
 - Applied the same single-active invariant when an owner sends a mission back to a selected stage.
+- Stopped the judgement scanner from misclassifying the safety term `fail-closed` as failed-test evidence.
 
 ## 2026-07-13 - Beacon Creative Studio provider evaluation foundation
 
