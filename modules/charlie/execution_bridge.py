@@ -7308,6 +7308,8 @@ def _run_codex_process(
     final_path = Path(final_path)
     started = time.monotonic()
     final_seen_at = None
+    last_progress_at = started
+    last_progress_signature = None
     no_final_timeout = min(
         int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
         NO_FINAL_ARTIFACT_TIMEOUT_SECONDS,
@@ -7330,28 +7332,39 @@ def _run_codex_process(
             process.stdin.close()
             process.stdin = None
         while process.poll() is None:
-            elapsed = time.monotonic() - started
+            now = time.monotonic()
+            elapsed = now - started
             final_exists = final_path.exists() and final_path.stat().st_size > 0
             if final_exists and final_seen_at is None:
-                final_seen_at = time.monotonic()
+                final_seen_at = now
             changed_files = _changed_files()
+            progress_signature = (
+                _file_progress_signature(stdout_path),
+                _file_progress_signature(stderr_path),
+                tuple(changed_files),
+            )
+            if progress_signature != last_progress_signature:
+                last_progress_signature = progress_signature
+                last_progress_at = now
+            idle_seconds = now - last_progress_at
             supervisor_status = "codex_final_artifact_seen" if final_exists else "codex_running"
-            if not final_exists and elapsed >= NO_FINAL_ARTIFACT_WARNING_SECONDS:
+            if not final_exists and idle_seconds >= NO_FINAL_ARTIFACT_WARNING_SECONDS:
                 supervisor_status = "codex_no_final_artifact_warning"
             write_runner_heartbeat({
                 "status": supervisor_status,
                 "mission_id": mission_id,
                 "execution_artifact": str(final_path),
                 "elapsed_seconds": int(elapsed),
+                "idle_seconds": int(idle_seconds),
                 "changed_files_count": len(changed_files),
                 "final_artifact_present": final_exists,
                 "stdout_tail": _read_tail(stdout_path, 1200),
                 "stderr_tail": _read_tail(stderr_path, 1200),
             })
-            if final_seen_at and time.monotonic() - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
+            if final_seen_at and now - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
                 _terminate_process_tree(process.pid)
                 break
-            if not final_exists and elapsed >= no_final_timeout:
+            if not final_exists and idle_seconds >= no_final_timeout:
                 _terminate_process_tree(process.pid)
                 break
             if elapsed >= int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS):
@@ -7396,6 +7409,14 @@ def _run_codex_process(
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
+
+
+def _file_progress_signature(path):
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return (0, 0)
+    return (int(stat.st_size), int(stat.st_mtime_ns))
 
 
 def _terminate_process_tree(pid):
