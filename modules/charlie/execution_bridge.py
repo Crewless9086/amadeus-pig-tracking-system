@@ -393,6 +393,12 @@ def run_agent_execution_bridge_v2(
     if status_code >= 400:
         return error, status_code
 
+    mission = _ensure_execution_governance(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     execution_id = _execution_id(mission["mission_id"])
