@@ -4,7 +4,6 @@ import os
 from flask import Blueprint, jsonify, request
 from modules.auth.owner_access import (
     owner_session_is_valid,
-    require_owner_admin_access,
     require_owner_read_access,
 )
 
@@ -157,7 +156,7 @@ def meat_processing_batches():
             return denied
         result, status_code = list_meat_processing_batches()
     else:
-        denied = require_owner_admin_access()
+        denied = require_owner_read_access()
         if denied:
             return denied
         result, status_code = create_meat_processing_batch(request.get_json(silent=True) or {})
@@ -175,7 +174,7 @@ def meat_processing_batch_detail(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/events", methods=["POST"])
 def meat_processing_batch_event(batch_id):
-    denied = require_owner_admin_access()
+    denied = require_owner_read_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_event(batch_id, request.get_json(silent=True) or {})
@@ -184,7 +183,7 @@ def meat_processing_batch_event(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/costs", methods=["POST"])
 def meat_processing_batch_cost(batch_id):
-    denied = require_owner_admin_access()
+    denied = require_owner_read_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_cost(batch_id, request.get_json(silent=True) or {})
@@ -193,7 +192,7 @@ def meat_processing_batch_cost(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/outputs", methods=["POST"])
 def meat_processing_batch_output(batch_id):
-    denied = require_owner_admin_access()
+    denied = require_owner_read_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_output(batch_id, request.get_json(silent=True) or {})
