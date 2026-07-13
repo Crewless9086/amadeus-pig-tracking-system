@@ -25,7 +25,7 @@ DEFAULT_KNOWLEDGE = {
     "product_menu": [
         {"key": "live_sales", "label": "Live pig sales", "summary": "Piglets, weaners, growers, finishers, and larger live pigs can be handled through the live-stock sales path."},
         {"key": "farm_info", "label": "Farm information", "summary": "Farm story, location, and general questions."},
-        {"key": "meat_sales_guarded", "label": "Meat sales", "summary": "Not open publicly yet; the owner will confirm when the pilot is ready."},
+        {"key": "meat_sales_guarded", "label": "Meat sales", "summary": "Pre-booked half carcass and other pork freezer options; the farm confirms availability before anything is booked."},
     ],
     "meat_sales": {
         "positioning": "Pre-booked Amadeus Farm pork for freezer buyers.",
