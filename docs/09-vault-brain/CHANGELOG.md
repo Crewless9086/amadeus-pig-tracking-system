@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - BEACON calendar durable lifecycle and revocation
+
+- Replaced process-local reusable-rule lifecycle authority with a worker-shared durable SQLite event registry.
+- Added authoritative owner revocation events; preparation and historical-entry evaluation now resolve current lifecycle state server-side and fail closed after revocation.
+- Kept rule approval and revocation evidence-only with no posting, sending, spending, reservation, stock, payment, or farm-write authority.
+
 ## 2026-07-14 - Beacon campaign rule lifecycle authority hardening
 
 - Required prepare-only calendar approvals and latest-version state to resolve from the server-owned append-only lifecycle registry.

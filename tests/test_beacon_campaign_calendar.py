@@ -6,10 +6,12 @@ from unittest.mock import patch
 from app import app
 from modules.beacon.campaign_calendar import (
     RULE_LIFECYCLE_REGISTRY,
+    RuleLifecycleRegistry,
     approve_rule_version,
     evaluate_prepared_entry,
     prepare_calendar_entry,
     propose_rule_version,
+    revoke_rule_version,
 )
 from modules.sales import sales_transaction_routes
 
@@ -158,19 +160,32 @@ class BeaconCampaignCalendarTests(unittest.TestCase):
         self.assertTrue(all(reason.startswith("pause_") for reason in result["pause_reasons"]))
 
     def test_revocation_blocks_current_use_without_rewriting_entry(self):
-        entry = prepare_calendar_entry(valid_payload(), now=NOW)["calendar_entry"]
+        payload = valid_payload()
+        entry = prepare_calendar_entry(payload, now=NOW)["calendar_entry"]
         snapshot = entry["snapshot_sha256"]
-        evaluated = evaluate_prepared_entry(entry, rule_status="revoked")
+        result = revoke_rule_version("RULE-1", 1, "owner-charl", revoked_at=NOW)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["calendar_entries"], [])
+        self.assertIn("rule_revoked", prepare_calendar_entry(payload, now=NOW)["errors"])
+        evaluated = evaluate_prepared_entry(entry)
         self.assertTrue(evaluated["currently_blocked"])
         self.assertIn("rule_revoked", evaluated["reasons"])
         self.assertEqual(evaluated["entry"]["snapshot_sha256"], snapshot)
+
+    def test_lifecycle_authority_survives_registry_restart_and_is_shared(self):
+        path = RULE_LIFECYCLE_REGISTRY.database_path
+        approved = approved_rule()
+        restarted = RuleLifecycleRegistry(path)
+        self.assertEqual(restarted.approved_rule("RULE-1", 1)["approval_id"], approved["approval_id"])
+        revoke_rule_version("RULE-1", 1, "owner-charl", revoked_at=NOW, registry=restarted)
+        self.assertEqual(RULE_LIFECYCLE_REGISTRY.latest_rule("RULE-1")["status"], "revoked")
 
     def test_routes_are_owner_guarded_and_never_execute_external_actions(self):
         app.testing = True
         client = app.test_client()
         denial = ({"success": False, "status": "owner_admin_required"}, 403)
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denial):
-            for route in ("rules/propose", "rules/approve", "prepare"):
+            for route in ("rules/propose", "rules/approve", "rules/revoke", "prepare"):
                 response = client.post("/api/beacon/campaign-calendar/" + route, json={})
                 self.assertEqual(response.status_code, 403)
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \

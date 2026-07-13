@@ -9,6 +9,9 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
+from pathlib import Path
+import sqlite3
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
@@ -33,29 +36,55 @@ PAUSE_SCOPES = {"global", "rule", "channel", "campaign", "asset", "fulfilment"}
 
 
 class RuleLifecycleRegistry:
-    """Process-local, append-only authority for rule proposals and approvals."""
+    """Append-only lifecycle authority backed by a worker-shared SQLite file."""
 
-    def __init__(self):
-        self._events = []
+    def __init__(self, database_path=None):
+        configured = database_path or os.getenv("BEACON_RULE_LIFECYCLE_DB_PATH")
+        self.database_path = str(Path(configured or "instance/beacon_rule_lifecycle.sqlite3"))
+        Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as connection:
+            connection.execute("""
+                create table if not exists rule_lifecycle_events (
+                    sequence integer primary key autoincrement,
+                    event_type text not null,
+                    rule_id text not null,
+                    rule_version integer not null,
+                    rule_json text not null
+                )
+            """)
+
+    def _connect(self):
+        return sqlite3.connect(self.database_path, timeout=10)
 
     def record(self, event_type, rule):
-        event = {"sequence": len(self._events) + 1, "event_type": event_type, "rule": deepcopy(rule)}
-        self._events.append(event)
+        snapshot = deepcopy(rule)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "insert into rule_lifecycle_events (event_type, rule_id, rule_version, rule_json) values (?, ?, ?, ?)",
+                (event_type, snapshot.get("rule_id"), snapshot.get("version"), json.dumps(snapshot, sort_keys=True)),
+            )
+        event = {"sequence": cursor.lastrowid, "event_type": event_type, "rule": snapshot}
         return deepcopy(event)
 
     def latest_rule(self, rule_id):
-        matches = [event["rule"] for event in self._events if event["rule"].get("rule_id") == rule_id]
-        return deepcopy(matches[-1]) if matches else {}
+        with self._connect() as connection:
+            row = connection.execute(
+                "select rule_json from rule_lifecycle_events where rule_id = ? order by sequence desc limit 1",
+                (rule_id,),
+            ).fetchone()
+        return json.loads(row[0]) if row else {}
 
     def approved_rule(self, rule_id, version):
-        matches = [event["rule"] for event in self._events
-                   if event["event_type"] == "approved"
-                   and event["rule"].get("rule_id") == rule_id
-                   and event["rule"].get("version") == version]
-        return deepcopy(matches[-1]) if matches else {}
+        with self._connect() as connection:
+            row = connection.execute(
+                "select rule_json from rule_lifecycle_events where rule_id = ? and rule_version = ? "
+                "and event_type = 'approved' order by sequence desc limit 1", (rule_id, version),
+            ).fetchone()
+        return json.loads(row[0]) if row else {}
 
     def clear(self):
-        self._events.clear()
+        with self._connect() as connection:
+            connection.execute("delete from rule_lifecycle_events")
 
 
 RULE_LIFECYCLE_REGISTRY = RuleLifecycleRegistry()
@@ -122,6 +151,24 @@ def approve_rule_version(rule, owner_id, approved_at=None, registry=None):
                    rule=approved if not errors else rule, calendar_entries=[])
 
 
+def revoke_rule_version(rule_id, version, owner_id, revoked_at=None, reason_code="owner_revoked", registry=None):
+    """Append an authoritative owner revocation; never mutate approval history."""
+    registry = registry or RULE_LIFECYCLE_REGISTRY
+    approved = registry.approved_rule(_text(rule_id), version)
+    errors = []
+    if not approved:
+        errors.append("approved_rule_not_found")
+    if not _text(owner_id):
+        errors.append("owner_identity_required")
+    if errors:
+        return _result(False, "rule_revocation_rejected", errors, rule=approved)
+    revoked = deepcopy(approved)
+    revoked.update({"status": "revoked", "revoked_by": _text(owner_id),
+                    "revoked_at": _utc(revoked_at).isoformat(), "revocation_reason": _text(reason_code)})
+    registry.record("revoked", revoked)
+    return _result(True, "rule_version_revoked", [], rule=revoked, calendar_entries=[])
+
+
 def prepare_calendar_entry(payload, now=None, registry=None):
     """Validate evidence and return a frozen review entry or fail closed."""
     payload = payload if isinstance(payload, dict) else {}
@@ -148,6 +195,8 @@ def prepare_calendar_entry(payload, now=None, registry=None):
     latest = registry.latest_rule(rule.get("rule_id"))
     if latest and latest.get("version") != rule.get("version"):
         errors.append("rule_superseded")
+    elif latest and latest.get("status") != ACTIVE_APPROVAL_STATUS:
+        errors.append("rule_" + _text(latest.get("status")))
     errors.extend(_active_rule_errors(rule, now))
     errors.extend(_asset_errors(asset, rule))
     if not exact_copy or _digest(exact_copy) != _text(payload.get("copy_sha256")):
@@ -190,12 +239,19 @@ def prepare_calendar_entry(payload, now=None, registry=None):
                    calculated_cap=calculated_cap, pause_reasons=[])
 
 
-def evaluate_prepared_entry(entry, rule_status=None, pauses=None):
+def evaluate_prepared_entry(entry, pauses=None, registry=None):
     """Re-evaluate revocation/pause state without rewriting historical evidence."""
+    registry = registry or RULE_LIFECYCLE_REGISTRY
     entry = deepcopy(entry) if isinstance(entry, dict) else {}
     reasons = []
-    if rule_status and rule_status != ACTIVE_APPROVAL_STATUS:
-        reasons.append("rule_" + _text(rule_status))
+    snapshot_rule = entry.get("rule", {})
+    current = registry.latest_rule(snapshot_rule.get("rule_id"))
+    if not current:
+        reasons.append("rule_authority_unavailable")
+    elif current.get("version") != snapshot_rule.get("version"):
+        reasons.append("rule_superseded")
+    elif current.get("status") != ACTIVE_APPROVAL_STATUS:
+        reasons.append("rule_" + _text(current.get("status")))
     reasons.extend(_pause_reasons(pauses or [], entry.get("rule", {}), entry.get("asset", {}), entry.get("channel", "")))
     return {"entry": entry, "currently_blocked": bool(reasons), "reasons": sorted(set(reasons)),
             "authority": deepcopy(PREPARE_ONLY_AUTHORITY)}

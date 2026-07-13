@@ -11,6 +11,7 @@ from modules.beacon.campaign_calendar import (
     approve_rule_version,
     prepare_calendar_entry,
     propose_rule_version,
+    revoke_rule_version,
 )
 
 from modules.oom_sakkie.sales_campaign_store import (
@@ -799,6 +800,18 @@ def beacon_campaign_calendar_rule_approve():
         return denied
     payload = request.get_json(silent=True) or {}
     result = approve_rule_version(payload.get("rule"), "authenticated_owner_admin", approved_at=payload.get("approved_at"))
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@sales_bp.route("/beacon/campaign-calendar/rules/revoke", methods=["POST"])
+def beacon_campaign_calendar_rule_revoke():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = revoke_rule_version(payload.get("rule_id"), payload.get("version"),
+                                 "authenticated_owner_admin", revoked_at=payload.get("revoked_at"),
+                                 reason_code=payload.get("reason_code"))
     return jsonify(result), 200 if result["success"] else 400
 
 
