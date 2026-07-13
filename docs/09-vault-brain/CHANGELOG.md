@@ -89,3 +89,8 @@
 - Added Vault readiness scorecard with current 82-87% estimate and blockers to 95-100%.
 - Added first-pass runtime Vault enforcement in CHARLIE Agent Runner v2: stage prompts load bounded Vault Brain context, agent artifacts must cite Vault sources, Brain Guard blocks owner review when Vault discipline is missing, and mission context packs now list Vault Brain as active truth.
 - Added second-pass runtime intelligence rails: ranked Vault retrieval, source coverage scoring, owner preference context, Brain Guard v2 evidence, normalized Vault write-through evidence, expanded tool permissions, autonomy readiness API data, dashboard readiness tiles, and broader improvement analyst categories.
+## 2026-07-13 - CHARLIE revision-scoped correction budgets
+
+- Scoped correction-budget counts to the current packaged Builder commit while retaining lifetime history.
+- Added the Builder revision SHA to durable backflow events.
+- Kept exact blocker fingerprints mission-durable across revisions to prevent cosmetic rebuild loops.

@@ -777,6 +777,7 @@ def run_agent_execution_bridge_v2(
                             "backflow_from": agent,
                             "backflow_to": backflow_target,
                             "finding_family": _primary_finding_family(artifact),
+                            "revision_sha": _builder_revision_sha(mission, artifacts),
                         },
                     ),
                     database_url=database_url,
@@ -6202,6 +6203,19 @@ def _record_mission_memory_event(mission, event, database_url=None, connect_fact
         database_url=database_url,
         connect_factory=connect_factory,
     )
+
+
+def _builder_revision_sha(mission, artifacts=None):
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
+    revision = str(builder.get("commit_sha") or "").strip()
+    if revision:
+        return revision
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    memory = metadata.get("mission_memory") if isinstance(metadata.get("mission_memory"), dict) else {}
+    latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
+    builder_event = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
+    return str(builder_event.get("commit_sha") or "").strip()
 
 
 def _agent_completion_note(agent, final_message):

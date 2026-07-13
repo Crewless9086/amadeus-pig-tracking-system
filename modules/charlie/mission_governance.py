@@ -182,7 +182,15 @@ def backflow_budget(mission, findings=None):
     total_limit = _positive_int(limits.get("mission_total"), DEFAULT_TOTAL_BACKFLOW_LIMIT)
     family_limit = _positive_int(limits.get("per_family"), DEFAULT_FAMILY_BACKFLOW_LIMIT)
     memory = metadata.get("mission_memory") if isinstance(metadata.get("mission_memory"), dict) else {}
-    events = [event for event in memory.get("events", []) if isinstance(event, dict) and event.get("type") == "agent_backflow"]
+    all_events = [event for event in memory.get("events", []) if isinstance(event, dict) and event.get("type") == "agent_backflow"]
+    revision_scope = _active_builder_revision(memory)
+    events = all_events
+    if revision_scope:
+        events = [
+            event
+            for event in all_events
+            if str((event.get("metadata") or {}).get("revision_sha") or "").strip() == revision_scope
+        ]
     family_counts = {}
     for event in events:
         event_metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
@@ -192,13 +200,21 @@ def backflow_budget(mission, findings=None):
     exhausted_families = [family for family in requested_families if family_counts.get(family, 0) >= family_limit]
     return {
         "mission_total": len(events),
+        "historical_mission_total": len(all_events),
         "mission_limit": total_limit,
         "per_family_limit": family_limit,
         "family_counts": family_counts,
         "requested_families": requested_families,
         "exhausted_families": exhausted_families,
         "exhausted": len(events) >= total_limit or bool(exhausted_families),
+        "revision_scope": revision_scope,
     }
+
+
+def _active_builder_revision(memory):
+    latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
+    builder = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
+    return str(builder.get("commit_sha") or "").strip()
 
 
 def build_followup_missions(parent, findings):

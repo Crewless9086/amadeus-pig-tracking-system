@@ -285,6 +285,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(execution_bridge._durable_backflow_fingerprint_count(mission, "missing"), 0)
         self.assertEqual(execution_bridge._durable_backflow_fingerprint_count({}, "abc123"), 0)
 
+    def test_builder_revision_sha_prefers_current_artifact_and_falls_back_to_memory(self):
+        mission = {
+            "metadata": {
+                "mission_memory": {
+                    "latest_by_agent": {"builder": {"commit_sha": "memory-sha"}},
+                }
+            }
+        }
+
+        self.assertEqual(
+            execution_bridge._builder_revision_sha(mission, {"builder": {"commit_sha": "artifact-sha"}}),
+            "artifact-sha",
+        )
+        self.assertEqual(execution_bridge._builder_revision_sha(mission, {}), "memory-sha")
+
     def test_rerun_recovers_done_lock_when_latest_agent_event_is_backflow(self):
         sequence = ["builder", "tester", "qa_red_team", "reviewer"]
         mission = {
