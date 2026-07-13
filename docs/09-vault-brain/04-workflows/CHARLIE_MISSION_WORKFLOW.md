@@ -147,3 +147,6 @@ Provider-specific stages must use the provider-aware runner path. If Claude/Anth
 ### Revision-scoped correction budgets
 
 Correction budgets are evaluated against the current packaged Builder revision. Historical backflows remain visible for learning and reporting, but they do not consume a new revision's correction budget. Each new backflow records the Builder commit SHA. The separate mission-durable blocker fingerprint remains authoritative across revisions, so rebuilding without resolving the same finding still reaches the hard loop stop.
+### Implementation follow-up routing
+
+Generated follow-up missions for implementation defects, code defects, regressions, or failing tests must use a software-build workflow even when they inherit a planning, marketing, or analysis mission type from their parent. Pickup workflow refresh must provide Builder, Tester, and QA stages before review.

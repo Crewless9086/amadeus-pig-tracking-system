@@ -102,3 +102,7 @@
 - Scoped correction-budget counts to the current packaged Builder commit while retaining lifetime history.
 - Added the Builder revision SHA to durable backflow events.
 - Kept exact blocker fingerprints mission-durable across revisions to prevent cosmetic rebuild loops.
+## 2026-07-13 - Implementation follow-ups receive build authority
+
+- Prevented generated implementation-defect follow-ups from inheriting read-only marketing or analysis pipelines.
+- Added workflow coverage requiring Builder, Tester, and QA before review.

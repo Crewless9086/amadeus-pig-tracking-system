@@ -418,8 +418,8 @@ def explicit_non_ui_requested(text):
     ))
 
 
-def classify_workflow_template(mission_type="", raw_text=""):
-    haystack = f"{mission_type} {raw_text}".lower()
+def classify_workflow_template(mission_type="", raw_text="", title=""):
+    haystack = f"{mission_type} {title} {raw_text}".lower()
     explicit_non_ui = explicit_non_ui_requested(haystack)
     explicit_ui = re.search(
         r"\b(ui|frontend|dashboard|page|browser|screen|interface|command center|control room)\b",
@@ -431,6 +431,13 @@ def classify_workflow_template(mission_type="", raw_text=""):
     )
     if not explicit_non_ui and (explicit_ui or visual_ui):
         return "ui_product_build"
+    implementation_followup = re.search(
+        r"\b(follow[- ]?up|resolve|fix|repair|correct)\b.{0,100}"
+        r"\b(implementation defect|code defect|bug|regression|failing test|test failure)\b",
+        haystack,
+    )
+    if implementation_followup:
+        return "software_build"
     implementation_request = re.search(
         r"\b(build|implement|develop|code|create|fix|repair|upgrade)\b.{0,120}"
         r"\b(scanner|api|backend|service|module|data model|database reader|endpoint)\b",
@@ -552,7 +559,11 @@ def build_workflow_from_template(template):
 def build_project_truth(mission):
     mission = mission if isinstance(mission, dict) else {}
     mission_type = clean_text(mission.get("mission_type", "feature build"), 80)
-    template_id = classify_workflow_template(mission_type, mission.get("raw_text", ""))
+    template_id = classify_workflow_template(
+        mission_type,
+        mission.get("raw_text", ""),
+        mission.get("title", ""),
+    )
     template = right_sized_workflow_template(template_id, mission)
     return {
         "version": CHARLIE_CORE_VERSION,
