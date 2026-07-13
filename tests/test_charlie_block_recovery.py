@@ -47,6 +47,46 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["block_class"], "owner_decision_required")
         self.assertFalse(result["recoverable"])
 
+    def test_exhausted_frozen_matrix_becomes_honest_owner_block(self):
+        result = classify_block(
+            "qa_red_team",
+            "Frozen acceptance criteria remain failed after the bounded correction budget was exhausted.",
+        )
+        self.assertEqual(result["block_class"], "owner_decision_required")
+        self.assertEqual(result["responsible_stage"], "owner")
+        self.assertFalse(result["recoverable"])
+
+    def test_governance_owner_block_cannot_be_reclassified_as_recoverable(self):
+        result = classify_block(
+            "qa_red_team",
+            "QA review failed.",
+            {
+                "mission_governance_decision": {
+                    "route": "owner_block",
+                    "failed_acceptance_ids": ["acceptance-storage"],
+                },
+            },
+        )
+        self.assertEqual(result["block_class"], "owner_decision_required")
+        self.assertFalse(result["recoverable"])
+
+    def test_unimplemented_verifier_result_returns_to_builder_not_verifier(self):
+        result = classify_block(
+            "qa_red_team",
+            "The scoped diff is empty; there is no implementation for owner review.",
+        )
+        self.assertEqual(result["block_class"], "implementation_fix_required")
+        self.assertEqual(result["responsible_stage"], "builder")
+        self.assertTrue(result["recoverable"])
+
+    def test_unapproved_additive_migration_requires_owner(self):
+        result = classify_block(
+            "builder",
+            "The additive migration is not explicitly owner-authorized.",
+        )
+        self.assertEqual(result["block_class"], "red_zone_owner_approval_required")
+        self.assertFalse(result["recoverable"])
+
     def test_normalized_findings_include_scope_and_responsible_stage(self):
         findings = normalize_findings(
             [{"finding": "Pre-existing warning outside changed surface.", "severity": "low"}],

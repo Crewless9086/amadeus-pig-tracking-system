@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-13 - CHARLIE frozen-matrix recovery loop closed
+
+- Made Mission Governance `owner_block` decisions authoritative in the generic recovery classifier.
+- Exhausted frozen acceptance matrices and unapproved migration requirements now stop honestly for owner review instead of cycling through QA.
+- Verifier findings against an empty or unimplemented scoped diff now route to Builder, and internal recovery notifications use the supported `info` level.
+
 ## 2026-07-13
 
 - Added the canonical meat-production batch rail for internal pilots and future customer/stock batches: pig traceability, append-only stages, actual costs, cut outputs, dressing/packed yield, and cost-per-kilogram evidence.

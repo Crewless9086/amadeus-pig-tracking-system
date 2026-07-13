@@ -490,7 +490,7 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
             _send_review_ready_notification(result)
         elif status_code < 400 and result.get("status") == "agent_stage_recovery_queued":
             _send_notification(
-                "running",
+                "info",
                 "CHARLIE internal recovery queued",
                 (
                     f"Mission {mission_id} hit {result.get('block_disposition', {}).get('block_class', 'a recoverable failure')}. "
