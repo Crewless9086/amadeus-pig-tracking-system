@@ -3663,6 +3663,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"], result)
 
+    def test_tester_quality_gate_does_not_treat_fail_closed_safety_handoff_as_failure(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["next_action"] = (
+            "Continue to QA Red Team for authority-boundary and fail-closed gate verification, "
+            "then proceed through owner review without rebuilding."
+        )
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_tester_quality_gate_still_blocks_explicit_failure_handoff(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["next_action"] = "The public-copy acceptance check failed; send back to Builder."
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_validate_technical_architect_allows_explicit_empty_planning_lists(self):
         artifact = _successful_stage_payload("technical_architect")
         artifact["files_to_inspect"] = []

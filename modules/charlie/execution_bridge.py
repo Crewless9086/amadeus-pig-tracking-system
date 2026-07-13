@@ -4301,7 +4301,8 @@ def _is_blocking_judgement_text(agent, artifact, value):
     )
     if any(phrase in text for phrase in blocking_phrases):
         return True
-    if re.search(r"\b(fail|failed|failing|failure)\b", text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", text):
+    failure_text = re.sub(r"\bfail[- ]closed\b", "", text)
+    if re.search(r"\b(fail|failed|failing|failure)\b", failure_text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", failure_text):
         return True
     return False
 
