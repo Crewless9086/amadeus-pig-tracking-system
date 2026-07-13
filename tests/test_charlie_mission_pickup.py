@@ -91,6 +91,22 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_mission_branch_name")
 
+    def test_restore_mission_branch_for_resume_resolves_branch_from_pr_number(self):
+        mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"pr_number": "168"}}}}}
+        commands = []
+
+        def run(command):
+            commands.append(command)
+            stdout = "feature/beacon-opportunity-scanner\n" if command[:3] == ["gh", "pr", "view"] else ""
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["branch_name"], "feature/beacon-opportunity-scanner")
+        self.assertEqual(commands[0], ["gh", "pr", "view", "168", "--json", "headRefName", "--jq", ".headRefName"])
+        self.assertEqual(commands[1], ["git", "fetch", "origin", "feature/beacon-opportunity-scanner"])
+
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup._owner_queue_missions")

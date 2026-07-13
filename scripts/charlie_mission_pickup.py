@@ -687,11 +687,22 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
     builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
     branch_name = str(builder.get("branch_name") or (builder.get("git_packaging") or {}).get("branch_name") or "").strip()
+    run = run_subprocess or _run_git_command
     if not branch_name:
-        return {"success": True, "status": "mission_branch_not_required", "branch_name": ""}
+        pr_number = str(builder.get("pr_number") or review_packet.get("pr_number") or "").strip()
+        if not pr_number and isinstance(builder.get("links"), dict):
+            match = re.search(r"/pull/(\d+)(?:$|[/?#])", str(builder["links"].get("pr") or builder.get("pr_url") or ""))
+            pr_number = match.group(1) if match else ""
+        if not pr_number:
+            return {"success": True, "status": "mission_branch_not_required", "branch_name": ""}
+        if not pr_number.isdigit():
+            return {"success": False, "status": "invalid_mission_pr_number", "pr_number": pr_number[:40]}
+        resolved = run(["gh", "pr", "view", pr_number, "--json", "headRefName", "--jq", ".headRefName"])
+        if resolved.returncode != 0:
+            return {"success": False, "status": "mission_pr_branch_resolution_failed", "pr_number": pr_number, "stderr": (resolved.stderr or "")[-500:]}
+        branch_name = str(resolved.stdout or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9._/-]{1,180}", branch_name) or branch_name.startswith(("-", "/")) or ".." in branch_name:
         return {"success": False, "status": "invalid_mission_branch_name", "branch_name": branch_name[:180]}
-    run = run_subprocess or _run_git_command
     fetched = run(["git", "fetch", "origin", branch_name])
     if fetched.returncode != 0:
         return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
