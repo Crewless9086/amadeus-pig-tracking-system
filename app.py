@@ -118,6 +118,14 @@ def meat_driver_page():
     return render_template("meat-driver.html")
 
 
+@app.route("/sales/meat-production")
+def meat_production_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
+    return render_template("meat-production.html")
+
+
 @app.route("/pig-allocation")
 def pig_allocation_page():
     return render_template("pig-allocation.html")

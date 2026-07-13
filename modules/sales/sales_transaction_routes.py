@@ -2,7 +2,11 @@ import ipaddress
 import os
 
 from flask import Blueprint, jsonify, request
-from modules.auth.owner_access import owner_session_is_valid, require_owner_read_access
+from modules.auth.owner_access import (
+    owner_session_is_valid,
+    require_owner_admin_access,
+    require_owner_read_access,
+)
 
 from modules.oom_sakkie.sales_campaign_store import (
     create_draft_order_from_sales_lead,
@@ -65,6 +69,14 @@ from modules.sales.meat_documents import (
     send_meat_estimated_quote_to_chatwoot,
 )
 from modules.sales.meat_pilot_readiness import get_meat_pilot_readiness
+from modules.sales.meat_production import (
+    create_meat_processing_batch,
+    get_meat_processing_batch,
+    list_meat_processing_batches,
+    record_meat_processing_cost,
+    record_meat_processing_event,
+    record_meat_processing_output,
+)
 from modules.sales.meat_template_pack import meat_whatsapp_template_pack
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
@@ -135,6 +147,57 @@ from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
 
 
 sales_bp = Blueprint("sales", __name__)
+
+
+@sales_bp.route("/sales/meat-production/batches", methods=["GET", "POST"])
+def meat_processing_batches():
+    if request.method == "GET":
+        denied = require_owner_read_access()
+        if denied:
+            return denied
+        result, status_code = list_meat_processing_batches()
+    else:
+        denied = require_owner_admin_access()
+        if denied:
+            return denied
+        result, status_code = create_meat_processing_batch(request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-production/batches/<batch_id>", methods=["GET"])
+def meat_processing_batch_detail(batch_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_meat_processing_batch(batch_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-production/batches/<batch_id>/events", methods=["POST"])
+def meat_processing_batch_event(batch_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_meat_processing_event(batch_id, request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-production/batches/<batch_id>/costs", methods=["POST"])
+def meat_processing_batch_cost(batch_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_meat_processing_cost(batch_id, request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-production/batches/<batch_id>/outputs", methods=["POST"])
+def meat_processing_batch_output(batch_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_meat_processing_output(batch_id, request.get_json(silent=True) or {})
+    return jsonify(result), status_code
 
 
 @sales_bp.route('/sales/beacon/opportunities', methods=['GET'])

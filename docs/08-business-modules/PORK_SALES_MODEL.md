@@ -2,7 +2,9 @@
 
 ## Status
 
-Planning source document. Not an implementation backlog yet.
+Planning source document with the first internal meat-production pilot rail implemented on 2026-07-13. It is not the daily implementation backlog.
+
+Production evidence now belongs to `/sales/meat-production` and the Supabase meat-processing batch tables. Internal pilots remain zero-revenue records; actual sales remain in the sales transaction/order rails.
 
 ## Purpose
 

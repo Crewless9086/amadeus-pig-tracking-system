@@ -2,7 +2,9 @@
 
 ## Status
 
-Phase 11A planning bridge.
+Phase 11A planning bridge with the first live meat-production evidence rail implemented on 2026-07-13.
+
+`/sales/meat-production` now records production batches, canonical pigs, append-only stages, actual costs, cut outputs, dressing yield, packed yield, and cost per kilogram without creating fake customer sales. `MEAT-PILOT-2026-001` is the first internal-use pilot batch.
 
 This is not a full meat-sales implementation backlog yet. It defines how the existing farm system should connect before new pork/meat workflows are built.
 

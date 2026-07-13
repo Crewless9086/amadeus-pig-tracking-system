@@ -38,6 +38,8 @@
 - Avoid launching too cheap and trying to raise pricing aggressively later.
 - Margin calculators should eventually show how price/kg changes affect pigs/month, feed pressure, delivery load, and profitability.
 - Needed final settings: minimum profit/pig, minimum delivery margin by zone, minimum order value, custom processing premium, and emergency cost-review threshold.
+- Verified production batches, not assumptions or fake sales, are the evidence source for dressing yield, packed yield, slaughter cost, butchery cost, packaging cost, and cost per packed kilogram.
+- Internal pilots remain zero-revenue production records and may influence live prices only after owner review.
 
 ## Cold-Chain And Label Rules
 

@@ -11,6 +11,7 @@ This folder holds business-model and launch-planning documents. Keep deep strate
 | `PORK_SALES_MODEL.md` | Full pork/meat business model, product rules, pricing assumptions, cut sets, payment terms, and operating context. Large reference document. |
 | `MEAT_SALES_LAUNCH_PLAN.md` | Short current launch plan for getting Meat Sales to first revenue. Use this for the next build sequence. |
 | `PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` | How pork sales connects to pig allocation, weights, lifecycle, slaughter, and reporting. |
+| `MEAT_PRODUCTION_BATCH_WORKFLOW.md` | Canonical slaughter-to-packed batch, cost, cut-output, and internal-pilot workflow. |
 | `FARM_CALENDAR_PLAN.md` | Farm-wide calendar scope, Prompt 1-4 decisions, backend shape, UI direction, and phased build plan. |
 
 ## Rule
