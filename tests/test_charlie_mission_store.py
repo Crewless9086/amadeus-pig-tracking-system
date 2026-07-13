@@ -122,6 +122,25 @@ class CharlieMissionStoreTests(unittest.TestCase):
         active = [item["agent"] for item in updated if item.get("status") == "active"]
         self.assertEqual(active, ["tester"])
 
+    def test_return_workflow_to_stage_clears_stale_upstream_active_stages(self):
+        from modules.charlie.mission_store import _return_workflow_to_stage
+
+        workflow = [
+            {"agent": "technical_architect", "status": "active", "handoff_to": "planner"},
+            {"agent": "builder", "status": "active", "handoff_to": "tester"},
+            {"agent": "tester", "status": "active", "handoff_to": "qa_red_team"},
+            {"agent": "qa_red_team", "status": "pending", "handoff_to": "reviewer"},
+        ]
+
+        updated = _return_workflow_to_stage(workflow, "tester", "Retest packaged PR.")
+
+        active = [item["agent"] for item in updated if item.get("status") == "active"]
+        self.assertEqual(active, ["tester"])
+        by_agent = {item["agent"]: item for item in updated}
+        self.assertEqual(by_agent["technical_architect"]["status"], "pending")
+        self.assertEqual(by_agent["builder"]["status"], "pending")
+        self.assertEqual(by_agent["qa_red_team"]["status"], "pending")
+
     @patch("modules.charlie.mission_store.update_mission_vault")
     @patch("modules.charlie.mission_store.get_mission")
     def test_reviewer_complete_does_not_mark_pr_ready_without_review_packet(self, get_mission_mock, update_vault_mock):
