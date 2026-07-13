@@ -131,9 +131,18 @@ from modules.beacon.media_library import (
     upload_beacon_media_asset,
 )
 from modules.beacon.marketing_operating_contract import build_beacon_marketing_operating_contract
+from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
 
 
 sales_bp = Blueprint("sales", __name__)
+
+
+@sales_bp.route('/sales/beacon/opportunities', methods=['GET'])
+def beacon_opportunity_cards():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify(build_beacon_opportunity_cards()), 200
 
 
 def _env_truthy(value):

@@ -2,6 +2,9 @@
 
 ## 2026-07-12
 
+- Required live-stock Beacon opportunity caps to match canonical animal sex to SAM demand sex preference and fail closed on invalid or missing sex evidence.
+- Hardened Beacon's live-stock opportunity scanner to read quantified category/weight demand from active Supabase order-intake items and fail closed when demand is missing or incompatible with eligible supply.
+- Added Beacon's Supabase-first, owner-review opportunity scanner contract: separate meat/live-stock cards, freshness and provenance, quantified-demand deduplication, conservative live-stock caps, zero meat cap in controlled mode, and no execution authority.
 - Added Beacon's owner-review marketing operating contract with proposed brand/channel rules, KPI formulas, fulfilment-capped targets, approval tiers, and no execution authority.
 - Added the completed-order sales projection contract: database-enforced linked-sale identity, atomic collected-line reconciliation, explicit totals, and conservative payment mapping.
 - Clarified the executive hierarchy as Charl -> CHARLIE -> CORE and business/farm command layers: CHARLIE is Charl's private digital executive, while CORE is the existing CHARLIE CORE mission engine.
@@ -19,6 +22,10 @@
 
 - Clarified CHARLIE CORE UI review-gate reliability: owner-review screenshot capture must probe local preview URLs before Playwright, recover stale localhost ports from recorded preview commands when possible, and only reuse durable stage screenshot evidence after promoting real desktop/mobile media into the owner-review media folder.
 - Clarified the SAM Live Stock draft-order workflow: when conversation memory already has a `draft_order_id`, SAM must reuse it and sync draft lines instead of creating a duplicate draft order before quote preparation.
+
+## 2026-07-12
+
+- Tightened the BEACON fulfilment-aware opportunity scanner rule so live-stock demand caps count only eligible animals whose fresh current weight falls inclusively within any supplied requested weight range; contradictory, unparseable, or category-plus-weight mismatched demand now fails closed.
 
 ## 2026-07-09
 
