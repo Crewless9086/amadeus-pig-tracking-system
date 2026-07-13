@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app import app
 from modules.beacon.campaign_calendar import (
+    RULE_LIFECYCLE_REGISTRY,
     approve_rule_version,
     evaluate_prepared_entry,
     prepare_calendar_entry,
@@ -47,6 +48,9 @@ def valid_payload():
 
 
 class BeaconCampaignCalendarTests(unittest.TestCase):
+    def setUp(self):
+        RULE_LIFECYCLE_REGISTRY.clear()
+
     def test_approval_is_evidence_only_and_approved_version_is_content_bound(self):
         proposed = propose_rule_version({
             "rule_id": "R", "campaign_lane": "meat_launch", "allowed_channels": ["facebook"],
@@ -68,6 +72,17 @@ class BeaconCampaignCalendarTests(unittest.TestCase):
         self.assertEqual(changed["status"], "proposed")
         self.assertEqual(changed["supersedes_version"], 1)
         self.assertIn("rule_proposed", prepare_calendar_entry({**valid_payload(), "rule": changed}, now=NOW)["errors"])
+        self.assertIn("rule_superseded", prepare_calendar_entry({**valid_payload(), "rule": first}, now=NOW)["errors"])
+
+    def test_forged_approval_fields_are_not_authoritative(self):
+        forged = approved_rule()
+        RULE_LIFECYCLE_REGISTRY.clear()
+        payload = valid_payload()
+        RULE_LIFECYCLE_REGISTRY.clear()
+        payload["rule"] = forged
+        result = prepare_calendar_entry(payload, now=NOW)
+        self.assertFalse(result["success"])
+        self.assertIn("owner_approval_not_authoritative", result["errors"])
 
     def test_inactive_rule_states_cannot_prepare(self):
         for status in ("proposed", "revoked", "expired", "superseded"):

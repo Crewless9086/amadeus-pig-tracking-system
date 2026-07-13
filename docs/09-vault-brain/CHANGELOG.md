@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - Beacon campaign rule lifecycle authority hardening
+
+- Required prepare-only calendar approvals and latest-version state to resolve from the server-owned append-only lifecycle registry.
+- Made forged approval snapshots and automatically superseded rule versions fail closed before calendar preparation.
+
 ## 2026-07-13 - CHARLIE resolved test-note backflow hardening
 
 - Prevented corrected informational test-command notes with passing evidence from triggering unnecessary Builder backflow.

@@ -13,7 +13,7 @@
 
 1. Beacon may propose a reusable campaign rule version containing an explicit campaign lane, channel allowlist, IANA timezone window, and demand unit.
 2. Only the authenticated owner may approve the exact content-addressed version. Approval records evidence only; it creates no calendar entry and performs no external action.
-3. An edit creates a new proposed version requiring fresh owner approval. Proposed, expired, revoked, and superseded versions cannot prepare entries.
+3. An edit creates a new proposed version requiring fresh owner approval. The server-owned append-only lifecycle registry resolves approval evidence and the latest version; caller-supplied approval fields are never authoritative. Proposed, expired, revoked, and superseded versions cannot prepare entries.
 4. Calendar preparation requires an effectively approved, public-use-approved, hash-verified, privacy-safe, lane-compatible asset; exact source-bound copy; an allowed channel; an unambiguous in-window instant; fresh compatible fulfilment evidence; positive residual capacity; and no active global, rule, channel, campaign, asset, or fulfilment pause.
 5. A prepared entry is an immutable owner-review evidence snapshot. It is not a timer, runnable job, queue item, webhook, post, send, boost, reservation, order, stock action, or farm write.
 6. Revocation and pauses block current use without rewriting historical preparation evidence.

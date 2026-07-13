@@ -32,10 +32,43 @@ INACTIVE_APPROVAL_STATUSES = {"proposed", "revoked", "expired", "superseded"}
 PAUSE_SCOPES = {"global", "rule", "channel", "campaign", "asset", "fulfilment"}
 
 
-def propose_rule_version(payload, previous_version=None, now=None):
+class RuleLifecycleRegistry:
+    """Process-local, append-only authority for rule proposals and approvals."""
+
+    def __init__(self):
+        self._events = []
+
+    def record(self, event_type, rule):
+        event = {"sequence": len(self._events) + 1, "event_type": event_type, "rule": deepcopy(rule)}
+        self._events.append(event)
+        return deepcopy(event)
+
+    def latest_rule(self, rule_id):
+        matches = [event["rule"] for event in self._events if event["rule"].get("rule_id") == rule_id]
+        return deepcopy(matches[-1]) if matches else {}
+
+    def approved_rule(self, rule_id, version):
+        matches = [event["rule"] for event in self._events
+                   if event["event_type"] == "approved"
+                   and event["rule"].get("rule_id") == rule_id
+                   and event["rule"].get("version") == version]
+        return deepcopy(matches[-1]) if matches else {}
+
+    def clear(self):
+        self._events.clear()
+
+
+RULE_LIFECYCLE_REGISTRY = RuleLifecycleRegistry()
+
+
+def propose_rule_version(payload, previous_version=None, now=None, registry=None):
     """Create a content-addressed proposed rule version; never mutate its parent."""
     payload = payload if isinstance(payload, dict) else {}
+    registry = registry or RULE_LIFECYCLE_REGISTRY
     previous_version = previous_version if isinstance(previous_version, dict) else {}
+    authoritative_previous = registry.latest_rule(_text(payload.get("rule_id") or previous_version.get("rule_id")))
+    if authoritative_previous:
+        previous_version = authoritative_previous
     now = _utc(now)
     version = int(previous_version.get("version") or 0) + 1
     rule = {
@@ -54,13 +87,19 @@ def propose_rule_version(payload, previous_version=None, now=None):
     }
     errors = _rule_definition_errors(rule)
     rule["rule_hash"] = _digest(_rule_content(rule))
+    if not errors:
+        registry.record("proposed", rule)
     return _result(not errors, "rule_version_proposed" if not errors else "rule_version_invalid", errors, rule=rule)
 
 
-def approve_rule_version(rule, owner_id, approved_at=None):
+def approve_rule_version(rule, owner_id, approved_at=None, registry=None):
     """Return approval evidence only; it cannot create calendar entries."""
+    registry = registry or RULE_LIFECYCLE_REGISTRY
     rule = deepcopy(rule) if isinstance(rule, dict) else {}
+    authoritative = registry.latest_rule(rule.get("rule_id"))
     errors = _rule_definition_errors(rule)
+    if not authoritative or authoritative.get("version") != rule.get("version") or authoritative.get("rule_hash") != rule.get("rule_hash"):
+        errors.append("rule_proposal_not_authoritative")
     if rule.get("status") != "proposed":
         errors.append("rule_status_must_be_proposed")
     if not _text(owner_id):
@@ -77,15 +116,19 @@ def approve_rule_version(rule, owner_id, approved_at=None):
             "rule_hash": rule.get("rule_hash"), "owner": _text(owner_id), "at": approved_at.isoformat()
         })[:20].upper(),
     })
+    if not errors:
+        registry.record("approved", approved)
     return _result(not errors, "rule_version_approved" if not errors else "rule_approval_rejected", errors,
                    rule=approved if not errors else rule, calendar_entries=[])
 
 
-def prepare_calendar_entry(payload, now=None):
+def prepare_calendar_entry(payload, now=None, registry=None):
     """Validate evidence and return a frozen review entry or fail closed."""
     payload = payload if isinstance(payload, dict) else {}
     now = _utc(now)
-    rule = deepcopy(payload.get("rule") or {})
+    registry = registry or RULE_LIFECYCLE_REGISTRY
+    supplied_rule = deepcopy(payload.get("rule") or {})
+    rule = registry.approved_rule(supplied_rule.get("rule_id"), supplied_rule.get("version"))
     asset = deepcopy(payload.get("asset") or {})
     demand = deepcopy(payload.get("demand_evidence") or {})
     pauses = deepcopy(payload.get("pauses") or [])
@@ -93,6 +136,18 @@ def prepare_calendar_entry(payload, now=None):
     exact_copy = payload.get("exact_copy") if isinstance(payload.get("exact_copy"), str) else ""
     errors = []
 
+    authority_fields = ("status", "approved_by", "approved_at", "approval_id", "rule_hash")
+    supplied_matches_authority = (
+        bool(rule)
+        and _rule_content(rule) == _rule_content(supplied_rule)
+        and all(rule.get(key) == supplied_rule.get(key) for key in authority_fields)
+    )
+    if not supplied_matches_authority:
+        errors.append("owner_approval_not_authoritative")
+        rule = supplied_rule
+    latest = registry.latest_rule(rule.get("rule_id"))
+    if latest and latest.get("version") != rule.get("version"):
+        errors.append("rule_superseded")
     errors.extend(_active_rule_errors(rule, now))
     errors.extend(_asset_errors(asset, rule))
     if not exact_copy or _digest(exact_copy) != _text(payload.get("copy_sha256")):
