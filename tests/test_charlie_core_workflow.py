@@ -83,6 +83,29 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertIn("tester", agents)
         self.assertLess(agents.index("builder"), agents.index("tester"))
 
+    def test_generated_implementation_followup_cannot_inherit_read_only_marketing_pipeline(self):
+        mission = {
+            "mission_id": "CHARLIE-FOLLOWUP-IMPLEMENTATION",
+            "title": "Follow-up: Implementation Defect",
+            "raw_text": "Resolve the implementation defect discovered by a marketing intelligence mission.",
+            "mission_type": "marketing intelligence",
+            "metadata": {
+                "mission_family": {
+                    "finding_family": "implementation_defect",
+                    "parent_mission_id": "CHARLIE-MISSION-PARENT",
+                }
+            },
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, mission["metadata"])
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+        self.assertIn("qa_red_team", agents)
+        self.assertLess(agents.index("builder"), agents.index("tester"))
+
     def test_ui_product_build_routes_through_design_council(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
