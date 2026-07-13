@@ -147,10 +147,16 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
     incompatible_records = 0
     invalid_weight_records = 0
     invalid_sex_records = 0
+    malformed_records = 0
     units_by_category = {}
     requirements = []
     compatible_categories = {_normalized_category(value) for value in (compatible_categories or []) if value}
+    if rows is not None and not isinstance(rows, list):
+        malformed_records += 1
     for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            malformed_records += 1
+            continue
         if str(row.get("status") or row.get("intake_status") or "").strip().lower() in excluded_statuses:
             continue
         interest = row.get("interest") if isinstance(row.get("interest"), dict) else {}
@@ -199,7 +205,7 @@ def _deduplicated_demand(rows, lane, compatible_categories=None):
                 requirements.append(parsed_item)
         units += sum(_quantity(item) for item in demand_items)
         accepted.append(identity)
-    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "invalid_sex_records": invalid_sex_records, "requirements": requirements, "source_ids": sorted(accepted)}
+    return {"qualified_units": units, "qualified_units_by_category": units_by_category, "qualified_records": len(accepted), "unknown_quantity_records": unknown_quantity, "incompatible_records": incompatible_records, "invalid_weight_records": invalid_weight_records, "invalid_sex_records": invalid_sex_records, "malformed_records": malformed_records, "requirements": requirements, "source_ids": sorted(accepted)}
 
 
 def _fingerprint(lane, category, source_ids):
@@ -240,18 +246,26 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=now.date(), allow_sheet_fallback=False)
     if live_intakes is None:
         result, status = list_sam_live_stock_open_intakes(limit=100)
-        live_intakes = result.get("open_intakes", []) if status == 200 and result.get("success") else None
+        live_intakes = result.get("open_intakes", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
     if meat_leads is None:
         result, status = list_sales_leads(limit=100, status_filter="launch_test")
-        meat_leads = result.get("sales_leads", []) if status == 200 and result.get("success") else None
+        meat_leads = result.get("sales_leads", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
 
     observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"))
     source_ok = allocation.get("source") == "supabase_canonical"
     evidence_in_future = observed_at is not None and observed_at > now
     fresh = observed_at is not None and not evidence_in_future and now <= observed_at + timedelta(hours=FRESHNESS_HOURS)
+    raw_pigs = allocation.get("pigs")
+    malformed_allocation_pigs = not isinstance(raw_pigs, list)
+    if isinstance(raw_pigs, list) and any(not isinstance(pig, dict) for pig in raw_pigs):
+        malformed_allocation_pigs = True
+    pigs_evidence = [pig for pig in raw_pigs if isinstance(pig, dict)] if isinstance(raw_pigs, list) else []
+    raw_thresholds = allocation.get("thresholds")
+    malformed_allocation_thresholds = not isinstance(raw_thresholds, dict)
+    thresholds = raw_thresholds if isinstance(raw_thresholds, dict) else {}
     eligible = []
-    for pig in allocation.get("pigs", []) if source_ok else []:
-        if _live_stock_sale_eligibility(pig, allocation.get("thresholds", {})).get("eligible"):
+    for pig in pigs_evidence if source_ok else []:
+        if _live_stock_sale_eligibility(pig, thresholds).get("eligible"):
             eligible.append(pig)
 
     cards = []
@@ -294,6 +308,10 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
         blockers = []
         if not source_ok:
             blockers.append("supabase_allocation_readiness_unavailable")
+        if malformed_allocation_pigs:
+            blockers.append("malformed_allocation_pigs_evidence")
+        if malformed_allocation_thresholds:
+            blockers.append("malformed_allocation_thresholds_evidence")
         if not fresh:
             blockers.append("stale_or_missing_allocation_evidence")
         if evidence_in_future:
@@ -308,6 +326,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
             blockers.append("invalid_live_stock_weight_requirement")
         if live_demand["invalid_sex_records"]:
             blockers.append("invalid_live_stock_sex_requirement")
+        if live_demand["malformed_records"]:
+            blockers.append("malformed_live_stock_demand_evidence")
         if weight_mismatch_records:
             blockers.append("incompatible_live_stock_weight_requirement")
         if not live_demand["qualified_units"]:
@@ -321,6 +341,8 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     meat_blockers = ["butcher_loop_not_proven"]
     if meat_leads is None:
         meat_blockers.append("sam_meat_demand_unavailable")
+    if meat_demand["malformed_records"]:
+        meat_blockers.append("malformed_meat_demand_evidence")
     policy = sam_meat_control_policy()
     meat_capacity = {"verified_available": 0, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0, "available_after_buffers": 0, "demand_cap": 0, "formula": "forced_zero_while_sam_meat_is_interest_capture_only", "control_mode": policy["mode"]}
     cards.append(_card(lane="meat", category="meat_preorder", now=now, observed_at=observed_at, demand=meat_demand, capacity=meat_capacity, blockers=meat_blockers, risks=["butcher_capacity_unproven", "owner_review_required"], source_ids=meat_demand["source_ids"]))

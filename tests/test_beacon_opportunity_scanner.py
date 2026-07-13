@@ -14,6 +14,46 @@ def eligible_pig(pig_id='P1', category='Grower', sex='Male'):
 
 
 class BeaconOpportunityScannerTests(unittest.TestCase):
+    def test_malformed_allocation_pigs_and_thresholds_fail_closed(self):
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
+        malformed_values = ((None, 'bad-thresholds'), ({}, None), ('not-pigs', []), ([eligible_pig(), None], 'bad-thresholds'))
+        for pigs, thresholds in malformed_values:
+            with self.subTest(pigs=pigs, thresholds=thresholds):
+                allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': thresholds, 'pigs': pigs}
+                result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=demand, meat_leads=[], now=NOW)
+                live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+                self.assertEqual(live['demand_cap'], 0)
+                self.assertEqual(live['status'], 'blocked')
+                self.assertIn('malformed_allocation_pigs_evidence', live['blockers'])
+                self.assertIn('malformed_allocation_thresholds_evidence', live['blockers'])
+
+    def test_malformed_demand_rows_fail_closed_for_both_lanes(self):
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        malformed_rows = [None, 'bad-row', ['nested-row']]
+        result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=malformed_rows, meat_leads=malformed_rows, now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        meat = next(card for card in result['cards'] if card['lane'] == 'meat')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertEqual(live['demand_summary']['malformed_records'], 3)
+        self.assertIn('malformed_live_stock_demand_evidence', live['blockers'])
+        self.assertEqual(meat['demand_cap'], 0)
+        self.assertEqual(meat['demand_summary']['malformed_records'], 3)
+        self.assertIn('malformed_meat_demand_evidence', meat['blockers'])
+
+    @patch('modules.beacon.opportunity_scanner.list_sales_leads')
+    @patch('modules.beacon.opportunity_scanner.list_sam_live_stock_open_intakes')
+    def test_production_adapters_malformed_rows_return_blocked_cards(self, list_intakes, list_leads):
+        list_intakes.return_value = ({'success': True, 'open_intakes': [None, 'bad-row']}, 200)
+        list_leads.return_value = ({'success': True, 'sales_leads': [None, 'bad-row']}, 200)
+        allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
+        result = build_beacon_opportunity_cards(allocation=allocation, now=NOW)
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        meat = next(card for card in result['cards'] if card['lane'] == 'meat')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('malformed_live_stock_demand_evidence', live['blockers'])
+        self.assertEqual(meat['demand_cap'], 0)
+        self.assertIn('malformed_meat_demand_evidence', meat['blockers'])
+
     def test_live_cap_is_demand_and_buffer_bounded(self):
         allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}') for i in range(5)]}
         result = build_beacon_opportunity_cards(allocation=allocation, live_intakes=[{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 9, 'category': 'Grower'}], meat_leads=[], now=NOW)
