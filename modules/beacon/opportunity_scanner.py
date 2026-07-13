@@ -96,12 +96,20 @@ def _weight_bounds(value):
     text = value.strip().lower().replace("_", " ")
     if not text:
         return None, False
-    numbers = [float(number) for number in re.findall(r"\d+(?:\.\d+)?", text)]
-    if len(numbers) == 1:
-        return (numbers[0], numbers[0]), True
-    if len(numbers) != 2 or numbers[0] > numbers[1]:
+    match = re.fullmatch(
+        r"(?:about|around|approx(?:imately)?\.?)?\s*"
+        r"(\d+(?:\.\d+)?)\s*"
+        r"(?:(?:-|\u2013|\u2014|to)\s*(\d+(?:\.\d+)?)\s*)?"
+        r"(?:kg|kgs|kilograms?)",
+        text,
+    )
+    if not match:
         return None, True
-    return (numbers[0], numbers[1]), True
+    lower = float(match.group(1))
+    upper = float(match.group(2)) if match.group(2) is not None else lower
+    if lower > upper:
+        return None, True
+    return (lower, upper), True
 
 
 def _pig_matches_weight(pig, bounds):

@@ -142,7 +142,13 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
 
     @patch('modules.beacon.opportunity_scanner.list_sam_live_stock_open_intakes')
     def test_production_adapter_structured_weight_evidence_fails_closed(self, list_intakes):
-        for weight_range in ({'min': 30, 'max': 40}, [30, 40]):
+        for weight_range in (
+            {'min': 30, 'max': 40},
+            [30, 40],
+            '30 pigs needed in 40 days',
+            'age 30 to 40 days',
+            'call 30/40 before delivery',
+        ):
             with self.subTest(weight_range=weight_range):
                 list_intakes.return_value = ({'success': True, 'open_intakes': [{'conversation_id': 'C1', 'intake_status': 'Open', 'items': [{'item_key': 'live_stock_primary', 'quantity': 2, 'category': 'Grower', 'weight_range': weight_range, 'sex': 'Female', 'status': 'active'}]}]}, 200)
                 allocation = {'source': 'supabase_canonical', 'generated_date': '2026-07-12', 'thresholds': {'stale_weight_days': 14}, 'pigs': [eligible_pig(f'P{i}', sex='Female') for i in range(5)]}
