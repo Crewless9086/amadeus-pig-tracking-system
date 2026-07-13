@@ -121,6 +121,8 @@ Telegram and `/charlie` record mission authority, but they do not execute shell 
 
 If an agent subprocess times out or crashes, CHARLIE must record stdout/stderr excerpts, return code, changed files, blocker class, responsible stage, and recovery guidance, then queue an internal environment retry. A timed-out runner must not leave a mission silently stuck in `in_progress` or create false owner work. Repeated identical failures become an honest owner block only after the durable recovery cap is exhausted.
 
+The no-final-artifact watchdog measures inactivity, not total elapsed build time. Continued stdout/stderr or worktree progress keeps a bounded agent run alive until the hard stage timeout; a productive long Builder must not be killed merely because its final handoff JSON is written at the end.
+
 When a runner result moves a mission to `pr_ready`, the review-ready notification must key off the mission status rather than a narrow internal status string.
 
 Existing `in_progress` missions must not be blindly re-executed by the watch loop. The watchdog recovers stale runner ownership. The continuous runner also reconciles legacy blocked missions against authoritative GitHub PR state: green mergeable PRs become review-ready, conflicts route to Publisher, current-head check failures route to Builder, and missing UI media routes to Visual QA.

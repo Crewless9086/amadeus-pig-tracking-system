@@ -2938,6 +2938,43 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             for call in write_heartbeat.call_args_list
         ))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/beacon/creative_studio.py"])
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    def test_run_codex_process_does_not_kill_agent_while_output_is_advancing(self, write_heartbeat, _changed_files):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            final_path = tmp_path / "final.md"
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib,sys,time; "
+                    "[(print(i, file=sys.stderr, flush=True), time.sleep(0.35)) for i in range(6)]; "
+                    "pathlib.Path(sys.argv[1]).write_text('done', encoding='utf-8'); time.sleep(0.2)"
+                ),
+                str(final_path),
+            ]
+
+            with patch("modules.charlie.execution_bridge.NO_FINAL_ARTIFACT_TIMEOUT_SECONDS", 1), patch(
+                "modules.charlie.execution_bridge.NO_FINAL_ARTIFACT_WARNING_SECONDS", 0.5,
+            ), patch("modules.charlie.execution_bridge.FINAL_ARTIFACT_GRACE_SECONDS", 0), patch(
+                "modules.charlie.execution_bridge.POLL_SECONDS", 0.05,
+            ):
+                completed = execution_bridge._run_codex_process(
+                    command,
+                    cwd=tmp,
+                    timeout_seconds=4,
+                    stdout_path=tmp_path / "stdout.txt",
+                    stderr_path=tmp_path / "stderr.txt",
+                    final_path=final_path,
+                    mission_id="CHARLIE-MISSION-ACTIVE-BUILDER",
+                )
+                final_exists = final_path.exists()
+
+        self.assertEqual(completed.returncode, 0)
+        self.assertTrue(final_exists)
+        self.assertTrue(any(call.args[0].get("idle_seconds") == 0 for call in write_heartbeat.call_args_list))
+
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
