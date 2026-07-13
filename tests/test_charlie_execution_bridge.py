@@ -537,9 +537,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "execution_dry_run")
         self.assertIn("prompt_path", result)
 
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.get_mission")
-    def test_agent_runner_v2_defaults_to_dry_run(self, get_mission):
+    def test_agent_runner_v2_defaults_to_dry_run(self, get_mission, update_vault):
         get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
 
         with tempfile.TemporaryDirectory() as tmp:
             result, status_code = execution_bridge.run_agent_execution_bridge_v2(
@@ -551,6 +553,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "agent_execution_dry_run")
         self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
         self.assertIn("ledger_path", result)
+        governance_write = update_vault.call_args.args[1]["mission_governance"]
+        self.assertTrue(governance_write["matrix_frozen"])
+        self.assertEqual(governance_write["matrix_source"], "mission_vault")
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
