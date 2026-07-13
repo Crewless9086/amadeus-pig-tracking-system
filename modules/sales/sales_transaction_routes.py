@@ -4,6 +4,7 @@ import os
 from flask import Blueprint, jsonify, request
 from modules.auth.owner_access import (
     owner_session_is_valid,
+    require_owner_admin_access,
     require_owner_read_access,
 )
 
@@ -143,6 +144,8 @@ from modules.beacon.media_library import (
 )
 from modules.beacon.marketing_operating_contract import build_beacon_marketing_operating_contract
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
+from modules.beacon.creative_providers import ALLOWED_CREATIVE_PROVIDERS, DISABLED_PROVIDER_FLAGS
+from modules.beacon.creative_studio import create_mock_creative_job, record_creative_review
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -776,6 +779,9 @@ def meat_document_delivery_status_webhook():
 
 @sales_bp.route("/beacon/media-policy", methods=["GET"])
 def beacon_media_policy():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     return jsonify(beacon_media_storage_policy()), 200
 
 
@@ -796,19 +802,29 @@ def beacon_marketing_operating_contract():
 @sales_bp.route("/beacon/media-assets", methods=["GET", "POST"])
 def beacon_media_assets():
     if request.method == "GET":
+        denied = require_owner_read_access()
+        if denied:
+            return denied
         result, status_code = list_beacon_media_assets(
             limit=request.args.get("limit", 50),
             approval_status=request.args.get("approval_status", ""),
             media_type=request.args.get("media_type", ""),
         )
         return jsonify(result), status_code
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
+    payload["created_by"] = "authenticated_owner_admin"
     result, status_code = register_beacon_media_asset(payload)
     return jsonify(result), status_code
 
 
 @sales_bp.route("/beacon/media-assets/upload", methods=["POST"])
 def beacon_media_asset_upload():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     upload = request.files.get("file")
     result, status_code = upload_beacon_media_asset(upload, form=request.form.to_dict())
     return jsonify(result), status_code
@@ -816,8 +832,47 @@ def beacon_media_asset_upload():
 
 @sales_bp.route("/beacon/media-assets/<asset_id>/events", methods=["POST"])
 def beacon_media_asset_event(asset_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
+    payload["recorded_by"] = "authenticated_owner_admin"
     result, status_code = record_beacon_media_asset_event(asset_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/creative-studio/providers", methods=["GET"])
+def beacon_creative_studio_providers():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify({
+        "success": True,
+        "mode": "beacon_creative_provider_evaluation_disabled",
+        "providers": sorted(ALLOWED_CREATIVE_PROVIDERS),
+        **DISABLED_PROVIDER_FLAGS,
+    }), 200
+
+
+@sales_bp.route("/beacon/creative-studio/jobs", methods=["POST"])
+def beacon_creative_studio_jobs():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = create_mock_creative_job(
+        request.get_json(silent=True) or {}, recorded_by="authenticated_owner_admin"
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/creative-studio/jobs/<job_id>/reviews", methods=["POST"])
+def beacon_creative_studio_reviews(job_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_creative_review(
+        job_id, request.get_json(silent=True) or {}, recorded_by="authenticated_owner_admin"
+    )
     return jsonify(result), status_code
 
 

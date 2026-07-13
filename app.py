@@ -110,6 +110,9 @@ def owner_status_route():
 
 @app.route("/sales/beacon-media")
 def beacon_media_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("beacon-media.html")
 
 

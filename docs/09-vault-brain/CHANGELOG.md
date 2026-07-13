@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-07-13 - Beacon Creative Studio provider evaluation foundation
+
+- Added the private, owner-guarded Beacon Creative Studio evaluation contract for allowlisted ElevenLabs and Happy Horse 1.0 candidate identifiers.
+- Required deterministic provider-disabled mocks, immutable prompt/parameter/source lineage, server-verifiable source hashes, estimate provenance, zero actual cost, private `needs_review` variants, and separate brand/privacy/safety/fidelity/disclosure/evaluation/public-use reviews.
+- Recorded that all approvals are evidence-only and cannot enable providers, spend, publication, scheduling, customer sends, campaign execution, stock changes, or farm writes.
+- Added the source-controlled additive migration contract; applying it remains separately owner-gated.
+- Enabled RLS in an unapplied hardening migration for all six private Creative Studio tables without anonymous or authenticated-browser policies.
+
 ## 2026-07-13 - CHARLIE frozen-matrix recovery loop closed
 
 - Made Mission Governance `owner_block` decisions authoritative in the generic recovery classifier.

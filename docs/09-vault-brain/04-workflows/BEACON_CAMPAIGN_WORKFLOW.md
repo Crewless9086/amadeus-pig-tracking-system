@@ -10,3 +10,12 @@
 8. Performance evidence informs future recommendations.
 
 Source reference: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
+
+## Creative Studio Evaluation Lane
+
+1. An authenticated owner admin submits an exact prompt, parameters, cost-estimate provenance, and source asset IDs plus SHA-256 hashes.
+2. The service verifies source existence, hash integrity, and the latest effective owner public-use approval; missing, hashless, tampered, rejected, or archived sources fail closed.
+3. Only the ElevenLabs and Happy Horse 1.0 identifiers are accepted, and their adapters return deterministic provider-disabled mock manifests without network, credential, source-transfer, or spend authority.
+4. Job, source lineage, attempt, cost, mock variant, and review evidence are appended as structured records. Mock variants remain private in `beacon-raw-intake`, `needs_review`, and not campaign-selectable.
+5. Brand, privacy, safety, animal/product fidelity, provider disclosure, evaluation, and owner public-use decisions are recorded separately by the server-bound authenticated owner identity.
+6. Evaluation or public-use approval records evidence only. It cannot enable a provider, spend, post, schedule, send, campaign action, order, stock change, or farm lifecycle write.
