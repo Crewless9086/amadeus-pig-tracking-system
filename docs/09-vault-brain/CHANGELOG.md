@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-13
+
+- Added the canonical meat-production batch rail for internal pilots and future customer/stock batches: pig traceability, append-only stages, actual costs, cut outputs, dressing/packed yield, and cost-per-kilogram evidence.
+- Required internal-use pilots to remain zero-revenue production records, separate from customer orders and sales transactions.
+- Registered `MEAT-PILOT-2026-001` as the first live evidence batch and expanded Butcher's advisory scope to production stages, cost gaps, cuts, and verified yields without granting booking, pricing, sale, or fulfilment authority.
+
 ## 2026-07-12
 
 - Required live-stock Beacon opportunity caps to match canonical animal sex to SAM demand sex preference and fail closed on invalid or missing sex evidence.

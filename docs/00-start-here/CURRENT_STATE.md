@@ -2,6 +2,14 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## Meat Production Pilot Rail - 2026-07-13
+
+- `/sales/meat-production` is the owner workspace for slaughter-to-packed production batches, costs, cuts, and yield evidence.
+- Supabase meat-processing batch tables keep internal production separate from customer sales and revenue.
+- Internal pilot batches record zero revenue and cannot create orders, reservations, customer sends, public posts, or sales transactions.
+- `MEAT-PILOT-2026-001` is the first live batch for `PIG-2026-EFB3` / tag `001`: 63.0 kg live, 46.8 kg head-on carcass, Bartelsfontein, R250 abattoir cost, at butcher/cutting on 2026-07-13. Butcher identity/cost, transport/packaging costs, and cut outputs remain pending.
+- Butcher and Ledger may use completed owner-verified evidence for recommendations; one pilot cannot silently change price-book or SAM authority.
+
 ## CHARLIE CORE Bounded Mission Delivery - 2026-07-13
 
 - CORE freezes an acceptance matrix before Builder and records Tester/QA evidence against each row.

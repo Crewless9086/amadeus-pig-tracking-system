@@ -43,6 +43,7 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
 - `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
+- `docs/08-business-modules/MEAT_PRODUCTION_BATCH_WORKFLOW.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 - `docs/08-business-modules/PORK_SALES_MODEL.md`
 - `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
@@ -50,6 +51,7 @@ Machine-aligned implementation map: `docs/09-vault-brain/10-source-map/IMPLEMENT
 - `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`
 - `config/sam_farm_knowledge.json`
 - `docs/09-vault-brain/08-business-rules/HERDMASTER_PIG_ALLOCATION_ALERT_RULES.md`
+- `docs/09-vault-brain/08-business-rules/MEAT_PRODUCTION_RULES.md`
 
 ## Operations And Evidence
 
