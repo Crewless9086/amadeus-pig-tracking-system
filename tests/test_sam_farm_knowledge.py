@@ -22,9 +22,25 @@ class SamFarmKnowledgeTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Amadeus Farm", result["knowledge"]["public_profile"]["farm_name"])
-        self.assertIn("Pork meat sales", product_menu_text(result["knowledge"]))
+        self._assert_public_menu_copy(result["knowledge"])
+        self._assert_public_meat_copy(self._build_intro_reply(environ={}))
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["changes_runtime_now"])
+
+    def test_missing_knowledge_file_uses_public_safe_fallback_menu(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_path = Path(temp_dir) / "missing-sam-knowledge.json"
+            result = load_sam_farm_knowledge(environ={
+                "SAM_FARM_KNOWLEDGE_PATH": str(missing_path),
+            })
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "fallback_default_file_missing")
+        self.assertFalse(result["configured"])
+        self._assert_public_menu_copy(result["knowledge"])
+        self._assert_public_meat_copy(self._build_intro_reply(environ={
+            "SAM_FARM_KNOWLEDGE_PATH": str(missing_path),
+        }))
 
     def test_custom_knowledge_path_changes_sam_intro_without_code_change(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -72,6 +88,29 @@ class SamFarmKnowledgeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["knowledge"]["public_profile"]["farm_name"], "Amadeus Farm")
         loader.assert_called_once()
+
+    def _assert_public_menu_copy(self, knowledge):
+        menu = product_menu_text(knowledge)
+        self._assert_public_meat_copy(menu)
+        self.assertIn("farm confirms availability", menu.lower())
+
+    def _assert_public_meat_copy(self, text):
+        self.assertIn("half carcass", text.lower())
+        self.assertNotIn("pilot", text.lower())
+
+    def _build_intro_reply(self, environ):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Hi Sam, what can you help with?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+            environ=environ,
+        )
+        return decision["reply_text"]
 
 
 if __name__ == "__main__":
