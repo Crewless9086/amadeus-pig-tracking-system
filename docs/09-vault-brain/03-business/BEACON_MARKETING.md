@@ -6,6 +6,14 @@ Beacon should support meat preorder, live pig sales, slaughter/abattoir fallback
 
 Beacon remains gated by owner approval, approved media, channel rules, spend caps, and backend fulfilment readiness.
 
+## Private Creative Studio Evaluation
+
+Beacon Creative Studio supports private, owner-only evaluation of only `elevenlabs` and `happy_horse_1_0`. Both adapters are deterministic disabled mocks: provider calls, network access, credentials, source transfer, and actual provider cost remain fixed at zero/false. Happy Horse identity, licensing, retention, privacy, pricing, API stability, and output quality remain unverified.
+
+Every mock job preserves the exact prompt, canonical parameters, provider/model identity, source-asset IDs and SHA-256 lineage, estimate provenance, zero actual cost, and a deterministic mock variant in private `beacon-raw-intake` with `needs_review`. A source asset must have a server-verifiable SHA-256 and the latest public-use approval decision must be owner-approved before it is eligible.
+
+Brand, privacy, safety, animal/product fidelity, provider disclosure, evaluation, and owner public-use decisions are separate append-only records. None enables provider access, spend, campaign selection, posting, scheduling, customer sends, stock/farm writes, or other execution. The additive migration is source-controlled but remains unapplied until separately owner-approved.
+
 ## Marketing Operating Contract
 
 Beacon's canonical marketing operating contract is owner-read-only and owner-review-only. It presents proposed objectives, brand voice and visual rules, channel allowlists, KPI definitions, and approval tiers. Proposed values are not owner-approved policy.
