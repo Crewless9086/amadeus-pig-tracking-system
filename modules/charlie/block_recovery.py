@@ -13,6 +13,15 @@ INTERNAL_BLOCK_CLASSES = {
     "evidence_repair_required",
     "stale_state_reconciliation_required",
 }
+VERIFICATION_AGENTS = {
+    "tester",
+    "qa_red_team",
+    "product_reviewer",
+    "security_reviewer",
+    "evidence_reviewer",
+    "reviewer",
+    "visual_qa_reviewer",
+}
 
 
 def classify_block(agent="", reason="", artifact=None):
@@ -20,17 +29,31 @@ def classify_block(agent="", reason="", artifact=None):
     text = _block_text(reason, artifact)
     scope = _scope_relation(text, artifact)
     introduced = _introduced_by_current_diff(text, artifact, scope)
+    governance = artifact.get("mission_governance_decision") if isinstance(artifact.get("mission_governance_decision"), dict) else {}
 
-    if _contains(text, (
+    if governance.get("route") == "owner_block":
+        if governance.get("red_zone_findings"):
+            block_class = RED_ZONE_OWNER_APPROVAL_REQUIRED
+        else:
+            block_class = OWNER_DECISION_REQUIRED
+        route = "owner"
+    elif _contains(text, (
         "destructive migration", "production data deletion", "delete production",
         "customer send", "send to customer", "payment", "deposit", "reserve stock",
         "reservation", "lifecycle write", "public post",
     )) and _contains(text, ("owner approval", "requires owner", "owner decision", "not approved", "red zone")):
         block_class = RED_ZONE_OWNER_APPROVAL_REQUIRED
         route = "owner"
+    elif _contains(text, ("migration", "schema change")) and _contains(text, (
+        "not explicitly owner-authorized", "not owner-authorized", "without owner approval",
+        "requires owner approval", "owner approval is required", "not approved",
+    )):
+        block_class = RED_ZONE_OWNER_APPROVAL_REQUIRED
+        route = "owner"
     elif _contains(text, (
         "repeated same blocker loop", "durable loop cap", "contract retry exhausted",
-        "recovery attempts exhausted",
+        "recovery attempts exhausted", "bounded correction budget was exhausted",
+        "frozen acceptance criteria remain failed",
     )):
         block_class = OWNER_DECISION_REQUIRED
         route = "owner"
@@ -62,6 +85,12 @@ def classify_block(agent="", reason="", artifact=None):
     elif scope in {"unrelated", "pre_existing"}:
         block_class = "system_repair_required"
         route = "evidence_reviewer"
+    elif agent in VERIFICATION_AGENTS and _contains(text, (
+        "scoped diff is empty", "no implementation", "not implemented", "unimplemented",
+        "no changed files", "implementation is absent",
+    )):
+        block_class = "implementation_fix_required"
+        route = "builder"
     elif _contains(text, (
         "source-map", "source map", "vault brain", "did not cite", "missing required agent",
         "missing doctrine", "missing evidence", "artifact missing", "contract retry",

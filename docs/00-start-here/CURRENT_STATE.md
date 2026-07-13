@@ -14,6 +14,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 - CORE freezes an acceptance matrix before Builder and records Tester/QA evidence against each row.
 - Automatic correction is bounded mission-wide and by semantic finding family; differently worded variants no longer bypass the loop cap indefinitely.
+- Governance owner blocks are now authoritative through the recovery layer: exhausted frozen acceptance matrices stop for an owner decision, and verifier findings against an empty/unimplemented diff route to Builder instead of requeueing the same verifier.
 - New non-red discoveries after the budget become deduplicated, owner-gated child missions linked to their parent/root mission. Red-zone findings remain hard owner stops.
 - Failures reproduced on `main` and advisory broad-suite timeouts no longer fail an unrelated parent mission.
 - `/charlie-v2` shows acceptance percentage, fixes, review runs, correction budget, cycling warnings, and linked mission-family work separately from workflow-stage progress.

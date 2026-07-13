@@ -606,6 +606,40 @@ class CharlieMissionPickupTests(unittest.TestCase):
         send_review.assert_called_once_with(result)
         send_blocked.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.runner_environment_preflight", return_value={"success": True})
+    @patch("scripts.charlie_mission_pickup.get_mission", return_value=({"mission": MISSION}, 200))
+    @patch("scripts.charlie_mission_pickup._send_notification")
+    @patch("scripts.charlie_mission_pickup.run_agent_execution_bridge_v2")
+    def test_internal_recovery_notification_uses_supported_info_level(
+        self,
+        run_bridge,
+        send_notification,
+        _get_mission,
+        _preflight,
+    ):
+        run_bridge.return_value = ({
+            "success": True,
+            "status": "agent_stage_recovery_queued",
+            "mission_id": "CHARLIE-MISSION-ACTIVE",
+            "mission_status": "approved",
+            "agent": "qa_red_team",
+            "block_disposition": {
+                "block_class": "implementation_fix_required",
+                "responsible_stage": "builder",
+            },
+        }, 202)
+
+        result, status_code = charlie_mission_pickup.execute_codex_for_mission(
+            "CHARLIE-MISSION-ACTIVE",
+            notify=True,
+            timeout_seconds=30,
+        )
+
+        self.assertEqual(status_code, 202)
+        self.assertEqual(result["status"], "agent_stage_recovery_queued")
+        send_notification.assert_called_once()
+        self.assertEqual(send_notification.call_args.args[0], "info")
+
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")

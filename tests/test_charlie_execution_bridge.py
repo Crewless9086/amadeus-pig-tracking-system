@@ -3261,6 +3261,79 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             for item in packet["unresolved_blockers"]
         ))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_exhausted_acceptance_matrix_stops_in_owner_block_instead_of_requeueing_qa(
+        self,
+        update_vault,
+        update_workflow,
+        update_status,
+        _changed_files,
+    ):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        ledger = {
+            "version": "charlie_agent_runner_v2",
+            "execution_id": "EXEC-MATRIX-STOP",
+            "mission_id": "CHARLIE-MISSION-MATRIX-STOP",
+            "stages": [],
+            "backflow_events": [],
+            "quality_gates": [],
+        }
+        artifact = {
+            "summary": "The scoped diff is empty; there is no implementation for owner review.",
+            "errors": [],
+            "bugs": [],
+            "acceptance_results": [
+                {"id": "acceptance-storage", "status": "failed", "evidence": ["No implementation exists."]},
+            ],
+            "mission_governance_decision": {
+                "route": "owner_block",
+                "reason": "Frozen acceptance criteria remain failed after the bounded correction budget was exhausted.",
+                "failed_acceptance_ids": ["acceptance-storage"],
+                "red_zone_findings": [],
+            },
+            "red_team_status": "blocked",
+            "risk_rating": "high",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {
+                name: Path(tmp) / f"EXEC-MATRIX-STOP.qa_red_team.{suffix}"
+                for name, suffix in (
+                    ("final_path", "final.md"),
+                    ("stdout_path", "stdout.txt"),
+                    ("stderr_path", "stderr.txt"),
+                    ("prompt_path", "prompt.md"),
+                )
+            }
+            for path in paths.values():
+                path.write_text("", encoding="utf-8")
+            result, status_code = execution_bridge._block_agent_stage(
+                "CHARLIE-MISSION-MATRIX-STOP",
+                "EXEC-MATRIX-STOP",
+                ledger,
+                "qa_red_team",
+                paths,
+                SimpleNamespace(returncode=0, stdout="", stderr=""),
+                "2026-07-13T10:00:00+00:00",
+                blocked_reason=artifact["mission_governance_decision"]["reason"],
+                artifact=artifact,
+                artifacts={"qa_red_team": artifact},
+            )
+
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(result["mission_status"], "blocked")
+        self.assertFalse(result["block_disposition"]["recoverable"])
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["review_status"], "agent_blocked")
+        self.assertEqual(packet["block_disposition"]["responsible_stage"], "owner")
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+
     def test_agent_stage_prompt_includes_unresolved_backflow_issues(self):
         ledger = {
             "backflow_events": [

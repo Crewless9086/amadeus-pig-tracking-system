@@ -64,6 +64,8 @@ Review findings are classified as:
 
 The default correction budget is four automatic backflows per mission and two per semantic finding family. Once exhausted, new non-red findings become deduplicated child missions with `parent_mission_id`, `root_mission_id`, sequence, finding family, dependency, priority, and reproduction evidence. Child missions are never auto-approved. The owner decides whether they run.
 
+If frozen acceptance rows are still failed when that correction budget is exhausted, the mission must become an honest owner block. The generic recovery classifier may not reinterpret that governance decision as internally recoverable. A verifier that reports an empty or unimplemented scoped diff must return the work to Builder while budget remains; CORE must never repeatedly rerun QA, review, or evidence stages when no implementation or matrix evidence changed.
+
 Parent missions become review-ready when their frozen matrix and focused mission-owned tests pass. Discovered work remains visible as a mission family without making delivery unbounded.
 
 ## Queue Discipline
