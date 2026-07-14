@@ -70,14 +70,23 @@ class BeaconCampaignTests(unittest.TestCase):
         event = {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": "7 days", "spend_amount": 0, "qualified_buyer_leads": 1, "created_at": "2026-07-14T08:00:00+00:00"}
         brief = build_beacon_weekly_command_brief([event], weekly_targets={"spend": {"target": 100}})
         self.assertEqual(brief["targets"]["spend"]["status"], "unavailable")
-        packet, status = prepare_beacon_owner_decision(brief["recommendations"][0], "core_work")
+        packet, status = prepare_beacon_owner_decision(event, "core_work")
         self.assertEqual(status, 200)
         self.assertEqual(packet["status"], "owner_decision_packet_prepared")
         for flag in ("creates_core_work", "approves_campaign", "posts_publicly", "calls_meta", "calls_n8n", "spends_money", "creates_order", "reserves_stock", "writes_farm_data"):
             self.assertFalse(packet[flag], flag)
-        unavailable, unavailable_status = prepare_beacon_owner_decision(brief["recommendations"][0], "execute_now")
+        unavailable, unavailable_status = prepare_beacon_owner_decision(event, "execute_now")
         self.assertEqual(unavailable_status, 400)
         self.assertEqual(unavailable["status"], "decision_destination_unavailable")
+
+    def test_owner_decision_recomputes_recommendation_from_source_event(self):
+        event = {"performance_event_id": "e1", "spend_amount": 75, "qualified_buyer_leads": 0}
+        event.update({"classification": "BOOST", "reason": "client_tampering", "supporting_metrics": {"spend_amount": 0}})
+        packet, status = prepare_beacon_owner_decision(event, "campaign_decision")
+        self.assertEqual(status, 200)
+        self.assertEqual(packet["classification"], "STOP")
+        self.assertEqual(packet["reason"], "paid_spend_without_qualified_leads")
+        self.assertEqual(packet["supporting_metrics"]["spend_amount"], 75)
 
     def test_packet_is_draft_only_and_has_no_external_authority(self):
         packet = build_meat_launch_campaign_packet()

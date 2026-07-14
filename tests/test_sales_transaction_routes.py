@@ -783,14 +783,24 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         build_brief.assert_called_once_with(source["performance_events"])
 
         prepared = {"success": True, "status": "owner_decision_packet_prepared", "creates_core_work": False, "approves_campaign": False}
-        recommendation = {"classification": "CHANGE", "performance_event_id": "BEACON-PERF-1"}
+        performance_event = {"performance_event_id": "BEACON-PERF-1", "spend_amount": 0, "qualified_buyer_leads": 0}
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"success": True, "performance_events": [performance_event]}, 200)
+        ) as list_events, patch.object(
             sales_transaction_routes, "prepare_beacon_owner_decision", return_value=(prepared, 200)
         ) as prepare:
-            response = self.client.post("/api/beacon/weekly-command-brief/prepare-decision", json={"recommendation": recommendation, "destination": "core_work"})
+            response = self.client.post("/api/beacon/weekly-command-brief/prepare-decision", json={"performance_event_id": "BEACON-PERF-1", "classification": "BOOST", "destination": "core_work"})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()["creates_core_work"])
-        prepare.assert_called_once_with(recommendation, "core_work")
+        list_events.assert_called_once_with(limit=100)
+        prepare.assert_called_once_with(performance_event, "core_work")
+
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"success": True, "performance_events": []}, 200)
+        ):
+            missing = self.client.post("/api/beacon/weekly-command-brief/prepare-decision", json={"performance_event_id": "fabricated", "destination": "core_work"})
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.get_json()["status"], "recommendation_source_not_found")
 
     def test_beacon_weekly_command_routes_fail_closed_when_unauthorized(self):
         denied = ({"success": False, "status": "owner_access_denied"}, 403)

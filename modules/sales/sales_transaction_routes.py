@@ -1024,7 +1024,19 @@ def beacon_weekly_command_prepare_decision():
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    result, status_code = prepare_beacon_owner_decision(payload.get("recommendation"), payload.get("destination"))
+    performance_event_id = str(payload.get("performance_event_id") or "").strip()
+    if not performance_event_id:
+        return jsonify({"success": False, "status": "recommendation_source_required"}), 400
+    source, source_status = list_beacon_campaign_performance_events(limit=100)
+    if source_status >= 400:
+        return jsonify(source), source_status
+    performance_event = next(
+        (event for event in source.get("performance_events", []) if event.get("performance_event_id") == performance_event_id),
+        None,
+    )
+    if performance_event is None:
+        return jsonify({"success": False, "status": "recommendation_source_not_found"}), 404
+    result, status_code = prepare_beacon_owner_decision(performance_event, payload.get("destination"))
     return jsonify(result), status_code
 
 

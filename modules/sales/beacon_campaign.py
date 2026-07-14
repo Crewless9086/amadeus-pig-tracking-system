@@ -764,22 +764,22 @@ def build_beacon_weekly_command_brief(events, now=None, stale_after_hours=168, w
             "recommendations": recommendations, "alerts": alerts, "authority": authority}
 
 
-def prepare_beacon_owner_decision(recommendation, destination):
+def prepare_beacon_owner_decision(performance_event, destination):
     """Prepare an owner-review packet without recording or executing the decision."""
-    recommendation = recommendation if isinstance(recommendation, dict) else {}
+    performance_event = performance_event if isinstance(performance_event, dict) else {}
     destination = _clean_text(destination).lower()
     if destination not in {"campaign_decision", "core_work"}:
         return {"success": False, "status": "decision_destination_unavailable", "allowed_destinations": ["campaign_decision", "core_work"], **_decision_authority()}, 400
-    classification = _clean_text(recommendation.get("classification")).upper()
-    source_id = _clean_text(recommendation.get("performance_event_id"))
-    if classification not in {"STOP", "CHANGE", "BOOST", "REUSE"} or not source_id:
+    source_id = _clean_text(performance_event.get("performance_event_id"))
+    if not source_id:
         return {"success": False, "status": "recommendation_source_required", **_decision_authority()}, 400
+    recommendation = _command_recommendation(performance_event)
     return {
         "success": True,
         "status": "owner_decision_packet_prepared",
         "mode": "beacon_owner_decision_prepare_only",
         "destination": destination,
-        "classification": classification,
+        "classification": recommendation["classification"],
         "performance_event_id": source_id,
         "reason": _clean_text(recommendation.get("reason")),
         "supporting_metrics": recommendation.get("supporting_metrics") if isinstance(recommendation.get("supporting_metrics"), dict) else {},
