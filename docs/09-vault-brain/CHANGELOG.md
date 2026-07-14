@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - Beacon weekly marketing command brief
+
+- Defined compatible latest-calendar-week campaign comparison and explicit target truth states.
+- Made STOP/CHANGE/BOOST/REUSE classification server-owned and decision preparation owner-authenticated, stateless, and non-executing.
+- Kept attributed revenue unavailable until a canonical paid/completed-sale join is proven.
+
 ## 2026-07-14 - CORE final artifact ingestion and supervisor truth
 
 - Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.

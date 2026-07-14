@@ -18,6 +18,7 @@ from modules.sales.beacon_campaign import (
     facebook_posting_policy,
     format_meat_launch_campaign_markdown,
     manual_post_evidence_policy,
+    prepare_beacon_owner_decision,
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
@@ -48,6 +49,35 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(len(brief["comparison"]["campaigns"]), 1)
         for flag in ("posts_publicly", "sends_customer_message", "calls_meta", "calls_chatwoot", "calls_n8n", "spends_money", "creates_order", "changes_stock", "writes_farm_data", "creates_core_work", "approves_campaign"):
             self.assertFalse(brief["authority"][flag], flag)
+
+    def test_weekly_command_brief_uses_latest_calendar_week_and_explicit_target_truth(self):
+        events = [
+            {"performance_event_id": "current", "publish_packet_id": "p1", "measurement_window": "7 days", "spend_amount": 25, "qualified_buyer_leads": 1, "created_at": "2026-07-14T08:00:00+00:00"},
+            {"performance_event_id": "prior-week", "publish_packet_id": "p2", "measurement_window": "7 days", "spend_amount": 900, "qualified_buyer_leads": 9, "created_at": "2026-07-12T08:00:00+00:00"},
+        ]
+        targets = {
+            "spend": {"status": "owner_approved", "target": 200},
+            "qualified_leads": {"status": "blocked", "target": 5, "blocker": "fulfilment_capacity_unavailable"},
+        }
+        brief = build_beacon_weekly_command_brief(events, weekly_targets=targets, now=datetime(2026, 7, 14, 9, tzinfo=timezone.utc))
+        self.assertEqual(brief["targets"]["spend"]["actual"], 25)
+        self.assertEqual(brief["targets"]["spend"]["status"], "owner_approved")
+        self.assertEqual(brief["targets"]["qualified_leads"]["status"], "blocked")
+        self.assertEqual(brief["targets"]["qualified_leads"]["blocker"], "fulfilment_capacity_unavailable")
+        self.assertEqual([item["performance_event_id"] for item in brief["recommendations"]], ["current"])
+
+    def test_weekly_targets_never_infer_proposed_status_and_decision_is_prepare_only(self):
+        event = {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": "7 days", "spend_amount": 0, "qualified_buyer_leads": 1, "created_at": "2026-07-14T08:00:00+00:00"}
+        brief = build_beacon_weekly_command_brief([event], weekly_targets={"spend": {"target": 100}})
+        self.assertEqual(brief["targets"]["spend"]["status"], "unavailable")
+        packet, status = prepare_beacon_owner_decision(brief["recommendations"][0], "core_work")
+        self.assertEqual(status, 200)
+        self.assertEqual(packet["status"], "owner_decision_packet_prepared")
+        for flag in ("creates_core_work", "approves_campaign", "posts_publicly", "calls_meta", "calls_n8n", "spends_money", "creates_order", "reserves_stock", "writes_farm_data"):
+            self.assertFalse(packet[flag], flag)
+        unavailable, unavailable_status = prepare_beacon_owner_decision(brief["recommendations"][0], "execute_now")
+        self.assertEqual(unavailable_status, 400)
+        self.assertEqual(unavailable["status"], "decision_destination_unavailable")
 
     def test_packet_is_draft_only_and_has_no_external_authority(self):
         packet = build_meat_launch_campaign_packet()
