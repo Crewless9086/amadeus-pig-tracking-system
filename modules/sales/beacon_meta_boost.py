@@ -128,6 +128,33 @@ def execute_meta_boost(payload, *, publication_resolver=None, performance_resolv
             "provider_invoked": True, "execution_evidence": evidence, "policy": policy}, (200 if status == "executed" else 502)
 
 
+def reconcile_meta_boost(payload, *, claim_resolver=None, provider=None,
+                         result_recorder=None, environ=None):
+    """Resolve an uncertain claim without creating a second paid boost."""
+    policy = meta_boost_policy(environ)
+    if policy["blockers"]:
+        return _blocked(policy["blockers"][0], policy), 503
+    if not all((claim_resolver, provider, result_recorder)):
+        return _blocked("paid_boost_reconciliation_not_configured", policy), 503
+    key = _text(payload.get("idempotency_key"))
+    claim = claim_resolver(key) if key else None
+    if not claim or claim.get("status") != "provider_acceptance_uncertain":
+        return _blocked("uncertain_claim_required", policy), 409
+    provider_result = provider.reconcile_fixed_lifetime_boost({
+        "idempotency_key": key,
+        "provider_reference": _text(claim.get("provider_reference"))[:160],
+    })
+    status = _text(provider_result.get("status"))
+    if status not in {"executed", "provider_rejected", "provider_acceptance_uncertain"}:
+        return _blocked("invalid_reconciliation_result", policy), 502
+    evidence = {"event": "reconciliation", "idempotency_key": key, "status": status,
+                "provider_reference": _text(provider_result.get("provider_reference"))[:160],
+                "uncertain": status == "provider_acceptance_uncertain"}
+    result_recorder(evidence)
+    return {"success": status == "executed", "status": status, "provider_invoked": True,
+            "execution_evidence": evidence, "policy": policy}, (200 if status == "executed" else 502)
+
+
 def _approval_error(approval, now):
     if approval.get("currency") != "ZAR":
         return "zar_total_cap_required"

@@ -1,7 +1,8 @@
 const { test, expect } = require("@playwright/test");
 
-const baseURL = "http://127.0.0.1:5088";
+const baseURL = process.env.OOM_SAKKIE_PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5088";
 const evidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-F7F8A97750EC42A5";
+const metaBoostEvidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-0E1D0B1F760B9328";
 
 const asset = {
   asset_id: "BEACON-ASSET-LIVE-001",
@@ -33,6 +34,38 @@ const exactText = "Three grower pigs are available near Riversdale at R2,450 eac
 
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+}
+
+for (const viewport of [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`${viewport.name} Meta paid-boost red-zone gate proof`, async ({ page, context }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await mockBeaconApi(page);
+    await page.route("**/api/beacon/meta-boost-policy", (route) => json(route, {
+      success: true, status: "ready_for_owner_execution", blockers: [], enabled: true,
+      paid_policy_approved: true, credentials_ready: true,
+    }));
+    await page.route("**/api/beacon/meta-boost-executions", (route) => json(route, {
+      success: false, status: "paid_boost_adapters_not_configured", provider_invoked: false,
+    }, 503));
+    await page.goto(`${baseURL}/sales/beacon-media`, { waitUntil: "domcontentloaded" });
+    const gate = page.locator(".beacon-meta-boost-status");
+    await gate.scrollIntoViewIfNeeded();
+    await expect(page.locator("#beacon_meta_boost_execute")).toBeEnabled();
+    await page.fill("#beacon_meta_boost_approval_id", "APPROVAL-OWNER-001");
+    await page.fill("#beacon_meta_boost_cap", "300");
+    await page.fill("#beacon_meta_boost_duration", "3");
+    await page.fill("#beacon_meta_boost_post_id", "123_456");
+    await expect(page.locator("#beacon_meta_boost_required_confirmation")).toHaveText("BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
+    await page.fill("#beacon_meta_boost_confirmation", "BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
+    await page.click("#beacon_meta_boost_execute");
+    await expect(page.locator("#beacon_meta_boost_result")).toContainText("Execution blocked");
+    await expect(page.locator("#beacon_meta_boost_result")).toContainText("paid_boost_adapters_not_configured");
+    await gate.screenshot({ path: `${metaBoostEvidenceDir}/beacon-meta-boost-${viewport.name}.png` });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
+  });
 }
 
 async function mockBeaconApi(page) {

@@ -1,7 +1,9 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 
-from modules.sales.beacon_meta_boost import execute_meta_boost, meta_boost_confirmation_phrase
+from modules.sales.beacon_meta_boost import execute_meta_boost, meta_boost_confirmation_phrase, reconcile_meta_boost
 
 
 class Provider:
@@ -14,17 +16,22 @@ class Provider:
         if self.timeout:
             raise TimeoutError()
         return self.result
+    def reconcile_fixed_lifetime_boost(self, payload):
+        self.calls.append(payload)
+        return {"status": "executed", "provider_reference": "mock-reconciled-1"}
 
 
 class Store:
     def __init__(self):
         self.claims = set()
         self.results = []
+        self.lock = Lock()
     def claim(self, event):
-        if event["idempotency_key"] in self.claims:
-            return {"created": False, "success": True, "status": "already_claimed"}
-        self.claims.add(event["idempotency_key"])
-        return {"created": True}
+        with self.lock:
+            if event["idempotency_key"] in self.claims:
+                return {"created": False, "success": True, "status": "already_claimed"}
+            self.claims.add(event["idempotency_key"])
+            return {"created": True}
     def result(self, event):
         self.results.append(event)
         return {"created": True}
@@ -70,6 +77,13 @@ class MetaBoostGateTests(unittest.TestCase):
         self.assertEqual(status, 200); self.assertEqual(body["status"], "already_claimed")
         self.assertEqual(len(provider.calls), 1)
 
+    def test_concurrent_duplicate_uses_atomic_claim_and_calls_provider_once(self):
+        provider, store = Provider(), Store()
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(lambda _: self.run_gate(provider, store)[0], range(8)))
+        self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(sum(body["provider_invoked"] for body, _ in results), 1)
+
     def test_policy_credentials_and_confirmation_fail_before_provider(self):
         provider = Provider()
         (body, status), _, _ = self.run_gate(provider=provider, env={})
@@ -97,10 +111,42 @@ class MetaBoostGateTests(unittest.TestCase):
             self.assertEqual(body["status"], expected); self.approval[field] = original
         self.assertEqual(provider.calls, [])
 
+    def test_mismatched_and_incompatible_server_evidence_blocks(self):
+        provider = Provider()
+        cases = [
+            (self.performance, "recommended_action", "stop", "latest_performance_does_not_recommend_boost"),
+            (self.performance, "canonical_post_id", "999_888", "boost_performance_post_mismatch"),
+            (self.approval, "canonical_post_id", "caller_forged", "canonical_published_post_mismatch"),
+            (self.approval, "budget_type", "open_ended", "fixed_lifetime_total_cap_only"),
+            (self.approval, "duration_days", 31, "fixed_lifetime_total_cap_only"),
+        ]
+        for target, field, value, expected in cases:
+            original = target[field]; target[field] = value
+            (body, _), _, _ = self.run_gate(provider=provider)
+            self.assertEqual(body["status"], expected); target[field] = original
+        self.assertEqual(provider.calls, [])
+
     def test_timeout_is_uncertain_and_audited_without_retry_authority(self):
         (body, status), provider, store = self.run_gate(provider=Provider(timeout=True))
         self.assertEqual(status, 502); self.assertEqual(body["status"], "provider_acceptance_uncertain")
         self.assertTrue(store.results[0]["uncertain"]); self.assertEqual(len(provider.calls), 1)
+
+    def test_uncertain_execution_reconciles_without_creating_another_boost(self):
+        provider, store = Provider(), Store()
+        claim = {"status": "provider_acceptance_uncertain", "provider_reference": "safe-ref"}
+        body, status = reconcile_meta_boost({"idempotency_key": "meta-boost-key"},
+            claim_resolver=lambda _: claim, provider=provider, result_recorder=store.result,
+            environ=self.env)
+        self.assertEqual(status, 200); self.assertEqual(body["status"], "executed")
+        self.assertEqual(store.results[0]["event"], "reconciliation")
+        self.assertNotIn("canonical_post_id", provider.calls[0])
+
+    def test_service_has_no_operational_writer_hooks(self):
+        import inspect
+        parameters = set(inspect.signature(execute_meta_boost).parameters)
+        forbidden = {"customer_writer", "order_writer", "reservation_writer", "stock_writer",
+                     "payment_writer", "lifecycle_writer", "organic_post_writer"}
+        self.assertTrue(parameters.isdisjoint(forbidden))
 
 
 if __name__ == "__main__":
