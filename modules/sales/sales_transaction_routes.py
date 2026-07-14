@@ -1075,6 +1075,9 @@ def beacon_facebook_posting_policy():
 
 @sales_bp.route("/beacon/facebook-post-executions", methods=["GET", "POST"])
 def beacon_facebook_post_executions():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     if request.method == "GET":
         result, status_code = list_beacon_facebook_post_execution_events(
             limit=request.args.get("limit", 25),

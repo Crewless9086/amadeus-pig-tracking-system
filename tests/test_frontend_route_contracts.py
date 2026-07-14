@@ -657,6 +657,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"effective_public_use_approved"', media_library)
 
         client = app.test_client()
+        with client.session_transaction() as owner_session:
+            owner_session["owner_access"] = {
+                "role": "admin",
+                "created_at": "2026-07-14T00:00:00+00:00",
+            }
         response = client.get("/sales/beacon-media")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)

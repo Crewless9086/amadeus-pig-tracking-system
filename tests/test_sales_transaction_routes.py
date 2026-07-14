@@ -841,6 +841,10 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         with patch.object(
             sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes,
             "list_beacon_facebook_post_execution_events",
             return_value=(list_result, 200),
         ) as list_events:
@@ -858,6 +862,10 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         }
         with patch.object(
             sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes,
             "execute_beacon_facebook_page_post",
             return_value=(execute_result, 503),
         ) as execute_post:
@@ -866,6 +874,26 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json(), execute_result)
         execute_post.assert_called_once_with(payload)
+
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch.object(
+            sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=denied,
+        ), patch.object(
+            sales_transaction_routes,
+            "list_beacon_facebook_post_execution_events",
+        ) as list_events, patch.object(
+            sales_transaction_routes,
+            "execute_beacon_facebook_page_post",
+        ) as execute_post:
+            denied_get = self.client.get("/api/beacon/facebook-post-executions")
+            denied_post = self.client.post("/api/beacon/facebook-post-executions", json=payload)
+
+        self.assertEqual(denied_get.status_code, 403)
+        self.assertEqual(denied_post.status_code, 403)
+        list_events.assert_not_called()
+        execute_post.assert_not_called()
 
     def test_beacon_facebook_post_execution_resolves_approved_image_asset(self):
         execute_result = {
@@ -889,6 +917,10 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         }
 
         with patch.object(
+            sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
             sales_transaction_routes,
             "list_beacon_media_assets",
             return_value=({"success": True, "assets": [approved_asset]}, 200),
