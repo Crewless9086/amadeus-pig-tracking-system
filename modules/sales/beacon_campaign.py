@@ -710,6 +710,80 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
     }, 200
 
 
+def build_beacon_weekly_command_brief(events, now=None, stale_after_hours=168):
+    """Project append-only performance snapshots into a read-only owner brief."""
+    now = now or datetime.now(timezone.utc)
+    unique, seen_ids = [], set()
+    for event in events or []:
+        event_id = _clean_text(event.get("performance_event_id"))
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        unique.append(event)
+    authority = {**deepcopy(PERFORMANCE_AUTHORITY_FLAGS), "creates_core_work": False, "approves_campaign": False}
+    if not unique:
+        unavailable = {"status": "unavailable", "target": None, "actual": None}
+        return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "unavailable",
+                "targets": {"spend": {**unavailable, "actual": 0}, "qualified_leads": {**unavailable, "actual": 0},
+                            "attributed_revenue": unavailable},
+                "comparison": {"status": "insufficient_data", "measurement_window": "", "campaigns": []},
+                "recommendations": [], "alerts": [{"code": "missing_evidence", "severity": "blocked"}], "authority": authority}
+
+    latest = unique[0]
+    window = " ".join(_clean_text(latest.get("measurement_window")).lower().split())
+    currency = (_clean_text(latest.get("spend_currency")) or "ZAR").upper()
+    compatible, seen_campaigns = [], set()
+    for event in unique:
+        event_window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
+        event_currency = (_clean_text(event.get("spend_currency")) or "ZAR").upper()
+        campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id") or event.get("channel"))
+        key = (campaign_id, event_window, event_currency)
+        if event_window != window or event_currency != currency or key in seen_campaigns:
+            continue
+        seen_campaigns.add(key)
+        compatible.append(event)
+
+    recommendations = [_command_recommendation(event) for event in compatible]
+    alerts = []
+    try:
+        latest_at = datetime.fromisoformat(_clean_text(latest.get("created_at")).replace("Z", "+00:00"))
+        latest_at = latest_at if latest_at.tzinfo else latest_at.replace(tzinfo=timezone.utc)
+    except ValueError:
+        latest_at = None
+    if not latest_at or (now - latest_at).total_seconds() > stale_after_hours * 3600:
+        alerts.append({"code": "stale_evidence", "severity": "warning"})
+    alerts.append({"code": "stop_recommendation_waiting" if any(r["classification"] == "STOP" for r in recommendations)
+                   else "recommendations_waiting", "severity": "blocked" if any(r["classification"] == "STOP" for r in recommendations) else "review"})
+    return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "comparable" if len(compatible) > 1 else "limited",
+            "last_updated_at": latest.get("created_at"),
+            "targets": {"spend": {"status": "proposed", "target": None, "actual": sum(float(e.get("spend_amount") or 0) for e in compatible), "currency": currency},
+                        "qualified_leads": {"status": "proposed", "target": None, "actual": sum(int(e.get("qualified_buyer_leads") or 0) for e in compatible)},
+                        "attributed_revenue": {"status": "unavailable", "target": None, "actual": None, "reason": "canonical_paid_completed_sale_join_unproven"}},
+            "comparison": {"status": "compatible" if len(compatible) > 1 else "insufficient_data", "measurement_window": latest.get("measurement_window") or "", "currency": currency, "campaigns": compatible},
+            "recommendations": recommendations, "alerts": alerts, "authority": authority}
+
+
+def _command_recommendation(event):
+    spend, leads = float(event.get("spend_amount") or 0), int(event.get("qualified_buyer_leads") or 0)
+    cap = float(event.get("max_spend_cap_amount") or BOOST_RECOMMENDATION_SPEND_CAP)
+    upstream = _clean_text(event.get("recommended_action")).lower()
+    if spend > cap:
+        result = ("STOP", "spend_cap_conflict", "blocked")
+    elif upstream == "do_not_boost" or (spend > 0 and leads == 0):
+        result = ("STOP", "paid_spend_without_qualified_leads", "blocked")
+    elif upstream == "light_boost_owner_review" and leads > 0:
+        result = ("BOOST", "qualified_leads_support_owner_review", "owner_review_required")
+    elif leads > 0 and spend == 0:
+        result = ("REUSE", "qualified_leads_without_paid_spend", "owner_review_required")
+    else:
+        result = ("CHANGE", "insufficient_evidence_or_adjustment_needed", "owner_review_required")
+    return {"classification": result[0], "reason": result[1], "truth_state": result[2],
+            "performance_event_id": event.get("performance_event_id") or "",
+            "supporting_metrics": {"spend_amount": spend, "qualified_buyer_leads": leads, "currency": event.get("spend_currency") or "ZAR"},
+            "owner_gate": "prepare_decision_only"}
+
+
 def facebook_posting_policy(environ=None):
     source = environ if environ is not None else os.environ
     enabled = _truthy(source.get(FACEBOOK_POSTING_ENABLED_ENV))
