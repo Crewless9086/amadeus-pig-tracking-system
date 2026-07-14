@@ -994,7 +994,7 @@ def facebook_posting_policy(environ=None):
     }
 
 
-def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None):
+def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None):
     payload = payload if isinstance(payload, dict) else {}
     if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch":
         return controlled_mode_denial("publish_meat_campaign")
@@ -1012,15 +1012,30 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
 
+    recorder = execution_recorder or _record_facebook_post_execution_event
+    params["execution_status"] = "record_only_before_send"
+    claim_result, claim_status = recorder(params, database_url=database_url)
+    if claim_status != 201 or not claim_result.get("created_count"):
+        return {
+            "success": False,
+            "status": "facebook_publish_packet_already_claimed" if claim_status < 400 else "facebook_publish_claim_failed",
+            "record_status_code": claim_status,
+            "record_result": claim_result,
+            "execution_event": _public_facebook_post_event(params),
+            "policy": policy,
+            **_facebook_execution_authority(False),
+        }, 409 if claim_status < 400 else 503
+
     post_fn = poster or _post_to_facebook_page
     post_result, post_status = post_fn(params, policy)
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
+        "execution_event_id": f'{params["execution_event_id"]}-RESULT',
         "execution_status": execution_status,
         "facebook_post_id": _clean_text(post_result.get("facebook_post_id") or post_result.get("id"))[:160],
         "facebook_response_json": json.dumps(post_result, sort_keys=True, default=str),
     })
-    record_result, record_status = _record_facebook_post_execution_event(params, database_url=database_url)
+    record_result, record_status = recorder(params, database_url=database_url)
     return {
         "success": execution_status == "facebook_page_post_sent",
         "status": execution_status,
@@ -1975,7 +1990,7 @@ def _facebook_execution_authority(executed):
 def _facebook_post_params(payload, policy):
     selected_asset = payload.get("selected_asset") if isinstance(payload.get("selected_asset"), dict) else {}
     params = {
-        "execution_event_id": _clean_text(payload.get("execution_event_id"))[:120],
+        "execution_event_id": "",
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
@@ -1995,8 +2010,7 @@ def _facebook_post_params(payload, policy):
     }
     if params["asset_id"]:
         params["selected_media_json"] = json.dumps(_facebook_selected_media(params), sort_keys=True, default=str)
-    if not params["execution_event_id"]:
-        params["execution_event_id"] = _facebook_post_execution_id(params)
+    params["execution_event_id"] = _facebook_post_execution_id(params)
     return params
 
 
@@ -2267,9 +2281,7 @@ def _facebook_post_row_to_event(row):
 def _facebook_post_execution_id(params):
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
-        "exact_text": params.get("exact_text", ""),
-        "asset_id": params.get("asset_id", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "channel": params.get("channel", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"

@@ -546,6 +546,12 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["spends_money"])
 
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
+        recorded = []
+
+        def fake_recorder(params, database_url=None):
+            recorded.append(dict(params))
+            return {"success": True, "created_count": 1}, 201
+
         def fake_poster(params, policy):
             return {"success": True, "facebook_post_id": "123_456", "id": "123_456"}, 200
 
@@ -554,7 +560,7 @@ class BeaconCampaignTests(unittest.TestCase):
             "channel": "Facebook",
             "exact_text": "Limited preorder test post.",
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, database_url="", poster=fake_poster, environ={
+        }, database_url="", poster=fake_poster, execution_recorder=fake_recorder, environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "123",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
@@ -567,6 +573,53 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertTrue(result["calls_meta"])
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
+        self.assertEqual([event["execution_status"] for event in recorded], ["record_only_before_send", "facebook_page_post_sent"])
+        self.assertTrue(recorded[1]["execution_event_id"].endswith("-RESULT"))
+
+    def test_facebook_post_execution_retry_is_blocked_before_meta(self):
+        calls = []
+        recorded_ids = set()
+
+        def durable_recorder(params, database_url=None):
+            event_id = params["execution_event_id"]
+            if event_id in recorded_ids:
+                return {"success": True, "created_count": 0, "status": "beacon_facebook_post_execution_already_recorded"}, 200
+            recorded_ids.add(event_id)
+            return {"success": True, "created_count": 1}, 201
+
+        def fake_poster(params, policy):
+            calls.append(params)
+            return {"success": True, "facebook_post_id": "must-not-send"}, 200
+
+        payload = {
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-RETRY",
+            "channel": "Facebook",
+            "exact_text": "Exact packet retry test.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        first, first_status = execute_beacon_facebook_page_post(
+            {**payload, "execution_event_id": "CALLER-CANNOT-CONTROL-CLAIM"},
+            poster=fake_poster, execution_recorder=durable_recorder, environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "123",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            },
+        )
+        result, status = execute_beacon_facebook_page_post(
+            payload, poster=fake_poster, execution_recorder=durable_recorder, environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "123",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            },
+        )
+
+        self.assertEqual(first_status, 200)
+        self.assertEqual(first["facebook_post_id"], "must-not-send")
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "facebook_publish_packet_already_claimed")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("CALLER-CANNOT-CONTROL-CLAIM", recorded_ids)
+        self.assertFalse(result["calls_meta"])
 
     def test_facebook_image_post_execution_requires_approved_image_asset(self):
         result, status = execute_beacon_facebook_page_post({
@@ -596,6 +649,9 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["calls_meta"])
 
     def test_facebook_image_post_execution_can_call_mock_poster_when_enabled(self):
+        def fake_recorder(params, database_url=None):
+            return {"success": True, "created_count": 1}, 201
+
         def fake_poster(params, policy):
             self.assertEqual(params["post_kind"], "photo")
             self.assertEqual(params["asset_id"], "BEACON-ASSET-APPROVED")
@@ -625,7 +681,7 @@ class BeaconCampaignTests(unittest.TestCase):
                 "storage_path": "2026/06/18/photo.jpg",
             },
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, database_url="", poster=fake_poster, environ={
+        }, database_url="", poster=fake_poster, execution_recorder=fake_recorder, environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "123",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",

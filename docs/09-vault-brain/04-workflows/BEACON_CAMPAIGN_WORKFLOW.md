@@ -15,7 +15,7 @@
 
 Beacon may pair that copy only with an owner-approved public-use asset whose content hash is present. Facebook and WhatsApp suggestions remain distinct: WhatsApp is copy-only with no send action. The exact Facebook packet content-addresses the copy, asset/hash, opportunity revision, fulfilment cap, effective price record, and Beacon-to-SAM Live Stock attribution identity. Facebook execution must rebuild that packet from current server-side evidence and reject missing, altered, stale, or superseded evidence before applying the existing exact owner phrase `POST EXACT BEACON PACKET`.
 
-The lane never authorizes an automatic post, customer send, negotiation, reservation, order, stock change, spend, or farm lifecycle write. A successful gated Facebook execution records the returned Facebook post ID through the existing execution-event rail. Buyer responses carrying the campaign identity route as `live_stock_sales` attribution to SAM.
+The lane never authorizes an automatic post, customer send, negotiation, reservation, order, stock change, spend, or farm lifecycle write. Before calling Meta, a gated Facebook execution must acquire one deterministic, append-only claim for the exact publish packet; a retry or concurrent duplicate that cannot create that claim must stop without calling Meta. A successful gated execution records the returned Facebook post ID through a separate append-only result event. Buyer responses carrying the campaign identity route as `live_stock_sales` attribution to SAM.
 
 ## Beacon-To-SAM Attribution Read Model
 

@@ -166,3 +166,4 @@
 - Added a separate `live_stock_sales` campaign workflow backed by fresh Supabase eligibility/capacity and effective sheet-lineaged `public.sales_pricing` evidence.
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
+- Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
