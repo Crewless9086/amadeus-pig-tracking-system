@@ -3630,6 +3630,42 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertTrue(result.get("timeout_advisory"), result)
 
+    def test_qa_quality_gate_defers_browser_environment_failure_with_pass_evidence(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = ["Browser list was empty and the local runner could not capture screenshot media."]
+        artifact["tests_run"] = [{
+            "command": "python -m unittest tests.test_beacon_campaign tests.test_sales_transaction_routes",
+            "status": "pass",
+            "output": "Ran 122 tests OK",
+        }]
+        artifact["visual_quality_findings"] = [
+            "Focused implementation checks passed; visual proof remains for the dedicated Visual QA gate.",
+        ]
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertTrue(result.get("visual_evidence_deferred"), result)
+
+    def test_qa_quality_gate_does_not_defer_real_failure_with_browser_noise(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "fail"
+        artifact["risk_rating"] = "high"
+        artifact["errors"] = [
+            "Browser list was empty and the local runner could not capture screenshot media.",
+            "Campaign decision endpoint writes without owner approval.",
+        ]
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_beacon_campaign", "status": "pass", "output": "Ran 20 tests OK"},
+        ]
+        artifact["visual_quality_findings"] = ["Browser evidence was unavailable."]
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_qa_quality_gate_still_blocks_real_failure_with_timeout_noise(self):
         artifact = _successful_stage_payload("qa_red_team")
         artifact["red_team_status"] = "fail"

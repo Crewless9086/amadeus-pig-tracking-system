@@ -2002,7 +2002,11 @@ def _ui_quality_contract_for_mission(mission):
             "docs/09-vault-brain/07-standards/TESTING_STANDARD.md",
         ],
         "required_viewports": ["desktop/laptop", "mobile"],
-        "gate": "UI missions must provide real local preview screenshots for desktop/laptop and mobile before owner review; generated fallback packets do not satisfy the gate.",
+        "gate": (
+            "UI missions must provide real local preview screenshots for desktop/laptop and mobile before owner review; "
+            "generated fallback packets do not satisfy the gate. If the in-app browser is unavailable, use the repository's "
+            "installed Playwright CLI against the real local preview and record the resulting durable screenshot paths."
+        ),
     }
 
 
@@ -3606,6 +3610,14 @@ def _agent_quality_gate(agent, artifact):
             "focused_tests_passed": True,
             "checked_at": datetime.now(timezone.utc).isoformat(),
         }
+    if agent == "qa_red_team" and _visual_capture_environment_only_is_advisory(agent, artifact):
+        return {
+            "passed": True,
+            "reason": "QA/red-team focused checks passed; screenshot-only environment limitation is deferred to the dedicated Visual QA gate using the Playwright fallback.",
+            "visual_evidence_deferred": True,
+            "focused_tests_passed": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
     judgement_quality = _judgement_evidence_quality_gate(agent, artifact)
     if not judgement_quality["passed"]:
         return judgement_quality
@@ -4180,7 +4192,9 @@ def _tester_timeout_only_failure_is_advisory(agent, artifact, allow_pass_status=
     return _timeout_only_failure_has_focused_pass_evidence(agent, artifact)
 
 
-def _tester_visual_capture_environment_only_is_advisory(artifact):
+def _visual_capture_environment_only_is_advisory(agent, artifact):
+    if agent not in {"tester", "qa_red_team"}:
+        return False
     if not isinstance(artifact, dict) or not _artifact_has_passing_test_collection(artifact):
         return False
     bugs = _artifact_value_list(artifact.get("bugs"))
@@ -4203,6 +4217,10 @@ def _tester_visual_capture_environment_only_is_advisory(artifact):
         "preview server",
     )
     return all(any(term in error for term in visual_environment_terms) for error in errors)
+
+
+def _tester_visual_capture_environment_only_is_advisory(artifact):
+    return _visual_capture_environment_only_is_advisory("tester", artifact)
 
 
 def _timeout_only_failure_has_focused_pass_evidence(agent, artifact):
