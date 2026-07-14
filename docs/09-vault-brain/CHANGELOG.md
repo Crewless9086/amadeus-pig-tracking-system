@@ -149,3 +149,9 @@
 - Added backend-generated owner-action guidance with a target stage, reason, expected outcome, and safe alternative.
 - Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
 - Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.
+
+## 2026-07-14 - Beacon-to-SAM deterministic attribution
+
+- Added the read-only Beacon-to-SAM attribution contract joining campaign evidence to explicit SAM lead, linked order, completed-sale revenue, fulfilment, and controlled lost-reason evidence.
+- Defined exact-ID precedence, bounded source/time matching, append-only supersession semantics, currency separation, and fail-closed ambiguous, expired, unmatched, duplicate, and malformed outcomes.
+- Kept persistent ingestion pending a separately approved migration and preserved zero post, send, optimization, spend, order, stock, and farm-write authority.
