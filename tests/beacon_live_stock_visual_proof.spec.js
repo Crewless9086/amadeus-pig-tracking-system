@@ -46,25 +46,24 @@ for (const viewport of [
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await mockBeaconApi(page);
     await page.route("**/api/beacon/meta-boost-policy", (route) => json(route, {
-      success: true, status: "ready_for_owner_execution", blockers: [], enabled: true,
-      paid_policy_approved: true, credentials_ready: true,
+      success: true, status: "hard_stopped", blockers: ["paid_boost_adapters_not_configured"],
+      enabled: true, paid_policy_approved: true, credentials_ready: true, provider_configured: false,
     }));
-    await page.route("**/api/beacon/meta-boost-executions", (route) => json(route, {
-      success: false, status: "paid_boost_adapters_not_configured", provider_invoked: false,
-    }, 503));
+    const login = await context.request.post(`${baseURL}/owner/login`, { form: { owner_token: "beacon-browser-fixture-token-0000000000000000", next: "/sales/beacon-media" } });
+    expect(login.ok()).toBeTruthy();
     await page.goto(`${baseURL}/sales/beacon-media`, { waitUntil: "domcontentloaded" });
     const gate = page.locator(".beacon-meta-boost-status");
     await gate.scrollIntoViewIfNeeded();
-    await expect(page.locator("#beacon_meta_boost_execute")).toBeEnabled();
+    await expect(page.locator("#beacon_meta_boost_execute")).toBeDisabled();
+    await expect(page.locator("#beacon_meta_boost_status")).toContainText("Hard stopped");
+    await expect(page.locator("#beacon_meta_boost_blockers")).toContainText("paid boost adapters not configured");
     await page.fill("#beacon_meta_boost_approval_id", "APPROVAL-OWNER-001");
     await page.fill("#beacon_meta_boost_cap", "300");
     await page.fill("#beacon_meta_boost_duration", "3");
     await page.fill("#beacon_meta_boost_post_id", "123_456");
     await expect(page.locator("#beacon_meta_boost_required_confirmation")).toHaveText("BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
     await page.fill("#beacon_meta_boost_confirmation", "BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
-    await page.click("#beacon_meta_boost_execute");
-    await expect(page.locator("#beacon_meta_boost_result")).toContainText("Execution blocked");
-    await expect(page.locator("#beacon_meta_boost_result")).toContainText("paid_boost_adapters_not_configured");
+    await expect(page.locator("#beacon_meta_boost_execute")).toBeDisabled();
     await gate.screenshot({ path: `${metaBoostEvidenceDir}/beacon-meta-boost-${viewport.name}.png` });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
   });

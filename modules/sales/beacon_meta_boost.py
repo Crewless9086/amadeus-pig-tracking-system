@@ -27,7 +27,7 @@ def meta_boost_confirmation_phrase(post_id, total_cap_zar, duration_days):
     return f"BOOST {post_id} FOR ZAR {amount:.2f} TOTAL OVER {int(duration_days)} DAYS"
 
 
-def meta_boost_policy(environ=None):
+def meta_boost_policy(environ=None, *, adapters_configured=False):
     env = environ or os.environ
     enabled = _truthy(env.get(META_BOOST_ENABLED_ENV))
     policy_approved = _truthy(env.get(META_BOOST_POLICY_ENV))
@@ -39,6 +39,11 @@ def meta_boost_policy(environ=None):
         blockers.append("paid_policy_missing")
     if not credentials_ready:
         blockers.append("meta_ads_credentials_missing")
+    # The production route deliberately has no durable approval, claim/result,
+    # reconciliation, or Meta provider adapters. Environment flags alone must
+    # never make the owner UI appear executable.
+    if not adapters_configured:
+        blockers.append("paid_boost_adapters_not_configured")
     return {
         "mode": "beacon_meta_paid_boost_red_zone",
         "status": "ready_for_owner_execution" if not blockers else "hard_stopped",
@@ -50,7 +55,7 @@ def meta_boost_policy(environ=None):
         "budget_semantics": "fixed_lifetime_total_cap_only",
         "recurring_spend": False,
         "automatic_execution": False,
-        "provider_configured": False,
+        "provider_configured": bool(adapters_configured),
         "writes_customer_order_stock_payment_or_lifecycle": False,
     }
 
@@ -59,12 +64,11 @@ def execute_meta_boost(payload, *, publication_resolver=None, performance_resolv
                        fulfilment_resolver=None, approval_resolver=None, claim_recorder=None,
                        provider=None, result_recorder=None, environ=None, now=None):
     """Validate trusted evidence and invoke an injected provider at most once."""
-    policy = meta_boost_policy(environ)
+    adapters_configured = all((publication_resolver, performance_resolver, fulfilment_resolver,
+                               approval_resolver, claim_recorder, provider, result_recorder))
+    policy = meta_boost_policy(environ, adapters_configured=adapters_configured)
     if policy["blockers"]:
         return _blocked(policy["blockers"][0], policy), 503
-    if not all((publication_resolver, performance_resolver, fulfilment_resolver,
-                approval_resolver, claim_recorder, provider, result_recorder)):
-        return _blocked("paid_boost_adapters_not_configured", policy), 503
 
     now = now or datetime.now(timezone.utc)
     approval_id = _text(payload.get("approval_id"))
@@ -131,11 +135,10 @@ def execute_meta_boost(payload, *, publication_resolver=None, performance_resolv
 def reconcile_meta_boost(payload, *, claim_resolver=None, provider=None,
                          result_recorder=None, environ=None):
     """Resolve an uncertain claim without creating a second paid boost."""
-    policy = meta_boost_policy(environ)
+    adapters_configured = all((claim_resolver, provider, result_recorder))
+    policy = meta_boost_policy(environ, adapters_configured=adapters_configured)
     if policy["blockers"]:
         return _blocked(policy["blockers"][0], policy), 503
-    if not all((claim_resolver, provider, result_recorder)):
-        return _blocked("paid_boost_reconciliation_not_configured", policy), 503
     key = _text(payload.get("idempotency_key"))
     claim = claim_resolver(key) if key else None
     if not claim or claim.get("status") != "provider_acceptance_uncertain":
