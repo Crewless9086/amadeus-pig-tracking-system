@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - CORE final artifact ingestion and supervisor truth
+
+- Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.
+- Required restart recovery to consume a valid pending artifact before resume-stage selection.
+- Defined one generation-owned supervisor process tree as dashboard runner truth and bounded stale-child recovery to dead prior supervisors.
+
 ## 2026-07-14 - BEACON calendar durable lifecycle and revocation
 
 - Replaced process-local reusable-rule lifecycle authority with a worker-shared durable SQLite event registry.
