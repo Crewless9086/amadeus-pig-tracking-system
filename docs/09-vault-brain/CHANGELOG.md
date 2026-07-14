@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - Beacon-to-SAM deterministic attribution
+
+- Added the read-only Beacon-to-SAM attribution contract joining campaign evidence to every exact matching SAM lead, linked orders, completed-sale revenue, fulfilment, and controlled lost-reason evidence.
+- Defined exact-ID precedence, bounded source/time matching, append-only supersession semantics, currency separation, and fail-closed ambiguous, expired, unmatched, duplicate, and malformed outcomes.
+- Kept persistent ingestion pending a separately approved migration and preserved zero post, send, optimization, spend, order, stock, and farm-write authority.
 ## 2026-07-14 - CORE final artifact ingestion and supervisor truth
 
 - Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.
