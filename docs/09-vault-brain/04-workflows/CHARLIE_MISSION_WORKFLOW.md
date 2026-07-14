@@ -158,6 +158,12 @@ Reviewer and Tester command mistakes that are explicitly informational, unrelate
 Owner send-back normalization follows the same single-active-stage invariant: the selected return stage is active, downstream stages are pending, and stale upstream active markers are cleared without discarding completed evidence.
 
 Safety language such as `fail-closed` describes required protective behavior and is not itself failure evidence. Explicit failed tests, unresolved acceptance findings, and send-back decisions remain blocking.
+
+### Final artifact ingestion and supervisor truth
+
+Agent Runner v2 final artifacts are durable stage inputs, not display-only files. A valid artifact is claimed under a locked mission record using mission, execution, agent, attempt, and content-hash identity. The same claim cannot append duplicate memory, handoff, quality, or workflow evidence. Consumption completes only the matching first incomplete stage and activates only its next incomplete stage; a passing Tester therefore activates QA/Red-Team while completed Builder evidence remains preserved.
+
+Runner startup reconciles an unconsumed heartbeat artifact before selecting the resume stage. Supervisor truth is one generation-owned process tree: dashboard status is active only when the live supervisor owns the heartbeat child for the same generation. A replacement supervisor may stop a stale child only after the recorded prior supervisor is no longer live.
 # CORE Recovery And Observability Rules (2026-07-14)
 
 - Outcome-based routing is authoritative: any mission that asks for code or product implementation must include Builder and focused verification stages. Planning-only workflows may not be sent through revision review as if they produced a packaged PR.

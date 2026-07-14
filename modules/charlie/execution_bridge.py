@@ -25,11 +25,12 @@ from modules.charlie.mission_store import (
     get_mission,
     list_missions,
     record_mission,
+    consume_final_agent_artifact,
     update_mission_status,
     update_mission_vault,
     update_mission_workflow_step,
 )
-from modules.charlie.runner_control import write_runner_heartbeat
+from modules.charlie.runner_control import runner_status, write_runner_heartbeat
 from modules.charlie.core_workflow import (
     AGENT_DOCTRINE_PATHS,
     build_handoff_report as build_core_handoff_report,
@@ -383,6 +384,7 @@ def run_agent_execution_bridge_v2(
     connect_factory=None,
     codex_command=None,
     run_subprocess=None,
+    artifact_consumer=None,
 ):
     mission, status_code, error = _load_execution_mission(
         mission_id=mission_id,
@@ -813,6 +815,25 @@ def run_agent_execution_bridge_v2(
                 connect_factory=connect_factory,
             )
         artifact["quality_gate"] = quality
+        artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+        if artifact_consumer is None:
+            ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+        else:
+            ingestion, ingestion_status = artifact_consumer(
+                mission["mission_id"], agent, execution_id, stage_attempts[agent], artifact, artifact_hash,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        ingestion_owned_stage = ingestion_status < 400 and ingestion.get("status") in {
+            "final_artifact_consumed", "final_artifact_already_consumed"
+        }
+        if ingestion_status >= 400 and ingestion.get("status") != "not_configured":
+            return _block_agent_stage(
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=f"Valid final artifact could not be consumed: {ingestion.get('status', 'unknown')}.",
+                artifact={**artifact, "artifact_ingestion": ingestion}, artifacts=artifacts,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        artifact["artifact_ingestion"] = ingestion
         _record_acceptance_progress(
             mission,
             agent,
@@ -823,18 +844,14 @@ def run_agent_execution_bridge_v2(
         )
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
-        _record_mission_memory_event(
-            mission,
-            build_memory_event(
-                agent,
-                "agent_complete",
-                attempt=stage_attempts[agent],
-                artifact=artifact,
-                quality_gate=quality,
-            ),
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
+        if not ingestion_owned_stage:
+            _record_mission_memory_event(
+                mission,
+                build_memory_event(
+                    agent, "agent_complete", attempt=stage_attempts[agent], artifact=artifact, quality_gate=quality,
+                ),
+                database_url=database_url, connect_factory=connect_factory,
+            )
         _append_ledger_stage(
             ledger,
             agent,
@@ -846,14 +863,12 @@ def run_agent_execution_bridge_v2(
             attempt=stage_attempts[agent],
         )
         _write_agent_ledger(output_dir, execution_id, ledger)
-        _record_execution_stage(
-            mission["mission_id"],
-            agent,
-            "complete",
-            _truncate(artifact.get("summary") or f"{agent} completed.", 1000),
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
+        if not ingestion_owned_stage:
+            _record_execution_stage(
+                mission["mission_id"], agent, "complete",
+                _truncate(artifact.get("summary") or f"{agent} completed.", 1000),
+                database_url=database_url, connect_factory=connect_factory,
+            )
 
     return _complete_agent_execution_v2(
         mission,
@@ -865,6 +880,52 @@ def run_agent_execution_bridge_v2(
         database_url=database_url,
         connect_factory=connect_factory,
     )
+
+
+def recover_pending_final_agent_artifact(mission_id="", database_url=None, connect_factory=None, status_loader=None):
+    """Consume the final artifact named by a stale/live heartbeat before a runner restart."""
+    status = (status_loader or runner_status)(include_orphans=False, include_git=False, include_ledger=False)
+    heartbeat_mission = str(status.get("last_mission_id") or "").strip()
+    mission_id = str(mission_id or heartbeat_mission).strip()
+    if not mission_id or (heartbeat_mission and mission_id != heartbeat_mission):
+        return {"success": True, "status": "no_matching_pending_final_artifact"}, 200
+    path = Path(str(status.get("execution_artifact") or "").strip())
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    final_text = _read_text(path)
+    if not final_text:
+        return {"success": True, "status": "no_pending_final_artifact"}, 200
+    loaded, load_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if load_status >= 400:
+        return loaded, load_status
+    mission = loaded.get("mission") or {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    agent = str(status.get("current_agent") or "").strip().lower()
+    if not agent:
+        agent = next((str(item.get("agent") or "").lower() for item in workflow if isinstance(item, dict) and str(item.get("status") or "").lower() != "complete"), "")
+    artifact = _agent_artifact_from_final(agent, final_text)
+    artifact.update({"agent": agent, "artifact_path": str(path), "recovered_after_restart": True})
+    validation = _validate_agent_artifact(agent, artifact)
+    if not validation["valid"]:
+        return {"success": False, "status": "pending_final_artifact_invalid", "missing_keys": validation["missing_keys"]}, 409
+    quality = _agent_quality_gate(agent, artifact)
+    if not quality["passed"]:
+        return {"success": False, "status": "pending_final_artifact_quality_failed", "reason": quality["reason"]}, 409
+    artifact["quality_gate"] = quality
+    execution_id = str(status.get("agent_ledger", {}).get("execution_id") or path.name.split(f".{agent}.")[0] or "recovered")
+    result, status_code = consume_final_agent_artifact(
+        mission_id, agent, execution_id, int(artifact.get("attempt") or 1), artifact,
+        hashlib.sha256(final_text.encode("utf-8")).hexdigest(),
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if status_code < 400:
+        write_runner_heartbeat({
+            "status": result.get("status"), "mission_id": mission_id,
+            "agent_runner_version": AGENT_RUNNER_VERSION, "current_agent": result.get("next_agent", ""),
+            "current_action": f"Recovered and consumed {agent} final artifact.",
+            "execution_artifact": str(path), "final_artifact_present": True,
+        })
+    return result, status_code
 
 
 def complete_codex_execution_from_artifact(

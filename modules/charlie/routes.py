@@ -1250,6 +1250,13 @@ def _compact_runner_status(status):
             "next_action",
             "can_start_from_web",
             "can_stop_from_web",
+            "supervisor_active",
+            "supervisor_owns_runner",
+            "supervisor_status",
+            "supervisor_pid",
+            "supervisor_child_pid",
+            "supervisor_generation",
+            "owner_process_pid",
         )
         if key in status
     }

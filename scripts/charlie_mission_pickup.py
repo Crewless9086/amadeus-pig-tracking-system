@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
-from modules.charlie.mission_store import get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
+from modules.charlie.mission_store import consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
@@ -480,6 +480,7 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
         mission_id=mission_id,
         execute_codex=True,
         timeout_seconds=timeout_seconds,
+        artifact_consumer=consume_final_agent_artifact,
     )
     if result.get("mission_status") in {"pr_ready", "blocked", "rejected"}:
         result["analyst"] = _queue_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
