@@ -296,6 +296,18 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("--mission-id", captured_argv)
         self.assertIn("CHARLIE-MISSION-123", captured_argv)
 
+    @patch("scripts.charlie_mission_pickup.notify_main")
+    def test_notification_normalizes_internal_levels_to_cli_contract(self, notify_main):
+        captured = []
+        notify_main.side_effect = lambda: captured.append(list(charlie_mission_pickup.sys.argv)) or 0
+
+        self.assertEqual(charlie_mission_pickup._send_notification("running", "Started", "Work started"), 0)
+        self.assertEqual(charlie_mission_pickup._send_notification("pr_ready", "Ready", "Review ready"), 0)
+        self.assertEqual(charlie_mission_pickup._send_notification("needs_owner_approval", "Review", "Decision needed"), 0)
+
+        levels = [argv[argv.index("--level") + 1] for argv in captured]
+        self.assertEqual(levels, ["info", "success", "warning"])
+
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")

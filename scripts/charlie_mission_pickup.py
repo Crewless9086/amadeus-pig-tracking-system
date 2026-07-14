@@ -1233,12 +1233,18 @@ def _send_blocked_notification(title, message, mission_id=""):
 
 
 def _send_notification(level, title, message, mission_id=""):
+    notification_level = {
+        "running": "info",
+        "pr_ready": "success",
+        "needs_owner_approval": "warning",
+        "hard_stop": "blocked",
+    }.get(str(level or "").strip().lower(), level)
     original_argv = list(sys.argv)
     try:
         sys.argv = [
             "charlie_notify.py",
             "--level",
-            level,
+            notification_level,
             "--title",
             title,
             "--message",
@@ -1252,7 +1258,7 @@ def _send_notification(level, title, message, mission_id=""):
                 "status": "notification_failed",
                 "mission_id": mission_id,
                 "notify_failing": True,
-                "notification_level": level,
+                "notification_level": notification_level,
                 "notification_title": title,
             })
         return exit_code
