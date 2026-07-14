@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 
-from modules.sales.beacon_meta_boost import execute_meta_boost, meta_boost_confirmation_phrase, reconcile_meta_boost
+from modules.sales.beacon_meta_boost import execute_meta_boost, meta_boost_confirmation_phrase, meta_boost_policy, reconcile_meta_boost
 
 
 class Provider:
@@ -70,6 +70,12 @@ class MetaBoostGateTests(unittest.TestCase):
         self.assertEqual(provider.calls[0]["lifetime_budget_minor"], 30000)
         self.assertEqual(provider.calls[0]["currency"], "ZAR")
         self.assertEqual(store.results[0]["status"], "executed")
+
+    def test_production_policy_never_reports_ready_without_adapters(self):
+        policy = meta_boost_policy(self.env)
+        self.assertEqual(policy["status"], "hard_stopped")
+        self.assertIn("paid_boost_adapters_not_configured", policy["blockers"])
+        self.assertFalse(policy["provider_configured"])
 
     def test_duplicate_retry_does_not_call_provider_twice(self):
         provider, store = Provider(), Store()
