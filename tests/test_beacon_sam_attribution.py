@@ -10,7 +10,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
             "leads": [{"lead_id": "LEAD-1", "campaign_id": "CAM-1", "campaign_source": "social_post", "status": "order_ready_for_approval", "linked_order_id": "ORDER-1", "created_at": "2026-07-02T10:00:00Z"}],
             "orders": [{"order_id": "ORDER-1", "status": "Completed"}],
             "sales_transactions": [{"sale_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "Completed", "net_total": "1234.50", "currency": "ZAR"}],
-            "fulfilment_events": [{"fulfillment_event_id": "FUL-1", "lead_id": "LEAD-1", "event_type": "delivered", "occurred_at": "2026-07-10T10:00:00Z"}],
+            "fulfilment_events": [{"fulfillment_event_id": "FUL-1", "lead_id": "LEAD-1", "event_type": "delivery_completed", "occurred_at": "2026-07-10T10:00:00Z"}],
             "loss_events": [],
         }
 

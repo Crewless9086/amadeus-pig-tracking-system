@@ -37,7 +37,7 @@ ALLOWED_LOST_REASONS = {
     "price", "timing", "location", "product_fit", "no_response",
     "stock_unavailable", "fulfilment_risk", "competitor", "other",
 }
-SUCCESS_FULFILMENT_EVENTS = {"delivered", "collected", "fulfilled", "handover_completed"}
+SUCCESS_FULFILMENT_EVENTS = {"delivery_completed", "collected", "fulfilled", "handover_completed"}
 FAILED_FULFILMENT_EVENTS = {"failed", "cancelled", "delivery_failed", "collection_failed"}
 
 
