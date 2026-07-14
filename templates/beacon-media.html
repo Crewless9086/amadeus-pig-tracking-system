@@ -164,6 +164,18 @@
             <span>No automatic post</span><span>No customer send</span><span>No reservation</span><span>No stock or spend change</span>
           </div>
         </div>
+        <section id="beacon_meat_readiness" class="beacon-meat-readiness hidden" aria-labelledby="beacon_meat_readiness_title">
+          <div class="beacon-panel-heading">
+            <div><span class="beacon-eyebrow">Step 1 · owner-controlled readiness</span><h3 id="beacon_meat_readiness_title">Meat offer pilot gates</h3></div>
+            <span id="beacon_meat_readiness_status" class="beacon-status-chip" data-state="blocked">Checking owner gate</span>
+          </div>
+          <div class="beacon-readiness-grid">
+            <article><span>Meat offer</span><strong id="beacon_meat_offer_state">Not enabled</strong><small>Must be enabled by the existing server-side owner flag.</small></article>
+            <article><span>Fulfilment / pilot cap</span><strong id="beacon_meat_cap_state">Enter an explicit cap</strong><small>No default, stock promise, reservation, or availability claim.</small></article>
+            <article><span>SAM Meat mode</span><strong>Interest capture only</strong><small>No quote, order, payment, reservation, fulfilment, or delivery authority.</small></article>
+          </div>
+          <p id="beacon_meat_readiness_blocker" class="beacon-inline-warning">Preparation stays locked until the owner enables the offer and enters a positive pilot cap.</p>
+        </section>
         <section id="beacon_sales_truth" class="beacon-sales-truth hidden" aria-labelledby="beacon_sales_truth_title">
           <div class="beacon-panel-heading">
             <div><span class="beacon-eyebrow">Step 1 · current source truth</span><h3 id="beacon_sales_truth_title">Sale readiness and fulfilment cap</h3></div>
@@ -201,7 +213,7 @@
             </div>
             <div class="form-group">
               <label for="beacon_publish_cap">Pilot Cap</label>
-              <input type="text" id="beacon_publish_cap" placeholder="Loaded from current fulfilment evidence" readonly />
+              <input type="text" id="beacon_publish_cap" inputmode="numeric" placeholder="Enter a positive whole-number cap" readonly />
             </div>
           </div>
           <div class="form-group">
@@ -240,6 +252,21 @@
           <div class="form-group">
             <label for="beacon_facebook_post_exact_text">Exact Facebook Text</label>
             <textarea id="beacon_facebook_post_exact_text" rows="5" placeholder="Prepared packet text will fill here." readonly></textarea>
+          </div>
+          <div class="beacon-exact-review-grid">
+            <figure class="beacon-exact-image-card">
+              <figcaption><strong>Exact approved image</strong><span id="beacon_facebook_post_image_status">Prepare a packet with an approved image.</span></figcaption>
+              <img id="beacon_facebook_post_image" class="hidden" alt="Exact owner-approved Beacon image for this Facebook packet" />
+              <div id="beacon_facebook_post_image_empty" class="beacon-image-empty">No exact image loaded</div>
+            </figure>
+            <div class="beacon-confirmation-checklist" aria-label="Final owner checks">
+              <strong>Before exact confirmation</strong>
+              <span id="beacon_check_offer" data-state="blocked">Owner-enabled meat offer</span>
+              <span id="beacon_check_cap" data-state="blocked">Explicit fulfilment / pilot cap</span>
+              <span id="beacon_check_text" data-state="blocked">Exact Facebook text shown</span>
+              <span id="beacon_check_image" data-state="blocked">Exact approved image shown</span>
+              <span id="beacon_check_config" data-state="blocked">Facebook configuration ready</span>
+            </div>
           </div>
           <div class="beacon-media-actions">
             <button type="button" id="beacon_facebook_post_execute" class="button-link" disabled>Confirm Once &amp; Post Exact Packet</button>

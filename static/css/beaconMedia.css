@@ -185,6 +185,10 @@
 .beacon-sales-truth-grid span, .beacon-sales-truth-grid small { color: #607066; }
 .beacon-sales-truth-grid strong { margin: 7px 0; color: #203528; }
 .beacon-inline-warning { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: #fff0ca; color: #765410; }
+.beacon-meat-readiness { grid-column: 1 / -1; padding: 16px; border: 1px solid #d7bd82; border-radius: 10px; background: #fffaf0; }
+.beacon-readiness-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.beacon-readiness-grid article { min-width: 0; padding: 12px; border: 1px solid #e1d7bd; border-radius: 8px; background: #fff; }
+.beacon-readiness-grid span, .beacon-readiness-grid strong, .beacon-readiness-grid small { display: block; overflow-wrap: anywhere; }
 .beacon-action-note { align-self: center; color: #607066; font-size: .82rem; }
 .hidden { display: none !important; }
 
@@ -374,6 +378,14 @@
   border-radius: 8px;
   padding: 10px;
 }
+.beacon-exact-review-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(240px, .65fr); gap: 14px; margin-top: 14px; }
+.beacon-exact-image-card { margin: 0; min-width: 0; border: 1px solid #b8cab8; border-radius: 10px; overflow: hidden; background: #fff; }
+.beacon-exact-image-card figcaption { display: grid; gap: 3px; padding: 11px 12px; }
+.beacon-exact-image-card img { display: block; width: 100%; max-height: 460px; object-fit: contain; background: #eef1ec; }
+.beacon-image-empty { display: grid; place-items: center; min-height: 220px; padding: 20px; background: #f0f3ed; color: #607066; font-weight: 800; text-align: center; }
+.beacon-confirmation-checklist { display: grid; align-content: start; gap: 8px; padding: 13px; border: 1px solid #d7ded6; border-radius: 10px; background: #fff; }
+.beacon-confirmation-checklist span { padding: 9px 10px; border-radius: 7px; background: #fff0f0; color: #7c2929; font-size: .82rem; font-weight: 700; overflow-wrap: anywhere; }
+.beacon-confirmation-checklist span[data-state="ready"] { background: #e7f2e8; color: #24532e; }
 
 .beacon-media-asset-list {
   display: grid;
@@ -465,7 +477,7 @@
   .beacon-performance-metrics-grid {
     grid-template-columns: 1fr;
   }
-  .beacon-lane-boundary, .beacon-sales-truth-grid { grid-template-columns: 1fr; }
+  .beacon-lane-boundary, .beacon-sales-truth-grid, .beacon-readiness-grid, .beacon-exact-review-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -477,4 +489,5 @@
   .beacon-command-meta .button-link { width: 100%; }
   .beacon-comparison-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .beacon-comparison-row > div { grid-column: 1 / -1; }
+  .beacon-facebook-post-panel .beacon-media-actions .button-link { width: 100%; }
 }

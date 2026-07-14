@@ -1131,7 +1131,47 @@ def beacon_facebook_post_executions():
                 "authoritative_packet_id": authoritative.get("publish_packet_id", ""),
                 "errors": authoritative.get("errors", []),
             }), 409
-    result, status_code = execute_beacon_facebook_page_post(payload)
+    meat_launch_authorized = False
+    if payload.get("campaign_lane") == "meat_launch":
+        authoritative = build_beacon_campaign_publish_packet({
+            "campaign_lane": "meat_launch",
+            "draft_id": "facebook_post",
+            "asset_id": asset_id,
+            "channel": "Facebook",
+            "pilot_cap": payload.get("pilot_cap"),
+        }, approved_assets=approved_assets)
+        canonical_text = (authoritative.get("selected_draft") or {}).get("exact_text", "")
+        canonical_asset_id = (authoritative.get("selected_asset") or {}).get("asset_id", "")
+        packet_matches = (
+            authoritative.get("success")
+            and authoritative.get("publish_packet_id") == payload.get("publish_packet_id")
+            and canonical_text == payload.get("exact_text")
+            and canonical_asset_id == asset_id
+            and str(payload.get("channel") or "").strip() == "Facebook"
+            and str(authoritative.get("pilot_cap") or "") == str(payload.get("pilot_cap") or "").strip()
+        )
+        if not packet_matches:
+            return jsonify({
+                "success": False,
+                "status": "meat_launch_packet_not_ready_or_stale",
+                "posts_publicly": False,
+                "calls_meta": False,
+                "spends_money": False,
+                "authoritative_packet_id": authoritative.get("publish_packet_id", ""),
+                "errors": authoritative.get("errors", []),
+            }), 409
+        payload = {
+            **payload,
+            "publish_packet_id": authoritative["publish_packet_id"],
+            "channel": "Facebook",
+            "exact_text": canonical_text,
+            "asset_id": canonical_asset_id,
+            "selected_asset": authoritative["selected_asset"],
+        }
+        meat_launch_authorized = True
+    result, status_code = execute_beacon_facebook_page_post(
+        payload, meat_launch_authorized=meat_launch_authorized
+    ) if meat_launch_authorized else execute_beacon_facebook_page_post(payload)
     return jsonify(result), status_code
 
 

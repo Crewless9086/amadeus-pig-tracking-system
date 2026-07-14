@@ -6,6 +6,9 @@
     latestPublishPacket: null,
     facebookPostingPolicy: null,
     salesTruthReady: false,
+    meatOfferEnabled: false,
+    meatCapReady: false,
+    exactImageReady: false,
     performanceEvents: [],
   };
 
@@ -27,6 +30,11 @@
     salesTruthStatus: byId("beacon_sales_truth_status"),
     salesTruthFacts: byId("beacon_sales_truth_facts"),
     salesTruthBlocker: byId("beacon_sales_truth_blocker"),
+    meatReadiness: byId("beacon_meat_readiness"),
+    meatReadinessStatus: byId("beacon_meat_readiness_status"),
+    meatOfferState: byId("beacon_meat_offer_state"),
+    meatCapState: byId("beacon_meat_cap_state"),
+    meatReadinessBlocker: byId("beacon_meat_readiness_blocker"),
     publishDraftId: byId("beacon_publish_draft_id"),
     publishAssetId: byId("beacon_publish_asset_id"),
     publishChannel: byId("beacon_publish_channel"),
@@ -40,6 +48,10 @@
     facebookPostConfirmation: byId("beacon_facebook_post_confirmation"),
     facebookPostAssetId: byId("beacon_facebook_post_asset_id"),
     facebookPostExactText: byId("beacon_facebook_post_exact_text"),
+    facebookPostImage: byId("beacon_facebook_post_image"),
+    facebookPostImageStatus: byId("beacon_facebook_post_image_status"),
+    facebookPostImageEmpty: byId("beacon_facebook_post_image_empty"),
+    checkOffer: byId("beacon_check_offer"), checkCap: byId("beacon_check_cap"), checkText: byId("beacon_check_text"), checkImage: byId("beacon_check_image"), checkConfig: byId("beacon_check_config"),
     facebookPostExecute: byId("beacon_facebook_post_execute"),
     facebookPostResult: byId("beacon_facebook_post_result"),
     facebookPostList: byId("beacon_facebook_post_execution_list"),
@@ -208,28 +220,51 @@
     renderCampaignSelection(selection);
     renderPublishPacketOptions(selection);
     renderSalesTruth(selection);
+    renderMeatReadiness(selection);
   }
 
   function renderLaneBoundary() {
     const lane = elements.campaignLane.value;
     const isSales = lane === "live_stock_sales";
+    const isMeat = lane === "meat_launch";
     elements.laneBoundary.dataset.lane = lane;
     elements.laneBadge.textContent = isSales ? "Sales" : lane === "meat_launch" ? "Meat" : "Awareness";
     elements.laneBadge.dataset.state = isSales ? "proposed" : "ready";
     elements.salesTruth.classList.toggle("hidden", !isSales);
+    elements.meatReadiness.classList.toggle("hidden", !isMeat);
     elements.laneTitle.textContent = isSales ? "Direct sales offer with source-backed facts" : lane === "meat_launch" ? "Separate meat campaign lane" : "Farm-life content, not a sales offer";
     elements.laneDescription.textContent = isSales
       ? "Price, stock and quantity may appear only after current eligibility, capacity and sheet lineage pass. Buyer responses carry Beacon attribution to SAM Live Stock."
       : lane === "meat_launch" ? "Meat copy and media stay separate from live animals and awareness content." : "No price, availability, quantity, booking language, or call to buy. Buyer questions still route to SAM Live Stock.";
-    elements.publishPrepare.textContent = isSales ? "Prepare Exact Facebook Packet" : "Prepare Publish Packet";
+    elements.publishPrepare.textContent = isSales || isMeat ? "Prepare Exact Facebook Packet" : "Prepare Publish Packet";
+    elements.publishCap.readOnly = !isMeat;
+    if (!isMeat && !isSales) elements.publishCap.value = "";
     state.salesTruthReady = false;
     if (isSales) {
       elements.salesTruthStatus.textContent = "Checking source truth";
       elements.salesTruthStatus.dataset.state = "loading";
       elements.publishPrepare.disabled = true;
-    } else {
+    } else if (!isMeat) {
       elements.publishPrepare.disabled = elements.publishChannel.value === "WhatsApp";
+    } else {
+      elements.publishPrepare.disabled = true;
     }
+    updateFacebookActionState();
+  }
+
+  function positiveWholeCap(value) { return /^\d+$/.test(String(value || "").trim()) && Number(value) > 0; }
+
+  function renderMeatReadiness(selection) {
+    if (selection.campaign_lane !== "meat_launch") return;
+    const readiness = selection.meat_launch_readiness || selection.readiness || {};
+    state.meatOfferEnabled = readiness.owner_offer_enabled === true;
+    state.meatCapReady = positiveWholeCap(elements.publishCap.value);
+    elements.meatOfferState.textContent = state.meatOfferEnabled ? "Owner enabled" : "Not enabled";
+    elements.meatReadinessStatus.textContent = state.meatOfferEnabled && state.meatCapReady ? "Ready to prepare" : "Pilot blocked";
+    elements.meatReadinessStatus.dataset.state = state.meatOfferEnabled && state.meatCapReady ? "ready" : "blocked";
+    elements.meatCapState.textContent = state.meatCapReady ? `${elements.publishCap.value.trim()} maximum` : "Enter an explicit cap";
+    elements.meatReadinessBlocker.textContent = state.meatOfferEnabled ? (state.meatCapReady ? "Readiness gates passed. Choose the exact approved image and review the canonical text." : "Enter a positive whole-number cap; no default will be supplied.") : "The server-side owner offer flag is off. No meat launch packet can be prepared.";
+    elements.publishPrepare.disabled = !(state.meatOfferEnabled && state.meatCapReady && elements.publishChannel.value !== "WhatsApp");
     updateFacebookActionState();
   }
 
@@ -345,15 +380,29 @@
     elements.facebookPostPacketId.value = packet.publish_packet_id || "";
     elements.facebookPostAssetId.value = packet.selected_asset?.asset_id || "";
     elements.facebookPostExactText.value = packet.selected_draft?.exact_text || "";
+    const asset = packet.selected_asset || {};
+    const previewUrl = asset.preview_url || asset.signed_preview_url || "";
+    state.exactImageReady = Boolean(asset.asset_id && previewUrl);
+    elements.facebookPostImage.classList.toggle("hidden", !state.exactImageReady);
+    elements.facebookPostImageEmpty.classList.toggle("hidden", state.exactImageReady);
+    elements.facebookPostImage.removeAttribute("src");
+    if (state.exactImageReady) elements.facebookPostImage.src = previewUrl;
+    elements.facebookPostImageStatus.textContent = state.exactImageReady ? `${safe(asset.title, asset.asset_id)} · approved public use` : "Approved image preview unavailable; execution remains locked.";
     updateFacebookActionState();
   }
+
+  function setChecklistState(element, ready) { element.dataset.state = ready ? "ready" : "blocked"; }
 
   function updateFacebookActionState() {
     const policy = state.facebookPostingPolicy || {};
     const ready = Boolean(policy.enabled && policy.page_id_configured && policy.page_access_token_configured);
     const exactConfirmation = elements.facebookPostConfirmation.value === "POST EXACT BEACON PACKET";
+    const meatLane = (state.latestPublishPacket?.campaign_lane || elements.campaignLane.value) === "meat_launch";
     const exactPacketReady = Boolean(elements.facebookPostPacketId.value && elements.facebookPostExactText.value);
-    elements.facebookPostExecute.disabled = !(ready && exactConfirmation && exactPacketReady);
+    const meatReady = !meatLane || (state.meatOfferEnabled && state.meatCapReady && state.exactImageReady);
+    setChecklistState(elements.checkOffer, !meatLane || state.meatOfferEnabled); setChecklistState(elements.checkCap, !meatLane || state.meatCapReady);
+    setChecklistState(elements.checkText, Boolean(elements.facebookPostExactText.value)); setChecklistState(elements.checkImage, !meatLane || state.exactImageReady); setChecklistState(elements.checkConfig, ready);
+    elements.facebookPostExecute.disabled = !(ready && exactConfirmation && exactPacketReady && meatReady);
   }
 
   async function loadFacebookPostingPolicy() {
@@ -380,6 +429,7 @@
       channel: "Facebook",
       exact_text: elements.facebookPostExactText.value,
       asset_id: elements.facebookPostAssetId.value,
+      pilot_cap: state.latestPublishPacket?.pilot_cap || "",
       owner_confirmation: elements.facebookPostConfirmation.value,
       recorded_by: "farm_app_beacon_facebook_post_gate",
     };
@@ -887,6 +937,7 @@
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.facebookPostConfirmation.addEventListener("input", updateFacebookActionState);
+    elements.publishCap.addEventListener("input", () => renderMeatReadiness({ campaign_lane: elements.campaignLane.value, meat_launch_readiness: { owner_offer_enabled: state.meatOfferEnabled } }));
     elements.publishChannel.addEventListener("change", () => {
       const whatsapp = elements.publishChannel.value === "WhatsApp";
       const sales = elements.campaignLane.value === "live_stock_sales";

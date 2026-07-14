@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
@@ -328,15 +329,19 @@ class BeaconCampaignTests(unittest.TestCase):
 
         self.assertTrue(selection["success"], selection)
         self.assertEqual(selection["mode"], "beacon_meat_launch_campaign_media_selection_review_only")
-        self.assertTrue(publish["success"], publish)
+        self.assertFalse(publish["success"], publish)
+        self.assertIn("meat_public_offer_not_owner_enabled", publish["errors"])
+        self.assertIn("meat_pilot_cap_positive_whole_number_required", publish["errors"])
+        self.assertIn("selected_image_asset_required", publish["errors"])
         self.assertIn("limited", publish["selected_draft"]["exact_text"].lower())
 
+    @patch.dict("os.environ", {"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"})
     def test_publish_packet_binds_exact_draft_and_approved_asset_without_posting(self):
         packet = build_meat_launch_campaign_publish_packet({
             "draft_id": "facebook_post",
             "asset_id": "BEACON-ASSET-APPROVED",
             "channel": "Facebook",
-            "pilot_cap": "2 halves",
+            "pilot_cap": "2",
             "owner_notes": "Owner will post manually.",
         }, approved_assets=[
             {
