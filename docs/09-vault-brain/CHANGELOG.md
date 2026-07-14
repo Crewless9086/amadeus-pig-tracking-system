@@ -1,5 +1,16 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - BEACON calendar durable lifecycle and revocation
+
+- Replaced process-local reusable-rule lifecycle authority with a worker-shared durable SQLite event registry.
+- Added authoritative owner revocation events; preparation and historical-entry evaluation now resolve current lifecycle state server-side and fail closed after revocation.
+- Kept rule approval and revocation evidence-only with no posting, sending, spending, reservation, stock, payment, or farm-write authority.
+
+## 2026-07-14 - Beacon campaign rule lifecycle authority hardening
+
+- Required prepare-only calendar approvals and latest-version state to resolve from the server-owned append-only lifecycle registry.
+- Made forged approval snapshots and automatically superseded rule versions fail closed before calendar preparation.
+
 ## 2026-07-13 - CHARLIE resolved test-note backflow hardening
 
 - Prevented corrected informational test-command notes with passing evidence from triggering unnecessary Builder backflow.
@@ -114,3 +125,8 @@
 
 - Prevented generated implementation-defect follow-ups from inheriting read-only marketing or analysis pipelines.
 - Added workflow coverage requiring Builder, Tester, and QA before review.
+
+## 2026-07-14 - BEACON prepare-only campaign calendar
+
+- Added the owner-rule campaign calendar contract: reusable rule versions require exact owner approval, changes require reapproval, and inactive versions fail closed.
+- Defined prepared entries as immutable review evidence bound to approved media, exact copy, allowlisted channels, timezone windows, fresh demand caps, and pause evaluation, with no execution authority.

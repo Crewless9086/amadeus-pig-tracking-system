@@ -7,6 +7,12 @@ from modules.auth.owner_access import (
     require_owner_admin_access,
     require_owner_read_access,
 )
+from modules.beacon.campaign_calendar import (
+    approve_rule_version,
+    prepare_calendar_entry,
+    propose_rule_version,
+    revoke_rule_version,
+)
 
 from modules.oom_sakkie.sales_campaign_store import (
     create_draft_order_from_sales_lead,
@@ -775,6 +781,47 @@ def meat_document_delivery_status_webhook():
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_meat_document_delivery_status_webhook(payload)
     return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/campaign-calendar/rules/propose", methods=["POST"])
+def beacon_campaign_calendar_rule_propose():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = propose_rule_version(payload.get("rule") or payload, previous_version=payload.get("previous_version"))
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@sales_bp.route("/beacon/campaign-calendar/rules/approve", methods=["POST"])
+def beacon_campaign_calendar_rule_approve():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = approve_rule_version(payload.get("rule"), "authenticated_owner_admin", approved_at=payload.get("approved_at"))
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@sales_bp.route("/beacon/campaign-calendar/rules/revoke", methods=["POST"])
+def beacon_campaign_calendar_rule_revoke():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result = revoke_rule_version(payload.get("rule_id"), payload.get("version"),
+                                 "authenticated_owner_admin", revoked_at=payload.get("revoked_at"),
+                                 reason_code=payload.get("reason_code"))
+    return jsonify(result), 200 if result["success"] else 400
+
+
+@sales_bp.route("/beacon/campaign-calendar/prepare", methods=["POST"])
+def beacon_campaign_calendar_prepare():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result = prepare_calendar_entry(request.get_json(silent=True) or {})
+    return jsonify(result), 200 if result["success"] else 400
 
 
 @sales_bp.route("/beacon/media-policy", methods=["GET"])
