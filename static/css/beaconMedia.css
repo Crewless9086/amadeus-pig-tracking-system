@@ -162,6 +162,32 @@
   margin: 18px 0;
 }
 
+.beacon-lane-boundary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr);
+  gap: 16px;
+  padding: 16px;
+  margin-top: 14px;
+  border: 1px solid #b9c8d8;
+  border-left: 5px solid #466a96;
+  border-radius: 10px;
+  background: #f4f8fc;
+}
+.beacon-lane-boundary[data-lane="live_stock_sales"] { border-color: #d7bd82; border-left-color: #b48019; background: #fff9eb; }
+.beacon-lane-boundary strong, .beacon-lane-boundary p { display: block; margin-top: 8px; }
+.beacon-lane-boundary p { color: #607066; margin-bottom: 0; }
+.beacon-boundary-locks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.beacon-boundary-locks span { display: grid; place-items: center; min-height: 42px; padding: 8px; border-radius: 8px; background: #fff; color: #6d3030; font-size: .78rem; font-weight: 800; text-align: center; }
+.beacon-sales-truth { grid-column: 1 / -1; padding: 16px; border: 1px solid #d7bd82; border-radius: 10px; background: #fffdf7; }
+.beacon-sales-truth-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.beacon-sales-truth-grid article { min-width: 0; padding: 12px; border: 1px solid #e1d7bd; border-radius: 8px; background: #fff; }
+.beacon-sales-truth-grid span, .beacon-sales-truth-grid strong, .beacon-sales-truth-grid small { display: block; overflow-wrap: anywhere; }
+.beacon-sales-truth-grid span, .beacon-sales-truth-grid small { color: #607066; }
+.beacon-sales-truth-grid strong { margin: 7px 0; color: #203528; }
+.beacon-inline-warning { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: #fff0ca; color: #765410; }
+.beacon-action-note { align-self: center; color: #607066; font-size: .82rem; }
+.hidden { display: none !important; }
+
 .beacon-media-policy-panel .section-header-compact,
 .beacon-media-campaign-panel .section-header-compact,
 .beacon-media-list-panel .section-header-compact,
@@ -416,6 +442,8 @@
     gap: 16px;
   }
 
+  .beacon-media-campaign-panel > .beacon-lane-boundary { grid-column: 1 / -1; }
+
   .beacon-media-campaign-panel > .section-header-compact,
   .beacon-media-campaign-panel > #beacon_campaign_selection_list {
     grid-column: 1 / -1;
@@ -437,6 +465,7 @@
   .beacon-performance-metrics-grid {
     grid-template-columns: 1fr;
   }
+  .beacon-lane-boundary, .beacon-sales-truth-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

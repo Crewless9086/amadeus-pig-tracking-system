@@ -138,8 +138,9 @@
       <section class="beacon-media-campaign-panel" aria-label="Beacon campaign draft media selection">
         <div class="page-header section-header-compact">
           <div>
-            <h2>Campaign Draft Selection</h2>
-            <p id="beacon_campaign_selection_status">Approved media can be paired with draft campaign copy. Nothing posts from here.</p>
+            <span class="beacon-eyebrow">Owner-gated campaign studio</span>
+            <h2>Choose the campaign lane</h2>
+            <p id="beacon_campaign_selection_status" aria-live="polite">Choose a lane. Awareness never becomes a sales campaign automatically.</p>
           </div>
           <button type="button" id="beacon_campaign_selection_refresh" class="button-link button-link-secondary">Refresh Selection</button>
         </div>
@@ -148,16 +149,41 @@
             <label for="beacon_campaign_lane">Campaign Lane</label>
             <select id="beacon_campaign_lane">
               <option value="live_stock_awareness">Live Stock Awareness</option>
+              <option value="live_stock_sales">Live-Stock Sales</option>
               <option value="meat_launch">Meat Launch</option>
             </select>
           </div>
         </div>
+        <div id="beacon_lane_boundary" class="beacon-lane-boundary" data-lane="live_stock_awareness">
+          <div>
+            <span id="beacon_lane_badge" class="beacon-status-chip" data-state="ready">Awareness</span>
+            <strong id="beacon_lane_title">Farm-life content, not a sales offer</strong>
+            <p id="beacon_lane_description">No price, availability, quantity, booking language, or call to buy. Buyer questions still route to SAM Live Stock.</p>
+          </div>
+          <div class="beacon-boundary-locks" aria-label="Campaign safety boundaries">
+            <span>No automatic post</span><span>No customer send</span><span>No reservation</span><span>No stock or spend change</span>
+          </div>
+        </div>
+        <section id="beacon_sales_truth" class="beacon-sales-truth hidden" aria-labelledby="beacon_sales_truth_title">
+          <div class="beacon-panel-heading">
+            <div><span class="beacon-eyebrow">Step 1 · current source truth</span><h3 id="beacon_sales_truth_title">Sale readiness and fulfilment cap</h3></div>
+            <span id="beacon_sales_truth_status" class="beacon-status-chip" data-state="loading">Checking Supabase</span>
+          </div>
+          <div id="beacon_sales_truth_facts" class="beacon-sales-truth-grid">
+            <article><span>Sale eligibility</span><strong>Awaiting authoritative evidence</strong><small>Supabase allocation readiness required</small></article>
+            <article><span>Fulfilment cap</span><strong>Not available</strong><small>Must be positive and current</small></article>
+            <article><span>Stock lineage</span><strong>Not verified</strong><small>Sheet-backed stock facts only</small></article>
+            <article><span>Effective price</span><strong>Not verified</strong><small>SALES_PRICING lineage required</small></article>
+          </div>
+          <p id="beacon_sales_truth_blocker" class="beacon-inline-warning">Sales suggestions stay locked until all four checks pass.</p>
+        </section>
         <div id="beacon_campaign_selection_list" class="beacon-campaign-selection-list"></div>
         <div class="beacon-publish-packet-panel" aria-label="Beacon campaign publish packet">
           <div class="page-header section-header-compact">
             <div>
-              <h3>Publish Packet</h3>
-              <p>Prepare exact text and selected media for owner review. This does not post.</p>
+              <span class="beacon-eyebrow">Step 2 · copy and approved media</span>
+              <h3>Review exact suggestions</h3>
+              <p>Facebook may be prepared for the exact gate. WhatsApp is copy-only and has no send action. This does not post.</p>
             </div>
           </div>
           <div class="beacon-media-review-grid">
@@ -171,11 +197,11 @@
             </div>
             <div class="form-group">
               <label for="beacon_publish_channel">Channel</label>
-              <input type="text" id="beacon_publish_channel" placeholder="Facebook, WhatsApp status, Instagram" />
+              <select id="beacon_publish_channel"><option value="Facebook">Facebook</option><option value="WhatsApp">WhatsApp suggestion only</option></select>
             </div>
             <div class="form-group">
               <label for="beacon_publish_cap">Pilot Cap</label>
-              <input type="text" id="beacon_publish_cap" placeholder="2 halves before pausing demand" />
+              <input type="text" id="beacon_publish_cap" placeholder="Loaded from current fulfilment evidence" readonly />
             </div>
           </div>
           <div class="form-group">
@@ -183,13 +209,15 @@
             <textarea id="beacon_publish_notes" rows="3" placeholder="Any channel, timing, or wording instructions for the exact packet."></textarea>
           </div>
           <div class="beacon-media-actions">
-            <button type="button" id="beacon_publish_prepare" class="button-link">Prepare Publish Packet</button>
+            <button type="button" id="beacon_publish_prepare" class="button-link">Prepare Exact Facebook Packet</button>
+            <span class="beacon-action-note">Preparing is review evidence only. It does not publish.</span>
           </div>
           <div id="beacon_publish_packet_result" class="beacon-publish-packet-result"></div>
         </div>
         <div class="beacon-facebook-post-panel" aria-label="Beacon Facebook Page post execution">
           <div class="page-header section-header-compact">
             <div>
+              <span class="beacon-eyebrow">Step 3 · one exact owner confirmation</span>
               <h3>Facebook Page Post</h3>
               <p id="beacon_facebook_post_policy_status">Checking Facebook posting gate...</p>
             </div>
@@ -198,7 +226,7 @@
           <div class="beacon-media-review-grid">
             <div class="form-group">
               <label for="beacon_facebook_post_packet_id">Publish Packet ID</label>
-              <input type="text" id="beacon_facebook_post_packet_id" placeholder="Prepare a publish packet first" />
+              <input type="text" id="beacon_facebook_post_packet_id" placeholder="Prepare a publish packet first" readonly />
             </div>
             <div class="form-group">
               <label for="beacon_facebook_post_confirmation">Owner Confirmation</label>
@@ -211,10 +239,10 @@
           </div>
           <div class="form-group">
             <label for="beacon_facebook_post_exact_text">Exact Facebook Text</label>
-            <textarea id="beacon_facebook_post_exact_text" rows="5" placeholder="Prepared packet text will fill here."></textarea>
+            <textarea id="beacon_facebook_post_exact_text" rows="5" placeholder="Prepared packet text will fill here." readonly></textarea>
           </div>
           <div class="beacon-media-actions">
-            <button type="button" id="beacon_facebook_post_execute" class="button-link">Post To Facebook Page</button>
+            <button type="button" id="beacon_facebook_post_execute" class="button-link" disabled>Confirm Once &amp; Post Exact Packet</button>
           </div>
           <div id="beacon_facebook_post_result" class="beacon-facebook-post-result"></div>
           <div id="beacon_facebook_post_execution_list" class="beacon-facebook-post-list"></div>
@@ -412,6 +440,7 @@
                 <label for="beacon_media_upload_relevance">Campaign Relevance</label>
                 <select id="beacon_media_upload_relevance">
                   <option value="live_stock_awareness">Live Stock Awareness</option>
+                  <option value="live_stock_sales">Live-Stock Sales</option>
                   <option value="meat">Meat</option>
                   <option value="farm_life">Farm Life</option>
                   <option value="butcher">Butcher</option>

@@ -9,6 +9,14 @@
 7. Manual or controlled execution evidence is recorded.
 8. Performance evidence informs future recommendations.
 
+## Owner-Gated Live-Stock Sales Lane
+
+`live_stock_sales` is separate from `live_stock_awareness`. It may prepare sales copy only when the current Supabase-first opportunity card is fresh, unblocked, sale-eligible, and carries a positive fulfilment cap, and when the effective price comes from `public.sales_pricing` with its inherited `SALES_PRICING` lineage.
+
+Beacon may pair that copy only with an owner-approved public-use asset whose content hash is present. Facebook and WhatsApp suggestions remain distinct: WhatsApp is copy-only with no send action. The exact Facebook packet content-addresses the copy, asset/hash, opportunity revision, fulfilment cap, effective price record, and Beacon-to-SAM Live Stock attribution identity. Facebook execution must rebuild that packet from current server-side evidence and reject missing, altered, stale, or superseded evidence before applying the existing exact owner phrase `POST EXACT BEACON PACKET`.
+
+The lane never authorizes an automatic post, customer send, negotiation, reservation, order, stock change, spend, or farm lifecycle write. A successful gated Facebook execution records the returned Facebook post ID through the existing execution-event rail. Buyer responses carrying the campaign identity route as `live_stock_sales` attribution to SAM.
+
 ## Beacon-To-SAM Attribution Read Model
 
 Beacon attribution is a deterministic, read-only projection over canonical append-only campaign, SAM lead, order, sales-transaction, fulfilment, and loss evidence. Exact campaign identifiers attribute every matching SAM lead independently and outrank campaign-source/time-window matching; ambiguous source/time matches, expired, unmatched, duplicate, superseded, and malformed evidence must remain visible or fail closed rather than creating a conversion silently.

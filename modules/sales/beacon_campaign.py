@@ -13,7 +13,7 @@ from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
 BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
-CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness"}
+CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
     "order",
@@ -113,6 +113,8 @@ def normalize_campaign_lane(value):
         return "meat_launch"
     if lane in {"live", "livestock", "live_stock", "live_pig", "live_pigs", "piglets", "farm_life"}:
         return "live_stock_awareness"
+    if lane in {"live_sales", "livestock_sales", "live_pig_sales"}:
+        return "live_stock_sales"
     return lane
 
 
@@ -122,7 +124,7 @@ def invalid_campaign_lane_response(lane):
         "status": "campaign_lane_required" if not lane else "invalid_campaign_lane",
         "campaign_lane": lane,
         "allowed_campaign_lanes": sorted(CAMPAIGN_LANES),
-        "message": "Choose meat_launch or live_stock_awareness before Beacon builds a draft or publish packet.",
+        "message": "Choose meat_launch, live_stock_awareness, or live_stock_sales before Beacon builds a draft or publish packet.",
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
     }
@@ -135,6 +137,8 @@ def build_beacon_campaign_selection(payload=None, approved_assets=None):
         return build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_selection(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -145,6 +149,8 @@ def build_beacon_campaign_publish_packet(payload=None, approved_assets=None):
         return build_meat_launch_campaign_publish_packet(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_publish_packet(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_publish_packet(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -332,6 +338,107 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "owner_review_checklist": list(LIVE_STOCK_OWNER_REVIEW_CHECKLIST),
         "next_gate": "owner_approves_exact_live_stock_awareness_packet_before_manual_or_gated_public_post",
     }
+
+
+def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    truth, errors = _live_stock_sales_truth(payload)
+    ranked = [asset for asset in _rank_approved_assets(approved_assets or [], campaign_lane="live_stock_sales")
+              if asset.get("public_use_approved") and asset.get("content_sha256")]
+    drafts = _live_stock_sales_drafts(truth) if not errors else []
+    return {
+        "success": not errors,
+        "mode": "beacon_live_stock_sales_campaign_review_only",
+        "campaign_lane": "live_stock_sales",
+        "campaign": {"name": "Live-Stock Sales", "status": "owner_review_required", "product_focus": truth.get("product_focus", "")},
+        "source_truth": truth,
+        "channel_drafts": drafts,
+        "channel_draft_pairings": _channel_asset_pairings(drafts, ranked),
+        "ranked_media_assets": ranked,
+        "approved_media_count": len(ranked),
+        "errors": errors,
+        "handoff_to_sam": {"sales_lane": "live_stock_sales", "campaign_attribution_id": truth.get("campaign_attribution_id", ""), "negotiates": False, "reserves": False, "creates_order": False},
+        "whatsapp_suggestion_only": True,
+        "next_gate": "owner_selects_exact_facebook_copy_and_approved_image" if not errors else "restore_current_supabase_and_sheet_lineaged_sales_evidence",
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+    }
+
+
+def build_live_stock_sales_campaign_publish_packet(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    selection = build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
+    truth = selection.get("source_truth", {})
+    drafts = selection.get("channel_drafts", [])
+    draft_id = _clean_text(payload.get("draft_id"))
+    asset_id = _clean_text(payload.get("asset_id"))
+    draft = next((item for item in drafts if item.get("id") == draft_id), None)
+    asset = _find_asset(selection.get("ranked_media_assets", []), asset_id)
+    errors = list(selection.get("errors", []))
+    if not draft or draft.get("channel") != "Facebook":
+        errors.append("facebook_sales_draft_required")
+    if not asset_id or not asset:
+        errors.append("owner_approved_sales_image_required")
+    exact_text = draft.get("text", "") if draft else ""
+    binding = {
+        "campaign_lane": "live_stock_sales", "channel": "Facebook", "exact_text": exact_text,
+        "asset_id": asset.get("asset_id", "") if asset else asset_id,
+        "asset_hash": asset.get("content_sha256", "") if asset else "",
+        "opportunity_fingerprint": truth.get("opportunity_fingerprint", ""),
+        "fulfilment_cap": truth.get("fulfilment_cap", 0), "pricing_id": truth.get("pricing_id", ""),
+        "unit_price": truth.get("unit_price"), "price_effective_from": truth.get("price_effective_from", ""),
+        "campaign_attribution_id": truth.get("campaign_attribution_id", ""),
+    }
+    packet_id = "BEACON-LIVE-SALES-" + hashlib.sha256(json.dumps(binding, sort_keys=True, default=str).encode()).hexdigest()[:24].upper()
+    return {
+        "success": not errors, "mode": "beacon_live_stock_sales_exact_publish_packet_owner_review_only",
+        "campaign_lane": "live_stock_sales", "publish_packet_id": packet_id, "packet_binding": binding,
+        "selected_draft": {"draft_id": draft_id, "channel": "Facebook", "exact_text": exact_text},
+        "selected_asset": asset, "source_truth": truth, "errors": sorted(set(errors)),
+        "whatsapp_suggestion": next((item for item in drafts if item.get("channel") == "WhatsApp"), {}),
+        "whatsapp_suggestion_only": True, "requires_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "approval_status": "owner_review_required", "posts_publicly_now": False,
+        "authority": deepcopy(AUTHORITY_FLAGS), "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "next_gate": "owner_confirms_exact_server_revalidated_packet" if not errors else "repair_packet_evidence",
+    }
+
+
+def _live_stock_sales_truth(payload):
+    card = payload.get("opportunity_card") if isinstance(payload.get("opportunity_card"), dict) else {}
+    pricing = payload.get("pricing") if isinstance(payload.get("pricing"), dict) else {}
+    errors = []
+    if card.get("lane") != "live_stock" or card.get("status") != "ready_for_owner_review": errors.append("current_sale_eligibility_required")
+    if card.get("blockers"): errors.append("sale_eligibility_blocked")
+    if not (card.get("freshness") or {}).get("fresh"): errors.append("sale_eligibility_stale")
+    cap = card.get("demand_cap")
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0: errors.append("positive_fulfilment_cap_required")
+    if pricing.get("source") != "supabase" or not pricing.get("pricing_id"): errors.append("sheet_lineaged_supabase_price_required")
+    if pricing.get("unit_price") in (None, ""): errors.append("effective_price_required")
+    fingerprint = _clean_text(card.get("fingerprint"))
+    if not fingerprint: errors.append("opportunity_revision_required")
+    attribution = "BEACON-SAM-LIVE-" + hashlib.sha256(f"{fingerprint}|{pricing.get('pricing_id','')}".encode()).hexdigest()[:16].upper() if fingerprint else ""
+    truth = {"product_focus": _clean_text(payload.get("product_focus")) or "live pigs", "fulfilment_cap": cap or 0,
+             "fulfilment_unit": "animals", "sale_eligible": not any(e in errors for e in ("current_sale_eligibility_required", "sale_eligibility_blocked", "sale_eligibility_stale")),
+             "opportunity_fingerprint": fingerprint, "opportunity_expires_at": (card.get("timing") or {}).get("expires_at", ""),
+             "stock_source": "Supabase canonical allocation derived from sheet-backed herd facts", "stock_source_ids": (card.get("provenance") or {}).get("source_ids", []),
+             "stock_lineage_approved": card.get("lane") == "live_stock" and bool(fingerprint),
+             "pricing_id": pricing.get("pricing_id", ""), "unit_price": pricing.get("unit_price"), "currency": pricing.get("currency", "ZAR"),
+             "price_effective_from": pricing.get("effective_from", ""), "price_source": pricing.get("source", ""),
+             "price_display": f"{pricing.get('currency', 'ZAR')} {pricing.get('unit_price', '')}", "price_lineage_approved": pricing.get("source") == "supabase" and bool(pricing.get("pricing_id")),
+             "blocker": ", ".join(sorted(set(errors))),
+             "campaign_attribution_id": attribution}
+    return truth, sorted(set(errors))
+
+
+def _live_stock_sales_drafts(truth):
+    product = truth["product_focus"]; cap = truth["fulfilment_cap"]; price = truth["unit_price"]; currency = truth["currency"]
+    attribution = truth["campaign_attribution_id"]
+    return [
+        {"id": "facebook_live_stock_sales", "label": "Facebook sales post", "channel": "Facebook", "intent": "owner-gated live-stock sale",
+         "text": f"Amadeus Farm has {product} available near Riversdale. We can safely take enquiries for up to {cap} animals at {currency} {price} each. Message us with the quantity and type you need. Reference: {attribution}."},
+        {"id": "whatsapp_live_stock_sales", "label": "WhatsApp suggestion", "channel": "WhatsApp", "intent": "copy suggestion only",
+         "text": f"Live-stock update from Amadeus Farm: enquiries are open for up to {cap} {product} at {currency} {price} each. Reply with the quantity and type you need and SAM will help. Reference: {attribution}."},
+    ]
 
 
 def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None):
@@ -1417,6 +1524,8 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             score += 25
         if campaign_lane == "live_stock_awareness" and any(item in relevance for item in ("live", "live_stock", "livestock", "farm_life")):
             score += 30
+        if campaign_lane == "live_stock_sales" and any(item in relevance for item in ("live", "live_stock", "livestock", "live_stock_sales")):
+            score += 35
         if campaign_lane == "meat_launch" and any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
             score += 15
         if campaign_lane == "live_stock_awareness" and any(tag in tags for tag in ("piglet", "piglets", "litter", "weaner", "weaners", "sow", "farm life", "new life")):
@@ -1429,6 +1538,7 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             "media_type": media_type,
             "storage_bucket": asset.get("storage_bucket", ""),
             "storage_path": asset.get("storage_path", ""),
+            "content_sha256": asset.get("content_sha256", ""),
             "subject_tags": tags,
             "sale_stream_relevance": relevance,
             "quality_score": asset.get("quality_score"),
