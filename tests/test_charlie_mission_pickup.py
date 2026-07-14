@@ -83,6 +83,22 @@ class CharlieMissionPickupTests(unittest.TestCase):
             ["git", "merge", "--ff-only", "origin/feature/beacon-opportunity-scanner"],
         ])
 
+    def test_restore_mission_branch_uses_detached_remote_when_branch_is_owned_elsewhere(self):
+        mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "feature/beacon-work"}}}}}
+        commands = []
+
+        def run(command):
+            commands.append(command)
+            if command == ["git", "switch", "feature/beacon-work"]:
+                return SimpleNamespace(returncode=128, stdout="", stderr="already checked out")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+
+        self.assertTrue(result["success"])
+        self.assertIn(["git", "switch", "--detach", "origin/feature/beacon-work"], commands)
+        self.assertNotIn(["git", "switch", "--track", "-c", "feature/beacon-work", "origin/feature/beacon-work"], commands)
+
     def test_restore_mission_branch_for_resume_rejects_unsafe_branch(self):
         mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "../unsafe"}}}}}
 

@@ -5483,6 +5483,39 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 "agent_ledger_path": str(ledger_path),
                 "next_action": "Do not mark pr_ready. Review packet repair did not read back from mission storage.",
             }, 502
+    workflow_ready, workflow_status = _verify_owner_review_artifacts_ready(mission, artifacts)
+    if not workflow_ready:
+        blocked_agent = str(workflow_status.get("blocked_agent") or "reviewer")
+        blocked_reason = str(workflow_status.get("reason") or "Owner-review workflow is not fully passing.")
+        blocked_result, blocked_status = update_mission_status(
+            mission["mission_id"],
+            "blocked",
+            owner_decision=blocked_reason,
+            event_type="status_changed",
+            notes="CORE refused pr_ready because at least one configured workflow stage was not complete.",
+            metadata={
+                "agent_runner_version": AGENT_RUNNER_VERSION,
+                "execution_id": execution_id,
+                "agent_ledger_path": str(ledger_path),
+                "review_status": "workflow_not_ready",
+                "blocked_agent": blocked_agent,
+                "blocked_reason": blocked_reason,
+                "recommended_next_action": f"Send back to {blocked_agent} and complete the missing evidence before owner review.",
+            },
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if blocked_status >= 400:
+            return blocked_result, blocked_status
+        return {
+            "success": False,
+            "status": "owner_review_workflow_not_ready",
+            "mission_id": mission["mission_id"],
+            "mission_status": "blocked",
+            "blocked_agent": blocked_agent,
+            "blocked_reason": blocked_reason,
+            "agent_ledger_path": str(ledger_path),
+        }, 200
     ready_result, ready_status = update_mission_status(
         mission["mission_id"],
         "pr_ready",
@@ -5509,6 +5542,27 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _verify_owner_review_artifacts_ready(mission, artifacts):
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
+    if not sequence:
+        return False, {"reason": "Owner-review workflow is empty."}
+    for agent in sequence:
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        if not artifact:
+            # Resume runs may intentionally reuse upstream durable evidence that
+            # is not rehydrated into this execution's compact artifact map.
+            continue
+        judgement = _judgement_evidence_quality_gate(agent, artifact)
+        if not judgement.get("passed"):
+            return False, {
+                "blocked_agent": agent,
+                "stage_status": "non_passing",
+                "reason": f"Owner review is not ready: {agent} is non-passing ({judgement.get('reason') or 'quality gate failed'}).",
+            }
+    return True, {"reason": "all_workflow_artifacts_passing"}
 
 
 def _verify_owner_review_packet_persisted(mission_id, *, database_url=None, connect_factory=None):

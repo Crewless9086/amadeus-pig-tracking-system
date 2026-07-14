@@ -136,6 +136,35 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_owner_review_artifact_gate_rejects_send_back_stage(self):
+        mission = {"mission_context_pack": {"agent_order": ["builder", "business_reviewer", "evidence_reviewer"]}}
+        artifacts = {
+            "builder": {"summary": "Built.", "changed_files": ["module.py"]},
+            "business_reviewer": {"summary": "Not ready.", "recommended_owner_decision": "send_back"},
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertFalse(ready)
+        self.assertEqual(detail["blocked_agent"], "business_reviewer")
+        self.assertEqual(detail["stage_status"], "non_passing")
+
+    def test_owner_review_artifact_gate_accepts_passing_artifacts(self):
+        mission = {"mission_context_pack": {"agent_order": ["builder", "reviewer"]}}
+        artifacts = {
+            "builder": {"summary": "Built.", "changed_files": ["module.py"]},
+            "reviewer": {
+                "summary": "Approved.",
+                "recommended_owner_decision": "approve_final_release",
+                "quality_gate": {"passed": True},
+            },
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertTrue(ready)
+        self.assertEqual(detail["reason"], "all_workflow_artifacts_passing")
+
     def test_ledger_stage_persists_duration_attempt_and_changed_file_count(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)

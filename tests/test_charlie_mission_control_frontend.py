@@ -31,6 +31,7 @@ class CharlieMissionControlFrontendTests(unittest.TestCase):
         self.assertIn('id="sendBackStage"', script)
         self.assertIn("if (!comments)", script)
         self.assertIn("target_stage: targetStage", script)
+        self.assertIn('if (!agents.includes("builder")) agents.unshift("builder")', script)
         self.assertIn('id="reviewDrawer"', template)
 
 
