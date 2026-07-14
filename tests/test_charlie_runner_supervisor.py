@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -7,6 +8,9 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_repo_root_is_available_for_supervisor_module_imports(self):
+        self.assertIn(str(supervisor.REPO_ROOT), sys.path)
+
     @patch.object(supervisor, "_process_identity")
     @patch.object(supervisor, "_pid_alive")
     @patch.object(supervisor.subprocess, "run")
