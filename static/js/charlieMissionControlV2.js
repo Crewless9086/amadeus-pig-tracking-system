@@ -788,6 +788,7 @@
     const agents = Array.from(new Set(workflow.map((item) => text(item.agent)).filter(Boolean)));
     const guidance = ownerActionGuidance(mission);
     const fallback = text(guidance.target_stage, text(stageLabel(mission), "builder"));
+    if (!agents.includes("builder")) agents.unshift("builder");
     if (!agents.includes(fallback)) agents.unshift(fallback);
     el.reviewDrawerTitle.textContent = `Send Back ${shortId(mission)}`;
     el.reviewDrawerBody.innerHTML = `<div class="notice">Return this mission with a clear reason. CHARLIE will preserve this instruction in the review packet.</div>

@@ -708,6 +708,11 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
         return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
     switched = run(["git", "switch", branch_name])
     if switched.returncode != 0:
+        # A packaged branch may already be checked out in an evidence worktree.
+        # Review stages only need the fetched revision, so detached mode avoids
+        # treating that valid worktree ownership as a missing-branch failure.
+        switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
+    if switched.returncode != 0:
         switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
     if switched.returncode != 0:
         return {"success": False, "status": "mission_branch_switch_failed", "branch_name": branch_name, "stderr": (switched.stderr or "")[-500:]}
