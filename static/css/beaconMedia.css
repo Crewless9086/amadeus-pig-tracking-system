@@ -39,7 +39,7 @@
 .beacon-command-meta { display: grid; justify-items: end; gap: 7px; min-width: 190px; }
 .beacon-command-meta small { color: #607066; text-align: right; }
 .beacon-status-chip, .beacon-count-badge { display: inline-flex; width: fit-content; padding: 4px 9px; border-radius: 999px; background: #e4e9e3; color: #425047; font-size: .74rem; font-weight: 800; }
-.beacon-status-chip[data-state="ready"] { background: #dcecdf; color: #24532e; }
+.beacon-status-chip[data-state="ready"], .beacon-status-chip[data-state="owner_approved"] { background: #dcecdf; color: #24532e; }
 .beacon-status-chip[data-state="proposed"], .beacon-status-chip[data-state="stale"] { background: #fff0ca; color: #765410; }
 .beacon-status-chip[data-state="unavailable"], .beacon-status-chip[data-state="blocked"] { background: #f4dddd; color: #7c2929; }
 .beacon-command-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .65fr); gap: 16px; margin-top: 18px; }
@@ -67,7 +67,8 @@
 .beacon-recommendation-title small { color: #765410; }
 .beacon-recommendation-card > strong, .beacon-recommendation-card > small { display: block; margin-top: 8px; }
 .beacon-recommendation-card p { color: #607066; margin: 7px 0; }
-.beacon-recommendation-card button { width: 100%; margin-top: 11px; }
+.beacon-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.beacon-decision-actions .button-link { flex: 1 1 9rem; min-width: 0; width: auto; margin-top: 0; white-space: normal; }
 .beacon-decision-result { display: grid; gap: 4px; margin-top: 12px; padding: 0; }
 .beacon-decision-result:not(:empty) { padding: 11px; border-radius: 8px; background: #eef5ef; }
 .beacon-decision-result span { color: #607066; font-size: .82rem; }
