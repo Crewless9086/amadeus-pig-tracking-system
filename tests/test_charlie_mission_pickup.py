@@ -455,6 +455,32 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual([item["agent"] for item in merged if item["status"] == "active"], ["product_architect"])
 
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.build_core_plan")
+    def test_refresh_core_plan_preserves_owner_builder_send_back(self, build_plan, update_vault):
+        mission = {
+            "mission_id": "MISSION-1",
+            "metadata": {"review_packet": {"return_to_stage": "builder"}},
+            "agent_workflow": [{"agent": "business_reviewer", "status": "blocked"}],
+        }
+        build_plan.return_value = {
+            "version": "v1",
+            "project_truth": {"pipeline_profile": "content", "workflow_template": "content", "workflow_right_sized": True},
+            "agent_workflow": [
+                {"agent": "business_reviewer", "status": "pending"},
+                {"agent": "reviewer", "status": "pending"},
+            ],
+        }
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+
+        result = charlie_mission_pickup._refresh_core_plan_for_pickup(mission)
+
+        payload = update_vault.call_args.args[1]
+        self.assertTrue(result["refreshed"])
+        self.assertEqual(payload["mission_context_pack"]["agent_order"], ["builder", "business_reviewer", "reviewer"])
+        self.assertEqual(payload["agent_workflow"][0]["agent"], "builder")
+        self.assertEqual(payload["agent_workflow"][0]["status"], "active")
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):
