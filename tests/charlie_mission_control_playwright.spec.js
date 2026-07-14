@@ -15,6 +15,22 @@ const blockedMission = {
     { agent: "tester", status: "pending", findings: "Waiting for corrected build." },
   ],
   metadata: {
+    owner_action_guidance: {
+      recommended_action: "send_back",
+      button_label: "Send Back to Builder",
+      target_stage: "builder",
+      reason: "Builder must attach the missing PR evidence.",
+      what_happens: "CORE preserves the plan and resumes at Builder.",
+      alternative_action: "approve_rerun",
+    },
+    stage_telemetry: {
+      execution_id: "EXEC-1",
+      last_progress_at: "2026-07-14T08:00:30+00:00",
+      stages: [
+        { agent: "planner", status: "complete", attempt: 1, duration_seconds: 75, changed_files_count: 0 },
+        { agent: "builder", status: "blocked", attempt: 2, duration_seconds: 620, changed_files_count: 3 },
+      ],
+    },
     mission_governance: {
       acceptance_percent: 67,
       acceptance_counts: { passed: 2, failed: 1, pending: 0 },
@@ -71,8 +87,10 @@ test("mission cockpit loads useful evidence and send-back requires owner comment
   await expect(page.getByText("PR evidence is missing.").first()).toBeVisible();
   await expect(page.getByText("builder", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Acceptance Matrix")).toBeVisible();
+  await expect(page.getByText("Send Back to Builder", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Try 2 | 10m 20s | 3 files", { exact: true })).toBeVisible();
   await expect(page.getByText("3 fixes", { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Send Back", exact: true }).click();
+  await page.getByRole("button", { name: "Send Back to Builder", exact: true }).click();
   await expect(page.getByText("What must be corrected")).toBeVisible();
   await page.locator("#sendBackComments").fill("Attach the PR and rerun the focused tests.");
   await page.locator("#sendBackStage").selectOption("builder");

@@ -138,6 +138,42 @@
     return memory.telemetry && typeof memory.telemetry === "object" ? memory.telemetry : {};
   }
 
+  function stageTelemetry(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.stage_telemetry && typeof metadata.stage_telemetry === "object" ? metadata.stage_telemetry : { stages: [] };
+  }
+
+  function ownerActionGuidance(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    return metadata.owner_action_guidance && typeof metadata.owner_action_guidance === "object" ? metadata.owner_action_guidance : {};
+  }
+
+  function formatDuration(seconds) {
+    const value = Math.max(0, Number(seconds || 0));
+    if (!value) return "--";
+    if (value < 60) return `${Math.round(value)}s`;
+    const minutes = Math.floor(value / 60);
+    const remainder = Math.floor(value % 60);
+    if (minutes < 60) return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+
+  function stageRuntime(row) {
+    if (Number(row && row.duration_seconds) > 0) return Number(row.duration_seconds);
+    const started = Date.parse(text(row && row.started_at));
+    if (!Number.isFinite(started)) return 0;
+    const status = text(row && row.status).toLowerCase();
+    const endpoint = ["active", "running", "in_progress"].includes(status)
+      ? Date.now()
+      : Date.parse(text(row && (row.completed_at || row.updated_at)));
+    return Number.isFinite(endpoint) ? Math.max(0, Math.round((endpoint - started) / 1000)) : 0;
+  }
+
+  function stageTelemetryRow(mission, agent) {
+    const rows = Array.isArray(stageTelemetry(mission).stages) ? stageTelemetry(mission).stages : [];
+    return rows.find((row) => text(row.agent).toLowerCase() === text(agent).toLowerCase()) || {};
+  }
+
   function stageLabel(mission) {
     const review = missionReviewPacket(mission);
     const status = text(mission.status).toLowerCase();
@@ -452,6 +488,7 @@
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
     const telemetry = missionTelemetry(mission);
+    const execution = stageTelemetry(mission);
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
     el.workflowPanel.innerHTML = `
@@ -469,6 +506,8 @@
         ${metric("Review runs", String(Number(governance.review_runs || 0)))}
         ${metric("Attempts", String(Number(telemetry.attempt_count || 0)))}
         ${metric("Recoveries", String(Number(telemetry.recovery_count || 0)))}
+        ${metric("Files changed", String((Array.isArray(execution.stages) ? execution.stages : []).reduce((total, row) => total + Number(row.changed_files_count || 0), 0)))}
+        ${metric("Last progress", text(execution.last_progress_at, "not recorded").replace("T", " ").slice(0, 16))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
       ${renderGovernanceSummary(governance, missionFamily(mission))}
@@ -510,11 +549,16 @@
     if (["active", "running", "in_progress"].includes(raw)) cls = "active";
     if (raw === "blocked" || text(mission.status).toLowerCase() === "blocked" && text(stage.agent).toLowerCase() === text(stageLabel(mission)).toLowerCase()) cls = "blocked";
     if (text(mission.status).toLowerCase() === "pr_ready" && text(stage.agent).toLowerCase().includes("review")) cls = "review";
-    return `<div class="stage ${cls}" title="${escapeAttr(text(stage.findings, "No findings yet."))}">
+    const telemetry = stageTelemetryRow(mission, stage.agent);
+    const attempt = Number(telemetry.attempt || 0);
+    const runtime = formatDuration(stageRuntime({ ...telemetry, status: raw }));
+    const files = Number(telemetry.changed_files_count || 0);
+    return `<div class="stage ${cls}" title="${escapeAttr(text(telemetry.current_action, text(stage.findings, "No findings yet.")))}">
       <div>
         <div class="stage-name">${escapeHtml(cleanAgentName(stage.agent))}</div>
         <div class="stage-state">${escapeHtml(raw || "pending")}</div>
       </div>
+      <div class="stage-telemetry">${attempt ? `Try ${attempt}` : "Not run"} | ${runtime}${files ? ` | ${files} files` : ""}</div>
       <div class="muted">${escapeHtml(text(stage.findings, "No findings yet.").slice(0, 130))}</div>
     </div>`;
   }
@@ -530,6 +574,7 @@
     const governance = missionGovernance(mission);
     const family = missionFamily(mission);
     const telemetry = missionTelemetry(mission);
+    const guidance = ownerActionGuidance(mission);
     el.actionPanel.innerHTML = `
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
@@ -540,10 +585,22 @@
         ${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? field("Repeated blocker", `x${Number(telemetry.highest_blocker_repeat)} | ${text(telemetry.last_restart_reason, "internal recovery capped")}`) : ""}
         ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
+        ${renderOwnerGuidance(mission, guidance)}
         ${actionButtons(mission)}
         ${runnerBox()}
         <details class="disclosure"><summary>Mission brief and review context</summary><div>${field("Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}</div></details>
       </div>`;
+  }
+
+  function renderOwnerGuidance(mission, guidance) {
+    if (text(mission.status).toLowerCase() !== "blocked" || !text(guidance.recommended_action)) return "";
+    return `<section class="decision-guidance">
+      <span>Recommended action</span>
+      <strong>${escapeHtml(text(guidance.button_label, "Review mission"))}</strong>
+      ${guidance.target_stage ? `<b>Target: ${escapeHtml(cleanAgentName(guidance.target_stage))}</b>` : ""}
+      <p>${escapeHtml(text(guidance.reason, "CORE recorded no decision explanation."))}</p>
+      <small>${escapeHtml(text(guidance.what_happens, "Mission evidence is preserved."))}</small>
+    </section>`;
   }
 
   function actionButtons(mission) {
@@ -556,12 +613,16 @@
       </div>`;
     }
     if (status === "blocked") {
-      return `<div class="button-grid">
-        <button class="primary ok" data-decision="approved">Approve Rerun</button>
-        <button class="warn" data-review-decision="send_back">Send Back</button>
+      const guidance = ownerActionGuidance(mission);
+      const sendBack = text(guidance.recommended_action) === "send_back";
+      const primary = sendBack
+        ? `<button class="primary ok wide" data-review-decision="send_back">${escapeHtml(text(guidance.button_label, "Send Back"))}</button>`
+        : `<button class="primary ok wide" data-decision="approved">${escapeHtml(text(guidance.button_label, "Approve Rerun"))}</button>`;
+      return `${primary}<details class="disclosure alternatives"><summary>Alternative actions</summary><div class="button-grid">
+        ${sendBack ? '<button class="warn wide" data-decision="approved">Approve Rerun Instead</button>' : '<button class="warn wide" data-review-decision="send_back">Choose Agent and Send Back</button>'}
         <button class="warn" data-decision="paused">Pause</button>
         <button class="danger" data-decision="rejected">Reject</button>
-      </div>`;
+      </div></details>`;
     }
     if (status === "pr_ready") {
       return `<div class="button-grid">
@@ -725,12 +786,13 @@
   function openSendBackDrawer(mission) {
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const agents = Array.from(new Set(workflow.map((item) => text(item.agent)).filter(Boolean)));
-    const fallback = text(stageLabel(mission), "builder");
+    const guidance = ownerActionGuidance(mission);
+    const fallback = text(guidance.target_stage, text(stageLabel(mission), "builder"));
     if (!agents.includes(fallback)) agents.unshift(fallback);
     el.reviewDrawerTitle.textContent = `Send Back ${shortId(mission)}`;
     el.reviewDrawerBody.innerHTML = `<div class="notice">Return this mission with a clear reason. CHARLIE will preserve this instruction in the review packet.</div>
       <div class="form-grid">
-        <label>Return to stage<select id="sendBackStage">${agents.map((agent) => `<option value="${escapeAttr(agent)}">${escapeHtml(cleanAgentName(agent))}</option>`).join("")}</select></label>
+        <label>Return to stage<select id="sendBackStage">${agents.map((agent) => `<option value="${escapeAttr(agent)}" ${agent === fallback ? "selected" : ""}>${escapeHtml(cleanAgentName(agent))}</option>`).join("")}</select></label>
         <label>What must be corrected<textarea id="sendBackComments" required placeholder="State the exact issue and expected correction."></textarea></label>
         <button class="warn" data-confirm-send-back>Send Back to Agent</button>
       </div>`;

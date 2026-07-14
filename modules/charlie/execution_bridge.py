@@ -3170,11 +3170,12 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
     stages = ledger.setdefault("stages", [])
     existing = next((item for item in stages if item.get("agent") == agent and int(item.get("attempt") or 1) == int(attempt or 1)), None)
     item = existing or {"agent": agent}
+    updated_at = datetime.now(timezone.utc).isoformat()
     item.update({
         "status": status,
         "attempt": int(attempt or 1),
         "started_at": started_at,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": updated_at,
         "current_action": current_action,
         "command": _display_command(command),
         "prompt_path": str(paths["prompt_path"]),
@@ -3190,11 +3191,20 @@ def _append_ledger_stage(ledger, agent, status, started_at, paths, artifact=None
         item["stdout_tail"] = artifact.get("stdout_tail", "")
         item["stderr_tail"] = artifact.get("stderr_tail", "")
         item["quality_gate"] = artifact.get("quality_gate", {})
+        item["changed_files_count"] = len(item["changed_files"])
         if item["quality_gate"]:
             gates = ledger.setdefault("quality_gates", [])
             gates = [gate for gate in gates if not (gate.get("agent") == agent and int(gate.get("attempt") or 1) == int(attempt or 1))]
             gates.append({"agent": agent, "attempt": int(attempt or 1), **item["quality_gate"]})
             ledger["quality_gates"] = gates
+    if status not in {"running", "active", "in_progress"}:
+        item["completed_at"] = updated_at
+        try:
+            start_value = datetime.fromisoformat(str(started_at or "").replace("Z", "+00:00"))
+            end_value = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            item["duration_seconds"] = max(0, int((end_value - start_value).total_seconds()))
+        except (TypeError, ValueError):
+            pass
     if existing is None:
         stages.append(item)
     ledger["status"] = "running" if status == "running" else ledger.get("status", "running")
