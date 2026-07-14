@@ -10,7 +10,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
             "leads": [{"lead_id": "LEAD-1", "campaign_id": "CAM-1", "campaign_source": "social_post", "status": "order_ready_for_approval", "linked_order_id": "ORDER-1", "created_at": "2026-07-02T10:00:00Z"}],
             "orders": [{"order_id": "ORDER-1", "status": "Completed"}],
             "sales_transactions": [{"sale_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "Completed", "net_total": "1234.50", "currency": "ZAR"}],
-            "fulfilment_events": [{"fulfillment_event_id": "FUL-1", "lead_id": "LEAD-1", "event_type": "delivered", "occurred_at": "2026-07-10T10:00:00Z"}],
+            "fulfilment_events": [{"fulfillment_event_id": "FUL-1", "lead_id": "LEAD-1", "event_type": "delivery_completed", "occurred_at": "2026-07-10T10:00:00Z"}],
             "loss_events": [],
         }
 
@@ -43,6 +43,36 @@ class BeaconSamAttributionTests(unittest.TestCase):
         self.assertEqual(row["status"], "ambiguous")
         self.assertEqual(row["candidate_lead_ids"], ["LEAD-1", "LEAD-2"])
         self.assertEqual(row["revenue"], [])
+
+    def test_exact_campaign_attributes_all_leads_orders_and_revenue(self):
+        payload = self.base()
+        payload["leads"].append({
+            **payload["leads"][0],
+            "lead_id": "LEAD-2",
+            "linked_order_id": "ORDER-2",
+        })
+        payload["orders"].append({"order_id": "ORDER-2", "status": "Completed"})
+        payload["sales_transactions"].append({
+            "sale_id": "SALE-2",
+            "linked_order_id": "ORDER-2",
+            "sale_status": "Completed",
+            "net_total": "765.50",
+            "currency": "ZAR",
+        })
+
+        result = build_beacon_sam_attribution(payload)
+
+        self.assertEqual([row["lead_id"] for row in result["attributions"]], ["LEAD-1", "LEAD-2"])
+        self.assertEqual([row["order_id"] for row in result["attributions"]], ["ORDER-1", "ORDER-2"])
+        self.assertEqual(
+            [row["revenue"] for row in result["attributions"]],
+            [
+                [{"currency": "ZAR", "net_total": "1234.50"}],
+                [{"currency": "ZAR", "net_total": "765.50"}],
+            ],
+        )
+        self.assertEqual(result["summary"]["attributed"], 2)
+        self.assertEqual(result["summary"]["qualified"], 2)
 
     def test_duplicate_event_is_idempotent_and_correction_supersedes(self):
         payload = self.base()

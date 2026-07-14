@@ -37,7 +37,7 @@ ALLOWED_LOST_REASONS = {
     "price", "timing", "location", "product_fit", "no_response",
     "stock_unavailable", "fulfilment_risk", "competitor", "other",
 }
-SUCCESS_FULFILMENT_EVENTS = {"delivered", "collected", "fulfilled", "handover_completed"}
+SUCCESS_FULFILMENT_EVENTS = {"delivery_completed", "collected", "fulfilled", "handover_completed"}
 FAILED_FULFILMENT_EVENTS = {"failed", "cancelled", "delivery_failed", "collection_failed"}
 
 
@@ -63,12 +63,17 @@ def build_beacon_sam_attribution(payload=None):
             continue
 
         candidates = _lead_candidates(campaign, leads, observed_at, window_days)
-        if len(candidates) != 1:
-            results.append(_unresolved(campaign, campaign_ref, "ambiguous" if candidates else "unmatched", candidates))
+        if not candidates:
+            results.append(_unresolved(campaign, campaign_ref, "unmatched", candidates))
             continue
 
-        lead, method = candidates[0]
-        results.append(_attributed(campaign, campaign_ref, lead, method, orders, sales, fulfilment, loss_events))
+        methods = {method for _, method in candidates}
+        if methods == {"source_time_window"} and len(candidates) > 1:
+            results.append(_unresolved(campaign, campaign_ref, "ambiguous", candidates))
+            continue
+
+        for lead, method in candidates:
+            results.append(_attributed(campaign, campaign_ref, lead, method, orders, sales, fulfilment, loss_events))
 
     results.sort(key=lambda row: (row["campaign_ref"], row["performance_event_id"], row.get("lead_id", "")))
     return {
