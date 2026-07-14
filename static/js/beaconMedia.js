@@ -537,7 +537,7 @@
         const item = recommendations[Number(button.dataset.index)];
         const result = await fetchJson("/api/beacon/weekly-command-brief/prepare-decision", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recommendation: item, destination: button.dataset.destination }),
+          body: JSON.stringify({ performance_event_id: item.performance_event_id, destination: button.dataset.destination }),
         });
         elements.decisionResult.innerHTML = `<strong>${escapeHtml(result.classification)} ${escapeHtml(result.destination)} packet prepared.</strong><span>Next gate: ${escapeHtml(result.next_gate)}. No approval, mission creation, spend, post, send, reservation, or operational write occurred.</span>`;
       });
