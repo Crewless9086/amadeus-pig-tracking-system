@@ -260,7 +260,7 @@ WORKFLOW_TEMPLATES = {
     },
     "system_improvement": {
         "label": "System Improvement",
-        "mission_type_aliases": ["system", "workflow", "governance", "dashboard", "runner"],
+        "mission_type_aliases": ["system", "system improvement", "workflow", "governance", "dashboard", "runner"],
         "agent_order": [
             "idea_expander",
             "source_mapper",
@@ -420,7 +420,16 @@ def explicit_non_ui_requested(text):
 
 def classify_workflow_template(mission_type="", raw_text="", title=""):
     haystack = f"{mission_type} {title} {raw_text}".lower()
+    mission_type_text = str(mission_type or "").strip().lower()
     explicit_non_ui = explicit_non_ui_requested(haystack)
+    core_reliability = re.search(
+        r"\b(charlie core|agent runner|runner|conveyor|supervisor|heartbeat|artifact ingest|workflow engine)\b",
+        haystack,
+    )
+    implementation_intent = re.search(
+        r"\b(build|rebuild|implement|develop|code|create|fix|repair|upgrade|add|wire|persist)\b",
+        haystack,
+    )
     explicit_ui = re.search(
         r"\b(ui|frontend|dashboard|page|browser|screen|interface|command center|control room)\b",
         haystack,
@@ -429,8 +438,16 @@ def classify_workflow_template(mission_type="", raw_text="", title=""):
         re.search(r"\bvisual\b.{0,50}\b(layout|screen|page|interface|ui|frontend|dashboard)\b", haystack)
         or re.search(r"\b(layout|screen|page|interface|ui|frontend|dashboard)\b.{0,50}\bvisual\b", haystack)
     )
-    if not explicit_non_ui and (explicit_ui or visual_ui):
-        return "ui_product_build"
+    # An explicit mission type is an owner/system classification and wins over
+    # incidental verbs in the description. UI remains content-routed below so
+    # generic labels such as "software build" can still select its workflow.
+    for template_id, template in WORKFLOW_TEMPLATES.items():
+        if template_id == "ui_product_build":
+            continue
+        if any(alias == mission_type_text for alias in template["mission_type_aliases"]):
+            if template_id != "software_build":
+                return template_id
+            break
     implementation_followup = re.search(
         r"\b(follow[- ]?up|resolve|fix|repair|correct)\b.{0,100}"
         r"\b(implementation defect|code defect|bug|regression|failing test|test failure)\b",
@@ -444,6 +461,12 @@ def classify_workflow_template(mission_type="", raw_text="", title=""):
         haystack,
     )
     if implementation_request:
+        return "software_build"
+    if core_reliability and implementation_intent:
+        return "software_build"
+    if implementation_intent and not explicit_non_ui and (explicit_ui or visual_ui):
+        return "ui_product_build"
+    if implementation_intent:
         return "software_build"
     for template_id, template in WORKFLOW_TEMPLATES.items():
         if template_id == "ui_product_build":

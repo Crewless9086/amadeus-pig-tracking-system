@@ -130,3 +130,10 @@
 
 - Added the owner-rule campaign calendar contract: reusable rule versions require exact owner approval, changes require reapproval, and inactive versions fail closed.
 - Defined prepared entries as immutable review evidence bound to approved media, exact copy, allowlisted channels, timezone windows, fresh demand caps, and pause evaluation, with no execution authority.
+# 2026-07-14 - CORE durable recovery and observability repair
+
+- Capped identical internal recovery across runner sessions and converted the second repeat into an honest owner block.
+- Corrected outcome-based routing so implementation work reaches Builder even when mission text also mentions marketing, status, or review UI.
+- Prevented placeholder revision text from triggering wrong-revision loops.
+- Added terminal progress truth and durable attempts/recovery/backflow telemetry to CHARLIE CORE mission summaries.
+- Bounded ANALYST reads and made observation-read failures degrade visibly instead of failing the scorecard.

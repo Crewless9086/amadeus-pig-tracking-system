@@ -4736,8 +4736,10 @@ def _revision_evidence_quality_gate(agent, artifact):
         return {"passed": True, "reason": "revision_evidence_not_required"}
     expected = str(artifact.get("expected_revision") or "").strip().lower()
     tested = str(artifact.get("tested_revision") or "").strip().lower()
-    if not expected:
+    if not expected or not re.fullmatch(r"[0-9a-f]{6,40}", expected):
         return {"passed": True, "reason": "no_packaged_revision_yet"}
+    if tested and not re.fullmatch(r"[0-9a-f]{6,40}", tested):
+        return {"passed": True, "reason": "tested_revision_not_packaged_evidence", "expected_revision": expected}
     if not tested:
         return {"passed": True, "reason": "revision_evidence_pending_final_reconciliation", "expected_revision": expected}
     if not (tested.startswith(expected) or expected.startswith(tested)):
@@ -4905,6 +4907,37 @@ def _durable_backflow_fingerprint_count(mission, fingerprint):
     return count
 
 
+def _bounded_internal_recovery(mission_id, agent, blocked_reason, artifact, disposition, mission=None, database_url=None, connect_factory=None):
+    disposition = dict(disposition if isinstance(disposition, dict) else {})
+    fingerprint = _backflow_fingerprint(agent, disposition.get("responsible_stage") or agent, blocked_reason, artifact)
+    loaded_mission = mission if isinstance(mission, dict) else {}
+    if not loaded_mission and mission_id:
+        loaded, status_code = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+        if status_code < 400:
+            loaded_mission = loaded.get("mission") or {}
+    metadata = loaded_mission.get("metadata") if isinstance(loaded_mission.get("metadata"), dict) else {}
+    memory = mission_memory_from_metadata(metadata)
+    pattern = (memory.get("recurring_block_patterns") or {}).get(f"fingerprint:{fingerprint}") or {}
+    prior_count = int(pattern.get("count") or 0)
+    occurrence = prior_count + 1
+    capped = bool(disposition.get("recoverable")) and occurrence >= 2
+    if capped:
+        disposition.update({
+            "block_class": "recovery_attempts_exhausted",
+            "recoverable": False,
+            "owner_required": True,
+            "responsible_stage": "owner",
+            "recovery_cap_reached": True,
+            "reason": f"Repeated internal recovery stopped after {occurrence} identical occurrences: {blocked_reason}",
+        })
+    return disposition, {
+        "fingerprint": fingerprint,
+        "prior_count": prior_count,
+        "occurrence": occurrence,
+        "capped": capped,
+    }
+
+
 def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
     artifact = artifact if isinstance(artifact, dict) else {}
     base = str(artifact.get("next_action") or "").strip()
@@ -4959,6 +4992,10 @@ def _block_agent_stage(
     if artifact and agent not in artifacts:
         artifacts = {**artifacts, agent: artifact}
     disposition = classify_block(agent, blocked_reason, artifact)
+    disposition, recovery_repeat = _bounded_internal_recovery(
+        mission_id, agent, blocked_reason, artifact, disposition,
+        database_url=database_url, connect_factory=connect_factory,
+    )
     unresolved = _artifact_issue_items(agent, artifact)
     if unresolved:
         ledger["unresolved_blockers"] = unresolved
@@ -5018,6 +5055,7 @@ def _block_agent_stage(
             artifact={**artifact, "next_action": artifact.get("next_action") or recovery_packet.get("recommended_next_action", "")},
             quality_gate=artifact.get("quality_gate", {}),
             recovery=recovery_packet,
+            metadata={"execution_id": execution_id, "backflow_fingerprint": recovery_repeat["fingerprint"], "recovery_occurrence": recovery_repeat["occurrence"]},
         ),
         database_url=database_url,
         connect_factory=connect_factory,
@@ -5063,6 +5101,7 @@ def _block_agent_stage(
                 "blocked_agent": agent,
                 "blocked_reason": blocked_reason,
                 "block_disposition": disposition,
+                "recovery_repeat": recovery_repeat,
                 "recommended_next_action": artifact.get("next_action") or (
                     f"CORE will recover from {disposition['responsible_stage']}."
                     if disposition["recoverable"]
@@ -5090,6 +5129,8 @@ def _block_agent_stage(
             "blocked_agent": agent,
             "block_class": disposition["block_class"],
             "recovery_stage": disposition["responsible_stage"],
+            "recovery_fingerprint": recovery_repeat["fingerprint"],
+            "recovery_occurrence": recovery_repeat["occurrence"],
         },
         database_url=database_url,
         connect_factory=connect_factory,
@@ -5739,6 +5780,10 @@ def _block_completed_agent_review(
     connect_factory=None,
 ):
     disposition = classify_block(agent, blocked_reason, artifact)
+    disposition, recovery_repeat = _bounded_internal_recovery(
+        mission.get("mission_id"), agent, blocked_reason, artifact, disposition,
+        mission=mission, database_url=database_url, connect_factory=connect_factory,
+    )
     ledger["status"] = "blocked"
     ledger["blocked_agent"] = agent
     ledger["blocked_reason"] = blocked_reason
@@ -5755,6 +5800,20 @@ def _block_completed_agent_review(
         changed_files=artifact.get("changed_files") or _changed_files(),
     )
     recovery_packet["disposition"] = disposition
+    _record_mission_memory_event(
+        mission,
+        build_memory_event(
+            agent,
+            "agent_blocked",
+            summary=f"{agent} blocked: {blocked_reason}",
+            artifact=artifact,
+            quality_gate=artifact.get("quality_gate", {}),
+            recovery=recovery_packet,
+            metadata={"execution_id": execution_id, "backflow_fingerprint": recovery_repeat["fingerprint"], "recovery_occurrence": recovery_repeat["occurrence"]},
+        ),
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
     mission_quality = score_mission_quality(
         mission,
         {
@@ -5806,6 +5865,7 @@ def _block_completed_agent_review(
         "blocked_agent": agent,
         "blocked_reason": blocked_reason,
         "block_disposition": disposition,
+        "recovery_repeat": recovery_repeat,
         "recommended_next_action": artifact.get("next_action") or (
             f"CORE will recover from {disposition['responsible_stage']}."
             if disposition["recoverable"]
@@ -5834,6 +5894,8 @@ def _block_completed_agent_review(
             "blocked_agent": agent,
             "block_class": disposition["block_class"],
             "recovery_stage": disposition["responsible_stage"],
+            "recovery_fingerprint": recovery_repeat["fingerprint"],
+            "recovery_occurrence": recovery_repeat["occurrence"],
         },
         database_url=database_url,
         connect_factory=connect_factory,

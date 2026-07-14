@@ -920,6 +920,16 @@ def _mission_dashboard_summary(mission):
         compact_metadata["mission_family"] = mission_family
     mission_memory = mission_memory_from_metadata(metadata)
     if mission_memory.get("events") or mission_memory.get("updated_at"):
+        events = [item for item in mission_memory.get("events", []) if isinstance(item, dict)]
+        attempts = [item for item in mission_memory.get("attempts", []) if isinstance(item, dict)]
+        recovery_notes = [item for item in mission_memory.get("recovery_notes", []) if isinstance(item, dict)]
+        patterns = [item for item in mission_memory.get("recurring_block_patterns", {}).values() if isinstance(item, dict)]
+        sessions = {
+            str((item.get("metadata") or {}).get("execution_id") or "").strip()
+            for item in events
+            if isinstance(item.get("metadata"), dict) and str((item.get("metadata") or {}).get("execution_id") or "").strip()
+        }
+        last_recovery = recovery_notes[-1] if recovery_notes else {}
         compact_metadata["mission_memory"] = {
             "version": mission_memory.get("version", ""),
             "updated_at": mission_memory.get("updated_at", ""),
@@ -934,6 +944,16 @@ def _mission_dashboard_summary(mission):
                 if isinstance(item, dict)
             },
             "recent_recovery_notes": _compact_event_list(mission_memory.get("recovery_notes"), limit=3),
+            "telemetry": {
+                "attempt_count": len(attempts),
+                "execution_session_count": len(sessions),
+                "recovery_count": len(recovery_notes),
+                "backflow_count": sum(1 for item in events if str(item.get("type") or "").lower() == "agent_backflow"),
+                "repeated_blocker_count": sum(1 for item in patterns if int(item.get("count") or 0) >= 2),
+                "highest_blocker_repeat": max([int(item.get("count") or 0) for item in patterns] or [0]),
+                "last_progress_at": mission_memory.get("updated_at", ""),
+                "last_restart_reason": _short_text(last_recovery.get("summary") or last_recovery.get("reason"), 240),
+            },
         }
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
     compact_vault = {
@@ -953,6 +973,11 @@ def _mission_dashboard_summary(mission):
     for key in ("problem_statement", "desired_outcome", "source_truth"):
         if key in compact_vault:
             compact_vault[key] = _short_text(compact_vault.get(key), 500)
+    status = str(mission.get("status") or "").strip().lower()
+    owner_decision = str(mission.get("owner_decision") or "").strip()
+    resolution = ""
+    if status in {"done", "merged", "deployed"}:
+        resolution = "resolved_duplicate_or_external" if any(word in owner_decision.lower() for word in ("duplicate", "already merged", "resolved externally")) else "completed"
     return {
         "mission_id": mission.get("mission_id", ""),
         "status": mission.get("status", ""),
@@ -964,6 +989,7 @@ def _mission_dashboard_summary(mission):
         "approval_level": mission.get("approval_level", ""),
         "selected_next_step": _short_text(mission.get("selected_next_step", ""), 300),
         "owner_decision": _short_text(mission.get("owner_decision", ""), 300),
+        "terminal_resolution": resolution,
         "created_at": mission.get("created_at", ""),
         "updated_at": mission.get("updated_at", ""),
         "queue_class": mission.get("queue_class", "owner_work"),

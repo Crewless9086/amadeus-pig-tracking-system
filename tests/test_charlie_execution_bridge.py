@@ -136,6 +136,47 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_internal_recovery_caps_second_identical_fingerprint(self):
+        artifact = {"errors": ["wrong revision"]}
+        disposition = {
+            "recoverable": True,
+            "owner_required": False,
+            "responsible_stage": "evidence_reviewer",
+            "block_class": "stale_state_reconciliation_required",
+        }
+        fingerprint = execution_bridge._backflow_fingerprint(
+            "business_reviewer", "evidence_reviewer", "reviewed wrong revision", artifact,
+        )
+        mission = {
+            "metadata": {
+                "mission_memory": {
+                    "recurring_block_patterns": {
+                        f"fingerprint:{fingerprint}": {"count": 1},
+                    },
+                },
+            },
+        }
+
+        bounded, repeat = execution_bridge._bounded_internal_recovery(
+            "MISSION-1", "business_reviewer", "reviewed wrong revision", artifact, disposition, mission=mission,
+        )
+
+        self.assertTrue(repeat["capped"])
+        self.assertEqual(repeat["occurrence"], 2)
+        self.assertFalse(bounded["recoverable"])
+        self.assertTrue(bounded["owner_required"])
+        self.assertEqual(bounded["block_class"], "recovery_attempts_exhausted")
+
+    def test_internal_recovery_allows_first_occurrence(self):
+        disposition = {"recoverable": True, "owner_required": False, "responsible_stage": "tester"}
+
+        bounded, repeat = execution_bridge._bounded_internal_recovery(
+            "MISSION-1", "tester", "temporary timeout", {}, disposition, mission={"metadata": {}},
+        )
+
+        self.assertFalse(repeat["capped"])
+        self.assertEqual(repeat["occurrence"], 1)
+        self.assertTrue(bounded["recoverable"])
     @patch("modules.charlie.execution_bridge._record_mission_memory_event")
     @patch("modules.charlie.execution_bridge.record_mission")
     def test_bounded_discovery_records_owner_gated_child_mission(self, record_mission, record_memory):
@@ -1000,6 +1041,15 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         })
 
         self.assertTrue(result["passed"])
+
+    def test_revision_gate_ignores_placeholder_revision_text(self):
+        result = execution_bridge._revision_evidence_quality_gate("reviewer", {
+            "expected_revision": "mission-specific packaged pr head not supplied",
+            "tested_revision": "main",
+        })
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["reason"], "no_packaged_revision_yet")
 
     def test_council_synthesis_parsed_artifact_gets_contract_defaults(self):
         final = """Council-approved build brief:

@@ -158,3 +158,11 @@ Reviewer and Tester command mistakes that are explicitly informational, unrelate
 Owner send-back normalization follows the same single-active-stage invariant: the selected return stage is active, downstream stages are pending, and stale upstream active markers are cleared without discarding completed evidence.
 
 Safety language such as `fail-closed` describes required protective behavior and is not itself failure evidence. Explicit failed tests, unresolved acceptance findings, and send-back decisions remain blocking.
+# CORE Recovery And Observability Rules (2026-07-14)
+
+- Outcome-based routing is authoritative: any mission that asks for code or product implementation must include Builder and focused verification stages. Planning-only workflows may not be sent through revision review as if they produced a packaged PR.
+- CORE permits one automatic recovery for an identical blocker fingerprint. The second occurrence is a durable owner block (`recovery_attempts_exhausted`), survives runner restarts, and is observed by ANALYST. Internal recovery may not silently reapprove the same unchanged mission indefinitely.
+- Revision matching is enforced only when Builder supplied a real packaged Git revision. Placeholder revision text is not evidence and cannot create an unwinnable wrong-revision loop.
+- Terminal mission states are display truth. `done`, `merged`, `deployed`, and review-ready outcomes display 100% even when an inherited workflow contains stale active steps. Duplicate or externally resolved completion is labelled separately.
+- CORE mission summaries expose durable execution sessions, attempts, recoveries, backflows, repeated blocker count, last progress, and latest recovery reason. This telemetry comes from mission memory; no parallel state store is allowed.
+- ANALYST reads bounded Supabase/Vault samples, degrades visibly when observation history is temporarily unavailable, and never hides the rest of CORE behind an artifact-read failure.
