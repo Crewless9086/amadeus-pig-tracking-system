@@ -86,6 +86,9 @@
     performanceRecord: byId("beacon_performance_record"),
     boostPacketResult: byId("beacon_boost_packet_result"),
     performanceList: byId("beacon_performance_event_list"),
+    metaBoostRefresh: byId("beacon_meta_boost_refresh"),
+    metaBoostStatus: byId("beacon_meta_boost_status"),
+    metaBoostBlockers: byId("beacon_meta_boost_blockers"),
     commandRefresh: byId("beacon_command_refresh"),
     commandTruth: byId("beacon_command_truth"),
     commandUpdated: byId("beacon_command_updated"),
@@ -190,6 +193,7 @@
     await loadFacebookPostExecutions();
     await loadManualPostEvidence();
     await loadCampaignPerformance();
+    await loadMetaBoostPolicy();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
       state.selectedAssetId = "";
       renderDetail(null);
@@ -416,6 +420,18 @@
       : "Facebook posting is locked until Render envs and owner confirmation are present.";
     updateFacebookActionState();
     return policy;
+  }
+
+  async function loadMetaBoostPolicy() {
+    const policy = await fetchJson("/api/beacon/meta-boost-policy");
+    const ready = policy.status === "ready_for_owner_execution";
+    elements.metaBoostStatus.textContent = ready
+      ? "Prerequisites report ready. A separate immutable approval and exact final confirmation are still required."
+      : "Hard stopped. No Meta provider call or spend is available.";
+    elements.metaBoostStatus.closest(".beacon-meta-boost-status").dataset.state = ready ? "ready" : "blocked";
+    elements.metaBoostBlockers.innerHTML = (policy.blockers || []).length
+      ? policy.blockers.map((item) => `<div class="ops-list-item"><strong>${escapeHtml(item.replaceAll("_", " "))}</strong></div>`).join("")
+      : `<div class="ops-list-item"><strong>Policy and credential checks passed</strong><span>Execution remains separately owner-confirmed.</span></div>`;
   }
 
   async function loadFacebookPostExecutions() {
@@ -952,6 +968,7 @@
     elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));
+    elements.metaBoostRefresh.addEventListener("click", () => loadMetaBoostPolicy().catch((error) => showMessage(error.message)));
     elements.commandRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => {
       elements.commandTruth.textContent = "Evidence unavailable";
       elements.commandTruth.dataset.state = "blocked";

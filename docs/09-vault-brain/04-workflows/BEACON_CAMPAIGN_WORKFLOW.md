@@ -43,3 +43,6 @@ Source reference: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
 4. Job, source lineage, attempt, cost, mock variant, and review evidence are appended as structured records. Mock variants remain private in `beacon-raw-intake`, `needs_review`, and not campaign-selectable.
 5. Brand, privacy, safety, animal/product fidelity, provider disclosure, evaluation, and owner public-use decisions are recorded separately by the server-bound authenticated owner identity.
 6. Evaluation or public-use approval records evidence only. It cannot enable a provider, spend, post, schedule, send, campaign action, order, stock change, or farm lifecycle write.
+# Optional Paid Boost Lane
+
+After a canonical published post has fresh performance evidence recommending `BOOST`, the owner may enter a separate red-zone paid-boost workflow. The server re-resolves publication, performance, fulfilment, immutable approval, paid policy, credentials, and idempotency evidence immediately before execution. Beacon cannot enter this lane automatically. The lane supports one fixed ZAR lifetime total cap for one fixed duration, requires exact final owner confirmation, and records append-only claim/result evidence. Missing runtime adapters or readiness fails closed; organic post creation and performance recording never call the paid provider.

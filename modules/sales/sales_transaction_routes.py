@@ -7,6 +7,7 @@ from modules.auth.owner_access import (
     require_owner_admin_access,
     require_owner_read_access,
 )
+from modules.sales.beacon_meta_boost import execute_meta_boost, meta_boost_policy
 from modules.beacon.campaign_calendar import (
     approve_rule_version,
     prepare_calendar_entry,
@@ -1038,6 +1039,9 @@ def beacon_manual_post_evidence():
 
 @sales_bp.route("/beacon/campaign-performance", methods=["GET", "POST"])
 def beacon_campaign_performance():
+    denied = require_owner_read_access() if request.method == "GET" else require_owner_admin_access()
+    if denied:
+        return denied
     if request.method == "GET":
         result, status_code = list_beacon_campaign_performance_events(
             limit=request.args.get("limit", 25),
@@ -1047,6 +1051,25 @@ def beacon_campaign_performance():
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_campaign_performance_event(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/meta-boost-policy", methods=["GET"])
+def beacon_meta_boost_policy():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify(meta_boost_policy()), 200
+
+
+@sales_bp.route("/beacon/meta-boost-executions", methods=["POST"])
+def beacon_meta_boost_executions():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    # Deliberately no production adapters until migration, policy, credentials,
+    # and live-spend authority are separately approved.
+    result, status_code = execute_meta_boost(request.get_json(silent=True) or {})
     return jsonify(result), status_code
 
 

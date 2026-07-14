@@ -462,6 +462,20 @@
   }
 }
 
+.beacon-meta-boost-status {
+  border: 2px solid #9f2d20;
+  border-radius: 10px;
+  background: #fff4f1;
+  margin-top: 16px;
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+
+.beacon-meta-boost-status[data-state="ready"] {
+  border-color: #8a6500;
+  background: #fff9e8;
+}
+
 @media (max-width: 980px) {
   .beacon-command-layout,
   .beacon-weekly-targets,
