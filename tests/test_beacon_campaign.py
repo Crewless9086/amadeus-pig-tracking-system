@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
@@ -6,6 +7,7 @@ from modules.sales.beacon_campaign import (
     build_beacon_campaign_publish_packet,
     build_beacon_campaign_selection,
     build_beacon_boost_recommendation_packet,
+    build_beacon_weekly_command_brief,
     build_live_stock_awareness_campaign_packet,
     build_live_stock_awareness_campaign_publish_packet,
     build_live_stock_awareness_campaign_selection,
@@ -23,6 +25,30 @@ from modules.sales.beacon_campaign import (
 
 
 class BeaconCampaignTests(unittest.TestCase):
+    def test_weekly_command_brief_compares_compatible_latest_snapshots_only(self):
+        events = [
+            {"performance_event_id": "e2", "publish_packet_id": "p2", "channel": "Instagram", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 0, "qualified_buyer_leads": 3, "created_at": "2026-07-14T08:00:00+00:00"},
+            {"performance_event_id": "e1", "publish_packet_id": "p1", "channel": "Facebook", "measurement_window": " 7   DAYS ", "spend_currency": "ZAR", "spend_amount": 100, "qualified_buyer_leads": 2, "recommended_action": "light_boost_owner_review", "created_at": "2026-07-14T07:00:00+00:00"},
+            {"performance_event_id": "old", "publish_packet_id": "p1", "channel": "Facebook", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 80, "qualified_buyer_leads": 1, "created_at": "2026-07-13T07:00:00+00:00"},
+            {"performance_event_id": "other", "publish_packet_id": "p3", "channel": "Facebook", "measurement_window": "24 hours", "spend_currency": "ZAR", "spend_amount": 20, "qualified_buyer_leads": 1, "created_at": "2026-07-14T06:00:00+00:00"},
+        ]
+        brief = build_beacon_weekly_command_brief(events, now=datetime(2026, 7, 14, 9, tzinfo=timezone.utc))
+        self.assertEqual(brief["comparison"]["status"], "compatible")
+        self.assertEqual(len(brief["comparison"]["campaigns"]), 2)
+        self.assertEqual(brief["targets"]["spend"]["actual"], 100)
+        self.assertEqual(brief["targets"]["qualified_leads"]["actual"], 5)
+        self.assertEqual([item["classification"] for item in brief["recommendations"]], ["REUSE", "BOOST"])
+        self.assertEqual(brief["targets"]["attributed_revenue"]["status"], "unavailable")
+
+    def test_weekly_command_brief_stale_stop_and_authority_fail_closed(self):
+        event = {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 50, "qualified_buyer_leads": 0, "created_at": "2026-07-01T00:00:00+00:00"}
+        brief = build_beacon_weekly_command_brief([event, dict(event)], now=datetime(2026, 7, 14, tzinfo=timezone.utc))
+        self.assertEqual(brief["recommendations"][0]["classification"], "STOP")
+        self.assertEqual({alert["code"] for alert in brief["alerts"]}, {"stale_evidence", "stop_recommendation_waiting"})
+        self.assertEqual(len(brief["comparison"]["campaigns"]), 1)
+        for flag in ("posts_publicly", "sends_customer_message", "calls_meta", "calls_chatwoot", "calls_n8n", "spends_money", "creates_order", "changes_stock", "writes_farm_data", "creates_core_work", "approves_campaign"):
+            self.assertFalse(brief["authority"][flag], flag)
+
     def test_packet_is_draft_only_and_has_no_external_authority(self):
         packet = build_meat_launch_campaign_packet()
 

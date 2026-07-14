@@ -757,6 +757,126 @@ def update_mission_vault(
     }, 200
 
 
+def consume_final_agent_artifact(
+    mission_id,
+    agent,
+    execution_id,
+    attempt,
+    artifact,
+    artifact_sha256,
+    database_url=None,
+    connect_factory=None,
+):
+    """Atomically claim one valid stage artifact and advance exactly one workflow step."""
+    mission_id = _clean_text(mission_id, 90)
+    agent = _clean_text(agent, 40).lower()
+    execution_id = _clean_text(execution_id, 160)
+    artifact_sha256 = _clean_text(artifact_sha256, 64).lower()
+    if not mission_id or not agent or not execution_id or not artifact_sha256:
+        return {"success": False, "status": "artifact_identity_required"}, 400
+    if not isinstance(artifact, dict):
+        return {"success": False, "status": "final_artifact_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    identity = f"{mission_id}:{execution_id}:{agent}:{int(attempt or 1)}:{artifact_sha256}"
+    consumed_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select metadata_json from public.charlie_missions
+                       where mission_id = %(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                metadata = dict(rows[0][0] or {})
+                ingestion = dict(metadata.get("final_artifact_ingestion") or {})
+                claims = list(ingestion.get("claims") or [])
+                existing = next((item for item in claims if isinstance(item, dict) and item.get("identity") == identity), None)
+                if existing:
+                    return {
+                        "success": True,
+                        "status": "final_artifact_already_consumed",
+                        "mission_id": mission_id,
+                        "agent": agent,
+                        "claim": existing,
+                    }, 200
+                workflow = list(metadata.get("agent_workflow") or [])
+                first_incomplete = next(
+                    (str(item.get("agent") or "").lower() for item in workflow
+                     if isinstance(item, dict) and str(item.get("status") or "").lower() != "complete"),
+                    "",
+                )
+                if first_incomplete != agent:
+                    return {
+                        "success": False,
+                        "status": "final_artifact_stage_mismatch",
+                        "expected_agent": first_incomplete,
+                        "artifact_agent": agent,
+                    }, 409
+                next_agent = ""
+                seen = False
+                updated_workflow = []
+                for item in workflow:
+                    current = dict(item) if isinstance(item, dict) else item
+                    if not isinstance(current, dict):
+                        updated_workflow.append(current)
+                        continue
+                    current_agent = str(current.get("agent") or "").lower()
+                    if current_agent == agent:
+                        current.update({"status": "complete", "findings": _clean_text(artifact.get("summary"), 1200), "completed_at": consumed_at})
+                        seen = True
+                    elif seen and not next_agent and str(current.get("status") or "").lower() != "complete":
+                        current["status"] = "active"
+                        next_agent = current_agent
+                    elif str(current.get("status") or "").lower() == "active":
+                        current["status"] = "pending"
+                    updated_workflow.append(current)
+                claim = {
+                    "identity": identity,
+                    "execution_id": execution_id,
+                    "agent": agent,
+                    "attempt": int(attempt or 1),
+                    "sha256": artifact_sha256,
+                    "consumed_at": consumed_at,
+                    "next_agent": next_agent,
+                }
+                claims.append(claim)
+                ingestion.update({"version": "charlie_final_artifact_ingestion_v1", "claims": claims[-100:], "last_claim": claim})
+                review_packet = dict(metadata.get("review_packet") or {})
+                agent_artifacts = dict(review_packet.get("agent_artifacts") or {})
+                agent_artifacts[agent] = artifact
+                review_packet["agent_artifacts"] = agent_artifacts
+                vault = dict(metadata.get("mission_vault") or {})
+                handoffs = list(vault.get("handoff_notes") or [])
+                handoffs.append({"agent": agent, "status": "complete", "findings": _clean_text(artifact.get("summary"), 1200), "artifact_identity": identity})
+                vault["handoff_notes"] = handoffs[-20:]
+                memory = dict(metadata.get("mission_memory") or {})
+                notes = list(memory.get("latest_agent_notes") or [])
+                notes.append({"agent": agent, "type": "agent_complete", "attempt": int(attempt or 1), "summary": _clean_text(artifact.get("summary"), 1200), "quality_gate": artifact.get("quality_gate") or {}, "artifact_identity": identity})
+                memory.update({"version": memory.get("version") or "charlie_mission_memory_v1", "status": "active", "updated_at": consumed_at, "latest_agent_notes": notes[-20:]})
+                updated_metadata = {
+                    **metadata,
+                    "agent_workflow": updated_workflow,
+                    "review_packet": review_packet,
+                    "mission_vault": vault,
+                    "mission_memory": memory,
+                    "final_artifact_ingestion": ingestion,
+                }
+                cursor.execute(
+                    """update public.charlie_missions set metadata_json = %(metadata_json)s::jsonb,
+                       updated_at = now() where mission_id = %(mission_id)s""",
+                    {"mission_id": mission_id, "metadata_json": json.dumps(updated_metadata)},
+                )
+                _insert_event(cursor, mission_id, "workflow_updated", f"Consumed {agent} final artifact and activated {next_agent or 'workflow completion'}.", claim)
+    except Exception as exc:
+        return {"success": False, "status": "final_artifact_ingestion_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "final_artifact_consumed", "mission_id": mission_id, "agent": agent, "next_agent": next_agent, "claim": claim}, 200
+
+
 def update_new_mission_intake(
     mission_id,
     updates,

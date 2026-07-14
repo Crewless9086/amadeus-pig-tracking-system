@@ -5,6 +5,7 @@
     selectedAssetId: "",
     latestPublishPacket: null,
     facebookPostingPolicy: null,
+    performanceEvents: [],
   };
 
   const byId = (id) => document.getElementById(id);
@@ -64,6 +65,17 @@
     performanceRecord: byId("beacon_performance_record"),
     boostPacketResult: byId("beacon_boost_packet_result"),
     performanceList: byId("beacon_performance_event_list"),
+    commandRefresh: byId("beacon_command_refresh"),
+    commandTruth: byId("beacon_command_truth"),
+    commandUpdated: byId("beacon_command_updated"),
+    ownerAlerts: byId("beacon_owner_alerts"),
+    weeklySpend: byId("beacon_weekly_spend"),
+    weeklyLeads: byId("beacon_weekly_leads"),
+    comparisonWindow: byId("beacon_comparison_window"),
+    campaignComparison: byId("beacon_campaign_comparison"),
+    recommendationList: byId("beacon_recommendation_list"),
+    decisionCount: byId("beacon_decision_count"),
+    decisionResult: byId("beacon_decision_result"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -387,10 +399,91 @@
 
   async function loadCampaignPerformance() {
     const data = await fetchJson("/api/beacon/campaign-performance?limit=12");
-    renderCampaignPerformance(data.performance_events || []);
+    state.performanceEvents = data.performance_events || [];
+    renderCampaignPerformance(state.performanceEvents);
+    renderCommandBrief(state.performanceEvents);
     if (data.latest_boost_packet?.recommended_action) {
       renderBoostPacket(data.latest_boost_packet);
     }
+  }
+
+  function normalizedWindow(value) {
+    return safe(value, "").toLowerCase().replace(/\s+/g, " ").trim();
+  }
+
+  function recommendationFor(event) {
+    const spend = Number(event.spend_amount || 0);
+    const leads = Number(event.qualified_buyer_leads || 0);
+    const action = String(event.recommended_action || "").toLowerCase();
+    if (spend > Number(event.max_spend_cap_amount || 500)) return ["STOP", "Recorded spend conflicts with the R500 test cap.", "blocked"];
+    if (spend > 0 && leads === 0) return ["STOP", "Paid spend has produced no qualified leads in this window.", "blocked"];
+    if (action.includes("boost") && leads > 0) return ["BOOST", "Qualified leads support an owner review of the capped boost proposal.", "review"];
+    if (leads > 0 && spend === 0) return ["REUSE", "This campaign produced qualified leads without recorded paid spend.", "review"];
+    return ["CHANGE", "Evidence is insufficient or the campaign needs a measured adjustment before more spend.", "review"];
+  }
+
+  function renderCommandBrief(events) {
+    if (!events.length) {
+      elements.commandTruth.textContent = "No evidence";
+      elements.commandTruth.dataset.state = "unavailable";
+      elements.commandUpdated.textContent = "Last updated: no campaign evidence recorded";
+      elements.weeklySpend.textContent = "R 0.00";
+      elements.weeklyLeads.textContent = "0";
+      elements.ownerAlerts.innerHTML = "<strong>Evidence needed</strong><span>Record a campaign measurement window before comparing or preparing a decision.</span>";
+      elements.ownerAlerts.dataset.state = "blocked";
+      elements.comparisonWindow.textContent = "Insufficient data";
+      elements.campaignComparison.innerHTML = '<div class="table-empty">No campaign evidence is available. Revenue and targets remain unavailable.</div>';
+      elements.recommendationList.innerHTML = '<div class="table-empty">No owner decision can be prepared without evidence.</div>';
+      elements.decisionCount.textContent = "0";
+      return;
+    }
+    const latest = events[0];
+    const windowName = normalizedWindow(latest.measurement_window);
+    const seenCampaigns = new Set();
+    const compatible = events.filter((event) => {
+      if (normalizedWindow(event.measurement_window) !== windowName || safe(event.spend_currency, "ZAR") !== safe(latest.spend_currency, "ZAR")) return false;
+      const campaignKey = `${safe(event.publish_packet_id, event.manual_post_event_id || event.channel)}|${windowName}`;
+      if (seenCampaigns.has(campaignKey)) return false;
+      seenCampaigns.add(campaignKey);
+      return true;
+    });
+    const spend = compatible.reduce((sum, event) => sum + Number(event.spend_amount || 0), 0);
+    const leads = compatible.reduce((sum, event) => sum + Number(event.qualified_buyer_leads || 0), 0);
+    const recommendations = compatible.map((event) => ({ event, result: recommendationFor(event) }));
+    const zeroLeadSpend = recommendations.some(({ event }) => Number(event.spend_amount || 0) > 0 && Number(event.qualified_buyer_leads || 0) === 0);
+    elements.commandTruth.textContent = compatible.length > 1 ? "Comparable evidence" : "Limited evidence";
+    elements.commandTruth.dataset.state = compatible.length > 1 ? "ready" : "stale";
+    elements.commandUpdated.textContent = `Last updated: ${safe(latest.created_at, "source time unavailable")}`;
+    elements.weeklySpend.textContent = `R ${spend.toFixed(2)}`;
+    elements.weeklyLeads.textContent = String(leads);
+    elements.comparisonWindow.textContent = safe(latest.measurement_window, "Window unavailable");
+    elements.comparisonWindow.dataset.state = compatible.length > 1 ? "ready" : "stale";
+    elements.ownerAlerts.dataset.state = zeroLeadSpend ? "blocked" : "review";
+    elements.ownerAlerts.innerHTML = zeroLeadSpend
+      ? "<strong>Spend without qualified leads</strong><span>Stop and review the affected campaign before any later paid action.</span>"
+      : `<strong>${recommendations.length} recommendation${recommendations.length === 1 ? "" : "s"} awaiting owner review</strong><span>Revenue remains unattributed and no action executes from this brief.</span>`;
+    elements.campaignComparison.innerHTML = compatible.map((event) => `
+      <article class="beacon-comparison-row">
+        <div><strong>${escapeHtml(safe(event.channel, "Unknown channel"))}</strong><small>${escapeHtml(safe(event.publish_packet_id, event.performance_event_id))}</small></div>
+        <span><small>Spend</small><strong>${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(event.spend_amount || 0).toFixed(2)}</strong></span>
+        <span><small>Qualified leads</small><strong>${Number(event.qualified_buyer_leads || 0)}</strong></span>
+        <span><small>Cost / lead</small><strong>${event.cost_per_qualified_lead == null ? "Unavailable" : `R ${Number(event.cost_per_qualified_lead).toFixed(2)}`}</strong></span>
+      </article>`).join("");
+    elements.recommendationList.innerHTML = recommendations.map(({ event, result }, index) => `
+      <article class="beacon-recommendation-card" data-action="${result[0].toLowerCase()}">
+        <div class="beacon-recommendation-title"><span>${result[0]}</span><small>${result[2] === "blocked" ? "Blocked" : "Owner decision required"}</small></div>
+        <strong>${escapeHtml(safe(event.channel, "Campaign"))} · ${escapeHtml(safe(event.measurement_window))}</strong>
+        <p>${escapeHtml(result[1])}</p>
+        <small>Source: ${escapeHtml(safe(event.performance_event_id))}</small>
+        <button type="button" class="button-link beacon-prepare-decision" data-index="${index}">Prepare decision brief</button>
+      </article>`).join("");
+    elements.decisionCount.textContent = String(recommendations.length);
+    elements.recommendationList.querySelectorAll(".beacon-prepare-decision").forEach((button) => {
+      button.addEventListener("click", () => {
+        const item = recommendations[Number(button.dataset.index)];
+        elements.decisionResult.innerHTML = `<strong>${item.result[0]} brief prepared for owner review.</strong><span>No campaign approval, CORE mission, spend, post, send, reservation, or operational write occurred.</span>`;
+      });
+    });
   }
 
   async function recordCampaignPerformance() {
@@ -642,6 +735,12 @@
     elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));
+    elements.commandRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => {
+      elements.commandTruth.textContent = "Evidence unavailable";
+      elements.commandTruth.dataset.state = "blocked";
+      elements.ownerAlerts.innerHTML = `<strong>Could not load campaign evidence</strong><span>${escapeHtml(error.message)}</span>`;
+      elements.ownerAlerts.dataset.state = "blocked";
+    }));
     elements.performanceRecord.addEventListener("click", () => recordCampaignPerformance().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));

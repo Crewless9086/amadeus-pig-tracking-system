@@ -56,6 +56,15 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
     supervisor = _read_json(SUPERVISOR_PATH) if heartbeat_path == HEARTBEAT_PATH else {}
     supervisor_alive = _pid_alive(supervisor.get("pid"))
+    supervisor_owns_runner = bool(
+        supervisor_alive
+        and process_alive
+        and int(supervisor.get("child_pid") or 0) == int(payload.get("pid") or -1)
+        and str(supervisor.get("generation") or "")
+        and str(supervisor.get("generation") or "") == str(payload.get("supervisor_generation") or "")
+    )
+    if heartbeat_path == HEARTBEAT_PATH:
+        active = active and supervisor_owns_runner
     if code_stale and process_alive and heartbeat_fresh:
         status = "runner_code_stale"
         next_action = "Restart the local CHARLIE runner because main changed after this runner process started."
@@ -101,8 +110,12 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {},
         "orphan_processes": orphan_processes,
         "supervisor_active": supervisor_alive,
+        "supervisor_owns_runner": supervisor_owns_runner,
         "supervisor_status": supervisor.get("status", ""),
         "supervisor_pid": supervisor.get("pid"),
+        "supervisor_child_pid": supervisor.get("child_pid"),
+        "supervisor_generation": supervisor.get("generation", ""),
+        "owner_process_pid": supervisor.get("pid") if supervisor_owns_runner else None,
         "supervisor_restart_count": int(supervisor.get("restart_count") or 0),
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
@@ -125,6 +138,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "active_status": str(result.get("active_status") or ""),
         "runner_source_commit": _current_git_commit(),
         "runner_source_branch": _current_git_branch(),
+        "supervisor_generation": str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or ""),
     }
     for key in (
         "elapsed_seconds",

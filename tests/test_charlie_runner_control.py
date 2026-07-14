@@ -9,6 +9,26 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @patch("modules.charlie.runner_control._current_git_commit", return_value="same")
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    def test_default_status_is_active_only_for_generation_owned_child(self, _alive, _commit):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            supervisor = root / "supervisor.json"
+            heartbeat.write_text(json.dumps({
+                "pid": 222, "last_seen": datetime.now(timezone.utc).isoformat(),
+                "runner_source_commit": "same", "supervisor_generation": "gen-1",
+            }), encoding="utf-8")
+            supervisor.write_text(json.dumps({
+                "pid": 111, "child_pid": 222, "generation": "gen-1", "status": "runner_started",
+            }), encoding="utf-8")
+            with patch.object(runner_control, "HEARTBEAT_PATH", heartbeat), patch.object(runner_control, "SUPERVISOR_PATH", supervisor):
+                result = runner_control.runner_status(include_orphans=False)
+        self.assertTrue(result["active"])
+        self.assertTrue(result["supervisor_owns_runner"])
+        self.assertEqual(result["owner_process_pid"], 111)
+
     def test_runner_status_reports_not_started_without_heartbeat(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = runner_control.runner_status(Path(tmp) / "missing.json")

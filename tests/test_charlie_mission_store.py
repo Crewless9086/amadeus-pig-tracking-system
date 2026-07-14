@@ -5,6 +5,7 @@ from unittest.mock import patch
 from modules.charlie.mission_store import (
     agent_sequence_for_mission,
     build_mission_review_packet,
+    consume_final_agent_artifact,
     get_mission,
     list_missions,
     list_owner_work_missions,
@@ -64,6 +65,44 @@ class FailingCursor(FakeCursor):
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_final_artifact_consumption_advances_tester_to_qa_once(self):
+        metadata = {
+            "agent_workflow": [
+                {"agent": "builder", "status": "complete", "findings": "Built."},
+                {"agent": "tester", "status": "active"},
+                {"agent": "qa_red_team", "status": "pending"},
+            ],
+            "review_packet": {"agent_artifacts": {"builder": {"summary": "Built."}}},
+            "mission_vault": {},
+        }
+        connection = FakeConnection([(metadata,)])
+        artifact = {"summary": "Focused tests passed.", "quality_gate": {"passed": True}}
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-1", 1, artifact, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "final_artifact_consumed")
+        self.assertEqual(result["next_agent"], "qa_red_team")
+        update_params = next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)
+        persisted = __import__("json").loads(update_params["metadata_json"])
+        self.assertEqual([item["status"] for item in persisted["agent_workflow"]], ["complete", "complete", "active"])
+        self.assertIn("builder", persisted["review_packet"]["agent_artifacts"])
+        self.assertEqual(persisted["final_artifact_ingestion"]["last_claim"]["sha256"], "a" * 64)
+
+    def test_final_artifact_duplicate_is_read_only(self):
+        identity = f"MISSION-1:EXEC-1:tester:1:{'b' * 64}"
+        metadata = {"final_artifact_ingestion": {"claims": [{"identity": identity, "agent": "tester"}]}}
+        connection = FakeConnection([(metadata,)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-1", 1, {"summary": "pass"}, "b" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "final_artifact_already_consumed")
+        self.assertEqual(len(connection.cursor_instance.executed), 1)
+
     def test_update_workflow_items_tolerates_unknown_agent_names(self):
         workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]
 
