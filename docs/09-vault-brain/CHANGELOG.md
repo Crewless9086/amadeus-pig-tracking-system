@@ -137,3 +137,9 @@
 - Prevented placeholder revision text from triggering wrong-revision loops.
 - Added terminal progress truth and durable attempts/recovery/backflow telemetry to CHARLIE CORE mission summaries.
 - Bounded ANALYST reads and made observation-read failures degrade visibly instead of failing the scorecard.
+# 2026-07-14 - CORE mission progress and owner decision clarity
+
+- Added durable per-agent attempt, runtime, changed-file, and last-progress telemetry to CORE mission summaries.
+- Added backend-generated owner-action guidance with a target stage, reason, expected outcome, and safe alternative.
+- Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
+- Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.

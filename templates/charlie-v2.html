@@ -103,6 +103,7 @@
     .stage.review { border-top-color: var(--purple); background: var(--purple-soft); }
     .stage-name { font-size: 9px; font-weight: 850; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .stage-state { margin-top: 5px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
+    .stage-telemetry { margin-top: 6px; color: var(--blue); font-size: 8px; font-weight: 800; white-space: nowrap; }
     .stage .muted { display: block; margin-top: 7px; max-height: 27px; overflow: hidden; }
     .evidence { margin-top: 13px; border-top: 1px solid var(--line); }
     .evidence-row { padding: 9px 1px; border-bottom: 1px solid var(--line); font-size: 9px; line-height: 1.4; }
@@ -115,6 +116,13 @@
     .field code { display: block; overflow-wrap: anywhere; color: #445049; font-size: 8px; line-height: 1.35; }
     .button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .button-grid .wide { grid-column: 1 / -1; }
+    .decision-guidance { display: grid; gap: 5px; padding: 11px; border-left: 4px solid var(--green); background: var(--green-soft); }
+    .decision-guidance span { color: var(--green); font-size: 8px; font-weight: 850; text-transform: uppercase; }
+    .decision-guidance strong { font-size: 13px; }
+    .decision-guidance b { color: #315c49; font-size: 9px; }
+    .decision-guidance p, .decision-guidance small { margin: 0; font-size: 9px; line-height: 1.4; }
+    .decision-guidance small { color: var(--muted); }
+    details.alternatives > div { padding-top: 8px; }
     .notice { padding: 10px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #67420d; font-size: 9px; line-height: 1.45; }
     details.disclosure { border: 1px solid var(--line); background: #fff; }
     details.disclosure summary { padding: 9px 10px; cursor: pointer; color: #4e5a53; font-size: 9px; font-weight: 800; }
@@ -212,6 +220,6 @@
     <div id="reviewDrawerBody" class="summary-block"></div>
   </div></div>
 
-  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260713-acceptance-mission-families') }}"></script>
+  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260714-progress-decisions') }}"></script>
 </body>
 </html>

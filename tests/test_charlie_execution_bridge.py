@@ -136,6 +136,31 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_ledger_stage_persists_duration_attempt_and_changed_file_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            paths = {
+                "prompt_path": base / "prompt.md",
+                "stdout_path": base / "stdout.txt",
+                "stderr_path": base / "stderr.txt",
+                "final_path": base / "final.md",
+            }
+            ledger = {"stages": []}
+            execution_bridge._append_ledger_stage(
+                ledger,
+                "builder",
+                "complete",
+                "2026-07-14T08:00:00+00:00",
+                paths,
+                artifact={"changed_files": ["a.py", "b.py"]},
+                attempt=2,
+            )
+
+        stage = ledger["stages"][0]
+        self.assertEqual(stage["attempt"], 2)
+        self.assertEqual(stage["changed_files_count"], 2)
+        self.assertIn("completed_at", stage)
+        self.assertGreaterEqual(stage["duration_seconds"], 0)
     def test_internal_recovery_caps_second_identical_fingerprint(self):
         artifact = {"errors": ["wrong revision"]}
         disposition = {

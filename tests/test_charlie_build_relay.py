@@ -608,6 +608,51 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(telemetry["backflow_count"], 1)
         self.assertEqual(telemetry["highest_blocker_repeat"], 2)
 
+    def test_dashboard_recommends_rerun_when_builder_is_missing_from_stale_workflow(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-STALE",
+            "status": "blocked",
+            "agent_workflow": [
+                {"agent": "source_mapper", "status": "complete"},
+                {"agent": "business_reviewer", "status": "blocked"},
+            ],
+            "metadata": {"review_packet": {
+                "blocked_agent": "business_reviewer",
+                "recommended_next_action": "Return to Builder. Implement and package a clean mission-specific PR.",
+                "block_disposition": {"responsible_stage": "owner", "owner_required": True},
+            }},
+        })
+
+        guidance = summary["metadata"]["owner_action_guidance"]
+        self.assertEqual(guidance["recommended_action"], "approve_rerun")
+        self.assertEqual(guidance["target_stage"], "builder")
+        self.assertIn("missing from the stored workflow", guidance["reason"])
+
+    def test_dashboard_exposes_per_agent_runtime_attempt_and_files(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-RUNNING",
+            "status": "in_progress",
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+            "metadata": {
+                "agent_execution": {
+                    "execution_id": "EXEC-1",
+                    "last_progress_at": "2026-07-14T08:00:30+00:00",
+                    "stages": [{
+                        "agent": "builder", "status": "running", "attempt": 2,
+                        "started_at": "2026-07-14T08:00:00+00:00",
+                        "updated_at": "2026-07-14T08:00:30+00:00",
+                        "changed_files": ["a.py", "b.py"],
+                    }],
+                },
+                "mission_memory": {"attempts": [{"agent": "builder", "attempt": 1}, {"agent": "builder", "attempt": 2}]},
+            },
+        })
+
+        telemetry = summary["metadata"]["stage_telemetry"]
+        self.assertEqual(telemetry["execution_id"], "EXEC-1")
+        self.assertEqual(telemetry["stages"][0]["attempt"], 2)
+        self.assertEqual(telemetry["stages"][0]["changed_files_count"], 2)
+
     def test_dashboard_summary_converts_legacy_review_media_path_to_served_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             review_root = Path(tmp) / "review_media"
