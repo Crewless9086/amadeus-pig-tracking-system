@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
-from modules.charlie.mission_store import consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
+from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
@@ -749,6 +749,21 @@ def _refresh_core_plan_for_pickup(mission):
         for item in (plan.get("agent_workflow") if isinstance(plan.get("agent_workflow"), list) else [])
         if isinstance(item, dict) and str(item.get("agent") or "").strip()
     ]
+    if resume_stage in AGENT_DEFINITIONS and resume_stage not in planned_agents:
+        definition = AGENT_DEFINITIONS[resume_stage]
+        inserted = {
+            "agent": resume_stage,
+            "status": "pending",
+            "purpose": definition.get("purpose", "Complete the owner-requested recovery stage."),
+            "findings": "",
+            "handoff_to": "",
+            "required_output": definition.get("required_output", "charlie_handoff_v1"),
+            "instruction_pack": definition.get("instruction_pack", {}),
+        }
+        review_agents = {"tester", "qa_red_team", "visual_qa_reviewer", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"}
+        insert_at = next((index for index, item in enumerate(plan.get("agent_workflow") or []) if str(item.get("agent") or "").strip() in review_agents), len(plan.get("agent_workflow") or []))
+        plan["agent_workflow"] = [*(plan.get("agent_workflow") or [])[:insert_at], inserted, *(plan.get("agent_workflow") or [])[insert_at:]]
+        planned_agents.insert(insert_at, resume_stage)
     if (
         current_agents == planned_agents
         and current_truth.get("pipeline_profile") == planned_truth.get("pipeline_profile")
