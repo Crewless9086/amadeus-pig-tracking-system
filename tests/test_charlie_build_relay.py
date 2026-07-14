@@ -583,6 +583,31 @@ class CharlieBuildRelayTests(unittest.TestCase):
             "/api/charlie/build-relay/review-media/MISSION-1/desktop.png",
         )
 
+    def test_dashboard_summary_reports_terminal_truth_and_memory_telemetry(self):
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "MISSION-DONE",
+            "status": "done",
+            "owner_decision": "Resolved duplicate; already merged.",
+            "agent_workflow": [{"agent": "builder", "status": "active"}, {"agent": "reviewer", "status": "pending"}],
+            "metadata": {"mission_memory": {
+                "updated_at": "2026-07-14T08:00:00+00:00",
+                "events": [
+                    {"agent": "builder", "type": "agent_backflow", "metadata": {"execution_id": "E1"}},
+                    {"agent": "builder", "type": "agent_blocked", "metadata": {"execution_id": "E2"}},
+                ],
+                "attempts": [{"agent": "builder"}, {"agent": "builder"}],
+                "recovery_notes": [{"summary": "Retry builder"}],
+                "recurring_block_patterns": {"fingerprint:x": {"count": 2}},
+            }},
+        })
+
+        telemetry = summary["metadata"]["mission_memory"]["telemetry"]
+        self.assertEqual(summary["terminal_resolution"], "resolved_duplicate_or_external")
+        self.assertEqual(telemetry["attempt_count"], 2)
+        self.assertEqual(telemetry["execution_session_count"], 2)
+        self.assertEqual(telemetry["backflow_count"], 1)
+        self.assertEqual(telemetry["highest_blocker_repeat"], 2)
+
     def test_dashboard_summary_converts_legacy_review_media_path_to_served_url(self):
         with tempfile.TemporaryDirectory() as tmp:
             review_root = Path(tmp) / "review_media"

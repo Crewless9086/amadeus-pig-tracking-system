@@ -83,6 +83,45 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertIn("tester", agents)
         self.assertLess(agents.index("builder"), agents.index("tester"))
 
+    def test_core_runner_fix_stays_software_build_when_ui_status_is_mentioned(self):
+        self.assertEqual(
+            classify_workflow_template(
+                "charlie core reliability",
+                "Fix final artifact ingestion and ensure UI status reflects the live supervisor.",
+                "CORE Final Artifact Consumption And Supervisor Truth",
+            ),
+            "software_build",
+        )
+
+    def test_marketing_attribution_build_includes_implementation_agents(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-ATTRIBUTION",
+            "title": "BEACON Meta Insights, SAM Lead And Revenue Attribution",
+            "raw_text": "Build deterministic attribution from Beacon campaigns to SAM leads, orders and revenue.",
+            "mission_type": "marketing intelligence",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
+        self.assertIn("builder", agents)
+        self.assertIn("tester", agents)
+
+    def test_marketing_dashboard_build_uses_ui_build_with_builder(self):
+        mission = {
+            "mission_id": "CHARLIE-MISSION-MARKETING-DASHBOARD",
+            "title": "BEACON Marketing Command Brief And Optimization Loop",
+            "raw_text": "Build a campaign comparison and spend, lead and revenue dashboard.",
+            "mission_type": "marketing optimization",
+        }
+
+        metadata = attach_core_plan_to_metadata(mission, {})
+        agents = [item["agent"] for item in metadata["agent_workflow"]]
+
+        self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "ui_product_build")
+        self.assertIn("builder", agents)
+
     def test_generated_implementation_followup_cannot_inherit_read_only_marketing_pipeline(self):
         mission = {
             "mission_id": "CHARLIE-FOLLOWUP-IMPLEMENTATION",

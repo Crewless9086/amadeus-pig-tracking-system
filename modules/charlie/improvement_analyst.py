@@ -99,6 +99,7 @@ def analyze_improvement_opportunities(missions):
 
 
 def run_operational_analyst(mission_id="", trigger="mission_terminal", limit=50, database_url=None, connect_factory=None):
+    limit = max(1, min(int(limit or 25), 25))
     before, _before_status = list_improvement_proposals(
         limit=limit,
         database_url=database_url,
@@ -542,6 +543,7 @@ def refresh_proposal_lifecycle(limit=50, database_url=None, connect_factory=None
 
 
 def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
+    limit = max(1, min(int(limit or 25), 25))
     proposals_result, proposal_status = list_improvement_proposals(
         limit=limit,
         database_url=database_url,
@@ -555,8 +557,10 @@ def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    observation_source_status = "ok"
     if observation_status >= 400:
-        return observations_result, observation_status
+        observations_result = {"artifacts": []}
+        observation_source_status = "degraded_observation_read"
     all_proposals = proposals_result.get("proposals", [])
     proposals = [proposal for proposal in all_proposals if proposal.get("status") != "superseded"]
     observations = observations_result.get("artifacts", [])
@@ -583,6 +587,7 @@ def analyst_scorecard(limit=50, database_url=None, connect_factory=None):
                 [str((artifact.get("content") or {}).get("recorded_at") or artifact.get("created_at") or "") for artifact in observations] or [""]
             ),
             "stage": "proposal_ready" if pending else ("validation_running" if any(proposal.get("status") == "deployed_pending_validation" for proposal in proposals) else "observing"),
+            "observation_source_status": observation_source_status,
         },
         "execution_boundary": _execution_boundary(),
     }, 200

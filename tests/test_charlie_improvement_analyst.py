@@ -320,6 +320,19 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertEqual(result["scorecard"]["stage"], "proposal_ready")
 
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
+    @patch("modules.charlie.improvement_analyst.list_improvement_proposals")
+    def test_analyst_scorecard_degrades_when_observation_read_fails(self, list_proposals, list_artifacts):
+        list_proposals.return_value = ({"success": True, "proposals": [{"status": "pending", "proposal_id": "P1"}]}, 200)
+        list_artifacts.return_value = ({"success": False, "status": "artifact_read_failed"}, 503)
+
+        result, status = analyst_scorecard(limit=500)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["scorecard"]["observations"], 0)
+        self.assertEqual(result["scorecard"]["observation_source_status"], "degraded_observation_read")
+
+    @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
     def test_list_proposals_deduplicates_legacy_artifacts_by_proposal_id(self, list_artifacts):
         list_artifacts.return_value = ({"success": True, "status": "ok", "artifacts": [
             {"artifact_id": "NEW", "mission_id": "M2", "content": {"proposal_id": "P-SAME", "status": "pending"}},

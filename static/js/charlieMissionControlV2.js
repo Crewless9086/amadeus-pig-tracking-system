@@ -116,6 +116,8 @@
   }
 
   function progressPct(mission) {
+    const missionStatus = text(mission.status).toLowerCase();
+    if (["done", "merged", "deployed", "pr_ready", "release_approved"].includes(missionStatus)) return 100;
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     if (!workflow.length) {
       if (["done", "merged", "deployed"].includes(text(mission.status).toLowerCase())) return 100;
@@ -128,6 +130,12 @@
     }).length;
     const activeBonus = workflow.some((item) => ["active", "running", "in_progress"].includes(text(item.status).toLowerCase())) ? 0.4 : 0;
     return Math.max(0, Math.min(100, Math.round(((complete + activeBonus) / workflow.length) * 100)));
+  }
+
+  function missionTelemetry(mission) {
+    const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const memory = metadata.mission_memory && typeof metadata.mission_memory === "object" ? metadata.mission_memory : {};
+    return memory.telemetry && typeof memory.telemetry === "object" ? memory.telemetry : {};
   }
 
   function stageLabel(mission) {
@@ -406,6 +414,7 @@
       const pct = progressPct(mission);
       const governance = missionGovernance(mission);
       const family = missionFamily(mission);
+      const telemetry = missionTelemetry(mission);
       const matrixCounts = governance.acceptance_counts || {};
       const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
@@ -420,6 +429,7 @@
           <span>${escapeHtml(stageLabel(mission))}</span>
         </div>
         <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
+        <div class="mission-card-runs">${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.recovery_count || 0)} recoveries | ${Number(telemetry.backflow_count || 0)} backflows${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? ` | repeat x${Number(telemetry.highest_blocker_repeat)}` : ""}</div>
         <div class="reason">${escapeHtml(headlineReason(mission) || "No reason recorded yet.")}</div>
       </button>`;
     }).join("");
@@ -441,6 +451,7 @@
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
+    const telemetry = missionTelemetry(mission);
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
     el.workflowPanel.innerHTML = `
@@ -456,6 +467,8 @@
         ${metric("Current", stageLabel(mission))}
         ${metric("Fixes", String(Number(governance.fix_count || 0)))}
         ${metric("Review runs", String(Number(governance.review_runs || 0)))}
+        ${metric("Attempts", String(Number(telemetry.attempt_count || 0)))}
+        ${metric("Recoveries", String(Number(telemetry.recovery_count || 0)))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
       ${renderGovernanceSummary(governance, missionFamily(mission))}
@@ -516,12 +529,15 @@
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
     const family = missionFamily(mission);
+    const telemetry = missionTelemetry(mission);
     el.actionPanel.innerHTML = `
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
         ${field("Mission", `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")}`)}
         ${field("State", `${statusLabel(status)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
         ${field("Delivery", `${Number(governance.acceptance_percent || 0)}% matrix | ${Number(governance.fix_count || 0)} fixes | ${Number(governance.review_runs || 0)} reviews`)}
+        ${field("Runtime history", `${Number(telemetry.execution_session_count || 0)} sessions | ${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.backflow_count || 0)} backflows | ${Number(telemetry.recovery_count || 0)} recoveries`)}
+        ${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? field("Repeated blocker", `x${Number(telemetry.highest_blocker_repeat)} | ${text(telemetry.last_restart_reason, "internal recovery capped")}`) : ""}
         ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
         ${actionButtons(mission)}
