@@ -7,6 +7,15 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    @patch.object(supervisor, "_pid_alive")
+    @patch.object(supervisor.subprocess, "run")
+    def test_stale_owned_child_is_recovered_only_when_prior_supervisor_is_dead(self, run, pid_alive):
+        pid_alive.side_effect = lambda pid: int(pid) == 222
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"):
+            supervisor.SUPERVISOR_PATH.write_text('{"pid": 111, "child_pid": 222}', encoding="utf-8")
+            self.assertTrue(supervisor._recover_stale_owned_child())
+        run.assert_called_once()
+
     def test_unexpected_exit_restarts_with_backoff(self):
         children = [Mock(pid=101), Mock(pid=102)]
         children[0].wait.return_value = 1
