@@ -5,7 +5,7 @@ const serverURL = process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_URL || `${baseURL}/oo
 
 module.exports = defineConfig({
   testDir: "tests",
-  testMatch: ["oom_sakkie_playwright_behavior.spec.js", "charlie_mission_control_playwright.spec.js", "beacon_live_stock_visual_proof.spec.js"],
+  testMatch: ["oom_sakkie_playwright_behavior.spec.js", "charlie_mission_control_playwright.spec.js", "beacon_live_stock_visual_proof.spec.js", "beacon_meat_launch_visual_proof.spec.js"],
   timeout: 30000,
   use: {
     baseURL,
