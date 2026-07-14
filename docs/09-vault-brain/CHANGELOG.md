@@ -181,3 +181,4 @@
 # 2026-07-15
 
 - Defined the separate Beacon Meta paid-boost red-zone rule and workflow: recommendation-only Beacon authority, canonical/fresh evidence, fulfilment safety, immutable owner-capped ZAR lifetime budget and duration, exact confirmation, idempotency, audit evidence, and fail-closed provider readiness.
+- Added the visible owner execution/blocked-result flow and defined uncertain-result reconciliation as a lookup against the existing claim, never authority to create a second boost.

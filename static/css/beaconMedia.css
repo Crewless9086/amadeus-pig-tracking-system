@@ -476,6 +476,18 @@
   background: #fff9e8;
 }
 
+.beacon-meta-boost-form { margin-top: 16px; }
+.beacon-meta-boost-cap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.beacon-meta-boost-form code { display: block; padding: 10px; border-radius: 6px; background: #2d1714; color: #fff; overflow-wrap: anywhere; white-space: normal; }
+.beacon-meta-boost-form button:disabled { cursor: not-allowed; opacity: .55; }
+.beacon-meta-boost-status .ops-list-item { display: grid; gap: 4px; }
+
+@media (max-width: 620px) {
+  .beacon-meta-boost-cap-grid { grid-template-columns: 1fr; }
+  .beacon-meta-boost-status .section-header-compact { align-items: stretch; }
+  .beacon-meta-boost-status .section-header-compact button { width: 100%; }
+}
+
 @media (max-width: 980px) {
   .beacon-command-layout,
   .beacon-weekly-targets,

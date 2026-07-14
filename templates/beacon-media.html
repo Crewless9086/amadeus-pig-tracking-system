@@ -425,6 +425,19 @@
           </div>
           <strong id="beacon_meta_boost_status">Checking policy and credential readiness...</strong>
           <div id="beacon_meta_boost_blockers" class="ops-list"></div>
+          <div class="beacon-meta-boost-form" aria-describedby="beacon_meta_boost_warning">
+            <div class="form-group"><label for="beacon_meta_boost_approval_id">Immutable owner approval ID</label><input id="beacon_meta_boost_approval_id" type="text" autocomplete="off" placeholder="Required from the separately approved audit store"></div>
+            <div class="beacon-meta-boost-cap-grid">
+              <div class="form-group"><label for="beacon_meta_boost_cap">Approved total cap (ZAR)</label><input id="beacon_meta_boost_cap" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+              <div class="form-group"><label for="beacon_meta_boost_duration">Approved duration (days)</label><input id="beacon_meta_boost_duration" type="number" min="1" max="30" step="1" inputmode="numeric"></div>
+            </div>
+            <div class="form-group"><label for="beacon_meta_boost_post_id">Canonical published post ID</label><input id="beacon_meta_boost_post_id" type="text" autocomplete="off" placeholder="Example: 123_456"></div>
+            <div class="form-group"><label for="beacon_meta_boost_confirmation">Exact final confirmation</label><textarea id="beacon_meta_boost_confirmation" rows="2" autocomplete="off" spellcheck="false"></textarea></div>
+            <code id="beacon_meta_boost_required_confirmation">Complete the approved post, cap, and duration to see the exact phrase.</code>
+            <div class="beacon-media-actions"><button type="button" id="beacon_meta_boost_execute" class="button-link" disabled>Execute one-time paid boost</button></div>
+            <div id="beacon_meta_boost_result" class="ops-list" aria-live="polite"></div>
+          </div>
+          <p id="beacon_meta_boost_warning"><strong>Red-zone warning:</strong> this action can spend up to the approved lifetime total. It never creates a post and never recurs.</p>
           <small>Only a fixed ZAR lifetime cap and duration can be approved. No recurring spend or silent budget increase.</small>
         </section>
       </section>

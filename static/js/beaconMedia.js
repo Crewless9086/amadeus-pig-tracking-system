@@ -89,6 +89,14 @@
     metaBoostRefresh: byId("beacon_meta_boost_refresh"),
     metaBoostStatus: byId("beacon_meta_boost_status"),
     metaBoostBlockers: byId("beacon_meta_boost_blockers"),
+    metaBoostApprovalId: byId("beacon_meta_boost_approval_id"),
+    metaBoostCap: byId("beacon_meta_boost_cap"),
+    metaBoostDuration: byId("beacon_meta_boost_duration"),
+    metaBoostPostId: byId("beacon_meta_boost_post_id"),
+    metaBoostConfirmation: byId("beacon_meta_boost_confirmation"),
+    metaBoostRequiredConfirmation: byId("beacon_meta_boost_required_confirmation"),
+    metaBoostExecute: byId("beacon_meta_boost_execute"),
+    metaBoostResult: byId("beacon_meta_boost_result"),
     commandRefresh: byId("beacon_command_refresh"),
     commandTruth: byId("beacon_command_truth"),
     commandUpdated: byId("beacon_command_updated"),
@@ -432,6 +440,33 @@
     elements.metaBoostBlockers.innerHTML = (policy.blockers || []).length
       ? policy.blockers.map((item) => `<div class="ops-list-item"><strong>${escapeHtml(item.replaceAll("_", " "))}</strong></div>`).join("")
       : `<div class="ops-list-item"><strong>Policy and credential checks passed</strong><span>Execution remains separately owner-confirmed.</span></div>`;
+    elements.metaBoostExecute.disabled = !ready;
+    return policy;
+  }
+
+  function updateMetaBoostConfirmation() {
+    const cap = Number(elements.metaBoostCap.value);
+    const duration = Number(elements.metaBoostDuration.value);
+    const postId = elements.metaBoostPostId.value.trim();
+    elements.metaBoostRequiredConfirmation.textContent = postId && cap > 0 && Number.isInteger(duration)
+      ? `BOOST ${postId} FOR ZAR ${cap.toFixed(2)} TOTAL OVER ${duration} DAYS`
+      : "Complete the approved post, cap, and duration to see the exact phrase.";
+  }
+
+  async function executeMetaBoost() {
+    elements.metaBoostExecute.disabled = true;
+    elements.metaBoostResult.innerHTML = '<div class="ops-list-item"><strong>Revalidating all server evidence...</strong></div>';
+    try {
+      const result = await fetchJson("/api/beacon/meta-boost-executions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approval_id: elements.metaBoostApprovalId.value.trim(), final_confirmation: elements.metaBoostConfirmation.value }),
+      });
+      elements.metaBoostResult.innerHTML = `<div class="ops-list-item"><strong>${escapeHtml(result.status || "Result recorded")}</strong><span>${result.provider_invoked ? "Provider invocation recorded." : "No provider invocation or spend occurred."}</span></div>`;
+    } catch (error) {
+      elements.metaBoostResult.innerHTML = `<div class="ops-list-item"><strong>Execution blocked</strong><span>${escapeHtml(error.message || "Server evidence did not pass.")}</span></div>`;
+    } finally {
+      await loadMetaBoostPolicy().catch(() => { elements.metaBoostExecute.disabled = true; });
+    }
   }
 
   async function loadFacebookPostExecutions() {
@@ -969,6 +1004,8 @@
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));
     elements.metaBoostRefresh.addEventListener("click", () => loadMetaBoostPolicy().catch((error) => showMessage(error.message)));
+    [elements.metaBoostCap, elements.metaBoostDuration, elements.metaBoostPostId].forEach((input) => input.addEventListener("input", updateMetaBoostConfirmation));
+    elements.metaBoostExecute.addEventListener("click", () => executeMetaBoost());
     elements.commandRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => {
       elements.commandTruth.textContent = "Evidence unavailable";
       elements.commandTruth.dataset.state = "blocked";
