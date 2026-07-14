@@ -180,6 +180,22 @@ class BeaconCampaignCalendarTests(unittest.TestCase):
         revoke_rule_version("RULE-1", 1, "owner-charl", revoked_at=NOW, registry=restarted)
         self.assertEqual(RULE_LIFECYCLE_REGISTRY.latest_rule("RULE-1")["status"], "revoked")
 
+    def test_revoking_superseded_version_does_not_displace_latest_proposal(self):
+        first = approved_rule()
+        second = propose_rule_version(
+            {**first, "allowed_channels": ["instagram"]},
+            previous_version=first,
+            now=NOW,
+        )["rule"]
+
+        revoked = revoke_rule_version("RULE-1", 1, "owner-charl", revoked_at=NOW)
+        approved_second = approve_rule_version(second, "owner-charl", approved_at=NOW)
+
+        self.assertTrue(revoked["success"])
+        self.assertTrue(approved_second["success"], approved_second["errors"])
+        self.assertEqual(RULE_LIFECYCLE_REGISTRY.latest_rule("RULE-1")["version"], 2)
+        self.assertEqual(RULE_LIFECYCLE_REGISTRY.latest_rule("RULE-1")["status"], "approved")
+
     def test_routes_are_owner_guarded_and_never_execute_external_actions(self):
         app.testing = True
         client = app.test_client()

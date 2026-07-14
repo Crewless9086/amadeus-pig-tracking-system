@@ -1,8 +1,8 @@
 """Deterministic, prepare-only BEACON campaign calendar contracts.
 
-This module deliberately has no database, timer, queue, HTTP, Meta, Chatwoot, or
-campaign-execution dependency.  Its outputs are immutable evidence packets for
-owner review, never runnable jobs.
+This module uses a local SQLite lifecycle authority, but deliberately has no
+timer, queue, HTTP, Meta, Chatwoot, or campaign-execution dependency. Its
+outputs are immutable evidence packets for owner review, never runnable jobs.
 """
 
 from copy import deepcopy
@@ -69,7 +69,8 @@ class RuleLifecycleRegistry:
     def latest_rule(self, rule_id):
         with self._connect() as connection:
             row = connection.execute(
-                "select rule_json from rule_lifecycle_events where rule_id = ? order by sequence desc limit 1",
+                "select rule_json from rule_lifecycle_events where rule_id = ? "
+                "order by rule_version desc, sequence desc limit 1",
                 (rule_id,),
             ).fetchone()
         return json.loads(row[0]) if row else {}
