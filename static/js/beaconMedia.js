@@ -71,6 +71,10 @@
     ownerAlerts: byId("beacon_owner_alerts"),
     weeklySpend: byId("beacon_weekly_spend"),
     weeklyLeads: byId("beacon_weekly_leads"),
+    weeklySpendStatus: byId("beacon_weekly_spend_status"),
+    weeklySpendTarget: byId("beacon_weekly_spend_target"),
+    weeklyLeadsStatus: byId("beacon_weekly_leads_status"),
+    weeklyLeadsTarget: byId("beacon_weekly_leads_target"),
     comparisonWindow: byId("beacon_comparison_window"),
     campaignComparison: byId("beacon_campaign_comparison"),
     recommendationList: byId("beacon_recommendation_list"),
@@ -401,7 +405,8 @@
     const data = await fetchJson("/api/beacon/campaign-performance?limit=12");
     state.performanceEvents = data.performance_events || [];
     renderCampaignPerformance(state.performanceEvents);
-    renderCommandBrief(state.performanceEvents);
+    const commandData = await fetchJson("/api/beacon/weekly-command-brief?limit=100");
+    renderServerCommandBrief(commandData.weekly_command_brief || {});
     if (data.latest_boost_packet?.recommended_action) {
       renderBoostPacket(data.latest_boost_packet);
     }
@@ -412,14 +417,8 @@
   }
 
   function recommendationFor(event) {
-    const spend = Number(event.spend_amount || 0);
-    const leads = Number(event.qualified_buyer_leads || 0);
-    const action = String(event.recommended_action || "").toLowerCase();
-    if (spend > Number(event.max_spend_cap_amount || 500)) return ["STOP", "Recorded spend conflicts with the R500 test cap.", "blocked"];
-    if (spend > 0 && leads === 0) return ["STOP", "Paid spend has produced no qualified leads in this window.", "blocked"];
-    if (action.includes("boost") && leads > 0) return ["BOOST", "Qualified leads support an owner review of the capped boost proposal.", "review"];
-    if (leads > 0 && spend === 0) return ["REUSE", "This campaign produced qualified leads without recorded paid spend.", "review"];
-    return ["CHANGE", "Evidence is insufficient or the campaign needs a measured adjustment before more spend.", "review"];
+    const result = event.server_recommendation || {};
+    return [safe(result.classification, "CHANGE"), safe(result.reason, "Server recommendation unavailable."), safe(result.truth_state, "blocked")];
   }
 
   function renderCommandBrief(events) {
@@ -484,6 +483,79 @@
         elements.decisionResult.innerHTML = `<strong>${item.result[0]} brief prepared for owner review.</strong><span>No campaign approval, CORE mission, spend, post, send, reservation, or operational write occurred.</span>`;
       });
     });
+  }
+
+  function renderServerCommandBrief(brief) {
+    const comparison = brief.comparison || {};
+    const campaigns = comparison.campaigns || [];
+    const recommendations = brief.recommendations || [];
+    const targets = brief.targets || {};
+    renderTarget("spend", targets.spend || { status: "unavailable", actual: 0 });
+    renderTarget("qualified_leads", targets.qualified_leads || { status: "unavailable", actual: 0 });
+    if (!campaigns.length) {
+      elements.commandTruth.textContent = "No evidence";
+      elements.commandTruth.dataset.state = "unavailable";
+      elements.commandUpdated.textContent = "Last updated: no campaign evidence recorded";
+      elements.ownerAlerts.innerHTML = "<strong>Evidence needed</strong><span>Record a campaign measurement window before comparing or preparing a decision.</span>";
+      elements.ownerAlerts.dataset.state = "blocked";
+      elements.comparisonWindow.textContent = "Insufficient data";
+      elements.campaignComparison.innerHTML = '<div class="table-empty">No campaign evidence is available. Revenue and targets remain unavailable.</div>';
+      elements.recommendationList.innerHTML = '<div class="table-empty">No owner decision can be prepared without evidence.</div>';
+      elements.decisionCount.textContent = "0";
+      return;
+    }
+    const hasStop = recommendations.some((item) => item.classification === "STOP");
+    elements.commandTruth.textContent = brief.truth_state === "comparable" ? "Comparable evidence" : "Limited evidence";
+    elements.commandTruth.dataset.state = brief.truth_state === "comparable" ? "ready" : "stale";
+    elements.commandUpdated.textContent = `Last updated: ${safe(brief.last_updated_at, "source time unavailable")}`;
+    elements.comparisonWindow.textContent = safe(comparison.measurement_window, "Window unavailable");
+    elements.comparisonWindow.dataset.state = comparison.status === "compatible" ? "ready" : "stale";
+    elements.ownerAlerts.dataset.state = hasStop ? "blocked" : "review";
+    elements.ownerAlerts.innerHTML = hasStop
+      ? "<strong>Spend or safety blocker</strong><span>Stop and review the affected campaign before any later paid action.</span>"
+      : `<strong>${recommendations.length} recommendation${recommendations.length === 1 ? "" : "s"} awaiting owner review</strong><span>Revenue remains unattributed and no action executes from this brief.</span>`;
+    elements.campaignComparison.innerHTML = campaigns.map((event) => `
+      <article class="beacon-comparison-row">
+        <div><strong>${escapeHtml(safe(event.channel, "Unknown channel"))}</strong><small>${escapeHtml(safe(event.publish_packet_id, event.performance_event_id))}</small></div>
+        <span><small>Spend</small><strong>${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(event.spend_amount || 0).toFixed(2)}</strong></span>
+        <span><small>Qualified leads</small><strong>${Number(event.qualified_buyer_leads || 0)}</strong></span>
+        <span><small>Cost / lead</small><strong>${event.cost_per_qualified_lead == null ? "Unavailable" : `R ${Number(event.cost_per_qualified_lead).toFixed(2)}`}</strong></span>
+      </article>`).join("");
+    elements.recommendationList.innerHTML = recommendations.map((item, index) => `
+      <article class="beacon-recommendation-card" data-action="${item.classification.toLowerCase()}">
+        <div class="beacon-recommendation-title"><span>${item.classification}</span><small>${item.truth_state === "blocked" ? "Blocked" : "Owner decision required"}</small></div>
+        <p>${escapeHtml(safe(item.reason))}</p>
+        <small>Source: ${escapeHtml(safe(item.performance_event_id))}</small>
+        <div class="beacon-decision-actions">
+          <button type="button" class="button-link beacon-prepare-decision" data-index="${index}" data-destination="campaign_decision">Campaign decision</button>
+          <button type="button" class="button-link button-link-secondary beacon-prepare-decision" data-index="${index}" data-destination="core_work">CORE work brief</button>
+        </div>
+      </article>`).join("");
+    elements.decisionCount.textContent = String(recommendations.length);
+    elements.recommendationList.querySelectorAll(".beacon-prepare-decision").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const item = recommendations[Number(button.dataset.index)];
+        const result = await fetchJson("/api/beacon/weekly-command-brief/prepare-decision", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recommendation: item, destination: button.dataset.destination }),
+        });
+        elements.decisionResult.innerHTML = `<strong>${escapeHtml(result.classification)} ${escapeHtml(result.destination)} packet prepared.</strong><span>Next gate: ${escapeHtml(result.next_gate)}. No approval, mission creation, spend, post, send, reservation, or operational write occurred.</span>`;
+      });
+    });
+  }
+
+  function renderTarget(kind, target) {
+    const isSpend = kind === "spend";
+    const status = safe(target.status, "unavailable");
+    const label = status.replace(/_/g, " ");
+    const value = Number(target.actual || 0);
+    const valueElement = isSpend ? elements.weeklySpend : elements.weeklyLeads;
+    const statusElement = isSpend ? elements.weeklySpendStatus : elements.weeklyLeadsStatus;
+    const targetElement = isSpend ? elements.weeklySpendTarget : elements.weeklyLeadsTarget;
+    valueElement.textContent = isSpend ? `${safe(target.currency, "ZAR")} ${value.toFixed(2)}` : String(value);
+    statusElement.textContent = label;
+    statusElement.dataset.state = status;
+    targetElement.textContent = status === "unavailable" ? "Target unavailable · no owner-approved source" : `${label} target: ${target.target ?? "not set"}${target.blocker ? ` · ${target.blocker}` : ""}`;
   }
 
   async function recordCampaignPerformance() {
