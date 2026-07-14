@@ -24,6 +24,69 @@
 
       <div id="beacon_media_message" class="message-box hidden"></div>
 
+      <section class="beacon-command-brief" aria-labelledby="beacon_command_title">
+        <div class="beacon-command-heading">
+          <div>
+            <span class="beacon-eyebrow">Weekly owner brief</span>
+            <h2 id="beacon_command_title">Marketing command</h2>
+            <p>Compare like-for-like campaign evidence, see what needs attention, and prepare a gated decision. Nothing on this panel posts, spends, approves, or creates CORE work.</p>
+          </div>
+          <div class="beacon-command-meta">
+            <span id="beacon_command_truth" class="beacon-status-chip" data-state="loading">Loading evidence</span>
+            <small id="beacon_command_updated">Last updated: checking source</small>
+            <button type="button" id="beacon_command_refresh" class="button-link button-link-secondary">Refresh brief</button>
+          </div>
+        </div>
+
+        <div class="beacon-command-layout">
+          <div class="beacon-command-main">
+            <div id="beacon_owner_alerts" class="beacon-alert-strip" aria-live="polite">
+              <strong>Checking owner alerts</strong>
+              <span>Beacon is reading the latest campaign evidence.</span>
+            </div>
+
+            <div class="beacon-weekly-targets" aria-label="Weekly targets and actuals">
+              <article>
+                <div><span>Spend</span><small id="beacon_weekly_spend_status" class="beacon-status-chip" data-state="unavailable">Unavailable</small></div>
+                <strong id="beacon_weekly_spend">R --</strong>
+                <p id="beacon_weekly_spend_target">Target unavailable · no approved weekly cap source</p>
+              </article>
+              <article>
+                <div><span>Qualified leads</span><small id="beacon_weekly_leads_status" class="beacon-status-chip" data-state="unavailable">Unavailable</small></div>
+                <strong id="beacon_weekly_leads">--</strong>
+                <p id="beacon_weekly_leads_target">Target unavailable · owner approval not recorded</p>
+              </article>
+              <article>
+                <div><span>Attributed revenue</span><small class="beacon-status-chip" data-state="unavailable">Unavailable</small></div>
+                <strong>Not attributed</strong>
+                <p>No canonical paid/completed-sale join is proven</p>
+              </article>
+            </div>
+
+            <section class="beacon-comparison-panel" aria-labelledby="beacon_comparison_title">
+              <div class="beacon-panel-heading">
+                <div><span class="beacon-eyebrow">Compatible windows only</span><h3 id="beacon_comparison_title">Campaign comparison</h3></div>
+                <span id="beacon_comparison_window" class="beacon-status-chip" data-state="unavailable">Awaiting evidence</span>
+              </div>
+              <div id="beacon_campaign_comparison" class="beacon-comparison-list">
+                <div class="table-empty">Loading campaign performance evidence…</div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="beacon-decision-queue" aria-labelledby="beacon_decision_title">
+            <div class="beacon-panel-heading">
+              <div><span class="beacon-eyebrow">Owner gate</span><h3 id="beacon_decision_title">Decision queue</h3></div>
+              <span id="beacon_decision_count" class="beacon-count-badge">0</span>
+            </div>
+            <div id="beacon_recommendation_list" class="beacon-recommendation-list">
+              <div class="table-empty">Recommendations will appear when comparable evidence is available.</div>
+            </div>
+            <div id="beacon_decision_result" class="beacon-decision-result" aria-live="polite"></div>
+          </aside>
+        </div>
+      </section>
+
       <section class="beacon-launch-rail" aria-label="First meat launch steps">
         <article>
           <span>1</span>

@@ -133,11 +133,13 @@ from modules.sales.beacon_campaign import (
     build_beacon_campaign_publish_packet,
     build_beacon_campaign_selection,
     build_beacon_facebook_image_launch_packet,
+    build_beacon_weekly_command_brief,
     execute_beacon_facebook_page_post,
     facebook_posting_policy,
     list_beacon_campaign_performance_events,
     list_beacon_facebook_post_execution_events,
     list_beacon_manual_post_evidence,
+    prepare_beacon_owner_decision,
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
 )
@@ -1001,6 +1003,40 @@ def beacon_campaign_performance():
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_campaign_performance_event(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/weekly-command-brief", methods=["GET"])
+def beacon_weekly_command_brief():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = list_beacon_campaign_performance_events(limit=request.args.get("limit", 100))
+    if status_code >= 400:
+        return jsonify(result), status_code
+    brief = build_beacon_weekly_command_brief(result.get("performance_events", []))
+    return jsonify({"success": True, "weekly_command_brief": brief}), 200
+
+
+@sales_bp.route("/beacon/weekly-command-brief/prepare-decision", methods=["POST"])
+def beacon_weekly_command_prepare_decision():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    performance_event_id = str(payload.get("performance_event_id") or "").strip()
+    if not performance_event_id:
+        return jsonify({"success": False, "status": "recommendation_source_required"}), 400
+    source, source_status = list_beacon_campaign_performance_events(limit=100)
+    if source_status >= 400:
+        return jsonify(source), source_status
+    performance_event = next(
+        (event for event in source.get("performance_events", []) if event.get("performance_event_id") == performance_event_id),
+        None,
+    )
+    if performance_event is None:
+        return jsonify({"success": False, "status": "recommendation_source_not_found"}), 404
+    result, status_code = prepare_beacon_owner_decision(performance_event, payload.get("destination"))
     return jsonify(result), status_code
 
 

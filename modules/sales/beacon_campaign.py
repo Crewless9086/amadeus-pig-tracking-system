@@ -710,6 +710,143 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
     }, 200
 
 
+def build_beacon_weekly_command_brief(events, now=None, stale_after_hours=168, weekly_targets=None):
+    """Project append-only performance snapshots into a read-only owner brief."""
+    now = now or datetime.now(timezone.utc)
+    unique, seen_ids = [], set()
+    ordered_events = sorted(events or [], key=lambda item: _event_datetime(item) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    for event in ordered_events:
+        event_id = _clean_text(event.get("performance_event_id"))
+        if event_id and event_id in seen_ids:
+            continue
+        if event_id:
+            seen_ids.add(event_id)
+        unique.append(event)
+    authority = {**deepcopy(PERFORMANCE_AUTHORITY_FLAGS), "creates_core_work": False, "approves_campaign": False}
+    if not unique:
+        unavailable = {"status": "unavailable", "target": None, "actual": None}
+        return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "unavailable",
+                "targets": {"spend": {**unavailable, "actual": 0}, "qualified_leads": {**unavailable, "actual": 0},
+                            "attributed_revenue": unavailable},
+                "comparison": {"status": "insufficient_data", "measurement_window": "", "campaigns": []},
+                "recommendations": [], "alerts": [{"code": "missing_evidence", "severity": "blocked"}], "authority": authority}
+
+    latest = unique[0]
+    latest_datetime = _event_datetime(latest)
+    if latest_datetime:
+        latest_week = latest_datetime.isocalendar()[:2]
+        unique = [event for event in unique if (_event_datetime(event) or latest_datetime).isocalendar()[:2] == latest_week]
+    window = " ".join(_clean_text(latest.get("measurement_window")).lower().split())
+    currency = (_clean_text(latest.get("spend_currency")) or "ZAR").upper()
+    compatible, seen_campaigns = [], set()
+    for event in unique:
+        event_window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
+        event_currency = (_clean_text(event.get("spend_currency")) or "ZAR").upper()
+        campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id") or event.get("channel"))
+        key = (campaign_id, event_window, event_currency)
+        if event_window != window or event_currency != currency or key in seen_campaigns:
+            continue
+        seen_campaigns.add(key)
+        compatible.append(event)
+
+    recommendations = [_command_recommendation(event) for event in compatible]
+    alerts = []
+    latest_at = _event_datetime(latest)
+    if not latest_at or (now - latest_at).total_seconds() > stale_after_hours * 3600:
+        alerts.append({"code": "stale_evidence", "severity": "warning"})
+    alerts.append({"code": "stop_recommendation_waiting" if any(r["classification"] == "STOP" for r in recommendations)
+                   else "recommendations_waiting", "severity": "blocked" if any(r["classification"] == "STOP" for r in recommendations) else "review"})
+    targets = _weekly_target_contract(weekly_targets, compatible, currency)
+    return {"mode": "beacon_weekly_command_brief_read_only", "truth_state": "comparable" if len(compatible) > 1 else "limited",
+            "last_updated_at": latest.get("created_at"),
+            "targets": targets,
+            "comparison": {"status": "compatible" if len(compatible) > 1 else "insufficient_data", "measurement_window": latest.get("measurement_window") or "", "currency": currency, "campaigns": compatible},
+            "recommendations": recommendations, "alerts": alerts, "authority": authority}
+
+
+def prepare_beacon_owner_decision(performance_event, destination):
+    """Prepare an owner-review packet without recording or executing the decision."""
+    performance_event = performance_event if isinstance(performance_event, dict) else {}
+    destination = _clean_text(destination).lower()
+    if destination not in {"campaign_decision", "core_work"}:
+        return {"success": False, "status": "decision_destination_unavailable", "allowed_destinations": ["campaign_decision", "core_work"], **_decision_authority()}, 400
+    source_id = _clean_text(performance_event.get("performance_event_id"))
+    if not source_id:
+        return {"success": False, "status": "recommendation_source_required", **_decision_authority()}, 400
+    recommendation = _command_recommendation(performance_event)
+    return {
+        "success": True,
+        "status": "owner_decision_packet_prepared",
+        "mode": "beacon_owner_decision_prepare_only",
+        "destination": destination,
+        "classification": recommendation["classification"],
+        "performance_event_id": source_id,
+        "reason": _clean_text(recommendation.get("reason")),
+        "supporting_metrics": recommendation.get("supporting_metrics") if isinstance(recommendation.get("supporting_metrics"), dict) else {},
+        "owner_gate": "owner_review_required",
+        "next_gate": "owner_records_separate_campaign_decision" if destination == "campaign_decision" else "owner_creates_or_approves_separate_core_mission",
+        **_decision_authority(),
+    }, 200
+
+
+def _event_datetime(event):
+    try:
+        value = datetime.fromisoformat(_clean_text(event.get("created_at")).replace("Z", "+00:00"))
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _weekly_target_contract(weekly_targets, events, currency):
+    weekly_targets = weekly_targets if isinstance(weekly_targets, dict) else {}
+    actuals = {
+        "spend": sum(float(event.get("spend_amount") or 0) for event in events),
+        "qualified_leads": sum(int(event.get("qualified_buyer_leads") or 0) for event in events),
+    }
+    targets = {}
+    for key in ("spend", "qualified_leads"):
+        source = weekly_targets.get(key) if isinstance(weekly_targets.get(key), dict) else {}
+        status = _clean_text(source.get("status")).lower()
+        if status not in {"proposed", "owner_approved", "blocked"}:
+            status = "unavailable"
+        targets[key] = {"status": status, "target": source.get("target") if status != "unavailable" else None, "actual": actuals[key]}
+        if key == "spend":
+            targets[key]["currency"] = currency
+        if status == "blocked":
+            targets[key]["blocker"] = _clean_text(source.get("blocker")) or "owner_or_fulfilment_block"
+    targets["attributed_revenue"] = {"status": "unavailable", "target": None, "actual": None, "reason": "canonical_paid_completed_sale_join_unproven"}
+    return targets
+
+
+def _decision_authority():
+    return {
+        "creates_core_work": False, "approves_campaign": False, "posts_publicly": False,
+        "sends_customer_message": False, "calls_meta": False, "calls_chatwoot": False,
+        "calls_n8n": False, "spends_money": False, "creates_order": False,
+        "reserves_stock": False, "changes_stock": False, "writes_farm_data": False,
+    }
+
+
+def _command_recommendation(event):
+    spend, leads = float(event.get("spend_amount") or 0), int(event.get("qualified_buyer_leads") or 0)
+    cap = float(event.get("max_spend_cap_amount") or BOOST_RECOMMENDATION_SPEND_CAP)
+    upstream = _clean_text(event.get("recommended_action")).lower()
+    if spend > cap:
+        result = ("STOP", "spend_cap_conflict", "blocked")
+    elif upstream == "do_not_boost" or (spend > 0 and leads == 0):
+        result = ("STOP", "paid_spend_without_qualified_leads", "blocked")
+    elif upstream == "light_boost_owner_review" and leads > 0:
+        result = ("BOOST", "qualified_leads_support_owner_review", "owner_review_required")
+    elif leads > 0 and spend == 0:
+        result = ("REUSE", "qualified_leads_without_paid_spend", "owner_review_required")
+    else:
+        result = ("CHANGE", "insufficient_evidence_or_adjustment_needed", "owner_review_required")
+    return {"classification": result[0], "reason": result[1], "truth_state": result[2],
+            "performance_event_id": event.get("performance_event_id") or "",
+            "supporting_metrics": {"spend_amount": spend, "qualified_buyer_leads": leads, "currency": event.get("spend_currency") or "ZAR"},
+            "owner_gate": "prepare_decision_only"}
+
+
 def facebook_posting_policy(environ=None):
     source = environ if environ is not None else os.environ
     enabled = _truthy(source.get(FACEBOOK_POSTING_ENABLED_ENV))
