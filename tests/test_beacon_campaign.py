@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
@@ -23,6 +24,64 @@ from modules.sales.beacon_campaign import (
     record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
 )
+
+
+class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
+    def evidence(self):
+        return {
+            "campaign_lane": "live_stock_sales", "product_focus": "Grower pigs",
+            "opportunity_card": {"lane": "live_stock", "status": "ready_for_owner_review", "blockers": [], "demand_cap": 3,
+                "fingerprint": "opportunity-revision-1", "freshness": {"fresh": True}, "timing": {"expires_at": "2026-07-15T00:00:00+00:00"},
+                "provenance": {"source_ids": ["PIG-1", "PIG-2", "PIG-3"]}},
+            "pricing": {"source": "supabase", "pricing_id": "PRICE-1", "unit_price": 1500, "currency": "ZAR", "effective_from": "2026-07-01"},
+        }
+
+    def assets(self):
+        return [{"asset_id": "ASSET-1", "effective_approval_status": "approved", "effective_public_use_approved": True,
+                 "media_type": "image", "content_sha256": "abc123", "sale_stream_relevance": ["live_stock_sales"], "privacy_risk": "low"}]
+
+    def test_sales_lane_builds_distinct_facebook_and_whatsapp_suggestions(self):
+        from modules.sales.beacon_campaign import build_beacon_campaign_selection
+        result = build_beacon_campaign_selection(self.evidence(), approved_assets=self.assets())
+        self.assertTrue(result["success"])
+        self.assertEqual([d["channel"] for d in result["channel_drafts"]], ["Facebook", "WhatsApp"])
+        self.assertTrue(result["whatsapp_suggestion_only"])
+        self.assertEqual(result["source_truth"]["fulfilment_cap"], 3)
+        self.assertEqual(result["source_truth"]["price_source"], "supabase")
+
+    def test_sales_lane_fails_closed_for_stale_zero_cap_or_non_supabase_price(self):
+        from modules.sales.beacon_campaign import build_beacon_campaign_selection
+        payload = self.evidence()
+        payload["opportunity_card"]["freshness"]["fresh"] = False
+        payload["opportunity_card"]["demand_cap"] = 0
+        payload["pricing"]["source"] = "code_defaults"
+        result = build_beacon_campaign_selection(payload, approved_assets=self.assets())
+        self.assertFalse(result["success"])
+        self.assertIn("sale_eligibility_stale", result["errors"])
+        self.assertIn("positive_fulfilment_cap_required", result["errors"])
+        self.assertIn("sheet_lineaged_supabase_price_required", result["errors"])
+        self.assertEqual(result["channel_drafts"], [])
+
+    def test_exact_packet_binds_copy_media_source_revisions_cap_price_and_attribution(self):
+        from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
+        payload = {**self.evidence(), "draft_id": "facebook_live_stock_sales", "asset_id": "ASSET-1", "channel": "Facebook"}
+        first = build_beacon_campaign_publish_packet(payload, approved_assets=self.assets())
+        second = build_beacon_campaign_publish_packet(payload, approved_assets=self.assets())
+        self.assertTrue(first["success"])
+        self.assertEqual(first["publish_packet_id"], second["publish_packet_id"])
+        binding = first["packet_binding"]
+        self.assertEqual(binding["asset_hash"], "abc123")
+        self.assertEqual(binding["opportunity_fingerprint"], "opportunity-revision-1")
+        self.assertEqual(binding["fulfilment_cap"], 3)
+        self.assertEqual(binding["pricing_id"], "PRICE-1")
+        self.assertTrue(binding["campaign_attribution_id"].startswith("BEACON-SAM-LIVE-"))
+
+    def test_sales_packet_requires_owner_approved_image(self):
+        from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
+        payload = {**self.evidence(), "draft_id": "facebook_live_stock_sales", "asset_id": "REJECTED", "channel": "Facebook"}
+        result = build_beacon_campaign_publish_packet(payload, approved_assets=[])
+        self.assertFalse(result["success"])
+        self.assertIn("owner_approved_sales_image_required", result["errors"])
 
 
 class BeaconCampaignTests(unittest.TestCase):
@@ -270,15 +329,19 @@ class BeaconCampaignTests(unittest.TestCase):
 
         self.assertTrue(selection["success"], selection)
         self.assertEqual(selection["mode"], "beacon_meat_launch_campaign_media_selection_review_only")
-        self.assertTrue(publish["success"], publish)
+        self.assertFalse(publish["success"], publish)
+        self.assertIn("meat_public_offer_not_owner_enabled", publish["errors"])
+        self.assertIn("meat_pilot_cap_positive_whole_number_required", publish["errors"])
+        self.assertIn("selected_image_asset_required", publish["errors"])
         self.assertIn("limited", publish["selected_draft"]["exact_text"].lower())
 
+    @patch.dict("os.environ", {"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"})
     def test_publish_packet_binds_exact_draft_and_approved_asset_without_posting(self):
         packet = build_meat_launch_campaign_publish_packet({
             "draft_id": "facebook_post",
             "asset_id": "BEACON-ASSET-APPROVED",
             "channel": "Facebook",
-            "pilot_cap": "2 halves",
+            "pilot_cap": "2",
             "owner_notes": "Owner will post manually.",
         }, approved_assets=[
             {
@@ -488,6 +551,12 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["spends_money"])
 
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
+        recorded = []
+
+        def fake_recorder(params, database_url=None):
+            recorded.append(dict(params))
+            return {"success": True, "created_count": 1}, 201
+
         def fake_poster(params, policy):
             return {"success": True, "facebook_post_id": "123_456", "id": "123_456"}, 200
 
@@ -496,7 +565,7 @@ class BeaconCampaignTests(unittest.TestCase):
             "channel": "Facebook",
             "exact_text": "Limited preorder test post.",
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, database_url="", poster=fake_poster, environ={
+        }, database_url="", poster=fake_poster, execution_recorder=fake_recorder, environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "123",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
@@ -509,6 +578,53 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertTrue(result["calls_meta"])
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
+        self.assertEqual([event["execution_status"] for event in recorded], ["record_only_before_send", "facebook_page_post_sent"])
+        self.assertTrue(recorded[1]["execution_event_id"].endswith("-RESULT"))
+
+    def test_facebook_post_execution_retry_is_blocked_before_meta(self):
+        calls = []
+        recorded_ids = set()
+
+        def durable_recorder(params, database_url=None):
+            event_id = params["execution_event_id"]
+            if event_id in recorded_ids:
+                return {"success": True, "created_count": 0, "status": "beacon_facebook_post_execution_already_recorded"}, 200
+            recorded_ids.add(event_id)
+            return {"success": True, "created_count": 1}, 201
+
+        def fake_poster(params, policy):
+            calls.append(params)
+            return {"success": True, "facebook_post_id": "must-not-send"}, 200
+
+        payload = {
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-RETRY",
+            "channel": "Facebook",
+            "exact_text": "Exact packet retry test.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        first, first_status = execute_beacon_facebook_page_post(
+            {**payload, "execution_event_id": "CALLER-CANNOT-CONTROL-CLAIM"},
+            poster=fake_poster, execution_recorder=durable_recorder, environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "123",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            },
+        )
+        result, status = execute_beacon_facebook_page_post(
+            payload, poster=fake_poster, execution_recorder=durable_recorder, environ={
+                "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+                "BEACON_FACEBOOK_PAGE_ID": "123",
+                "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            },
+        )
+
+        self.assertEqual(first_status, 200)
+        self.assertEqual(first["facebook_post_id"], "must-not-send")
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "facebook_publish_packet_already_claimed")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("CALLER-CANNOT-CONTROL-CLAIM", recorded_ids)
+        self.assertFalse(result["calls_meta"])
 
     def test_facebook_image_post_execution_requires_approved_image_asset(self):
         result, status = execute_beacon_facebook_page_post({
@@ -538,6 +654,9 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["calls_meta"])
 
     def test_facebook_image_post_execution_can_call_mock_poster_when_enabled(self):
+        def fake_recorder(params, database_url=None):
+            return {"success": True, "created_count": 1}, 201
+
         def fake_poster(params, policy):
             self.assertEqual(params["post_kind"], "photo")
             self.assertEqual(params["asset_id"], "BEACON-ASSET-APPROVED")
@@ -567,7 +686,7 @@ class BeaconCampaignTests(unittest.TestCase):
                 "storage_path": "2026/06/18/photo.jpg",
             },
             "owner_confirmation": "POST EXACT BEACON PACKET",
-        }, database_url="", poster=fake_poster, environ={
+        }, database_url="", poster=fake_poster, execution_recorder=fake_recorder, environ={
             "BEACON_FACEBOOK_POSTING_ENABLED": "1",
             "BEACON_FACEBOOK_PAGE_ID": "123",
             "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",

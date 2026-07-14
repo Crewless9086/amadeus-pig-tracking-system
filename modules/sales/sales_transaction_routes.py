@@ -934,12 +934,18 @@ def beacon_campaign_draft_selection():
     )
     if assets_status >= 400:
         return jsonify(assets_result), assets_status
-    result = build_beacon_campaign_selection({
+    campaign_payload = {
         "campaign_lane": request.args.get("campaign_lane", ""),
         "pilot_name": request.args.get("pilot_name", ""),
         "area": request.args.get("area", ""),
         "product_focus": request.args.get("product_focus", ""),
-    }, approved_assets=assets_result.get("assets", []))
+    }
+    if campaign_payload["campaign_lane"] == "live_stock_sales":
+        source_payload, source_error, source_status = _beacon_live_stock_sales_sources(campaign_payload)
+        if source_error:
+            return jsonify(source_error), source_status
+        campaign_payload.update(source_payload)
+    result = build_beacon_campaign_selection(campaign_payload, approved_assets=assets_result.get("assets", []))
     return jsonify(result), 200 if result.get("success") else 400
 
 
@@ -953,8 +959,30 @@ def beacon_campaign_publish_packet():
     )
     if assets_status >= 400:
         return jsonify(assets_result), assets_status
+    if payload.get("campaign_lane") == "live_stock_sales":
+        source_payload, source_error, source_status = _beacon_live_stock_sales_sources(payload)
+        if source_error:
+            return jsonify(source_error), source_status
+        payload = {**payload, **source_payload}
     result = build_beacon_campaign_publish_packet(payload, approved_assets=assets_result.get("assets", []))
     return jsonify(result), 200 if result.get("success") else 400
+
+
+def _beacon_live_stock_sales_sources(payload):
+    opportunities = build_beacon_opportunity_cards()
+    card = next((item for item in opportunities.get("cards", []) if item.get("lane") == "live_stock"), {})
+    prices, price_status = list_live_stock_price_entries(limit=500)
+    if price_status >= 400:
+        return {}, prices, price_status
+    price_entries = prices.get("price_entries", []) if prices.get("source") == "supabase" else []
+    requested = str(payload.get("product_focus") or "").strip().lower()
+    candidates = [entry for entry in price_entries if entry.get("active") is not False]
+    if requested:
+        matching = [entry for entry in candidates if requested in str(entry.get("sale_category") or "").lower() or requested in str(entry.get("weight_band") or "").lower()]
+        candidates = matching or candidates
+    candidates.sort(key=lambda entry: (str(entry.get("effective_from") or ""), str(entry.get("created_at") or "")), reverse=True)
+    pricing = candidates[0] if candidates else {"source": prices.get("source", "")}
+    return {"opportunity_card": card, "pricing": pricing}, None, 200
 
 
 @sales_bp.route("/beacon/facebook-image-launch-packet", methods=["GET", "POST"])
@@ -1047,6 +1075,9 @@ def beacon_facebook_posting_policy():
 
 @sales_bp.route("/beacon/facebook-post-executions", methods=["GET", "POST"])
 def beacon_facebook_post_executions():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     if request.method == "GET":
         result, status_code = list_beacon_facebook_post_execution_events(
             limit=request.args.get("limit", 25),
@@ -1055,6 +1086,7 @@ def beacon_facebook_post_executions():
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
     asset_id = str(payload.get("asset_id") or "").strip()
+    approved_assets = []
     if asset_id:
         assets_result, assets_status = list_beacon_media_assets(
             limit=100,
@@ -1076,8 +1108,70 @@ def beacon_facebook_post_executions():
                 "calls_meta": False,
                 "spends_money": False,
             }), 400
+        approved_assets = assets_result.get("assets", [])
         payload = {**payload, "selected_asset": approved_asset}
-    result, status_code = execute_beacon_facebook_page_post(payload)
+    if payload.get("campaign_lane") == "live_stock_sales":
+        source_payload, source_error, source_status = _beacon_live_stock_sales_sources(payload)
+        if source_error:
+            return jsonify(source_error), source_status
+        authoritative = build_beacon_campaign_publish_packet({
+            **source_payload,
+            "campaign_lane": "live_stock_sales",
+            "product_focus": payload.get("product_focus", ""),
+            "draft_id": "facebook_live_stock_sales",
+            "asset_id": asset_id,
+            "channel": "Facebook",
+        }, approved_assets=approved_assets)
+        if (not authoritative.get("success") or
+                authoritative.get("publish_packet_id") != payload.get("publish_packet_id") or
+                (authoritative.get("selected_draft") or {}).get("exact_text") != payload.get("exact_text")):
+            return jsonify({
+                "success": False, "status": "live_stock_sales_packet_stale_or_altered",
+                "posts_publicly": False, "calls_meta": False, "spends_money": False,
+                "authoritative_packet_id": authoritative.get("publish_packet_id", ""),
+                "errors": authoritative.get("errors", []),
+            }), 409
+    meat_launch_authorized = False
+    if payload.get("campaign_lane") == "meat_launch":
+        authoritative = build_beacon_campaign_publish_packet({
+            "campaign_lane": "meat_launch",
+            "draft_id": "facebook_post",
+            "asset_id": asset_id,
+            "channel": "Facebook",
+            "pilot_cap": payload.get("pilot_cap"),
+        }, approved_assets=approved_assets)
+        canonical_text = (authoritative.get("selected_draft") or {}).get("exact_text", "")
+        canonical_asset_id = (authoritative.get("selected_asset") or {}).get("asset_id", "")
+        packet_matches = (
+            authoritative.get("success")
+            and authoritative.get("publish_packet_id") == payload.get("publish_packet_id")
+            and canonical_text == payload.get("exact_text")
+            and canonical_asset_id == asset_id
+            and str(payload.get("channel") or "").strip() == "Facebook"
+            and str(authoritative.get("pilot_cap") or "") == str(payload.get("pilot_cap") or "").strip()
+        )
+        if not packet_matches:
+            return jsonify({
+                "success": False,
+                "status": "meat_launch_packet_not_ready_or_stale",
+                "posts_publicly": False,
+                "calls_meta": False,
+                "spends_money": False,
+                "authoritative_packet_id": authoritative.get("publish_packet_id", ""),
+                "errors": authoritative.get("errors", []),
+            }), 409
+        payload = {
+            **payload,
+            "publish_packet_id": authoritative["publish_packet_id"],
+            "channel": "Facebook",
+            "exact_text": canonical_text,
+            "asset_id": canonical_asset_id,
+            "selected_asset": authoritative["selected_asset"],
+        }
+        meat_launch_authorized = True
+    result, status_code = execute_beacon_facebook_page_post(
+        payload, meat_launch_authorized=meat_launch_authorized
+    ) if meat_launch_authorized else execute_beacon_facebook_page_post(payload)
     return jsonify(result), status_code
 
 

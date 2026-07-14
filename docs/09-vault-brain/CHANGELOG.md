@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-14 - Owner-gated Beacon meat-launch Facebook pilot
+
+- Replaced the unconditional meat-launch Facebook denial with a server-authoritative, owner-gated pilot path.
+- Required the existing owner offer flag, an explicit positive whole-number cap, canonical exact copy, an approved exact image, and the existing exact confirmation phrase before the deterministic execution claim.
+- Kept SAM Meat in `interest_capture_only` mode and preserved zero automatic post, customer-send, quote, order, reservation, payment, stock, fulfilment, delivery, or paid-spend authority.
+
 ## 2026-07-14 - Beacon-to-SAM deterministic attribution
 
 - Added the read-only Beacon-to-SAM attribution contract joining campaign evidence to every exact matching SAM lead, linked orders, completed-sale revenue, fulfilment, and controlled lost-reason evidence.
@@ -160,3 +166,10 @@
 - Added backend-generated owner-action guidance with a target stage, reason, expected outcome, and safe alternative.
 - Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
 - Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.
+
+## 2026-07-14 - Owner-gated Beacon Live-Stock Sales lane
+
+- Added a separate `live_stock_sales` campaign workflow backed by fresh Supabase eligibility/capacity and effective sheet-lineaged `public.sales_pricing` evidence.
+- Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
+- Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
+- Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.

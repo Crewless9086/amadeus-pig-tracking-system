@@ -13,7 +13,7 @@ from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
 BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
-CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness"}
+CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
     "order",
@@ -71,6 +71,7 @@ FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
 FACEBOOK_PAGE_ACCESS_TOKEN_ENV = "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN"
 FACEBOOK_GRAPH_VERSION_ENV = "BEACON_FACEBOOK_GRAPH_VERSION"
 FACEBOOK_POST_CONFIRMATION_PHRASE = "POST EXACT BEACON PACKET"
+MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 SUPABASE_URL_ENV = "SUPABASE_URL"
 SUPABASE_SERVICE_ROLE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 
@@ -113,6 +114,8 @@ def normalize_campaign_lane(value):
         return "meat_launch"
     if lane in {"live", "livestock", "live_stock", "live_pig", "live_pigs", "piglets", "farm_life"}:
         return "live_stock_awareness"
+    if lane in {"live_sales", "livestock_sales", "live_pig_sales"}:
+        return "live_stock_sales"
     return lane
 
 
@@ -122,7 +125,7 @@ def invalid_campaign_lane_response(lane):
         "status": "campaign_lane_required" if not lane else "invalid_campaign_lane",
         "campaign_lane": lane,
         "allowed_campaign_lanes": sorted(CAMPAIGN_LANES),
-        "message": "Choose meat_launch or live_stock_awareness before Beacon builds a draft or publish packet.",
+        "message": "Choose meat_launch, live_stock_awareness, or live_stock_sales before Beacon builds a draft or publish packet.",
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
     }
@@ -135,6 +138,8 @@ def build_beacon_campaign_selection(payload=None, approved_assets=None):
         return build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_selection(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -145,6 +150,8 @@ def build_beacon_campaign_publish_packet(payload=None, approved_assets=None):
         return build_meat_launch_campaign_publish_packet(payload, approved_assets=approved_assets)
     if lane == "live_stock_awareness":
         return build_live_stock_awareness_campaign_publish_packet(payload, approved_assets=approved_assets)
+    if lane == "live_stock_sales":
+        return build_live_stock_sales_campaign_publish_packet(payload, approved_assets=approved_assets)
     return invalid_campaign_lane_response(lane)
 
 
@@ -155,6 +162,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
     ranked_assets = _rank_approved_assets(approved_assets)
     channel_pairings = _channel_asset_pairings(packet.get("channel_drafts", []), ranked_assets)
     story_pairings = _channel_asset_pairings(packet.get("story_updates", []), ranked_assets, fallback_channel="story")
+    readiness = meat_launch_readiness(payload)
     return {
         "success": True,
         "mode": "beacon_meat_launch_campaign_media_selection_review_only",
@@ -162,6 +170,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
         "alias": "Prisma/Beacon",
         "campaign_lane": "meat_launch",
         "campaign": packet.get("campaign", {}),
+        "meat_launch_readiness": readiness,
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "approved_media_count": len(ranked_assets),
@@ -191,14 +200,19 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
     owner_notes = _clean_text(payload.get("owner_notes"))
     draft = _find_draft(campaign_packet, draft_id)
     asset = _find_asset(ranked_assets, selected_asset_id)
-    errors = []
+    readiness = meat_launch_readiness(payload)
+    errors = list(readiness["errors"])
     if not draft:
         errors.append("selected_draft_not_found")
     if selected_asset_id and not asset:
         errors.append("selected_asset_not_approved_or_not_found")
+    if not selected_asset_id:
+        errors.append("selected_image_asset_required")
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, pilot_cap)
     exact_text = draft.get("text", "") if draft else ""
+    packet_id = _meat_launch_publish_packet_id(
+        draft_id, selected_asset_id, channel, pilot_cap, exact_text, readiness["owner_offer_enabled"]
+    )
     return {
         "success": not errors,
         "mode": "beacon_campaign_publish_packet_owner_review_only",
@@ -216,6 +230,7 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         },
         "selected_asset": asset,
         "pilot_cap": pilot_cap,
+        "meat_launch_readiness": readiness,
         "owner_notes": owner_notes,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
@@ -227,7 +242,9 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         "safety_checks": {
             "draft_is_limited_preorder": _has_preorder_signal(exact_text.lower()) and "limited" in exact_text.lower(),
             "draft_has_no_forbidden_promise": not _has_forbidden_promise(exact_text.lower()),
-            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "asset_is_owner_approved": bool(
+                asset.get("effective_public_use_approved") or asset.get("public_use_approved")
+            ) if asset else False,
             "no_public_send_or_post": True,
             "no_meta_call": True,
             "no_signed_url_created": True,
@@ -334,6 +351,131 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
     }
 
 
+def meat_launch_readiness(payload=None, environ=None):
+    """Return fail-closed, server-owned readiness for the bounded meat Facebook pilot."""
+    payload = payload if isinstance(payload, dict) else {}
+    source = environ if environ is not None else os.environ
+    owner_offer_enabled = _truthy(source.get(MEAT_PUBLIC_OFFER_ENABLED_ENV))
+    pilot_cap = _clean_text(payload.get("pilot_cap"))
+    pilot_cap_valid = pilot_cap.isdigit() and int(pilot_cap) > 0
+    errors = []
+    if not owner_offer_enabled:
+        errors.append("meat_public_offer_not_owner_enabled")
+    if not pilot_cap_valid:
+        errors.append("meat_pilot_cap_positive_whole_number_required")
+    return {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "owner_offer_enabled": owner_offer_enabled,
+        "owner_offer_source": MEAT_PUBLIC_OFFER_ENABLED_ENV,
+        "pilot_cap": pilot_cap,
+        "pilot_cap_valid": pilot_cap_valid,
+        "sam_mode": "interest_capture_only",
+        "ready": not errors,
+        "errors": errors,
+    }
+
+
+def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    truth, errors = _live_stock_sales_truth(payload)
+    ranked = [asset for asset in _rank_approved_assets(approved_assets or [], campaign_lane="live_stock_sales")
+              if asset.get("public_use_approved") and asset.get("content_sha256")]
+    drafts = _live_stock_sales_drafts(truth) if not errors else []
+    return {
+        "success": not errors,
+        "mode": "beacon_live_stock_sales_campaign_review_only",
+        "campaign_lane": "live_stock_sales",
+        "campaign": {"name": "Live-Stock Sales", "status": "owner_review_required", "product_focus": truth.get("product_focus", "")},
+        "source_truth": truth,
+        "channel_drafts": drafts,
+        "channel_draft_pairings": _channel_asset_pairings(drafts, ranked),
+        "ranked_media_assets": ranked,
+        "approved_media_count": len(ranked),
+        "errors": errors,
+        "handoff_to_sam": {"sales_lane": "live_stock_sales", "campaign_attribution_id": truth.get("campaign_attribution_id", ""), "negotiates": False, "reserves": False, "creates_order": False},
+        "whatsapp_suggestion_only": True,
+        "next_gate": "owner_selects_exact_facebook_copy_and_approved_image" if not errors else "restore_current_supabase_and_sheet_lineaged_sales_evidence",
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+    }
+
+
+def build_live_stock_sales_campaign_publish_packet(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    selection = build_live_stock_sales_campaign_selection(payload, approved_assets=approved_assets)
+    truth = selection.get("source_truth", {})
+    drafts = selection.get("channel_drafts", [])
+    draft_id = _clean_text(payload.get("draft_id"))
+    asset_id = _clean_text(payload.get("asset_id"))
+    draft = next((item for item in drafts if item.get("id") == draft_id), None)
+    asset = _find_asset(selection.get("ranked_media_assets", []), asset_id)
+    errors = list(selection.get("errors", []))
+    if not draft or draft.get("channel") != "Facebook":
+        errors.append("facebook_sales_draft_required")
+    if not asset_id or not asset:
+        errors.append("owner_approved_sales_image_required")
+    exact_text = draft.get("text", "") if draft else ""
+    binding = {
+        "campaign_lane": "live_stock_sales", "channel": "Facebook", "exact_text": exact_text,
+        "asset_id": asset.get("asset_id", "") if asset else asset_id,
+        "asset_hash": asset.get("content_sha256", "") if asset else "",
+        "opportunity_fingerprint": truth.get("opportunity_fingerprint", ""),
+        "fulfilment_cap": truth.get("fulfilment_cap", 0), "pricing_id": truth.get("pricing_id", ""),
+        "unit_price": truth.get("unit_price"), "price_effective_from": truth.get("price_effective_from", ""),
+        "campaign_attribution_id": truth.get("campaign_attribution_id", ""),
+    }
+    packet_id = "BEACON-LIVE-SALES-" + hashlib.sha256(json.dumps(binding, sort_keys=True, default=str).encode()).hexdigest()[:24].upper()
+    return {
+        "success": not errors, "mode": "beacon_live_stock_sales_exact_publish_packet_owner_review_only",
+        "campaign_lane": "live_stock_sales", "publish_packet_id": packet_id, "packet_binding": binding,
+        "selected_draft": {"draft_id": draft_id, "channel": "Facebook", "exact_text": exact_text},
+        "selected_asset": asset, "source_truth": truth, "errors": sorted(set(errors)),
+        "whatsapp_suggestion": next((item for item in drafts if item.get("channel") == "WhatsApp"), {}),
+        "whatsapp_suggestion_only": True, "requires_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "approval_status": "owner_review_required", "posts_publicly_now": False,
+        "authority": deepcopy(AUTHORITY_FLAGS), "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "next_gate": "owner_confirms_exact_server_revalidated_packet" if not errors else "repair_packet_evidence",
+    }
+
+
+def _live_stock_sales_truth(payload):
+    card = payload.get("opportunity_card") if isinstance(payload.get("opportunity_card"), dict) else {}
+    pricing = payload.get("pricing") if isinstance(payload.get("pricing"), dict) else {}
+    errors = []
+    if card.get("lane") != "live_stock" or card.get("status") != "ready_for_owner_review": errors.append("current_sale_eligibility_required")
+    if card.get("blockers"): errors.append("sale_eligibility_blocked")
+    if not (card.get("freshness") or {}).get("fresh"): errors.append("sale_eligibility_stale")
+    cap = card.get("demand_cap")
+    if not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0: errors.append("positive_fulfilment_cap_required")
+    if pricing.get("source") != "supabase" or not pricing.get("pricing_id"): errors.append("sheet_lineaged_supabase_price_required")
+    if pricing.get("unit_price") in (None, ""): errors.append("effective_price_required")
+    fingerprint = _clean_text(card.get("fingerprint"))
+    if not fingerprint: errors.append("opportunity_revision_required")
+    attribution = "BEACON-SAM-LIVE-" + hashlib.sha256(f"{fingerprint}|{pricing.get('pricing_id','')}".encode()).hexdigest()[:16].upper() if fingerprint else ""
+    truth = {"product_focus": _clean_text(payload.get("product_focus")) or "live pigs", "fulfilment_cap": cap or 0,
+             "fulfilment_unit": "animals", "sale_eligible": not any(e in errors for e in ("current_sale_eligibility_required", "sale_eligibility_blocked", "sale_eligibility_stale")),
+             "opportunity_fingerprint": fingerprint, "opportunity_expires_at": (card.get("timing") or {}).get("expires_at", ""),
+             "stock_source": "Supabase canonical allocation derived from sheet-backed herd facts", "stock_source_ids": (card.get("provenance") or {}).get("source_ids", []),
+             "stock_lineage_approved": card.get("lane") == "live_stock" and bool(fingerprint),
+             "pricing_id": pricing.get("pricing_id", ""), "unit_price": pricing.get("unit_price"), "currency": pricing.get("currency", "ZAR"),
+             "price_effective_from": pricing.get("effective_from", ""), "price_source": pricing.get("source", ""),
+             "price_display": f"{pricing.get('currency', 'ZAR')} {pricing.get('unit_price', '')}", "price_lineage_approved": pricing.get("source") == "supabase" and bool(pricing.get("pricing_id")),
+             "blocker": ", ".join(sorted(set(errors))),
+             "campaign_attribution_id": attribution}
+    return truth, sorted(set(errors))
+
+
+def _live_stock_sales_drafts(truth):
+    product = truth["product_focus"]; cap = truth["fulfilment_cap"]; price = truth["unit_price"]; currency = truth["currency"]
+    attribution = truth["campaign_attribution_id"]
+    return [
+        {"id": "facebook_live_stock_sales", "label": "Facebook sales post", "channel": "Facebook", "intent": "owner-gated live-stock sale",
+         "text": f"Amadeus Farm has {product} available near Riversdale. We can safely take enquiries for up to {cap} animals at {currency} {price} each. Message us with the quantity and type you need. Reference: {attribution}."},
+        {"id": "whatsapp_live_stock_sales", "label": "WhatsApp suggestion", "channel": "WhatsApp", "intent": "copy suggestion only",
+         "text": f"Live-stock update from Amadeus Farm: enquiries are open for up to {cap} {product} at {currency} {price} each. Reply with the quantity and type you need and SAM will help. Reference: {attribution}."},
+    ]
+
+
 def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None):
     payload = payload if isinstance(payload, dict) else {}
     selection = build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
@@ -351,7 +493,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
             "draft_id": "facebook_post",
             "channel": "Facebook",
             "asset_id": asset_id,
-            "pilot_cap": payload.get("pilot_cap") or "2 halves",
+            "pilot_cap": payload.get("pilot_cap"),
         },
         approved_assets=approved_assets,
     )
@@ -361,6 +503,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
         "exact_text": (publish_packet.get("selected_draft") or {}).get("exact_text", ""),
         "asset_id": ((publish_packet.get("selected_asset") or {}).get("asset_id") or ""),
         "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "pilot_cap": publish_packet.get("pilot_cap", ""),
     }
     return {
         "success": bool(publish_packet.get("success")) and bool((publish_packet.get("selected_asset") or {}).get("asset_id")),
@@ -887,9 +1030,10 @@ def facebook_posting_policy(environ=None):
     }
 
 
-def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None):
+def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
+                                      meat_launch_authorized=False):
     payload = payload if isinstance(payload, dict) else {}
-    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch":
+    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
     policy = facebook_posting_policy(environ=environ)
     params = _facebook_post_params(payload, policy)
@@ -905,15 +1049,30 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
 
+    recorder = execution_recorder or _record_facebook_post_execution_event
+    params["execution_status"] = "record_only_before_send"
+    claim_result, claim_status = recorder(params, database_url=database_url)
+    if claim_status != 201 or not claim_result.get("created_count"):
+        return {
+            "success": False,
+            "status": "facebook_publish_packet_already_claimed" if claim_status < 400 else "facebook_publish_claim_failed",
+            "record_status_code": claim_status,
+            "record_result": claim_result,
+            "execution_event": _public_facebook_post_event(params),
+            "policy": policy,
+            **_facebook_execution_authority(False),
+        }, 409 if claim_status < 400 else 503
+
     post_fn = poster or _post_to_facebook_page
     post_result, post_status = post_fn(params, policy)
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
+        "execution_event_id": f'{params["execution_event_id"]}-RESULT',
         "execution_status": execution_status,
         "facebook_post_id": _clean_text(post_result.get("facebook_post_id") or post_result.get("id"))[:160],
         "facebook_response_json": json.dumps(post_result, sort_keys=True, default=str),
     })
-    record_result, record_status = _record_facebook_post_execution_event(params, database_url=database_url)
+    record_result, record_status = recorder(params, database_url=database_url)
     return {
         "success": execution_status == "facebook_page_post_sent",
         "status": execution_status,
@@ -1417,6 +1576,8 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             score += 25
         if campaign_lane == "live_stock_awareness" and any(item in relevance for item in ("live", "live_stock", "livestock", "farm_life")):
             score += 30
+        if campaign_lane == "live_stock_sales" and any(item in relevance for item in ("live", "live_stock", "livestock", "live_stock_sales")):
+            score += 35
         if campaign_lane == "meat_launch" and any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
             score += 15
         if campaign_lane == "live_stock_awareness" and any(tag in tags for tag in ("piglet", "piglets", "litter", "weaner", "weaners", "sow", "farm life", "new life")):
@@ -1429,6 +1590,7 @@ def _rank_approved_assets(assets, campaign_lane="meat_launch"):
             "media_type": media_type,
             "storage_bucket": asset.get("storage_bucket", ""),
             "storage_path": asset.get("storage_path", ""),
+            "content_sha256": asset.get("content_sha256", ""),
             "subject_tags": tags,
             "sale_stream_relevance": relevance,
             "quality_score": asset.get("quality_score"),
@@ -1538,6 +1700,21 @@ def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
     for char in seed:
         total = (total * 33 + ord(char)) % 0xFFFFFFFF
     return f"BEACON-PUBLISH-PACKET-{total:08X}"
+
+
+def _meat_launch_publish_packet_id(draft_id, asset_id, channel, pilot_cap, exact_text, owner_offer_enabled):
+    snapshot = {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "campaign_lane": "meat_launch",
+        "draft_id": draft_id,
+        "asset_id": asset_id,
+        "channel": channel,
+        "pilot_cap": pilot_cap,
+        "exact_text": exact_text,
+        "owner_offer_enabled": bool(owner_offer_enabled),
+    }
+    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode("utf-8")).hexdigest()[:20].upper()
+    return f"BEACON-MEAT-PUBLISH-{digest}"
 
 
 def _manual_post_params(payload):
@@ -1865,7 +2042,7 @@ def _facebook_execution_authority(executed):
 def _facebook_post_params(payload, policy):
     selected_asset = payload.get("selected_asset") if isinstance(payload.get("selected_asset"), dict) else {}
     params = {
-        "execution_event_id": _clean_text(payload.get("execution_event_id"))[:120],
+        "execution_event_id": "",
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
@@ -1885,8 +2062,7 @@ def _facebook_post_params(payload, policy):
     }
     if params["asset_id"]:
         params["selected_media_json"] = json.dumps(_facebook_selected_media(params), sort_keys=True, default=str)
-    if not params["execution_event_id"]:
-        params["execution_event_id"] = _facebook_post_execution_id(params)
+    params["execution_event_id"] = _facebook_post_execution_id(params)
     return params
 
 
@@ -2157,9 +2333,7 @@ def _facebook_post_row_to_event(row):
 def _facebook_post_execution_id(params):
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
-        "exact_text": params.get("exact_text", ""),
-        "asset_id": params.get("asset_id", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "channel": params.get("channel", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"

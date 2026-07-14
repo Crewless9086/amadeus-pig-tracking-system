@@ -580,6 +580,12 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="beacon_campaign_selection_list"', template)
         self.assertIn('id="beacon_campaign_selection_refresh"', template)
         self.assertIn('id="beacon_campaign_lane"', template)
+        self.assertIn('<option value="live_stock_sales">Live-Stock Sales</option>', template)
+        self.assertIn('id="beacon_sales_truth"', template)
+        self.assertIn("Awareness never becomes a sales campaign automatically", template)
+        self.assertIn("WhatsApp is copy-only and has no send action", template)
+        self.assertIn('id="beacon_facebook_post_packet_id" placeholder="Prepare a publish packet first" readonly', template)
+        self.assertIn('id="beacon_facebook_post_exact_text" rows="5" placeholder="Prepared packet text will fill here." readonly', template)
         self.assertIn('id="beacon_media_upload_relevance"', template)
         self.assertIn('id="beacon_publish_prepare"', template)
         self.assertIn('id="beacon_publish_packet_result"', template)
@@ -630,6 +636,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("This does not boost or spend.", template)
         self.assertIn("This does not call Meta or spend.", template)
         self.assertIn("paid boost locked", js)
+        self.assertIn('selection.campaign_lane === "live_stock_sales"', js)
+        self.assertIn('truth.sale_eligible && truth.fulfilment_cap > 0', js)
+        self.assertIn('elements.facebookPostConfirmation.value === "POST EXACT BEACON PACKET"', js)
+        self.assertIn('elements.publishChannel.value === "WhatsApp"', js)
 
         self.assertIn(".beacon-media-card", css)
         self.assertIn("max-width: 1680px", css)
@@ -638,6 +648,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".beacon-campaign-selection-list", css)
         self.assertIn(".beacon-publish-packet-card", css)
         self.assertIn(".beacon-facebook-post-card", css)
+        self.assertIn(".beacon-lane-boundary", css)
+        self.assertIn(".beacon-sales-truth-grid", css)
         self.assertIn(".beacon-boost-packet-card", css)
         self.assertIn("grid-template-columns", css)
         self.assertIn("coalesce(nullif(e.approval_status, ''), a.approval_status)", media_library)
@@ -645,6 +657,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"effective_public_use_approved"', media_library)
 
         client = app.test_client()
+        with client.session_transaction() as owner_session:
+            owner_session["owner_access"] = {
+                "role": "admin",
+                "created_at": "2026-07-14T00:00:00+00:00",
+            }
         response = client.get("/sales/beacon-media")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
