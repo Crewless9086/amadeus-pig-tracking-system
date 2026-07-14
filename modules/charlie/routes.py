@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -890,6 +891,9 @@ def _mission_dashboard_summary(mission):
     mission_id = str(mission.get("mission_id") or "").strip()
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    owner_action_guidance = _owner_action_guidance(mission, review_packet, workflow)
+    stage_telemetry = _stage_telemetry(metadata, workflow)
     compact_review_packet = {
         key: review_packet.get(key)
         for key in (
@@ -915,6 +919,8 @@ def _mission_dashboard_summary(mission):
     if compact_review_packet:
         compact_metadata["review_packet"] = compact_review_packet
     compact_metadata["mission_governance"] = mission_governance_summary(mission)
+    compact_metadata["owner_action_guidance"] = owner_action_guidance
+    compact_metadata["stage_telemetry"] = stage_telemetry
     mission_family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
     if mission_family:
         compact_metadata["mission_family"] = mission_family
@@ -998,6 +1004,98 @@ def _mission_dashboard_summary(mission):
         "agent_workflow": _compact_workflow(mission.get("agent_workflow", [])),
         "metadata": compact_metadata,
     }
+
+
+def _stage_telemetry(metadata, workflow):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    execution = metadata.get("agent_execution") if isinstance(metadata.get("agent_execution"), dict) else {}
+    stages = [item for item in execution.get("stages", []) if isinstance(item, dict)]
+    memory = mission_memory_from_metadata(metadata)
+    attempts = [item for item in memory.get("attempts", []) if isinstance(item, dict)]
+    attempt_counts = {}
+    for item in attempts:
+        agent = str(item.get("agent") or "").strip().lower()
+        if agent:
+            attempt_counts[agent] = max(attempt_counts.get(agent, 0), int(item.get("attempt") or 1))
+    latest = {}
+    for item in stages:
+        agent = str(item.get("agent") or "").strip().lower()
+        if not agent:
+            continue
+        attempt = int(item.get("attempt") or 1)
+        attempt_counts[agent] = max(attempt_counts.get(agent, 0), attempt)
+        previous = latest.get(agent)
+        if previous is None or attempt >= int(previous.get("attempt") or 1):
+            latest[agent] = item
+    rows = []
+    for workflow_item in workflow:
+        workflow_item = workflow_item if isinstance(workflow_item, dict) else {}
+        agent = str(workflow_item.get("agent") or "").strip().lower()
+        if not agent:
+            continue
+        stage = latest.get(agent, {})
+        changed_files = stage.get("changed_files") if isinstance(stage.get("changed_files"), list) else []
+        rows.append({
+            "agent": agent,
+            "status": str(workflow_item.get("status") or stage.get("status") or "pending"),
+            "attempt": max(attempt_counts.get(agent, 0), int(stage.get("attempt") or 0)),
+            "started_at": stage.get("started_at", ""),
+            "updated_at": stage.get("updated_at", ""),
+            "completed_at": stage.get("completed_at", ""),
+            "duration_seconds": stage.get("duration_seconds"),
+            "changed_files_count": int(stage.get("changed_files_count") or len(changed_files)),
+            "current_action": _short_text(stage.get("current_action", ""), 180),
+        })
+    return {
+        "execution_id": execution.get("execution_id", ""),
+        "started_at": execution.get("started_at", ""),
+        "last_progress_at": execution.get("last_progress_at") or memory.get("updated_at", ""),
+        "stages": rows,
+    }
+
+
+def _owner_action_guidance(mission, review_packet, workflow):
+    status = str(mission.get("status") or "").strip().lower()
+    review_packet = review_packet if isinstance(review_packet, dict) else {}
+    workflow_agents = [str(item.get("agent") or "").strip().lower() for item in workflow if isinstance(item, dict)]
+    recommendation = str(review_packet.get("recommended_next_action") or "").strip()
+    target = str(review_packet.get("return_to_stage") or "").strip().lower()
+    disposition = review_packet.get("block_disposition") if isinstance(review_packet.get("block_disposition"), dict) else {}
+    if not target and disposition.get("responsible_stage") not in {None, "", "owner"}:
+        target = str(disposition.get("responsible_stage") or "").strip().lower()
+    if not target and recommendation:
+        match = re.search(r"\breturn to\s+([a-z_ -]+?)(?:[.;]|\s+and\b)", recommendation.lower())
+        if match:
+            target = "_".join(match.group(1).strip().split())
+    if status == "blocked":
+        missing_target = bool(target) and target not in workflow_agents
+        if missing_target:
+            return {
+                "recommended_action": "approve_rerun",
+                "button_label": "Approve Rerun",
+                "target_stage": target,
+                "reason": f"The required {target.replace('_', ' ').title()} stage is missing from the stored workflow. CORE must refresh routing before retrying.",
+                "what_happens": "Completed evidence is preserved, the workflow is refreshed at pickup, and the mission waits behind the currently active mission.",
+                "alternative_action": "send_back",
+            }
+        if target:
+            return {
+                "recommended_action": "send_back",
+                "button_label": f"Send Back to {target.replace('_', ' ').title()}",
+                "target_stage": target,
+                "reason": recommendation or f"The blocking evidence identifies {target.replace('_', ' ')} as the responsible correction stage.",
+                "what_happens": "CORE preserves completed upstream evidence and resumes from the selected correction stage.",
+                "alternative_action": "approve_rerun",
+            }
+        return {
+            "recommended_action": "approve_rerun",
+            "button_label": "Approve Rerun",
+            "target_stage": "",
+            "reason": recommendation or "CORE recorded a recoverable block but no reliable send-back target.",
+            "what_happens": "CORE recalculates routing at pickup and preserves durable evidence.",
+            "alternative_action": "send_back",
+        }
+    return {"recommended_action": "", "button_label": "", "target_stage": "", "reason": "", "what_happens": "", "alternative_action": ""}
 
 
 def _compact_workflow(workflow):
