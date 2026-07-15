@@ -11,6 +11,14 @@
 - Required the existing owner offer flag, an explicit positive whole-number cap, canonical exact copy, an approved exact image, and the existing exact confirmation phrase before the deterministic execution claim.
 - Kept SAM Meat in `interest_capture_only` mode and preserved zero automatic post, customer-send, quote, order, reservation, payment, stock, fulfilment, delivery, or paid-spend authority.
 
+## 2026-07-15 - Explicit shared Order streams
+
+- Defined validated `Livestock`, `Meat`, and `Slaughter` Order streams, labelled legacy read fallback, typed stream extensions, and the rule that only Livestock completion may mutate pig Sold/off-farm lifecycle state (`06-data/ORDER_DATA_MODEL.md`).
+
+## 2026-07-15 - Order approval gate separation
+
+- Separated Order approval from reservation/allocation and customer or quote notification. Approval now records the owner decision only; downstream actions retain their own gates (`06-data/ORDER_DATA_MODEL.md`).
+
 ## 2026-07-14 - Beacon-to-SAM deterministic attribution
 
 - Added the read-only Beacon-to-SAM attribution contract joining campaign evidence to every exact matching SAM lead, linked orders, completed-sale revenue, fulfilment, and controlled lost-reason evidence.

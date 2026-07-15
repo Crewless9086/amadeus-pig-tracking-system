@@ -12,6 +12,7 @@ def draft_order(**overrides):
         "Payment_Method": "Cash",
         "Customer_Name": "Test Customer",
         "Collection_Location": "Riversdale",
+        "Order_Stream": "Livestock",
     }
     row.update(overrides)
     return row
@@ -28,6 +29,25 @@ ORDER_LINES_HEADERS = [
 
 
 class OrderLifecycleServiceTests(unittest.TestCase):
+    def test_order_transition_matrix_is_exhaustive_for_canonical_statuses(self):
+        expected = {
+            "Draft": {"send_for_approval", "reject", "cancel"},
+            "Pending_Approval": {"approve", "reject", "cancel"},
+            "Approved": {"reject", "cancel", "complete"},
+            "Completed": set(),
+            "Cancelled": set(),
+        }
+        for status, allowed_actions in expected.items():
+            actual = {
+                action for action in order_lifecycle.ORDER_TRANSITION_MATRIX
+                if order_lifecycle.order_transition_allowed(action, status, "Approved")
+            }
+            self.assertEqual(actual, allowed_actions, status)
+
+    def test_rejected_cancelled_order_has_no_transition(self):
+        for action in order_lifecycle.ORDER_TRANSITION_MATRIX:
+            self.assertFalse(order_lifecycle.order_transition_allowed(action, "Cancelled", "Rejected"))
+
     def test_send_order_for_approval_updates_draft_and_logs_status(self):
         lines = [
             {"Order_ID": "ORD-1", "Order_Line_ID": "OL-1", "Line_Status": "Draft"},
@@ -87,28 +107,19 @@ class OrderLifecycleServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "At least one active order line"):
                 order_lifecycle.send_order_for_approval("ORD-1")
 
-    def test_approve_order_keeps_approval_when_auto_reserve_warns(self):
+    def test_approve_order_does_not_reserve_or_notify_customer(self):
         pending_row = draft_order(Order_Status="Pending_Approval", Approval_Status="Pending")
-        approved_row = draft_order(Order_Status="Approved", Approval_Status="Approved")
-        reserve_result = {
-            "success": False,
-            "message": "No lines could be reserved.",
-            "errors": ["No eligible lines to reserve."],
-        }
 
-        with patch.object(order_lifecycle, "_get_order_master_row", side_effect=[pending_row, approved_row]), \
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=pending_row), \
              patch.object(order_lifecycle, "_update_sheet_row_by_id") as update_order, \
              patch.object(order_lifecycle, "_write_order_status_log") as write_log, \
-             patch.object(order_lifecycle, "reserve_order_lines", return_value=reserve_result), \
-             patch.object(order_lifecycle, "_notify_order_customer_notification", return_value={"sent": True}), \
-             patch.object(order_lifecycle, "_add_notification_result_to_response") as add_notification:
+             patch.object(order_lifecycle, "_notify_order_customer_notification") as notify_customer:
             result = order_lifecycle.approve_order("ORD-1", changed_by="Tester")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["order_id"], "ORD-1")
-        self.assertEqual(result["auto_reserve"], reserve_result)
-        self.assertEqual(result["reserve_warning"], "No lines could be reserved.")
-        self.assertEqual(result["warning"], "No lines could be reserved.")
+        self.assertFalse(result["reservation_performed"])
+        self.assertFalse(result["customer_notification_sent"])
 
         update_order.assert_called_once()
         update_args = update_order.call_args.args
@@ -117,10 +128,8 @@ class OrderLifecycleServiceTests(unittest.TestCase):
         self.assertEqual(update_args[2]["Order_Status"], "Approved")
         self.assertEqual(update_args[2]["Approval_Status"], "Approved")
 
-        self.assertEqual(write_log.call_count, 2)
-        self.assertEqual(write_log.call_args_list[0].kwargs["new_status"], "Approved | Approved")
-        self.assertIn("manual follow-up", write_log.call_args_list[1].kwargs["notes"])
-        add_notification.assert_called_once()
+        write_log.assert_called_once()
+        notify_customer.assert_not_called()
 
     def test_approve_order_requires_pending_approval_status(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Draft")):
@@ -168,7 +177,7 @@ class OrderLifecycleServiceTests(unittest.TestCase):
 
     def test_reject_order_blocks_completed_orders(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Completed")):
-            with self.assertRaisesRegex(ValueError, "Completed orders cannot be rejected"):
+            with self.assertRaisesRegex(ValueError, "cannot be rejected"):
                 order_lifecycle.reject_order("ORD-1")
 
     def test_cancel_order_cancels_active_lines_and_marks_customer_cancelled(self):
@@ -210,7 +219,7 @@ class OrderLifecycleServiceTests(unittest.TestCase):
 
     def test_cancel_order_blocks_completed_orders(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Completed")):
-            with self.assertRaisesRegex(ValueError, "Completed orders cannot be cancelled"):
+            with self.assertRaisesRegex(ValueError, "cannot be cancelled"):
                 order_lifecycle.cancel_order("ORD-1")
 
     def test_cancel_order_blocks_already_rejected_orders(self):
@@ -269,6 +278,21 @@ class OrderLifecycleServiceTests(unittest.TestCase):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Draft")):
             with self.assertRaisesRegex(ValueError, "Only Approved orders"):
                 order_lifecycle.complete_order("ORD-1")
+
+    def test_complete_meat_order_never_mutates_livestock_state(self):
+        approved_row = draft_order(Order_Status="Approved", Approval_Status="Approved", Order_Stream="Meat")
+        rows = [["OL-MEAT", "ORD-1", "", "Confirmed", "Not_Reserved", ""]]
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=approved_row), \
+             patch.object(order_lifecycle, "_sheet_headers_and_rows", return_value=(ORDER_LINES_HEADERS, rows)), \
+             patch.object(order_lifecycle, "batch_update_rows_by_id") as batch_update, \
+             patch.object(order_lifecycle, "_update_sheet_row_by_id"), \
+             patch.object(order_lifecycle, "_write_order_status_log"):
+            result = order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+
+        self.assertEqual(result["pigs_marked_sold"], 0)
+        self.assertEqual(batch_update.call_count, 1)
+        self.assertEqual(batch_update.call_args.args[0], order_lifecycle.ORDER_LINES_SHEET)
+        self.assertNotEqual(batch_update.call_args.args[0], order_lifecycle.PIG_MASTER_SHEET)
 
     def test_completed_order_retries_projection_without_lifecycle_writes(self):
         row = draft_order(Order_Status="Completed", Approval_Status="Approved")

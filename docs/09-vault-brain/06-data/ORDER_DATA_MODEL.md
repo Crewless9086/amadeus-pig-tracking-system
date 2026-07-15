@@ -15,6 +15,12 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 
 ## Core Entities
 
+All new shared-flow Orders persist one validated `order_stream`: `Livestock`, `Meat`, or `Slaughter`.
+Legacy rows with no stream may be classified only by labelled read compatibility and must not use
+text inference as a new-write contract. Stream-specific data belongs in the matching typed extension
+envelope. Only `Livestock` completion may mark pigs Sold/off-farm; `Meat` and `Slaughter` completion
+must not invoke livestock lifecycle mutation.
+
 | Entity | Current/legacy source | Supabase target | Purpose |
 | --- | --- | --- | --- |
 | Order header | `ORDER_MASTER` | `orders` | Customer/order lifecycle, approval, payment, collection, conversation link. |
@@ -45,7 +51,7 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 - Approved live-stock order revisions must use a dedicated owner/Oom Sakkie backend action. That action must require explicit owner/Oom Sakkie authorization before mutation (`owner_authorized=true` or exact `owner_confirmation='REVISE APPROVED LIVESTOCK ORDER'`, with `authorization_source` and a trusted `changed_by` actor). After that gate, it may update the approved order request, resync active lines under the explicit approved-order revision status override, reserve the corrected active lines, regenerate current paperwork, and prepare a customer quote send packet, but customer sending still requires a separate owner confirmation.
 - Approved-order revision actions must be idempotent: repeated correction requests should detect already-matching active lines and logged revision fingerprints instead of silently duplicating pigs or paperwork.
 - `send_for_approval` requires Draft status, customer name, payment method, collection location, and at least one active line.
-- Approval may attempt auto-reservation, but reservation warnings do not roll back the approval automatically.
+- Approval records the owner decision only. Reservation/allocation and customer or quote notification are separate named gated actions; approval must not trigger either action automatically.
 - Rejection/customer cancellation must cancel/release linked non-terminal lines and write status-log evidence.
 - Completed orders and terminal records must be protected from unsafe approval/rejection/cancellation changes.
 - Quote/document sending must use backend-prepared document state and the outbound document-delivery path.

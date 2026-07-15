@@ -12,7 +12,6 @@ from services.google_sheets_service import (
 )
 from modules.pig_weights.pig_weights_utils import to_clean_string
 from modules.orders.order_status_log import write_order_status_log
-from modules.orders.order_reservation import reserve_order_lines
 from modules.orders.order_line_sync import _cancel_order_lines
 from modules.orders import order_supabase_write
 from modules.orders.order_sales_projection import project_completed_order_to_sale
@@ -28,14 +27,27 @@ ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
 )
 ORDER_NOTIFICATION_WEBHOOK_URL = os.getenv("ORDER_NOTIFICATION_WEBHOOK_URL", "").strip()
 
-APPROVAL_CUSTOMER_MESSAGE = (
-    "Your order has been approved. We have reserved the pigs linked to your order "
-    "and will keep you posted on the next step."
-)
 REJECTION_CUSTOMER_MESSAGE = (
     "Your order was reviewed, but we cannot approve it at this stage. We will "
     "follow up if there is another suitable option."
 )
+
+ORDER_TRANSITION_MATRIX = {
+    "send_for_approval": {"Draft"},
+    "approve": {"Pending_Approval"},
+    "reject": {"Draft", "Pending_Approval", "Approved"},
+    "cancel": {"Draft", "Pending_Approval", "Approved"},
+    "complete": {"Approved"},
+}
+
+
+def order_transition_allowed(action: str, order_status: str, approval_status: str = "") -> bool:
+    action = str(action or "").strip().lower()
+    status = str(order_status or "").strip()
+    approval = str(approval_status or "").strip()
+    if action not in ORDER_TRANSITION_MATRIX or status not in ORDER_TRANSITION_MATRIX[action]:
+        return False
+    return not (action == "cancel" and approval == "Rejected")
 
 
 def _sheet_headers_and_rows(sheet_name: str):
@@ -237,7 +249,7 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status != "Draft":
+    if not order_transition_allowed("send_for_approval", old_status, old_approval):
         raise ValueError(
             f"Only Draft orders can be sent for approval. Current status: {old_status}."
         )
@@ -320,7 +332,7 @@ def approve_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status != "Pending_Approval":
+    if not order_transition_allowed("approve", old_status, old_approval):
         raise ValueError(
             f"Only Pending_Approval orders can be approved. Current status: {old_status}."
         )
@@ -348,68 +360,12 @@ def approve_order(order_id: str, changed_by: str = "App"):
 
     result = {
         "success": True,
-        "message": "Order approved successfully.",
+        "message": "Order approved. Reservation and customer notification remain separate gated actions.",
         "order_id": order_id,
+        "reservation_performed": False,
+        "customer_notification_sent": False,
+        "next_actions": ["reserve_order_lines", "prepare_or_send_approved_document"],
     }
-
-    reserve_result = None
-    reserve_warning = ""
-
-    try:
-        reserve_result = reserve_order_lines(order_id)
-        result["auto_reserve"] = reserve_result
-
-        if not reserve_result.get("success"):
-            reserve_warning = (
-                reserve_result.get("message")
-                or "; ".join(reserve_result.get("errors", []))
-                or "Auto-reservation did not reserve any order lines."
-            )
-        elif reserve_result.get("warning"):
-            reserve_warning = reserve_result["warning"]
-
-    except Exception as exc:
-        reserve_warning = f"Auto-reservation failed after approval: {str(exc)}"
-
-    if reserve_warning:
-        result["reserve_warning"] = reserve_warning
-        result["warning"] = reserve_warning
-
-        try:
-            _write_order_status_log(
-                order_id=order_id,
-                old_status="Approved | Approved",
-                new_status="Approved | Approved",
-                changed_by=changed_by,
-                change_source="App",
-                notes=f"Approval completed, but reservation needs manual follow-up: {reserve_warning}",
-            )
-        except Exception as exc:
-            result["status_log_warning"] = (
-                "Reservation warning could not be written to ORDER_STATUS_LOG: "
-                + str(exc)
-            )
-
-    notification_row = _get_order_master_row(order_id) or row
-    notification_result = _notify_order_customer_notification(
-        order_id=order_id,
-        event_type="order_approved",
-        message_text=APPROVAL_CUSTOMER_MESSAGE,
-        changed_by=changed_by,
-        order_row=notification_row,
-        extra_payload={
-            "reserve_warning": reserve_warning,
-            "auto_reserve": reserve_result,
-        },
-    )
-    _add_notification_result_to_response(
-        result=result,
-        order_id=order_id,
-        changed_by=changed_by,
-        notification_result=notification_result,
-        log_note="Approval completed, but customer notification needs manual follow-up",
-        status_for_log="Approved | Approved",
-    )
 
     return result
 
@@ -424,8 +380,8 @@ def reject_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Completed":
-        raise ValueError("Completed orders cannot be rejected.")
+    if not order_transition_allowed("reject", old_status, old_approval):
+        raise ValueError(f"Order status {old_status} | {old_approval} cannot be rejected.")
 
     today_str = datetime.now().strftime("%d %b %Y")
 
@@ -513,11 +469,10 @@ def cancel_order(order_id: str, changed_by: str = "App", reason: str = ""):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Completed":
-        raise ValueError("Completed orders cannot be cancelled.")
-
-    if old_status == "Cancelled" and old_approval == "Rejected":
-        raise ValueError("Rejected orders are already cancelled and cannot be customer-cancelled.")
+    if not order_transition_allowed("cancel", old_status, old_approval):
+        if old_status == "Cancelled" and old_approval == "Rejected":
+            raise ValueError("Rejected orders are already cancelled and cannot be customer-cancelled.")
+        raise ValueError(f"Order status {old_status} | {old_approval} cannot be cancelled.")
 
     today_str = datetime.now().strftime("%d %b %Y")
 
@@ -589,6 +544,9 @@ def complete_order(order_id: str, changed_by: str = "App"):
 
     old_status = to_clean_string(order_row.get("Order_Status", ""))
     old_approval = to_clean_string(order_row.get("Approval_Status", ""))
+    order_stream = to_clean_string(order_row.get("Order_Stream", "")) or "Livestock"
+    if order_stream not in {"Livestock", "Meat", "Slaughter"}:
+        raise ValueError("Order stream must be Livestock, Meat, or Slaughter before completion.")
 
     if old_status == "Completed":
         if not order_supabase_write.supabase_order_writes_available():
@@ -602,7 +560,7 @@ def complete_order(order_id: str, changed_by: str = "App"):
             "sales_projection": projection,
         }
 
-    if old_status != "Approved":
+    if not order_transition_allowed("complete", old_status, old_approval):
         raise ValueError(f"Only Approved orders can be completed. Current status: {old_status}.")
 
     if order_supabase_write.supabase_order_writes_available():
@@ -640,7 +598,7 @@ def complete_order(order_id: str, changed_by: str = "App"):
         raise ValueError("Order has no active lines to complete.")
 
     missing_pig = [l["line_id"] for l in active_lines if not l["pig_id"]]
-    if missing_pig:
+    if order_stream == "Livestock" and missing_pig:
         raise ValueError(f"The following lines have no Pig_ID and cannot be completed: {', '.join(missing_pig)}")
 
     today_str = datetime.now().strftime("%d %b %Y")
@@ -670,10 +628,13 @@ def complete_order(order_id: str, changed_by: str = "App"):
         }
         for line in active_lines
     }
-    if order_supabase_write.supabase_order_writes_available():
-        order_supabase_write.mark_pigs_sold([line["pig_id"] for line in active_lines])
-    else:
-        batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
+    pigs_marked_sold = 0
+    if order_stream == "Livestock":
+        if order_supabase_write.supabase_order_writes_available():
+            order_supabase_write.mark_pigs_sold([line["pig_id"] for line in active_lines])
+        else:
+            batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
+        pigs_marked_sold = len(active_lines)
 
     _update_sheet_row_by_id(ORDER_MASTER_SHEET, order_id, {
         "Order_Status": "Completed",
@@ -686,14 +647,15 @@ def complete_order(order_id: str, changed_by: str = "App"):
         new_status="Completed | Approved",
         changed_by=changed_by,
         change_source="App",
-        notes=f"Order completed - {len(active_lines)} pig(s) marked as sold",
+        notes=(f"Order completed - {pigs_marked_sold} pig(s) marked as sold" if order_stream == "Livestock"
+               else f"{order_stream} order completed - no livestock lifecycle writes"),
     )
 
     result = {
         "success": True,
         "message": "Order completed successfully.",
         "order_id": order_id,
-        "pigs_marked_sold": len(active_lines),
+        "pigs_marked_sold": pigs_marked_sold,
     }
     if order_supabase_write.supabase_order_writes_available():
         result["sales_projection"] = project_completed_order_to_sale(order_id, changed_by=changed_by)

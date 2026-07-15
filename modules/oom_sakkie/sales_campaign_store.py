@@ -1440,6 +1440,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
     events = lead.get("events") if isinstance(lead.get("events"), list) else []
     existing_order = _latest_draft_order_created_event({"events": events})
     if existing_order.get("order_id"):
+        owner_actions = _draft_order_owner_actions(existing_order.get("order_id"))
         return {
             "success": True,
             "configured": contract_result.get("configured", True),
@@ -1447,6 +1448,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
             "order_id": existing_order.get("order_id"),
             "order_url": f"/orders/{existing_order.get('order_id')}",
+            "owner_actions": owner_actions,
             "skipped": True,
             "creates_order": False,
             **{k: v for k, v in _false_flags().items() if k != "creates_order"},
@@ -1493,6 +1495,8 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             **{k: v for k, v in _false_flags().items() if k != "creates_order"},
         }, 502
 
+    owner_actions = _draft_order_owner_actions(order_id)
+
     event_notes = {
         "source": "farm_app_meat_leads",
         "kind": "draft_order_created",
@@ -1521,6 +1525,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
             "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
             "order_id": order_id,
             "order_url": f"/orders/{order_id}",
+            "owner_actions": owner_actions,
             "order_result": order_result,
             "lead_event_error": event_result,
             "creates_order": True,
@@ -1536,6 +1541,7 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
         "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
         "order_id": order_id,
         "order_url": f"/orders/{order_id}",
+        "owner_actions": owner_actions,
         "order_result": order_result,
         "lead_event": event_result,
         "deposit_status": "Pending",
@@ -1544,6 +1550,14 @@ def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None,
         "writes_farm_data": True,
         **{k: v for k, v in _false_flags().items() if k not in {"creates_order", "writes_farm_data"}},
     }, 201
+
+
+def _draft_order_owner_actions(order_id):
+    href = f"/orders/{_clean_text(order_id, 100)}"
+    return [
+        {"action": "open_order", "label": "Open Order", "href": href},
+        {"action": "review_order", "label": "Review Draft Order", "href": f"{href}#order-actions"},
+    ]
 
 
 def send_customer_followup_to_chatwoot(lead_id, payload, database_url=None, chatwoot_sender=None):
@@ -2093,6 +2107,7 @@ def build_draft_order_payload_from_sales_lead(lead, contract, confirmation=None,
         "customer_channel": _normal_order_channel(overrides.get("customer_channel") or lead.get("channel")),
         "customer_language": _clean_text(overrides.get("customer_language") or "English", 40),
         "order_source": _clean_text(overrides.get("order_source") or "Sam Meat Preorder", 80),
+        "order_stream": "Meat",
         "requested_category": _clean_text(overrides.get("requested_category") or "Slaughter", 80),
         "requested_weight_range": _clean_text(
             overrides.get("requested_weight_range") or required.get("estimated_weight_or_size") or cut_set,
