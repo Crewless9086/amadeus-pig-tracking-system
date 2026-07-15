@@ -949,7 +949,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), execute_result)
-        list_assets.assert_called_once_with(limit=100, approval_status="approved", media_type="image")
+        list_assets.assert_called_once_with(limit=100, approval_status="approved")
         execute_post.assert_called_once()
         sent_payload = execute_post.call_args.args[0]
         self.assertEqual(sent_payload["selected_asset"], approved_asset)
@@ -1021,6 +1021,27 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.get_json()["status"], "meat_launch_packet_not_ready_or_stale")
+
+    def test_beacon_facebook_post_execution_prohibits_live_stock_sales_meta_lane(self):
+        with patch.object(
+            sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=None,
+        ), patch.object(
+            sales_transaction_routes,
+            "execute_beacon_facebook_page_post",
+        ) as execute_post:
+            response = self.client.post("/api/beacon/facebook-post-executions", json={
+                "campaign_lane": "live_stock_sales",
+                "publish_packet_id": "PACKET-SALES",
+                "channel": "Facebook",
+                "exact_text": "Livestock sales text",
+                "owner_confirmation": "POST EXACT BEACON PACKET",
+            })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "live_stock_sales_meta_posting_prohibited")
+        self.assertFalse(response.get_json()["calls_meta"])
         execute_post.assert_not_called()
 
     def test_meat_sales_learning_list_route_uses_learning_store(self):

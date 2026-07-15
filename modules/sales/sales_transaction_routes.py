@@ -1112,49 +1112,65 @@ def beacon_facebook_post_executions():
         )
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
-    asset_id = str(payload.get("asset_id") or "").strip()
+    asset_ids = payload.get("asset_ids") if isinstance(payload.get("asset_ids"), list) else []
+    if not asset_ids and payload.get("asset_id"):
+        asset_ids = [payload.get("asset_id")]
+    asset_ids = list(dict.fromkeys(str(value or "").strip() for value in asset_ids if str(value or "").strip()))[:10]
+    asset_id = asset_ids[0] if asset_ids else ""
     approved_assets = []
-    if asset_id:
+    if asset_ids:
         assets_result, assets_status = list_beacon_media_assets(
             limit=100,
             approval_status="approved",
-            media_type="image",
         )
         if assets_status >= 400:
             return jsonify(assets_result), assets_status
-        approved_asset = next(
-            (asset for asset in assets_result.get("assets", []) if asset.get("asset_id") == asset_id),
-            None,
-        )
-        if not approved_asset:
+        by_id = {asset.get("asset_id"): asset for asset in assets_result.get("assets", [])}
+        selected_assets = [by_id.get(selected_id) for selected_id in asset_ids]
+        missing_asset_ids = [selected_id for selected_id, asset in zip(asset_ids, selected_assets) if not asset]
+        if missing_asset_ids:
             return jsonify({
                 "success": False,
-                "status": "selected_image_asset_not_approved_or_not_found",
-                "asset_id": asset_id,
+                "status": "selected_media_asset_not_approved_or_not_found",
+                "asset_ids": missing_asset_ids,
                 "posts_publicly": False,
                 "calls_meta": False,
                 "spends_money": False,
             }), 400
         approved_assets = assets_result.get("assets", [])
-        payload = {**payload, "selected_asset": approved_asset}
-    if payload.get("campaign_lane") == "live_stock_sales":
-        source_payload, source_error, source_status = _beacon_live_stock_sales_sources(payload)
-        if source_error:
-            return jsonify(source_error), source_status
-        authoritative = build_beacon_campaign_publish_packet({
-            **source_payload,
-            "campaign_lane": "live_stock_sales",
-            "product_focus": payload.get("product_focus", ""),
-            "draft_id": "facebook_live_stock_sales",
+        payload = {
+            **payload,
             "asset_id": asset_id,
+            "asset_ids": asset_ids,
+            "selected_asset": selected_assets[0],
+            "selected_assets": selected_assets,
+        }
+    if payload.get("campaign_lane") == "live_stock_sales":
+        return jsonify({
+            "success": False,
+            "status": "live_stock_sales_meta_posting_prohibited",
+            "reason": "Livestock Meta publishing is awareness-only. Sales, price, stock, availability, and reservation language are prohibited.",
+            "posts_publicly": False,
+            "calls_meta": False,
+            "spends_money": False,
+        }), 409
+    if payload.get("campaign_lane") == "live_stock_awareness":
+        authoritative = build_beacon_campaign_publish_packet({
+            "campaign_lane": "live_stock_awareness",
+            "draft_id": "facebook_awareness_post",
+            "asset_id": asset_id,
+            "asset_ids": asset_ids,
             "channel": "Facebook",
         }, approved_assets=approved_assets)
         if (not authoritative.get("success") or
                 authoritative.get("publish_packet_id") != payload.get("publish_packet_id") or
                 (authoritative.get("selected_draft") or {}).get("exact_text") != payload.get("exact_text")):
             return jsonify({
-                "success": False, "status": "live_stock_sales_packet_stale_or_altered",
-                "posts_publicly": False, "calls_meta": False, "spends_money": False,
+                "success": False,
+                "status": "live_stock_awareness_packet_stale_or_altered",
+                "posts_publicly": False,
+                "calls_meta": False,
+                "spends_money": False,
                 "authoritative_packet_id": authoritative.get("publish_packet_id", ""),
                 "errors": authoritative.get("errors", []),
             }), 409
