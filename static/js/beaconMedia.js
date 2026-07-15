@@ -10,11 +10,17 @@
     meatCapReady: false,
     exactImageReady: false,
     performanceEvents: [],
+    attribution: null,
   };
 
   const byId = (id) => document.getElementById(id);
   const elements = {
     message: byId("beacon_media_message"),
+    attributionRefresh: byId("beacon_attribution_refresh"),
+    attributionStatus: byId("beacon_attribution_status"),
+    attributionSummary: byId("beacon_attribution_summary"),
+    attributionRevenue: byId("beacon_attribution_revenue"),
+    attributionEvidence: byId("beacon_attribution_evidence"),
     refresh: byId("beacon_media_refresh"),
     policyStatus: byId("beacon_media_policy_status"),
     policyFlags: byId("beacon_media_policy_flags"),
@@ -167,6 +173,48 @@
       throw new Error(payload.status || payload.error || `Request failed with ${response.status}`);
     }
     return payload;
+  }
+
+  function validAttribution(payload) {
+    return payload && typeof payload === "object" && payload.mode === "beacon_sam_attribution_read_only"
+      && payload.summary && typeof payload.summary === "object" && Array.isArray(payload.attributions)
+      && payload.authority?.read_only === true;
+  }
+
+  function renderAttribution(payload) {
+    if (!validAttribution(payload)) {
+      elements.attributionStatus.textContent = "Canonical evidence is malformed or unavailable. No totals were inferred.";
+      elements.attributionStatus.dataset.state = "blocked";
+      elements.attributionSummary.innerHTML = ""; elements.attributionRevenue.innerHTML = "";
+      elements.attributionEvidence.innerHTML = '<div class="beacon-attribution-state" data-state="blocked"><strong>Evidence unavailable</strong><span>The response did not satisfy the read-only attribution contract.</span></div>';
+      return;
+    }
+    state.attribution = payload;
+    const labels = { attributed: "Attributed", ambiguous: "Ambiguous", unmatched: "Unmatched", qualified: "Qualified", lost: "Lost" };
+    elements.attributionSummary.innerHTML = Object.entries(labels).map(([key, label]) => `<article><span>${label}</span><strong>${Number.isFinite(Number(payload.summary[key])) ? Number(payload.summary[key]) : "—"}</strong></article>`).join("");
+    const revenue = {};
+    payload.attributions.forEach((row) => (Array.isArray(row.revenue) ? row.revenue : []).forEach((item) => {
+      const currency = String(item?.currency || "").trim().toUpperCase(); const amount = Number(item?.net_total);
+      if (currency && Number.isFinite(amount)) revenue[currency] = (revenue[currency] || 0) + amount;
+    }));
+    const revenueRows = Object.keys(revenue).sort().map((currency) => `<article><span>${escapeHtml(currency)} attributed revenue</span><strong>${escapeHtml(revenue[currency].toFixed(2))}</strong></article>`);
+    elements.attributionRevenue.innerHTML = revenueRows.length ? revenueRows.join("") : '<div class="beacon-attribution-state"><strong>No completed-sale revenue</strong><span>Revenue remains unavailable until explicit completed sales evidence is linked.</span></div>';
+    elements.attributionEvidence.innerHTML = payload.attributions.length ? payload.attributions.map((row) => {
+      const lost = row.lost_reason?.status === "recorded" ? row.lost_reason.code : (row.qualification === "lost" ? "Unknown" : "Not lost");
+      const candidates = Array.isArray(row.candidate_lead_ids) && row.candidate_lead_ids.length ? ` · Candidates ${row.candidate_lead_ids.map(escapeHtml).join(", ")}` : "";
+      return `<article class="beacon-attribution-row" data-state="${escapeHtml(row.status || "unknown")}"><div><span>${escapeHtml(row.campaign_ref || "Unknown campaign")}</span><strong>${escapeHtml(row.status || "unknown")}</strong></div><div><span>Lead</span><strong>${escapeHtml(row.lead_id || "Unresolved")}</strong></div><div><span>Qualification</span><strong>${escapeHtml(row.qualification || "unresolved")}</strong></div><div><span>Order</span><strong>${escapeHtml(row.order_id || row.order_status || "None")}</strong></div><div><span>Fulfilment</span><strong>${escapeHtml(row.fulfilment || "unknown")}</strong></div><div><span>Lost reason</span><strong>${escapeHtml(lost)}</strong></div><small>${escapeHtml(row.method || "No deterministic match")}${candidates}</small></article>`;
+    }).join("") : '<div class="beacon-attribution-state"><strong>No attribution evidence yet</strong><span>No canonical campaign evidence is currently available to project.</span></div>';
+    const malformed = Array.isArray(payload.malformed_evidence_ids) ? payload.malformed_evidence_ids.length : 0;
+    elements.attributionStatus.textContent = payload.status === "malformed_evidence" || malformed ? `Partial evidence shown. ${malformed} malformed record(s) remain excluded.` : `Canonical read-only projection · ${payload.rule_version || "rule version unavailable"} · ${payload.attribution_window_days || "—"}-day window`;
+    elements.attributionStatus.dataset.state = malformed ? "blocked" : "ready";
+  }
+
+  async function loadAttribution() {
+    elements.attributionRefresh.disabled = true; elements.attributionStatus.textContent = "Loading canonical attribution evidence…";
+    elements.attributionEvidence.innerHTML = '<div class="beacon-attribution-state"><strong>Loading evidence</strong><span>Reading the server-owned deterministic projection.</span></div>';
+    try { renderAttribution(await fetchJson("/api/beacon/sam-attribution")); }
+    catch (error) { elements.attributionStatus.textContent = "Attribution evidence could not be loaded."; elements.attributionStatus.dataset.state = "blocked"; elements.attributionSummary.innerHTML = ""; elements.attributionRevenue.innerHTML = ""; elements.attributionEvidence.innerHTML = `<div class="beacon-attribution-state" data-state="blocked"><strong>Evidence unavailable</strong><span>${escapeHtml(error.message)}</span></div>`; }
+    finally { elements.attributionRefresh.disabled = false; }
   }
 
   async function loadBeaconMedia() {
@@ -952,6 +1000,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    elements.attributionRefresh.addEventListener("click", () => loadAttribution());
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
@@ -984,6 +1033,6 @@
     elements.reject.addEventListener("click", () => recordReviewEvent("rejected_public_use").catch((error) => showMessage(error.message)));
     elements.archive.addEventListener("click", () => recordReviewEvent("archived").catch((error) => showMessage(error.message)));
     setReviewDisabled(true);
-    await loadBeaconMedia().catch((error) => showMessage(error.message));
+    await Promise.all([loadBeaconMedia().catch((error) => showMessage(error.message)), loadAttribution()]);
   });
 })();
