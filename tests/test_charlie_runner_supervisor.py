@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import sys
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -8,6 +9,9 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    @patch("scripts.charlie_runner_supervisor.subprocess.run", side_effect=subprocess.TimeoutExpired(["powershell"], 5))
+    def test_windows_process_command_timeout_is_nonfatal(self, _run):
+        self.assertEqual(supervisor._windows_process_command(1234), "")
     def test_shared_repo_venv_is_used_from_runner_worktree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

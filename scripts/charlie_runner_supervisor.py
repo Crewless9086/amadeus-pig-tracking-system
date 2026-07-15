@@ -106,7 +106,7 @@ def _process_identity(pid):
         executable = str(Path(f"/proc/{pid}/exe").resolve())
         command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8").strip()
         return {"created": stat_parts[21], "executable": executable, "command": command}
-    except (OSError, ValueError, IndexError, UnicodeError):
+    except (OSError, ValueError, IndexError, UnicodeError, subprocess.SubprocessError):
         return None
 
 
@@ -142,10 +142,13 @@ def _windows_process_command(pid):
         "$p=Get-CimInstance Win32_Process -Filter \"ProcessId = " + str(pid) + "\"; "
         "if($p){[Console]::Out.Write($p.CommandLine)}"
     )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, check=False, timeout=10,
-    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+    except subprocess.SubprocessError:
+        return ""
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
