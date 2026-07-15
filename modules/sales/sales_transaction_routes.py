@@ -1,4 +1,4 @@
-﻿import ipaddress
+import ipaddress
 import os
 
 from flask import Blueprint, jsonify, request
