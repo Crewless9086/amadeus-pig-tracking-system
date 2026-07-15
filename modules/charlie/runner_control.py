@@ -194,8 +194,8 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
     return payload
 
 
-def start_runner():
-    status = runner_status()
+def start_runner(status_override=None):
+    status = status_override if isinstance(status_override, dict) else runner_status()
     if status["active"]:
         return {"success": True, "status": "runner_already_active", "runner": status}, 200
     if status.get("orphan_processes"):

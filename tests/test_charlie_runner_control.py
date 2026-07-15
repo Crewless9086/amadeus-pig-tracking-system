@@ -221,7 +221,17 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "runner_already_active")
-        popen.assert_not_called()
+
+    @patch("modules.charlie.runner_control.write_runner_heartbeat")
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, write_heartbeat):
+        popen.return_value.pid = 1234
+        write_heartbeat.return_value = {"status": "runner_started"}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
+            result, status_code = runner_control.start_runner(status_override={"active": False, "status": "runner_not_started", "orphan_processes": []})
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "runner_started")
+        popen.assert_called_once()
 
     @patch("modules.charlie.runner_control.write_runner_heartbeat")
     @patch("modules.charlie.runner_control.runner_status")
