@@ -67,8 +67,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(sleeps, [5])
         self.assertEqual(result["restart_count"], 2)
         child_env = popen.call_args_list[0].kwargs["env"]
-        self.assertEqual(child_env["GIT_CONFIG_KEY_0"], "safe.directory")
-        self.assertEqual(child_env["GIT_CONFIG_VALUE_0"], str(supervisor.REPO_ROOT))
+        self.assertIn("GIT_CONFIG_GLOBAL", child_env)
 
     def test_stop_marker_prevents_child_start(self):
         popen = Mock()

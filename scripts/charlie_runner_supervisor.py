@@ -48,9 +48,7 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
         child_env = {
             **os.environ,
             "CHARLIE_SUPERVISOR_GENERATION": generation,
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "safe.directory",
-            "GIT_CONFIG_VALUE_0": str(REPO_ROOT),
+            "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env)
         child_identity = _process_identity(child.pid)

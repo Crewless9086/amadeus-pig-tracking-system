@@ -28,6 +28,18 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_started")
         self.assertTrue(result["started"])
 
+    def test_tick_writes_process_scoped_safe_git_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "watchdog.json"
+            watchdog_tick(
+                status_reader=lambda: {"active": True, "status": "runner_active"},
+                starter=lambda: self.fail("must not start"),
+                state_path=state,
+            )
+            config = state.with_name("task-gitconfig")
+            self.assertTrue(config.exists())
+            self.assertIn("safe", config.read_text(encoding="utf-8"))
+
     def test_orphan_is_not_duplicated(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = watchdog_tick(
