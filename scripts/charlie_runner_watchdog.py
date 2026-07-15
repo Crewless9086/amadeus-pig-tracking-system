@@ -32,7 +32,11 @@ def _configure_git_safe_directory(config_path=GIT_CONFIG_PATH):
     return config_path
 
 
-def watchdog_tick(status_reader=runner_status, starter=start_runner, state_path=STATE_PATH):
+def _fast_runner_status():
+    return runner_status(include_orphans=False, include_git=False, include_ledger=False)
+
+
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH):
     _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
     status = status_reader()
     if status.get("active"):
@@ -40,7 +44,7 @@ def watchdog_tick(status_reader=runner_status, starter=start_runner, state_path=
     elif status.get("orphan_processes"):
         result = {"status": "orphan_requires_cleanup", "started": False}
     else:
-        started, status_code = starter()
+        started, status_code = starter(status_override=status) if starter is start_runner else starter()
         result = {
             "status": str(started.get("status") or "runner_start_failed"),
             "started": status_code < 300 and started.get("status") == "runner_started",
