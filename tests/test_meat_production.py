@@ -99,7 +99,7 @@ class MeatProductionTests(unittest.TestCase):
         self.assertIn('@app.route("/sales/meat-production")', app_source)
         self.assertIn('require_owner_page_access()', app_source)
         self.assertIn('"/sales/meat-production/batches"', route_source)
-        self.assertNotIn("require_owner_admin_access()", route_source)
+        self.assertIn("require_owner_admin_access()", route_source)
 
     def test_owner_batch_capture_routes_use_the_page_owner_session(self):
         route_source = (ROOT / "modules" / "sales" / "sales_transaction_routes.py").read_text(encoding="utf-8")
@@ -108,8 +108,8 @@ class MeatProductionTests(unittest.TestCase):
             route_source.index("@sales_bp.route('/sales/beacon/opportunities'")
         ]
 
-        self.assertEqual(route_block.count("require_owner_read_access()"), 6)
-        self.assertNotIn("require_owner_admin_access", route_block)
+        self.assertEqual(route_block.count("require_owner_admin_access()"), 4)
+        self.assertIn("require_owner_read_access", route_block)
 
 
 if __name__ == "__main__":

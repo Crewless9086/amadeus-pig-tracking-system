@@ -38,6 +38,7 @@ from modules.sales.sales_transaction_lifecycle import (
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
+from modules.sales.butcher_truth_board import get_butcher_truth_board
 from modules.sales.meat_fulfillment import (
     approve_meat_journey_notification,
     build_dad_booking_packet,
@@ -167,7 +168,7 @@ def meat_processing_batches():
             return denied
         result, status_code = list_meat_processing_batches()
     else:
-        denied = require_owner_read_access()
+        denied = require_owner_admin_access()
         if denied:
             return denied
         result, status_code = create_meat_processing_batch(request.get_json(silent=True) or {})
@@ -185,7 +186,7 @@ def meat_processing_batch_detail(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/events", methods=["POST"])
 def meat_processing_batch_event(batch_id):
-    denied = require_owner_read_access()
+    denied = require_owner_admin_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_event(batch_id, request.get_json(silent=True) or {})
@@ -194,7 +195,7 @@ def meat_processing_batch_event(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/costs", methods=["POST"])
 def meat_processing_batch_cost(batch_id):
-    denied = require_owner_read_access()
+    denied = require_owner_admin_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_cost(batch_id, request.get_json(silent=True) or {})
@@ -203,10 +204,19 @@ def meat_processing_batch_cost(batch_id):
 
 @sales_bp.route("/sales/meat-production/batches/<batch_id>/outputs", methods=["POST"])
 def meat_processing_batch_output(batch_id):
-    denied = require_owner_read_access()
+    denied = require_owner_admin_access()
     if denied:
         return denied
     result, status_code = record_meat_processing_output(batch_id, request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-production/butcher-board/<lead_id>", methods=["GET"])
+def butcher_truth_board(lead_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_butcher_truth_board(lead_id)
     return jsonify(result), status_code
 
 

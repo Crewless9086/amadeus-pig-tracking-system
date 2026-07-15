@@ -43,6 +43,13 @@ def get_sales_lead_meat_match(lead_id, payload=None, database_url=None):
         [item.get("pig_id") for item in planning.get("pigs") or []],
         database_url=database_url,
     )
+    if active_reservations is None:
+        return {
+            "success": False,
+            "status": "carcass_reservation_source_unavailable",
+            "lead_id": lead_id,
+            **_authority_flags(),
+        }, 503
     match = build_butcher_meat_match(
         contract_result.get("lead") or {},
         contract_result.get("contract") or {},
@@ -228,11 +235,11 @@ def _fetch_active_carcass_reservations(pig_ids, database_url=None):
         return []
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
-        return []
+        return None
     try:
         import psycopg
     except ImportError:
-        return []
+        return None
     try:
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:

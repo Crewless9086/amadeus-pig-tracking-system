@@ -302,7 +302,7 @@ def _confirmed_deposit_amount(deposits, reservation_id):
     for deposit in deposits or []:
         if deposit.get("reservation_id") != reservation_id:
             continue
-        if deposit.get("event_type") not in {"deposit_confirmed_in_bank", "deposit_confirmed"}:
+        if deposit.get("event_type") != "deposit_confirmed_in_bank":
             continue
         total += _number(deposit.get("amount")) or 0
     return _money(total)
