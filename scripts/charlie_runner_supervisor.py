@@ -45,7 +45,13 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
     cycles = 0
     while not STOP_PATH.exists():
         cycles += 1
-        child_env = {**os.environ, "CHARLIE_SUPERVISOR_GENERATION": generation}
+        child_env = {
+            **os.environ,
+            "CHARLIE_SUPERVISOR_GENERATION": generation,
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(REPO_ROOT),
+        }
         child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env)
         child_identity = _process_identity(child.pid)
         _write_status(
@@ -168,7 +174,10 @@ def _write_status(status, **extra):
 
 
 def main():
-    load_dotenv(REPO_ROOT / ".env", override=False)
+    for path in (REPO_ROOT / ".env", REPO_ROOT.parents[1] / ".env"):
+        if path.exists():
+            load_dotenv(path, override=False)
+            break
     if STOP_PATH.exists():
         STOP_PATH.unlink()
     try:
