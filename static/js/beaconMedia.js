@@ -195,10 +195,10 @@
     elements.publishDraftId.innerHTML = pairings.map((pairing) => `
       <option value="${escapeHtml(pairing.draft_id)}">${escapeHtml(safe(pairing.draft_label || pairing.draft_id))}</option>
     `).join("");
-    elements.publishAssetId.innerHTML = [
-      `<option value="">Text only for now</option>`,
-      ...assets.map((asset) => `<option value="${escapeHtml(asset.asset_id)}">${escapeHtml(safe(asset.title || asset.asset_id))}</option>`),
-    ].join("");
+    elements.publishAssetId.innerHTML = assets.map((asset) =>
+      `<option value="${escapeHtml(asset.asset_id)}">${escapeHtml(safe(asset.title || asset.asset_id))} (${escapeHtml(safe(asset.media_type, "media"))})</option>`
+    ).join("");
+    elements.publishAssetId.required = true;
     if (pairings[0] && !elements.publishChannel.value) {
       elements.publishChannel.value = pairings[0].channel || "";
     }
@@ -206,10 +206,17 @@
 
   async function preparePublishPacket() {
     clearMessage();
+    const assetIds = Array.from(elements.publishAssetId.selectedOptions).map((option) => option.value).filter(Boolean);
+    if (!assetIds.length) {
+      showMessage("Choose at least one owner-approved media asset before preparing the packet.");
+      elements.publishAssetId.focus();
+      return;
+    }
     const payload = {
       campaign_lane: elements.campaignLane?.value || "live_stock_awareness",
       draft_id: elements.publishDraftId.value,
-      asset_id: elements.publishAssetId.value,
+      asset_id: assetIds[0],
+      asset_ids: assetIds,
       channel: elements.publishChannel.value,
       pilot_cap: elements.publishCap.value,
       owner_notes: elements.publishNotes.value,
@@ -228,12 +235,17 @@
 
   function renderPublishPacket(packet) {
     const checks = packet.safety_checks || {};
-    const asset = packet.selected_asset || {};
+    const assets = Array.isArray(packet.selected_assets) ? packet.selected_assets : packet.selected_asset ? [packet.selected_asset] : [];
+    const salesTruth = packet.sales_truth || packet.source_truth || {};
+    const isSales = packet.campaign_lane === "live_stock_sales";
+    const checkSummary = isSales
+      ? `Eligibility ${salesTruth.sale_eligible ? "verified" : "blocked"} | cap ${escapeHtml(safe(salesTruth.fulfilment_cap, "not verified"))} | price lineage ${salesTruth.price_lineage_approved ? "verified" : "blocked"} | posting ${checks.no_public_send_or_post ? "locked" : "exact gate only"}`
+      : `Forbidden promises ${checks.draft_has_no_forbidden_promise ? "clear" : "review"} | posting ${checks.no_public_send_or_post ? "locked" : "exact gate only"}`;
     elements.publishResult.innerHTML = `
       <div class="beacon-publish-packet-card">
         <strong>${escapeHtml(packet.publish_packet_id)}</strong>
-        <span>${escapeHtml(packet.selected_draft?.channel || "")} | ${escapeHtml(packet.approval_status || "")}</span>
-        <p>Asset: ${escapeHtml(safe(asset.title || asset.asset_id, "Text only"))}</p>
+        <span>${escapeHtml(packet.campaign_lane || "")} | ${escapeHtml(packet.selected_draft?.channel || "")} | ${escapeHtml(packet.approval_status || "")}</span>
+        <p>Media: ${escapeHtml(assets.map((asset) => safe(asset.title || asset.asset_id)).join(" -> ") || "Text only")}</p>
         <pre>${escapeHtml(packet.selected_draft?.exact_text || "")}</pre>
         <small>Checks: preorder ${checks.draft_is_limited_preorder ? "yes" : "no"} | forbidden promises ${checks.draft_has_no_forbidden_promise ? "clear" : "review"} | posting ${checks.no_public_send_or_post ? "locked" : "enabled"}</small>
       </div>
@@ -251,9 +263,26 @@
   }
 
   function primeFacebookPostExecution(packet) {
+    const assets = Array.isArray(packet.selected_assets) ? packet.selected_assets : packet.selected_asset ? [packet.selected_asset] : [];
     elements.facebookPostPacketId.value = packet.publish_packet_id || "";
-    elements.facebookPostAssetId.value = packet.selected_asset?.asset_id || "";
+    elements.facebookPostAssetId.value = assets.map((asset) => asset.asset_id).join(", ");
     elements.facebookPostExactText.value = packet.selected_draft?.exact_text || "";
+    const mixedMedia = assets.length > 1 && new Set(assets.map((asset) => asset.media_type)).size > 1;
+    elements.facebookPostExecute.dataset.manualMediaRequired = mixedMedia ? "true" : "false";
+    if (mixedMedia) {
+      elements.facebookPostPolicyStatus.textContent = "Photo + video packet ready. Post this combination with Facebook's manual composer; automatic posting is locked.";
+      elements.facebookPostResult.innerHTML = `<div class="beacon-facebook-post-card"><strong>Manual Facebook composer required</strong><span>Use the exact text above and add the selected photo and video in the displayed order.</span><small>Beacon approved and bound both assets. No Meta call has been made.</small></div>`;
+    }
+    updateFacebookActionState();
+  }
+
+  function updateFacebookActionState() {
+    const policy = state.facebookPostingPolicy || {};
+    const ready = Boolean(policy.enabled && policy.page_id_configured && policy.page_access_token_configured);
+    const exactConfirmation = elements.facebookPostConfirmation.value === "POST EXACT BEACON PACKET";
+    const exactPacketReady = Boolean(elements.facebookPostPacketId.value && elements.facebookPostExactText.value);
+    const manualMediaRequired = elements.facebookPostExecute.dataset.manualMediaRequired === "true";
+    elements.facebookPostExecute.disabled = manualMediaRequired || !(ready && exactConfirmation && exactPacketReady);
   }
 
   async function loadFacebookPostingPolicy() {
@@ -263,7 +292,7 @@
     elements.facebookPostPolicyStatus.textContent = ready
       ? "Facebook posting gate is armed. Exact owner confirmation is still required."
       : "Facebook posting is locked until Render envs and owner confirmation are present.";
-    elements.facebookPostExecute.disabled = !ready;
+    updateFacebookActionState();
     return policy;
   }
 
@@ -274,11 +303,16 @@
 
   async function executeFacebookPost() {
     clearMessage();
+    const assets = Array.isArray(state.latestPublishPacket?.selected_assets)
+      ? state.latestPublishPacket.selected_assets
+      : state.latestPublishPacket?.selected_asset ? [state.latestPublishPacket.selected_asset] : [];
     const payload = {
+      campaign_lane: state.latestPublishPacket?.campaign_lane || "",
       publish_packet_id: elements.facebookPostPacketId.value,
       channel: "Facebook",
       exact_text: elements.facebookPostExactText.value,
-      asset_id: elements.facebookPostAssetId.value,
+      asset_id: assets[0]?.asset_id || "",
+      asset_ids: assets.map((asset) => asset.asset_id),
       owner_confirmation: elements.facebookPostConfirmation.value,
       recorded_by: "farm_app_beacon_facebook_post_gate",
     };
@@ -298,7 +332,7 @@
       <div class="beacon-facebook-post-card">
         <strong>${escapeHtml(result.status || event.execution_status || "not_attempted")}</strong>
         <span>Post ID: ${escapeHtml(safe(result.facebook_post_id || event.facebook_post_id, "Not posted"))}</span>
-        <small>${escapeHtml(safe(event.post_kind || result.facebook_result?.post_kind || "feed"))} | media ${escapeHtml(safe(event.selected_media?.asset_id || result.facebook_result?.selected_media?.asset_id, "text only"))}</small>
+        <small>${escapeHtml(safe(event.post_kind || result.facebook_result?.post_kind || "feed"))} | media ${escapeHtml(mediaSummary(event.selected_media || result.facebook_result?.selected_media))}</small>
         <small>Public post ${result.posts_publicly ? "executed" : "locked"} | Meta call ${result.calls_meta ? "executed" : "locked"} | paid boost locked</small>
       </div>
     `;
@@ -313,10 +347,15 @@
       <div class="beacon-facebook-post-item">
         <strong>${escapeHtml(event.execution_status || event.execution_event_id)}</strong>
         <span>${escapeHtml(safe(event.publish_packet_id))} | ${escapeHtml(safe(event.facebook_post_id, "No post id"))}</span>
-        <small>${escapeHtml(safe(event.post_kind || "feed"))} | ${escapeHtml(safe(event.selected_media?.title || event.selected_media?.asset_id, "text only"))}</small>
+        <small>${escapeHtml(safe(event.post_kind || "feed"))} | ${escapeHtml(mediaSummary(event.selected_media))}</small>
         <small>${escapeHtml(safe(event.created_at))}</small>
       </div>
     `).join("");
+  }
+
+  function mediaSummary(media) {
+    if (Array.isArray(media?.assets)) return media.assets.map((asset) => safe(asset.title || asset.asset_id)).join(" + ");
+    return safe(media?.title || media?.asset_id, "text only");
   }
 
   async function loadManualPostEvidence() {
@@ -636,6 +675,7 @@
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
+    elements.facebookPostConfirmation.addEventListener("input", updateFacebookActionState);
     elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
     elements.facebookPostRefresh.addEventListener("click", () => Promise.all([loadFacebookPostingPolicy(), loadFacebookPostExecutions()]).catch((error) => showMessage(error.message)));
     elements.facebookPostExecute.addEventListener("click", () => executeFacebookPost().catch((error) => showMessage(error.message)));

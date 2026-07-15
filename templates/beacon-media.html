@@ -103,8 +103,9 @@
               <select id="beacon_publish_draft_id"></select>
             </div>
             <div class="form-group">
-              <label for="beacon_publish_asset_id">Approved Media</label>
-              <select id="beacon_publish_asset_id"></select>
+              <label for="beacon_publish_asset_id">Approved Media (in post order)</label>
+              <select id="beacon_publish_asset_id" multiple size="4"></select>
+              <small>Select more than one with Ctrl+click. Mixed photo/video packets use Facebook's manual composer.</small>
             </div>
             <div class="form-group">
               <label for="beacon_publish_channel">Channel</label>
@@ -142,8 +143,8 @@
               <input type="text" id="beacon_facebook_post_confirmation" placeholder="POST EXACT BEACON PACKET" />
             </div>
             <div class="form-group">
-              <label for="beacon_facebook_post_asset_id">Approved Image</label>
-              <input type="text" id="beacon_facebook_post_asset_id" placeholder="Text-only unless publish packet has image" readonly />
+              <label for="beacon_facebook_post_asset_id">Approved Media IDs</label>
+              <input type="text" id="beacon_facebook_post_asset_id" placeholder="Prepared packet media" readonly />
             </div>
           </div>
           <div class="form-group">
