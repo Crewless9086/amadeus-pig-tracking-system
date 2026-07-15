@@ -298,21 +298,24 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
     approved_assets = approved_assets if isinstance(approved_assets, list) else []
     ranked_assets = _rank_approved_assets(approved_assets, campaign_lane="live_stock_awareness")
     draft_id = _clean_text(payload.get("draft_id"))
-    selected_asset_id = _clean_text(payload.get("asset_id"))
+    selected_asset_ids = _selected_asset_ids(payload)
     selected_channel = _clean_text(payload.get("channel"))
     owner_notes = _clean_text(payload.get("owner_notes"))
     draft = _find_draft(campaign_packet, draft_id)
-    asset = _find_asset(ranked_assets, selected_asset_id)
+    assets = [_find_asset(ranked_assets, asset_id) for asset_id in selected_asset_ids]
+    missing_asset_ids = [asset_id for asset_id, asset in zip(selected_asset_ids, assets) if not asset]
+    assets = [asset for asset in assets if asset]
+    asset = assets[0] if assets else None
     errors = []
     if not draft:
         errors.append("selected_draft_not_found")
-    if selected_asset_id and not asset:
+    if missing_asset_ids:
         errors.append("selected_asset_not_approved_or_not_found")
     exact_text = draft.get("text", "") if draft else ""
     if _has_live_stock_direct_sales_wording(exact_text):
         errors.append("live_stock_awareness_direct_sales_wording_blocked")
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, "live_stock_awareness")
+    packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness")
     return {
         "success": not errors,
         "mode": "beacon_live_stock_awareness_publish_packet_owner_review_only",
@@ -329,18 +332,22 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
             "exact_text": exact_text,
         },
         "selected_asset": asset,
+        "selected_assets": assets,
+        "asset_ids": selected_asset_ids,
         "owner_notes": owner_notes,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
         "approval_sends_or_posts": False,
         "requires_owner_exact_text_confirmation": True,
-        "requires_owner_exact_media_confirmation": bool(asset),
+        "requires_owner_exact_media_confirmation": bool(assets),
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "safety_checks": {
             "draft_is_awareness_only": not _has_live_stock_direct_sales_wording(exact_text),
             "draft_has_no_direct_sales_wording": not _has_live_stock_direct_sales_wording(exact_text),
-            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "assets_are_owner_approved": len(assets) == len(selected_asset_ids) and all(
+                item.get("effective_public_use_approved") or item.get("public_use_approved") for item in assets
+            ),
             "no_public_send_or_post": True,
             "no_meta_call": True,
             "no_signed_url_created": True,
@@ -1694,6 +1701,20 @@ def _find_asset(assets, asset_id):
     return {}
 
 
+def _selected_asset_ids(payload, limit=10):
+    values = payload.get("asset_ids") if isinstance(payload.get("asset_ids"), list) else []
+    if not values and payload.get("asset_id"):
+        values = [payload.get("asset_id")]
+    result = []
+    for value in values:
+        asset_id = _clean_text(value)[:120]
+        if asset_id and asset_id not in result:
+            result.append(asset_id)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
     seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap"])
     total = 0
@@ -2041,6 +2062,19 @@ def _facebook_execution_authority(executed):
 
 def _facebook_post_params(payload, policy):
     selected_asset = payload.get("selected_asset") if isinstance(payload.get("selected_asset"), dict) else {}
+    selected_assets = payload.get("selected_assets") if isinstance(payload.get("selected_assets"), list) else []
+    selected_assets = [item for item in selected_assets if isinstance(item, dict)][:10]
+    if not selected_assets and selected_asset:
+        selected_assets = [selected_asset]
+    media_types = [str(item.get("media_type") or "").lower() for item in selected_assets]
+    if not selected_assets:
+        post_kind = "feed"
+    elif len(selected_assets) == 1:
+        post_kind = "video" if media_types[0] == "video" else "photo"
+    elif all(value == "image" for value in media_types):
+        post_kind = "multi_photo"
+    else:
+        post_kind = "mixed_media_manual"
     params = {
         "execution_event_id": "",
         "mode": "beacon_facebook_page_post_execution_gate",
@@ -2049,8 +2083,9 @@ def _facebook_post_params(payload, policy):
         "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
         "asset_id": _clean_text(payload.get("asset_id") or selected_asset.get("asset_id"))[:120],
         "selected_asset": selected_asset,
+        "selected_assets": selected_assets,
         "selected_media_json": "{}",
-        "post_kind": "photo" if _clean_text(payload.get("asset_id") or selected_asset.get("asset_id")) else "feed",
+        "post_kind": post_kind,
         "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
@@ -2060,7 +2095,7 @@ def _facebook_post_params(payload, policy):
         "page_id_configured": bool(policy.get("page_id_configured")),
         "page_access_token_configured": bool(policy.get("page_access_token_configured")),
     }
-    if params["asset_id"]:
+    if selected_assets:
         params["selected_media_json"] = json.dumps(_facebook_selected_media(params), sort_keys=True, default=str)
     params["execution_event_id"] = _facebook_post_execution_id(params)
     return params
@@ -2071,18 +2106,19 @@ def _facebook_post_validation_error(params, policy):
         return "publish_packet_id_required"
     if not params.get("exact_text"):
         return "exact_text_required"
-    if params.get("asset_id"):
-        asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
-        if not asset:
-            return "selected_image_asset_required"
-        if asset.get("media_type") != "image":
-            return "selected_asset_must_be_image"
-        if not (asset.get("effective_public_use_approved") or asset.get("public_use_approved")):
-            return "selected_image_asset_not_public_use_approved"
-        if not asset.get("storage_bucket") or not asset.get("storage_path"):
-            return "selected_image_asset_storage_missing"
+    assets = params.get("selected_assets") if isinstance(params.get("selected_assets"), list) else []
+    if assets:
+        if params.get("post_kind") == "mixed_media_manual":
+            return "facebook_mixed_media_requires_manual_composer"
+        for asset in assets:
+            if asset.get("media_type") not in {"image", "video"}:
+                return "selected_media_type_not_supported"
+            if not (asset.get("effective_public_use_approved") or asset.get("public_use_approved")):
+                return "selected_media_asset_not_public_use_approved"
+            if not asset.get("storage_bucket") or not asset.get("storage_path"):
+                return "selected_media_asset_storage_missing"
         if not policy.get("media_storage_configured"):
-            return "facebook_image_posting_storage_not_configured"
+            return "facebook_media_posting_storage_not_configured"
     if params.get("owner_confirmation") != FACEBOOK_POST_CONFIRMATION_PHRASE:
         return "owner_confirmation_required"
     if "facebook" not in params.get("channel", "").lower():
@@ -2095,6 +2131,10 @@ def _facebook_post_validation_error(params, policy):
 
 
 def _post_to_facebook_page(params, policy, environ=None):
+    if params.get("post_kind") == "multi_photo":
+        return _post_to_facebook_page_multi_photo(params, policy, environ=environ)
+    if params.get("post_kind") == "video":
+        return _post_to_facebook_page_video(params, policy, environ=environ)
     if params.get("asset_id"):
         return _post_to_facebook_page_photos(params, policy, environ=environ)
     return _post_to_facebook_page_feed(params, policy, environ=environ)
@@ -2183,11 +2223,88 @@ def _post_to_facebook_page_photos(params, policy, environ=None):
         }, 502
 
 
-def _signed_supabase_media_url(params, environ=None):
+def _post_to_facebook_page_multi_photo(params, policy, environ=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    media_ids = []
+    for asset in params.get("selected_assets", []):
+        signed, signed_status = _signed_supabase_media_url(params, environ=source, asset=asset)
+        if signed_status >= 400:
+            return {**signed, "status": "facebook_multi_photo_sign_failed", "uploaded_media_ids": media_ids}, signed_status
+        endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/photos"
+        body = urllib_parse.urlencode({
+            "url": signed.get("signed_url", ""),
+            "published": "false",
+            "access_token": token,
+        }).encode("utf-8")
+        result, status = _facebook_form_request(endpoint, body, "facebook_multi_photo_upload_failed", timeout=35)
+        if status >= 400 or not result.get("id"):
+            return {**result, "uploaded_media_ids": media_ids}, status
+        media_ids.append(str(result["id"]))
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/feed"
+    fields = {
+        "message": params.get("exact_text", ""),
+        "access_token": token,
+    }
+    for index, media_id in enumerate(media_ids):
+        fields[f"attached_media[{index}]"] = json.dumps({"media_fbid": media_id})
+    result, status = _facebook_form_request(
+        endpoint,
+        urllib_parse.urlencode(fields).encode("utf-8"),
+        "facebook_multi_photo_post_failed",
+        timeout=35,
+    )
+    return {
+        **result,
+        "post_kind": "multi_photo",
+        "uploaded_media_ids": media_ids,
+        "selected_media": _facebook_selected_media(params),
+    }, status
+
+
+def _post_to_facebook_page_video(params, policy, environ=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    asset = params.get("selected_assets", [{}])[0]
+    signed, signed_status = _signed_supabase_media_url(params, environ=source, asset=asset)
+    if signed_status >= 400:
+        return signed, signed_status
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/videos"
+    body = urllib_parse.urlencode({
+        "file_url": signed.get("signed_url", ""),
+        "description": params.get("exact_text", ""),
+        "access_token": token,
+    }).encode("utf-8")
+    result, status = _facebook_form_request(endpoint, body, "facebook_video_post_failed", timeout=60)
+    return {**result, "post_kind": "video", "selected_media": _facebook_selected_media(params)}, status
+
+
+def _facebook_form_request(endpoint, body, failure_status, timeout=35):
+    req = urllib_request.Request(endpoint, data=body, method="POST")
+    try:
+        with urllib_request.urlopen(req, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8") or "{}")
+            return {"success": True, **payload}, response.status
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return {"success": False, "status": failure_status, "http_status": exc.code, "error": raw[:500]}, exc.code
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {"success": False, "status": failure_status, "error_type": exc.__class__.__name__, "error": str(exc)[:240]}, 502
+
+
+def _signed_supabase_media_url(params, environ=None, asset=None):
     source = environ if environ is not None else os.environ
     url = _clean_text(source.get(SUPABASE_URL_ENV)).rstrip("/")
     key = _clean_text(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV))
-    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+    asset = asset if isinstance(asset, dict) else params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
     bucket = _clean_text(asset.get("storage_bucket"))
     storage_path = str(asset.get("storage_path") or "").strip().replace("\\", "/")
     if not url or not key:
@@ -2351,11 +2468,16 @@ def _facebook_post_unavailable(status, configured):
 
 
 def _facebook_selected_media(params):
-    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
-    if not asset and not params.get("asset_id"):
+    assets = params.get("selected_assets") if isinstance(params.get("selected_assets"), list) else []
+    assets = [asset for asset in assets if isinstance(asset, dict)]
+    if not assets:
+        asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+        if asset:
+            assets = [asset]
+    if not assets and not params.get("asset_id"):
         return {}
-    return {
-        "asset_id": params.get("asset_id") or asset.get("asset_id", ""),
+    selected = [{
+        "asset_id": asset.get("asset_id", ""),
         "title": asset.get("title", ""),
         "media_type": asset.get("media_type", ""),
         "mime_type": asset.get("mime_type", ""),
@@ -2364,7 +2486,10 @@ def _facebook_selected_media(params):
         "privacy_risk": asset.get("privacy_risk", ""),
         "quality_score": asset.get("quality_score"),
         "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
-    }
+    } for asset in assets]
+    if len(selected) == 1:
+        return selected[0]
+    return {"asset_count": len(selected), "post_kind": params.get("post_kind", ""), "assets": selected}
 
 
 def _truthy(value):

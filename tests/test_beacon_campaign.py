@@ -318,6 +318,26 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(packet["approval_sends_or_posts"])
         self.assertFalse(packet["authority"]["posts_publicly"])
 
+    def test_live_stock_awareness_packet_binds_ordered_approved_media(self):
+        assets = [
+            {"asset_id": "PHOTO-1", "media_type": "image", "public_use_approved": True,
+             "effective_public_use_approved": True, "effective_approval_status": "approved",
+             "sale_stream_relevance": ["live_stock_awareness"]},
+            {"asset_id": "VIDEO-1", "media_type": "video", "public_use_approved": True,
+             "effective_public_use_approved": True, "effective_approval_status": "approved",
+             "sale_stream_relevance": ["live_stock_awareness"]},
+        ]
+        packet = build_live_stock_awareness_campaign_publish_packet({
+            "draft_id": "facebook_awareness_post",
+            "asset_ids": ["PHOTO-1", "VIDEO-1"],
+            "channel": "Facebook",
+        }, approved_assets=assets)
+
+        self.assertTrue(packet["success"], packet)
+        self.assertEqual(packet["asset_ids"], ["PHOTO-1", "VIDEO-1"])
+        self.assertEqual([item["asset_id"] for item in packet["selected_assets"]], ["PHOTO-1", "VIDEO-1"])
+        self.assertTrue(packet["safety_checks"]["assets_are_owner_approved"])
+
     def test_dispatcher_preserves_meat_launch_when_lane_is_explicit(self):
         selection = build_beacon_campaign_selection({
             "campaign_lane": "meat_launch",
@@ -550,6 +570,34 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["calls_meta"])
         self.assertFalse(result["spends_money"])
 
+    def test_facebook_mixed_media_requires_manual_composer_before_meta(self):
+        called = []
+        assets = [
+            {"asset_id": "PHOTO-1", "media_type": "image", "public_use_approved": True,
+             "storage_bucket": "beacon-raw-intake", "storage_path": "photo.jpg"},
+            {"asset_id": "VIDEO-1", "media_type": "video", "public_use_approved": True,
+             "storage_bucket": "beacon-raw-intake", "storage_path": "video.mp4"},
+        ]
+        result, status = execute_beacon_facebook_page_post({
+            "campaign_lane": "live_stock_awareness",
+            "publish_packet_id": "PACKET-MIXED",
+            "channel": "Facebook",
+            "exact_text": "A day with the piglets on the farm.",
+            "asset_ids": ["PHOTO-1", "VIDEO-1"],
+            "selected_assets": assets,
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: called.append(True), environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "page",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        })
+
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "facebook_mixed_media_requires_manual_composer")
+        self.assertEqual(called, [])
+
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
         recorded = []
 
@@ -626,7 +674,7 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertNotIn("CALLER-CANNOT-CONTROL-CLAIM", recorded_ids)
         self.assertFalse(result["calls_meta"])
 
-    def test_facebook_image_post_execution_requires_approved_image_asset(self):
+    def test_facebook_media_post_execution_rejects_unsupported_media_type(self):
         result, status = execute_beacon_facebook_page_post({
             "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
             "channel": "Facebook",
@@ -634,7 +682,7 @@ class BeaconCampaignTests(unittest.TestCase):
             "asset_id": "BEACON-ASSET-1",
             "selected_asset": {
                 "asset_id": "BEACON-ASSET-1",
-                "media_type": "video",
+                "media_type": "document",
                 "effective_public_use_approved": True,
                 "storage_bucket": "beacon-raw-intake",
                 "storage_path": "2026/06/18/video.mp4",
@@ -649,7 +697,7 @@ class BeaconCampaignTests(unittest.TestCase):
         })
 
         self.assertEqual(status, 400)
-        self.assertEqual(result["status"], "selected_asset_must_be_image")
+        self.assertEqual(result["status"], "selected_media_type_not_supported")
         self.assertFalse(result["posts_publicly"])
         self.assertFalse(result["calls_meta"])
 
