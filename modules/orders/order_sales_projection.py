@@ -107,6 +107,12 @@ def build_projection(order, lines, changed_by="App"):
 
 
 def classify_sale_stream(order, lines):
+    explicit = _clean(order.get("order_stream"))
+    if explicit:
+        if explicit not in {"Livestock", "Meat", "Slaughter"}:
+            raise ValueError("Order order_stream must be Livestock, Meat, or Slaughter.")
+        return explicit
+    # Read-only compatibility for rows created before order_stream existed.
     context = " ".join(str(value or "") for value in (
         order.get("requested_category"), order.get("order_source"), order.get("notes"),
         *(line.get("sale_category") for line in lines),

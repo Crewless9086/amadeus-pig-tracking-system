@@ -13,6 +13,7 @@ def cleaned_order(**overrides):
         "customer_channel": "WhatsApp",
         "customer_language": "English",
         "order_source": "Sam",
+        "order_stream": "Livestock",
         "requested_category": "Grower",
         "requested_weight_range": "40_to_44_Kg",
         "requested_sex": "Any",

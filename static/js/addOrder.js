@@ -26,6 +26,7 @@ function setupAddOrderForm() {
             customer_language: formData.get("customer_language") || "",
             order_source: formData.get("order_source") || "",
             requested_category: formData.get("requested_category") || "",
+            order_stream: formData.get("order_stream") || "",
             requested_weight_range: formData.get("requested_weight_range") || "",
             requested_sex: formData.get("requested_sex") || "",
             requested_quantity: formData.get("requested_quantity") || "",

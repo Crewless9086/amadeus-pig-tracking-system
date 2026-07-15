@@ -2093,6 +2093,7 @@ def build_draft_order_payload_from_sales_lead(lead, contract, confirmation=None,
         "customer_channel": _normal_order_channel(overrides.get("customer_channel") or lead.get("channel")),
         "customer_language": _clean_text(overrides.get("customer_language") or "English", 40),
         "order_source": _clean_text(overrides.get("order_source") or "Sam Meat Preorder", 80),
+        "order_stream": "Meat",
         "requested_category": _clean_text(overrides.get("requested_category") or "Slaughter", 80),
         "requested_weight_range": _clean_text(
             overrides.get("requested_weight_range") or required.get("estimated_weight_or_size") or cut_set,
