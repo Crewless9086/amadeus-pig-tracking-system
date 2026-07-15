@@ -48,6 +48,8 @@ def _load_runner_dotenv():
     candidates = [REPO_ROOT / ".env"]
     if REPO_ROOT.parent.name == ".worktrees":
         candidates.append(REPO_ROOT.parent.parent / ".env")
+    if REPO_ROOT.parent.name == ".charlie_runner":
+        candidates.append(REPO_ROOT.parents[1] / ".env")
     for path in candidates:
         if path.exists():
             load_dotenv(path, override=False)
