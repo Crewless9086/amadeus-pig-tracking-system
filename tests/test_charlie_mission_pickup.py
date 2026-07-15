@@ -638,6 +638,24 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(packet["return_to_stage"], "builder")
         send_blocked.assert_called_once()
 
+    def test_stranded_recovery_detects_idle_observer_without_owned_execution(self):
+        decision = charlie_mission_pickup._stranded_recovery_decision(
+            {"mission_id": "CHARLIE-MISSION-IDLE"},
+            {
+                "status": "runner_stale_or_stopped",
+                "active": False,
+                "process_alive": True,
+                "age_seconds": 20,
+                "last_mission_id": "CHARLIE-MISSION-IDLE",
+                "last_result_status": "active_mission_in_progress",
+                "current_agent": "",
+                "execution_artifact": "",
+            },
+        )
+
+        self.assertTrue(decision["recover"])
+        self.assertEqual(decision["reason"], "in_progress_row_has_no_owned_execution")
+
     @patch("scripts.charlie_mission_pickup._send_blocked_notification")
     @patch("scripts.charlie_mission_pickup._send_review_ready_notification")
     @patch("scripts.charlie_mission_pickup.run_agent_execution_bridge_v2")
