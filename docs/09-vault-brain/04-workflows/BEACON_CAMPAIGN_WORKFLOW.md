@@ -1,4 +1,4 @@
-# Beacon Campaign Workflow
+﻿# Beacon Campaign Workflow
 
 1. Beacon detects opportunity from the owner-read-only Supabase-first scanner; a scanner card is advisory and cannot trigger a campaign or public action.
 2. Beacon reads the owner-review operating contract and verifies fresh fulfilment evidence; missing, stale, invalid, or zero capacity stops campaign targeting.

@@ -406,12 +406,20 @@ def _stranded_recovery_decision(mission, local_status):
     heartbeat_stale = age is not None and int(age) > max(STALE_SECONDS * 2, 240)
     process_dead = local_status.get("process_alive") is False
     runner_not_active = local_status.get("active") is False and local_status.get("status") in {"runner_stale_or_stopped", "runner_not_started", "runner_code_stale"}
+    idle_observer = (
+        last_mission_id == mission_id
+        and local_status.get("last_result_status") == "active_mission_in_progress"
+        and not str(local_status.get("current_agent") or "").strip()
+        and not str(local_status.get("execution_artifact") or "").strip()
+    )
     if last_mission_id and last_mission_id != mission_id and local_status.get("active"):
         return {"recover": True, "reason": "in_progress_not_owned_by_active_runner"}
     if process_dead and heartbeat_stale:
         return {"recover": True, "reason": "runner_process_dead_and_heartbeat_stale"}
     if runner_not_active and heartbeat_stale:
         return {"recover": True, "reason": "runner_inactive_and_heartbeat_stale"}
+    if idle_observer:
+        return {"recover": True, "reason": "in_progress_row_has_no_owned_execution"}
     return {"recover": False, "reason": "runner_heartbeat_still_active_or_uncertain"}
 
 

@@ -380,6 +380,8 @@
     elements.facebookPostPacketId.value = packet.publish_packet_id || "";
     elements.facebookPostAssetId.value = packet.selected_asset?.asset_id || "";
     elements.facebookPostExactText.value = packet.selected_draft?.exact_text || "";
+    updateFacebookActionState();
+
     const asset = packet.selected_asset || {};
     const previewUrl = asset.preview_url || asset.signed_preview_url || "";
     state.exactImageReady = Boolean(asset.asset_id && previewUrl);

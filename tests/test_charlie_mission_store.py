@@ -856,6 +856,16 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn('"creative_ui_designer", "status": "pending"', update_params["metadata_json"])
         self.assertIn("Mapped owner reference media", update_params["metadata_json"])
 
+    def test_update_workflow_items_allows_next_agent_without_current_agent(self):
+        workflow = [{"agent": "builder", "status": "pending", "handoff_to": "tester"}]
+        updated = _update_workflow_items(
+            workflow, "", "pending", "", "visual_reference_interpreter"
+        )
+        self.assertEqual(
+            [item["agent"] for item in updated],
+            ["builder", "visual_reference_interpreter"],
+        )
+
     def test_update_mission_workflow_step_records_blocked_agent_stage(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
         row = (

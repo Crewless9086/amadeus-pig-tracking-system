@@ -1,4 +1,4 @@
-const { defineConfig } = require("@playwright/test");
+﻿const { defineConfig } = require("@playwright/test");
 
 const baseURL = process.env.OOM_SAKKIE_PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000";
 const serverURL = process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_URL || `${baseURL}/oom-sakkie`;

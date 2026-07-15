@@ -1,4 +1,4 @@
-.beacon-media-shell {
+﻿.beacon-media-shell {
   display: block;
   max-width: none;
   padding: 24px;
@@ -477,6 +477,7 @@
   .beacon-performance-metrics-grid {
     grid-template-columns: 1fr;
   }
+  .beacon-lane-boundary, .beacon-sales-truth-grid { grid-template-columns: 1fr; }
   .beacon-lane-boundary, .beacon-sales-truth-grid, .beacon-readiness-grid, .beacon-exact-review-grid { grid-template-columns: 1fr; }
 }
 

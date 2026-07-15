@@ -622,7 +622,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "approved_media_count": 1,
         }
 
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), patch.object(
             sales_transaction_routes,
             "list_beacon_media_assets",
             return_value=(assets_result, 200),
@@ -652,7 +652,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
         }
 
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
             sales_transaction_routes,
             "list_beacon_media_assets",
             return_value=(assets_result, 200),
@@ -674,6 +674,22 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         build_packet.assert_called_once()
         self.assertEqual(build_packet.call_args.kwargs["approved_assets"], assets_result["assets"])
         self.assertEqual(build_packet.call_args.args[0]["campaign_lane"], "meat_launch")
+
+    def test_beacon_campaign_routes_require_owner_access_before_service_calls(self):
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), patch.object(
+            sales_transaction_routes, "list_beacon_media_assets"
+        ) as list_assets:
+            response = self.client.get("/api/beacon/campaign-draft-selection")
+        self.assertEqual(response.status_code, 403)
+        list_assets.assert_not_called()
+
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), patch.object(
+            sales_transaction_routes, "list_beacon_media_assets"
+        ) as list_assets:
+            response = self.client.post("/api/beacon/campaign-publish-packet", json={})
+        self.assertEqual(response.status_code, 403)
+        list_assets.assert_not_called()
 
     def test_beacon_manual_post_evidence_routes_record_owner_post_history_only(self):
         list_result = {

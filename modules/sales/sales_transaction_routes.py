@@ -937,6 +937,9 @@ def beacon_creative_studio_reviews(job_id):
 
 @sales_bp.route("/beacon/campaign-draft-selection", methods=["GET"])
 def beacon_campaign_draft_selection():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
     assets_result, assets_status = list_beacon_media_assets(
         limit=request.args.get("limit", 25),
         approval_status="approved",
@@ -961,6 +964,9 @@ def beacon_campaign_draft_selection():
 
 @sales_bp.route("/beacon/campaign-publish-packet", methods=["POST"])
 def beacon_campaign_publish_packet():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     assets_result, assets_status = list_beacon_media_assets(
         limit=25,

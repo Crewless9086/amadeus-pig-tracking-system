@@ -1,13 +1,15 @@
-const { test, expect } = require("@playwright/test");
+﻿const { test, expect } = require("@playwright/test");
 
 const baseURL = "http://127.0.0.1:5088";
 const evidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-F7F8A97750EC42A5";
 
+const exactImage = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#e8dfc8"/><rect x="72" y="72" width="1056" height="656" rx="36" fill="#315940"/><text x="600" y="320" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="76" font-weight="700">AMADEUS FARM</text><text x="600" y="430" text-anchor="middle" fill="#edcf78" font-family="Arial" font-size="54">Owner-approved grower pigs</text><text x="600" y="520" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="32">Exact public-use asset BEACON-ASSET-LIVE-001</text></svg>`);
 const asset = {
   asset_id: "BEACON-ASSET-LIVE-001",
   title: "Owner-approved grower pigs",
   original_filename: "grower-pigs-owner-approved.jpg",
   media_type: "image",
+  preview_url: exactImage,
   effective_approval_status: "approved",
   effective_public_use_approved: true,
   content_sha256: "7f4d9a2e1b6c8d00",
@@ -36,6 +38,7 @@ function json(route, body, status = 200) {
 }
 
 async function mockBeaconApi(page) {
+  const executionEvents = [];
   await page.route("**/api/beacon/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -55,11 +58,15 @@ async function mockBeaconApi(page) {
       selected_draft: { channel: "Facebook", exact_text: exactText }, safety_checks: { no_public_send_or_post: false },
     });
     if (url.pathname.endsWith("/facebook-posting-policy")) return json(route, { success: true, enabled: true, page_id_configured: true, page_access_token_configured: true, required_owner_confirmation: "POST EXACT BEACON PACKET" });
-    if (url.pathname.endsWith("/facebook-post-executions") && request.method() === "POST") return json(route, {
-      success: true, status: "facebook_post_recorded", facebook_post_id: "123456789_987654321", posts_publicly: true, calls_meta: true,
-      execution_event: { execution_status: "posted", facebook_post_id: "123456789_987654321", publish_packet_id: "BEACON-PUBLISH-PACKET-F7F8A977", post_kind: "photo", selected_media: asset, created_at: "2026-07-14T19:45:00Z" },
-    });
-    if (url.pathname.endsWith("/facebook-post-executions")) return json(route, { success: true, execution_events: [] });
+    if (url.pathname.endsWith("/facebook-post-executions") && request.method() === "POST") {
+      const executionEvent = { execution_status: "posted", facebook_post_id: "123456789_987654321", publish_packet_id: "BEACON-PUBLISH-PACKET-F7F8A977", post_kind: "photo", selected_media: asset, created_at: "2026-07-14T19:45:00Z" };
+      executionEvents.unshift(executionEvent);
+      return json(route, {
+        success: true, status: "facebook_post_recorded", facebook_post_id: "123456789_987654321", posts_publicly: true, calls_meta: true,
+        execution_event: executionEvent,
+      });
+    }
+    if (url.pathname.endsWith("/facebook-post-executions")) return json(route, { success: true, execution_events: executionEvents });
     if (url.pathname.endsWith("/manual-post-evidence")) return json(route, { success: true, manual_post_events: [] });
     if (url.pathname.endsWith("/campaign-performance")) return json(route, { success: true, performance_events: [], command_brief: { recommendations: [] } });
     return json(route, { success: true });
@@ -81,9 +88,14 @@ for (const viewport of [
     await page.selectOption("#beacon_publish_asset_id", asset.asset_id);
     await page.click("#beacon_publish_prepare");
     await expect(page.locator("#beacon_facebook_post_packet_id")).toHaveValue("BEACON-PUBLISH-PACKET-F7F8A977");
+    await expect(page.locator("#beacon_facebook_post_image")).toBeVisible();
     await page.fill("#beacon_facebook_post_confirmation", "POST EXACT BEACON PACKET");
     await page.click("#beacon_facebook_post_execute");
     await expect(page.locator("#beacon_facebook_post_result")).toContainText("123456789_987654321");
+    const executionLedger = page.locator("#beacon_facebook_post_execution_list .beacon-facebook-post-item");
+    await expect(executionLedger).toHaveCount(1);
+    await expect(executionLedger.first()).toContainText("BEACON-PUBLISH-PACKET-F7F8A977");
+    await expect(executionLedger.first()).toContainText("123456789_987654321");
     await page.locator("#beacon_sales_truth").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${evidenceDir}/beacon-live-stock-${viewport.name}.png`, fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
