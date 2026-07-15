@@ -41,6 +41,20 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def test_resume_uses_exact_remote_branch_without_local_fast_forward(self):
+        mission = {
+            "mission_id": "M-1",
+            "metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "feature/test"}}}},
+        }
+        commands = []
+        def run(command):
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+        self.assertTrue(result["success"])
+        self.assertIn(["git", "switch", "--detach", "origin/feature/test"], commands)
+        self.assertNotIn(["git", "switch", "feature/test"], commands)
+        self.assertFalse(any(command[:3] == ["git", "merge", "--ff-only"] for command in commands))
     def setUp(self):
         self._base_branch_env_patcher = patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": ""})
         self._base_branch_env_patcher.start()
@@ -57,7 +71,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             self._base_branch_guard_patcher.start()
             self.addCleanup(self._base_branch_guard_patcher.stop)
 
-    def test_restore_mission_branch_for_resume_fetches_switches_and_fast_forwards(self):
+    def test_restore_mission_branch_for_resume_fetches_exact_remote_revision(self):
         mission = {
             "metadata": {
                 "review_packet": {
@@ -79,8 +93,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["status"], "mission_branch_restored")
         self.assertEqual(commands, [
             ["git", "fetch", "origin", "feature/beacon-opportunity-scanner"],
-            ["git", "switch", "feature/beacon-opportunity-scanner"],
-            ["git", "merge", "--ff-only", "origin/feature/beacon-opportunity-scanner"],
+            ["git", "switch", "--detach", "origin/feature/beacon-opportunity-scanner"],
         ])
 
     def test_restore_mission_branch_uses_detached_remote_when_branch_is_owned_elsewhere(self):
@@ -89,8 +102,6 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         def run(command):
             commands.append(command)
-            if command == ["git", "switch", "feature/beacon-work"]:
-                return SimpleNamespace(returncode=128, stdout="", stderr="already checked out")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
