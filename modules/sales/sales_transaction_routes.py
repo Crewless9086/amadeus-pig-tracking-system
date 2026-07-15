@@ -145,6 +145,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_manual_post_evidence,
 )
 from modules.sales.beacon_facebook_history import import_beacon_facebook_history
+from modules.beacon.post_composer import build_beacon_caption_suggestions
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -985,6 +986,21 @@ def beacon_campaign_publish_packet():
     return jsonify(result), 200 if result.get("success") else 400
 
 
+@sales_bp.route("/beacon/post-composer/suggestions", methods=["POST"])
+def beacon_post_composer_suggestions():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    history, history_status = list_beacon_manual_post_evidence(limit=30)
+    if history_status >= 400:
+        return jsonify(history), history_status
+    result, status_code = build_beacon_caption_suggestions(
+        request.get_json(silent=True) or {},
+        historical_events=history.get("manual_post_events", []),
+    )
+    return jsonify(result), status_code
+
+
 def _beacon_live_stock_sales_sources(payload):
     opportunities = build_beacon_opportunity_cards()
     card = next((item for item in opportunities.get("cards", []) if item.get("lane") == "live_stock"), {})
@@ -1161,6 +1177,7 @@ def beacon_facebook_post_executions():
             "asset_id": asset_id,
             "asset_ids": asset_ids,
             "channel": "Facebook",
+            "owner_exact_text": payload.get("exact_text"),
         }, approved_assets=approved_assets)
         if (not authoritative.get("success") or
                 authoritative.get("publish_packet_id") != payload.get("publish_packet_id") or

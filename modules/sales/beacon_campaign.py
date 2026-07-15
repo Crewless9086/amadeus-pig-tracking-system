@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -16,10 +17,14 @@ BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_o
 CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
+    "sale",
+    "available",
+    "stock",
     "order",
-    "available now",
     "reserve",
     "price",
+    "cost",
+    "book",
     "special",
     "discount",
     "limited stock",
@@ -311,11 +316,11 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         errors.append("selected_draft_not_found")
     if missing_asset_ids:
         errors.append("selected_asset_not_approved_or_not_found")
-    exact_text = draft.get("text", "") if draft else ""
+    exact_text = _clean_caption_text(payload.get("owner_exact_text")) or (draft.get("text", "") if draft else "")
     if _has_live_stock_direct_sales_wording(exact_text):
         errors.append("live_stock_awareness_direct_sales_wording_blocked")
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness")
+    packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness", exact_text)
     return {
         "success": not errors,
         "mode": "beacon_live_stock_awareness_publish_packet_owner_review_only",
@@ -1715,8 +1720,8 @@ def _selected_asset_ids(payload, limit=10):
     return result
 
 
-def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
-    seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap"])
+def _publish_packet_id(draft_id, asset_id, channel, pilot_cap, exact_text=""):
+    seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap", exact_text or "canonical"])
     total = 0
     for char in seed:
         total = (total * 33 + ord(char)) % 0xFFFFFFFF
@@ -2549,8 +2554,13 @@ def _has_forbidden_promise(text):
 
 def _has_live_stock_direct_sales_wording(text):
     clean = str(text or "").lower()
-    return any(term in clean for term in LIVE_STOCK_DIRECT_SALES_TERMS)
+    return any(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", clean) for term in LIVE_STOCK_DIRECT_SALES_TERMS)
 
 
 def _clean_text(value):
     return " ".join(str(value or "").strip().split())
+
+
+def _clean_caption_text(value, limit=2200):
+    lines = [" ".join(line.split()) for line in str(value or "").replace("\x00", " ").splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:limit]

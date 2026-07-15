@@ -675,6 +675,22 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(build_packet.call_args.kwargs["approved_assets"], assets_result["assets"])
         self.assertEqual(build_packet.call_args.args[0]["campaign_lane"], "meat_launch")
 
+    def test_beacon_post_composer_uses_stored_owner_history(self):
+        history = {"success": True, "manual_post_events": [{"evidence_notes": "Exact text: Past farm post"}]}
+        suggestions = {"success": True, "status": "caption_suggestions_ready", "suggestions": ["New farm post"]}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_manual_post_evidence", return_value=(history, 200)
+        ) as list_history, patch.object(
+            sales_transaction_routes, "build_beacon_caption_suggestions", return_value=(suggestions, 200)
+        ) as compose:
+            response = self.client.post("/api/beacon/post-composer/suggestions", json={
+                "campaign_lane": "live_stock_awareness", "brief": "Twelve piglets growing well",
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), suggestions)
+        list_history.assert_called_once_with(limit=30)
+        self.assertEqual(compose.call_args.kwargs["historical_events"], history["manual_post_events"])
+
     def test_beacon_campaign_routes_require_owner_access_before_service_calls(self):
         denied = ({"success": False, "status": "owner_access_denied"}, 403)
         with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), patch.object(
