@@ -9,6 +9,29 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @patch("modules.charlie.runner_control._pid_descends_from", return_value=True)
+    @patch("modules.charlie.runner_control._current_git_commit", return_value="same")
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    def test_supervisor_owns_real_python_descendant_of_windows_venv_shim(self, _alive, _commit, descendant):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            supervisor = root / "supervisor.json"
+            heartbeat.write_text(json.dumps({
+                "pid": 55004, "last_seen": datetime.now(timezone.utc).isoformat(),
+                "runner_source_commit": "same", "supervisor_generation": "gen-1",
+                "last_result_status": "watch_started",
+            }), encoding="utf-8")
+            supervisor.write_text(json.dumps({
+                "pid": 123636, "child_pid": 123588, "generation": "gen-1", "status": "runner_started",
+            }), encoding="utf-8")
+            with patch.object(runner_control, "HEARTBEAT_PATH", heartbeat), patch.object(runner_control, "SUPERVISOR_PATH", supervisor):
+                result = runner_control.runner_status(include_orphans=False)
+        self.assertTrue(result["active"])
+        self.assertTrue(result["supervisor_owns_runner"])
+        self.assertEqual(result["operating_state"], "waiting_for_queue")
+        descendant.assert_called_once_with(55004, 123588)
+
     @patch("modules.charlie.runner_control._current_git_commit", return_value="same")
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_default_status_is_active_only_for_generation_owned_child(self, _alive, _commit):
