@@ -6,6 +6,12 @@ from scripts.charlie_runner_watchdog import watchdog_tick
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
+    def test_windows_task_trusts_only_designated_runner_worktree(self):
+        script = (Path(__file__).parents[1] / "scripts" / "charlie_runner_watchdog_task.ps1").read_text(encoding="utf-8")
+        self.assertIn("safe.directory $repo", script)
+        self.assertNotIn("safe.directory '*'", script)
+        self.assertIn("charlie_runner_watchdog.py", script)
+
     def test_healthy_runner_is_not_started_twice(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []
