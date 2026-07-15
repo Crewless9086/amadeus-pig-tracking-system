@@ -451,6 +451,7 @@
       const governance = missionGovernance(mission);
       const family = missionFamily(mission);
       const telemetry = missionTelemetry(mission);
+      const executionWarning = missionExecutionWarning(mission);
       const matrixCounts = governance.acceptance_counts || {};
       const familyLabel = family.parent_mission_id ? `Follow-up ${family.sequence || ""}` : "";
       return `<button class="mission-card ${statusClass(status)} ${mission.mission_id === state.selectedId ? "selected" : ""}" data-select="${escapeAttr(mission.mission_id)}">
@@ -466,7 +467,7 @@
         </div>
         <div class="mission-card-runs">Matrix ${Number(matrixCounts.passed || 0)}/${Number(matrixCounts.passed || 0) + Number(matrixCounts.failed || 0) + Number(matrixCounts.pending || 0)} · ${Number(governance.fix_count || 0)} fixes · ${Number(governance.review_runs || 0)} reviews${governance.cycling ? " · CYCLING" : ""}</div>
         <div class="mission-card-runs">${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.recovery_count || 0)} recoveries | ${Number(telemetry.backflow_count || 0)} backflows${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? ` | repeat x${Number(telemetry.highest_blocker_repeat)}` : ""}</div>
-        <div class="reason">${escapeHtml(headlineReason(mission) || "No reason recorded yet.")}</div>
+        <div class="reason">${escapeHtml(executionWarning || headlineReason(mission) || "No reason recorded yet.")}</div>
       </button>`;
     }).join("");
   }
@@ -491,6 +492,7 @@
     const execution = stageTelemetry(mission);
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const stages = workflow.length ? workflow : placeholderStages(mission);
+    const executionWarning = missionExecutionWarning(mission);
     el.workflowPanel.innerHTML = `
       <div class="mission-hero">
         <div>
@@ -510,6 +512,7 @@
         ${metric("Last progress", text(execution.last_progress_at, "not recorded").replace("T", " ").slice(0, 16))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
+      ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
       ${renderLiveActivity(mission)}
       ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
@@ -518,6 +521,19 @@
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
       </div>`;
+  }
+
+  function missionExecutionWarning(mission) {
+    if (!mission || text(mission.status).toLowerCase() !== "in_progress") return "";
+    const updated = Date.parse(text(mission.updated_at));
+    if (!Number.isFinite(updated)) return "";
+    const idleMinutes = Math.max(0, Math.floor((Date.now() - updated) / 60000));
+    const runner = state.runner || {};
+    const local = runner.local_runner || {};
+    const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
+    if (!cloudOnly && !local.active) return `Execution stopped. ${progressPct(mission)}% is the last saved stage, not live progress.`;
+    if (idleMinutes >= 20) return `No durable mission progress for ${idleMinutes} minutes. ${progressPct(mission)}% is the last saved stage.`;
+    return "";
   }
 
   function operatingStateLabel(value) {
@@ -619,6 +635,7 @@
     const family = missionFamily(mission);
     const telemetry = missionTelemetry(mission);
     const guidance = ownerActionGuidance(mission);
+    const executionWarning = missionExecutionWarning(mission);
     el.actionPanel.innerHTML = `
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
@@ -629,6 +646,7 @@
         ${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? field("Repeated blocker", `x${Number(telemetry.highest_blocker_repeat)} | ${text(telemetry.last_restart_reason, "internal recovery capped")}`) : ""}
         ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
+        ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
         ${renderOwnerGuidance(mission, guidance)}
         ${actionButtons(mission)}
         ${runnerBox()}
@@ -680,7 +698,10 @@
       return `<div class="notice">Approved and waiting for the local runner. Start the runner if it is stale.</div>`;
     }
     if (status === "in_progress" || status === "release_in_progress") {
-      return `<div class="notice">Observe only while the local runner is executing. Do not change mission state mid-run.</div>`;
+      const warning = missionExecutionWarning(mission);
+      return warning
+        ? `<div class="notice danger">${escapeHtml(warning)} The watchdog will recover the runner automatically.</div>`
+        : `<div class="notice">Observe only while the local runner is executing. Do not change mission state mid-run.</div>`;
     }
     if (status === "release_approved") {
       return `<div class="notice">Final approval is recorded. The local release bridge handles merge/release evidence.</div>`;

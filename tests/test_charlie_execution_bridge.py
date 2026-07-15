@@ -3566,6 +3566,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("Stop automatic retries", recovery)
         self.assertIn("Capture browser evidence", recovery)
 
+    def test_backflow_fingerprint_groups_equivalent_acceptance_wording(self):
+        first = execution_bridge._backflow_fingerprint(
+            "qa_red_team", "builder",
+            "Frozen acceptance criteria failed: lifecycle transition matrix and canonical order linkage evidence missing.",
+            {"bugs": ["Add focused lifecycle matrix tests", "Prove canonical order creation and /orders/{order_id} deep-link"]},
+        )
+        second = execution_bridge._backflow_fingerprint(
+            "qa_red_team", "builder",
+            "Acceptance evidence remains incomplete for status transitions, order creation, and named action deep links.",
+            {"bugs": ["Lifecycle transition matrix not exhaustive", "Order linkage and deep link proof required"]},
+        )
+        self.assertEqual(first, second)
+
     def test_agent_command_base_replaces_global_model_with_agent_model(self):
         command = execution_bridge._agent_command_base(
             ["codex", "exec", "--model", "base-model", "--sandbox", "workspace-write"],

@@ -45,6 +45,8 @@ class CharlieMissionControlFrontendTests(unittest.TestCase):
         self.assertIn("waiting_for_queue", script)
         self.assertIn("Cloud snapshot", script)
         self.assertIn("Latest check", script)
+        self.assertIn("missionExecutionWarning", script)
+        self.assertIn("last saved stage, not live progress", script)
 
 
 if __name__ == "__main__":

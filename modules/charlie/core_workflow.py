@@ -438,11 +438,12 @@ def classify_workflow_template(mission_type="", raw_text="", title=""):
         re.search(r"\bvisual\b.{0,50}\b(layout|screen|page|interface|ui|frontend|dashboard)\b", haystack)
         or re.search(r"\b(layout|screen|page|interface|ui|frontend|dashboard)\b.{0,50}\bvisual\b", haystack)
     )
+    ui_advisory_only = bool(re.search(r"\b(ui|page|navigation|screen)\s+(navigation\s+)?(recommendations?|guidance|notes?|advice)\b", haystack))
     strong_ui_build = bool(
         re.search(r"\b(attached|reference)\s+(screenshot|image|mockup|design)\b", haystack)
         or re.search(r"\b(rebuild|redesign|create|build)\b.{0,80}\b(dashboard|page|ui|interface|command center|control room)\b", haystack)
     )
-    if implementation_intent and strong_ui_build and not explicit_non_ui:
+    if implementation_intent and strong_ui_build and not explicit_non_ui and not ui_advisory_only:
         return "ui_product_build"
     # An explicit mission type is an owner/system classification and wins over
     # incidental verbs in the description. UI remains content-routed below so
@@ -470,7 +471,7 @@ def classify_workflow_template(mission_type="", raw_text="", title=""):
         return "software_build"
     if core_reliability and implementation_intent:
         return "software_build"
-    if implementation_intent and not explicit_non_ui and (explicit_ui or visual_ui):
+    if implementation_intent and not explicit_non_ui and not ui_advisory_only and (explicit_ui or visual_ui):
         return "ui_product_build"
     if implementation_intent:
         return "software_build"
@@ -511,6 +512,24 @@ def right_sized_workflow_template(template_id, mission=None):
         template["pipeline_profile"] = profile
         template["right_sized"] = True
         template["right_sizing_reason"] = "Small non-UI software fix; skipped broad product/council stages to reduce retry surface and token cost."
+    elif profile == "high_risk_backend":
+        template["agent_order"] = [
+            "source_mapper",
+            "product_architect",
+            "technical_architect",
+            "planner",
+            "architect",
+            "builder",
+            "tester",
+            "qa_red_team",
+            "evidence_reviewer",
+            "reviewer",
+            "publisher",
+        ]
+        template["required_artifacts"] = ["source_map", "product_requirements", "technical_architecture", "build_plan", "test_report", "review_board_packet"]
+        template["pipeline_profile"] = profile
+        template["right_sized"] = True
+        template["right_sizing_reason"] = "Risk-sensitive backend mission; retained architecture, test, red-team and evidence gates while excluding unrelated UI and broad council stages."
     else:
         template["pipeline_profile"] = profile
         template["right_sized"] = False
@@ -522,9 +541,9 @@ def pipeline_profile_for_mission(template_id, mission=None):
     haystack = f"{mission.get('mission_type', '')} {mission.get('title', '')} {mission.get('raw_text', '')}".lower()
     if template_id != "software_build":
         return "full"
-    if not explicit_non_ui_requested(haystack):
-        return "full"
     if re.search(r"\b(customer-facing|sales|payment|security|migration|schema|database|telegram|chatwoot)\b", haystack):
+        return "high_risk_backend"
+    if not explicit_non_ui_requested(haystack):
         return "full"
     if re.search(r"\b(simple|small|tiny|focused|bug|fix|regression|test|cleanup|one[- ]?line|backend|service)\b", haystack):
         return "minimal_software_fix"
