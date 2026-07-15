@@ -14,8 +14,18 @@ LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
 STALE_SECONDS = 120
+
+
+def _python_executable(repo_root=REPO_ROOT):
+    candidates = [
+        Path(repo_root) / "venv" / "Scripts" / "python.exe",
+        Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
+    ]
+    return str(next((path for path in candidates if path.exists()), Path(sys.executable)))
+
+
 RUNNER_COMMAND = [
-    str(REPO_ROOT / "venv" / "Scripts" / "python.exe"),
+    _python_executable(),
     str(REPO_ROOT / "scripts" / "charlie_mission_pickup.py"),
     "--watch",
     "--continuous",
@@ -29,7 +39,7 @@ RUNNER_COMMAND = [
     "30",
 ]
 SUPERVISOR_COMMAND = [
-    str(REPO_ROOT / "venv" / "Scripts" / "python.exe"),
+    _python_executable(),
     str(REPO_ROOT / "scripts" / "charlie_runner_supervisor.py"),
 ]
 

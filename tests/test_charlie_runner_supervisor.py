@@ -8,6 +8,14 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_shared_repo_venv_is_used_from_runner_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / ".charlie_runner" / "clean"
+            python = root / "venv" / "Scripts" / "python.exe"
+            python.parent.mkdir(parents=True)
+            python.touch()
+            self.assertEqual(supervisor._python_executable(worktree), str(python))
     def test_repo_root_is_available_for_supervisor_module_imports(self):
         self.assertIn(str(supervisor.REPO_ROOT), sys.path)
 

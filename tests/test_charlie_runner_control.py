@@ -9,6 +9,14 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_shared_repo_venv_is_used_from_runner_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / ".charlie_runner" / "clean"
+            python = root / "venv" / "Scripts" / "python.exe"
+            python.parent.mkdir(parents=True)
+            python.touch()
+            self.assertEqual(runner_control._python_executable(worktree), str(python))
     @patch("modules.charlie.runner_control._pid_descends_from", return_value=True)
     @patch("modules.charlie.runner_control._current_git_commit", return_value="same")
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)

@@ -18,8 +18,18 @@ if str(REPO_ROOT) not in sys.path:
 RUNNER_DIR = REPO_ROOT / ".charlie_runner"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
+
+
+def _python_executable(repo_root=REPO_ROOT):
+    candidates = [
+        Path(repo_root) / "venv" / "Scripts" / "python.exe",
+        Path(repo_root).parents[1] / "venv" / "Scripts" / "python.exe",
+    ]
+    return str(next((path for path in candidates if path.exists()), Path(sys.executable)))
+
+
 RUNNER_COMMAND = [
-    str(REPO_ROOT / "venv" / "Scripts" / "python.exe"),
+    _python_executable(),
     str(REPO_ROOT / "scripts" / "charlie_mission_pickup.py"),
     "--watch", "--continuous", "--notify", "--execute-codex", "--watch-release",
     "--auto-merge-pr", "--release-verify-url",
