@@ -66,6 +66,13 @@ class MeatReconciliationTest(unittest.TestCase):
 
         self.assertEqual(meat_reconciliation._confirmed_deposit_amount(deposits, "RES-1"), 500)
 
+    def test_legacy_deposit_confirmed_does_not_count_as_bank_confirmation(self):
+        deposits = [
+            {"reservation_id": "RES-1", "event_type": "deposit_confirmed", "amount": 1600},
+        ]
+
+        self.assertEqual(meat_reconciliation._confirmed_deposit_amount(deposits, "RES-1"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
