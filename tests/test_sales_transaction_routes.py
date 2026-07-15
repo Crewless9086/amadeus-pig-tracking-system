@@ -938,6 +938,75 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         sent_payload = execute_post.call_args.args[0]
         self.assertEqual(sent_payload["selected_asset"], approved_asset)
 
+    @patch.dict("os.environ", {"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"})
+    def test_meat_launch_execution_rebuilds_authoritative_packet_before_execute(self):
+        approved_asset = {
+            "asset_id": "BEACON-ASSET-MEAT",
+            "title": "Approved meat pilot image",
+            "media_type": "image",
+            "effective_approval_status": "approved",
+            "effective_public_use_approved": True,
+            "public_use_approved": True,
+            "storage_bucket": "beacon-approved-media",
+            "storage_path": "pilot/meat.jpg",
+        }
+        authoritative = sales_transaction_routes.build_beacon_campaign_publish_packet({
+            "campaign_lane": "meat_launch", "draft_id": "facebook_post",
+            "asset_id": approved_asset["asset_id"], "channel": "Facebook", "pilot_cap": "2",
+        }, approved_assets=[approved_asset])
+        payload = {
+            "campaign_lane": "meat_launch",
+            "publish_packet_id": authoritative["publish_packet_id"],
+            "channel": "Facebook",
+            "exact_text": authoritative["selected_draft"]["exact_text"],
+            "asset_id": approved_asset["asset_id"],
+            "pilot_cap": "2",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_media_assets",
+            return_value=({"success": True, "assets": [approved_asset]}, 200),
+        ), patch.object(
+            sales_transaction_routes, "execute_beacon_facebook_page_post",
+            return_value=({"success": True, "facebook_post_id": "PAGE_123"}, 200),
+        ) as execute_post:
+            response = self.client.post("/api/beacon/facebook-post-executions", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        execute_post.assert_called_once()
+        self.assertTrue(execute_post.call_args.kwargs["meat_launch_authorized"])
+        self.assertEqual(
+            execute_post.call_args.args[0]["selected_asset"]["asset_id"], approved_asset["asset_id"]
+        )
+
+    @patch.dict("os.environ", {"SAM_MEAT_PUBLIC_OFFER_ENABLED": "1"})
+    def test_meat_launch_execution_rejects_changed_cap_before_execute(self):
+        approved_asset = {
+            "asset_id": "BEACON-ASSET-MEAT", "media_type": "image",
+            "effective_approval_status": "approved", "effective_public_use_approved": True,
+            "public_use_approved": True, "storage_bucket": "beacon-approved-media",
+            "storage_path": "pilot/meat.jpg",
+        }
+        authoritative = sales_transaction_routes.build_beacon_campaign_publish_packet({
+            "campaign_lane": "meat_launch", "draft_id": "facebook_post",
+            "asset_id": approved_asset["asset_id"], "channel": "Facebook", "pilot_cap": "2",
+        }, approved_assets=[approved_asset])
+        payload = {
+            "campaign_lane": "meat_launch", "publish_packet_id": authoritative["publish_packet_id"],
+            "channel": "Facebook", "exact_text": authoritative["selected_draft"]["exact_text"],
+            "asset_id": approved_asset["asset_id"], "pilot_cap": "3",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_media_assets",
+            return_value=({"success": True, "assets": [approved_asset]}, 200),
+        ), patch.object(sales_transaction_routes, "execute_beacon_facebook_page_post") as execute_post:
+            response = self.client.post("/api/beacon/facebook-post-executions", json=payload)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "meat_launch_packet_not_ready_or_stale")
+        execute_post.assert_not_called()
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,

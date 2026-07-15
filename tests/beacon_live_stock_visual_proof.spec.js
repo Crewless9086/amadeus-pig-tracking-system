@@ -1,13 +1,15 @@
-const { test, expect } = require("@playwright/test");
+﻿const { test, expect } = require("@playwright/test");
 
 const baseURL = "http://127.0.0.1:5088";
 const evidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-F7F8A97750EC42A5";
 
+const exactImage = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#e8dfc8"/><rect x="72" y="72" width="1056" height="656" rx="36" fill="#315940"/><text x="600" y="320" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="76" font-weight="700">AMADEUS FARM</text><text x="600" y="430" text-anchor="middle" fill="#edcf78" font-family="Arial" font-size="54">Owner-approved grower pigs</text><text x="600" y="520" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="32">Exact public-use asset BEACON-ASSET-LIVE-001</text></svg>`);
 const asset = {
   asset_id: "BEACON-ASSET-LIVE-001",
   title: "Owner-approved grower pigs",
   original_filename: "grower-pigs-owner-approved.jpg",
   media_type: "image",
+  preview_url: exactImage,
   effective_approval_status: "approved",
   effective_public_use_approved: true,
   content_sha256: "7f4d9a2e1b6c8d00",
@@ -86,6 +88,7 @@ for (const viewport of [
     await page.selectOption("#beacon_publish_asset_id", asset.asset_id);
     await page.click("#beacon_publish_prepare");
     await expect(page.locator("#beacon_facebook_post_packet_id")).toHaveValue("BEACON-PUBLISH-PACKET-F7F8A977");
+    await expect(page.locator("#beacon_facebook_post_image")).toBeVisible();
     await page.fill("#beacon_facebook_post_confirmation", "POST EXACT BEACON PACKET");
     await page.click("#beacon_facebook_post_execute");
     await expect(page.locator("#beacon_facebook_post_result")).toContainText("123456789_987654321");

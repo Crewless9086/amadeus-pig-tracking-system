@@ -1,4 +1,4 @@
-# Beacon Campaign Workflow
+﻿# Beacon Campaign Workflow
 
 1. Beacon detects opportunity from the owner-read-only Supabase-first scanner; a scanner card is advisory and cannot trigger a campaign or public action.
 2. Beacon reads the owner-review operating contract and verifies fresh fulfilment evidence; missing, stale, invalid, or zero capacity stops campaign targeting.
@@ -14,6 +14,8 @@
 `live_stock_sales` is separate from `live_stock_awareness`. It may prepare sales copy only when the current Supabase-first opportunity card is fresh, unblocked, sale-eligible, and carries a positive fulfilment cap, and when the effective price comes from `public.sales_pricing` with its inherited `SALES_PRICING` lineage.
 
 Beacon may pair that copy only with an owner-approved public-use asset whose content hash is present. Facebook and WhatsApp suggestions remain distinct: WhatsApp is copy-only with no send action. The exact Facebook packet content-addresses the copy, asset/hash, opportunity revision, fulfilment cap, effective price record, and Beacon-to-SAM Live Stock attribution identity. Facebook execution must rebuild that packet from current server-side evidence and reject missing, altered, stale, or superseded evidence before applying the existing exact owner phrase `POST EXACT BEACON PACKET`.
+
+For the bounded `meat_launch` Facebook pilot, preparation and execution remain fail-closed unless the server-side `SAM_MEAT_PUBLIC_OFFER_ENABLED` owner flag is enabled, the owner supplies an explicit positive whole-number fulfilment/pilot cap, and a currently approved public-use image is selected. The immutable packet identity includes the canonical exact Facebook text, exact asset identity, Facebook channel, cap, and owner-enable truth. Execution rebuilds this packet server-side and rejects any missing, altered, stale, or client-asserted readiness before the deterministic claim or Meta call. SAM Meat remains `interest_capture_only`; this pilot grants no quote, order, reservation, payment, stock, fulfilment, delivery, customer-send, or paid-spend authority.
 
 The lane never authorizes an automatic post, customer send, negotiation, reservation, order, stock change, spend, or farm lifecycle write. Before calling Meta, a gated Facebook execution must acquire one deterministic, append-only claim for the exact publish packet; a retry or concurrent duplicate that cannot create that claim must stop without calling Meta. A successful gated execution records the returned Facebook post ID through a separate append-only result event. Buyer responses carrying the campaign identity route as `live_stock_sales` attribution to SAM.
 

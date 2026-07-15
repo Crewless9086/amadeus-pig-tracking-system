@@ -71,6 +71,7 @@ FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
 FACEBOOK_PAGE_ACCESS_TOKEN_ENV = "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN"
 FACEBOOK_GRAPH_VERSION_ENV = "BEACON_FACEBOOK_GRAPH_VERSION"
 FACEBOOK_POST_CONFIRMATION_PHRASE = "POST EXACT BEACON PACKET"
+MEAT_PUBLIC_OFFER_ENABLED_ENV = "SAM_MEAT_PUBLIC_OFFER_ENABLED"
 SUPABASE_URL_ENV = "SUPABASE_URL"
 SUPABASE_SERVICE_ROLE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 
@@ -161,6 +162,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
     ranked_assets = _rank_approved_assets(approved_assets)
     channel_pairings = _channel_asset_pairings(packet.get("channel_drafts", []), ranked_assets)
     story_pairings = _channel_asset_pairings(packet.get("story_updates", []), ranked_assets, fallback_channel="story")
+    readiness = meat_launch_readiness(payload)
     return {
         "success": True,
         "mode": "beacon_meat_launch_campaign_media_selection_review_only",
@@ -168,6 +170,7 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
         "alias": "Prisma/Beacon",
         "campaign_lane": "meat_launch",
         "campaign": packet.get("campaign", {}),
+        "meat_launch_readiness": readiness,
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "approved_media_count": len(ranked_assets),
@@ -197,14 +200,19 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
     owner_notes = _clean_text(payload.get("owner_notes"))
     draft = _find_draft(campaign_packet, draft_id)
     asset = _find_asset(ranked_assets, selected_asset_id)
-    errors = []
+    readiness = meat_launch_readiness(payload)
+    errors = list(readiness["errors"])
     if not draft:
         errors.append("selected_draft_not_found")
     if selected_asset_id and not asset:
         errors.append("selected_asset_not_approved_or_not_found")
+    if not selected_asset_id:
+        errors.append("selected_image_asset_required")
     channel = selected_channel or (draft.get("channel") if draft else "")
-    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, pilot_cap)
     exact_text = draft.get("text", "") if draft else ""
+    packet_id = _meat_launch_publish_packet_id(
+        draft_id, selected_asset_id, channel, pilot_cap, exact_text, readiness["owner_offer_enabled"]
+    )
     return {
         "success": not errors,
         "mode": "beacon_campaign_publish_packet_owner_review_only",
@@ -222,6 +230,7 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         },
         "selected_asset": asset,
         "pilot_cap": pilot_cap,
+        "meat_launch_readiness": readiness,
         "owner_notes": owner_notes,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
@@ -233,7 +242,9 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         "safety_checks": {
             "draft_is_limited_preorder": _has_preorder_signal(exact_text.lower()) and "limited" in exact_text.lower(),
             "draft_has_no_forbidden_promise": not _has_forbidden_promise(exact_text.lower()),
-            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "asset_is_owner_approved": bool(
+                asset.get("effective_public_use_approved") or asset.get("public_use_approved")
+            ) if asset else False,
             "no_public_send_or_post": True,
             "no_meta_call": True,
             "no_signed_url_created": True,
@@ -337,6 +348,30 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "errors": errors,
         "owner_review_checklist": list(LIVE_STOCK_OWNER_REVIEW_CHECKLIST),
         "next_gate": "owner_approves_exact_live_stock_awareness_packet_before_manual_or_gated_public_post",
+    }
+
+
+def meat_launch_readiness(payload=None, environ=None):
+    """Return fail-closed, server-owned readiness for the bounded meat Facebook pilot."""
+    payload = payload if isinstance(payload, dict) else {}
+    source = environ if environ is not None else os.environ
+    owner_offer_enabled = _truthy(source.get(MEAT_PUBLIC_OFFER_ENABLED_ENV))
+    pilot_cap = _clean_text(payload.get("pilot_cap"))
+    pilot_cap_valid = pilot_cap.isdigit() and int(pilot_cap) > 0
+    errors = []
+    if not owner_offer_enabled:
+        errors.append("meat_public_offer_not_owner_enabled")
+    if not pilot_cap_valid:
+        errors.append("meat_pilot_cap_positive_whole_number_required")
+    return {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "owner_offer_enabled": owner_offer_enabled,
+        "owner_offer_source": MEAT_PUBLIC_OFFER_ENABLED_ENV,
+        "pilot_cap": pilot_cap,
+        "pilot_cap_valid": pilot_cap_valid,
+        "sam_mode": "interest_capture_only",
+        "ready": not errors,
+        "errors": errors,
     }
 
 
@@ -458,7 +493,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
             "draft_id": "facebook_post",
             "channel": "Facebook",
             "asset_id": asset_id,
-            "pilot_cap": payload.get("pilot_cap") or "2 halves",
+            "pilot_cap": payload.get("pilot_cap"),
         },
         approved_assets=approved_assets,
     )
@@ -468,6 +503,7 @@ def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None
         "exact_text": (publish_packet.get("selected_draft") or {}).get("exact_text", ""),
         "asset_id": ((publish_packet.get("selected_asset") or {}).get("asset_id") or ""),
         "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "pilot_cap": publish_packet.get("pilot_cap", ""),
     }
     return {
         "success": bool(publish_packet.get("success")) and bool((publish_packet.get("selected_asset") or {}).get("asset_id")),
@@ -994,9 +1030,10 @@ def facebook_posting_policy(environ=None):
     }
 
 
-def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None):
+def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
+                                      meat_launch_authorized=False):
     payload = payload if isinstance(payload, dict) else {}
-    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch":
+    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
     policy = facebook_posting_policy(environ=environ)
     params = _facebook_post_params(payload, policy)
@@ -1663,6 +1700,21 @@ def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
     for char in seed:
         total = (total * 33 + ord(char)) % 0xFFFFFFFF
     return f"BEACON-PUBLISH-PACKET-{total:08X}"
+
+
+def _meat_launch_publish_packet_id(draft_id, asset_id, channel, pilot_cap, exact_text, owner_offer_enabled):
+    snapshot = {
+        "schema_version": "beacon_meat_launch_readiness_v1",
+        "campaign_lane": "meat_launch",
+        "draft_id": draft_id,
+        "asset_id": asset_id,
+        "channel": channel,
+        "pilot_cap": pilot_cap,
+        "exact_text": exact_text,
+        "owner_offer_enabled": bool(owner_offer_enabled),
+    }
+    digest = hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode("utf-8")).hexdigest()[:20].upper()
+    return f"BEACON-MEAT-PUBLISH-{digest}"
 
 
 def _manual_post_params(payload):
