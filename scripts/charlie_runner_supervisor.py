@@ -159,7 +159,7 @@ def _pid_alive(pid):
             return False
         os.kill(pid, 0)
         return True
-    except (TypeError, ValueError, OSError):
+    except (TypeError, ValueError, OSError, SystemError):
         return False
 
 

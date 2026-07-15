@@ -13,5 +13,13 @@ if ($trusted -notcontains $repo) {
     if ($LASTEXITCODE -ne 0) { throw "Could not trust the designated CHARLIE runner worktree." }
 }
 
+$runnerBase = "charlie-runner-core-live-base"
+$env:CHARLIE_RUNNER_BASE_BRANCH = $runnerBase
+git show-ref --verify --quiet ("refs/heads/{0}" -f $runnerBase)
+if ($LASTEXITCODE -ne 0) {
+    git branch $runnerBase HEAD
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the dedicated CHARLIE runner base branch." }
+}
+
 & $python (Join-Path $PSScriptRoot "charlie_runner_watchdog.py") --json
 exit $LASTEXITCODE

@@ -11,6 +11,7 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
         self.assertIn("safe.directory $repo", script)
         self.assertNotIn("safe.directory '*'", script)
         self.assertIn("charlie_runner_watchdog.py", script)
+        self.assertIn("charlie-runner-core-live-base", script)
 
     def test_healthy_runner_is_not_started_twice(self):
         with tempfile.TemporaryDirectory() as tmp:
