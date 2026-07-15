@@ -144,6 +144,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
 )
+from modules.sales.beacon_facebook_history import import_beacon_facebook_history
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -1060,6 +1061,16 @@ def beacon_weekly_command_brief():
         return jsonify(result), status_code
     brief = build_beacon_weekly_command_brief(result.get("performance_events", []))
     return jsonify({"success": True, "weekly_command_brief": brief}), 200
+
+
+@sales_bp.route("/beacon/facebook-history-import", methods=["POST"])
+def beacon_facebook_history_import():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = import_beacon_facebook_history(max_posts=payload.get("max_posts", 5000))
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/beacon/weekly-command-brief/prepare-decision", methods=["POST"])
