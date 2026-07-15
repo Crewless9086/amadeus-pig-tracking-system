@@ -16,6 +16,7 @@ from modules.charlie.mission_store import (
     record_mission_event,
     update_mission_queue_priority,
     update_mission_status,
+    transition_mission_review_state,
     update_mission_vault,
     _mission_queue_class,
     _normalize_review_send_back_stage,
@@ -65,6 +66,23 @@ class FailingCursor(FakeCursor):
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_review_state_transition_updates_status_and_packet_atomically(self):
+        connection = FakeConnection([("MISSION-1",)])
+        result, status_code = transition_mission_review_state(
+            "MISSION-1",
+            "approved",
+            {"review_status": "internal_recovery_queued", "return_to_stage": "publisher"},
+            expected_status="blocked",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        update_sql, params = connection.cursor_instance.executed[0]
+        self.assertIn("jsonb_build_object('review_packet'", update_sql)
+        self.assertEqual(params["status"], "approved")
+        self.assertIn("internal_recovery_queued", params["review_packet"])
+
     def test_final_artifact_consumption_advances_tester_to_qa_once(self):
         metadata = {
             "agent_workflow": [

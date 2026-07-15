@@ -55,6 +55,8 @@ from modules.charlie.mission_quality import (
 )
 from modules.charlie.mission_governance import (
     build_followup_missions,
+    analyze_pre_builder_scope,
+    build_scope_child_missions,
     ensure_acceptance_matrix,
     evaluate_quality_failure,
     update_acceptance_matrix,
@@ -1647,6 +1649,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
     mission_governance = ensure_acceptance_matrix(mission)
+    pre_builder_scope = analyze_pre_builder_scope(mission)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
     runner_preflight = runner_environment_preflight(require_browser=bool(ui_contract.get("ui_related")))
     model_assignment = choose_agent_model(
@@ -1661,6 +1664,10 @@ Mission ID: {mission.get("mission_id", "")}
 Title: {mission.get("title", "")}
 Approval level: {mission.get("approval_level", "")}
 Mission type: {mission.get("mission_type", "")}
+Pre-Builder scope contract:
+{json.dumps(pre_builder_scope, indent=2)}
+
+The planner and architects must resolve every planning_gates item before Builder. If split_required is true, keep the frozen parent acceptance matrix bounded and record adjacent discoveries as linked child missions rather than expanding this mission indefinitely.
 Agent doctrine file: {doctrine_path or "MISSING - Brain Guard must block this workflow until doctrine exists."}
 Model assignment:
 {json.dumps(model_assignment, indent=2)}
@@ -1766,15 +1773,43 @@ Stop at the required artifact for this stage.
 def _ensure_execution_governance(mission, database_url=None, connect_factory=None):
     mission = mission if isinstance(mission, dict) else {}
     governance = ensure_acceptance_matrix(mission)
+    pre_builder_scope = analyze_pre_builder_scope(mission)
     mission.setdefault("metadata", {})["mission_governance"] = governance
+    mission["metadata"]["pre_builder_scope"] = pre_builder_scope
     update_mission_vault(
         mission.get("mission_id", ""),
-        {"mission_governance": governance},
-        notes="CHARLIE froze the mission acceptance matrix before execution.",
+        {"mission_governance": governance, "pre_builder_scope": pre_builder_scope},
+        notes="CHARLIE froze the mission acceptance matrix and pre-Builder scope contract before execution.",
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    if pre_builder_scope.get("split_required"):
+        _record_scope_children(mission, pre_builder_scope, database_url=database_url, connect_factory=connect_factory)
     return mission
+
+
+def _record_scope_children(mission, scope_analysis, database_url=None, connect_factory=None):
+    recorded = []
+    for child in build_scope_child_missions(mission, scope_analysis):
+        result, status_code = record_mission(
+            child,
+            source_context={"source": "charlie_pre_builder_scope"},
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        recorded.append({
+            "mission_id": result.get("mission_id") or child["mission_id"],
+            "status": result.get("status", "record_failed"),
+            "created": status_code < 400 and result.get("status") != "duplicate_open_mission",
+        })
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"pre_builder_scope": {**scope_analysis, "linked_children": recorded}},
+        notes="CHARLIE materialized linked child missions for oversized scope.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return recorded
 
 
 def _record_acceptance_progress(mission, agent, artifact, passed, database_url=None, connect_factory=None):

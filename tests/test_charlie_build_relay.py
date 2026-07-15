@@ -1268,9 +1268,9 @@ class CharlieBuildRelayTests(unittest.TestCase):
         list_improvement_proposals.assert_called_once_with(status="pending", limit=20)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
-    @patch("modules.charlie.routes.generate_and_store_proposals")
-    def test_improvements_analyze_route_generates_advisory_proposals(self, generate_and_store, _owner_access):
-        generate_and_store.return_value = ({
+    @patch("modules.charlie.routes.run_operational_analyst")
+    def test_improvements_analyze_route_generates_advisory_proposals(self, run_analyst, _owner_access):
+        run_analyst.return_value = ({
             "success": True,
             "status": "ok",
             "proposal_count": 1,
@@ -1283,7 +1283,7 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
         self.assertEqual(data["proposal_count"], 1)
-        generate_and_store.assert_called_once_with(limit=30)
+        run_analyst.assert_called_once_with(trigger="owner_manual", limit=30)
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.create_owner_gated_improvement_missions")

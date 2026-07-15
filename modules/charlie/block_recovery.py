@@ -51,6 +51,12 @@ def classify_block(agent="", reason="", artifact=None):
         block_class = RED_ZONE_OWNER_APPROVAL_REQUIRED
         route = "owner"
     elif _contains(text, (
+        "merge conflict", "has conflicts", "conflicting", "branch mismatch", "wrong branch",
+        "head branch", "not pushed", "behind main", "stale branch", "wrong release base",
+    )):
+        block_class = "branch_repair_required"
+        route = "publisher" if agent in {"publisher", "reviewer", "evidence_reviewer"} else "builder"
+    elif _contains(text, (
         "repeated same blocker loop", "durable loop cap", "contract retry exhausted",
         "recovery attempts exhausted", "bounded correction budget was exhausted",
         "frozen acceptance criteria remain failed",
@@ -63,12 +69,6 @@ def classify_block(agent="", reason="", artifact=None):
     )):
         block_class = OWNER_DECISION_REQUIRED
         route = "owner"
-    elif _contains(text, (
-        "merge conflict", "has conflicts", "conflicting", "branch mismatch", "wrong branch",
-        "head branch", "not pushed", "behind main", "stale branch",
-    )):
-        block_class = "branch_repair_required"
-        route = "publisher" if agent in {"publisher", "reviewer", "evidence_reviewer"} else "builder"
     elif _contains(text, (
         "browser unavailable", "browser runtime", "browser list", "could not capture screenshot",
         "no real screenshots", "screenshot permission", "preview server", "preview url",

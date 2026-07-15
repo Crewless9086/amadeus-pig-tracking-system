@@ -93,6 +93,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 result = runner_control.runner_status(heartbeat)
 
         self.assertEqual(result["status"], "runner_active")
+        self.assertEqual(result["operating_state"], "running_agent")
         self.assertTrue(result["active"])
         self.assertEqual(result["last_result_status"], "codex_running")
         self.assertEqual(result["last_mission_id"], "MISSION-1")
@@ -107,6 +108,15 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["agent_ledger"]["latest_stage"]["agent"], "builder")
         self.assertEqual(result["agent_ledger"]["latest_stage"]["commands_run"][0], "node --check static/js/charlieMissionControl.js")
         self.assertEqual(result["stdout_tail"], "running tests")
+
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    def test_healthy_idle_runner_reports_waiting_not_stale(self, _pid_alive):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            runner_control.write_runner_heartbeat({"status": "watch_started"}, heartbeat)
+            result = runner_control.runner_status(heartbeat)
+        self.assertTrue(result["active"])
+        self.assertEqual(result["operating_state"], "waiting_for_queue")
 
     @patch("modules.charlie.runner_control._pid_alive", return_value=True)
     def test_runner_status_reports_stale_heartbeat(self, _pid_alive):

@@ -620,6 +620,64 @@ def update_mission_status(
     }, 200
 
 
+def transition_mission_review_state(
+    mission_id,
+    status,
+    review_packet,
+    *,
+    expected_status="",
+    owner_decision="",
+    notes="",
+    database_url=None,
+    connect_factory=None,
+):
+    """Atomically change mission status and its authoritative review packet."""
+    mission_id = _clean_text(mission_id, 90)
+    status = _clean_text(status, 40)
+    expected_status = _clean_text(expected_status, 40)
+    if not mission_id or status not in MISSION_STATUSES:
+        return {"success": False, "status": "invalid_review_transition"}, 400
+    if not isinstance(review_packet, dict):
+        return {"success": False, "status": "review_packet_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    expected_clause = "and status = %(expected_status)s" if expected_status else ""
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    update public.charlie_missions
+                    set status = %(status)s,
+                        owner_decision = %(owner_decision)s,
+                        metadata = coalesce(metadata, '{{}}'::jsonb) || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
+                        updated_at = now()
+                    where mission_id = %(mission_id)s
+                    {expected_clause}
+                    returning mission_id
+                    """,
+                    {
+                        "mission_id": mission_id,
+                        "status": status,
+                        "owner_decision": _clean_text(owner_decision, 1000),
+                        "review_packet": json.dumps(review_packet),
+                        "expected_status": expected_status,
+                    },
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "status": "status_claim_lost", "mission_id": mission_id}, 409
+                _insert_event(cursor, mission_id, "status_changed", notes or f"Review state changed atomically to {status}.", {
+                    "status": status,
+                    "review_status": review_packet.get("review_status", ""),
+                    "atomic_review_transition": True,
+                })
+    except Exception as exc:
+        return {"success": False, "status": "review_transition_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": True, "status": "review_state_transitioned", "mission_id": mission_id, "mission_status": status}, 200
+
+
 def normalize_approval_level(value):
     raw = _clean_text(value, 40).upper().replace("_", " ").replace("-", " ")
     if not raw:

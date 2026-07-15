@@ -1,6 +1,8 @@
 import unittest
 
 from modules.charlie.mission_governance import (
+    analyze_pre_builder_scope,
+    build_scope_child_missions,
     backflow_budget,
     build_followup_missions,
     ensure_acceptance_matrix,
@@ -33,6 +35,28 @@ def mission_with_events(events=None):
 
 
 class CharlieMissionGovernanceTests(unittest.TestCase):
+    def test_large_cross_domain_mission_is_split_before_builder(self):
+        result = analyze_pre_builder_scope({
+            "title": "Add SAM sales order lifecycle UI and Supabase migration then deploy",
+            "raw_text": "Create canonical sale records, cancellation paths, dashboard controls, agent replies, and release checks.",
+        })
+        self.assertTrue(result["split_required"])
+        self.assertIn("canonical_record_discriminator", result["planning_gates"])
+        self.assertGreaterEqual(len(result["child_scopes"]), 4)
+
+    def test_scope_children_are_deterministic_and_dependency_ordered(self):
+        parent = {
+            "mission_id": "MISSION-ROOT",
+            "title": "Cross-domain launch",
+            "raw_text": "SAM sales order lifecycle UI Supabase migration deploy",
+        }
+        analysis = analyze_pre_builder_scope(parent)
+        children = build_scope_child_missions(parent, analysis)
+        self.assertGreaterEqual(len(children), 4)
+        self.assertEqual(children[0]["metadata"]["depends_on_mission_ids"], [])
+        self.assertEqual(children[1]["metadata"]["depends_on_mission_ids"], [children[0]["mission_id"]])
+        self.assertEqual(children, build_scope_child_missions(parent, analysis))
+
     def test_acceptance_matrix_is_frozen_before_builder(self):
         packet = ensure_acceptance_matrix(mission_with_events())
 
