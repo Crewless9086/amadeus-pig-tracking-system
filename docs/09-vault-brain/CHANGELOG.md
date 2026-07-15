@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-15 - Order approval gate separation
+
+- Separated Order approval from reservation/allocation and customer or quote notification. Approval now records the owner decision only; downstream actions retain their own gates (`06-data/ORDER_DATA_MODEL.md`).
+
 ## 2026-07-14 - Beacon-to-SAM deterministic attribution
 
 - Added the read-only Beacon-to-SAM attribution contract joining campaign evidence to every exact matching SAM lead, linked orders, completed-sale revenue, fulfilment, and controlled lost-reason evidence.
