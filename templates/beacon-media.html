@@ -77,6 +77,17 @@
         </div>
       </main>
 
+      <section class="beacon-attribution-panel" aria-labelledby="beacon_attribution_title">
+        <div class="page-header section-header-compact">
+          <div><span class="beacon-eyebrow">Beacon → SAM evidence</span><h2 id="beacon_attribution_title">Lead and sales attribution</h2><p id="beacon_attribution_status" role="status" aria-live="polite">Loading canonical attribution evidence…</p></div>
+          <button type="button" id="beacon_attribution_refresh" class="button-link button-link-secondary">Refresh evidence</button>
+        </div>
+        <div class="beacon-attribution-authority" aria-label="Attribution authority boundary"><strong>Read-only evidence</strong><span>No posting, customer sends, spend, orders, reservations, stock changes, or farm writes.</span></div>
+        <div id="beacon_attribution_summary" class="beacon-attribution-summary" aria-label="Attribution summary"></div>
+        <div id="beacon_attribution_revenue" class="beacon-attribution-revenue" aria-label="Attributed revenue by currency"></div>
+        <div id="beacon_attribution_evidence" class="beacon-attribution-evidence" aria-label="Attribution evidence"></div>
+      </section>
+
       <details class="beacon-advanced-workspace">
         <summary><strong>Advanced campaign controls</strong><span>Performance, evidence, packet and detailed media tools</span></summary>
 
