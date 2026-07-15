@@ -24,6 +24,62 @@
 
       <div id="beacon_media_message" class="message-box hidden"></div>
 
+      <main class="beacon-compose" aria-labelledby="beacon_compose_title">
+        <header class="beacon-compose-header">
+          <div>
+            <span class="beacon-eyebrow">Create a post</span>
+            <h2 id="beacon_compose_title">From media to ready post</h2>
+            <p>Upload, approve, write and publish from one place. Beacon keeps the safety and evidence work behind the screen.</p>
+          </div>
+          <span id="beacon_compose_state" class="beacon-status-chip" data-state="loading">Loading media</span>
+        </header>
+
+        <div class="beacon-compose-grid">
+          <section class="beacon-compose-step" aria-labelledby="beacon_compose_media_title">
+            <div class="beacon-step-title"><span>1</span><div><h3 id="beacon_compose_media_title">Choose media</h3><p>New files are saved privately. Approve only the files you want in this post.</p></div></div>
+            <label class="beacon-dropzone" for="beacon_quick_files">
+              <strong>Add photos or videos</strong>
+              <span>Choose one or more files</span>
+              <input id="beacon_quick_files" type="file" accept="image/*,video/*" multiple />
+            </label>
+            <button type="button" id="beacon_quick_upload" class="button-link">Upload selected files</button>
+            <div id="beacon_quick_upload_status" class="beacon-inline-status" aria-live="polite"></div>
+            <div id="beacon_quick_media" class="beacon-quick-media" aria-label="Beacon media choices"></div>
+          </section>
+
+          <section class="beacon-compose-step" aria-labelledby="beacon_compose_copy_title">
+            <div class="beacon-step-title"><span>2</span><div><h3 id="beacon_compose_copy_title">Tell Beacon the story</h3><p>A short plain-language brief is enough. Past approved posts guide the style.</p></div></div>
+            <div class="form-group">
+              <label for="beacon_quick_lane">Post type</label>
+              <select id="beacon_quick_lane"><option value="live_stock_awareness">Livestock awareness</option><option value="meat_launch">Meat launch</option></select>
+            </div>
+            <div class="form-group">
+              <label for="beacon_quick_brief">What is happening?</label>
+              <textarea id="beacon_quick_brief" rows="5" placeholder="Example: Follow-up on our litter of 12 piglets. They are strong, feeding well and growing quickly. Show them off and encourage people to follow their journey."></textarea>
+            </div>
+            <button type="button" id="beacon_quick_suggest" class="button-link">Suggest captions</button>
+            <small id="beacon_quick_learning">Beacon will show how many past posts informed the result.</small>
+            <div id="beacon_quick_suggestions" class="beacon-caption-options"></div>
+            <div class="form-group">
+              <label for="beacon_quick_caption">Final caption</label>
+              <textarea id="beacon_quick_caption" rows="10" placeholder="Select a suggestion or write your own exact caption."></textarea>
+            </div>
+          </section>
+
+          <section class="beacon-compose-step beacon-compose-final" aria-labelledby="beacon_compose_review_title">
+            <div class="beacon-step-title"><span>3</span><div><h3 id="beacon_compose_review_title">Review and post</h3><p>Beacon checks the exact caption and exact media before anything leaves the system.</p></div></div>
+            <div id="beacon_quick_safety" class="beacon-safety-summary" data-state="waiting"><strong>Waiting for a caption</strong><span>Livestock posts are always awareness-only on Meta.</span></div>
+            <div id="beacon_quick_preview" class="beacon-post-preview"><p>Your post preview will appear here.</p></div>
+            <button type="button" id="beacon_quick_prepare" class="button-link">Prepare exact post</button>
+            <button type="button" id="beacon_quick_publish" class="button-link hidden">Publish to Facebook</button>
+            <div id="beacon_quick_result" class="beacon-inline-status" aria-live="polite"></div>
+          </section>
+        </div>
+      </main>
+
+      <details class="beacon-advanced-workspace">
+        <summary><strong>Advanced campaign controls</strong><span>Performance, evidence, packet and detailed media tools</span></summary>
+
       <section class="beacon-command-brief" aria-labelledby="beacon_command_title">
         <div class="beacon-command-heading">
           <div>
@@ -539,9 +595,11 @@
           </section>
         </div>
       </section>
+      </details>
     </div>
   </div>
 
+  <script src="{{ url_for('static', filename='js/beaconComposer.js') }}"></script>
   <script src="{{ url_for('static', filename='js/beaconMedia.js') }}"></script>
 </body>
 </html>
