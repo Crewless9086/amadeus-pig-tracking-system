@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-15 - Beacon evidence-guided recommendation proof
+
+- Versioned the server-owned Beacon recommendation projection and added deterministic provenance, exclusions, evidence-coverage confidence, owner explanations, and stable fingerprints.
+- Defined influence from prior classification, approved hash-verified media, compatible engagement, qualified leads, and exact completed-sale evidence without retraining, persistence, migrations, or execution authority.
+
 ## 2026-07-15 - Butcher operational truth gate
 
 - Added a read-only, fail-closed Butcher truth projection across candidates, carcass commitments, cut promises, bank-confirmed deposits, processing stages, and packed-weight reconciliation.

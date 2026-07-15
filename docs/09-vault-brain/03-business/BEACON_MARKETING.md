@@ -12,6 +12,8 @@ Beacon projects append-only campaign performance evidence into an authenticated 
 
 STOP, CHANGE, BOOST, and REUSE classifications are server-owned recommendations. The dashboard may prepare an authenticated campaign-decision or CORE-work review packet, but preparation creates neither decision nor mission and grants no approval, posting, sending, spending, ordering, reservation, stock, farm-write, Meta, Chatwoot, or n8n authority.
 
+The versioned evidence-guided recommendation projection may consume prior campaign classification, approved hash-verified media, compatible engagement outcomes, canonical qualified leads, and exact completed-sale evidence with a resolvable linked order. It exposes contributing and excluded evidence, source identifiers, freshness, a stable fingerprint, and deterministic evidence-coverage confidence. Confidence is coverage and quality, never model probability. The rules are fixed and reviewable; they do not retrain or modify their own weights.
+
 ## Private Creative Studio Evaluation
 
 Beacon Creative Studio supports private, owner-only evaluation of only `elevenlabs` and `happy_horse_1_0`. Both adapters are deterministic disabled mocks: provider calls, network access, credentials, source transfer, and actual provider cost remain fixed at zero/false. Happy Horse identity, licensing, retention, privacy, pricing, API stability, and output quality remain unverified.
