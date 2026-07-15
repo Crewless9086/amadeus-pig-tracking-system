@@ -32,6 +32,23 @@ REJECTION_CUSTOMER_MESSAGE = (
     "follow up if there is another suitable option."
 )
 
+ORDER_TRANSITION_MATRIX = {
+    "send_for_approval": {"Draft"},
+    "approve": {"Pending_Approval"},
+    "reject": {"Draft", "Pending_Approval", "Approved"},
+    "cancel": {"Draft", "Pending_Approval", "Approved"},
+    "complete": {"Approved"},
+}
+
+
+def order_transition_allowed(action: str, order_status: str, approval_status: str = "") -> bool:
+    action = str(action or "").strip().lower()
+    status = str(order_status or "").strip()
+    approval = str(approval_status or "").strip()
+    if action not in ORDER_TRANSITION_MATRIX or status not in ORDER_TRANSITION_MATRIX[action]:
+        return False
+    return not (action == "cancel" and approval == "Rejected")
+
 
 def _sheet_headers_and_rows(sheet_name: str):
     all_values = get_all_values(sheet_name)
@@ -232,7 +249,7 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status != "Draft":
+    if not order_transition_allowed("send_for_approval", old_status, old_approval):
         raise ValueError(
             f"Only Draft orders can be sent for approval. Current status: {old_status}."
         )
@@ -315,7 +332,7 @@ def approve_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status != "Pending_Approval":
+    if not order_transition_allowed("approve", old_status, old_approval):
         raise ValueError(
             f"Only Pending_Approval orders can be approved. Current status: {old_status}."
         )
@@ -363,8 +380,8 @@ def reject_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Completed":
-        raise ValueError("Completed orders cannot be rejected.")
+    if not order_transition_allowed("reject", old_status, old_approval):
+        raise ValueError(f"Order status {old_status} | {old_approval} cannot be rejected.")
 
     today_str = datetime.now().strftime("%d %b %Y")
 
@@ -452,11 +469,10 @@ def cancel_order(order_id: str, changed_by: str = "App", reason: str = ""):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Completed":
-        raise ValueError("Completed orders cannot be cancelled.")
-
-    if old_status == "Cancelled" and old_approval == "Rejected":
-        raise ValueError("Rejected orders are already cancelled and cannot be customer-cancelled.")
+    if not order_transition_allowed("cancel", old_status, old_approval):
+        if old_status == "Cancelled" and old_approval == "Rejected":
+            raise ValueError("Rejected orders are already cancelled and cannot be customer-cancelled.")
+        raise ValueError(f"Order status {old_status} | {old_approval} cannot be cancelled.")
 
     today_str = datetime.now().strftime("%d %b %Y")
 
@@ -544,7 +560,7 @@ def complete_order(order_id: str, changed_by: str = "App"):
             "sales_projection": projection,
         }
 
-    if old_status != "Approved":
+    if not order_transition_allowed("complete", old_status, old_approval):
         raise ValueError(f"Only Approved orders can be completed. Current status: {old_status}.")
 
     if order_supabase_write.supabase_order_writes_available():

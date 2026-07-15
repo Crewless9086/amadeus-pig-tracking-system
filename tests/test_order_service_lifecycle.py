@@ -29,6 +29,25 @@ ORDER_LINES_HEADERS = [
 
 
 class OrderLifecycleServiceTests(unittest.TestCase):
+    def test_order_transition_matrix_is_exhaustive_for_canonical_statuses(self):
+        expected = {
+            "Draft": {"send_for_approval", "reject", "cancel"},
+            "Pending_Approval": {"approve", "reject", "cancel"},
+            "Approved": {"reject", "cancel", "complete"},
+            "Completed": set(),
+            "Cancelled": set(),
+        }
+        for status, allowed_actions in expected.items():
+            actual = {
+                action for action in order_lifecycle.ORDER_TRANSITION_MATRIX
+                if order_lifecycle.order_transition_allowed(action, status, "Approved")
+            }
+            self.assertEqual(actual, allowed_actions, status)
+
+    def test_rejected_cancelled_order_has_no_transition(self):
+        for action in order_lifecycle.ORDER_TRANSITION_MATRIX:
+            self.assertFalse(order_lifecycle.order_transition_allowed(action, "Cancelled", "Rejected"))
+
     def test_send_order_for_approval_updates_draft_and_logs_status(self):
         lines = [
             {"Order_ID": "ORD-1", "Order_Line_ID": "OL-1", "Line_Status": "Draft"},
@@ -158,7 +177,7 @@ class OrderLifecycleServiceTests(unittest.TestCase):
 
     def test_reject_order_blocks_completed_orders(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Completed")):
-            with self.assertRaisesRegex(ValueError, "Completed orders cannot be rejected"):
+            with self.assertRaisesRegex(ValueError, "cannot be rejected"):
                 order_lifecycle.reject_order("ORD-1")
 
     def test_cancel_order_cancels_active_lines_and_marks_customer_cancelled(self):
@@ -200,7 +219,7 @@ class OrderLifecycleServiceTests(unittest.TestCase):
 
     def test_cancel_order_blocks_completed_orders(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Completed")):
-            with self.assertRaisesRegex(ValueError, "Completed orders cannot be cancelled"):
+            with self.assertRaisesRegex(ValueError, "cannot be cancelled"):
                 order_lifecycle.cancel_order("ORD-1")
 
     def test_cancel_order_blocks_already_rejected_orders(self):

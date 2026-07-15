@@ -5738,6 +5738,11 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "draft_order_created")
         self.assertEqual(result["order_id"], "ORD-2026-TEST")
+        self.assertEqual(result["order_url"], "/orders/ORD-2026-TEST")
+        self.assertEqual(result["owner_actions"][0], {
+            "action": "open_order", "label": "Open Order", "href": "/orders/ORD-2026-TEST",
+        })
+        self.assertEqual(result["owner_actions"][1]["href"], "/orders/ORD-2026-TEST#order-actions")
         self.assertTrue(result["creates_order"])
         self.assertTrue(result["writes_farm_data"])
         order_payload = order_creator.call_args.args[0]
