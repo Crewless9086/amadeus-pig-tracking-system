@@ -50,6 +50,7 @@ def list_meat_processing_batches(database_url=None):
                 cursor.execute(
                     """
                     select b.*,
+                           coalesce((select json_agg(bp.pig_id order by bp.pig_id) from public.meat_processing_batch_pigs bp where bp.batch_id = b.batch_id), '[]'::json) as pig_ids,
                            coalesce((select count(*) from public.meat_processing_batch_pigs bp where bp.batch_id = b.batch_id), 0) as pig_count,
                            coalesce((select sum(bp.live_weight_kg) from public.meat_processing_batch_pigs bp where bp.batch_id = b.batch_id), 0) as live_weight_kg,
                            coalesce((select sum(bp.carcass_weight_kg) from public.meat_processing_batch_pigs bp where bp.batch_id = b.batch_id), 0) as carcass_weight_kg,

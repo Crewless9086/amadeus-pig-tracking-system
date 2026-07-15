@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-15 - Butcher operational truth gate
+
+- Added a read-only, fail-closed Butcher truth projection across candidates, carcass commitments, cut promises, bank-confirmed deposits, processing stages, and packed-weight reconciliation.
+- Required recommendations to stop at Owner Approval Inbox/Oom Sakkie and prohibited direct reservation, provider booking, payment confirmation, customer send, or farm lifecycle authority.
+
 ## 2026-07-14 - Owner-gated Beacon meat-launch Facebook pilot
 
 - Replaced the unconditional meat-launch Facebook denial with a server-authoritative, owner-gated pilot path.

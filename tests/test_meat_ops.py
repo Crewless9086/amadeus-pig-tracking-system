@@ -55,7 +55,7 @@ class MeatOpsTests(unittest.TestCase):
         pending = meat_ops._assembly_status(reservations, [])
         ready = meat_ops._assembly_status(reservations, [{
             "reservation_id": "RES-2",
-            "event_type": "deposit_confirmed",
+            "event_type": "deposit_confirmed_in_bank",
         }])
 
         self.assertTrue(pending["full_carcass_committed"])
@@ -211,7 +211,7 @@ class MeatOpsTests(unittest.TestCase):
         drafts = meat_ops._instruction_draft_params(
             "LEAD-1",
             reservation,
-            [{"event_type": "deposit_confirmed", "payment_reference": "EFT-123"}],
+            [{"event_type": "deposit_confirmed_in_bank", "payment_reference": "EFT-123"}],
             {},
         )
 

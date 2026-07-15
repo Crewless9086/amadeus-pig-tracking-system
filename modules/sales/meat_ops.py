@@ -85,7 +85,7 @@ def build_meat_payment_gate(reservations, deposits):
     ]
     latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
     latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
-    latest_bank = _latest_any_deposit_event(active_deposits, {"deposit_confirmed_in_bank", "deposit_confirmed"})
+    latest_bank = _latest_any_deposit_event(active_deposits, {"deposit_confirmed_in_bank"})
     latest_balance = _latest_deposit_event(active_deposits, "balance_confirmed")
     pop_is_open = bool(latest_pop) and (
         not latest_rejection
@@ -616,7 +616,7 @@ def _assembly_status(reservations, deposits):
     latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
     latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
     deposit_confirmed = any(
-        item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+        item.get("event_type") == "deposit_confirmed_in_bank"
         for item in active_deposits
     )
     pop_received_unverified = bool(latest_pop) and (
@@ -696,7 +696,7 @@ def _instruction_draft_params(lead_id, reservation, deposits, payload):
     deposit_ref = next((
         item.get("payment_reference")
         for item in deposits
-        if item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+        if item.get("event_type") == "deposit_confirmed_in_bank"
     ), "")
     base_payload = {
         "lead_id": lead_id,

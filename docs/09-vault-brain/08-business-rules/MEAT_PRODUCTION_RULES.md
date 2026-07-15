@@ -17,6 +17,9 @@ Supabase meat processing batches are the source of truth for slaughter-to-packed
 - Stage events are append-only evidence.
 - Pig lifecycle writes require explicit owner/operator authority and must use canonical pig identity.
 - A batch does not reserve stock, create an order, create a quote, confirm payment, send a customer message, or publish content.
+- Butcher's operational truth board is a read-only recommendation projection for SAM, Oom Sakkie, and owner review. Missing or conflicting candidate, reservation, payment, batch, or reconciliation evidence blocks the recommendation.
+- POP is unverified evidence. Only an explicit `deposit_confirmed_in_bank` event clears the deposit gate for an operational next step.
+- Half/full carcass commitments and promised cut sets must remain visible, and overlapping side/full commitments must fail closed.
 
 ## Learning Rule
 
