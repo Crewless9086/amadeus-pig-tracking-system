@@ -15,6 +15,7 @@ from modules.charlie.core_workflow import (
     classify_workflow_template,
     evaluate_core_readiness,
     evaluate_review_board,
+    right_sized_workflow_template,
 )
 from modules.charlie.model_registry import choose_agent_model
 
@@ -92,6 +93,22 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
             ),
             "software_build",
         )
+
+    def test_sales_architecture_mission_uses_focused_high_risk_backend_pipeline(self):
+        mission = {
+            "mission_type": "software build",
+            "title": "Shared Livestock And Meat Sales Order Flow",
+            "raw_text": "Implement canonical order lifecycle and schema-safe sales linkage with UI navigation recommendations.",
+        }
+        template_id = classify_workflow_template(mission["mission_type"], mission["raw_text"], mission["title"])
+        template = right_sized_workflow_template(template_id, mission)
+        self.assertEqual(template_id, "software_build")
+        self.assertEqual(template["pipeline_profile"], "high_risk_backend")
+        self.assertTrue(template["right_sized"])
+        self.assertIn("builder", template["agent_order"])
+        self.assertIn("qa_red_team", template["agent_order"])
+        self.assertNotIn("creative_ui_designer", template["agent_order"])
+        self.assertLess(len(template["agent_order"]), 14)
 
     def test_marketing_attribution_build_includes_implementation_agents(self):
         mission = {
@@ -205,7 +222,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertNotIn("product_architect", agents)
         self.assertLess(len(agents), len(WORKFLOW_TEMPLATES["software_build"]["agent_order"]))
 
-    def test_ui_and_sensitive_work_stay_on_full_pipeline(self):
+    def test_ui_stays_full_and_sensitive_backend_keeps_focused_risk_gates(self):
         mission = {
             "mission_id": "CHARLIE-MISSION-UI",
             "title": "Dashboard rebuild",
@@ -226,7 +243,8 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
 
         self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "ui_product_build")
         self.assertIn("creative_ui_designer", ui_agents)
-        self.assertFalse(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
+        self.assertTrue(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
+        self.assertEqual(sensitive_metadata["mission_vault"]["project_truth"]["pipeline_profile"], "high_risk_backend")
         self.assertIn("product_architect", sensitive_agents)
 
     def test_design_agents_have_specific_model_assignments(self):

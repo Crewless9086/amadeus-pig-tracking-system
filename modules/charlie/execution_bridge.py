@@ -4983,18 +4983,46 @@ def _append_backflow_event(ledger, from_agent, to_agent, reason, attempt, artifa
 
 def _backflow_fingerprint(from_agent, to_agent, reason, artifact=None):
     artifact = artifact if isinstance(artifact, dict) else {}
-    issue_text = " ".join(
-        str(item.get("finding") or item.get("summary") or item)
-        for item in _artifact_issue_items(str(from_agent or ""), artifact)
-    )
+    items = _artifact_issue_items(str(from_agent or ""), artifact)
+    issue_signatures = sorted({_stable_blocker_signature(item) for item in items if _stable_blocker_signature(item)})
+    criteria = artifact.get("acceptance_criteria") if isinstance(artifact.get("acceptance_criteria"), list) else []
+    criterion_signatures = sorted({_stable_blocker_signature(item) for item in criteria if _stable_blocker_signature(item)})
+    combined = _stable_blocker_signature(" ".join([str(reason or ""), *[str(item) for item in items], *[str(item) for item in criteria]]))
     raw = "|".join([
         str(from_agent or "").strip().lower(),
         str(to_agent or "").strip().lower(),
-        " ".join(str(reason or "").strip().lower().split()),
-        " ".join(issue_text.lower().split()),
-        " ".join(str(artifact.get("send_back_stage") or "").strip().lower().split()),
+        combined if "+" in combined else _stable_blocker_signature(reason),
+        "" if "+" in combined else ",".join(issue_signatures),
+        "" if "+" in combined else ",".join(criterion_signatures),
     ])
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_blocker_signature(value):
+    if isinstance(value, dict):
+        value = value.get("criterion_id") or value.get("requirement_id") or value.get("finding") or value.get("summary") or value.get("message") or value
+    text = str(value or "").lower()
+    families = []
+    vocabulary = {
+        "lifecycle_matrix": ("lifecycle", "transition matrix", "status transition"),
+        "canonical_order_linkage": ("canonical order", "order linkage", "order creation", "order id"),
+        "order_deep_link": ("deep-link", "deep link", "/orders/", "named action"),
+        "typed_extension": ("typed", "extension", "meat readiness"),
+        "focused_tests": ("focused test", "test evidence", "acceptance evidence"),
+        "visual_evidence": ("screenshot", "visual evidence", "browser evidence"),
+        "security": ("security", "authorization", "permission", "secret"),
+    }
+    for family, terms in vocabulary.items():
+        if any(term in text for term in terms):
+            families.append(family)
+    if len(families) > 1 and "focused_tests" in families:
+        families.remove("focused_tests")
+    if families:
+        return "+".join(sorted(set(families)))
+    normalized = re.sub(r"\b(?:attempt|run|try|repeat|occurrence)\s*#?\d+\b", "", text)
+    normalized = re.sub(r"\b\d+(?:\.\d+)?\b", "#", normalized)
+    normalized = re.sub(r"[^a-z0-9_/#]+", " ", normalized)
+    return " ".join(normalized.split())[:180]
 
 
 def _backflow_fingerprint_count(ledger, fingerprint):
