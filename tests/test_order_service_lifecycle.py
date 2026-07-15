@@ -87,28 +87,19 @@ class OrderLifecycleServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "At least one active order line"):
                 order_lifecycle.send_order_for_approval("ORD-1")
 
-    def test_approve_order_keeps_approval_when_auto_reserve_warns(self):
+    def test_approve_order_does_not_reserve_or_notify_customer(self):
         pending_row = draft_order(Order_Status="Pending_Approval", Approval_Status="Pending")
-        approved_row = draft_order(Order_Status="Approved", Approval_Status="Approved")
-        reserve_result = {
-            "success": False,
-            "message": "No lines could be reserved.",
-            "errors": ["No eligible lines to reserve."],
-        }
 
-        with patch.object(order_lifecycle, "_get_order_master_row", side_effect=[pending_row, approved_row]), \
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=pending_row), \
              patch.object(order_lifecycle, "_update_sheet_row_by_id") as update_order, \
              patch.object(order_lifecycle, "_write_order_status_log") as write_log, \
-             patch.object(order_lifecycle, "reserve_order_lines", return_value=reserve_result), \
-             patch.object(order_lifecycle, "_notify_order_customer_notification", return_value={"sent": True}), \
-             patch.object(order_lifecycle, "_add_notification_result_to_response") as add_notification:
+             patch.object(order_lifecycle, "_notify_order_customer_notification") as notify_customer:
             result = order_lifecycle.approve_order("ORD-1", changed_by="Tester")
 
         self.assertTrue(result["success"])
         self.assertEqual(result["order_id"], "ORD-1")
-        self.assertEqual(result["auto_reserve"], reserve_result)
-        self.assertEqual(result["reserve_warning"], "No lines could be reserved.")
-        self.assertEqual(result["warning"], "No lines could be reserved.")
+        self.assertFalse(result["reservation_performed"])
+        self.assertFalse(result["customer_notification_sent"])
 
         update_order.assert_called_once()
         update_args = update_order.call_args.args
@@ -117,10 +108,8 @@ class OrderLifecycleServiceTests(unittest.TestCase):
         self.assertEqual(update_args[2]["Order_Status"], "Approved")
         self.assertEqual(update_args[2]["Approval_Status"], "Approved")
 
-        self.assertEqual(write_log.call_count, 2)
-        self.assertEqual(write_log.call_args_list[0].kwargs["new_status"], "Approved | Approved")
-        self.assertIn("manual follow-up", write_log.call_args_list[1].kwargs["notes"])
-        add_notification.assert_called_once()
+        write_log.assert_called_once()
+        notify_customer.assert_not_called()
 
     def test_approve_order_requires_pending_approval_status(self):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Draft")):

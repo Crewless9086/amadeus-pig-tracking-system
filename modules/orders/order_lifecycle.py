@@ -12,7 +12,6 @@ from services.google_sheets_service import (
 )
 from modules.pig_weights.pig_weights_utils import to_clean_string
 from modules.orders.order_status_log import write_order_status_log
-from modules.orders.order_reservation import reserve_order_lines
 from modules.orders.order_line_sync import _cancel_order_lines
 from modules.orders import order_supabase_write
 from modules.orders.order_sales_projection import project_completed_order_to_sale
@@ -28,10 +27,6 @@ ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
 )
 ORDER_NOTIFICATION_WEBHOOK_URL = os.getenv("ORDER_NOTIFICATION_WEBHOOK_URL", "").strip()
 
-APPROVAL_CUSTOMER_MESSAGE = (
-    "Your order has been approved. We have reserved the pigs linked to your order "
-    "and will keep you posted on the next step."
-)
 REJECTION_CUSTOMER_MESSAGE = (
     "Your order was reviewed, but we cannot approve it at this stage. We will "
     "follow up if there is another suitable option."
@@ -348,68 +343,12 @@ def approve_order(order_id: str, changed_by: str = "App"):
 
     result = {
         "success": True,
-        "message": "Order approved successfully.",
+        "message": "Order approved. Reservation and customer notification remain separate gated actions.",
         "order_id": order_id,
+        "reservation_performed": False,
+        "customer_notification_sent": False,
+        "next_actions": ["reserve_order_lines", "prepare_or_send_approved_document"],
     }
-
-    reserve_result = None
-    reserve_warning = ""
-
-    try:
-        reserve_result = reserve_order_lines(order_id)
-        result["auto_reserve"] = reserve_result
-
-        if not reserve_result.get("success"):
-            reserve_warning = (
-                reserve_result.get("message")
-                or "; ".join(reserve_result.get("errors", []))
-                or "Auto-reservation did not reserve any order lines."
-            )
-        elif reserve_result.get("warning"):
-            reserve_warning = reserve_result["warning"]
-
-    except Exception as exc:
-        reserve_warning = f"Auto-reservation failed after approval: {str(exc)}"
-
-    if reserve_warning:
-        result["reserve_warning"] = reserve_warning
-        result["warning"] = reserve_warning
-
-        try:
-            _write_order_status_log(
-                order_id=order_id,
-                old_status="Approved | Approved",
-                new_status="Approved | Approved",
-                changed_by=changed_by,
-                change_source="App",
-                notes=f"Approval completed, but reservation needs manual follow-up: {reserve_warning}",
-            )
-        except Exception as exc:
-            result["status_log_warning"] = (
-                "Reservation warning could not be written to ORDER_STATUS_LOG: "
-                + str(exc)
-            )
-
-    notification_row = _get_order_master_row(order_id) or row
-    notification_result = _notify_order_customer_notification(
-        order_id=order_id,
-        event_type="order_approved",
-        message_text=APPROVAL_CUSTOMER_MESSAGE,
-        changed_by=changed_by,
-        order_row=notification_row,
-        extra_payload={
-            "reserve_warning": reserve_warning,
-            "auto_reserve": reserve_result,
-        },
-    )
-    _add_notification_result_to_response(
-        result=result,
-        order_id=order_id,
-        changed_by=changed_by,
-        notification_result=notification_result,
-        log_note="Approval completed, but customer notification needs manual follow-up",
-        status_for_log="Approved | Approved",
-    )
 
     return result
 

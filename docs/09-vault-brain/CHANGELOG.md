@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-15 - Order approval gate separation
+
+- Separated Order approval from reservation/allocation and customer or quote notification. Approval now records the owner decision only; downstream actions retain their own gates (`06-data/ORDER_DATA_MODEL.md`).
+
 ## 2026-07-14 - Owner-gated Beacon meat-launch Facebook pilot
 
 - Replaced the unconditional meat-launch Facebook denial with a server-authoritative, owner-gated pilot path.

@@ -16,15 +16,33 @@
         </div>
         <div class="detail-actions compact-actions">
           <a href="/orders/new" class="button-link">Create New Order</a>
-          <a href="/" class="button-link button-link-secondary">Dashboard</a>
+          <a href="/sales-dashboard" class="button-link button-link-secondary">Sales Dashboard</a>
+          <a href="/" class="button-link button-link-secondary">Home</a>
         </div>
       </div>
+
+      <section class="sales-rail-guide" aria-labelledby="sales_rail_title">
+        <div class="sales-rail-guide-copy">
+          <span class="sales-rail-eyebrow">One shared sales rail</span>
+          <h2 id="sales_rail_title">Orders are where sales work moves forward</h2>
+          <p>Manage livestock, meat, and slaughter work here. Completed orders feed Sales Transactions for commercial reporting.</p>
+        </div>
+        <ol class="sales-rail-steps" aria-label="Shared order lifecycle">
+          <li><span>1</span>Draft</li><li><span>2</span>Quote prep</li><li><span>3</span>Owner approval</li>
+          <li><span>4</span>Gated send</li><li><span>5</span>Payment review</li><li><span>6</span>Fulfilment</li><li><span>7</span>Sales posting</li>
+        </ol>
+        <div class="sales-rail-safety" role="note">Opening an order never sends a quote, confirms payment, reserves stock, or releases collection or delivery. Each action keeps its existing owner gate.</div>
+      </section>
 
       <div id="orders_summary" class="history-summary-grid"></div>
 
       <div id="orders_status_tabs" class="orders-status-tabs" role="tablist" aria-label="Order status views"></div>
 
       <div class="sales-filters-grid">
+        <div class="form-group">
+          <label for="orders_stream_filter">Sales Stream</label>
+          <select id="orders_stream_filter"><option value="">All streams</option></select>
+        </div>
         <div class="form-group">
           <label for="orders_search">Search</label>
           <input type="text" id="orders_search" placeholder="Search order, customer, phone, notes..." />
