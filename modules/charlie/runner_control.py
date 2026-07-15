@@ -59,7 +59,10 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     supervisor_owns_runner = bool(
         supervisor_alive
         and process_alive
-        and int(supervisor.get("child_pid") or 0) == int(payload.get("pid") or -1)
+        and (
+            int(supervisor.get("child_pid") or 0) == int(payload.get("pid") or -1)
+            or _pid_descends_from(payload.get("pid"), supervisor.get("child_pid"))
+        )
         and str(supervisor.get("generation") or "")
         and str(supervisor.get("generation") or "") == str(payload.get("supervisor_generation") or "")
     )
@@ -459,6 +462,50 @@ def _pid_alive_windows(pid):
         return False
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _pid_descends_from(pid, ancestor_pid):
+    try:
+        pid = int(pid)
+        ancestor_pid = int(ancestor_pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0 or ancestor_pid <= 0 or pid == ancestor_pid:
+        return pid == ancestor_pid and pid > 0
+    if os.name == "nt":
+        script = (
+            f"$current={pid}; $ancestor={ancestor_pid}; $seen=@{{}}; "
+            "for($i=0; $i -lt 12; $i++){ "
+            "if($seen.ContainsKey($current)){ break }; $seen[$current]=$true; "
+            "$row=Get-CimInstance Win32_Process -Filter \"ProcessId = $current\" -ErrorAction SilentlyContinue; "
+            "if(-not $row){ break }; $parent=[int]$row.ParentProcessId; "
+            "if($parent -eq $ancestor){ Write-Output 'true'; exit 0 }; "
+            "if($parent -le 0){ break }; $current=$parent }; Write-Output 'false'"
+        )
+        try:
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script],
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return completed.returncode == 0 and completed.stdout.strip().lower().endswith("true")
+    current = pid
+    for _ in range(12):
+        try:
+            fields = Path(f"/proc/{current}/stat").read_text(encoding="utf-8").split()
+            parent = int(fields[3])
+        except (OSError, ValueError, IndexError):
+            return False
+        if parent == ancestor_pid:
+            return True
+        if parent <= 1 or parent == current:
+            return False
+        current = parent
+    return False
 
 
 def _find_runner_processes():
