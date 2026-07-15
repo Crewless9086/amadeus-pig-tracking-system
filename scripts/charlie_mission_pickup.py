@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import threading
+from types import SimpleNamespace
 import time
 import uuid
 from datetime import datetime, timezone
@@ -720,24 +721,22 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     fetched = run(["git", "fetch", "origin", branch_name])
     if fetched.returncode != 0:
         return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
-    switched = run(["git", "switch", branch_name])
-    if switched.returncode != 0:
-        # A packaged branch may already be checked out in an evidence worktree.
-        # Review stages only need the fetched revision, so detached mode avoids
-        # treating that valid worktree ownership as a missing-branch failure.
-        switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
+    # Resume review against the exact fetched remote revision. A stale local
+    # mission branch may have diverged during earlier runner sessions and must
+    # never become review truth.
+    switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
     if switched.returncode != 0:
         switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
     if switched.returncode != 0:
         return {"success": False, "status": "mission_branch_switch_failed", "branch_name": branch_name, "stderr": (switched.stderr or "")[-500:]}
-    fast_forward = run(["git", "merge", "--ff-only", f"origin/{branch_name}"])
-    if fast_forward.returncode != 0:
-        return {"success": False, "status": "mission_branch_fast_forward_failed", "branch_name": branch_name, "stderr": (fast_forward.stderr or "")[-500:]}
     return {"success": True, "status": "mission_branch_restored", "branch_name": branch_name}
 
 
 def _run_git_command(command):
-    return subprocess.run(command, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60)
+    try:
+        return subprocess.run(command, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60)
+    except subprocess.TimeoutExpired:
+        return SimpleNamespace(returncode=124, stdout="", stderr=f"Command timed out after 60 seconds: {' '.join(command)}")
 
 
 def _refresh_core_plan_for_pickup(mission):
