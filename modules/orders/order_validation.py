@@ -61,6 +61,8 @@ ALLOWED_COLLECTION_LOCATIONS = {
     "Any",
 }
 
+ALLOWED_ORDER_STREAMS = {"Livestock", "Meat", "Slaughter"}
+
 
 ALLOWED_SYNC_ITEM_INTENT_TYPES = {
     "primary",
@@ -94,6 +96,7 @@ def validate_new_order_payload(payload: dict):
     notes = str(payload.get("notes", "")).strip()
     created_by = str(payload.get("created_by", "")).strip()
     conversation_id = str(payload.get("conversation_id", "")).strip()
+    order_stream = str(payload.get("order_stream", "")).strip()
 
     parsed_order_date = parse_sheet_date(order_date)
     if not parsed_order_date:
@@ -110,6 +113,9 @@ def validate_new_order_payload(payload: dict):
 
     if not order_source:
         errors.append("Order_Source is required.")
+
+    if order_stream not in ALLOWED_ORDER_STREAMS:
+        errors.append("Order_Stream must be Livestock, Meat, or Slaughter.")
 
     parsed_requested_quantity = to_float(requested_quantity)
     if parsed_requested_quantity is not None and parsed_requested_quantity < 0:
@@ -145,6 +151,7 @@ def validate_new_order_payload(payload: dict):
             "notes": notes,
             "created_by": created_by or "App",
             "conversation_id": conversation_id,
+            "order_stream": order_stream,
         }
     }
 

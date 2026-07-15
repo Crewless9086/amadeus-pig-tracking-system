@@ -15,6 +15,12 @@ Backend owns order logic, validation, reservations, lifecycle changes, and safe 
 
 ## Core Entities
 
+All new shared-flow Orders persist one validated `order_stream`: `Livestock`, `Meat`, or `Slaughter`.
+Legacy rows with no stream may be classified only by labelled read compatibility and must not use
+text inference as a new-write contract. Stream-specific data belongs in the matching typed extension
+envelope. Only `Livestock` completion may mark pigs Sold/off-farm; `Meat` and `Slaughter` completion
+must not invoke livestock lifecycle mutation.
+
 | Entity | Current/legacy source | Supabase target | Purpose |
 | --- | --- | --- | --- |
 | Order header | `ORDER_MASTER` | `orders` | Customer/order lifecycle, approval, payment, collection, conversation link. |

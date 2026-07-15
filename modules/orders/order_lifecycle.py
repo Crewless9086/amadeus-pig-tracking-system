@@ -528,6 +528,9 @@ def complete_order(order_id: str, changed_by: str = "App"):
 
     old_status = to_clean_string(order_row.get("Order_Status", ""))
     old_approval = to_clean_string(order_row.get("Approval_Status", ""))
+    order_stream = to_clean_string(order_row.get("Order_Stream", "")) or "Livestock"
+    if order_stream not in {"Livestock", "Meat", "Slaughter"}:
+        raise ValueError("Order stream must be Livestock, Meat, or Slaughter before completion.")
 
     if old_status == "Completed":
         if not order_supabase_write.supabase_order_writes_available():
@@ -579,7 +582,7 @@ def complete_order(order_id: str, changed_by: str = "App"):
         raise ValueError("Order has no active lines to complete.")
 
     missing_pig = [l["line_id"] for l in active_lines if not l["pig_id"]]
-    if missing_pig:
+    if order_stream == "Livestock" and missing_pig:
         raise ValueError(f"The following lines have no Pig_ID and cannot be completed: {', '.join(missing_pig)}")
 
     today_str = datetime.now().strftime("%d %b %Y")
@@ -609,10 +612,13 @@ def complete_order(order_id: str, changed_by: str = "App"):
         }
         for line in active_lines
     }
-    if order_supabase_write.supabase_order_writes_available():
-        order_supabase_write.mark_pigs_sold([line["pig_id"] for line in active_lines])
-    else:
-        batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
+    pigs_marked_sold = 0
+    if order_stream == "Livestock":
+        if order_supabase_write.supabase_order_writes_available():
+            order_supabase_write.mark_pigs_sold([line["pig_id"] for line in active_lines])
+        else:
+            batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
+        pigs_marked_sold = len(active_lines)
 
     _update_sheet_row_by_id(ORDER_MASTER_SHEET, order_id, {
         "Order_Status": "Completed",
@@ -625,14 +631,15 @@ def complete_order(order_id: str, changed_by: str = "App"):
         new_status="Completed | Approved",
         changed_by=changed_by,
         change_source="App",
-        notes=f"Order completed - {len(active_lines)} pig(s) marked as sold",
+        notes=(f"Order completed - {pigs_marked_sold} pig(s) marked as sold" if order_stream == "Livestock"
+               else f"{order_stream} order completed - no livestock lifecycle writes"),
     )
 
     result = {
         "success": True,
         "message": "Order completed successfully.",
         "order_id": order_id,
-        "pigs_marked_sold": len(active_lines),
+        "pigs_marked_sold": pigs_marked_sold,
     }
     if order_supabase_write.supabase_order_writes_available():
         result["sales_projection"] = project_completed_order_to_sale(order_id, changed_by=changed_by)

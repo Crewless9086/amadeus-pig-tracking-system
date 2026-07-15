@@ -12,6 +12,7 @@ def draft_order(**overrides):
         "Payment_Method": "Cash",
         "Customer_Name": "Test Customer",
         "Collection_Location": "Riversdale",
+        "Order_Stream": "Livestock",
     }
     row.update(overrides)
     return row
@@ -258,6 +259,21 @@ class OrderLifecycleServiceTests(unittest.TestCase):
         with patch.object(order_lifecycle, "_get_order_master_row", return_value=draft_order(Order_Status="Draft")):
             with self.assertRaisesRegex(ValueError, "Only Approved orders"):
                 order_lifecycle.complete_order("ORD-1")
+
+    def test_complete_meat_order_never_mutates_livestock_state(self):
+        approved_row = draft_order(Order_Status="Approved", Approval_Status="Approved", Order_Stream="Meat")
+        rows = [["OL-MEAT", "ORD-1", "", "Confirmed", "Not_Reserved", ""]]
+        with patch.object(order_lifecycle, "_get_order_master_row", return_value=approved_row), \
+             patch.object(order_lifecycle, "_sheet_headers_and_rows", return_value=(ORDER_LINES_HEADERS, rows)), \
+             patch.object(order_lifecycle, "batch_update_rows_by_id") as batch_update, \
+             patch.object(order_lifecycle, "_update_sheet_row_by_id"), \
+             patch.object(order_lifecycle, "_write_order_status_log"):
+            result = order_lifecycle.complete_order("ORD-1", changed_by="Tester")
+
+        self.assertEqual(result["pigs_marked_sold"], 0)
+        self.assertEqual(batch_update.call_count, 1)
+        self.assertEqual(batch_update.call_args.args[0], order_lifecycle.ORDER_LINES_SHEET)
+        self.assertNotEqual(batch_update.call_args.args[0], order_lifecycle.PIG_MASTER_SHEET)
 
     def test_completed_order_retries_projection_without_lifecycle_writes(self):
         row = draft_order(Order_Status="Completed", Approval_Status="Approved")

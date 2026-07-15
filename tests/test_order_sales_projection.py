@@ -34,6 +34,9 @@ class OrderSalesProjectionTests(unittest.TestCase):
             build_projection({**self.order, "final_total": "8000.00"}, self.lines)
 
     def test_stream_precedence_and_payment_safety(self):
+        self.assertEqual(classify_sale_stream({**self.order, "order_stream": "Meat", "notes": "abattoir"}, self.lines), "Meat")
+        with self.assertRaisesRegex(ValueError, "order_stream"):
+            classify_sale_stream({**self.order, "order_stream": "Auction"}, self.lines)
         self.assertEqual(classify_sale_stream({**self.order, "notes": "abattoir"}, self.lines), "Slaughter")
         self.assertEqual(classify_sale_stream({**self.order, "requested_category": "Pork freezer pack"}, self.lines), "Meat")
         self.assertEqual(map_payment_status("Paid"), "Paid")

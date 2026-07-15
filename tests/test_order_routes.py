@@ -34,6 +34,7 @@ class OrderRoutesTests(unittest.TestCase):
             "customer_channel": "Chatwoot",
             "customer_language": "English",
             "order_source": "WhatsApp",
+            "order_stream": "Livestock",
             "requested_category": "Grower",
             "requested_weight_range": "35_to_39_Kg",
             "requested_sex": "Female",
@@ -56,6 +57,20 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertEqual(cleaned["customer_name"], "Sam")
         self.assertEqual(cleaned["requested_quantity"], 1.0)
         self.assertEqual(cleaned["created_by"], "Tester")
+
+    def test_create_order_rejects_missing_or_invalid_explicit_stream(self):
+        base = {
+            "order_date": "2026-05-18", "customer_name": "Sam",
+            "customer_channel": "Chatwoot", "customer_language": "English",
+            "order_source": "WhatsApp",
+        }
+        for stream in (None, "Auction"):
+            payload = dict(base)
+            if stream is not None:
+                payload["order_stream"] = stream
+            response = self.client.post("/api/master/orders", json=payload)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("Order_Stream must be Livestock, Meat, or Slaughter.", response.get_json()["errors"])
 
     def test_shadow_order_compare_route_is_read_only_boundary(self):
         service_result = {

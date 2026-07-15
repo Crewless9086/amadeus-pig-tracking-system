@@ -74,6 +74,7 @@ def _line_rollup(lines):
 
 def _order_record(row, lines):
     rollup = _line_rollup(lines)
+    explicit_stream = _text(row.get("order_stream"))
     return {
         "order_id": _text(row.get("order_id")),
         "order_date": _date_text(row.get("order_date")),
@@ -82,6 +83,8 @@ def _order_record(row, lines):
         "customer_channel": _text(row.get("customer_channel")),
         "customer_language": _text(row.get("customer_language")),
         "order_source": _text(row.get("order_source")),
+        "order_stream": explicit_stream or _legacy_order_stream(row, lines),
+        "order_stream_source": "explicit" if explicit_stream else "legacy_read_fallback",
         "requested_category": _text(row.get("requested_category")),
         "requested_weight_range": _text(row.get("requested_weight_range")),
         "requested_sex": _text(row.get("requested_sex")),
@@ -210,6 +213,7 @@ def get_order_master_row(order_id, connect_factory=None):
         "Customer_Channel": order.get("customer_channel", ""),
         "Customer_Language": order.get("customer_language", ""),
         "Order_Source": order.get("order_source", ""),
+        "Order_Stream": order.get("order_stream", ""),
         "Requested_Category": order.get("requested_category", ""),
         "Requested_Weight_Range": order.get("requested_weight_range", ""),
         "Requested_Sex": order.get("requested_sex", ""),
@@ -229,6 +233,19 @@ def get_order_master_row(order_id, connect_factory=None):
         "Created_At": order.get("created_at", ""),
         "Updated_At": order.get("updated_at", ""),
     }
+
+
+def _legacy_order_stream(row, lines):
+    """Classify only pre-stream rows for read compatibility; never use for new writes."""
+    context = " ".join(str(value or "") for value in (
+        row.get("requested_category"), row.get("order_source"), row.get("notes"),
+        *(line.get("sale_category") for line in (lines or [])),
+    )).lower()
+    if any(word in context for word in ("slaughter", "abattoir")):
+        return "Slaughter"
+    if any(word in context for word in ("meat", "carcass", "pork", "cut set", "freezer")):
+        return "Meat"
+    return "Livestock"
 
 
 def list_order_status_logs(connect_factory=None):
