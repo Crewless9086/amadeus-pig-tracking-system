@@ -406,7 +406,7 @@
         : "Laptop runner hidden from Render";
     } else if (local.active) {
       cls = "green";
-      label = `Runner active ${text(local.age_seconds, "0")}s`;
+      label = `${operatingStateLabel(local.operating_state)} | ${text(local.age_seconds, "0")}s`;
     } else if (local.status) {
       cls = "red";
       label = "Runner stale/off";
@@ -510,6 +510,7 @@
         ${metric("Last progress", text(execution.last_progress_at, "not recorded").replace("T", " ").slice(0, 16))}
       </div>
       <div class="bar"><span style="width:${pct}%"></span></div>
+      ${renderLiveActivity(mission)}
       ${renderGovernanceSummary(governance, missionFamily(mission))}
       <div class="timeline">${stages.map((stage) => renderStage(stage, mission)).join("")}</div>
       <div class="evidence">
@@ -517,6 +518,49 @@
         ${evidenceRow("Next action", text(review.recommended_next_action, nextActionText(mission)))}
         ${renderTestEvidence(review)}
       </div>`;
+  }
+
+  function operatingStateLabel(value) {
+    return ({
+      running_agent: "Running agent",
+      between_stages: "Between stages",
+      waiting_for_queue: "Waiting for queue",
+      stale_or_stopped: "Stale or stopped",
+    })[text(value).toLowerCase()] || "Runner active";
+  }
+
+  function renderLiveActivity(mission) {
+    const runner = state.runner || {};
+    const local = runner.local_runner || {};
+    const ledger = local.agent_ledger && typeof local.agent_ledger === "object" ? local.agent_ledger : {};
+    const latest = ledger.latest_stage && typeof ledger.latest_stage === "object" ? ledger.latest_stage : {};
+    const sameMission = text(local.last_mission_id) === text(mission.mission_id);
+    const cloudOnly = text(runner.local_runner_scope) === "render_cannot_see_laptop_runner";
+    const agent = sameMission ? text(local.current_agent, text(latest.agent, stageLabel(mission))) : stageLabel(mission);
+    const action = sameMission
+      ? text(local.current_action, text(latest.current_action, text(local.last_result_status, "Agent stage running")))
+      : nextActionText(mission);
+    const runtime = sameMission ? formatDuration(local.elapsed_seconds) : "--";
+    const heartbeat = sameMission && local.last_seen
+      ? `${text(local.age_seconds, "--")}s ago`
+      : text(mission.updated_at, "not recorded").replace("T", " ").slice(0, 19);
+    const attempts = sameMission ? Number(latest.attempt || 0) : Number(missionTelemetry(mission).attempt_count || 0);
+    const files = sameMission ? Number(local.changed_files_count || (latest.changed_files || []).length || 0) : 0;
+    const commands = Array.isArray(latest.commands_run) ? latest.commands_run : [];
+    const stateLabel = cloudOnly
+      ? "Cloud snapshot"
+      : sameMission ? operatingStateLabel(local.operating_state) : statusLabel(mission.status);
+    return `<section class="live-activity ${sameMission && local.active ? "live" : cloudOnly ? "snapshot" : ""}">
+      <div class="live-head"><span><i></i>${escapeHtml(stateLabel)}</span><b>${escapeHtml(cleanAgentName(agent))}</b><small>${escapeHtml(heartbeat)}</small></div>
+      <div class="live-grid">
+        ${metric("Current action", action)}
+        ${metric("Stage runtime", runtime)}
+        ${metric("Attempt", attempts ? String(attempts) : "--")}
+        ${metric("Files changed", files ? String(files) : "--")}
+      </div>
+      ${commands.length ? `<div class="live-command"><strong>Latest check</strong><span>${escapeHtml(text(commands[commands.length - 1]))}</span></div>` : ""}
+      ${cloudOnly ? '<p>Render shows persisted Supabase progress. Open the local dashboard for second-by-second laptop heartbeat and commands.</p>' : ""}
+    </section>`;
   }
 
   function renderGovernanceSummary(governance, family) {
@@ -652,7 +696,7 @@
     const activeMission = runner.active_mission || {};
     const label = scope === "render_cannot_see_laptop_runner"
       ? (activeMission.mission_id ? `Cloud sees active mission ${shortId(activeMission)}` : "Cloud cannot see the laptop runner")
-      : (local.active ? `Active (${text(local.age_seconds, "0")}s heartbeat)` : "Stale/off");
+      : (local.active ? `${operatingStateLabel(local.operating_state)} (${text(local.age_seconds, "0")}s heartbeat)` : "Stale/off");
     const visibility = scope === "render_cannot_see_laptop_runner"
       ? "Render can read mission status from Supabase, but it cannot see the local laptop process heartbeat. Use the local status command for runner truth."
       : text(runner.local_runner_visibility_note, "Local runner heartbeat is visible here.");
@@ -667,7 +711,7 @@
     const policy = state.policy || {};
     const activeLabel = runner.local_runner_scope === "render_cannot_see_laptop_runner"
       ? (runner.active_mission ? "DB active, laptop hidden" : "Laptop hidden")
-      : (local.active ? "Active" : "Stale/off");
+      : (local.active ? operatingStateLabel(local.operating_state) : "Stale/off");
     el.systemStrip.innerHTML = [
       strip("Queue", `New ${(state.buckets.new || []).length} | Approved ${(state.buckets.approved || []).length}`),
       strip("Review", `Ready ${(state.buckets.review || []).length} | Blocked ${(state.buckets.blocked || []).length}`),
