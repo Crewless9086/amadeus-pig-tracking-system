@@ -186,7 +186,7 @@ def charlie_build_relay_runner_status_route():
     review_backlog = pr_ready
     next_approved = _first_mission(approved_queue)
     next_release_approved = _first_mission(release_approved)
-    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=not _running_on_render()))
     local_runner_scope = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     if active_mission:
         runner_status = "active_mission_in_progress"
@@ -272,7 +272,7 @@ def charlie_build_relay_command_center_route():
             "statuses": statuses,
         }), 503
     detailed = str(request.args.get("detail") or "").strip().lower() in {"1", "true", "yes", "full"}
-    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
+    local_status = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=not _running_on_render()))
     if detailed:
         vault_health, _vault_health_status = vault_tables_health()
         improvements, _improvements_status = list_improvement_proposals(status="pending", limit=8)
@@ -455,7 +455,7 @@ def charlie_agent_workforce_route():
         sam_learning, sam_status = learning_future.result()
         analyst_learning, analyst_status = analyst_future.result()
         beacon_learning = beacon_future.result()
-    runner = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=False))
+    runner = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=not _running_on_render()))
     packet = build_agent_workforce_packet(
         mission_summary=mission_summary if mission_status < 400 else {},
         runner=runner,
@@ -1226,6 +1226,7 @@ def _compact_runner_status(status):
             "success",
             "status",
             "active",
+            "operating_state",
             "pid",
             "process_alive",
             "heartbeat_fresh",

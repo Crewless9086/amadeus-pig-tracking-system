@@ -34,6 +34,18 @@ class CharlieMissionControlFrontendTests(unittest.TestCase):
         self.assertIn('if (!agents.includes("builder")) agents.unshift("builder")', script)
         self.assertIn('id="reviewDrawer"', template)
 
+    def test_live_activity_distinguishes_runner_truth_from_cloud_snapshot(self):
+        template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
+        script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")
+
+        self.assertIn(".live-activity", template)
+        self.assertIn("renderLiveActivity", script)
+        self.assertIn("running_agent", script)
+        self.assertIn("between_stages", script)
+        self.assertIn("waiting_for_queue", script)
+        self.assertIn("Cloud snapshot", script)
+        self.assertIn("Latest check", script)
+
 
 if __name__ == "__main__":
     unittest.main()

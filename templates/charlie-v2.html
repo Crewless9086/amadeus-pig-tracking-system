@@ -77,6 +77,20 @@
     .mission-hero h2 { margin: 0; font-size: 18px; line-height: 1.16; }
     .muted { color: var(--muted); font-size: 9px; line-height: 1.4; }
     .mission-stats { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; border: 1px solid var(--line); background: var(--line); gap: 1px; }
+    .live-activity { margin-top: 14px; border: 1px solid var(--line); background: #fff; }
+    .live-activity.live { border-color: #9fcbb5; }
+    .live-activity.snapshot { border-color: #d6b777; }
+    .live-head { min-height: 36px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+    .live-head span { display: flex; align-items: center; gap: 6px; color: var(--green); font-size: 8px; font-weight: 850; text-transform: uppercase; }
+    .live-head i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+    .live-activity.live .live-head i { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+    .live-head b { font-size: 10px; }
+    .live-head small { color: var(--muted); font-size: 8px; }
+    .live-grid { display: grid; grid-template-columns: 2fr repeat(3, 1fr); gap: 1px; background: var(--line); }
+    .live-grid .metric { min-height: 48px; }
+    .live-command { display: grid; grid-template-columns: 85px 1fr; gap: 8px; padding: 7px 10px; font-size: 8px; }
+    .live-command span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .live-activity p { margin: 0; padding: 7px 10px; color: #6f4309; background: var(--amber-soft); font-size: 8px; }
     .metric { min-width: 0; min-height: 54px; padding: 9px; background: #fff; }
     .metric span { display: block; text-transform: uppercase; font-size: 8px; }
     .metric b { display: block; margin-top: 5px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -157,6 +171,7 @@
       .app > * { min-width: 0; max-width: 100%; }
       .panel { min-height: 470px; border-right: 0; border-bottom: 1px solid var(--line); }
       .mission-stats { grid-template-columns: 1fr 1fr; }
+      .live-grid { grid-template-columns: 1fr 1fr; }
       .matrix-list { grid-template-columns: 1fr; }
       .matrix-row:nth-child(odd) { border-right: 0; }
       .system-strip { grid-template-columns: 1fr 1fr; min-height: 80px; }
@@ -220,6 +235,6 @@
     <div id="reviewDrawerBody" class="summary-block"></div>
   </div></div>
 
-  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260714-progress-decisions') }}"></script>
+  <script src="{{ url_for('static', filename='js/charlieMissionControlV2.js', v='20260715-live-runner-progress') }}"></script>
 </body>
 </html>
