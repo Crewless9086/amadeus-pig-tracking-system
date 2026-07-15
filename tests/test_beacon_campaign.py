@@ -85,6 +85,44 @@ class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
 
 
 class BeaconCampaignTests(unittest.TestCase):
+    def recommendation(self, **changes):
+        event = {"performance_event_id": "OBS-1", "publish_packet_id": "PACKET-1", "measurement_window": "7 days",
+                 "spend_currency": "ZAR", "spend_amount": 0, "created_at": "2026-07-14T08:00:00+00:00"}
+        event.update(changes)
+        return build_beacon_weekly_command_brief([event], now=datetime(2026, 7, 14, 9, tzinfo=timezone.utc))["recommendations"][0]
+
+    def test_each_evidence_family_materially_influences_deterministic_advice(self):
+        baseline = self.recommendation()
+        prior = self.recommendation(prior_classification="STOP")
+        media = self.recommendation(media_evidence={"asset_id": "ASSET-1", "content_sha256": "abc", "approved": True})
+        engagement = self.recommendation(engagement_outcomes={"reactions": 10})
+        leads = self.recommendation(qualified_buyer_leads=1)
+        sales = self.recommendation(qualified_buyer_leads=1, attributable_sales=[{
+            "sales_transaction_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "completed", "currency": "ZAR", "net_total": "100.00"}])
+        self.assertEqual(prior["classification"], "STOP")
+        self.assertGreater(media["confidence"]["percent"], baseline["confidence"]["percent"])
+        self.assertEqual(engagement["classification"], "REUSE")
+        self.assertEqual(leads["classification"], "REUSE")
+        self.assertEqual(sales["classification"], "BOOST")
+        self.assertNotEqual(sales["reason"], leads["reason"])
+
+    def test_provenance_confidence_exclusions_and_fingerprint_are_stable(self):
+        kwargs = {"prior_classification": "CHANGE", "qualified_buyer_leads": 2,
+                  "media_evidence": {"asset_id": "ASSET-1", "content_sha256": "abc", "approved": True},
+                  "engagement_outcomes": {"messages": 3, "shares": 2},
+                  "attributable_sales": [
+                      {"sales_transaction_id": "SALE-2", "linked_order_id": "ORDER-2", "sale_status": "completed"},
+                      {"sales_transaction_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "completed"}]}
+        first = self.recommendation(**kwargs)
+        kwargs["attributable_sales"].reverse()
+        replay = self.recommendation(**kwargs)
+        self.assertEqual(first["recommendation_fingerprint"], replay["recommendation_fingerprint"])
+        self.assertEqual(first["confidence"], {"kind": "deterministic_evidence_coverage", "covered": 5, "required": 5, "percent": 100, "status": "complete"})
+        self.assertEqual(first["provenance"]["campaign_discriminator"], {"kind": "publish_packet_id", "id": "PACKET-1"})
+        invalid = self.recommendation(media_evidence={"asset_id": "ASSET-1", "approved": True}, attributable_sales=[{"sales_transaction_id": "SALE-X"}])
+        self.assertEqual({item["family"] for item in invalid["excluded_evidence"]}, {"media_evidence", "attributable_sales"})
+        self.assertEqual(invalid["classification"], "CHANGE")
+
     def test_weekly_command_brief_compares_compatible_latest_snapshots_only(self):
         events = [
             {"performance_event_id": "e2", "publish_packet_id": "p2", "channel": "Instagram", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 0, "qualified_buyer_leads": 3, "created_at": "2026-07-14T08:00:00+00:00"},

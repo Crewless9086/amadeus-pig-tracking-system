@@ -65,7 +65,7 @@
 .beacon-recommendation-card[data-action="reuse"] { border-left-color: #466a96; }
 .beacon-recommendation-title span { font-weight: 900; letter-spacing: .06em; }
 .beacon-recommendation-title small { color: #765410; }
-.beacon-recommendation-card > strong, .beacon-recommendation-card > small { display: block; margin-top: 8px; }
+.beacon-recommendation-card > strong, .beacon-recommendation-card > small { display: block; margin-top: 8px; overflow-wrap: anywhere; }
 .beacon-recommendation-card p { color: #607066; margin: 7px 0; }
 .beacon-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
 .beacon-decision-actions .button-link { flex: 1 1 9rem; min-width: 0; width: auto; margin-top: 0; white-space: normal; }

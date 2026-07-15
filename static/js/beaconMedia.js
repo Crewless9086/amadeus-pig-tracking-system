@@ -679,7 +679,12 @@
       <article class="beacon-recommendation-card" data-action="${item.classification.toLowerCase()}">
         <div class="beacon-recommendation-title"><span>${item.classification}</span><small>${item.truth_state === "blocked" ? "Blocked" : "Owner decision required"}</small></div>
         <p>${escapeHtml(safe(item.reason))}</p>
-        <small>Source: ${escapeHtml(safe(item.performance_event_id))}</small>
+        <small>Confidence: ${Number((item.confidence || {}).percent || 0)}% evidence coverage (${Number((item.confidence || {}).covered || 0)}/${Number((item.confidence || {}).required || 5)})</small>
+        <small>Sources: ${escapeHtml(((item.provenance || {}).source_ids || [item.performance_event_id]).join(", "))}</small>
+        <small>Contributing: ${escapeHtml((item.contributing_evidence || []).join(", ") || "none")}</small>
+        <small>Excluded: ${escapeHtml((item.excluded_evidence || []).map((entry) => `${entry.family}: ${entry.reason}`).join(", ") || "none")}</small>
+        <small>Rule: ${escapeHtml(safe(item.rule_version))} · ${escapeHtml(safe(item.recommendation_fingerprint))}</small>
+        <small>Baseline: same inputs without named evidence family · owner review only</small>
         <div class="beacon-decision-actions">
           <button type="button" class="button-link beacon-prepare-decision" data-index="${index}" data-destination="campaign_decision">Campaign decision</button>
           <button type="button" class="button-link button-link-secondary beacon-prepare-decision" data-index="${index}" data-destination="core_work">CORE work brief</button>

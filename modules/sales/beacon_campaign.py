@@ -14,6 +14,7 @@ from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
 BEACON_LIVE_STOCK_AWARENESS_MODE = "beacon_live_stock_awareness_campaign_draft_only"
+BEACON_RECOMMENDATION_RULE_VERSION = "beacon_evidence_guided_recommendation_v1"
 CAMPAIGN_LANES = {"meat_launch", "live_stock_awareness", "live_stock_sales"}
 LIVE_STOCK_DIRECT_SALES_TERMS = (
     "buy",
@@ -938,6 +939,13 @@ def prepare_beacon_owner_decision(performance_event, destination):
         "performance_event_id": source_id,
         "reason": _clean_text(recommendation.get("reason")),
         "supporting_metrics": recommendation.get("supporting_metrics") if isinstance(recommendation.get("supporting_metrics"), dict) else {},
+        "rule_version": recommendation["rule_version"],
+        "recommendation_fingerprint": recommendation["recommendation_fingerprint"],
+        "confidence": recommendation["confidence"],
+        "provenance": recommendation["provenance"],
+        "contributing_evidence": recommendation["contributing_evidence"],
+        "excluded_evidence": recommendation["excluded_evidence"],
+        "owner_review_only": True,
         "owner_gate": "owner_review_required",
         "next_gate": "owner_records_separate_campaign_decision" if destination == "campaign_decision" else "owner_creates_or_approves_separate_core_mission",
         **_decision_authority(),
@@ -986,20 +994,87 @@ def _command_recommendation(event):
     spend, leads = float(event.get("spend_amount") or 0), int(event.get("qualified_buyer_leads") or 0)
     cap = float(event.get("max_spend_cap_amount") or BOOST_RECOMMENDATION_SPEND_CAP)
     upstream = _clean_text(event.get("recommended_action")).lower()
+    evidence = _recommendation_evidence(event)
+    prior = evidence["normalized"]["campaign_classification"]
+    engagement = evidence["normalized"]["engagement"]
+    completed_sales = evidence["normalized"]["completed_sales"]
     if spend > cap:
         result = ("STOP", "spend_cap_conflict", "blocked")
+    elif prior == "STOP":
+        result = ("STOP", "prior_stop_classification_requires_review", "blocked")
+    elif evidence["normalized"]["media_status"] == "excluded":
+        result = ("CHANGE", "approved_hash_verified_media_required", "owner_review_required")
     elif upstream == "do_not_boost" or (spend > 0 and leads == 0):
         result = ("STOP", "paid_spend_without_qualified_leads", "blocked")
+    elif completed_sales > 0 and leads > 0:
+        result = ("BOOST", "completed_sales_and_qualified_leads_support_owner_review", "owner_review_required")
     elif upstream == "light_boost_owner_review" and leads > 0:
         result = ("BOOST", "qualified_leads_support_owner_review", "owner_review_required")
     elif leads > 0 and spend == 0:
         result = ("REUSE", "qualified_leads_without_paid_spend", "owner_review_required")
+    elif engagement >= 10 and spend == 0:
+        result = ("REUSE", "compatible_engagement_supports_reuse", "owner_review_required")
     else:
         result = ("CHANGE", "insufficient_evidence_or_adjustment_needed", "owner_review_required")
-    return {"classification": result[0], "reason": result[1], "truth_state": result[2],
+    fingerprint_payload = {"rule_version": BEACON_RECOMMENDATION_RULE_VERSION, "input": evidence["fingerprint_input"],
+                           "classification": result[0], "reason": result[1]}
+    fingerprint = "BEACON-REC-" + hashlib.sha256(json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:24].upper()
+    return {"classification": result[0], "reason": result[1], "explanation": result[1].replace("_", " "), "truth_state": result[2],
             "performance_event_id": event.get("performance_event_id") or "",
             "supporting_metrics": {"spend_amount": spend, "qualified_buyer_leads": leads, "currency": event.get("spend_currency") or "ZAR"},
+            "rule_version": BEACON_RECOMMENDATION_RULE_VERSION, "recommendation_fingerprint": fingerprint,
+            "confidence": evidence["confidence"], "provenance": evidence["provenance"],
+            "contributing_evidence": evidence["contributing"], "excluded_evidence": evidence["excluded"],
+            "comparison_baseline": "same_inputs_without_named_evidence_family", "owner_review_only": True,
             "owner_gate": "prepare_decision_only"}
+
+
+def _recommendation_evidence(event):
+    """Normalize advisory inputs; confidence is evidence coverage, never probability."""
+    campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id"))
+    media = event.get("media_evidence") if isinstance(event.get("media_evidence"), dict) else {}
+    engagement = event.get("engagement_outcomes") if isinstance(event.get("engagement_outcomes"), dict) else {}
+    sales = event.get("attributable_sales") if isinstance(event.get("attributable_sales"), list) else []
+    prior = _clean_text(event.get("prior_classification")).upper()
+    media_present = bool(media)
+    media_valid = bool(media.get("asset_id") and media.get("content_sha256") and media.get("approved") is True)
+    engagement_total = sum(_nonnegative_int(engagement.get(key)) for key in ("reactions", "comments", "shares", "messages"))
+    valid_sales, sale_ids = [], set()
+    for sale in sorted((row for row in sales if isinstance(row, dict)), key=lambda row: _clean_text(row.get("sales_transaction_id"))):
+        sale_id, order_id = _clean_text(sale.get("sales_transaction_id")), _clean_text(sale.get("linked_order_id"))
+        if sale_id and sale_id not in sale_ids and order_id and _clean_text(sale.get("sale_status")).lower() == "completed":
+            sale_ids.add(sale_id); valid_sales.append(sale)
+    families = {
+        "campaign_classification": prior in {"STOP", "CHANGE", "BOOST", "REUSE"},
+        "media_evidence": media_valid,
+        "engagement_outcomes": bool(engagement),
+        "qualified_leads": "qualified_buyer_leads" in event,
+        "attributable_sales": bool(valid_sales),
+    }
+    contributing = sorted(key for key, valid in families.items() if valid)
+    excluded = []
+    if media_present and not media_valid: excluded.append({"family": "media_evidence", "reason": "unapproved_hashless_or_missing_identity"})
+    if sales and not valid_sales: excluded.append({"family": "attributable_sales", "reason": "completed_linked_order_evidence_required"})
+    confidence = {"kind": "deterministic_evidence_coverage", "covered": len(contributing), "required": 5,
+                  "percent": len(contributing) * 20, "status": "complete" if len(contributing) == 5 else "limited"}
+    source_ids = sorted(filter(None, [campaign_id, _clean_text(event.get("performance_event_id")), _clean_text(media.get("asset_id"))] + list(sale_ids)))
+    normalized = {"campaign_classification": prior, "media_status": "verified" if media_valid else ("excluded" if media_present else "unavailable"),
+                  "engagement": engagement_total, "completed_sales": len(valid_sales)}
+    return {"normalized": normalized, "confidence": confidence, "contributing": contributing, "excluded": excluded,
+            "provenance": {"campaign_discriminator": {"kind": "publish_packet_id" if event.get("publish_packet_id") else "manual_post_event_id", "id": campaign_id},
+                           "observation_id": _clean_text(event.get("performance_event_id")), "source_ids": source_ids,
+                           "freshness": _clean_text(event.get("created_at")) or "unavailable"},
+            "fingerprint_input": {"campaign_id": campaign_id, "observation_id": _clean_text(event.get("performance_event_id")),
+                                  "prior": prior, "media": [media.get("asset_id"), media.get("content_sha256"), media_valid],
+                                  "engagement": engagement_total, "qualified_leads": int(event.get("qualified_buyer_leads") or 0),
+                                  "completed_sale_ids": sorted(sale_ids)}}
+
+
+def _nonnegative_int(value):
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def facebook_posting_policy(environ=None):
