@@ -20,9 +20,20 @@ from modules.charlie.runner_control import RUNNER_DIR, runner_status, start_runn
 
 
 STATE_PATH = RUNNER_DIR / "watchdog.json"
+GIT_CONFIG_PATH = RUNNER_DIR / "task-gitconfig"
+
+
+def _configure_git_safe_directory(config_path=GIT_CONFIG_PATH):
+    config_path = Path(config_path)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    safe_path = str(REPO_ROOT).replace("\\", "/")
+    config_path.write_text(f'[safe]\n\tdirectory = "{safe_path}"\n', encoding="utf-8")
+    os.environ["GIT_CONFIG_GLOBAL"] = str(config_path)
+    return config_path
 
 
 def watchdog_tick(status_reader=runner_status, starter=start_runner, state_path=STATE_PATH):
+    _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
     status = status_reader()
     if status.get("active"):
         result = {"status": "runner_healthy", "started": False}
