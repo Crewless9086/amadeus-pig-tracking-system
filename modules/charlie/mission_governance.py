@@ -8,6 +8,7 @@ from modules.charlie.block_recovery import normalize_findings
 GOVERNANCE_VERSION = "charlie_mission_governance_v1"
 DEFAULT_TOTAL_BACKFLOW_LIMIT = 4
 DEFAULT_FAMILY_BACKFLOW_LIMIT = 2
+OVERSIZED_SCOPE_DOMAIN_LIMIT = 4
 RED_ZONE_TERMS = (
     "auth bypass",
     "authorization bypass",
@@ -257,6 +258,84 @@ def build_followup_missions(parent, findings):
             },
         })
     return missions
+
+
+def analyze_pre_builder_scope(mission):
+    """Freeze architecture questions and proposed child work before Builder starts."""
+    mission = mission if isinstance(mission, dict) else {}
+    text = " ".join(str(mission.get(key) or "") for key in ("title", "raw_text", "mission_type")).lower()
+    domains = {
+        "data_model": ("schema", "table", "migration", "canonical", "supabase"),
+        "lifecycle": ("lifecycle", "status transition", "cancel", "complete", "negative path"),
+        "frontend": ("ui", "dashboard", "page", "frontend", "browser"),
+        "agent_runtime": ("sam", "agent", "prompt", "conversation", "telegram"),
+        "commercial": ("sale", "order", "quote", "price", "payment", "reservation"),
+        "release": ("deploy", "render", "github", "pr", "release"),
+    }
+    matched = [name for name, needles in domains.items() if any(needle in text for needle in needles)]
+    gates = []
+    if "data_model" in matched and "commercial" in matched:
+        gates.extend(["canonical_record_discriminator", "ownership_and_source_of_truth"])
+    if "lifecycle" in matched:
+        gates.append("positive_and_negative_lifecycle_paths")
+    if "data_model" in matched:
+        gates.append("migration_and_rollback_authority")
+    split_required = len(matched) >= OVERSIZED_SCOPE_DOMAIN_LIMIT
+    return {
+        "version": "charlie_pre_builder_scope_v1",
+        "domains": matched,
+        "planning_gates": list(dict.fromkeys(gates)),
+        "split_required": split_required,
+        "child_scopes": [
+            {"sequence": index, "scope": domain, "depends_on": matched[index - 2] if index > 1 else ""}
+            for index, domain in enumerate(matched, 1)
+        ] if split_required else [],
+        "builder_allowed": not gates or bool(((mission.get("metadata") or {}).get("pre_builder_plan") or {}).get("approved")),
+    }
+
+
+def build_scope_child_missions(parent, scope_analysis=None):
+    parent = parent if isinstance(parent, dict) else {}
+    analysis = scope_analysis if isinstance(scope_analysis, dict) else analyze_pre_builder_scope(parent)
+    if not analysis.get("split_required"):
+        return []
+    parent_id = str(parent.get("mission_id") or "").strip()
+    metadata = parent.get("metadata") if isinstance(parent.get("metadata"), dict) else {}
+    family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    root_id = str(family.get("root_mission_id") or parent_id).strip()
+    children = []
+    previous_id = ""
+    for item in analysis.get("child_scopes", []):
+        scope = str(item.get("scope") or "").strip()
+        if not scope:
+            continue
+        child_id = f"CHARLIE-SCOPE-{hashlib.sha256(f'{root_id}|{scope}'.encode('utf-8')).hexdigest()[:16].upper()}"
+        child_metadata = {
+            "mission_family": {
+                "parent_mission_id": parent_id,
+                "root_mission_id": root_id,
+                "sequence": item.get("sequence"),
+                "discovery_source": "pre_builder_scope_split",
+                "finding_family": scope,
+                "dependency": previous_id,
+            },
+            "depends_on_mission_ids": [previous_id] if previous_id else [],
+            "pre_builder_scope": {"parent_analysis": analysis, "scope": scope},
+        }
+        children.append({
+            "mission_id": child_id,
+            "status": "new",
+            "title": f"{parent.get('title') or parent_id}: {scope.replace('_', ' ').title()}",
+            "raw_text": f"Deliver the {scope.replace('_', ' ')} slice of parent mission {parent_id}. Keep adjacent domains out of scope and record them as follow-ups.",
+            "urgency": parent.get("urgency") or "P1",
+            "mission_type": parent.get("mission_type") or "system improvement",
+            "approval_level": parent.get("approval_level") or "LEVEL 3",
+            "acceptance_criteria": [f"Complete and regression-test only the {scope.replace('_', ' ')} slice."],
+            "test_plan": [f"Run focused verification for the {scope.replace('_', ' ')} affected paths."],
+            "metadata": child_metadata,
+        })
+        previous_id = child_id
+    return children
 
 
 def mission_governance_summary(mission):

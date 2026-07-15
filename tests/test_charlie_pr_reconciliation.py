@@ -19,6 +19,7 @@ def pr(mergeable="MERGEABLE", state="OPEN", conclusion="SUCCESS"):
         "state": state,
         "mergeable": mergeable,
         "headRefOid": "abc123",
+        "baseRefName": "main",
         "statusCheckRollup": [{"conclusion": conclusion}],
     }
 
@@ -45,6 +46,20 @@ class CharliePrReconciliationTests(unittest.TestCase):
     def test_merged_pr_reconciles_terminal_state(self):
         result = reconciliation_decision(mission(), pr(state="MERGED"))
         self.assertEqual(result["target_status"], "merged")
+
+    def test_wrong_base_routes_internal_branch_repair(self):
+        state = pr()
+        state["baseRefName"] = "feature/other-mission"
+        result = reconciliation_decision(mission(), state)
+        self.assertEqual(result["reason"], "github_pr_wrong_release_base")
+        self.assertEqual(result["disposition"]["block_class"], "branch_repair_required")
+
+    def test_incomplete_dependency_cannot_become_review_ready(self):
+        value = mission()
+        value["metadata"]["depends_on_mission_ids"] = ["PARENT-1"]
+        result = reconciliation_decision(value, pr(), {"PARENT-1": "pr_ready"})
+        self.assertEqual(result["action"], "wait_dependencies")
+        self.assertEqual(result["target_status"], "approved")
 
 
 if __name__ == "__main__":

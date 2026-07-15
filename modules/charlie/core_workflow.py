@@ -438,6 +438,12 @@ def classify_workflow_template(mission_type="", raw_text="", title=""):
         re.search(r"\bvisual\b.{0,50}\b(layout|screen|page|interface|ui|frontend|dashboard)\b", haystack)
         or re.search(r"\b(layout|screen|page|interface|ui|frontend|dashboard)\b.{0,50}\bvisual\b", haystack)
     )
+    strong_ui_build = bool(
+        re.search(r"\b(attached|reference)\s+(screenshot|image|mockup|design)\b", haystack)
+        or re.search(r"\b(rebuild|redesign|create|build)\b.{0,80}\b(dashboard|page|ui|interface|command center|control room)\b", haystack)
+    )
+    if implementation_intent and strong_ui_build and not explicit_non_ui:
+        return "ui_product_build"
     # An explicit mission type is an owner/system classification and wins over
     # incidental verbs in the description. UI remains content-routed below so
     # generic labels such as "software build" can still select its workflow.

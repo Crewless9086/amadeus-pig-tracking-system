@@ -123,10 +123,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(commands[0], ["gh", "pr", "view", "168", "--json", "headRefName", "--jq", ".headRefName"])
         self.assertEqual(commands[1], ["git", "fetch", "origin", "feature/beacon-opportunity-scanner"])
 
-    @patch("scripts.charlie_mission_pickup.update_mission_status")
-    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.transition_mission_review_state")
     @patch("scripts.charlie_mission_pickup._owner_queue_missions")
-    def test_reconcile_green_blocked_pr_moves_to_owner_review(self, owner_queue, update_vault, update_status):
+    def test_reconcile_green_blocked_pr_moves_to_owner_review(self, owner_queue, transition):
         blocked = {
             **MISSION,
             "status": "blocked",
@@ -136,49 +135,46 @@ class CharlieMissionPickupTests(unittest.TestCase):
             },
         }
         owner_queue.return_value = ([blocked], 200)
-        update_vault.return_value = ({"success": True}, 200)
-        update_status.return_value = ({"success": True}, 200)
+        transition.return_value = ({"success": True}, 200)
 
         def fake_runner(*_args, **_kwargs):
             return SimpleNamespace(
                 returncode=0,
-                stdout='{"number":12,"url":"https://github.com/example/repo/pull/12","state":"OPEN","mergeable":"MERGEABLE","headRefOid":"abc123","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
+                stdout='{"number":12,"url":"https://github.com/example/repo/pull/12","state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","headRefOid":"abc123","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
                 stderr="",
             )
 
         result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
 
         self.assertEqual(result["changed_count"], 1)
-        self.assertEqual(update_status.call_args.args[1], "pr_ready")
-        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(transition.call_args.args[1], "pr_ready")
+        packet = transition.call_args.args[2]
         self.assertEqual(packet["review_status"], "ready_for_owner_review")
         self.assertEqual(packet["tested_revision"], "abc123")
 
-    @patch("scripts.charlie_mission_pickup.update_mission_status")
-    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.transition_mission_review_state")
     @patch("scripts.charlie_mission_pickup._owner_queue_missions")
-    def test_reconcile_conflicting_pr_queues_publisher_recovery(self, owner_queue, update_vault, update_status):
+    def test_reconcile_conflicting_pr_queues_publisher_recovery(self, owner_queue, transition):
         blocked = {
             **MISSION,
             "status": "blocked",
             "metadata": {"review_packet": {"links": {"pr": "https://github.com/example/repo/pull/13"}}},
         }
         owner_queue.return_value = ([blocked], 200)
-        update_vault.return_value = ({"success": True}, 200)
-        update_status.return_value = ({"success": True}, 200)
+        transition.return_value = ({"success": True}, 200)
 
         def fake_runner(*_args, **_kwargs):
             return SimpleNamespace(
                 returncode=0,
-                stdout='{"number":13,"state":"OPEN","mergeable":"CONFLICTING","headRefOid":"def456","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
+                stdout='{"number":13,"state":"OPEN","mergeable":"CONFLICTING","baseRefName":"main","headRefOid":"def456","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
                 stderr="",
             )
 
         result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
 
         self.assertEqual(result["changed_count"], 1)
-        self.assertEqual(update_status.call_args.args[1], "approved")
-        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(transition.call_args.args[1], "approved")
+        packet = transition.call_args.args[2]
         self.assertEqual(packet["return_to_stage"], "publisher")
         self.assertEqual(packet["review_status"], "internal_recovery_queued")
 
@@ -783,7 +779,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
         self.assertEqual(result["runner_mode"], "code_test_pr")
         queried_statuses = [call.args[0] for call in list_owner_work_missions.call_args_list]
-        self.assertNotIn("pr_ready", queried_statuses)
+        # pr_ready is reconciled for stale GitHub state, but it is not treated as
+        # an active mission and therefore cannot stop the approved pickup.
+        self.assertIn("pr_ready", queried_statuses)
         self.assertIn("approved", queried_statuses)
         write_heartbeat.assert_called()
         sleep.assert_not_called()

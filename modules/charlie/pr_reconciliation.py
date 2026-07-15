@@ -5,6 +5,7 @@ import re
 import subprocess
 
 from modules.charlie.block_recovery import classify_block
+from modules.charlie.review_readiness import validate_review_readiness
 
 
 PASSING_CHECK_CONCLUSIONS = {"SUCCESS", "SKIPPED", "NEUTRAL"}
@@ -17,7 +18,7 @@ def query_pr_state(pr_reference, run_subprocess=None):
     runner = run_subprocess or subprocess.run
     command = [
         "gh", "pr", "view", reference,
-        "--json", "number,url,state,mergeable,headRefOid,statusCheckRollup",
+        "--json", "number,url,state,mergeable,baseRefName,headRefName,headRefOid,statusCheckRollup",
     ]
     try:
         completed = runner(
@@ -40,7 +41,7 @@ def query_pr_state(pr_reference, run_subprocess=None):
     return {"success": True, "status": "ok", **payload}
 
 
-def reconciliation_decision(mission, pr_state):
+def reconciliation_decision(mission, pr_state, dependency_states=None, release_base="main"):
     mission = mission if isinstance(mission, dict) else {}
     pr_state = pr_state if isinstance(pr_state, dict) else {}
     if not pr_state.get("success"):
@@ -60,6 +61,13 @@ def reconciliation_decision(mission, pr_state):
         return {"action": "mark_merged", "target_status": "merged", "reason": "github_pr_merged", "head_sha": head_sha}
     if state != "OPEN":
         return {"action": "none", "reason": f"github_pr_state_{state.lower() or 'unknown'}", "head_sha": head_sha}
+    readiness = validate_review_readiness(mission, pr_state, dependency_states, release_base)
+    if "wrong_release_base" in readiness["reasons"]:
+        disposition = classify_block("publisher", "GitHub PR targets the wrong branch and must be rebased onto the release base.", review_packet)
+        return {"action": "queue_recovery", "target_status": "approved", "reason": "github_pr_wrong_release_base", "disposition": disposition, "head_sha": head_sha, "readiness": readiness}
+    if "dependencies_incomplete" in readiness["reasons"]:
+        disposition = classify_block("planner", "Mission dependencies are not complete.", review_packet)
+        return {"action": "wait_dependencies", "target_status": "approved", "reason": "mission_dependencies_incomplete", "disposition": disposition, "head_sha": head_sha, "readiness": readiness}
     if mergeable == "CONFLICTING":
         disposition = classify_block("publisher", "GitHub PR has merge conflicts.", review_packet)
         return {"action": "queue_recovery", "target_status": "approved", "reason": "github_pr_conflicting", "disposition": disposition, "head_sha": head_sha}
@@ -69,8 +77,11 @@ def reconciliation_decision(mission, pr_state):
     if checks_complete and mergeable == "MERGEABLE" and not visual_ready:
         disposition = classify_block("visual_qa_reviewer", "Visual review media was not captured.", review_packet)
         return {"action": "queue_recovery", "target_status": "approved", "reason": "visual_evidence_required", "disposition": disposition, "head_sha": head_sha}
+    if checks_complete and mergeable == "MERGEABLE" and visual_ready and readiness["passed"]:
+        return {"action": "mark_pr_ready", "target_status": "pr_ready", "reason": "github_pr_green_and_reviewable", "head_sha": head_sha, "readiness": readiness}
     if checks_complete and mergeable == "MERGEABLE" and visual_ready:
-        return {"action": "mark_pr_ready", "target_status": "pr_ready", "reason": "github_pr_green_and_reviewable", "head_sha": head_sha}
+        disposition = classify_block("evidence_reviewer", "Owner review readiness evidence is incomplete: " + ", ".join(readiness["reasons"]), review_packet)
+        return {"action": "queue_recovery", "target_status": "approved", "reason": "owner_review_readiness_incomplete", "disposition": disposition, "head_sha": head_sha, "readiness": readiness}
     return {"action": "none", "reason": "github_checks_pending_or_mergeability_unknown", "head_sha": head_sha}
 
 

@@ -65,12 +65,18 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     )
     if heartbeat_path == HEARTBEAT_PATH:
         active = active and supervisor_owns_runner
+    ledger_summary = _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {}
+    operating_state = _runner_operating_state(payload, ledger_summary, active)
     if code_stale and process_alive and heartbeat_fresh:
         status = "runner_code_stale"
         next_action = "Restart the local CHARLIE runner because main changed after this runner process started."
     elif active:
         status = "runner_active"
-        next_action = "Approved missions should be picked up, executed locally, and moved to owner review while this runner stays active."
+        next_action = {
+            "running_agent": "CORE is actively executing the displayed agent stage.",
+            "between_stages": "CORE is healthy and transitioning between agent stages.",
+            "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
+        }.get(operating_state, "CORE is healthy and processing the mission queue.")
     elif orphan_processes:
         status = "runner_orphaned"
         next_action = "Stop the orphaned local CHARLIE runner, then start it again so runner control owns the heartbeat."
@@ -84,6 +90,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "success": True,
         "status": status,
         "active": active,
+        "operating_state": operating_state,
         "pid": payload.get("pid"),
         "process_alive": process_alive,
         "heartbeat_fresh": heartbeat_fresh,
@@ -107,7 +114,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "notify_failing": bool(payload.get("notify_failing")),
         "notification_level": payload.get("notification_level", ""),
         "notification_title": payload.get("notification_title", ""),
-        "agent_ledger": _read_agent_ledger_summary(payload.get("agent_ledger_path", "")) if include_ledger else {},
+        "agent_ledger": ledger_summary,
         "orphan_processes": orphan_processes,
         "supervisor_active": supervisor_alive,
         "supervisor_owns_runner": supervisor_owns_runner,
@@ -124,6 +131,19 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "can_start_from_web": False,
         "can_stop_from_web": False,
     }
+
+
+def _runner_operating_state(payload, ledger, active):
+    if not active:
+        return "stale_or_stopped"
+    latest = ledger.get("latest_stage") if isinstance(ledger, dict) and isinstance(ledger.get("latest_stage"), dict) else {}
+    current_agent = str(payload.get("current_agent") or latest.get("agent") or "").strip()
+    stage_status = str(latest.get("status") or "").strip().lower()
+    if current_agent and stage_status in {"running", "in_progress", "active"}:
+        return "running_agent"
+    if payload.get("last_mission_id") and (current_agent or stage_status in {"complete", "completed", "passed"}):
+        return "between_stages"
+    return "waiting_for_queue"
 
 
 def write_runner_heartbeat(result=None, heartbeat_path=None):

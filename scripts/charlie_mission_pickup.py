@@ -17,7 +17,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
-from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, update_mission_status, update_mission_vault
+from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
+from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
 from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
@@ -233,7 +234,7 @@ def watch_for_mission(
 
 
 def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
-    missions, status_code = _owner_queue_missions(statuses=("blocked",), limit=50)
+    missions, status_code = _owner_queue_missions(statuses=("blocked", "pr_ready"), limit=50)
     if status_code >= 400:
         return {"success": False, "status": "blocked_pr_reconciliation_unavailable", "changed_count": 0}
     changed = []
@@ -245,7 +246,12 @@ def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
             skipped.append({"mission_id": mission_id, "reason": "pr_reference_missing"})
             continue
         pr_state = query_pr_state(reference, run_subprocess=run_subprocess)
-        decision = reconciliation_decision(mission, pr_state)
+        dependency_states = {}
+        for dependency_id in mission_dependency_ids(mission):
+            dependency_result, dependency_code = get_mission(dependency_id)
+            if dependency_code < 400:
+                dependency_states[dependency_id] = (dependency_result.get("mission") or {}).get("status", "")
+        decision = reconciliation_decision(mission, pr_state, dependency_states)
         if decision.get("action") == "none":
             skipped.append({"mission_id": mission_id, "reason": decision.get("reason")})
             continue
@@ -266,27 +272,24 @@ def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
                 "tested_revision": decision.get("head_sha", ""),
                 "recommended_next_action": "Owner can review the green, mergeable PR and its evidence.",
             })
-        elif decision.get("action") == "queue_recovery":
+        elif decision.get("action") in {"queue_recovery", "wait_dependencies"}:
             disposition = decision.get("disposition") or {}
+            review_packet = cleared_review_packet(
+                review_packet,
+                reason=decision.get("reason", "internal recovery required"),
+                return_to_stage=disposition.get("responsible_stage", "planner"),
+            )
             review_packet.update({
-                "review_status": "internal_recovery_queued",
                 "block_disposition": disposition,
-                "return_to_stage": disposition.get("responsible_stage", "builder"),
-                "recommended_next_action": f"CORE will recover from {disposition.get('responsible_stage', 'builder')}; no owner action is required.",
+                "github_reconciliation": review_packet.get("github_reconciliation", {}),
             })
-        update_mission_vault(
-            mission_id,
-            {"review_packet": review_packet},
-            notes=f"Runner reconciled blocked mission from authoritative GitHub PR state: {decision.get('reason')}.",
-        )
-        updated, updated_code = update_mission_status(
+        updated, updated_code = transition_mission_review_state(
             mission_id,
             decision.get("target_status"),
+            review_packet,
             owner_decision="" if decision.get("target_status") == "approved" else str(mission.get("owner_decision") or ""),
-            event_type="status_changed",
             notes=f"GitHub reconciliation: {decision.get('reason')}.",
-            metadata={"github_reconciliation": True, "head_sha": decision.get("head_sha", "")},
-            expected_status="blocked",
+            expected_status=str(mission.get("status") or "blocked"),
         )
         if updated_code >= 400:
             skipped.append({"mission_id": mission_id, "reason": updated.get("status", "status_update_failed")})

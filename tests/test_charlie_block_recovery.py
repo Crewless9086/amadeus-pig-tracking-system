@@ -47,6 +47,14 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["block_class"], "owner_decision_required")
         self.assertFalse(result["recoverable"])
 
+    def test_merge_conflict_never_consumes_correction_budget_into_owner_block(self):
+        result = classify_block(
+            "publisher",
+            "Pull request has merge conflicts after bounded correction budget was exhausted.",
+        )
+        self.assertEqual(result["block_class"], "branch_repair_required")
+        self.assertFalse(result["owner_required"])
+
     def test_exhausted_frozen_matrix_becomes_honest_owner_block(self):
         result = classify_block(
             "qa_red_team",
