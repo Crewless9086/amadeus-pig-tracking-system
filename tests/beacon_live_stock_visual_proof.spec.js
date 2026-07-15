@@ -36,6 +36,7 @@ function json(route, body, status = 200) {
 }
 
 async function mockBeaconApi(page) {
+  const executionEvents = [];
   await page.route("**/api/beacon/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -55,11 +56,15 @@ async function mockBeaconApi(page) {
       selected_draft: { channel: "Facebook", exact_text: exactText }, safety_checks: { no_public_send_or_post: false },
     });
     if (url.pathname.endsWith("/facebook-posting-policy")) return json(route, { success: true, enabled: true, page_id_configured: true, page_access_token_configured: true, required_owner_confirmation: "POST EXACT BEACON PACKET" });
-    if (url.pathname.endsWith("/facebook-post-executions") && request.method() === "POST") return json(route, {
-      success: true, status: "facebook_post_recorded", facebook_post_id: "123456789_987654321", posts_publicly: true, calls_meta: true,
-      execution_event: { execution_status: "posted", facebook_post_id: "123456789_987654321", publish_packet_id: "BEACON-PUBLISH-PACKET-F7F8A977", post_kind: "photo", selected_media: asset, created_at: "2026-07-14T19:45:00Z" },
-    });
-    if (url.pathname.endsWith("/facebook-post-executions")) return json(route, { success: true, execution_events: [] });
+    if (url.pathname.endsWith("/facebook-post-executions") && request.method() === "POST") {
+      const executionEvent = { execution_status: "posted", facebook_post_id: "123456789_987654321", publish_packet_id: "BEACON-PUBLISH-PACKET-F7F8A977", post_kind: "photo", selected_media: asset, created_at: "2026-07-14T19:45:00Z" };
+      executionEvents.unshift(executionEvent);
+      return json(route, {
+        success: true, status: "facebook_post_recorded", facebook_post_id: "123456789_987654321", posts_publicly: true, calls_meta: true,
+        execution_event: executionEvent,
+      });
+    }
+    if (url.pathname.endsWith("/facebook-post-executions")) return json(route, { success: true, execution_events: executionEvents });
     if (url.pathname.endsWith("/manual-post-evidence")) return json(route, { success: true, manual_post_events: [] });
     if (url.pathname.endsWith("/campaign-performance")) return json(route, { success: true, performance_events: [], command_brief: { recommendations: [] } });
     return json(route, { success: true });
@@ -84,6 +89,10 @@ for (const viewport of [
     await page.fill("#beacon_facebook_post_confirmation", "POST EXACT BEACON PACKET");
     await page.click("#beacon_facebook_post_execute");
     await expect(page.locator("#beacon_facebook_post_result")).toContainText("123456789_987654321");
+    const executionLedger = page.locator("#beacon_facebook_post_execution_list .beacon-facebook-post-item");
+    await expect(executionLedger).toHaveCount(1);
+    await expect(executionLedger.first()).toContainText("BEACON-PUBLISH-PACKET-F7F8A977");
+    await expect(executionLedger.first()).toContainText("123456789_987654321");
     await page.locator("#beacon_sales_truth").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${evidenceDir}/beacon-live-stock-${viewport.name}.png`, fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
