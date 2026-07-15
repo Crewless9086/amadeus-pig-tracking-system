@@ -66,6 +66,16 @@ body {
   border-radius: 18px;
 }
 
+.sales-rail-guide { margin: 22px 0; padding: 22px; border: 1px solid #cbd9cf; border-left: 5px solid var(--green-main); border-radius: 12px; background: linear-gradient(135deg, #f5faf6 0%, #fff 70%); }
+.sales-rail-guide-copy h2 { margin: 4px 0 6px; font-size: clamp(20px, 2vw, 28px); }
+.sales-rail-guide-copy p { margin: 0; color: var(--text-soft); }
+.sales-rail-eyebrow { color: var(--green-dark); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.sales-rail-steps { display: grid; grid-template-columns: repeat(7, minmax(100px, 1fr)); gap: 8px; margin: 18px 0; padding: 0; list-style: none; }
+.sales-rail-steps li { min-width: 0; padding: 10px; border-radius: 8px; background: #eaf2ec; font-size: 12px; font-weight: 700; color: var(--green-dark); }
+.sales-rail-steps span { display: block; margin-bottom: 4px; color: var(--text-soft); font-size: 11px; }
+.sales-rail-safety { padding: 11px 13px; border-radius: 8px; background: #fff7df; color: #664d03; font-size: 13px; line-height: 1.45; }
+.order-stream-pill { background: #e7efff; color: #244879; }
+
 /* Order workspace: full-width operational view with detail on demand. */
 .order-detail-page {
   background: #f3f5f2;
@@ -1980,7 +1990,7 @@ button:disabled {
 }
 
 .orders-page-card .sales-filters-grid {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
 }
 
 .orders-page-card .pig-list-grid {
@@ -2882,6 +2892,8 @@ button:disabled {
   .orders-status-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .sales-rail-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .orders-page-shell {
     padding: 18px 12px;
