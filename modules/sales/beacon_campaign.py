@@ -738,6 +738,8 @@ def record_beacon_campaign_performance_event(payload, database_url=None):
                         reserves_stock, dispatch_enabled, changes_runtime_now,
                         changes_prompt_now, physical_controls_enabled,
                         customer_public_output_enabled, writes_farm_data, recorded_by
+                        , metric_evidence, evidence_source, source_reference, retrieved_at,
+                        source_snapshot_key, supersedes_event_id
                     )
                     values (
                         %(performance_event_id)s, %(mode)s, %(manual_post_event_id)s,
@@ -758,6 +760,8 @@ def record_beacon_campaign_performance_event(payload, database_url=None):
                         %(changes_runtime_now)s, %(changes_prompt_now)s,
                         %(physical_controls_enabled)s, %(customer_public_output_enabled)s,
                         %(writes_farm_data)s, %(recorded_by)s
+                        , %(metric_evidence_json)s::jsonb, %(evidence_source)s, %(source_reference)s,
+                        %(retrieved_at)s::timestamptz, %(performance_event_id)s, nullif(%(supersedes_event_id)s, '')
                     )
                     on conflict (performance_event_id) do nothing
                     """,
@@ -828,7 +832,9 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
                            recommendation_reason, recommended_spend_amount,
                            recommended_duration_days, max_spend_cap_amount,
                            cost_per_message, cost_per_qualified_lead,
-                           recommends_boost, recorded_by, created_at
+                           recommends_boost, recorded_by, created_at,
+                           metric_evidence, evidence_source, source_reference, retrieved_at,
+                           source_snapshot_key, supersedes_event_id
                     from public.beacon_campaign_performance_events
                     {where}
                     order by created_at desc
@@ -1832,9 +1838,10 @@ def _manual_post_unavailable(status, configured):
 
 def _performance_params(payload):
     spend_amount = _safe_money(payload.get("spend_amount") or payload.get("spend"))
-    messages = _safe_int(payload.get("messages_to_sam") or payload.get("messages"), 0)
-    qualified = _safe_int(payload.get("qualified_buyer_leads") or payload.get("qualified_leads"), 0)
-    recommendation = _recommend_boost(payload, spend_amount, messages, qualified)
+    evidence = _performance_metric_evidence(payload)
+    messages = _verified_metric_value(evidence, "messages_to_sam")
+    qualified = _verified_metric_value(evidence, "qualified_buyer_leads")
+    recommendation = _recommend_boost(payload, spend_amount, messages, qualified, evidence=evidence)
     cost_per_message = _cost(spend_amount, messages)
     cost_per_qualified_lead = _cost(spend_amount, qualified)
     params = {
@@ -1863,6 +1870,11 @@ def _performance_params(payload):
         "cost_per_message": cost_per_message,
         "cost_per_qualified_lead": cost_per_qualified_lead,
         "recorded_by": _clean_text(payload.get("recorded_by") or "beacon_performance_tracking")[:120],
+        "metric_evidence_json": json.dumps(evidence, sort_keys=True, default=str),
+        "evidence_source": _clean_text(payload.get("evidence_source") or "owner_manual")[:80],
+        "source_reference": _clean_text(payload.get("source_reference") or payload.get("manual_post_event_id") or payload.get("publish_packet_id"))[:240],
+        "retrieved_at": _clean_text(payload.get("retrieved_at")) or datetime.now(timezone.utc).isoformat(),
+        "supersedes_event_id": _clean_text(payload.get("supersedes_event_id"))[:120],
         **PERFORMANCE_AUTHORITY_FLAGS,
     }
     params["recommends_boost"] = params["recommended_action"] == "light_boost_owner_review"
@@ -1871,7 +1883,8 @@ def _performance_params(payload):
     return params
 
 
-def _recommend_boost(payload, spend_amount, messages, qualified):
+def _recommend_boost(payload, spend_amount, messages, qualified, evidence=None):
+    evidence = evidence or _performance_metric_evidence(payload)
     fulfillment_risk = _clean_text(payload.get("fulfillment_risk")).lower()
     safety_risk = _clean_text(payload.get("safety_risk")).lower()
     owner_blocked = str(payload.get("owner_blocked") or "").strip().lower() in {"1", "true", "yes", "on"}
@@ -1883,6 +1896,8 @@ def _recommend_boost(payload, spend_amount, messages, qualified):
             "recommended_spend_amount": 0,
             "recommended_duration_days": 0,
         }
+    if (evidence.get("messages_to_sam") or {}).get("status") not in {"verified", "owner_correction"} and (evidence.get("qualified_buyer_leads") or {}).get("status") not in {"verified", "owner_correction"}:
+        return {"recommended_action": "wait_for_more_data", "recommendation_reason": "Message and qualified-lead evidence is unavailable; no performance conclusion is supported.", "recommended_spend_amount": 0, "recommended_duration_days": 0}
     if requested_spend > BOOST_RECOMMENDATION_SPEND_CAP:
         return {
             "recommended_action": "owner_review_required",
@@ -1980,6 +1995,12 @@ def _public_performance_event(params):
         "cost_per_message": params.get("cost_per_message"),
         "cost_per_qualified_lead": params.get("cost_per_qualified_lead"),
         "recorded_by": params.get("recorded_by", ""),
+        "metric_evidence": _loads(params.get("metric_evidence_json"), {}),
+        "evidence_source": params.get("evidence_source", ""),
+        "source_reference": params.get("source_reference", ""),
+        "retrieved_at": params.get("retrieved_at", ""),
+        "source_snapshot_key": params.get("performance_event_id", ""),
+        "supersedes_event_id": params.get("supersedes_event_id", ""),
         **PERFORMANCE_AUTHORITY_FLAGS,
         "recommends_boost": params.get("recommended_action") == "light_boost_owner_review",
     }
@@ -2014,6 +2035,12 @@ def _performance_row_to_event(row):
         "recommends_boost": bool(row[23]),
         "recorded_by": row[24],
         "created_at": row[25].isoformat() if hasattr(row[25], "isoformat") else str(row[25] or ""),
+        "metric_evidence": row[26] or {},
+        "evidence_source": row[27] or "",
+        "source_reference": row[28] or "",
+        "retrieved_at": row[29].isoformat() if hasattr(row[29], "isoformat") else str(row[29] or ""),
+        "source_snapshot_key": row[30] or "",
+        "supersedes_event_id": row[31] or "",
         **PERFORMANCE_AUTHORITY_FLAGS,
     }
 
@@ -2031,14 +2058,51 @@ def _event_to_performance_params(event):
 
 
 def _performance_event_id(params):
+    evidence = _loads(params.get("metric_evidence_json"), {})
+    canonical_evidence = {name: {key: value for key, value in item.items() if key != "retrieved_at"} for name, item in evidence.items()}
     seed = {
         "manual_post_event_id": params.get("manual_post_event_id", ""),
         "publish_packet_id": params.get("publish_packet_id", ""),
         "measurement_window": params.get("measurement_window", ""),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_reference": params.get("source_reference", ""),
+        "metric_evidence": canonical_evidence,
+        "supersedes_event_id": params.get("supersedes_event_id", ""),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-PERF-{digest}"
+
+
+def _performance_metric_evidence(payload):
+    supplied = payload.get("metric_evidence") if isinstance(payload.get("metric_evidence"), dict) else {}
+    source = _clean_text(payload.get("evidence_source") or "owner_manual")[:80]
+    reference = _clean_text(payload.get("source_reference") or payload.get("manual_post_event_id") or payload.get("publish_packet_id"))[:240]
+    retrieved = _clean_text(payload.get("retrieved_at")) or datetime.now(timezone.utc).isoformat()
+    aliases = {"messages_to_sam": "messages", "qualified_buyer_leads": "qualified_leads"}
+    result = {}
+    for name in ("spend_amount", "reach", "impressions", "reactions", "comments", "shares", "messages_to_sam", "qualified_buyer_leads", "booking_review_requests", "sales", "revenue"):
+        item = supplied.get(name) if isinstance(supplied.get(name), dict) else None
+        if item:
+            status = _clean_text(item.get("status"))
+            value = item.get("value")
+        else:
+            key = name if name in payload else aliases.get(name)
+            raw = payload.get(key) if key else None
+            status, value = ("verified", raw) if raw not in (None, "") else ("missing", None)
+        if status == "verified":
+            try:
+                value = float(value) if name in {"spend_amount", "revenue"} else int(value)
+                if value < 0: raise ValueError
+            except (TypeError, ValueError):
+                status, value = "malformed", None
+        elif status not in {"missing", "unsupported", "malformed", "provider_error", "owner_correction"}:
+            status, value = "malformed", None
+        result[name] = {"value": value, "status": status, "source": _clean_text((item or {}).get("source") or source), "source_reference": _clean_text((item or {}).get("source_reference") or reference), "retrieved_at": _clean_text((item or {}).get("retrieved_at") or retrieved)}
+    return result
+
+
+def _verified_metric_value(evidence, name):
+    item = evidence.get(name) or {}
+    return item.get("value") if item.get("status") in {"verified", "owner_correction"} else 0
 
 
 def _performance_unavailable(status, configured):

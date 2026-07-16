@@ -424,6 +424,11 @@
             </div>
             <button type="button" id="beacon_performance_refresh" class="button-link button-link-secondary">Refresh Performance</button>
           </div>
+          <div class="beacon-outcome-import" aria-label="Beacon outcome evidence import">
+            <div><strong>Retrieve supported Meta metrics</strong><p>Imports reactions, comments, and shares when Meta returns them. Reach, leads, sales, and revenue stay unavailable until evidence exists.</p></div>
+            <button type="button" id="beacon_history_import" class="button-link">Retrieve post outcomes</button>
+            <span id="beacon_history_import_status" class="beacon-status-chip" data-state="unavailable">Not retrieved</span>
+          </div>
           <div class="beacon-media-review-grid">
             <div class="form-group">
               <label for="beacon_performance_manual_post_id">Manual Post Event ID</label>
@@ -493,6 +498,17 @@
           </div>
           <div id="beacon_boost_packet_result" class="beacon-boost-packet-result"></div>
           <div id="beacon_performance_event_list" class="beacon-performance-list"></div>
+          <div id="beacon_correction_panel" class="beacon-correction-panel hidden">
+            <h4>Correct missing evidence</h4><p id="beacon_correction_context"></p>
+            <input type="hidden" id="beacon_correction_source_id" />
+            <div class="beacon-media-review-grid">
+              <div class="form-group"><label for="beacon_correction_metric">Metric</label><select id="beacon_correction_metric"></select></div>
+              <div class="form-group"><label for="beacon_correction_value">Evidence value</label><input id="beacon_correction_value" type="number" min="0" step="1" /></div>
+              <div class="form-group"><label for="beacon_correction_reference">Source reference</label><input id="beacon_correction_reference" placeholder="CRM record, report, or owner evidence reference" /></div>
+              <div class="form-group"><label for="beacon_correction_notes">Correction notes</label><input id="beacon_correction_notes" placeholder="Why this supersedes the prior snapshot" /></div>
+            </div>
+            <button type="button" id="beacon_correction_save" class="button-link">Append correction</button>
+          </div>
         </details>
       </section>
 
