@@ -1096,6 +1096,27 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
         self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
 
+    @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
+    @patch("modules.charlie.routes._dashboard_owner_queue")
+    @patch("modules.charlie.routes.mission_status_summary")
+    def test_mission_control_keeps_queue_visible_when_count_summary_fails(
+        self, mission_summary, owner_queue, _owner_access
+    ):
+        charlie_routes.MISSION_CONTROL_CACHE.update({"expires_at": 0.0, "packet": None})
+        mission_summary.return_value = ({"success": False, "status": "mission_summary_failed"}, 503)
+        owner_queue.return_value = ({"success": True, "missions": [
+            {"mission_id": "REVIEW-1", "status": "pr_ready"},
+            {"mission_id": "APPROVED-1", "status": "approved"},
+        ]}, 200)
+
+        response = self.client.get("/api/charlie/build-relay/mission-control?refresh=1")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["counts_source"], "owner_queue_fallback")
+        self.assertEqual(data["counts"]["pr_ready"], 1)
+        self.assertEqual(data["buckets"]["review"][0]["mission_id"], "REVIEW-1")
+
     def test_mission_family_children_stay_attached_to_parent_summary(self):
         missions = [
             {"mission_id": "PARENT", "status": "in_progress", "metadata": {}},

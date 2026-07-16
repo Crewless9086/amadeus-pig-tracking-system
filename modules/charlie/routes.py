@@ -378,20 +378,22 @@ def charlie_mission_control_snapshot_route():
     now = time.monotonic()
     if not refresh and MISSION_CONTROL_CACHE.get("packet") and now < float(MISSION_CONTROL_CACHE.get("expires_at") or 0):
         return jsonify({**MISSION_CONTROL_CACHE["packet"], "cache": "fresh"}), 200
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        summary_future = pool.submit(mission_status_summary)
-        queue_future = pool.submit(_dashboard_owner_queue, 100)
-        summary, summary_status = summary_future.result()
-        owner_queue, queue_status = queue_future.result()
+    # Supabase's transaction pool can reject the dashboard's simultaneous cold
+    # connections even while each query succeeds alone. Load the authoritative
+    # owner queue first; counts are useful metadata and may degrade independently.
+    owner_queue, queue_status = _dashboard_owner_queue(100)
+    summary, summary_status = mission_status_summary()
     statuses = [summary_status, queue_status]
-    if max(statuses) >= 400:
+    if queue_status >= 400:
         return jsonify({"success": False, "status": "mission_control_snapshot_unavailable", "statuses": statuses}), 503
     owner_missions = _attach_mission_family_children(owner_queue.get("missions", []))
     raw_buckets = _mission_status_buckets(owner_missions)
+    fallback_counts = {status: len(missions) for status, missions in raw_buckets.items()}
+    counts = summary.get("counts", {}) if summary_status < 400 else fallback_counts
     packet = {
         "success": True,
         "status": "mission_control_snapshot_ready",
-        "counts": summary.get("counts", {}),
+        "counts": counts,
         "buckets": {
             "active": [*raw_buckets.get("in_progress", []), *raw_buckets.get("release_in_progress", [])],
             "new": raw_buckets.get("new", []),
@@ -402,6 +404,7 @@ def charlie_mission_control_snapshot_route():
         "source": "supabase_charlie_missions",
         "authoritative": True,
         "source_statuses": statuses,
+        "counts_source": "mission_status_summary" if summary_status < 400 else "owner_queue_fallback",
         "cache": "refreshed",
     }
     MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})
