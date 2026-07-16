@@ -186,3 +186,7 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-07-15
+
+- Defined the separate Beacon Meta paid-boost red-zone rule and workflow: recommendation-only Beacon authority, canonical/fresh evidence, fulfilment safety, immutable owner-capped ZAR lifetime budget and duration, exact confirmation, idempotency, audit evidence, and fail-closed provider readiness.
+- Added the visible owner execution/blocked-result flow and defined uncertain-result reconciliation as a lookup against the existing claim, never authority to create a second boost.

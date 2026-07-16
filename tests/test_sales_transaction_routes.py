@@ -769,7 +769,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "spends_money": False,
         }
 
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), patch.object(
             sales_transaction_routes,
             "list_beacon_campaign_performance_events",
             return_value=(list_result, 200),
@@ -789,7 +789,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
             "messages_to_sam": 3,
         }
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
             sales_transaction_routes,
             "record_beacon_campaign_performance_event",
             return_value=(record_result, 201),
@@ -799,6 +799,25 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json(), record_result)
         record_event.assert_called_once_with(payload)
+
+    def test_beacon_campaign_performance_routes_require_owner_access(self):
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied):
+            self.assertEqual(self.client.get("/api/beacon/campaign-performance").status_code, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied):
+            self.assertEqual(self.client.post("/api/beacon/campaign-performance", json={}).status_code, 403)
+
+    def test_beacon_meta_boost_routes_are_owner_protected_and_fail_closed(self):
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None):
+            response = self.client.get("/api/beacon/meta-boost-policy")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "hard_stopped")
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.dict(
+            "os.environ", {}, clear=True
+        ):
+            response = self.client.post("/api/beacon/meta-boost-executions", json={})
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.get_json()["provider_invoked"])
 
     def test_beacon_weekly_command_routes_require_owner_and_prepare_without_execution(self):
         source = {"success": True, "performance_events": [{"performance_event_id": "BEACON-PERF-1"}]}

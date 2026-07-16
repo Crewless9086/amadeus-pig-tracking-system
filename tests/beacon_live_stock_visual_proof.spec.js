@@ -1,7 +1,8 @@
 ﻿const { test, expect } = require("@playwright/test");
 
-const baseURL = "http://127.0.0.1:5088";
+const baseURL = process.env.OOM_SAKKIE_PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5088";
 const evidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-F7F8A97750EC42A5";
+const metaBoostEvidenceDir = ".charlie_runner/evidence/CHARLIE-MISSION-0E1D0B1F760B9328";
 
 const exactImage = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#e8dfc8"/><rect x="72" y="72" width="1056" height="656" rx="36" fill="#315940"/><text x="600" y="320" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="76" font-weight="700">AMADEUS FARM</text><text x="600" y="430" text-anchor="middle" fill="#edcf78" font-family="Arial" font-size="54">Owner-approved grower pigs</text><text x="600" y="520" text-anchor="middle" fill="#fffaf0" font-family="Arial" font-size="32">Exact public-use asset BEACON-ASSET-LIVE-001</text></svg>`);
 const asset = {
@@ -35,6 +36,37 @@ const exactText = "Three grower pigs are available near Riversdale at R2,450 eac
 
 function json(route, body, status = 200) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+}
+
+for (const viewport of [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "mobile", width: 390, height: 844 },
+]) {
+  test(`${viewport.name} Meta paid-boost red-zone gate proof`, async ({ page, context }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await mockBeaconApi(page);
+    await page.route("**/api/beacon/meta-boost-policy", (route) => json(route, {
+      success: true, status: "hard_stopped", blockers: ["paid_boost_adapters_not_configured"],
+      enabled: true, paid_policy_approved: true, credentials_ready: true, provider_configured: false,
+    }));
+    const login = await context.request.post(`${baseURL}/owner/login`, { form: { owner_token: "beacon-browser-fixture-token-0000000000000000", next: "/sales/beacon-media" } });
+    expect(login.ok()).toBeTruthy();
+    await page.goto(`${baseURL}/sales/beacon-media`, { waitUntil: "domcontentloaded" });
+    const gate = page.locator(".beacon-meta-boost-status");
+    await gate.scrollIntoViewIfNeeded();
+    await expect(page.locator("#beacon_meta_boost_execute")).toBeDisabled();
+    await expect(page.locator("#beacon_meta_boost_status")).toContainText("Hard stopped");
+    await expect(page.locator("#beacon_meta_boost_blockers")).toContainText("paid boost adapters not configured");
+    await page.fill("#beacon_meta_boost_approval_id", "APPROVAL-OWNER-001");
+    await page.fill("#beacon_meta_boost_cap", "300");
+    await page.fill("#beacon_meta_boost_duration", "3");
+    await page.fill("#beacon_meta_boost_post_id", "123_456");
+    await expect(page.locator("#beacon_meta_boost_required_confirmation")).toHaveText("BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
+    await page.fill("#beacon_meta_boost_confirmation", "BOOST 123_456 FOR ZAR 300.00 TOTAL OVER 3 DAYS");
+    await expect(page.locator("#beacon_meta_boost_execute")).toBeDisabled();
+    await gate.screenshot({ path: `${metaBoostEvidenceDir}/beacon-meta-boost-${viewport.name}.png` });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBeTruthy();
+  });
 }
 
 async function mockBeaconApi(page) {

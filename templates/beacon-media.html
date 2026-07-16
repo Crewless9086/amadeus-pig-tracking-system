@@ -471,6 +471,31 @@
           <div id="beacon_boost_packet_result" class="beacon-boost-packet-result"></div>
           <div id="beacon_performance_event_list" class="beacon-performance-list"></div>
         </details>
+        <section class="beacon-meta-boost-status" aria-labelledby="beacon_meta_boost_title" data-state="blocked">
+          <div class="page-header section-header-compact">
+            <div>
+              <h3 id="beacon_meta_boost_title">Red zone: Meta paid boost</h3>
+              <p>Separate owner execution gate. Beacon recommendations never spend automatically.</p>
+            </div>
+            <button type="button" id="beacon_meta_boost_refresh" class="button-link button-link-secondary">Refresh paid gate</button>
+          </div>
+          <strong id="beacon_meta_boost_status">Checking policy and credential readiness...</strong>
+          <div id="beacon_meta_boost_blockers" class="ops-list"></div>
+          <div class="beacon-meta-boost-form" aria-describedby="beacon_meta_boost_warning">
+            <div class="form-group"><label for="beacon_meta_boost_approval_id">Immutable owner approval ID</label><input id="beacon_meta_boost_approval_id" type="text" autocomplete="off" placeholder="Required from the separately approved audit store"></div>
+            <div class="beacon-meta-boost-cap-grid">
+              <div class="form-group"><label for="beacon_meta_boost_cap">Approved total cap (ZAR)</label><input id="beacon_meta_boost_cap" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+              <div class="form-group"><label for="beacon_meta_boost_duration">Approved duration (days)</label><input id="beacon_meta_boost_duration" type="number" min="1" max="30" step="1" inputmode="numeric"></div>
+            </div>
+            <div class="form-group"><label for="beacon_meta_boost_post_id">Canonical published post ID</label><input id="beacon_meta_boost_post_id" type="text" autocomplete="off" placeholder="Example: 123_456"></div>
+            <div class="form-group"><label for="beacon_meta_boost_confirmation">Exact final confirmation</label><textarea id="beacon_meta_boost_confirmation" rows="2" autocomplete="off" spellcheck="false"></textarea></div>
+            <code id="beacon_meta_boost_required_confirmation">Complete the approved post, cap, and duration to see the exact phrase.</code>
+            <div class="beacon-media-actions"><button type="button" id="beacon_meta_boost_execute" class="button-link" disabled>Execute one-time paid boost</button></div>
+            <div id="beacon_meta_boost_result" class="ops-list" aria-live="polite"></div>
+          </div>
+          <p id="beacon_meta_boost_warning"><strong>Red-zone warning:</strong> this action can spend up to the approved lifetime total. It never creates a post and never recurs.</p>
+          <small>Only a fixed ZAR lifetime cap and duration can be approved. No recurring spend or silent budget increase.</small>
+        </section>
       </section>
 
       <section class="beacon-media-workflow">
