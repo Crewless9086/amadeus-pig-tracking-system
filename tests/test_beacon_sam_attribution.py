@@ -166,7 +166,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
         self.assertEqual(result["attributions"][0]["revenue"], [])
 
     def test_malformed_money_is_reported_and_excluded_without_throwing(self):
-        for net_total in ("Infinity", "NaN", "not-money", "-0.01"):
+        for net_total in ("Infinity", "NaN", "not-money", "-0.01", "1E+999999"):
             with self.subTest(net_total=net_total):
                 payload = self.base()
                 payload["sales_transactions"][0]["net_total"] = net_total

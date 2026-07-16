@@ -259,6 +259,7 @@ def _validated_sales(grouped):
                     and _text(row.get("payment_status")).lower() == "paid"):
                 try:
                     amount = Decimal(str(row.get("net_total")))
+                    amount.quantize(Decimal("0.01"))
                 except (InvalidOperation, TypeError):
                     amount = None
                 if amount is None or not amount.is_finite() or amount < 0:
