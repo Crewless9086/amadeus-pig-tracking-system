@@ -682,6 +682,7 @@
     const comparison = brief.comparison || {};
     const campaigns = comparison.campaigns || [];
     const recommendations = brief.recommendations || [];
+    const alerts = Array.isArray(brief.alerts) ? brief.alerts : [];
     const targets = brief.targets || {};
     renderTarget("spend", targets.spend || { status: "unavailable", actual: 0 });
     renderTarget("qualified_leads", targets.qualified_leads || { status: "unavailable", actual: 0 });
@@ -698,14 +699,22 @@
       return;
     }
     const hasStop = recommendations.some((item) => item.classification === "STOP");
+    const alertCodes = new Set(alerts.map((alert) => safe(alert.code, "")));
+    const evidenceBlocked = alertCodes.has("missing_evidence") || alertCodes.has("stale_evidence");
+    const alertCopy = {
+      missing_evidence: "Campaign evidence is missing. Record a supported measurement before preparing a decision.",
+      stale_evidence: "The latest campaign evidence is stale. Refresh or record current evidence before preparing a decision.",
+      stop_recommendation_waiting: "A STOP recommendation is waiting for owner review. No paid or public action is authorized.",
+      recommendations_waiting: `${recommendations.length} recommendation${recommendations.length === 1 ? "" : "s"} awaiting owner review.`,
+    };
     elements.commandTruth.textContent = brief.truth_state === "comparable" ? "Comparable evidence" : "Limited evidence";
     elements.commandTruth.dataset.state = brief.truth_state === "comparable" ? "ready" : "stale";
     elements.commandUpdated.textContent = `Last updated: ${safe(brief.last_updated_at, "source time unavailable")}`;
     elements.comparisonWindow.textContent = safe(comparison.measurement_window, "Window unavailable");
     elements.comparisonWindow.dataset.state = comparison.status === "compatible" ? "ready" : "stale";
-    elements.ownerAlerts.dataset.state = hasStop ? "blocked" : "review";
-    elements.ownerAlerts.innerHTML = hasStop
-      ? "<strong>Spend or safety blocker</strong><span>Stop and review the affected campaign before any later paid action.</span>"
+    elements.ownerAlerts.dataset.state = evidenceBlocked || hasStop ? "blocked" : "review";
+    elements.ownerAlerts.innerHTML = alerts.length
+      ? `<strong>${evidenceBlocked ? "Evidence blocks decision preparation" : hasStop ? "Owner attention required" : "Owner review required"}</strong><span>${alerts.map((alert) => escapeHtml(alertCopy[alert.code] || safe(alert.code).replace(/_/g, " "))).join(" ")} Revenue remains unattributed and no action executes from this brief.</span>`
       : `<strong>${recommendations.length} recommendation${recommendations.length === 1 ? "" : "s"} awaiting owner review</strong><span>Revenue remains unattributed and no action executes from this brief.</span>`;
     elements.campaignComparison.innerHTML = campaigns.map((event) => `
       <article class="beacon-comparison-row">
@@ -714,20 +723,27 @@
         <span><small>Qualified leads</small><strong>${Number(event.qualified_buyer_leads || 0)}</strong></span>
         <span><small>Cost / lead</small><strong>${event.cost_per_qualified_lead == null ? "Unavailable" : `R ${Number(event.cost_per_qualified_lead).toFixed(2)}`}</strong></span>
       </article>`).join("");
-    elements.recommendationList.innerHTML = recommendations.map((item, index) => `
+    elements.recommendationList.innerHTML = recommendations.map((item, index) => {
+      const sourceAvailable = Boolean(safe(item.performance_event_id, ""));
+      const preparationBlocked = evidenceBlocked || !sourceAvailable;
+      const blockReason = evidenceBlocked ? "Current source evidence is required before preparation." : "A source performance event is required before preparation.";
+      return `
       <article class="beacon-recommendation-card" data-action="${item.classification.toLowerCase()}">
         <div class="beacon-recommendation-title"><span>${item.classification}</span><small>${item.truth_state === "blocked" ? "Blocked" : "Owner decision required"}</small></div>
         <p>${escapeHtml(safe(item.reason))}</p>
-        <small>Source: ${escapeHtml(safe(item.performance_event_id))}</small>
+        <small>Source: ${escapeHtml(safe(item.performance_event_id, "Unavailable"))}</small>
+        ${preparationBlocked ? `<small class="beacon-decision-blocker" role="status">${escapeHtml(blockReason)}</small>` : ""}
         <div class="beacon-decision-actions">
-          <button type="button" class="button-link beacon-prepare-decision" data-index="${index}" data-destination="campaign_decision">Campaign decision</button>
-          <button type="button" class="button-link button-link-secondary beacon-prepare-decision" data-index="${index}" data-destination="core_work">CORE work brief</button>
+          <button type="button" class="button-link beacon-prepare-decision" data-index="${index}" data-destination="campaign_decision" ${preparationBlocked ? "disabled" : ""}>Campaign decision</button>
+          <button type="button" class="button-link button-link-secondary beacon-prepare-decision" data-index="${index}" data-destination="core_work" ${preparationBlocked ? "disabled" : ""}>CORE work brief</button>
         </div>
-      </article>`).join("");
+      </article>`;
+    }).join("");
     elements.decisionCount.textContent = String(recommendations.length);
     elements.recommendationList.querySelectorAll(".beacon-prepare-decision").forEach((button) => {
       button.addEventListener("click", async () => {
         const item = recommendations[Number(button.dataset.index)];
+        if (evidenceBlocked || !item || !safe(item.performance_event_id, "")) return;
         const result = await fetchJson("/api/beacon/weekly-command-brief/prepare-decision", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ performance_event_id: item.performance_event_id, destination: button.dataset.destination }),
