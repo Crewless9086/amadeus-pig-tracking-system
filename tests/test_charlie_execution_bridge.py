@@ -1486,6 +1486,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("--sandbox", cleaned)
         self.assertIn("read-only", cleaned)
 
+    def test_codex_worker_uses_windowless_creation_flag_on_windows(self):
+        self.assertEqual(
+            execution_bridge._windowless_process_kwargs("nt"),
+            {"creationflags": 0x08000000},
+        )
+        self.assertEqual(execution_bridge._windowless_process_kwargs("posix"), {})
+
     @patch("modules.charlie.execution_bridge.run_anthropic_prompt")
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     @patch("modules.charlie.execution_bridge._changed_files", return_value=[])

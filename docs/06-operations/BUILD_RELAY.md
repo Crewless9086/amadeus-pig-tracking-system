@@ -108,6 +108,8 @@ Supported commands:
 
 `scripts/install_charlie_telegram_relay_task.ps1` installs an opt-in Windows Scheduled Task that starts the relay at owner logon and restarts it after failures. The task runs only the relay process; it does not grant Telegram shell execution and does not start Codex.
 
+The installed task now runs `charlie_telegram_relay_watchdog.py` through `pythonw.exe` every two minutes. The watchdog keeps the relay windowless, starts at most one listener, preserves a live lock, and removes a lock only when its recorded PID is dead. Relay stdout, stderr, and watchdog state remain under `.charlie_runner/` for diagnosis.
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_charlie_telegram_relay_task.ps1
 Start-ScheduledTask -TaskName "CHARLIE Telegram Relay"

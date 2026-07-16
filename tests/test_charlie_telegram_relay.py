@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import inspect
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts import charlie_telegram_relay
 
@@ -390,6 +391,17 @@ class CharlieTelegramRelayTests(unittest.TestCase):
             self.assertTrue(acquired.ok)
             self.assertFalse(blocked.ok)
             self.assertEqual(blocked.action, "lock_active")
+            self.assertFalse(lock_path.exists())
+
+    def test_instance_lock_recovers_dead_pid_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "relay.lock"
+            lock_path.write_text("pid=99999999\nstarted_at=1\n", encoding="utf-8")
+            with patch("scripts.charlie_telegram_relay._pid_alive", return_value=False):
+                lock = charlie_telegram_relay.RelayInstanceLock(lock_path)
+                acquired = lock.acquire()
+                lock.release()
+            self.assertTrue(acquired.ok)
             self.assertFalse(lock_path.exists())
 
     def test_load_local_env_uses_dotenv_without_overriding_shell(self):
