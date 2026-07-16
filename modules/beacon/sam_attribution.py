@@ -45,15 +45,15 @@ def build_beacon_sam_attribution(payload=None):
     """Build a deterministic attribution read model from canonical evidence lists."""
     payload = payload if isinstance(payload, dict) else {}
     window_days = _positive_int(payload.get("attribution_window_days"), DEFAULT_WINDOW_DAYS)
-    campaigns = _active_rows(payload.get("campaign_events"), "performance_event_id")
+    campaigns, campaign_malformed = _active_rows(payload.get("campaign_events"), "performance_event_id")
     leads = _rows(payload.get("leads"))
     orders = _index_unique(payload.get("orders"), "order_id")
-    sales = _group(payload.get("sales_transactions"), "linked_order_id")
+    sales, sale_malformed = _group_unique(payload.get("sales_transactions"), "sale_id", "linked_order_id")
     fulfilment = _group(payload.get("fulfilment_events"), "lead_id")
     loss_events = _group(payload.get("loss_events"), "lead_id")
 
     results = []
-    malformed = []
+    malformed = campaign_malformed + sale_malformed
     for campaign in campaigns:
         campaign_ref = _campaign_ref(campaign)
         event_id = _text(campaign.get("performance_event_id"))
@@ -62,7 +62,8 @@ def build_beacon_sam_attribution(payload=None):
             malformed.append(event_id or _fingerprint(campaign))
             continue
 
-        candidates = _lead_candidates(campaign, leads, observed_at, window_days)
+        candidates, invalid_leads = _lead_candidates(campaign, leads, observed_at, window_days)
+        malformed.extend(invalid_leads)
         if not candidates:
             results.append(_unresolved(campaign, campaign_ref, "unmatched", candidates))
             continue
@@ -83,7 +84,7 @@ def build_beacon_sam_attribution(payload=None):
         "rule_version": ATTRIBUTION_RULE_VERSION,
         "attribution_window_days": window_days,
         "attributions": results,
-        "malformed_evidence_ids": sorted(malformed),
+        "malformed_evidence_ids": sorted(set(malformed)),
         "summary": _summary(results),
         "authority": deepcopy(ATTRIBUTION_AUTHORITY),
     }
@@ -93,19 +94,27 @@ def _lead_candidates(campaign, leads, observed_at, window_days):
     ref = _campaign_ref(campaign)
     exact = []
     timed = []
+    malformed = []
     source = _text(campaign.get("campaign_source")).lower()
     for lead in leads:
+        lead_id = _text(lead.get("lead_id"))
         lead_ref = _text(lead.get("source_campaign_id") or lead.get("campaign_id"))
         if lead_ref and lead_ref == ref:
-            exact.append((lead, "exact_campaign_id"))
+            if lead_id:
+                exact.append((lead, "exact_campaign_id"))
+            else:
+                malformed.append(_fingerprint(lead))
             continue
         lead_time = _time(lead.get("created_at") or lead.get("last_inbound_at"))
         lead_source = _text(lead.get("campaign_source")).lower()
         if source and lead_source == source and lead_time is not None:
             elapsed = (lead_time - observed_at).total_seconds()
             if 0 <= elapsed <= window_days * 86400:
-                timed.append((lead, "source_time_window"))
-    return exact if exact else timed
+                if lead_id:
+                    timed.append((lead, "source_time_window"))
+                else:
+                    malformed.append(_fingerprint(lead))
+    return (exact if exact else timed), malformed
 
 
 def _attributed(campaign, campaign_ref, lead, method, orders, sales, fulfilment, loss_events):
@@ -113,7 +122,11 @@ def _attributed(campaign, campaign_ref, lead, method, orders, sales, fulfilment,
     order_id = _text(lead.get("linked_order_id"))
     order = orders.get(order_id)
     sale_rows = sales.get(order_id, []) if order else []
-    completed_sales = [row for row in sale_rows if _text(row.get("sale_status")).lower() == "completed"]
+    completed_sales = [
+        row for row in sale_rows
+        if _text(row.get("sale_status")).lower() == "completed"
+        and _text(row.get("payment_status")).lower() == "paid"
+    ]
     revenue = _revenue(completed_sales)
     status = _text(lead.get("status")).lower()
     lost_reason = _lost_reason(loss_events.get(lead_id, [])) if status in LOST_STATUSES else {"code": "", "status": "not_lost"}
@@ -151,12 +164,48 @@ def _unresolved(campaign, campaign_ref, status, candidates):
 def _active_rows(value, id_key):
     rows = _rows(value)
     by_id = {}
+    malformed = []
+    conflicts = set()
     for row in rows:
         row_id = _text(row.get(id_key))
-        if row_id and row_id not in by_id:
+        if not row_id:
+            continue
+        if row_id in conflicts:
+            continue
+        if row_id not in by_id:
             by_id[row_id] = row
+        elif _canonical(row) != _canonical(by_id[row_id]):
+            by_id.pop(row_id, None)
+            conflicts.add(row_id)
+            malformed.append(row_id)
     superseded = {_text(row.get("supersedes_event_id")) for row in by_id.values() if _text(row.get("supersedes_event_id"))}
-    return [row for row_id, row in by_id.items() if row_id not in superseded]
+    return [row for row_id, row in by_id.items() if row_id not in superseded], malformed
+
+
+def _group_unique(value, identity_key, group_key):
+    """Collapse identical retries and exclude missing or conflicting identities."""
+    by_id = {}
+    malformed = []
+    conflicts = set()
+    for row in _rows(value):
+        item_id = _text(row.get(identity_key))
+        if not item_id:
+            malformed.append(_fingerprint(row))
+            continue
+        if item_id in conflicts:
+            continue
+        if item_id not in by_id:
+            by_id[item_id] = row
+        elif _canonical(row) != _canonical(by_id[item_id]):
+            by_id.pop(item_id, None)
+            conflicts.add(item_id)
+            malformed.append(item_id)
+    grouped = {}
+    for row in by_id.values():
+        group_id = _text(row.get(group_key))
+        if group_id:
+            grouped.setdefault(group_id, []).append(row)
+    return grouped, malformed
 
 
 def _index_unique(value, key):
@@ -263,3 +312,7 @@ def _time(value):
 def _fingerprint(value):
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return "BEACON-SAM-ATTR-" + hashlib.sha256(encoded).hexdigest()[:24].upper()
+
+
+def _canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
