@@ -2088,7 +2088,7 @@ def _performance_metric_evidence(payload):
             key = name if name in payload else aliases.get(name)
             raw = payload.get(key) if key else None
             status, value = ("verified", raw) if raw not in (None, "") else ("missing", None)
-        if status == "verified":
+        if status in {"verified", "owner_correction"}:
             try:
                 value = float(value) if name in {"spend_amount", "revenue"} else int(value)
                 if value < 0: raise ValueError

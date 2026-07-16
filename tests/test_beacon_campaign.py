@@ -775,6 +775,23 @@ class BeaconMetricEvidenceTests(unittest.TestCase):
         self.assertEqual(correction["supersedes_event_id"], original["performance_event_id"])
         self.assertNotEqual(correction["performance_event_id"], original["performance_event_id"])
 
+    def test_invalid_owner_correction_fails_closed(self):
+        for value in (-1, "not-a-number"):
+            with self.subTest(value=value):
+                params = _performance_params({
+                    "manual_post_event_id": "M1",
+                    "metric_evidence": {
+                        "qualified_buyer_leads": {
+                            "status": "owner_correction",
+                            "value": value,
+                        }
+                    },
+                })
+                evidence = __import__("json").loads(params["metric_evidence_json"])
+                self.assertEqual(evidence["qualified_buyer_leads"]["status"], "malformed")
+                self.assertIsNone(evidence["qualified_buyer_leads"]["value"])
+                self.assertEqual(params["recommended_action"], "wait_for_more_data")
+
 
 if __name__ == "__main__":
     unittest.main()
