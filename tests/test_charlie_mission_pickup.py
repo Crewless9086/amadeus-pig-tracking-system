@@ -693,6 +693,15 @@ class CharlieMissionPickupTests(unittest.TestCase):
         get_mission.return_value = ({"mission": {"status": "deployed"}}, 200)
         self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission))
 
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    def test_dependency_status_is_cached_within_queue_scan(self, get_mission):
+        get_mission.return_value = ({"mission": {"status": "done"}}, 200)
+        cache = {}
+        mission = {"metadata": {"depends_on_mission_ids": ["PARENT-1"]}}
+        self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission, status_cache=cache))
+        self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission, status_cache=cache))
+        get_mission.assert_called_once_with("PARENT-1")
+
     def test_execution_lease_includes_expiry(self):
         lease = charlie_mission_pickup._execution_lease_packet("MISSION-1")
         self.assertIn("expires_at", lease)
