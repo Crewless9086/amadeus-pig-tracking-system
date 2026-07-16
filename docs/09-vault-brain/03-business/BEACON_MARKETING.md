@@ -8,6 +8,8 @@ Beacon remains gated by owner approval, approved media, channel rules, spend cap
 
 ## Weekly Marketing Command Brief
 
+Beacon post-metric retrieval stores per-metric provenance and evidence status. A numeric zero is verified only when explicitly returned by the source; absent, unsupported, malformed, or provider-error reach, impressions, messages, leads, sales, and revenue remain unavailable. Identical provider snapshots use deterministic persistence identity, while changed snapshots and owner corrections append new evidence; corrections supersede rather than mutate history. Retrieval and correction grant no posting, sending, boosting, spending, ordering, reservation, stock, or farm-write authority. The additive migration is source-controlled but remains unapplied until separately owner-approved.
+
 Beacon projects append-only campaign performance evidence into an authenticated owner brief. Comparisons use the latest evidence calendar week and only compatible measurement windows and currencies, with one latest snapshot per campaign. Weekly spend and qualified-lead targets must identify an explicit `proposed`, `owner_approved`, or `blocked` source state; missing or malformed target authority is `unavailable`, never inferred from a default. Attributed revenue remains unavailable until a canonical paid/completed-sale join is proven.
 
 STOP, CHANGE, BOOST, and REUSE classifications are server-owned recommendations. The dashboard may prepare an authenticated campaign-decision or CORE-work review packet, but preparation creates neither decision nor mission and grants no approval, posting, sending, spending, ordering, reservation, stock, farm-write, Meta, Chatwoot, or n8n authority.

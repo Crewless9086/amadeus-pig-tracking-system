@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -50,7 +51,7 @@ def import_beacon_facebook_history(
             return {
                 **_result(False, "facebook_history_fetch_failed", fetched, imported, existing),
                 "failed_count": failed + 1,
-                "error": str((page or {}).get("error") or "Meta history read failed")[:300],
+                "error": "Meta history retrieval failed. Check the server-side provider configuration and retry.",
             }, 502
         for post in page.get("data") or []:
             if fetched >= max_posts:
@@ -110,11 +111,18 @@ def _evidence_payloads(post):
     message = str(post.get("message") or "").strip()
     media_url = str(post.get("full_picture") or "").strip()
     label = _campaign_label(message)
-    metrics = {
-        "reactions": _summary_total(post.get("reactions")),
-        "comments": _summary_total(post.get("comments")),
-        "shares": max(int((post.get("shares") or {}).get("count") or 0), 0),
+    metric_evidence = {
+        "reactions": _provider_metric(post, "reactions", summary=True),
+        "comments": _provider_metric(post, "comments", summary=True),
+        "shares": _provider_metric(post, "shares", nested_key="count"),
     }
+    for name in ("reach", "impressions", "messages_to_sam", "qualified_buyer_leads", "sales", "revenue"):
+        metric_evidence[name] = {"value": None, "status": "unsupported", "source": "meta_graph_posts"}
+    metrics = {name: evidence["value"] for name, evidence in metric_evidence.items() if evidence["status"] == "verified"}
+    snapshot_seed = {"facebook_post_id": facebook_post_id, "metrics": metric_evidence}
+    source_snapshot_id = "META-POST-" + hashlib.sha256(
+        json.dumps(snapshot_seed, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:24].upper()
     notes = f"Imported read-only from Meta post {facebook_post_id}. Text: {message or '[no message]'}"
     if media_url:
         notes += f" Media reference: {media_url}"
@@ -137,10 +145,33 @@ def _evidence_payloads(post):
             "channel": "Facebook",
             "measurement_window": "historical_meta_import_snapshot",
             **metrics,
+            "metric_evidence": metric_evidence,
+            "source_snapshot_id": source_snapshot_id,
+            "source_ref": facebook_post_id,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
             "notes": f"Read-only Meta history import for {facebook_post_id}; reach, impressions, messages and sales remain unverified.",
             "recorded_by": "beacon_meta_history_import",
         },
     }
+
+
+def _provider_metric(post, key, summary=False, nested_key=""):
+    if key not in post or post.get(key) is None:
+        return {"value": None, "status": "missing", "source": "meta_graph_posts"}
+    raw = post.get(key)
+    if summary:
+        raw = ((raw or {}).get("summary") or {}).get("total_count")
+    elif nested_key:
+        raw = (raw or {}).get(nested_key)
+    if raw is None:
+        return {"value": None, "status": "missing", "source": "meta_graph_posts"}
+    try:
+        value = int(raw)
+        if value < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return {"value": None, "status": "malformed", "source": "meta_graph_posts"}
+    return {"value": value, "status": "verified", "source": "meta_graph_posts"}
 
 
 def _summary_total(value):

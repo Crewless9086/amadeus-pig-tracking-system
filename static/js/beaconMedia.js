@@ -70,6 +70,9 @@
     manualPostRecord: byId("beacon_manual_post_record"),
     manualPostList: byId("beacon_manual_post_evidence_list"),
     performanceRefresh: byId("beacon_performance_refresh"),
+    historyImport: byId("beacon_history_import"),
+    historyImportStatus: byId("beacon_history_import_status"),
+    missingEvidenceQueue: byId("beacon_missing_evidence_queue"),
     performanceManualPostId: byId("beacon_performance_manual_post_id"),
     performancePublishPacketId: byId("beacon_performance_publish_packet_id"),
     performanceChannel: byId("beacon_performance_channel"),
@@ -559,11 +562,46 @@
     const data = await fetchJson("/api/beacon/campaign-performance?limit=12");
     state.performanceEvents = data.performance_events || [];
     renderCampaignPerformance(state.performanceEvents);
+    renderMissingEvidenceQueue(state.performanceEvents);
     const commandData = await fetchJson("/api/beacon/weekly-command-brief?limit=100");
     renderServerCommandBrief(commandData.weekly_command_brief || {});
     if (data.latest_boost_packet?.recommended_action) {
       renderBoostPacket(data.latest_boost_packet);
     }
+  }
+
+  function renderMissingEvidenceQueue(events) {
+    const incomplete = events.filter((event) => (event.missing_evidence || []).length);
+    if (!incomplete.length) {
+      elements.missingEvidenceQueue.innerHTML = '<div class="table-empty">No missing-evidence items in the loaded records.</div>';
+      return;
+    }
+    elements.missingEvidenceQueue.innerHTML = incomplete.map((event) => `
+      <article class="beacon-evidence-card">
+        <div><strong>${escapeHtml(safe(event.channel, "Campaign evidence"))}</strong><small>${escapeHtml(safe(event.source_ref, event.performance_event_id))}</small></div>
+        <p>Needs evidence: ${escapeHtml(event.missing_evidence.join(", "))}</p>
+        <button type="button" class="button-link button-link-secondary beacon-correct-evidence" data-id="${escapeHtml(event.performance_event_id)}">Correct with evidence</button>
+      </article>`).join("");
+    elements.missingEvidenceQueue.querySelectorAll(".beacon-correct-evidence").forEach((button) => button.addEventListener("click", () => {
+      const event = incomplete.find((item) => item.performance_event_id === button.dataset.id);
+      elements.performanceManualPostId.value = event.manual_post_event_id || "";
+      elements.performancePublishPacketId.value = event.publish_packet_id || "";
+      elements.performanceNotes.value = `Correction supersedes ${event.performance_event_id}. Enter only values supported by owner evidence.`;
+      elements.performanceRecord.dataset.supersedes = event.performance_event_id;
+      elements.performanceRecord.scrollIntoView({ behavior: "smooth", block: "center" });
+    }));
+  }
+
+  async function importFacebookHistory() {
+    elements.historyImport.disabled = true;
+    elements.historyImportStatus.textContent = "Retrieving supported metrics…";
+    try {
+      const result = await fetchJson("/api/beacon/facebook-history-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ max_posts: 5000 }) });
+      elements.historyImportStatus.textContent = `${result.imported_count || 0} new, ${result.already_imported_count || 0} unchanged, ${result.failed_count || 0} failed.`;
+      await loadCampaignPerformance();
+    } catch (error) {
+      elements.historyImportStatus.textContent = "Retrieval failed. Credentials and provider details remain server-side; retry or inspect server logs.";
+    } finally { elements.historyImport.disabled = false; }
   }
 
   function normalizedWindow(value) {
@@ -720,16 +758,17 @@
       channel: elements.performanceChannel.value,
       measurement_window: elements.performanceWindow.value,
       spend_amount: elements.performanceSpend.value,
-      reach: elements.performanceReach.value,
-      messages_to_sam: elements.performanceMessages.value,
-      qualified_buyer_leads: elements.performanceQualified.value,
       recommended_spend_amount: elements.performanceRecommendedSpend.value,
       recommended_duration_days: elements.performanceDuration.value,
       fulfillment_risk: elements.performanceFulfillmentRisk.value,
       safety_risk: elements.performanceSafetyRisk.value,
       notes: elements.performanceNotes.value,
       recorded_by: "farm_app_beacon_performance",
+      supersedes_performance_event_id: elements.performanceRecord.dataset.supersedes || "",
     };
+    [["reach", elements.performanceReach], ["messages_to_sam", elements.performanceMessages], ["qualified_buyer_leads", elements.performanceQualified]].forEach(([name, input]) => {
+      if (input.value !== "") payload[name] = input.value;
+    });
     const result = await fetchJson("/api/beacon/campaign-performance", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -737,6 +776,7 @@
     });
     renderBoostPacket(result.boost_packet || {});
     showMessage(`Performance evidence recorded: ${result.performance_event_id}`, "success");
+    delete elements.performanceRecord.dataset.supersedes;
     await loadCampaignPerformance();
   }
 
@@ -969,6 +1009,7 @@
     elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));
+    elements.historyImport.addEventListener("click", importFacebookHistory);
     elements.commandRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => {
       elements.commandTruth.textContent = "Evidence unavailable";
       elements.commandTruth.dataset.state = "blocked";

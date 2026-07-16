@@ -1,9 +1,23 @@
 import unittest
 
-from modules.sales.beacon_facebook_history import import_beacon_facebook_history
+from modules.sales.beacon_facebook_history import import_beacon_facebook_history, _evidence_payloads
 
 
 class BeaconFacebookHistoryTests(unittest.TestCase):
+    def test_metric_evidence_distinguishes_explicit_zero_missing_and_unsupported(self):
+        payload = _evidence_payloads({"id": "page_1", "reactions": {"summary": {"total_count": 0}}, "comments": None, "shares": {"count": "bad"}})["performance"]
+        self.assertEqual(payload["metric_evidence"]["reactions"]["status"], "verified")
+        self.assertEqual(payload["metric_evidence"]["reactions"]["value"], 0)
+        self.assertEqual(payload["metric_evidence"]["comments"]["status"], "missing")
+        self.assertEqual(payload["metric_evidence"]["shares"]["status"], "malformed")
+        self.assertEqual(payload["metric_evidence"]["reach"]["status"], "unsupported")
+
+    def test_snapshot_identity_is_deterministic_and_changes_with_provider_values(self):
+        first = _evidence_payloads({"id": "page_1", "shares": {"count": 1}})["performance"]
+        retry = _evidence_payloads({"id": "page_1", "shares": {"count": 1}})["performance"]
+        changed = _evidence_payloads({"id": "page_1", "shares": {"count": 2}})["performance"]
+        self.assertEqual(first["source_snapshot_id"], retry["source_snapshot_id"])
+        self.assertNotEqual(first["source_snapshot_id"], changed["source_snapshot_id"])
     def test_import_is_paginated_idempotent_and_evidence_only(self):
         pages = [
             ({"data": [{"id": "PAGE_1", "message": "Piglets for sale", "created_time": "2026-07-01T10:00:00+0000", "permalink_url": "https://facebook.test/1", "reactions": {"summary": {"total_count": 4}}, "comments": {"summary": {"total_count": 2}}, "shares": {"count": 1}}], "paging": {"next": "page-2"}}, 200),

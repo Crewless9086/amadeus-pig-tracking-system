@@ -85,6 +85,17 @@ class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
 
 
 class BeaconCampaignTests(unittest.TestCase):
+    def test_unavailable_outcomes_do_not_drive_negative_or_positive_recommendation(self):
+        packet = build_beacon_boost_recommendation_packet({"publish_packet_id": "p1", "spend_amount": 100})
+        self.assertEqual(packet["recommended_action"], "wait_for_more_data")
+        self.assertIn("unavailable", packet["recommendation_reason"])
+
+    def test_explicit_zero_is_verified_but_absent_is_missing(self):
+        from modules.sales.beacon_campaign import _performance_params
+        params = _performance_params({"publish_packet_id": "p1", "reach": 0})
+        self.assertEqual(params["metric_evidence"]["reach"], {"value": 0, "status": "verified", "source": "owner_manual"})
+        self.assertEqual(params["metric_evidence"]["impressions"]["status"], "missing")
+        self.assertIn("source_snapshot_id", params)
     def test_weekly_command_brief_compares_compatible_latest_snapshots_only(self):
         events = [
             {"performance_event_id": "e2", "publish_packet_id": "p2", "channel": "Instagram", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 0, "qualified_buyer_leads": 3, "created_at": "2026-07-14T08:00:00+00:00"},
