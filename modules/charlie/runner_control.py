@@ -1,5 +1,6 @@
 import json
 import os
+import csv
 import signal
 import subprocess
 import sys
@@ -461,7 +462,10 @@ def _pid_alive_windows(pid):
 
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, pid)
     if not handle:
-        return False
+        # Scheduled tasks can run under a different Windows token. OpenProcess
+        # may be denied even though the exact PID is alive, so use tasklist as
+        # a read-only existence fallback before declaring the runner dead.
+        return _pid_exists_windows_tasklist(pid)
     try:
         wait_result = kernel32.WaitForSingleObject(handle, 0)
         if wait_result == WAIT_TIMEOUT:
@@ -472,6 +476,23 @@ def _pid_alive_windows(pid):
         return False
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _pid_exists_windows_tasklist(pid, runner=subprocess.run):
+    try:
+        completed = runner(
+            ["tasklist", "/FI", f"PID eq {int(pid)}", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return False
+        rows = list(csv.reader(str(completed.stdout or "").splitlines()))
+        return any(len(row) > 1 and row[1].strip() == str(int(pid)) for row in rows)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
 
 
 def _pid_descends_from(pid, ancestor_pid):

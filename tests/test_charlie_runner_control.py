@@ -3,7 +3,8 @@ import unittest
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from modules.charlie import runner_control
 
@@ -211,6 +212,13 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertTrue(result)
         pid_alive_windows.assert_called_once_with(1234)
         kill.assert_not_called()
+
+    def test_tasklist_pid_fallback_matches_exact_pid(self):
+        completed = SimpleNamespace(returncode=0, stdout='"python.exe","10308","Console","1","20,000 K"\n')
+        runner = Mock(return_value=completed)
+
+        self.assertTrue(runner_control._pid_exists_windows_tasklist(10308, runner=runner))
+        self.assertFalse(runner_control._pid_exists_windows_tasklist(1030, runner=runner))
 
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")
