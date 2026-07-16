@@ -5,8 +5,10 @@
     files: $("beacon_quick_files"), upload: $("beacon_quick_upload"), uploadStatus: $("beacon_quick_upload_status"),
     media: $("beacon_quick_media"), lane: $("beacon_quick_lane"), brief: $("beacon_quick_brief"),
     suggest: $("beacon_quick_suggest"), learning: $("beacon_quick_learning"), suggestions: $("beacon_quick_suggestions"),
-    caption: $("beacon_quick_caption"), safety: $("beacon_quick_safety"), preview: $("beacon_quick_preview"),
-    prepare: $("beacon_quick_prepare"), publish: $("beacon_quick_publish"), result: $("beacon_quick_result"), status: $("beacon_compose_state"),
+    caption: $("beacon_quick_caption"), revision: $("beacon_quick_revision"), revise: $("beacon_quick_revise"), revisionStatus: $("beacon_quick_revision_status"),
+    safety: $("beacon_quick_safety"), preview: $("beacon_quick_preview"), previewMedia: $("beacon_quick_preview_media"),
+    prepare: $("beacon_quick_prepare"), publish: $("beacon_quick_publish"), manual: $("beacon_quick_manual"), postUrl: $("beacon_quick_post_url"), recordUrl: $("beacon_quick_record_url"),
+    actionTitle: $("beacon_quick_action_title"), actionNote: $("beacon_quick_action_note"), result: $("beacon_quick_result"), status: $("beacon_compose_state"),
   };
   if (!el.files) return;
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -31,7 +33,7 @@
       const checked = state.selected.has(asset.asset_id) ? "checked" : "";
       return `<div class="beacon-quick-asset"><input type="checkbox" data-select="${esc(asset.asset_id)}" ${checked} ${approved ? "" : "disabled"}/><div><strong>${esc(asset.title || asset.original_filename || asset.asset_id)}</strong><small>${esc(asset.media_type)} · ${approved ? "approved" : "needs approval"}</small></div>${approved ? "" : `<button type="button" data-approve="${esc(asset.asset_id)}">Approve</button>`}</div>`;
     }).join("");
-    el.media.querySelectorAll("[data-select]").forEach((box) => box.addEventListener("change", () => box.checked ? state.selected.add(box.dataset.select) : state.selected.delete(box.dataset.select)));
+    el.media.querySelectorAll("[data-select]").forEach((box) => box.addEventListener("change", () => { box.checked ? state.selected.add(box.dataset.select) : state.selected.delete(box.dataset.select); updatePreview(); }));
     el.media.querySelectorAll("[data-approve]").forEach((button) => button.addEventListener("click", () => approveAsset(button.dataset.approve)));
   }
   async function approveAsset(assetId) {
@@ -60,6 +62,16 @@
       if (data.suggestions?.length) { el.caption.value = data.suggestions[0]; updatePreview(); }
     } catch (error) { el.learning.textContent = error.message; } finally { el.suggest.disabled = false; }
   }
+  async function reviseCaption() {
+    const instruction = el.revision.value.trim();
+    if (!instruction || !el.caption.value.trim()) { el.revisionStatus.textContent = "Choose a caption and describe the change first."; return; }
+    el.revise.disabled = true; el.revisionStatus.textContent = "Revising in your established post style...";
+    try {
+      const data = await api("/api/beacon/post-composer/revision", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({campaign_lane:el.lane.value, caption:el.caption.value, revision_instruction:instruction, brief:el.brief.value})});
+      el.caption.value = data.caption || data.revised_caption || ""; el.revision.value = ""; updatePreview();
+      el.revisionStatus.textContent = "Caption revised. Review or edit it directly before posting.";
+    } catch (error) { el.revisionStatus.textContent = `${error.message}. Your current caption is unchanged.`; } finally { el.revise.disabled = false; }
+  }
   function localIssues() {
     const text = el.caption.value.toLowerCase(); if (!text.trim()) return ["Add or select a caption."];
     if (el.lane.value !== "live_stock_awareness") return [];
@@ -67,10 +79,12 @@
     return blocked.filter((term) => new RegExp(`(^|\\W)${term}(?=$|\\W)`, "i").test(text)).map((term) => `Remove “${term}” from livestock awareness copy.`);
   }
   function updatePreview() {
-    const issues = localIssues(); el.preview.textContent = el.caption.value || "Your post preview will appear here.";
+    const issues = localIssues(); el.preview.textContent = el.caption.value || "Your final caption will appear here.";
+    const selected = Array.from(state.selected).map((id) => state.assets.find((asset) => asset.asset_id === id)).filter(Boolean);
+    el.previewMedia.innerHTML = selected.length ? selected.map((asset, index) => `<div class="beacon-preview-media-item" data-type="${esc(asset.media_type)}"><span>${asset.media_type === "video" ? "▶" : "▧"}</span><div><strong>${index + 1}. ${esc(asset.title || asset.original_filename || "Farm media")}</strong><small>${esc(asset.media_type)} · exact post order</small></div></div>`).join("") : "<p>Select approved media to see the exact post order.</p>";
     el.safety.dataset.state = issues.length ? "blocked" : "ready";
     el.safety.innerHTML = issues.length ? `<strong>Needs attention</strong><span>${esc(issues.join(" "))}</span>` : "<strong>Awareness safety check passed</strong><span>No direct livestock sales wording detected.</span>";
-    state.packet = null; el.publish.classList.add("hidden");
+    state.packet = null; el.publish.classList.add("hidden"); el.manual.classList.add("hidden"); el.prepare.classList.remove("hidden");
   }
   async function preparePost() {
     const issues = localIssues(); if (issues.length) { updatePreview(); return; }
@@ -80,8 +94,9 @@
       const data = await api("/api/beacon/campaign-publish-packet", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({campaign_lane:el.lane.value, draft_id:el.lane.value === "live_stock_awareness" ? "facebook_awareness_post" : "facebook_post", asset_ids:assetIds, asset_id:assetIds[0], channel:"Facebook", owner_exact_text:el.caption.value})});
       state.packet = data; const media = data.selected_assets || [];
       const mixed = media.some((a) => a.media_type === "video") && media.some((a) => a.media_type === "image");
-      if (mixed) { el.result.textContent = "Photo + video packet is ready. Facebook requires manual media selection; copy the caption and add these selected files in Facebook."; await navigator.clipboard?.writeText(el.caption.value).catch(() => {}); }
-      else { el.result.textContent = "Exact caption and media are ready. One final owner confirmation will publish it."; el.publish.classList.remove("hidden"); }
+      el.prepare.classList.add("hidden");
+      if (mixed) { el.actionTitle.textContent = "Manual Facebook handoff"; el.actionNote.textContent = "Facebook requires mixed photo and video posts to be assembled in its composer."; el.result.textContent = "Exact caption copied. Add the selected media in the order shown above."; el.manual.classList.remove("hidden"); await navigator.clipboard?.writeText(el.caption.value).catch(() => {}); }
+      else { el.actionTitle.textContent = "Exact post ready"; el.actionNote.textContent = "This is the one owner-confirmed public action."; el.result.textContent = "Caption, media order and safety check are locked for your confirmation."; el.publish.classList.remove("hidden"); }
     } catch (error) { el.result.textContent = error.message; } finally { el.prepare.disabled = false; }
   }
   async function publishPost() {
@@ -93,6 +108,12 @@
       el.result.textContent = `Published to Facebook${data.facebook_post_id ? ` · Post ${data.facebook_post_id}` : ""}. Evidence was recorded automatically.`; el.publish.classList.add("hidden");
     } catch (error) { el.result.textContent = error.message; } finally { el.publish.disabled = false; }
   }
-  el.upload.addEventListener("click", uploadFiles); el.suggest.addEventListener("click", suggestCaptions); el.caption.addEventListener("input", updatePreview); el.lane.addEventListener("change", updatePreview); el.prepare.addEventListener("click", preparePost); el.publish.addEventListener("click", publishPost);
+  async function recordManualUrl() {
+    if (!state.packet || !el.postUrl.value.trim()) { el.result.textContent = "Paste the Facebook post URL first."; return; }
+    el.recordUrl.disabled = true;
+    try { await api("/api/beacon/manual-post-evidence", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({publish_packet_id:state.packet.publish_packet_id, channel:"Facebook", post_url:el.postUrl.value.trim(), evidence_notes:`Exact text: ${el.caption.value}`})}); el.result.textContent = "Post URL saved. Beacon can now learn from this post."; }
+    catch (error) { el.result.textContent = error.message; } finally { el.recordUrl.disabled = false; }
+  }
+  el.upload.addEventListener("click", uploadFiles); el.suggest.addEventListener("click", suggestCaptions); el.revise.addEventListener("click", reviseCaption); el.caption.addEventListener("input", updatePreview); el.lane.addEventListener("change", updatePreview); el.prepare.addEventListener("click", preparePost); el.publish.addEventListener("click", publishPost); el.recordUrl.addEventListener("click", recordManualUrl);
   loadAssets().catch((error) => { el.status.textContent = error.message; el.status.dataset.state = "blocked"; });
 })();

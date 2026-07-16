@@ -6,6 +6,7 @@
   <title>Beacon Media</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/beaconMedia.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/beaconComposer.css') }}">
 </head>
 <body>
   <div class="page-shell beacon-media-shell">
@@ -28,8 +29,8 @@
         <header class="beacon-compose-header">
           <div>
             <span class="beacon-eyebrow">Create a post</span>
-            <h2 id="beacon_compose_title">From media to ready post</h2>
-            <p>Upload, approve, write and publish from one place. Beacon keeps the safety and evidence work behind the screen.</p>
+            <h2 id="beacon_compose_title">Beacon Story Desk</h2>
+            <p>Choose approved farm media, shape the story and confirm the exact Facebook post from one screen.</p>
           </div>
           <span id="beacon_compose_state" class="beacon-status-chip" data-state="loading">Loading media</span>
         </header>
@@ -47,7 +48,7 @@
             <div id="beacon_quick_media" class="beacon-quick-media" aria-label="Beacon media choices"></div>
           </section>
 
-          <section class="beacon-compose-step" aria-labelledby="beacon_compose_copy_title">
+          <section class="beacon-compose-step beacon-compose-copy" aria-labelledby="beacon_compose_copy_title">
             <div class="beacon-step-title"><span>2</span><div><h3 id="beacon_compose_copy_title">Tell Beacon the story</h3><p>A short plain-language brief is enough. Past approved posts guide the style.</p></div></div>
             <div class="form-group">
               <label for="beacon_quick_lane">Post type</label>
@@ -60,6 +61,14 @@
             <button type="button" id="beacon_quick_suggest" class="button-link">Suggest captions</button>
             <small id="beacon_quick_learning">Beacon will show how many past posts informed the result.</small>
             <div id="beacon_quick_suggestions" class="beacon-caption-options"></div>
+            <div class="beacon-revision-box">
+              <label for="beacon_quick_revision">Want a change?</label>
+              <div class="beacon-revision-row">
+                <input id="beacon_quick_revision" type="text" placeholder="Make it warmer, shorter, or more like our usual posts" />
+                <button type="button" id="beacon_quick_revise" class="button-link button-link-secondary">Revise caption</button>
+              </div>
+              <small id="beacon_quick_revision_status" aria-live="polite">Describe the change in ordinary language, or edit the caption directly below.</small>
+            </div>
             <div class="form-group">
               <label for="beacon_quick_caption">Final caption</label>
               <textarea id="beacon_quick_caption" rows="10" placeholder="Select a suggestion or write your own exact caption."></textarea>
@@ -69,9 +78,23 @@
           <section class="beacon-compose-step beacon-compose-final" aria-labelledby="beacon_compose_review_title">
             <div class="beacon-step-title"><span>3</span><div><h3 id="beacon_compose_review_title">Review and post</h3><p>Beacon checks the exact caption and exact media before anything leaves the system.</p></div></div>
             <div id="beacon_quick_safety" class="beacon-safety-summary" data-state="waiting"><strong>Waiting for a caption</strong><span>Livestock posts are always awareness-only on Meta.</span></div>
-            <div id="beacon_quick_preview" class="beacon-post-preview"><p>Your post preview will appear here.</p></div>
-            <button type="button" id="beacon_quick_prepare" class="button-link">Prepare exact post</button>
-            <button type="button" id="beacon_quick_publish" class="button-link hidden">Publish to Facebook</button>
+            <article class="beacon-facebook-preview" aria-label="Exact Facebook post preview">
+              <header><span class="beacon-preview-avatar">A</span><div><strong>Amadeus Farm</strong><small>Facebook post preview</small></div></header>
+              <div id="beacon_quick_preview_media" class="beacon-preview-media"><p>Select approved media to see the exact post order.</p></div>
+              <div id="beacon_quick_preview" class="beacon-post-preview"><p>Your final caption will appear here.</p></div>
+            </article>
+            <div class="beacon-owner-action">
+              <strong id="beacon_quick_action_title">Ready for your exact review</strong>
+              <span id="beacon_quick_action_note">Nothing posts until you confirm the final caption and selected media.</span>
+              <button type="button" id="beacon_quick_prepare" class="button-link">Review exact post</button>
+              <button type="button" id="beacon_quick_publish" class="button-link hidden">Confirm and post to Facebook</button>
+            </div>
+            <div id="beacon_quick_manual" class="beacon-manual-handoff hidden">
+              <strong>Finish this mixed-media post in Facebook</strong>
+              <p>Beacon has copied the exact caption. Add the media below in the shown order, then paste the Facebook post URL here.</p>
+              <label for="beacon_quick_post_url">Facebook post URL</label>
+              <div class="beacon-revision-row"><input id="beacon_quick_post_url" type="url" placeholder="https://www.facebook.com/..." /><button type="button" id="beacon_quick_record_url" class="button-link">Save post URL</button></div>
+            </div>
             <div id="beacon_quick_result" class="beacon-inline-status" aria-live="polite"></div>
           </section>
         </div>

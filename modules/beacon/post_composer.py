@@ -57,6 +57,42 @@ def build_beacon_caption_suggestions(payload=None, historical_events=None, envir
     }, 200
 
 
+def revise_beacon_caption(payload=None, historical_events=None, environ=None, requester=None):
+    payload = payload if isinstance(payload, dict) else {}
+    caption = _clean_caption(payload.get("caption"), 2200)
+    instruction = _clean(payload.get("revision_instruction"), 500)
+    lane = _clean(payload.get("campaign_lane") or "live_stock_awareness", 80)
+    if not caption:
+        return {"success": False, "status": "caption_required"}, 400
+    if len(instruction) < 3:
+        return {"success": False, "status": "revision_instruction_required"}, 400
+
+    source = environ if environ is not None else os.environ
+    history = _historical_captions(historical_events or [])
+    revised = ""
+    llm_enabled = _truthy(source.get(LLM_ENABLED_ENV) or source.get("SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"))
+    if llm_enabled and _model(source) and source.get(OPENAI_API_KEY_ENV):
+        revised = _llm_revision(caption, instruction, lane, history, source, requester=requester)
+    if not revised:
+        return {
+            "success": False,
+            "status": "caption_revision_unavailable",
+            "caption": caption,
+            "historical_example_count": len(history),
+        }, 503
+    issues = caption_safety_issues(revised, lane)
+    if issues:
+        return {"success": False, "status": "caption_revision_blocked", "blocked_reasons": issues, "caption": caption}, 409
+    return {
+        "success": True,
+        "status": "caption_revised",
+        "caption": revised,
+        "historical_example_count": len(history),
+        "calls_meta": False,
+        "posts_publicly": False,
+    }, 200
+
+
 def caption_safety_issues(text, lane="live_stock_awareness"):
     lowered = _clean(text, 3000).lower()
     issues = []
@@ -134,6 +170,43 @@ def _llm_suggestions(brief, lane, history, source, requester=None):
         return decoded.get("suggestions", []) if isinstance(decoded, dict) else []
     except (OSError, TimeoutError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return []
+
+
+def _llm_revision(caption, instruction, lane, history, source, requester=None):
+    examples = "\n\n".join(f"PAST POST {index + 1}:\n{text}" for index, text in enumerate(history[:5]))
+    boundary = (
+        "This is livestock awareness only. Never add sales, price, availability, stock, ordering, booking, reserving, or buying language."
+        if lane == "live_stock_awareness" else
+        "Do not invent prices, availability, quantities, delivery, or guarantees."
+    )
+    body = {
+        "model": _model(source),
+        "temperature": 0.5,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": "Revise the supplied Facebook caption exactly as instructed while preserving verified facts and the farm's established voice. Return JSON only: {\"caption\":\"...\"}. " + boundary},
+            {"role": "user", "content": f"CURRENT CAPTION:\n{caption}\n\nOWNER INSTRUCTION:\n{instruction}\n\nPAST APPROVED POSTS:\n{examples or '[none yet]'}"},
+        ],
+    }
+    try:
+        if requester:
+            response = requester(body)
+        else:
+            req = urllib_request.Request(
+                source.get(LLM_URL_ENV) or DEFAULT_LLM_URL,
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Authorization": f"Bearer {source[OPENAI_API_KEY_ENV]}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib_request.urlopen(req, timeout=30) as raw:
+                response = json.loads(raw.read().decode("utf-8"))
+        if isinstance(response, dict) and response.get("caption"):
+            return _clean_caption(response["caption"], 2200)
+        content = (((response.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}")
+        decoded = json.loads(content) if isinstance(content, str) else content
+        return _clean_caption(decoded.get("caption"), 2200) if isinstance(decoded, dict) else ""
+    except (OSError, TimeoutError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return ""
 
 
 def _fallback_suggestions(brief, lane, history):

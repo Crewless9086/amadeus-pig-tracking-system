@@ -145,7 +145,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_manual_post_evidence,
 )
 from modules.sales.beacon_facebook_history import import_beacon_facebook_history
-from modules.beacon.post_composer import build_beacon_caption_suggestions
+from modules.beacon.post_composer import build_beacon_caption_suggestions, revise_beacon_caption
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -995,6 +995,21 @@ def beacon_post_composer_suggestions():
     if history_status >= 400:
         return jsonify(history), history_status
     result, status_code = build_beacon_caption_suggestions(
+        request.get_json(silent=True) or {},
+        historical_events=history.get("manual_post_events", []),
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/post-composer/revision", methods=["POST"])
+def beacon_post_composer_revision():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    history, history_status = list_beacon_manual_post_evidence(limit=30)
+    if history_status >= 400:
+        return jsonify(history), history_status
+    result, status_code = revise_beacon_caption(
         request.get_json(silent=True) or {},
         historical_events=history.get("manual_post_events", []),
     )

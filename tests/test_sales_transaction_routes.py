@@ -691,6 +691,19 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         list_history.assert_called_once_with(limit=30)
         self.assertEqual(compose.call_args.kwargs["historical_events"], history["manual_post_events"])
 
+    def test_beacon_post_composer_revision_uses_stored_owner_history(self):
+        history = {"success": True, "manual_post_events": [{"evidence_notes": "Exact text: Past farm post"}]}
+        revised = {"success": True, "status": "caption_revised", "caption": "Warmer farm post"}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
+            sales_transaction_routes, "list_beacon_manual_post_evidence", return_value=(history, 200)
+        ), patch.object(sales_transaction_routes, "revise_beacon_caption", return_value=(revised, 200)) as revise:
+            response = self.client.post("/api/beacon/post-composer/revision", json={
+                "campaign_lane": "live_stock_awareness", "caption": "Farm post", "revision_instruction": "Make it warmer",
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), revised)
+        self.assertEqual(revise.call_args.kwargs["historical_events"], history["manual_post_events"])
+
     def test_beacon_campaign_routes_require_owner_access_before_service_calls(self):
         denied = ({"success": False, "status": "owner_access_denied"}, 403)
         with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), patch.object(
