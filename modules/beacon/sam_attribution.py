@@ -49,11 +49,12 @@ def build_beacon_sam_attribution(payload=None):
     leads = _rows(payload.get("leads"))
     orders = _index_unique(payload.get("orders"), "order_id")
     sales, sale_malformed = _group_unique(payload.get("sales_transactions"), "sale_id", "linked_order_id")
+    sales, invalid_money = _validated_sales(sales)
     fulfilment = _group(payload.get("fulfilment_events"), "lead_id")
     loss_events = _group(payload.get("loss_events"), "lead_id")
 
     results = []
-    malformed = campaign_malformed + sale_malformed
+    malformed = campaign_malformed + sale_malformed + invalid_money
     for campaign in campaigns:
         campaign_ref = _campaign_ref(campaign)
         event_id = _text(campaign.get("performance_event_id"))
@@ -241,9 +242,30 @@ def _revenue(rows):
             value = Decimal(str(amount))
         except (InvalidOperation, TypeError):
             continue
+        if not value.is_finite() or value < 0:
+            continue
         currency = _text(row.get("currency") or "ZAR").upper()
         totals[currency] = totals.get(currency, Decimal("0")) + value
     return [{"currency": key, "net_total": str(totals[key].quantize(Decimal("0.01")))} for key in sorted(totals)]
+
+
+def _validated_sales(grouped):
+    """Exclude malformed canonical money evidence and surface its stable identity."""
+    valid = {}
+    malformed = []
+    for group_id, rows in grouped.items():
+        for row in rows:
+            if (_text(row.get("sale_status")).lower() == "completed"
+                    and _text(row.get("payment_status")).lower() == "paid"):
+                try:
+                    amount = Decimal(str(row.get("net_total")))
+                except (InvalidOperation, TypeError):
+                    amount = None
+                if amount is None or not amount.is_finite() or amount < 0:
+                    malformed.append(_text(row.get("sale_id")) or _fingerprint(row))
+                    continue
+            valid.setdefault(group_id, []).append(row)
+    return valid, malformed
 
 
 def _fulfilment(rows):

@@ -165,6 +165,19 @@ class BeaconSamAttributionTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["attributions"][0]["revenue"], [])
 
+    def test_malformed_money_is_reported_and_excluded_without_throwing(self):
+        for net_total in ("Infinity", "NaN", "not-money", "-0.01"):
+            with self.subTest(net_total=net_total):
+                payload = self.base()
+                payload["sales_transactions"][0]["net_total"] = net_total
+
+                result = build_beacon_sam_attribution(payload)
+
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], "malformed_evidence")
+                self.assertEqual(result["malformed_evidence_ids"], ["SALE-1"])
+                self.assertEqual(result["attributions"][0]["revenue"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
