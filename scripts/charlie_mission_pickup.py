@@ -157,10 +157,14 @@ def watch_for_mission(
                 if reconciliation.get("changed_count"):
                     reconciliation["checks"] = checks
                     write_runner_heartbeat(reconciliation)
-            cleanup_result = process_visual_review_cleanup_queue()
-            if cleanup_result.get("processed_count"):
-                cleanup_result["checks"] = checks
-                write_runner_heartbeat(cleanup_result)
+            # Review-media cleanup is maintenance, not a mission-pickup gate.
+            # Running it every cycle delayed an otherwise ready queue by nearly
+            # a minute on the owner workstation.
+            if checks % 10 == 0:
+                cleanup_result = process_visual_review_cleanup_queue()
+                if cleanup_result.get("processed_count"):
+                    cleanup_result["checks"] = checks
+                    write_runner_heartbeat(cleanup_result)
             active = _active_mission()
             if active:
                 result = {
@@ -485,6 +489,7 @@ def _owner_queue_missions(statuses, limit=10):
     if not wanted:
         return [], 200
     missions = []
+    dependency_status_cache = {}
     for status in statuses:
         clean_status = str(status or "").strip()
         if not clean_status or clean_status not in wanted:
@@ -494,21 +499,27 @@ def _owner_queue_missions(statuses, limit=10):
             return [], status_code
         candidates = loaded.get("missions") or []
         if clean_status == "approved":
-            candidates = [mission for mission in candidates if _mission_dependencies_ready(mission)]
+            candidates = [
+                mission for mission in candidates
+                if _mission_dependencies_ready(mission, status_cache=dependency_status_cache)
+            ]
         missions.extend(candidates)
         if len(missions) >= parsed_limit:
             break
     return missions[:parsed_limit], status_code
 
 
-def _mission_dependencies_ready(mission):
+def _mission_dependencies_ready(mission, status_cache=None):
+    status_cache = status_cache if isinstance(status_cache, dict) else {}
     dependency_ids = mission_dependency_ids(mission)
     if not dependency_ids:
         return True
     for dependency_id in dependency_ids:
-        loaded, status_code = get_mission(dependency_id)
-        dependency = loaded.get("mission") if status_code < 400 and isinstance(loaded, dict) else {}
-        if str((dependency or {}).get("status") or "").lower() not in {"done", "merged", "deployed"}:
+        if dependency_id not in status_cache:
+            loaded, status_code = get_mission(dependency_id)
+            dependency = loaded.get("mission") if status_code < 400 and isinstance(loaded, dict) else {}
+            status_cache[dependency_id] = str((dependency or {}).get("status") or "").lower()
+        if status_cache[dependency_id] not in {"done", "merged", "deployed"}:
             return False
     return True
 

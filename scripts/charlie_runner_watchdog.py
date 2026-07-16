@@ -22,6 +22,7 @@ from modules.charlie.runner_control import RUNNER_DIR, _pid_alive, runner_status
 STATE_PATH = RUNNER_DIR / "watchdog.json"
 GIT_CONFIG_PATH = RUNNER_DIR / "task-gitconfig"
 SUPERVISOR_LOCK_PATH = RUNNER_DIR / "supervisor.lock"
+DEFAULT_RUNNER_BASE_BRANCH = "charlie-runner-core-live-base"
 
 
 def _live_supervisor_lock(path=SUPERVISOR_LOCK_PATH):
@@ -47,6 +48,7 @@ def _fast_runner_status():
 
 def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock):
     _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
+    os.environ.setdefault("CHARLIE_RUNNER_BASE_BRANCH", DEFAULT_RUNNER_BASE_BRANCH)
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
     if status.get("active"):

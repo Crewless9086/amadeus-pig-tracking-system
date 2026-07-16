@@ -15,7 +15,9 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
 
     def test_installed_watchdog_runs_hidden(self):
         script = (Path(__file__).parents[1] / "scripts" / "install_charlie_runner_watchdog.ps1").read_text(encoding="utf-8")
-        self.assertIn("-WindowStyle Hidden", script)
+        self.assertIn("pythonw.exe", script)
+        self.assertNotIn("powershell.exe", script.lower())
+        self.assertIn("charlie-runner-core-live-base", script)
 
     def test_healthy_runner_is_not_started_twice(self):
         with tempfile.TemporaryDirectory() as tmp:
