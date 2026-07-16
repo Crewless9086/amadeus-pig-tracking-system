@@ -9,9 +9,11 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
-    @patch("scripts.charlie_runner_supervisor.os.kill", side_effect=SystemError("stale pid"))
-    def test_pid_alive_treats_windows_system_error_as_dead(self, _kill):
-        self.assertFalse(supervisor._pid_alive(1234))
+    def test_pid_alive_uses_exact_tasklist_pid_on_windows(self):
+        runner = Mock(return_value=Mock(returncode=0, stdout='"python.exe","1234","Console","1","20,000 K"\n'))
+        with patch("scripts.charlie_runner_supervisor.os.name", "nt"):
+            self.assertTrue(supervisor._pid_alive(1234, runner=runner))
+            self.assertFalse(supervisor._pid_alive(123, runner=runner))
     @patch("scripts.charlie_runner_supervisor.subprocess.run", side_effect=subprocess.TimeoutExpired(["powershell"], 5))
     def test_windows_process_command_timeout_is_nonfatal(self, _run):
         self.assertEqual(supervisor._windows_process_command(1234), "")

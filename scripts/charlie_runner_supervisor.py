@@ -1,4 +1,5 @@
 import json
+import csv
 import os
 import signal
 import subprocess
@@ -152,14 +153,26 @@ def _windows_process_command(pid):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _pid_alive(pid):
+def _pid_alive(pid, runner=subprocess.run):
     try:
         pid = int(pid)
         if pid <= 0:
             return False
+        if os.name == "nt":
+            completed = runner(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if completed.returncode != 0:
+                return False
+            rows = list(csv.reader(str(completed.stdout or "").splitlines()))
+            return any(len(row) > 1 and row[1].strip() == str(pid) for row in rows)
         os.kill(pid, 0)
         return True
-    except (TypeError, ValueError, OSError, SystemError):
+    except (TypeError, ValueError, OSError, SystemError, subprocess.SubprocessError):
         return False
 
 
