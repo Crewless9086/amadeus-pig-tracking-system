@@ -620,6 +620,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             "status": "in_progress",
             "mission_id": "CHARLIE-MISSION-STRANDED",
             "agent_workflow": [{"agent": "builder", "status": "active"}],
+            "metadata": {"execution_lease": {"lease_id": "lease-1", "expires_at": "2020-01-01T00:00:00+00:00"}},
         }
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [active]}, 200)
         runner_status.return_value = {
@@ -638,14 +639,14 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual(result["recovered_count"], 1)
         update_status.assert_called_once()
-        self.assertEqual(update_status.call_args.args[1], "blocked")
+        self.assertEqual(update_status.call_args.args[1], "approved")
         self.assertEqual(update_status.call_args.kwargs["expected_status"], "in_progress")
         packet = update_vault.call_args.args[1]["review_packet"]
         self.assertEqual(packet["blocked_agent"], "builder")
         self.assertEqual(packet["return_to_stage"], "builder")
         send_blocked.assert_called_once()
 
-    def test_stranded_recovery_detects_idle_observer_without_owned_execution(self):
+    def test_live_process_is_never_recovered_from_idle_observer_shape(self):
         decision = charlie_mission_pickup._stranded_recovery_decision(
             {"mission_id": "CHARLIE-MISSION-IDLE"},
             {
@@ -660,8 +661,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
             },
         )
 
-        self.assertTrue(decision["recover"])
-        self.assertEqual(decision["reason"], "in_progress_row_has_no_owned_execution")
+        self.assertFalse(decision["recover"])
+        self.assertEqual(decision["reason"], "execution_alive_or_lease_not_expired")
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    def test_dependency_must_be_terminal_before_pickup(self, get_mission):
+        mission = {"metadata": {"depends_on_mission_ids": ["MISSION-DATA"]}}
+        get_mission.return_value = ({"mission": {"status": "blocked"}}, 200)
+        self.assertFalse(charlie_mission_pickup._mission_dependencies_ready(mission))
+        get_mission.return_value = ({"mission": {"status": "deployed"}}, 200)
+        self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission))
+
+    def test_execution_lease_includes_expiry(self):
+        lease = charlie_mission_pickup._execution_lease_packet("MISSION-1")
+        self.assertIn("expires_at", lease)
+        self.assertFalse(charlie_mission_pickup._execution_lease_expired(lease))
 
     @patch("scripts.charlie_mission_pickup._send_blocked_notification")
     @patch("scripts.charlie_mission_pickup._send_review_ready_notification")

@@ -177,9 +177,14 @@
   function stageLabel(mission) {
     const review = missionReviewPacket(mission);
     const status = text(mission.status).toLowerCase();
+    const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
+    const coordinator = metadata.mission_coordinator && typeof metadata.mission_coordinator === "object" ? metadata.mission_coordinator : {};
     if (status === "blocked") return text(review.blocked_agent, text(mission.vault && mission.vault.mission_stage, "blocked"));
     if (status === "pr_ready") return "owner review";
+    if (status === "approved" && dependencies.length) return "waiting dependency";
     if (status === "approved") return "waiting runner";
+    if (status === "paused" && coordinator.status === "waiting_children") return "waiting children";
     if (status === "new") return "needs approval";
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const active = workflow.find((item) => ["active", "running", "in_progress"].includes(text(item.status).toLowerCase()));
@@ -188,6 +193,11 @@
 
   function headlineReason(mission) {
     const review = missionReviewPacket(mission);
+    const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
+    const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
+    if (text(mission.status).toLowerCase() === "approved" && dependencies.length) {
+      return `Waiting for ${dependencies.join(", ")} to complete.`;
+    }
     return text(
       review.blocked_reason,
       text(review.recommended_next_action, text(mission.selected_next_step, text(mission.owner_decision, text(mission.raw_text, ""))))

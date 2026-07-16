@@ -8,7 +8,7 @@ import threading
 from types import SimpleNamespace
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -343,27 +343,36 @@ def recover_stranded_missions(notify=False):
             skipped.append({"mission_id": mission_id, "reason": "already_recovered_this_runner"})
             continue
         blocked_agent = _recovery_blocked_agent(mission, local_status)
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        previous_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+        recovery_history = list(previous_packet.get("runner_recovery_history") or [])
+        recovery_event = {
+            "status": "lease_expired_runner_dead",
+            "reason": decision["reason"],
+            "runner_status": local_status.get("status"),
+            "heartbeat_age_seconds": local_status.get("age_seconds"),
+            "process_alive": local_status.get("process_alive"),
+            "last_runner_mission_id": local_status.get("last_mission_id", ""),
+            "recovered_at": datetime.now(timezone.utc).isoformat(),
+        }
+        recovery_history.append(recovery_event)
         review_packet = {
-            "review_status": "blocked",
+            **previous_packet,
+            "review_status": "internal_recovery_queued",
             "blocked_agent": blocked_agent,
             "return_to_stage": blocked_agent,
             "blocked_reason": decision["reason"],
             "summary": "CHARLIE runner recovered a stranded in-progress mission instead of freezing the queue.",
-            "recommended_next_action": "Review the recovery packet, then send back or approve rerun from the blocked stage.",
-            "runner_recovery": {
-                "status": "lease_expired_runner_dead",
-                "runner_status": local_status.get("status"),
-                "heartbeat_age_seconds": local_status.get("age_seconds"),
-                "process_alive": local_status.get("process_alive"),
-                "last_runner_mission_id": local_status.get("last_mission_id", ""),
-            },
+            "recommended_next_action": f"CORE will resume automatically from {blocked_agent} after runner recovery.",
+            "runner_recovery": recovery_event,
+            "runner_recovery_history": recovery_history[-20:],
         }
         status_result, block_status = update_mission_status(
             mission_id,
-            "blocked",
-            owner_decision="CHARLIE runner watchdog recovered a stranded in-progress mission.",
+            "approved",
+            owner_decision="CHARLIE runner recovered a dead execution and queued an internal stage resume.",
             event_type="status_changed",
-            notes=f"Runner watchdog moved stale in-progress mission to blocked: {decision['reason']}",
+            notes=f"Runner recovery returned dead execution to its responsible stage: {decision['reason']}",
             metadata={"watchdog": "charlie_mission_pickup", "blocked_agent": blocked_agent},
             expected_status="in_progress",
         )
@@ -374,7 +383,7 @@ def recover_stranded_missions(notify=False):
             mission_id,
             {
                 "review_packet": review_packet,
-                "mission_vault": {"mission_stage": f"blocked_at_{blocked_agent}" if blocked_agent else "blocked"},
+                "mission_vault": {"mission_stage": f"recovery_queued_at_{blocked_agent}" if blocked_agent else "recovery_queued"},
             },
             notes="Runner watchdog wrote stranded-mission recovery packet.",
         )
@@ -409,21 +418,27 @@ def _stranded_recovery_decision(mission, local_status):
     heartbeat_stale = age is not None and int(age) > max(STALE_SECONDS * 2, 240)
     process_dead = local_status.get("process_alive") is False
     runner_not_active = local_status.get("active") is False and local_status.get("status") in {"runner_stale_or_stopped", "runner_not_started", "runner_code_stale"}
-    idle_observer = (
-        last_mission_id == mission_id
-        and local_status.get("last_result_status") == "active_mission_in_progress"
-        and not str(local_status.get("current_agent") or "").strip()
-        and not str(local_status.get("execution_artifact") or "").strip()
-    )
-    if last_mission_id and last_mission_id != mission_id and local_status.get("active"):
-        return {"recover": True, "reason": "in_progress_not_owned_by_active_runner"}
-    if process_dead and heartbeat_stale:
+    lease = ((mission.get("metadata") or {}).get("execution_lease") or {}) if isinstance(mission, dict) else {}
+    lease_expired = _execution_lease_expired(lease)
+    if process_dead and heartbeat_stale and lease_expired:
         return {"recover": True, "reason": "runner_process_dead_and_heartbeat_stale"}
-    if runner_not_active and heartbeat_stale:
+    if runner_not_active and heartbeat_stale and lease_expired:
         return {"recover": True, "reason": "runner_inactive_and_heartbeat_stale"}
-    if idle_observer:
-        return {"recover": True, "reason": "in_progress_row_has_no_owned_execution"}
-    return {"recover": False, "reason": "runner_heartbeat_still_active_or_uncertain"}
+    return {"recover": False, "reason": "execution_alive_or_lease_not_expired"}
+
+
+def _execution_lease_expired(lease, now=None):
+    if not isinstance(lease, dict) or not lease.get("lease_id"):
+        return False
+    now = now or datetime.now(timezone.utc)
+    expires_at = str(lease.get("expires_at") or "").strip()
+    try:
+        if expires_at:
+            return datetime.fromisoformat(expires_at.replace("Z", "+00:00")) <= now
+        heartbeat = datetime.fromisoformat(str(lease.get("heartbeat_at") or lease.get("acquired_at") or "").replace("Z", "+00:00"))
+        return heartbeat + timedelta(seconds=int(lease.get("ttl_seconds") or LEASE_TTL_SECONDS)) <= now
+    except (TypeError, ValueError):
+        return False
 
 
 def _recovery_blocked_agent(mission, local_status):
@@ -461,10 +476,25 @@ def _owner_queue_missions(statuses, limit=10):
         loaded, status_code = list_owner_work_missions(clean_status, limit=parsed_limit)
         if status_code >= 400:
             return [], status_code
-        missions.extend(loaded.get("missions") or [])
+        candidates = loaded.get("missions") or []
+        if clean_status == "approved":
+            candidates = [mission for mission in candidates if _mission_dependencies_ready(mission)]
+        missions.extend(candidates)
         if len(missions) >= parsed_limit:
             break
     return missions[:parsed_limit], status_code
+
+
+def _mission_dependencies_ready(mission):
+    dependency_ids = mission_dependency_ids(mission)
+    if not dependency_ids:
+        return True
+    for dependency_id in dependency_ids:
+        loaded, status_code = get_mission(dependency_id)
+        dependency = loaded.get("mission") if status_code < 400 and isinstance(loaded, dict) else {}
+        if str((dependency or {}).get("status") or "").lower() not in {"done", "merged", "deployed"}:
+            return False
+    return True
 
 
 def _retryable_queue_error(result, status_code):
@@ -701,7 +731,9 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
     builder = artifacts.get("builder") if isinstance(artifacts.get("builder"), dict) else {}
-    branch_name = str(builder.get("branch_name") or (builder.get("git_packaging") or {}).get("branch_name") or "").strip()
+    packaging = builder.get("git_packaging") if isinstance(builder.get("git_packaging"), dict) else {}
+    branch_name = str(builder.get("branch_name") or packaging.get("branch_name") or "").strip()
+    recovery_stash = str(packaging.get("recovery_stash") or "").strip()
     run = run_subprocess or _run_git_command
     if not branch_name:
         pr_number = str(builder.get("pr_number") or review_packet.get("pr_number") or "").strip()
@@ -721,15 +753,34 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     fetched = run(["git", "fetch", "origin", branch_name])
     if fetched.returncode != 0:
         return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
-    # Resume review against the exact fetched remote revision. A stale local
-    # mission branch may have diverged during earlier runner sessions and must
-    # never become review truth.
-    switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
-    if switched.returncode != 0:
-        switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
+    if recovery_stash:
+        switched = run(["git", "switch", branch_name])
+        if switched.returncode != 0:
+            switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
+    else:
+        # Review stages consume the exact fetched revision, never a divergent local branch.
+        switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
+        if switched.returncode != 0:
+            switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
     if switched.returncode != 0:
         return {"success": False, "status": "mission_branch_switch_failed", "branch_name": branch_name, "stderr": (switched.stderr or "")[-500:]}
-    return {"success": True, "status": "mission_branch_restored", "branch_name": branch_name}
+    if recovery_stash:
+        applied = run(["git", "stash", "apply", recovery_stash])
+        if applied.returncode != 0:
+            return {
+                "success": False,
+                "status": "mission_recovery_stash_apply_failed",
+                "branch_name": branch_name,
+                "recovery_stash": recovery_stash,
+                "stderr": (applied.stderr or "")[-500:],
+            }
+    return {
+        "success": True,
+        "status": "mission_branch_restored",
+        "branch_name": branch_name,
+        "recovery_stash": recovery_stash,
+        "recovery_stash_applied": bool(recovery_stash),
+    }
 
 
 def _run_git_command(command):
@@ -880,13 +931,15 @@ def _write_execution_lease(mission_id):
 
 
 def _execution_lease_packet(mission_id):
-    now = datetime.now(timezone.utc).isoformat()
+    now_value = datetime.now(timezone.utc)
+    now = now_value.isoformat()
     return {
         "lease_id": f"charlie-lease-{uuid.uuid4().hex[:16]}",
         "mission_id": str(mission_id or "").strip(),
         "holder": f"{socket.gethostname()}:{os.getpid()}",
         "acquired_at": now,
         "heartbeat_at": now,
+        "expires_at": (now_value + timedelta(seconds=LEASE_TTL_SECONDS)).isoformat(),
         "ttl_seconds": LEASE_TTL_SECONDS,
         "source": "scripts/charlie_mission_pickup.py",
     }

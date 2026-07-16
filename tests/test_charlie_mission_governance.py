@@ -57,6 +57,16 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertEqual(children[1]["metadata"]["depends_on_mission_ids"], [children[0]["mission_id"]])
         self.assertEqual(children, build_scope_child_missions(parent, analysis))
 
+    def test_child_scope_is_frozen_and_never_recursively_split(self):
+        result = analyze_pre_builder_scope({
+            "title": "Lead and Sales Attribution: Data Model",
+            "raw_text": "Deliver the data model slice of a sales parent mission.",
+            "metadata": {"pre_builder_scope": {"scope": "data_model", "parent_analysis": {"split_required": True}}},
+        })
+        self.assertEqual(result["domains"], ["data_model"])
+        self.assertFalse(result["split_required"])
+        self.assertTrue(result["builder_allowed"])
+
     def test_acceptance_matrix_is_frozen_before_builder(self):
         packet = ensure_acceptance_matrix(mission_with_events())
 

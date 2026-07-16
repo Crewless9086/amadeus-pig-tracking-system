@@ -2,6 +2,18 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## CHARLIE CORE Conveyor Integrity Repair - 2026-07-16
+
+- Runner ownership recovery now requires an expired durable lease plus a dead/stale process; the former idle-observer heuristic is retired.
+- Execution leases include expiry and refresh while Codex stages run.
+- Oversized parents pause as `waiting_children` coordinators; only their deterministic child missions execute.
+- Child dependencies are enforced before pickup and child scope cannot recursively re-split from inherited parent wording.
+- Final artifacts can reconcile idempotently after a workflow already advanced.
+- Builder packaging includes actual untracked Git changes and preserves failed packaging in a mission-labelled recovery stash.
+- Watchdog recovery appends history and returns work to an internal stage instead of overwriting evidence with a false owner block.
+- Mission-family/scope deduplication prevents duplicate generated children, and CORE dashboard summaries expose dependency/coordinator/recovery state.
+- The Windows watchdog installer uses hidden PowerShell mode to stop the two-minute console flash.
+
 ## Meat Production Pilot Rail - 2026-07-13
 
 - `/sales/meat-production` is the owner workspace for slaughter-to-packed production batches, costs, cuts, and yield evidence.
