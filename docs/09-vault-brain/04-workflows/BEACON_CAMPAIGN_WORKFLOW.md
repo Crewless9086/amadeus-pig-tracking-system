@@ -27,6 +27,8 @@ The lane never authorizes an automatic post, customer send, negotiation, reserva
 
 ## Beacon-To-SAM Attribution Read Model
 
+Attribution requires stable, non-conflicting campaign, lead, and sale identities. Identical retries are idempotent; missing or conflicting identities fail closed as malformed evidence. Recognized revenue requires explicit `sale_status=Completed`, `payment_status=Paid`, and valid `net_total` evidence, with currencies kept separate.
+
 Beacon attribution is a deterministic, read-only projection over canonical append-only campaign, SAM lead, order, sales-transaction, fulfilment, and loss evidence. Exact campaign identifiers attribute every matching SAM lead independently and outrank campaign-source/time-window matching; ambiguous source/time matches, expired, unmatched, duplicate, superseded, and malformed evidence must remain visible or fail closed rather than creating a conversion silently.
 
 Qualification comes from explicit SAM lead status, orders require a resolvable `linked_order_id`, and revenue comes only from explicit completed sales-transaction `net_total` values kept separate by currency. Fulfilment uses the latest deterministic lead-linked event. Lost-reason aggregation accepts controlled reason codes only. The projection cannot post, send, call Meta/Chatwoot/n8n, optimize campaigns, spend, create orders, reserve or change stock, or write farm lifecycle data. Persistent attribution ingestion remains blocked until a separately approved append-only data migration exists.
