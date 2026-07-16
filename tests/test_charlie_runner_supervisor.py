@@ -9,6 +9,25 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_instance_lock_refuses_live_owner_and_recovers_stale_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "supervisor.lock"
+            path.write_text('{"pid": 123}', encoding="utf-8")
+            lock = supervisor.SupervisorInstanceLock(path)
+            with patch.object(supervisor, "_pid_alive", return_value=True):
+                self.assertEqual(lock.acquire(), (False, 123))
+            with patch.object(supervisor, "_pid_alive", return_value=False), patch.object(supervisor.os, "getpid", return_value=456):
+                self.assertEqual(lock.acquire(), (True, 456))
+                lock.release()
+            self.assertFalse(path.exists())
+
+    def test_transaction_pool_url_is_used_for_supabase_session_pool(self):
+        original = "postgresql://user:pass@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require"
+        converted = supervisor._transaction_pool_url(original)
+        self.assertIn(":6543/postgres", converted)
+        self.assertNotIn(":5432/postgres", converted)
+        self.assertEqual(supervisor._transaction_pool_url("postgresql://localhost:5432/app"), "postgresql://localhost:5432/app")
+
     def test_pid_alive_uses_exact_tasklist_pid_on_windows(self):
         runner = Mock(return_value=Mock(returncode=0, stdout='"python.exe","1234","Console","1","20,000 K"\n'))
         with patch("scripts.charlie_runner_supervisor.os.name", "nt"):

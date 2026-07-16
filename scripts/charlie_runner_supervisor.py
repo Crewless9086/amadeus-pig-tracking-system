@@ -7,6 +7,7 @@ import sys
 import time
 import uuid
 import ctypes
+from urllib.parse import urlsplit, urlunsplit
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,72 @@ if str(REPO_ROOT) not in sys.path:
 RUNNER_DIR = REPO_ROOT / ".charlie_runner"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
+LOCK_PATH = RUNNER_DIR / "supervisor.lock"
+
+
+class SupervisorInstanceLock:
+    """Atomic, process-owned guard against duplicate local supervisors."""
+
+    def __init__(self, path=LOCK_PATH):
+        self.path = Path(path)
+        self.owned = False
+
+    def acquire(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for _attempt in range(2):
+            try:
+                descriptor = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                owner_pid = _lock_owner_pid(self.path)
+                if owner_pid and _pid_alive(owner_pid):
+                    return False, owner_pid
+                try:
+                    self.path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    return False, owner_pid
+                continue
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump({"pid": os.getpid(), "created_at": datetime.now(timezone.utc).isoformat()}, stream)
+            self.owned = True
+            return True, os.getpid()
+        return False, _lock_owner_pid(self.path)
+
+    def release(self):
+        if not self.owned:
+            return
+        try:
+            if _lock_owner_pid(self.path) == os.getpid():
+                self.path.unlink()
+        except FileNotFoundError:
+            pass
+        finally:
+            self.owned = False
+
+
+def _lock_owner_pid(path=LOCK_PATH):
+    try:
+        return int(json.loads(Path(path).read_text(encoding="utf-8")).get("pid") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0
+
+
+def _transaction_pool_url(value):
+    """Use Supabase's transaction pool for long-lived local runner processes."""
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+    try:
+        parsed = urlsplit(raw)
+        if not parsed.hostname or not parsed.hostname.endswith(".pooler.supabase.com") or parsed.port != 5432:
+            return raw
+        if not parsed.netloc.endswith(":5432"):
+            return raw
+        netloc = f"{parsed.netloc[:-5]}:6543"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+    except (ValueError, TypeError):
+        return raw
 
 
 def _python_executable(repo_root=REPO_ROOT):
@@ -51,6 +118,7 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             "CHARLIE_SUPERVISOR_GENERATION": generation,
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
+        child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
         child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env)
         child_identity = _process_identity(child.pid)
         _write_status(
@@ -192,18 +260,27 @@ def main():
         if path.exists():
             load_dotenv(path, override=False)
             break
-    if STOP_PATH.exists():
-        STOP_PATH.unlink()
+    instance_lock = SupervisorInstanceLock()
+    acquired, owner_pid = instance_lock.acquire()
+    if not acquired:
+        _write_status("duplicate_supervisor_refused", existing_supervisor_pid=owner_pid)
+        return {"status": "duplicate_supervisor_refused", "existing_supervisor_pid": owner_pid}
     try:
-        from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
-        recovery, recovery_status = recover_pending_final_agent_artifact()
-    except Exception as exc:
-        recovery, recovery_status = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}, 503
-    if recovery_status >= 400:
-        _write_status("final_artifact_recovery_blocked", recovery=recovery)
-        return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
-    return supervise_runner()
+        if STOP_PATH.exists():
+            STOP_PATH.unlink()
+        try:
+            from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
+            recovery, recovery_status = recover_pending_final_agent_artifact()
+        except Exception as exc:
+            recovery, recovery_status = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}, 503
+        if recovery_status >= 400:
+            _write_status("final_artifact_recovery_blocked", recovery=recovery)
+            return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
+        return supervise_runner()
+    finally:
+        instance_lock.release()
 
 
 if __name__ == "__main__":
-    raise SystemExit(0 if main().get("status") == "supervisor_stopped" else 1)
+    result = main()
+    raise SystemExit(0 if result.get("status") in {"supervisor_stopped", "duplicate_supervisor_refused"} else 1)

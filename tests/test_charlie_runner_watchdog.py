@@ -24,6 +24,7 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
                 status_reader=lambda: {"active": True, "status": "runner_active"},
                 starter=lambda: calls.append(True),
                 state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
             )
         self.assertEqual(result["status"], "runner_healthy")
         self.assertFalse(result["started"])
@@ -35,6 +36,7 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
                 status_reader=lambda: {"active": False, "status": "runner_stale_or_stopped", "orphan_processes": []},
                 starter=lambda: ({"status": "runner_started"}, 200),
                 state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
             )
         self.assertEqual(result["status"], "runner_started")
         self.assertTrue(result["started"])
@@ -46,6 +48,7 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
                 status_reader=lambda: {"active": True, "status": "runner_active"},
                 starter=lambda: self.fail("must not start"),
                 state_path=state,
+                supervisor_lock_reader=lambda: 0,
             )
             config = state.with_name("task-gitconfig")
             self.assertTrue(config.exists())
@@ -57,8 +60,20 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
                 status_reader=lambda: {"active": False, "status": "runner_orphaned", "orphan_processes": [{"pid": 5}]},
                 starter=lambda: self.fail("must not start over an orphan"),
                 state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
             )
         self.assertEqual(result["status"], "orphan_requires_cleanup")
+
+    def test_live_supervisor_lock_prevents_duplicate_start_during_heartbeat_gap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = watchdog_tick(
+                status_reader=lambda: {"active": False, "status": "runner_stale_or_stopped", "orphan_processes": []},
+                starter=lambda: self.fail("must not start over live supervisor"),
+                state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 4321,
+            )
+        self.assertEqual(result["status"], "supervisor_healthy_runner_starting")
+        self.assertEqual(result["supervisor_pid"], 4321)
 
 
 if __name__ == "__main__":

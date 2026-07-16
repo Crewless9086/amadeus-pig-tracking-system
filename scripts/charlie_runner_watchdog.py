@@ -16,11 +16,20 @@ os.environ.setdefault("GIT_CONFIG_COUNT", "1")
 os.environ.setdefault("GIT_CONFIG_KEY_0", "safe.directory")
 os.environ.setdefault("GIT_CONFIG_VALUE_0", str(REPO_ROOT))
 
-from modules.charlie.runner_control import RUNNER_DIR, runner_status, start_runner
+from modules.charlie.runner_control import RUNNER_DIR, _pid_alive, runner_status, start_runner
 
 
 STATE_PATH = RUNNER_DIR / "watchdog.json"
 GIT_CONFIG_PATH = RUNNER_DIR / "task-gitconfig"
+SUPERVISOR_LOCK_PATH = RUNNER_DIR / "supervisor.lock"
+
+
+def _live_supervisor_lock(path=SUPERVISOR_LOCK_PATH):
+    try:
+        owner_pid = int(json.loads(Path(path).read_text(encoding="utf-8")).get("pid") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0
+    return owner_pid if _pid_alive(owner_pid) else 0
 
 
 def _configure_git_safe_directory(config_path=GIT_CONFIG_PATH):
@@ -36,11 +45,14 @@ def _fast_runner_status():
     return runner_status(include_orphans=False, include_git=False, include_ledger=False)
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH):
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock):
     _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
     status = status_reader()
+    supervisor_pid = supervisor_lock_reader()
     if status.get("active"):
         result = {"status": "runner_healthy", "started": False}
+    elif supervisor_pid:
+        result = {"status": "supervisor_healthy_runner_starting", "started": False, "supervisor_pid": supervisor_pid}
     elif status.get("orphan_processes"):
         result = {"status": "orphan_requires_cleanup", "started": False}
     else:
