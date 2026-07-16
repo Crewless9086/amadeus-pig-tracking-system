@@ -6,6 +6,8 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from modules.charlie.final_readiness import evaluate_final_readiness
+
 
 CALLBACK_PREFIX = "cm:"
 ACTIONABLE_STATUSES = ("in_progress", "release_in_progress", "pr_ready", "blocked", "release_approved", "approved", "new", "paused")
@@ -63,6 +65,7 @@ def mission_card_text(mission: Mapping[str, Any], runner: Mapping[str, Any] | No
     progress, current = _workflow_progress(mission)
     blocked_reason = str(packet.get("blocked_reason") or packet.get("reason") or "").strip()
     next_action = str(packet.get("recommended_next_action") or packet.get("next_action") or "").strip()
+    readiness = evaluate_final_readiness(mission) if status == "pr_ready" else {}
     runner = dict(runner or {})
     runner_line = str(runner.get("status") or "runner visibility unavailable")
     title = str(mission.get("title") or mission.get("raw_text") or mission_id or "Untitled mission").strip()
@@ -79,6 +82,9 @@ def mission_card_text(mission: Mapping[str, Any], runner: Mapping[str, Any] | No
         lines.append(f"Blocked reason: {blocked_reason[:500]}")
     if next_action:
         lines.append(f"Next action: {next_action[:300]}")
+    if readiness:
+        lines.append(f"Owner verdict: {readiness['headline']}")
+        lines.append(f"Required next: {readiness['next_action'][:300]}")
     if status == "in_progress":
         lines.append("Observe only while the runner owns this mission.")
     return "\n".join(lines)
@@ -95,7 +101,11 @@ def mission_keyboard(mission: Mapping[str, Any]) -> dict[str, Any]:
     elif status == "blocked":
         actions = [("Send Back", "sendback", "builder"), ("Pause", "pause", ""), ("Reject", "reject", "")]
     elif status == "pr_ready":
-        actions = [("Approve Final", "approvefinal", ""), ("Send Back", "sendback", "builder"), ("Pause", "pause", "")]
+        readiness = evaluate_final_readiness(mission)
+        actions = []
+        if readiness.get("can_authorize_release"):
+            actions.append(("Approve Release", "approvefinal", ""))
+        actions.extend([("Show Requirements", "open", ""), ("Send Back", "sendback", "builder"), ("Pause", "pause", "")])
     elif status == "paused":
         actions = [("Approve / Resume", "resume", ""), ("Reject", "reject", "")]
     rows = [[{"text": label, "callback_data": mission_callback(mission_id, action, arg)}] for label, action, arg in actions]

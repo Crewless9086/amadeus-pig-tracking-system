@@ -19,6 +19,7 @@ from modules.charlie.core_workflow import (
 )
 from modules.charlie import vault_store
 from modules.charlie.mission_governance import ensure_acceptance_matrix
+from modules.charlie.final_readiness import evaluate_final_readiness
 
 
 MISSION_STATUSES = {
@@ -1254,6 +1255,16 @@ def record_mission_review_decision(
     if load_status >= 400:
         return loaded, load_status
     mission = loaded.get("mission") or {}
+    final_readiness = evaluate_final_readiness(mission)
+    if decision == "approve_final_release" and not final_readiness.get("can_authorize_release"):
+        return {
+            "success": False,
+            "configured": True,
+            "status": "final_approval_not_ready",
+            "mission_id": mission_id,
+            "final_readiness": final_readiness,
+            "next_action": final_readiness.get("next_action", "Complete the pending readiness gates."),
+        }, 409
     if decision == "send_back":
         target_stage = _normalize_review_send_back_stage(target_stage, mission.get("agent_workflow") or [])
     metadata = dict(mission.get("metadata") or {})
@@ -1385,6 +1396,7 @@ def build_mission_review_packet(mission):
         review_board = build_review_board_packet(mission, packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {})
     income_stream_readiness = metadata.get("income_stream_readiness") if isinstance(metadata.get("income_stream_readiness"), dict) else build_income_stream_readiness(mission)
     core_readiness = evaluate_core_readiness(mission)
+    final_readiness = evaluate_final_readiness(mission)
     return {
         "mission": {
             "mission_id": mission.get("mission_id", ""),
@@ -1425,7 +1437,8 @@ def build_mission_review_packet(mission):
         "owner_review_decisions": metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else [],
         "agent_workflow": workflow,
         "mission_vault": vault,
-        "can_approve_final_release": mission.get("status") == "pr_ready",
+        "final_readiness": final_readiness,
+        "can_approve_final_release": final_readiness.get("can_authorize_release") is True,
         "can_send_back": mission.get("status") in {"pr_ready", "blocked"},
         "allowed_decisions": sorted(REVIEW_DECISIONS),
         "execution_boundary": "Dashboard review decisions update mission state only; local Codex/release bridge must execute build, merge, and deploy steps.",

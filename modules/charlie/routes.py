@@ -44,6 +44,7 @@ from modules.charlie.mission_memory import (
 )
 from modules.charlie.mission_quality import score_mission_quality
 from modules.charlie.mission_governance import mission_governance_summary
+from modules.charlie.final_readiness import evaluate_final_readiness
 from modules.charlie.replay_stress import golden_example_candidate, stress_replay_mission
 from modules.charlie.tool_permissions import check_tool_permission, permission_packet, tool_permission_registry
 from modules.charlie.vault_retrieval import autonomy_readiness_packet, owner_preference_packet, retrieve_vault_sources
@@ -891,6 +892,8 @@ def _mission_dashboard_summary(mission):
     mission_id = str(mission.get("mission_id") or "").strip()
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    final_readiness = evaluate_final_readiness(mission)
+    review_packet = {**review_packet, "final_readiness": final_readiness}
     workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
     owner_action_guidance = _owner_action_guidance(mission, review_packet, workflow)
     stage_telemetry = _stage_telemetry(metadata, workflow)
@@ -914,6 +917,7 @@ def _mission_dashboard_summary(mission):
             "runner_recovery",
             "runner_recovery_history",
             "repo_test_command_memory",
+            "final_readiness",
         )
         if key in review_packet
     }
@@ -1157,6 +1161,7 @@ def _compact_owner_review_packet(packet, mission_id=""):
         "blocked_reason": _short_text(packet.get("blocked_reason"), 800),
         "unresolved_blockers": _compact_event_list(packet.get("unresolved_blockers"), limit=6),
         "recommended_next_action": _short_text(packet.get("recommended_next_action"), 800),
+        "final_readiness": packet.get("final_readiness") if isinstance(packet.get("final_readiness"), dict) else {},
         "can_approve_final_release": packet.get("can_approve_final_release") is True,
         "can_send_back": packet.get("can_send_back") is True,
         "allowed_decisions": packet.get("allowed_decisions") if isinstance(packet.get("allowed_decisions"), list) else [],

@@ -74,6 +74,20 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertIn("review_media_missing", codes)
         self.assertTrue(all(proposal["applies_automatically"] is False for proposal in result["proposals"]))
 
+    def test_replay_analysis_learns_from_premature_owner_review_readiness(self):
+        result, status = analyze_mission_replay({
+            "mission_id": "MISSION-MIGRATION",
+            "status": "pr_ready",
+            "metadata": {"review_packet": {
+                "review_status": "ready_for_owner_review",
+                "changed_files": ["supabase/migrations/202607160001_example.sql"],
+                "test_evidence": ["Focused tests passed."],
+            }},
+        })
+        self.assertEqual(status, 200)
+        self.assertTrue(any("pending readiness gates" in finding for finding in result["findings"]))
+        self.assertTrue(any(proposal["target_area"] == "gates" for proposal in result["proposals"]))
+
     @patch("modules.charlie.improvement_analyst.vault_store.write_artifact")
     @patch("modules.charlie.improvement_analyst.vault_store.list_artifacts")
     @patch("modules.charlie.improvement_analyst.mission_store.list_missions")

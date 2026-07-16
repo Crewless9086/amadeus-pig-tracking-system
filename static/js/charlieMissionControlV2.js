@@ -90,6 +90,15 @@
     return metadata && typeof metadata.review_packet === "object" ? metadata.review_packet : {};
   }
 
+  function ownerDisplayStatus(mission) {
+    const status = text(mission && mission.status, "unknown").toLowerCase();
+    if (status !== "pr_ready") return statusLabel(status);
+    const readiness = missionReviewPacket(mission).final_readiness || {};
+    if (readiness.verdict === "owner_action_required") return "Owner Action Required";
+    if (readiness.verdict === "verification_required") return "Verification Required";
+    return "Ready To Approve";
+  }
+
   function missionGovernance(mission) {
     const metadata = mission && mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
     return metadata.mission_governance && typeof metadata.mission_governance === "object" ? metadata.mission_governance : {};
@@ -193,10 +202,14 @@
 
   function headlineReason(mission) {
     const review = missionReviewPacket(mission);
+    const readiness = review.final_readiness || {};
     const metadata = mission.metadata && typeof mission.metadata === "object" ? mission.metadata : {};
     const dependencies = Array.isArray(metadata.depends_on_mission_ids) ? metadata.depends_on_mission_ids : [];
     if (text(mission.status).toLowerCase() === "approved" && dependencies.length) {
       return `Waiting for ${dependencies.join(", ")} to complete.`;
+    }
+    if (text(mission.status).toLowerCase() === "pr_ready" && readiness.verdict && readiness.verdict !== "ready_to_approve") {
+      return text(readiness.next_action, "Complete readiness gates before approval.").slice(0, 170);
     }
     return text(
       review.blocked_reason,
@@ -468,7 +481,7 @@
         <div class="mission-card-title">${familyLabel ? `<span class="family-tag">${escapeHtml(familyLabel)}</span>` : ""}${escapeHtml(titleOf(mission))}</div>
         <div class="mission-card-meta">
           <span>${escapeHtml(shortId(mission))} | ${escapeHtml(text(mission.approval_level, "LEVEL ?"))}</span>
-          <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
+          <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
         </div>
         <div class="bar"><span style="width:${pct}%"></span></div>
         <div class="mission-card-meta">
@@ -494,7 +507,7 @@
     const status = text(mission.status, "unknown");
     const pct = progressPct(mission);
     el.selectedStatusChip.className = `chip ${chipClass(status)}`;
-    el.selectedStatusChip.textContent = statusLabel(status);
+    el.selectedStatusChip.textContent = ownerDisplayStatus(mission);
     el.workflowSub.textContent = `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")} | ${pct}%`;
     const review = missionReviewPacket(mission);
     const governance = missionGovernance(mission);
@@ -509,7 +522,7 @@
           <h2>${escapeHtml(titleOf(mission))}</h2>
           <p class="muted">${escapeHtml(text(mission.mission_type, "mission"))} | ${escapeHtml(text(mission.urgency, "P?"))}</p>
         </div>
-        <span class="chip ${chipClass(status)}">${escapeHtml(statusLabel(status))}</span>
+        <span class="chip ${chipClass(status)}">${escapeHtml(ownerDisplayStatus(mission))}</span>
       </div>
       <div class="mission-stats">
         ${metric("Acceptance", `${Number(governance.acceptance_percent || 0)}%`)}
@@ -650,18 +663,31 @@
       <div class="summary-block">
         <h3 class="summary-title">${escapeHtml(titleOf(mission))}</h3>
         ${field("Mission", `${shortId(mission)} | ${text(mission.approval_level, "LEVEL ?")}`)}
-        ${field("State", `${statusLabel(status)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
+        ${field("State", `${ownerDisplayStatus(mission)} | ${stageLabel(mission)} | ${progressPct(mission)}%`)}
         ${field("Delivery", `${Number(governance.acceptance_percent || 0)}% matrix | ${Number(governance.fix_count || 0)} fixes | ${Number(governance.review_runs || 0)} reviews`)}
         ${field("Runtime history", `${Number(telemetry.execution_session_count || 0)} sessions | ${Number(telemetry.attempt_count || 0)} attempts | ${Number(telemetry.backflow_count || 0)} backflows | ${Number(telemetry.recovery_count || 0)} recoveries`)}
         ${Number(telemetry.highest_blocker_repeat || 0) >= 2 ? field("Repeated blocker", `x${Number(telemetry.highest_blocker_repeat)} | ${text(telemetry.last_restart_reason, "internal recovery capped")}`) : ""}
         ${family.parent_mission_id ? field("Mission family", `Child of ${family.parent_mission_id} | ${text(family.finding_family, "follow-up")}`) : field("Discovered work", `${Number(governance.followup_count || 0)} linked follow-ups`)}
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
         ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
+        ${renderFinalReadiness(review.final_readiness)}
         ${renderOwnerGuidance(mission, guidance)}
         ${actionButtons(mission)}
         ${runnerBox()}
         <details class="disclosure"><summary>Mission brief and review context</summary><div>${field("Brief", text(review.summary, text(mission.raw_text, "No brief loaded.")))}</div></details>
       </div>`;
+  }
+
+  function renderFinalReadiness(readiness) {
+    if (!readiness || !readiness.verdict) return "";
+    const gates = Array.isArray(readiness.gates) ? readiness.gates : [];
+    const tone = readiness.verdict === "ready_to_approve" ? "" : " danger";
+    return `<section class="decision-guidance${tone}">
+      <span>Owner verdict</span>
+      <strong>${escapeHtml(text(readiness.headline, "READINESS UNKNOWN"))}</strong>
+      <p>${escapeHtml(text(readiness.next_action, "Review the required gates."))}</p>
+      <div class="matrix-list">${gates.map((gate) => `<div class="matrix-row ${escapeAttr(text(gate.status, "pending"))}"><span class="matrix-dot"></span><b>${escapeHtml(text(gate.label, gate.key))}</b><span>${escapeHtml(statusLabel(gate.status))}</span></div>`).join("")}</div>
+    </section>`;
   }
 
   function renderOwnerGuidance(mission, guidance) {
@@ -697,9 +723,16 @@
       </div></details>`;
     }
     if (status === "pr_ready") {
+      const readiness = missionReviewPacket(mission).final_readiness || {};
+      const approve = readiness.can_authorize_release
+        ? '<button class="ok" data-review-decision="approve_final_release">Approve Release</button>'
+        : '<button class="ok" disabled title="Complete the listed readiness gates first">Approval Locked</button>';
+      const openLabel = Array.isArray(readiness.pending_gate_keys) && readiness.pending_gate_keys.includes("migration_approval")
+        ? "Review Migration Requirements"
+        : "Open Review";
       return `<div class="button-grid">
-        <button class="primary wide" data-open-review>Open Review</button>
-        <button class="ok" data-review-decision="approve_final_release">Approve Final</button>
+        <button class="primary wide" data-open-review>${openLabel}</button>
+        ${approve}
         <button class="warn" data-review-decision="send_back">Send Back</button>
         <button class="danger" data-review-decision="reject">Reject</button>
       </div>`;
@@ -779,7 +812,10 @@
     if (status === "new") return "Approve, pause, or reject.";
     if (status === "approved") return "Waiting for local runner.";
     if (status === "blocked") return "Review blocked reason, then send back or approve rerun.";
-    if (status === "pr_ready") return "Open review and approve final or send back.";
+    if (status === "pr_ready") {
+      const readiness = missionReviewPacket(mission).final_readiness || {};
+      return readiness.can_authorize_release ? "Open review and approve release or send back." : text(readiness.next_action, "Complete readiness gates before approval.");
+    }
     if (status === "in_progress") return "Observe local runner.";
     return "No immediate action.";
   }
@@ -885,15 +921,20 @@
       const data = await fetchJson(`${API.missions}/${encodeURIComponent(mission.mission_id)}/review?compact=1`, { timeoutMs: 25000 });
       const packet = data.review_packet || data.packet || data || {};
       const tests = Array.isArray(packet.test_evidence) ? packet.test_evidence : [];
+      const readiness = packet.final_readiness || {};
+      const approve = readiness.can_authorize_release
+        ? '<button class="ok" data-review-decision="approve_final_release">Approve Release</button>'
+        : '<button class="ok" disabled title="Complete the listed readiness gates first">Approval Locked</button>';
       el.reviewDrawerBody.innerHTML = `
         ${field("Mission", `${titleOf(mission)} | ${shortId(mission)}`)}
-        ${field("Status", statusLabel(mission.status))}
+        ${field("Status", ownerDisplayStatus(mission))}
         ${field("Summary", text(packet.summary, text(packet.blocked_reason, "No review summary returned.")))}
         ${field("Recommended", text(packet.recommended_next_action, "No recommendation recorded."))}
         ${field("Blocked agent", text(packet.blocked_agent, "n/a"))}
+        ${renderFinalReadiness(readiness)}
         <details class="disclosure"><summary>Test evidence (${tests.length})</summary><div>${tests.length ? tests.map((item, index) => field(`Evidence ${index + 1}`, typeof item === "string" ? item : JSON.stringify(item))).join("") : '<div class="notice">No test evidence was recorded.</div>'}</div></details>
         <div class="button-grid">
-          <button class="ok" data-review-decision="approve_final_release">Approve Final</button>
+          ${approve}
           <button class="warn" data-review-decision="send_back">Send Back</button>
           <button class="danger" data-review-decision="reject">Reject</button>
         </div>`;
