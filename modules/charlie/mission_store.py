@@ -652,7 +652,7 @@ def transition_mission_review_state(
                     update public.charlie_missions
                     set status = %(status)s,
                         owner_decision = %(owner_decision)s,
-                        metadata = coalesce(metadata, '{{}}'::jsonb) || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
+                        metadata_json = coalesce(metadata_json, '{{}}'::jsonb) || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
                         updated_at = now()
                     where mission_id = %(mission_id)s
                     {expected_clause}
