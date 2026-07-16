@@ -1,0 +1,18 @@
+.beacon-revision-box { margin: 14px 0; padding: 12px; border: 1px solid #d6e2da; border-radius: 10px; background: #f3f7f4; }
+.beacon-revision-box > label { display: block; margin-bottom: 7px; font-weight: 800; }
+.beacon-revision-row { display: flex; gap: 8px; }
+.beacon-revision-row input { min-width: 0; flex: 1; padding: 10px; }
+.beacon-facebook-preview { overflow: hidden; margin-bottom: 14px; border: 1px solid #d6ddd8; border-radius: 12px; background: #fff; }
+.beacon-facebook-preview > header { display: flex; gap: 9px; align-items: center; padding: 12px 14px; }
+.beacon-preview-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #174f3c; color: #fff; font-weight: 900; }
+.beacon-preview-media { display: grid; gap: 1px; min-height: 90px; background: #e7ece8; }
+.beacon-preview-media > p { place-self: center; padding: 20px; text-align: center; }
+.beacon-preview-media-item { display: flex; gap: 10px; align-items: center; min-width: 0; padding: 12px 14px; background: #edf2ee; }
+.beacon-preview-media-item > span { font-size: 24px; color: #174f3c; }
+.beacon-preview-media-item div { min-width: 0; display: grid; }
+.beacon-preview-media-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.beacon-owner-action { display: grid; gap: 5px; padding: 14px; border-radius: 11px; background: #153f32; color: #fff; }
+.beacon-owner-action span { color: #d7e6dc; }
+.beacon-manual-handoff { margin-top: 12px; padding: 14px; border: 1px solid #d8b35a; border-radius: 11px; background: #fff9e9; }
+@media (min-width: 1101px) { .beacon-compose-final { position: sticky; top: 14px; } }
+@media (max-width: 720px) { .beacon-revision-row { flex-direction: column; } .beacon-revision-row .button-link { width: 100%; } }
