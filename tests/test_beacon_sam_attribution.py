@@ -9,7 +9,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
             "campaign_events": [{"performance_event_id": "PERF-1", "campaign_id": "CAM-1", "campaign_source": "social_post", "observed_at": "2026-07-01T10:00:00Z"}],
             "leads": [{"lead_id": "LEAD-1", "campaign_id": "CAM-1", "campaign_source": "social_post", "status": "order_ready_for_approval", "linked_order_id": "ORDER-1", "created_at": "2026-07-02T10:00:00Z"}],
             "orders": [{"order_id": "ORDER-1", "status": "Completed"}],
-            "sales_transactions": [{"sale_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "Completed", "net_total": "1234.50", "currency": "ZAR"}],
+            "sales_transactions": [{"sale_id": "SALE-1", "linked_order_id": "ORDER-1", "sale_status": "Completed", "payment_status": "Paid", "net_total": "1234.50", "currency": "ZAR"}],
             "fulfilment_events": [{"fulfillment_event_id": "FUL-1", "lead_id": "LEAD-1", "event_type": "delivery_completed", "occurred_at": "2026-07-10T10:00:00Z"}],
             "loss_events": [],
         }
@@ -56,6 +56,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
             "sale_id": "SALE-2",
             "linked_order_id": "ORDER-2",
             "sale_status": "Completed",
+            "payment_status": "Paid",
             "net_total": "765.50",
             "currency": "ZAR",
         })
@@ -95,7 +96,7 @@ class BeaconSamAttributionTests(unittest.TestCase):
 
     def test_revenue_keeps_currencies_separate(self):
         payload = self.base()
-        payload["sales_transactions"].append({"sale_id": "SALE-2", "linked_order_id": "ORDER-1", "sale_status": "Completed", "net_total": "10", "currency": "USD"})
+        payload["sales_transactions"].append({"sale_id": "SALE-2", "linked_order_id": "ORDER-1", "sale_status": "Completed", "payment_status": "Paid", "net_total": "10", "currency": "USD"})
         row = build_beacon_sam_attribution(payload)["attributions"][0]
         self.assertEqual(row["revenue"], [{"currency": "USD", "net_total": "10.00"}, {"currency": "ZAR", "net_total": "1234.50"}])
 
@@ -117,6 +118,65 @@ class BeaconSamAttributionTests(unittest.TestCase):
         self.assertEqual(result["status"], "malformed_evidence")
         self.assertEqual(result["malformed_evidence_ids"], ["PERF-BAD"])
         self.assertEqual(result["attributions"], [])
+
+    def test_conflicting_campaign_identity_fails_closed_independent_of_order(self):
+        payload = self.base()
+        payload["campaign_events"].append({**payload["campaign_events"][0], "campaign_id": "CAM-OTHER"})
+        first = build_beacon_sam_attribution(payload)
+        payload["campaign_events"].reverse()
+        second = build_beacon_sam_attribution(payload)
+        for result in (first, second):
+            self.assertFalse(result["success"])
+            self.assertEqual(result["malformed_evidence_ids"], ["PERF-1"])
+            self.assertEqual(result["attributions"], [])
+
+    def test_candidate_without_stable_lead_identity_is_not_attributed(self):
+        payload = self.base()
+        payload["leads"][0]["lead_id"] = ""
+        result = build_beacon_sam_attribution(payload)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["summary"]["attributed"], 0)
+        self.assertEqual(result["attributions"][0]["status"], "unmatched")
+        self.assertEqual(len(result["malformed_evidence_ids"]), 1)
+
+    def test_sale_identity_retries_are_idempotent_and_conflicts_fail_closed(self):
+        payload = self.base()
+        payload["sales_transactions"].append(dict(payload["sales_transactions"][0]))
+        self.assertEqual(
+            build_beacon_sam_attribution(payload)["attributions"][0]["revenue"],
+            [{"currency": "ZAR", "net_total": "1234.50"}],
+        )
+        payload["sales_transactions"][1]["net_total"] = "9999.00"
+        result = build_beacon_sam_attribution(payload)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["malformed_evidence_ids"], ["SALE-1"])
+        self.assertEqual(result["attributions"][0]["revenue"], [])
+
+    def test_revenue_requires_completed_and_paid_with_stable_sale_identity(self):
+        for payment_status in ("Unpaid", "Deposit_Paid", "Part_Paid", "Cancelled", "", None):
+            with self.subTest(payment_status=payment_status):
+                payload = self.base()
+                payload["sales_transactions"][0]["payment_status"] = payment_status
+                self.assertEqual(build_beacon_sam_attribution(payload)["attributions"][0]["revenue"], [])
+
+        payload = self.base()
+        payload["sales_transactions"][0]["sale_id"] = ""
+        result = build_beacon_sam_attribution(payload)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["attributions"][0]["revenue"], [])
+
+    def test_malformed_money_is_reported_and_excluded_without_throwing(self):
+        for net_total in ("Infinity", "NaN", "not-money", "-0.01", "1E+999999"):
+            with self.subTest(net_total=net_total):
+                payload = self.base()
+                payload["sales_transactions"][0]["net_total"] = net_total
+
+                result = build_beacon_sam_attribution(payload)
+
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], "malformed_evidence")
+                self.assertEqual(result["malformed_evidence_ids"], ["SALE-1"])
+                self.assertEqual(result["attributions"][0]["revenue"], [])
 
 
 if __name__ == "__main__":

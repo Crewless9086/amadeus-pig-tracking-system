@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-16 - Beacon attribution identity and revenue integrity
+
+- Required stable, non-conflicting campaign, lead, and sale identities in the read-only Beacon-to-SAM attribution projection.
+- Defined recognized attribution revenue as canonical sales evidence that is both `Completed` and `Paid`, with malformed or conflicting evidence failing closed.
+- Kept persistence, migrations, ingestion, UI, automation, and operational writes outside this bounded data-model correction.
+
 ## 2026-07-16 - Beacon outcome evidence capture
 
 - Defined per-metric provenance and explicit verified, missing, unsupported, malformed, provider-error, and owner-correction evidence states.
