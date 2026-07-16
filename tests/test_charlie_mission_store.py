@@ -121,6 +121,23 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["status"], "final_artifact_already_consumed")
         self.assertEqual(len(connection.cursor_instance.executed), 1)
 
+    def test_final_artifact_reconciles_when_stage_already_advanced(self):
+        metadata = {
+            "agent_workflow": [
+                {"agent": "tester", "status": "complete"},
+                {"agent": "qa_red_team", "status": "active"},
+            ],
+            "review_packet": {},
+        }
+        connection = FakeConnection([(metadata,)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-OLD", 1, {"summary": "Tests passed."}, "c" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "final_artifact_reconciled_after_advance")
+        self.assertTrue(result["claim"]["reconciled_after_advance"])
+
     def test_update_workflow_items_tolerates_unknown_agent_names(self):
         workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]
 

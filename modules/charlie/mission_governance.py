@@ -263,6 +263,20 @@ def build_followup_missions(parent, findings):
 def analyze_pre_builder_scope(mission):
     """Freeze architecture questions and proposed child work before Builder starts."""
     mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    frozen_child = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else {}
+    child_scope = str(frozen_child.get("scope") or "").strip()
+    if child_scope:
+        return {
+            "version": "charlie_pre_builder_scope_v1",
+            "domains": [child_scope],
+            "planning_gates": [],
+            "split_required": False,
+            "child_scopes": [],
+            "builder_allowed": True,
+            "scope": child_scope,
+            "parent_analysis": frozen_child.get("parent_analysis", {}),
+        }
     text = " ".join(str(mission.get(key) or "") for key in ("title", "raw_text", "mission_type")).lower()
     domains = {
         "data_model": ("schema", "table", "migration", "canonical", "supabase"),

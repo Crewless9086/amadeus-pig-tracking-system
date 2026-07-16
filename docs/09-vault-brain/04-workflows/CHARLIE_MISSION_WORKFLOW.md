@@ -72,6 +72,10 @@ Parent missions become review-ready when their frozen matrix and focused mission
 
 CHARLIE owner-facing queues, Telegram handoff views, command-center buckets, and local runner pickup must treat `owner_work` as the actionable queue class. System smoke tests, validation missions, canary/no-op checks, placeholder relay records, and low-signal intake are not owner work and must not crowd out real owner missions waiting for approval, pickup, review, or release handling.
 
+Dependencies are executable gates, not display hints. A child remains `waiting_dependency` until every `depends_on_mission_id` is `done`, `merged`, or `deployed`. Oversized parents become paused `waiting_children` coordinators after their deterministic children are created; the parent pipeline may not execute in parallel with those children. Child scope is frozen from its explicit family scope and may not recursively split from words inherited from the parent title.
+
+Open mission intake is deduplicated by exact intent and by `(root_mission_id, finding_family)` for generated families. Recovery and review may append evidence to an existing mission, but may not create another open mission for the same family/scope.
+
 ## Provider Routing
 
 CHARLIE CORE may route selected specialist/review stages through Claude/Anthropic when `ANTHROPIC_API_KEY` is configured. The temporary typo alias `ANTROPIC_API_KEY` is also accepted so a configured owner environment does not fail closed for spelling alone.
@@ -126,6 +130,10 @@ The no-final-artifact watchdog measures inactivity, not total elapsed build time
 When a runner result moves a mission to `pr_ready`, the review-ready notification must key off the mission status rather than a narrow internal status string.
 
 Existing `in_progress` missions must not be blindly re-executed by the watch loop. The watchdog recovers stale runner ownership. The continuous runner also reconciles legacy blocked missions against authoritative GitHub PR state: green mergeable PRs become review-ready, conflicts route to Publisher, current-head check failures route to Builder, and missing UI media routes to Visual QA.
+
+Runner recovery requires both an expired durable execution lease and a dead/stale matching process. An empty current-agent display, a between-stage heartbeat, or another active mission is not enough to block a mission. Recovery returns the mission to its responsible internal stage and appends `runner_recovery_history`; it does not overwrite the original review packet or create owner work.
+
+Builder packaging is transactional. CORE stages every actual Git change except runner-generated scratch output, including untracked files omitted by a model artifact. If commit packaging fails, CORE preserves the complete dirty state in a mission-labelled recovery stash, cleans the shared runner worktree, and reapplies that stash only when the same mission resumes.
 
 ## Revision And Finding Contracts
 

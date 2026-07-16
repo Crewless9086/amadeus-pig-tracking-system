@@ -245,6 +245,13 @@ def prepare_codex_execution(mission_id="", status="in_progress", output_dir=None
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    decomposition = _pause_decomposed_parent(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if decomposition:
+        return decomposition, 200
 
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -402,6 +409,13 @@ def run_agent_execution_bridge_v2(
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    decomposition = _pause_decomposed_parent(
+        mission,
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if decomposition:
+        return decomposition, 200
 
     output_dir = Path(output_dir or EXECUTION_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1786,6 +1800,50 @@ def _ensure_execution_governance(mission, database_url=None, connect_factory=Non
     if pre_builder_scope.get("split_required"):
         _record_scope_children(mission, pre_builder_scope, database_url=database_url, connect_factory=connect_factory)
     return mission
+
+
+def _pause_decomposed_parent(mission, database_url=None, connect_factory=None):
+    """Turn an oversized parent into a coordinator; only its ordered children execute."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    scope = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else {}
+    if family.get("parent_mission_id") or not scope.get("split_required"):
+        return None
+    children = [
+        str(item.get("mission_id") or "").strip()
+        for item in scope.get("linked_children", [])
+        if isinstance(item, dict) and str(item.get("mission_id") or "").strip()
+    ]
+    coordinator = {
+        "status": "waiting_children",
+        "child_mission_ids": children,
+        "completed_child_ids": [],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"mission_coordinator": coordinator},
+        notes="Oversized parent paused as a coordinator for ordered child missions.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    update_mission_status(
+        mission.get("mission_id", ""),
+        "paused",
+        owner_decision="CORE decomposed this oversized mission; ordered child missions now carry delivery.",
+        notes="Split parent paused at waiting_children and will not execute a duplicate pipeline.",
+        expected_status="in_progress",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return {
+        "success": True,
+        "status": "mission_decomposed_waiting_children",
+        "mission_id": mission.get("mission_id", ""),
+        "child_mission_ids": children,
+        "owner_action_required": False,
+    }
 
 
 def _record_scope_children(mission, scope_analysis, database_url=None, connect_factory=None):
@@ -4624,7 +4682,11 @@ def _blocking_artifact_items(agent, artifact, values):
 
 def _auto_package_builder_changes(mission, artifact, runner=None):
     artifact = artifact if isinstance(artifact, dict) else {}
-    changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
+    changed_files = list(dict.fromkeys([
+        *artifact_files,
+        *[path for path in _changed_files() if not _runner_generated_path(path)],
+    ]))
     if not _has_release_relevant_changes(changed_files) or _artifact_pr_reference(artifact):
         return artifact
     runner = runner or subprocess.run
@@ -4690,6 +4752,7 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     if not existing_commit:
         committed = run(["git", "commit", "-m", commit_message])
         if committed["returncode"] != 0:
+            _preserve_builder_recovery_stash(run, result, mission)
             return _builder_packaging_failed(artifact, result, "git_commit_failed")
     sha = run(["git", "rev-parse", "--short", "HEAD"])
     commit_sha = sha["stdout"].strip()
@@ -4730,6 +4793,26 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
     })
     return packaged
+
+
+def _runner_generated_path(path):
+    normalized = str(path or "").replace("\\", "/").strip()
+    return normalized == "planning/CODEX_CHAT.md" or normalized.startswith("test-results/") or normalized.startswith(".charlie_runner/")
+
+
+def _preserve_builder_recovery_stash(run, result, mission):
+    mission_id = str((mission or {}).get("mission_id") or "unknown").strip()
+    stashed = run(["git", "stash", "push", "-u", "-m", f"CHARLIE recovery {mission_id}"])
+    if stashed.get("returncode") != 0 or "No local changes" in str(stashed.get("stdout") or ""):
+        return False
+    reference = run(["git", "stash", "list", "-1", "--format=%gd"])
+    stash_ref = str(reference.get("stdout") or "").strip()
+    if stash_ref:
+        result["recovery_stash"] = stash_ref
+        result["recovery_stash_mission_id"] = mission_id
+        result["worktree_cleaned_after_failure"] = True
+        return True
+    return False
 
 
 def _remove_resolved_builder_packaging_errors(errors):
@@ -7618,6 +7701,7 @@ def _run_codex_process(
     final_seen_at = None
     last_progress_at = started
     last_progress_signature = None
+    last_lease_refresh_at = 0.0
     no_final_timeout = min(
         int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS),
         NO_FINAL_ARTIFACT_TIMEOUT_SECONDS,
@@ -7669,6 +7753,9 @@ def _run_codex_process(
                 "stdout_tail": _read_tail(stdout_path, 1200),
                 "stderr_tail": _read_tail(stderr_path, 1200),
             })
+            if now - last_lease_refresh_at >= 30:
+                _refresh_execution_lease(mission_id, process.pid, supervisor_status)
+                last_lease_refresh_at = now
             if final_seen_at and now - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
                 _terminate_process_tree(process.pid)
                 break
@@ -7717,6 +7804,34 @@ def _run_codex_process(
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
+
+
+def _refresh_execution_lease(mission_id, process_id=0, stage_status=""):
+    """Keep the durable lease fresh while the owned model process is alive."""
+    if not mission_id:
+        return False
+    loaded, status_code = get_mission(mission_id)
+    if status_code >= 400:
+        return False
+    mission = loaded.get("mission") if isinstance(loaded, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    lease = dict(metadata.get("execution_lease") or {})
+    if not lease.get("lease_id"):
+        return False
+    now = datetime.now(timezone.utc)
+    ttl = max(int(lease.get("ttl_seconds") or 900), 120)
+    lease.update({
+        "heartbeat_at": now.isoformat(),
+        "expires_at": datetime.fromtimestamp(now.timestamp() + ttl, timezone.utc).isoformat(),
+        "process_id": int(process_id or 0),
+        "stage_status": str(stage_status or ""),
+    })
+    result, refresh_status = update_mission_vault(
+        mission_id,
+        {"execution_lease": lease},
+        notes="CHARLIE refreshed the active execution lease.",
+    )
+    return refresh_status < 400 and result.get("success") is not False
 
 
 def _file_progress_signature(path):

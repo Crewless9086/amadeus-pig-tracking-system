@@ -868,7 +868,12 @@ def consume_final_agent_artifact(
                      if isinstance(item, dict) and str(item.get("status") or "").lower() != "complete"),
                     "",
                 )
-                if first_incomplete != agent:
+                artifact_stage = next(
+                    (item for item in workflow if isinstance(item, dict) and str(item.get("agent") or "").lower() == agent),
+                    {},
+                )
+                stage_already_complete = str(artifact_stage.get("status") or "").lower() == "complete"
+                if first_incomplete != agent and not stage_already_complete:
                     return {
                         "success": False,
                         "status": "final_artifact_stage_mismatch",
@@ -901,6 +906,7 @@ def consume_final_agent_artifact(
                     "sha256": artifact_sha256,
                     "consumed_at": consumed_at,
                     "next_agent": next_agent,
+                    "reconciled_after_advance": stage_already_complete,
                 }
                 claims.append(claim)
                 ingestion.update({"version": "charlie_final_artifact_ingestion_v1", "claims": claims[-100:], "last_claim": claim})
@@ -932,7 +938,14 @@ def consume_final_agent_artifact(
                 _insert_event(cursor, mission_id, "workflow_updated", f"Consumed {agent} final artifact and activated {next_agent or 'workflow completion'}.", claim)
     except Exception as exc:
         return {"success": False, "status": "final_artifact_ingestion_failed", "error_type": exc.__class__.__name__}, 503
-    return {"success": True, "status": "final_artifact_consumed", "mission_id": mission_id, "agent": agent, "next_agent": next_agent, "claim": claim}, 200
+    return {
+        "success": True,
+        "status": "final_artifact_reconciled_after_advance" if claim.get("reconciled_after_advance") else "final_artifact_consumed",
+        "mission_id": mission_id,
+        "agent": agent,
+        "next_agent": next_agent,
+        "claim": claim,
+    }, 200
 
 
 def update_new_mission_intake(
@@ -1668,7 +1681,7 @@ def _mission_row(row):
 def _find_open_duplicate_mission(cursor, params):
     cursor.execute(
         """
-        select mission_id, status, title, raw_text
+        select mission_id, status, title, raw_text, metadata_json
         from public.charlie_missions
         where status = any(%(statuses)s)
         order by updated_at desc
@@ -1678,6 +1691,12 @@ def _find_open_duplicate_mission(cursor, params):
     )
     new_title = _normalize_mission_text(params.get("title", ""))
     new_raw = _normalize_mission_text(params.get("raw_text", ""))
+    new_metadata = params.get("metadata_json")
+    try:
+        new_metadata = json.loads(new_metadata) if isinstance(new_metadata, str) else dict(new_metadata or {})
+    except (TypeError, ValueError):
+        new_metadata = {}
+    new_family_key = _mission_family_scope_key(new_metadata)
     for row in cursor.fetchall():
         existing_title = _normalize_mission_text(row[2])
         existing_raw = _normalize_mission_text(row[3])
@@ -1685,7 +1704,18 @@ def _find_open_duplicate_mission(cursor, params):
             return {"mission_id": row[0], "status": row[1], "title": row[2]}
         if new_title and existing_title == new_title and len(new_title) >= 18:
             return {"mission_id": row[0], "status": row[1], "title": row[2]}
+        existing_metadata = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
+        if new_family_key and _mission_family_scope_key(existing_metadata) == new_family_key:
+            return {"mission_id": row[0], "status": row[1], "title": row[2]}
     return None
+
+
+def _mission_family_scope_key(metadata):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    root_id = str(family.get("root_mission_id") or "").strip().lower()
+    scope = str(family.get("finding_family") or (metadata.get("pre_builder_scope") or {}).get("scope") or "").strip().lower()
+    return f"{root_id}|{scope}" if root_id and scope else ""
 
 
 def _mission_intake_quality(mission, raw_text):

@@ -910,6 +910,9 @@ def _mission_dashboard_summary(mission):
             "unresolved_blockers",
             "mission_quality",
             "recovery_packet",
+            "block_disposition",
+            "runner_recovery",
+            "runner_recovery_history",
             "repo_test_command_memory",
         )
         if key in review_packet
@@ -924,6 +927,12 @@ def _mission_dashboard_summary(mission):
     mission_family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
     if mission_family:
         compact_metadata["mission_family"] = mission_family
+    dependencies = metadata.get("depends_on_mission_ids") if isinstance(metadata.get("depends_on_mission_ids"), list) else []
+    if dependencies:
+        compact_metadata["depends_on_mission_ids"] = dependencies
+    coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+    if coordinator:
+        compact_metadata["mission_coordinator"] = coordinator
     mission_memory = mission_memory_from_metadata(metadata)
     if mission_memory.get("events") or mission_memory.get("updated_at"):
         events = [item for item in mission_memory.get("events", []) if isinstance(item, dict)]

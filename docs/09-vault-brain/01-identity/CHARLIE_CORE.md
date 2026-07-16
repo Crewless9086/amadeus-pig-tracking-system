@@ -67,3 +67,16 @@ Deep overnight missions require at least 96% confidence under `../00-governance/
 ## Current Weakness
 
 The workflow mechanics are ahead of the operating brain. The Vault Brain closes that gap by making identity, roles, playbooks, business rules, evidence standards, and update rules explicit.
+
+## Conveyor Integrity Contract
+
+CORE must produce one honest outcome for every claimed mission: verified owner review, an explicit red-zone owner decision, dependency waiting, or an internally recoverable stage. Generic ownership uncertainty is never an owner block.
+
+- Supabase mission state and the durable execution lease are authoritative.
+- One supervisor generation owns one runner process tree.
+- Split parents coordinate; ordered child missions deliver.
+- Dependencies are enforced before claim.
+- Mission-family scope is deduplicated and frozen.
+- Review and recovery history is append-only.
+- Dirty Builder work is packaged or durably preserved before the runner changes mission branches.
+- Public posting, spend, migrations, customer sends, payment, stock, and farm lifecycle authority remain owner-gated.
