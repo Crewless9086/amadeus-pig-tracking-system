@@ -989,10 +989,19 @@ def _decision_authority():
 
 
 def _command_recommendation(event):
-    spend, leads = float(event.get("spend_amount") or 0), int(event.get("qualified_buyer_leads") or 0)
+    evidence = event.get("metric_evidence") if isinstance(event.get("metric_evidence"), dict) else {}
+    spend_evidence = evidence.get("spend_amount") if isinstance(evidence.get("spend_amount"), dict) else {}
+    lead_evidence = evidence.get("qualified_buyer_leads") if isinstance(evidence.get("qualified_buyer_leads"), dict) else {}
+    accepted_statuses = {"verified", "owner_correction"}
+    spend_available = _clean_text(spend_evidence.get("status")).lower() in accepted_statuses
+    leads_available = _clean_text(lead_evidence.get("status")).lower() in accepted_statuses
+    spend = float(spend_evidence.get("value") or 0) if spend_available else None
+    leads = int(lead_evidence.get("value") or 0) if leads_available else None
     cap = float(event.get("max_spend_cap_amount") or BOOST_RECOMMENDATION_SPEND_CAP)
     upstream = _clean_text(event.get("recommended_action")).lower()
-    if spend > cap:
+    if not spend_available or not leads_available:
+        result = ("CHANGE", "spend_or_qualified_lead_evidence_unavailable", "evidence_unavailable")
+    elif spend > cap:
         result = ("STOP", "spend_cap_conflict", "blocked")
     elif upstream == "do_not_boost" or (spend > 0 and leads == 0):
         result = ("STOP", "paid_spend_without_qualified_leads", "blocked")
@@ -1004,7 +1013,15 @@ def _command_recommendation(event):
         result = ("CHANGE", "insufficient_evidence_or_adjustment_needed", "owner_review_required")
     return {"classification": result[0], "reason": result[1], "truth_state": result[2],
             "performance_event_id": event.get("performance_event_id") or "",
-            "supporting_metrics": {"spend_amount": spend, "qualified_buyer_leads": leads, "currency": event.get("spend_currency") or "ZAR"},
+            "supporting_metrics": {
+                "spend_amount": spend,
+                "qualified_buyer_leads": leads,
+                "currency": event.get("spend_currency") or "ZAR",
+                "metric_evidence_status": {
+                    "spend_amount": _clean_text(spend_evidence.get("status")).lower() or "missing",
+                    "qualified_buyer_leads": _clean_text(lead_evidence.get("status")).lower() or "missing",
+                },
+            },
             "owner_gate": "prepare_decision_only"}
 
 

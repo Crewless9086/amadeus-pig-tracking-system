@@ -86,10 +86,16 @@ class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
 
 
 class BeaconCampaignTests(unittest.TestCase):
+    def performance_evidence(self, spend, leads, spend_status="verified", lead_status="verified"):
+        return {
+            "spend_amount": {"status": spend_status, "value": spend},
+            "qualified_buyer_leads": {"status": lead_status, "value": leads},
+        }
+
     def test_weekly_command_brief_compares_compatible_latest_snapshots_only(self):
         events = [
-            {"performance_event_id": "e2", "publish_packet_id": "p2", "channel": "Instagram", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 0, "qualified_buyer_leads": 3, "created_at": "2026-07-14T08:00:00+00:00"},
-            {"performance_event_id": "e1", "publish_packet_id": "p1", "channel": "Facebook", "measurement_window": " 7   DAYS ", "spend_currency": "ZAR", "spend_amount": 100, "qualified_buyer_leads": 2, "recommended_action": "light_boost_owner_review", "created_at": "2026-07-14T07:00:00+00:00"},
+            {"performance_event_id": "e2", "publish_packet_id": "p2", "channel": "Instagram", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 0, "qualified_buyer_leads": 3, "metric_evidence": self.performance_evidence(0, 3), "created_at": "2026-07-14T08:00:00+00:00"},
+            {"performance_event_id": "e1", "publish_packet_id": "p1", "channel": "Facebook", "measurement_window": " 7   DAYS ", "spend_currency": "ZAR", "spend_amount": 100, "qualified_buyer_leads": 2, "metric_evidence": self.performance_evidence(100, 2), "recommended_action": "light_boost_owner_review", "created_at": "2026-07-14T07:00:00+00:00"},
             {"performance_event_id": "old", "publish_packet_id": "p1", "channel": "Facebook", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 80, "qualified_buyer_leads": 1, "created_at": "2026-07-13T07:00:00+00:00"},
             {"performance_event_id": "other", "publish_packet_id": "p3", "channel": "Facebook", "measurement_window": "24 hours", "spend_currency": "ZAR", "spend_amount": 20, "qualified_buyer_leads": 1, "created_at": "2026-07-14T06:00:00+00:00"},
         ]
@@ -102,7 +108,11 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(brief["targets"]["attributed_revenue"]["status"], "unavailable")
 
     def test_weekly_command_brief_stale_stop_and_authority_fail_closed(self):
-        event = {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 50, "qualified_buyer_leads": 0, "created_at": "2026-07-01T00:00:00+00:00"}
+        event = {
+            "performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": "7 days",
+            "spend_currency": "ZAR", "spend_amount": 50, "qualified_buyer_leads": 0,
+            "metric_evidence": self.performance_evidence(50, 0), "created_at": "2026-07-01T00:00:00+00:00",
+        }
         brief = build_beacon_weekly_command_brief([event, dict(event)], now=datetime(2026, 7, 14, tzinfo=timezone.utc))
         self.assertEqual(brief["recommendations"][0]["classification"], "STOP")
         self.assertEqual({alert["code"] for alert in brief["alerts"]}, {"stale_evidence", "stop_recommendation_waiting"})
@@ -140,13 +150,28 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(unavailable["status"], "decision_destination_unavailable")
 
     def test_owner_decision_recomputes_recommendation_from_source_event(self):
-        event = {"performance_event_id": "e1", "spend_amount": 75, "qualified_buyer_leads": 0}
+        event = {"performance_event_id": "e1", "spend_amount": 75, "qualified_buyer_leads": 0, "metric_evidence": self.performance_evidence(75, 0)}
         event.update({"classification": "BOOST", "reason": "client_tampering", "supporting_metrics": {"spend_amount": 0}})
         packet, status = prepare_beacon_owner_decision(event, "campaign_decision")
         self.assertEqual(status, 200)
         self.assertEqual(packet["classification"], "STOP")
         self.assertEqual(packet["reason"], "paid_spend_without_qualified_leads")
         self.assertEqual(packet["supporting_metrics"]["spend_amount"], 75)
+
+    def test_recommendation_fails_closed_when_metric_evidence_is_unavailable(self):
+        event = {
+            "performance_event_id": "missing-evidence",
+            "spend_amount": 0,
+            "qualified_buyer_leads": 0,
+            "metric_evidence": self.performance_evidence(None, None, "missing", "provider_error"),
+        }
+        packet, status = prepare_beacon_owner_decision(event, "campaign_decision")
+        self.assertEqual(status, 200)
+        self.assertEqual(packet["classification"], "CHANGE")
+        self.assertEqual(packet["reason"], "spend_or_qualified_lead_evidence_unavailable")
+        self.assertIsNone(packet["supporting_metrics"]["spend_amount"])
+        self.assertIsNone(packet["supporting_metrics"]["qualified_buyer_leads"])
+        self.assertEqual(packet["supporting_metrics"]["metric_evidence_status"], {"spend_amount": "missing", "qualified_buyer_leads": "provider_error"})
 
     def test_packet_is_draft_only_and_has_no_external_authority(self):
         packet = build_meat_launch_campaign_packet()
