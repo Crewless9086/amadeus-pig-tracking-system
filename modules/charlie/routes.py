@@ -381,8 +381,8 @@ def charlie_mission_control_snapshot_route():
     # Supabase's transaction pool can reject the dashboard's simultaneous cold
     # connections even while each query succeeds alone. Load the authoritative
     # owner queue first; counts are useful metadata and may degrade independently.
-    owner_queue, queue_status = _dashboard_owner_queue(100)
-    summary, summary_status = mission_status_summary()
+    owner_queue, queue_status = _retry_dashboard_read(_dashboard_owner_queue, 100)
+    summary, summary_status = _retry_dashboard_read(mission_status_summary)
     statuses = [summary_status, queue_status]
     if queue_status >= 400:
         return jsonify({"success": False, "status": "mission_control_snapshot_unavailable", "statuses": statuses}), 503
@@ -409,6 +409,17 @@ def charlie_mission_control_snapshot_route():
     }
     MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})
     return jsonify(packet), 200
+
+
+def _retry_dashboard_read(loader, *args, attempts=3):
+    """Retry transient Render/Supabase read failures without hiding hard errors."""
+    result, status_code = loader(*args)
+    for attempt in range(1, max(1, int(attempts))):
+        if status_code < 500:
+            break
+        time.sleep(0.2 * attempt)
+        result, status_code = loader(*args)
+    return result, status_code
 
 
 def _attach_mission_family_children(missions):

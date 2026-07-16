@@ -1117,6 +1117,23 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["counts"]["pr_ready"], 1)
         self.assertEqual(data["buckets"]["review"][0]["mission_id"], "REVIEW-1")
 
+    @patch("modules.charlie.routes.time.sleep")
+    def test_dashboard_read_retries_transient_server_failures(self, sleep):
+        calls = []
+
+        def loader(limit):
+            calls.append(limit)
+            if len(calls) < 3:
+                return {"success": False, "status": "mission_read_failed"}, 503
+            return {"success": True, "missions": [{"mission_id": "MISSION-1"}]}, 200
+
+        result, status_code = charlie_routes._retry_dashboard_read(loader, 100)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(calls, [100, 100, 100])
+        self.assertEqual(sleep.call_count, 2)
+
     def test_mission_family_children_stay_attached_to_parent_summary(self):
         missions = [
             {"mission_id": "PARENT", "status": "in_progress", "metadata": {}},
