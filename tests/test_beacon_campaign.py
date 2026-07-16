@@ -23,6 +23,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
+    _performance_params,
 )
 
 
@@ -749,6 +750,30 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertTrue(result["posts_publicly"])
         self.assertTrue(result["calls_meta"])
         self.assertFalse(result["spends_money"])
+
+
+class BeaconMetricEvidenceTests(unittest.TestCase):
+    def test_snapshot_identity_is_deterministic_and_changes_with_provider_values(self):
+        base = {"manual_post_event_id": "M1", "source_reference": "POST1", "reactions": 0}
+        first = _performance_params({**base, "retrieved_at": "2026-07-16T08:00:00Z"})
+        retry = _performance_params({**base, "retrieved_at": "2026-07-16T09:00:00Z"})
+        changed = _performance_params({**base, "reactions": 1, "retrieved_at": "2026-07-16T09:00:00Z"})
+        self.assertEqual(first["performance_event_id"], retry["performance_event_id"])
+        self.assertNotEqual(first["performance_event_id"], changed["performance_event_id"])
+
+    def test_unavailable_metrics_do_not_create_cost_or_positive_recommendation(self):
+        params = _performance_params({"manual_post_event_id": "M1", "spend_amount": 100})
+        evidence = __import__("json").loads(params["metric_evidence_json"])
+        self.assertEqual(evidence["qualified_buyer_leads"]["status"], "missing")
+        self.assertIsNone(evidence["qualified_buyer_leads"]["value"])
+        self.assertIsNone(params["cost_per_qualified_lead"])
+        self.assertNotEqual(params["recommended_action"], "light_boost_owner_review")
+
+    def test_owner_correction_has_explicit_lineage_and_new_identity(self):
+        original = _performance_params({"manual_post_event_id": "M1", "source_reference": "POST1"})
+        correction = _performance_params({"manual_post_event_id": "M1", "source_reference": "CRM-7", "supersedes_event_id": original["performance_event_id"], "metric_evidence": {"qualified_buyer_leads": {"status": "owner_correction", "value": 2}}})
+        self.assertEqual(correction["supersedes_event_id"], original["performance_event_id"])
+        self.assertNotEqual(correction["performance_event_id"], original["performance_event_id"])
 
 
 if __name__ == "__main__":

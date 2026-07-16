@@ -1,6 +1,6 @@
 import unittest
 
-from modules.sales.beacon_facebook_history import import_beacon_facebook_history
+from modules.sales.beacon_facebook_history import _evidence_payloads, import_beacon_facebook_history
 
 
 class BeaconFacebookHistoryTests(unittest.TestCase):
@@ -39,6 +39,25 @@ class BeaconFacebookHistoryTests(unittest.TestCase):
         self.assertEqual(performance_payloads[0]["reactions"], 4)
         self.assertEqual(performance_payloads[0]["comments"], 2)
         self.assertEqual(performance_payloads[0]["shares"], 1)
+        evidence = performance_payloads[0]["metric_evidence"]
+        self.assertEqual(evidence["reactions"]["status"], "verified")
+        self.assertEqual(evidence["reach"]["status"], "unsupported")
+        self.assertIsNone(evidence["reach"]["value"])
+
+    def test_explicit_zero_is_verified_but_absent_and_malformed_are_not(self):
+        payload = _evidence_payloads({
+            "id": "PAGE_3",
+            "reactions": {"summary": {"total_count": 0}},
+            "comments": {"summary": {}},
+            "shares": {"count": "bad"},
+        })["performance"]
+        evidence = payload["metric_evidence"]
+        self.assertEqual(evidence["reactions"]["status"], "verified")
+        self.assertEqual(evidence["reactions"]["value"], 0)
+        self.assertEqual(evidence["comments"]["status"], "missing")
+        self.assertEqual(evidence["shares"]["status"], "malformed")
+        self.assertNotIn("comments", payload)
+        self.assertNotIn("shares", payload)
 
     def test_import_fails_closed_without_meta_configuration(self):
         result, status = import_beacon_facebook_history(environ={})

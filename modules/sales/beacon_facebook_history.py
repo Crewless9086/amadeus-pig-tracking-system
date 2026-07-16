@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -39,7 +40,7 @@ def import_beacon_facebook_history(
     manual_writer = manual_recorder or record_beacon_manual_post_evidence
     performance_writer = performance_recorder or record_beacon_campaign_performance_event
     url = _first_page_url(version, page_id, token)
-    imported = existing = failed = fetched = 0
+    imported = existing = failed = fetched = performance_imported = performance_existing = 0
     failures = []
     seen_urls = set()
 
@@ -69,12 +70,18 @@ def import_beacon_facebook_history(
             if performance_status >= 400:
                 failed += 1
                 failures.append({"facebook_post_id": payloads["facebook_post_id"], "status": performance.get("status")})
+            else:
+                performance_created = int(performance.get("created_count") or 0)
+                performance_imported += performance_created
+                performance_existing += 0 if performance_created else 1
         url = str(((page.get("paging") or {}).get("next")) or "").strip()
 
     return {
         **_result(failed == 0, "facebook_history_import_complete" if failed == 0 else "facebook_history_import_partial", fetched, imported, existing),
         "failed_count": failed,
         "failures": failures[:20],
+        "performance_imported_count": performance_imported,
+        "performance_already_imported_count": performance_existing,
     }, 200 if failed == 0 else 207
 
 
@@ -110,11 +117,15 @@ def _evidence_payloads(post):
     message = str(post.get("message") or "").strip()
     media_url = str(post.get("full_picture") or "").strip()
     label = _campaign_label(message)
-    metrics = {
-        "reactions": _summary_total(post.get("reactions")),
-        "comments": _summary_total(post.get("comments")),
-        "shares": max(int((post.get("shares") or {}).get("count") or 0), 0),
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+    metric_evidence = {
+        "reactions": _metric_evidence("reactions", post.get("reactions"), facebook_post_id, retrieved_at, summary=True),
+        "comments": _metric_evidence("comments", post.get("comments"), facebook_post_id, retrieved_at, summary=True),
+        "shares": _metric_evidence("shares", post.get("shares"), facebook_post_id, retrieved_at, key="count"),
     }
+    for name in ("reach", "impressions", "messages_to_sam", "qualified_buyer_leads", "sales", "revenue"):
+        metric_evidence[name] = _unavailable_metric(name, facebook_post_id, retrieved_at, "unsupported")
+    metrics = {name: item["value"] for name, item in metric_evidence.items() if item["status"] == "verified"}
     notes = f"Imported read-only from Meta post {facebook_post_id}. Text: {message or '[no message]'}"
     if media_url:
         notes += f" Media reference: {media_url}"
@@ -137,17 +148,31 @@ def _evidence_payloads(post):
             "channel": "Facebook",
             "measurement_window": "historical_meta_import_snapshot",
             **metrics,
+            "metric_evidence": metric_evidence,
+            "evidence_source": "meta_graph_api",
+            "source_reference": facebook_post_id,
+            "retrieved_at": retrieved_at,
             "notes": f"Read-only Meta history import for {facebook_post_id}; reach, impressions, messages and sales remain unverified.",
             "recorded_by": "beacon_meta_history_import",
         },
     }
 
 
-def _summary_total(value):
+def _metric_evidence(name, container, source_reference, retrieved_at, key=None, summary=False):
+    raw = ((container or {}).get("summary") or {}).get("total_count") if summary and isinstance(container, dict) else (container or {}).get(key) if isinstance(container, dict) else None
+    if raw is None:
+        return _unavailable_metric(name, source_reference, retrieved_at, "missing")
     try:
-        return max(int(((value or {}).get("summary") or {}).get("total_count") or 0), 0)
+        value = int(raw)
+        if value < 0:
+            raise ValueError
     except (TypeError, ValueError):
-        return 0
+        return _unavailable_metric(name, source_reference, retrieved_at, "malformed")
+    return {"value": value, "status": "verified", "source": "meta_graph_api", "source_reference": source_reference, "retrieved_at": retrieved_at}
+
+
+def _unavailable_metric(name, source_reference, retrieved_at, status):
+    return {"value": None, "status": status, "source": "meta_graph_api", "source_reference": source_reference, "retrieved_at": retrieved_at, "metric": name}
 
 
 def _campaign_label(message):
