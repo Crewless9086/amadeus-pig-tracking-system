@@ -664,6 +664,27 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertFalse(decision["recover"])
         self.assertEqual(decision["reason"], "execution_alive_or_lease_not_expired")
 
+    @patch("scripts.charlie_mission_pickup._pid_alive", return_value=False)
+    def test_expired_lease_uses_recorded_owner_pid_not_new_runner_pid(self, _pid_alive):
+        decision = charlie_mission_pickup._stranded_recovery_decision(
+            {"mission_id": "CHARLIE-OLD-RUN", "metadata": {"execution_lease": {
+                "lease_id": "lease-old",
+                "holder": "CharlHP:133340",
+                "heartbeat_at": "2020-01-01T00:00:00+00:00",
+                "ttl_seconds": 900,
+            }}},
+            {
+                "status": "runner_active",
+                "active": True,
+                "process_alive": True,
+                "age_seconds": 5,
+                "last_mission_id": "",
+            },
+        )
+
+        self.assertTrue(decision["recover"])
+        self.assertEqual(decision["reason"], "execution_lease_owner_dead_and_expired")
+
     @patch("scripts.charlie_mission_pickup.get_mission")
     def test_dependency_must_be_terminal_before_pickup(self, get_mission):
         mission = {"metadata": {"depends_on_mission_ids": ["MISSION-DATA"]}}
