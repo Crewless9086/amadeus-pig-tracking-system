@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from modules.charlie import mission_store, vault_store
 from modules.charlie.mission_memory import replay_packet
 from modules.charlie.mission_quality import classify_known_failures, score_mission_quality
+from modules.charlie.final_readiness import evaluate_final_readiness
 
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
@@ -228,6 +229,15 @@ def analyze_mission_replay(mission):
     known_failures = classify_known_failures(str(review_packet), str(debug_focus), str(events))
     findings = []
     proposals = []
+    final_readiness = evaluate_final_readiness(mission)
+    if str(mission.get("status") or "").lower() == "pr_ready" and not final_readiness.get("can_authorize_release"):
+        findings.append(f"Mission entered owner review with pending readiness gates: {', '.join(final_readiness.get('pending_gate_keys') or [])}.")
+        proposals.append({
+            "target_area": "gates",
+            "problem_detected": "Owner review readiness was classified before mandatory release evidence was complete.",
+            "recommendation": "Use the deterministic final-readiness verdict and keep final approval locked until required gates pass.",
+            "applies_automatically": False,
+        })
     if debug_focus.get("blocked_reason"):
         findings.append(f"Mission blocked at {debug_focus.get('blocked_agent') or 'unknown agent'}: {debug_focus.get('blocked_reason')}")
         proposals.append({

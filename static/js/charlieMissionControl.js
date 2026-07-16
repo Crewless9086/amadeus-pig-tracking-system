@@ -967,6 +967,8 @@
     const workflow = Array.isArray(mission.agent_workflow) ? mission.agent_workflow : [];
     const blocked = mission.status === "blocked" || reviewPacket.review_status === "agent_blocked";
     const quality = reviewPacket.mission_quality || {};
+    const readiness = reviewPacket.final_readiness || {};
+    const canApprove = readiness.can_authorize_release === true;
     card.innerHTML = `
       <div class="charlie-mission-card-header">
         <div>
@@ -976,6 +978,7 @@
         <code>${escapeHtml(shortId(missionId))}</code>
       </div>
       ${blocked ? blockedReviewBanner(reviewPacket) : ""}
+      ${finalReadinessMarkup(readiness)}
       <dl class="charlie-mission-meta">
         <div><dt>Preview / visual proof</dt><dd>${localPreviewMarkup(localPreview, links, reviewPacket.visual_review || {})}</dd></div>
         <div><dt>PR / diff</dt><dd>${reviewLink(links.pr || links.diff || reviewPacket.pr_url || reviewPacket.diff_url)}</dd></div>
@@ -1010,7 +1013,7 @@
       <div class="charlie-mission-actions charlie-review-actions">
         <button type="button" data-open-owner-review>Open Review</button>
         <button type="button" data-open-replay-debug>Replay Debug</button>
-        <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+        <button type="button" data-review-decision="approve_final_release" ${canApprove ? "" : "disabled"}>${canApprove ? "Approve Release" : "Approval Locked"}</button>
         <button type="button" data-review-decision="send_back">Send Back</button>
         <button type="button" data-review-decision="pause">Pause</button>
         <button type="button" data-review-decision="reject">Reject</button>
@@ -1038,6 +1041,12 @@
     card.querySelector("[data-open-replay-debug]").addEventListener("click", () => loadReplayDebug(missionId, card));
     card.querySelector("[data-open-owner-review]").addEventListener("click", () => openOwnerReviewModal(mission));
     return card;
+  }
+
+  function finalReadinessMarkup(readiness) {
+    if (!readiness || !readiness.verdict) return "";
+    const gates = Array.isArray(readiness.gates) ? readiness.gates : [];
+    return `<div class="charlie-review-readiness"><strong>${escapeHtml(safeText(readiness.headline || "READINESS UNKNOWN"))}</strong><p>${escapeHtml(safeText(readiness.next_action || "Review required gates."))}</p><ul>${gates.filter((gate) => gate.required).map((gate) => `<li>${escapeHtml(safeText(gate.label))}: ${escapeHtml(safeText(gate.status))}</li>`).join("")}</ul></div>`;
   }
 
   function agentBadge(agent) {
@@ -1121,7 +1130,7 @@
           </label>
           <button type="button" data-review-refresh>Refresh Evidence</button>
           <div class="charlie-mission-actions charlie-review-actions">
-            <button type="button" data-review-decision="approve_final_release">Approve Final</button>
+            <button type="button" data-review-decision="approve_final_release" ${(reviewPacket.final_readiness || {}).can_authorize_release ? "" : "disabled"}>${(reviewPacket.final_readiness || {}).can_authorize_release ? "Approve Release" : "Approval Locked"}</button>
             <button type="button" data-review-decision="send_back">Send Back</button>
             <button type="button" data-review-decision="pause">Pause</button>
             <button type="button" data-review-decision="reject">Reject</button>

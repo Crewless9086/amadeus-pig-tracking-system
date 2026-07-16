@@ -933,6 +933,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
             "metadata": {
                 "review_packet": {
                     "changed_files": ["modules/sam.py"],
+                    "test_evidence": ["python -m unittest tests.test_sam: passed"],
                     "local_preview": {"url": "http://127.0.0.1:5000/sales/meat-leads"},
                     "visual_review": {
                         "contract": "charlie_visual_review_v1",
@@ -964,6 +965,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
             "", "", "", {
                 "review_packet": {
                     "summary": "Ready",
+                    "test_evidence": ["Focused tests passed."],
                     "visual_review": {
                         "ui_related": True,
                         "cleanup": {"required": True, "status": "pending_owner_decision", "local_path": ".charlie_runner/review_media/MISSION-1"},
@@ -993,6 +995,30 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(update_params["approval_level"], "LEVEL 4")
         self.assertIn("approve_final_release", update_params["metadata_json"])
         self.assertIn("cleanup_requested", update_params["metadata_json"])
+
+    def test_final_approval_is_refused_when_migration_is_not_approved(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890",
+            "Migration mission", "Migration mission", "P1", "feature build", "LEVEL 3",
+            "", "", "", {
+                "review_packet": {
+                    "summary": "Code complete.",
+                    "changed_files": ["supabase/migrations/202607160001_example.sql"],
+                    "test_evidence": ["Focused tests passed."],
+                },
+            }, now, now,
+        )
+        result, status_code = record_mission_review_decision(
+            "MISSION-1",
+            "approve_final_release",
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "final_approval_not_ready")
+        self.assertEqual(result["final_readiness"]["verdict"], "owner_action_required")
+        self.assertIn("migration_approval", result["final_readiness"]["pending_gate_keys"])
 
     def test_record_mission_review_decision_send_back_keeps_comments_for_next_runner_pickup(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)

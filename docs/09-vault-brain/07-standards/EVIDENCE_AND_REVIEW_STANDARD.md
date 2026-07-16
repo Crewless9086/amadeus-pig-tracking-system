@@ -26,6 +26,13 @@ Every build review must include:
 
 For dashboards and owner review surfaces:
 
+- Never infer final approval authority from `status=pr_ready` alone.
+- Use the deterministic final-readiness packet as the shared backend, CORE UI, and Telegram verdict.
+- Show the gate checklist and exact next action before presenting an approval control.
+- Lock final/release approval when tests, migration approval/application, required visual evidence, or other mandatory release evidence is pending.
+- Re-read and re-evaluate mission state on every owner action; packet snapshots are advisory and may be stale.
+- ANALYST records a review-readiness classification proposal whenever a mission reaches owner review with mandatory gates still pending.
+
 - show actual screen or local/live preview;
 - verify critical buttons are visible;
 - verify cards do not hide owner decisions;

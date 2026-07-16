@@ -124,6 +124,8 @@ Owner comments are mission instructions. When the owner sends a mission back fro
 
 Final approval is separate from build approval. LEVEL 3 can build, test, commit, push, and open a PR, but it must stop at owner review. Final approval must record `release_approved`, not normal `approved`; LEVEL 4 can merge/release only after the owner approves the final review packet and the deployment SOP checks are clean. Red-zone actions still require separate explicit approval even inside LEVEL 4.
 
+`pr_ready` means the build has entered the owner-review queue; it does not by itself mean the owner may approve release. Every review packet is evaluated by the deterministic `charlie-final-readiness-v1` gate. Owner surfaces must display one of `READY TO APPROVE`, `OWNER ACTION REQUIRED`, or `DO NOT APPROVE YET`, show every required gate, and hide or disable release approval unless `can_authorize_release=true`. Migration missions require explicit owner approval and recorded application before release authorization. UI missions require browser evidence. Production changes retain deployment and live-smoke gates for the release bridge. The review endpoint re-evaluates current mission state when clicked, so a stale card cannot bypass these rules.
+
 No mission should be considered complete merely because code was written. A mission is complete only when the owner accepts the final review result, or when the owner explicitly marks a non-release mission done.
 
 ## Status Model
