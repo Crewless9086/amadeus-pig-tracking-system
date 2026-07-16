@@ -9,6 +9,12 @@
 7. Manual or controlled execution evidence is recorded.
 8. Performance evidence informs future recommendations.
 
+## Campaign Outcome Evidence
+
+The authenticated owner may retrieve only provider-supported, allowlisted post metrics. Each metric retains its source, source reference, retrieval time, and evidence status. A numeric zero is verified only when the source explicitly returns zero; absent, unsupported, malformed, or provider-error values remain unavailable and cannot support recommendations or cost calculations.
+
+Provider snapshots use deterministic content identity so unchanged retries are idempotent and changed source values append a new snapshot. Missing-evidence review is owner-visible. Corrections append a new event with explicit supersession lineage and never mutate original evidence. Retrieval and correction grant no posting, sending, boosting, spending, sales creation, stock, reservation, or farm lifecycle authority.
+
 ## Owner-Gated Live-Stock Sales Lane
 
 `live_stock_sales` is separate from `live_stock_awareness`. It may prepare sales copy only when the current Supabase-first opportunity card is fresh, unblocked, sale-eligible, and carries a positive fulfilment cap, and when the effective price comes from `public.sales_pricing` with its inherited `SALES_PRICING` lineage.

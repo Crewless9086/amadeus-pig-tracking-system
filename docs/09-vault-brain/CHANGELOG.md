@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-16 - Beacon outcome evidence capture
+
+- Defined per-metric provenance and explicit verified, missing, unsupported, malformed, provider-error, and owner-correction evidence states.
+- Required deterministic provider snapshot identity, idempotent retries, append-only corrections, and owner-visible missing-evidence review.
+- Required recommendations and cost calculations to exclude unavailable evidence while preserving zero posting, sending, boosting, spending, sales, stock, reservation, and farm-lifecycle authority.
+
 ## 2026-07-15 - Butcher operational truth gate
 
 - Added a read-only, fail-closed Butcher truth projection across candidates, carcass commitments, cut promises, bank-confirmed deposits, processing stages, and packed-weight reconciliation.

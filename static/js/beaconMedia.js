@@ -86,6 +86,9 @@
     performanceRecord: byId("beacon_performance_record"),
     boostPacketResult: byId("beacon_boost_packet_result"),
     performanceList: byId("beacon_performance_event_list"),
+    historyImport: byId("beacon_history_import"), historyImportStatus: byId("beacon_history_import_status"),
+    correctionPanel: byId("beacon_correction_panel"), correctionContext: byId("beacon_correction_context"), correctionSourceId: byId("beacon_correction_source_id"),
+    correctionMetric: byId("beacon_correction_metric"), correctionValue: byId("beacon_correction_value"), correctionReference: byId("beacon_correction_reference"), correctionNotes: byId("beacon_correction_notes"), correctionSave: byId("beacon_correction_save"),
     commandRefresh: byId("beacon_command_refresh"),
     commandTruth: byId("beacon_command_truth"),
     commandUpdated: byId("beacon_command_updated"),
@@ -566,6 +569,42 @@
     }
   }
 
+  async function importFacebookHistory() {
+    elements.historyImport.disabled = true;
+    elements.historyImportStatus.textContent = "Retrieving...";
+    elements.historyImportStatus.dataset.state = "stale";
+    try {
+      const result = await fetchJson("/api/beacon/facebook-history-import", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({max_posts: 5000})});
+      elements.historyImportStatus.textContent = `${result.performance_imported_count || 0} new · ${result.performance_already_imported_count || 0} unchanged`;
+      elements.historyImportStatus.dataset.state = result.failed_count ? "blocked" : "ready";
+      await loadCampaignPerformance();
+    } finally { elements.historyImport.disabled = false; }
+  }
+
+  function evidenceItems(event) {
+    const evidence = event.metric_evidence || {};
+    return Object.entries(evidence).map(([name, item]) => ({name, ...(item || {})}));
+  }
+
+  function openCorrection(event, missing) {
+    elements.correctionPanel.classList.remove("hidden");
+    elements.correctionSourceId.value = event.performance_event_id;
+    elements.correctionContext.textContent = `Append-only correction for ${event.performance_event_id}. Original evidence remains unchanged.`;
+    elements.correctionMetric.innerHTML = missing.map((item) => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name.replaceAll("_", " "))} · ${escapeHtml(item.status)}</option>`).join("");
+    elements.correctionPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
+  }
+
+  async function saveCorrection() {
+    const source = state.performanceEvents.find((event) => event.performance_event_id === elements.correctionSourceId.value);
+    if (!source || !elements.correctionReference.value.trim() || elements.correctionValue.value === "") throw new Error("Evidence value and source reference are required.");
+    const metric = elements.correctionMetric.value;
+    const metricEvidence = {...(source.metric_evidence || {}), [metric]: {status: "owner_correction", value: Number(elements.correctionValue.value), source: "owner_correction", source_reference: elements.correctionReference.value.trim(), retrieved_at: new Date().toISOString()}};
+    const result = await fetchJson("/api/beacon/campaign-performance", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({manual_post_event_id: source.manual_post_event_id, publish_packet_id: source.publish_packet_id, channel: source.channel, measurement_window: source.measurement_window, source_reference: elements.correctionReference.value.trim(), supersedes_event_id: source.performance_event_id, metric_evidence: metricEvidence, notes: elements.correctionNotes.value, recorded_by: "authenticated_owner_admin_correction"})});
+    showMessage(`Correction appended: ${result.performance_event_id}`, "success");
+    elements.correctionPanel.classList.add("hidden");
+    await loadCampaignPerformance();
+  }
+
   function normalizedWindow(value) {
     return safe(value, "").toLowerCase().replace(/\s+/g, " ").trim();
   }
@@ -762,14 +801,23 @@
       elements.performanceList.innerHTML = `<div class="table-empty">No campaign performance evidence recorded yet.</div>`;
       return;
     }
-    elements.performanceList.innerHTML = events.map((event) => `
+    elements.performanceList.innerHTML = events.map((event, index) => {
+      const items = evidenceItems(event);
+      const missing = items.filter((item) => item.status !== "verified" && item.status !== "owner_correction");
+      return `
       <div class="beacon-performance-item">
         <strong>${escapeHtml(event.recommended_action || event.performance_event_id)}</strong>
         <span>${escapeHtml(safe(event.channel))} | ${escapeHtml(safe(event.measurement_window))} | ${escapeHtml(safe(event.created_at))}</span>
         <small>Messages ${escapeHtml(String(event.messages_to_sam ?? 0))} | qualified leads ${escapeHtml(String(event.qualified_buyer_leads ?? 0))} | spend ${escapeHtml(safe(event.spend_currency, "ZAR"))} ${escapeHtml(String(event.spend_amount ?? 0))}</small>
         <small>${escapeHtml(safe(event.recommendation_reason))}</small>
-      </div>
-    `).join("");
+        <div class="beacon-metric-grid">${items.map((item) => `<span class="beacon-metric-chip" data-state="${escapeHtml(item.status)}"><strong>${escapeHtml(item.name.replaceAll("_", " "))}</strong> ${item.value == null ? escapeHtml(item.status) : escapeHtml(String(item.value))} · ${escapeHtml(item.source || "source unavailable")}</span>`).join("")}</div>
+        ${missing.length ? `<button type="button" class="button-link button-link-secondary beacon-correct-evidence" data-index="${index}">Correct ${missing.length} missing metric${missing.length === 1 ? "" : "s"}</button>` : ""}
+      </div>`;
+    }).join("");
+    elements.performanceList.querySelectorAll(".beacon-correct-evidence").forEach((button) => button.addEventListener("click", () => {
+      const event = events[Number(button.dataset.index)];
+      openCorrection(event, evidenceItems(event).filter((item) => item.status !== "verified" && item.status !== "owner_correction"));
+    }));
   }
 
   function renderPolicy(policy) {
@@ -976,6 +1024,8 @@
       elements.ownerAlerts.dataset.state = "blocked";
     }));
     elements.performanceRecord.addEventListener("click", () => recordCampaignPerformance().catch((error) => showMessage(error.message)));
+    elements.historyImport.addEventListener("click", () => importFacebookHistory().catch((error) => { elements.historyImportStatus.textContent = error.message; elements.historyImportStatus.dataset.state = "blocked"; showMessage(error.message); }));
+    elements.correctionSave.addEventListener("click", () => saveCorrection().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.uploadForm.addEventListener("submit", (event) => uploadAsset(event).catch((error) => showMessage(error.message)));
