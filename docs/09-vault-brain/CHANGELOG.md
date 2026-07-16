@@ -1,5 +1,9 @@
 # Vault Brain Changelog
 
+## 2026-07-16
+
+- Documented Beacon campaign outcome retrieval evidence states, deterministic snapshot identity, append-only owner correction lineage, and unchanged no-post/no-spend authority boundary.
+
 ## 2026-07-15 - Butcher operational truth gate
 
 - Added a read-only, fail-closed Butcher truth projection across candidates, carcass commitments, cut promises, bank-confirmed deposits, processing stages, and packed-weight reconciliation.

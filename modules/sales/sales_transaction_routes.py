@@ -1078,6 +1078,9 @@ def beacon_campaign_performance():
         )
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     result, status_code = record_beacon_campaign_performance_event(payload)
     return jsonify(result), status_code
 

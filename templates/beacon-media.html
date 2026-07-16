@@ -424,6 +424,12 @@
             </div>
             <button type="button" id="beacon_performance_refresh" class="button-link button-link-secondary">Refresh Performance</button>
           </div>
+          <div class="beacon-evidence-import">
+            <div><strong>Retrieve supported Meta evidence</strong><p>Imports reactions, comments, and shares only. Reach, impressions, messages, leads, sales, and revenue stay labelled unavailable until evidence exists.</p></div>
+            <button type="button" id="beacon_history_import" class="button-link">Retrieve post metrics</button>
+            <span id="beacon_history_import_status" role="status">No retrieval run this session.</span>
+          </div>
+          <div id="beacon_missing_evidence_queue" class="beacon-missing-evidence-queue"><div class="table-empty">Load performance evidence to review missing outcomes.</div></div>
           <div class="beacon-media-review-grid">
             <div class="form-group">
               <label for="beacon_performance_manual_post_id">Manual Post Event ID</label>
