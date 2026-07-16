@@ -67,6 +67,7 @@ class RelayInstanceLock:
 
     def acquire(self) -> RelayResult:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._remove_stale_lock()
         try:
             self._fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             payload = f"pid={os.getpid()}\nstarted_at={int(time.time())}\n"
@@ -80,6 +81,24 @@ class RelayInstanceLock:
                 reason=f"Another relay appears active via {self.path}. Stop it or remove stale lock after confirming no relay is running.",
             )
 
+    def _remove_stale_lock(self) -> bool:
+        if not self.path.exists():
+            return False
+        pid = _lock_pid(self.path)
+        if pid and _pid_alive(pid):
+            return False
+        if not pid:
+            try:
+                if time.time() - self.path.stat().st_mtime < 30:
+                    return False
+            except FileNotFoundError:
+                return False
+        try:
+            self.path.unlink()
+            return True
+        except FileNotFoundError:
+            return False
+
     def release(self) -> None:
         if self._fd is not None:
             try:
@@ -91,6 +110,40 @@ class RelayInstanceLock:
             self.path.unlink()
         except FileNotFoundError:
             pass
+
+
+def _lock_pid(path: Path) -> int:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    for line in content.splitlines():
+        if line.startswith("pid="):
+            try:
+                return int(line.split("=", 1)[1].strip())
+            except ValueError:
+                return 0
+    return 0
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except (AttributeError, OSError):
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
 
 class TelegramRelayClient(build_relay_telegram_buttons.TelegramButtonClient):

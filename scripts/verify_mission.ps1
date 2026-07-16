@@ -123,6 +123,7 @@ if ($hasPython) {
     }
     $missionLoopTests = @(
         "tests.test_charlie_telegram_relay",
+        "tests.test_charlie_telegram_relay_watchdog",
         "tests.test_build_relay_notify",
         "tests.test_build_relay_telegram_buttons",
         "tests.test_charlie_mission_telegram",

@@ -7717,6 +7717,7 @@ def _run_codex_process(
         encoding="utf-8",
         errors="replace",
         cwd=cwd,
+        **_windowless_process_kwargs(),
     )
     try:
         if process.stdin:
@@ -7804,6 +7805,14 @@ def _run_codex_process(
         returncode = 0
         stderr = (stderr or "") + "\nCodex process was stopped after final artifact was written.\n"
     return subprocess.CompletedProcess(command, returncode, stdout or "", stderr or "")
+
+
+def _windowless_process_kwargs(platform_name=None):
+    """Keep local agent subprocesses from opening transient Windows consoles."""
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name != "nt":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
 
 
 def _refresh_execution_lease(mission_id, process_id=0, stage_status=""):
