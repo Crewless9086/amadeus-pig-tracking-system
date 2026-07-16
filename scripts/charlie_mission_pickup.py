@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
-from modules.charlie.runner_control import STALE_SECONDS, runner_status, write_runner_heartbeat
+from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
@@ -420,11 +420,27 @@ def _stranded_recovery_decision(mission, local_status):
     runner_not_active = local_status.get("active") is False and local_status.get("status") in {"runner_stale_or_stopped", "runner_not_started", "runner_code_stale"}
     lease = ((mission.get("metadata") or {}).get("execution_lease") or {}) if isinstance(mission, dict) else {}
     lease_expired = _execution_lease_expired(lease)
+    lease_pid = _execution_lease_pid(lease)
+    if lease_pid and not _pid_alive(lease_pid) and lease_expired:
+        return {"recover": True, "reason": "execution_lease_owner_dead_and_expired"}
     if process_dead and heartbeat_stale and lease_expired:
         return {"recover": True, "reason": "runner_process_dead_and_heartbeat_stale"}
     if runner_not_active and heartbeat_stale and lease_expired:
         return {"recover": True, "reason": "runner_inactive_and_heartbeat_stale"}
     return {"recover": False, "reason": "execution_alive_or_lease_not_expired"}
+
+
+def _execution_lease_pid(lease):
+    if not isinstance(lease, dict):
+        return 0
+    try:
+        process_id = int(lease.get("process_id") or 0)
+    except (TypeError, ValueError):
+        process_id = 0
+    if process_id > 0:
+        return process_id
+    match = re.search(r":(\d+)$", str(lease.get("holder") or ""))
+    return int(match.group(1)) if match else 0
 
 
 def _execution_lease_expired(lease, now=None):
