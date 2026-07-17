@@ -2,6 +2,14 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## CHARLIE Executive Runtime v2 Phases A-E - 2026-07-17
+
+- Supabase stores durable conversation goals, active subjects, evidence plans, pending follow-ups, tool outcomes, capability trust, and owner decisions.
+- CHARLIE performs bounded multi-tool reads, verifies mission writes, and supervises CORE through the existing policy-bound executive cycle.
+- Typed business operations include order inspection, owner-gated livestock sales-pack preparation, SAM/Beacon/farm status, Meta-safe Beacon draft preparation, and capability-trust reporting.
+- Browser speech and private Telegram voice are supported without storing raw audio. Due follow-ups and morning briefs use the durable executive outbox.
+- Customer sends, public posts, payments, reservations, lifecycle writes, credentials, and destructive production actions remain Charl-confirmed.
+
 ## CHARLIE Private Executive Interface - 2026-07-17
 
 - A single-owner, private-chat Telegram interface is implemented over the existing Render webhook ingress.

@@ -5,7 +5,7 @@
     summary: document.getElementById("summary"), identity: document.getElementById("identityChip"), runner: document.getElementById("runnerChip"),
     messages: document.getElementById("messages"), decisions: document.getElementById("decisionBody"), footer: document.getElementById("footer"),
     notice: document.getElementById("coreNotice"), refresh: document.getElementById("refreshBtn"), composer: document.getElementById("composer"),
-    input: document.getElementById("messageInput"), send: document.getElementById("sendBtn"),
+    input: document.getElementById("messageInput"), send: document.getElementById("sendBtn"), voice: document.getElementById("voiceBtn"),
   };
   const esc = (v) => String(v == null ? "" : v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   const count = (key) => Number(state.packet?.missions?.counts?.[key] || 0);
@@ -31,7 +31,7 @@
     const metrics = [
       ["CORE active", count("in_progress"), `${count("approved")} approved`], ["Owner review", count("pr_ready"), `${privateState.decisions?.length || 0} private decisions`],
       ["Blocked", count("blocked"), "CHARLIE filters genuine decisions"], ["Tool success", `${successRate}%`, `${evaluation.tool_runs || 0} durable runs`],
-      ["Clarifications", evaluation.clarifications || 0, `${evaluation.intents || 0} interpreted intents`], ["Recoveries", p.executive?.open_recoveries || 0, "executive control plane"],
+      ["Follow-ups", executiveContext.pending_follow_ups?.filter((item) => item.status === "pending").length || 0, `${evaluation.clarifications || 0} clarifications`], ["Recoveries", p.executive?.open_recoveries || 0, "executive control plane"],
     ];
     el.summary.innerHTML = metrics.map(([label, value, note]) => `<div class="metric"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(note)}</small></div>`).join("");
     el.identity.className = `chip ${p.policy?.enabled ? "green" : "red"}`; el.identity.innerHTML = `<span class="dot"></span>${p.policy?.enabled ? "Private identity active" : "Identity incomplete"}`;
@@ -81,7 +81,17 @@
     const response = await fetch(`/api/charlie/private/decisions/${encodeURIComponent(bundle)}`, { method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({decision}) });
     const result = await response.json().catch(() => ({})); if (!response.ok) { el.notice.className="status-band warn"; el.notice.textContent=result.status || `Decision failed (${response.status})`; return; } await load();
   }
+  function setupVoice() {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!el.voice || !Recognition) { if (el.voice) el.voice.classList.add("hidden"); return; }
+    const recognition = new Recognition(); recognition.lang = "en-ZA"; recognition.interimResults = false; recognition.continuous = false;
+    recognition.addEventListener("start", () => { el.voice.classList.add("listening"); el.voice.textContent = "Listening"; });
+    recognition.addEventListener("end", () => { el.voice.classList.remove("listening"); el.voice.textContent = "Voice"; });
+    recognition.addEventListener("result", (event) => { const transcript = event.results?.[0]?.[0]?.transcript || ""; if (transcript) { el.input.value = transcript; el.input.focus(); } });
+    recognition.addEventListener("error", () => { el.notice.className = "status-band warn"; el.notice.textContent = "Voice capture was unavailable. Type the instruction or use a Telegram voice note."; });
+    el.voice.addEventListener("click", () => recognition.start());
+  }
   el.composer.addEventListener("submit", (event) => { event.preventDefault(); const text = el.input.value.trim(); if (text) send(text); });
   document.querySelectorAll("[data-command]").forEach((button) => button.addEventListener("click", () => send(button.dataset.command)));
-  el.refresh.addEventListener("click", load); load(); setInterval(load, 30000);
+  el.refresh.addEventListener("click", load); setupVoice(); load(); setInterval(load, 30000);
 })();

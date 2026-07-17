@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 from modules.charlie.private_media import normalize_private_media, transcribe_voice
 from modules.charlie.private_executive import build_executive_plan, compose_executive_reply, context_after_plan, run_executive_plan
@@ -17,6 +18,7 @@ from modules.charlie.private_store import (
     update_thread_context,
 )
 from modules.charlie.private_tools import TOOL_FOR_INTENT, execute_private_tool
+from modules.charlie.executive_store import record_capability_outcome
 
 CALLBACK_PREFIX = "cp:"
 
@@ -87,6 +89,21 @@ def _handle_message(payload, binding, store, sender, environ):
         bundle = _approval_for_intent(binding["thread_id"], intent, store)
         reply = "I have prepared this as an owner decision instead of executing it. Confirm it from the decision card after checking the exact action."
         return _reply(binding, reply, store, sender, update_id, [], environ, reply_markup=_bundle_keyboard(bundle))
+    if intent["type"] == "schedule_follow_up":
+        delay = max(1, min(int(intent["args"].get("delay_minutes") or 1), 10080))
+        due_at = datetime.now(timezone.utc) + timedelta(minutes=delay)
+        open_context = dict(context.get("open_context") or {})
+        pending = list(open_context.get("pending_follow_ups") or [])
+        follow_up = {
+            "follow_up_id": stable_id("FOLLOWUP", binding["thread_id"], owner_message["message_id"], due_at.isoformat()),
+            "request": str(intent["args"].get("request") or "Check current executive status")[:1000],
+            "due_at": due_at.isoformat(), "status": "pending", "source_message_id": owner_message["message_id"],
+        }
+        open_context.update({"goal": follow_up["request"], "stage": "monitoring", "pending_follow_ups": [*pending, follow_up][-20:], "updated_at": datetime.now(timezone.utc).isoformat()})
+        updated, updated_status = store.update_thread_context(binding["thread_id"], open_context, summary=follow_up["request"])
+        result = {"success": updated_status < 400, "status": updated.get("status"), "summary": f"I will check {follow_up['request']} again in {delay} minute(s) and report through your private CHARLIE channel.", "follow_up": follow_up}
+        store.record_tool_execution(intent_record["intent_id"], "schedule_follow_up", authority["tier"], intent.get("args") or {}, result, status="succeeded" if updated_status < 400 else "failed")
+        return _reply(binding, result["summary"], store, sender, update_id, [], environ, status_code=updated_status)
     if intent["type"].startswith("read_") or intent["type"] == "executive_brief":
         plan = build_executive_plan(text, intent, context)
         evidence = run_executive_plan(plan, intent_record["intent_id"], recorder=store.record_tool_execution)
@@ -105,6 +122,13 @@ def _handle_message(payload, binding, store, sender, environ):
             "success": status < 400 and result.get("success") is not False, "status": status, "result": result,
         }])
         store.update_thread_context(binding["thread_id"], durable_context, summary=str(durable_context.get("goal") or "")[:1000])
+    if hasattr(store, "record_capability_outcome"):
+        store.record_capability_outcome(
+            f"private.{TOOL_FOR_INTENT.get(intent['type'], intent['type'])}",
+            clean_pass=status < 400 and result.get("success") is not False,
+            escaped_defect=status >= 500,
+            evidence_version="charlie_private_executive_v2",
+        )
     reply = result.get("summary") or "The action completed." if status < 400 else result.get("summary") or "I could not complete that safely."
     return _reply(binding, reply, store, sender, update_id, [], environ, status_code=status)
 
@@ -121,6 +145,11 @@ def _handle_callback(callback, binding, store, callback_answerer, sender, enviro
     decided, status = store.decide_bundle(parts[1], parts[2])
     if status >= 400:
         return _reply(binding, "That decision is stale, expired, or already handled. I made no change.", store, sender, f"callback-{callback.get('id')}", [], environ)
+    if hasattr(store, "record_capability_outcome"):
+        store.record_capability_outcome(
+            "charlie.owner_decision_quality", clean_pass=parts[2] == "approve",
+            human_edit=parts[2] == "reject", evidence_version="charlie_private_executive_v2",
+        )
     # Bundles deliberately record the decision. Red-zone execution remains outside this runtime.
     text = {"approve": "Decision approved and recorded. The protected action has not been executed automatically.", "reject": "Decision rejected and recorded.", "defer": "Decision deferred. I will leave it pending for your next review."}[parts[2]]
     return _reply(binding, text, store, sender, f"callback-{callback.get('id')}", [], environ)
@@ -201,3 +230,4 @@ class _StoreFacade:
     decide_bundle = staticmethod(decide_bundle)
     remember_preference = staticmethod(remember_preference)
     update_thread_context = staticmethod(update_thread_context)
+    record_capability_outcome = staticmethod(record_capability_outcome)

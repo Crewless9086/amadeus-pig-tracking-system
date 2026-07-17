@@ -76,6 +76,46 @@ class CharliePrivateToolsTests(unittest.TestCase):
         self.assertIn("stage builder", result["summary"])
         self.assertIn("42% progress", result["summary"])
 
+    @patch("modules.charlie.private_tools.get_order_operator_summary", return_value={"outstanding_actions": ["Generate quote"]})
+    @patch("modules.charlie.private_tools.get_order_detail", return_value={"order": {"Order_Status": "Draft", "Approval_Status": "Approved"}, "lines": [{}, {}]})
+    def test_order_read_returns_verified_operating_summary(self, _detail, _operator):
+        result, status = execute_private_tool("read_order", {"order_id": "ORD-2026-12BCCC"})
+        self.assertEqual(status, 200)
+        self.assertIn("2 line(s)", result["summary"])
+        self.assertIn("Generate quote", result["summary"])
+
+    @patch("modules.charlie.private_tools.prepare_live_stock_sales_pack")
+    def test_order_pack_is_prepare_only(self, prepare):
+        prepare.return_value = {"success": True, "status": "ready", "missing_fields": [], "errors": [], "customer_send_allowed": False, "reserves_stock": False}
+        result, status = execute_private_tool("prepare_order_pack", {"order_id": "ORD-2026-12BCCC"})
+        self.assertEqual(status, 200)
+        self.assertTrue(result["prepared_only"])
+        self.assertFalse(result["customer_send_allowed"])
+        self.assertFalse(result["reserves_stock"])
+
+    @patch("modules.charlie.private_tools.build_beacon_caption_suggestions")
+    def test_beacon_draft_never_posts(self, compose):
+        compose.return_value = ({"success": True, "suggestions": ["One", "Two", "Three"]}, 200)
+        result, status = execute_private_tool("prepare_beacon_draft", {"brief": "Healthy litter update", "campaign_lane": "live_stock_awareness"})
+        self.assertEqual(status, 200)
+        self.assertFalse(result["posts_publicly"])
+        self.assertIn("Option 1", result["summary"])
+
+    @patch("modules.charlie.private_tools.list_capability_trust", return_value=({"capabilities": [{"capability_key": "core.recovery", "tier": "delegated"}]}, 200))
+    def test_trust_status_is_read_only(self, _trust):
+        result, status = execute_private_tool("read_trust", {})
+        self.assertEqual(status, 200)
+        self.assertIn("1 delegated or auto", result["summary"])
+
+    @patch("modules.charlie.private_tools.plan_live_stock_next_action", return_value={"goal": "buy six piglets", "stage": "qualified", "next_action": "prepare_quote", "missing_fields": []})
+    @patch("modules.charlie.private_tools.load_chatwoot_conversation_history", return_value={"messages": [{}, {}]})
+    @patch("modules.charlie.private_tools.get_intake_context", return_value={"conversation_id": "1871", "items": []})
+    def test_sam_conversation_read_combines_intake_history_and_plan(self, _intake, _history, _plan):
+        result, status = execute_private_tool("read_sam_conversation", {"conversation_id": "1871"})
+        self.assertEqual(status, 200)
+        self.assertIn("buy six piglets", result["summary"])
+        self.assertIn("2 recent message", result["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

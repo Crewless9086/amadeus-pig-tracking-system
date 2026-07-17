@@ -24,6 +24,11 @@ READ_PLANS = {
     "read_beacon_status": ("read_beacon_status",),
     "read_orders_status": ("read_orders_status",),
     "read_farm_status": ("read_farm_status",),
+    "read_order": ("read_order",),
+    "prepare_order_pack": ("prepare_order_pack",),
+    "prepare_beacon_draft": ("prepare_beacon_draft",),
+    "read_trust": ("read_trust",),
+    "read_sam_conversation": ("read_sam_conversation",),
 }
 
 
@@ -132,6 +137,8 @@ def _subject(intent_type, args, context):
     mission_id = str(args.get("mission_id") or "").strip()
     if mission_id:
         return {"type": "mission", "mission_id": mission_id}
+    if args.get("order_id"):
+        return {"type": "order", "order_id": args.get("order_id")}
     existing = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
     active = existing.get("active_subject") if isinstance(existing.get("active_subject"), dict) else {}
     if intent_type == "read_mission" and active.get("mission_id"):

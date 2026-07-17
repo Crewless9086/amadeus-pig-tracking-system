@@ -49,6 +49,25 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan["type"], "protected_business_action")
         self.assertEqual(plan["risk_flags"], ["customer_send"])
 
+    def test_business_preparation_and_follow_up_intents_are_typed(self):
+        order = plan_owner_intent("Prepare all documents for ORD-2026-12BCCC", {}, environ={})
+        self.assertEqual(order["type"], "prepare_order_pack")
+        self.assertTrue(order["explicit_owner_command"])
+        beacon = plan_owner_intent("Draft a Beacon post about our litter growing well", {}, environ={})
+        self.assertEqual(beacon["type"], "prepare_beacon_draft")
+        self.assertEqual(beacon["args"]["campaign_lane"], "live_stock_awareness")
+        follow_up = plan_owner_intent("Check CORE again in 20 minutes", {}, environ={})
+        self.assertEqual(follow_up["type"], "schedule_follow_up")
+        self.assertEqual(follow_up["args"]["delay_minutes"], 20)
+
+    def test_order_read_is_automatic(self):
+        plan = plan_owner_intent("What is happening with ORD-2026-12BCCC?", {}, environ={})
+        self.assertEqual(plan["type"], "read_order")
+        self.assertFalse(plan["explicit_owner_command"])
+        conversation = plan_owner_intent("What is happening with conversation 1871?", {}, environ={})
+        self.assertEqual(conversation["type"], "read_sam_conversation")
+        self.assertEqual(conversation["args"]["conversation_id"], "1871")
+
 
 if __name__ == "__main__":
     unittest.main()

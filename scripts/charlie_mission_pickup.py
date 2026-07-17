@@ -25,7 +25,7 @@ from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
-from modules.charlie.private_briefing import queue_due_private_briefs
+from modules.charlie.private_briefing import queue_due_private_briefs, queue_due_private_followups
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import send_private_telegram_message
 from modules.charlie.executive_control import portfolio_priority
@@ -1505,6 +1505,7 @@ def _deliver_executive_outbox():
     policy = private_policy()
     if policy.get("enabled"):
         queue_due_private_briefs()
+        queue_due_private_followups()
     claimed, status_code = claim_pending_outbox(limit=10)
     if status_code >= 400:
         return claimed
