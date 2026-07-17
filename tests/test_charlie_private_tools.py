@@ -30,6 +30,11 @@ class CharliePrivateToolsTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(result["success"])
 
+    def test_read_mission_requires_identifier(self):
+        result, status = execute_private_tool("read_mission", {})
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "mission_id_required")
+
     @patch("modules.charlie.private_tools.live_stock_learning_scorecard")
     def test_sam_status_is_read_only_scorecard(self, scorecard):
         scorecard.return_value = ({"scorecard": {"total_events": 12, "owner_edit_events": 3}}, 200)

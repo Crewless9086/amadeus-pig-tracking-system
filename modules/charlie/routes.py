@@ -82,6 +82,8 @@ AGENT_WORKFORCE_CACHE = {"expires_at": 0.0, "packet": None}
 AGENT_WORKFORCE_CACHE_SECONDS = 30
 MISSION_CONTROL_CACHE = {"expires_at": 0.0, "packet": None}
 MISSION_CONTROL_CACHE_SECONDS = 15
+PRIVATE_DASHBOARD_CACHE = {"expires_at": 0.0, "packet": None}
+PRIVATE_DASHBOARD_CACHE_SECONDS = 15
 
 
 @charlie_bp.route("/charlie/build-relay/policy", methods=["GET"])
@@ -121,15 +123,25 @@ def charlie_private_dashboard_route():
     denied = require_owner_read_access()
     if denied:
         return denied
-    private, private_status = private_owner_snapshot(limit=request.args.get("limit", 40))
-    missions, mission_status = mission_status_summary()
-    executive, executive_status = executive_scorecard()
-    analyst, analyst_status = analyst_scorecard(limit=50)
+    refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    now = time.monotonic()
+    if not refresh and PRIVATE_DASHBOARD_CACHE.get("packet") and now < float(PRIVATE_DASHBOARD_CACHE.get("expires_at") or 0):
+        return jsonify({**PRIVATE_DASHBOARD_CACHE["packet"], "cache": "fresh"}), 200
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        private_future = pool.submit(private_owner_snapshot, limit=request.args.get("limit", 40))
+        mission_future = pool.submit(mission_status_summary)
+        executive_future = pool.submit(executive_scorecard)
+        analyst_future = pool.submit(analyst_scorecard, limit=50)
+        private, private_status = private_future.result()
+        missions, mission_status = mission_future.result()
+        executive, executive_status = executive_future.result()
+        analyst, analyst_status = analyst_future.result()
     runner = local_runner_status(include_git=False, include_ledger=False)
+    runner["local_runner_scope"] = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     policy = private_policy()
     component_status = {"private": private_status, "missions": mission_status, "executive": executive_status, "analyst": analyst_status}
     degraded = any(code >= 400 for code in component_status.values())
-    return jsonify({
+    packet = {
         "success": True,
         "status": "charlie_private_dashboard_degraded" if degraded else "charlie_private_dashboard_ready",
         "component_status": component_status,
@@ -139,7 +151,9 @@ def charlie_private_dashboard_route():
         "analyst": analyst,
         "runner": runner,
         "policy": {key: value for key, value in policy.items() if key not in {"token", "secret"}},
-    }), 200
+    }
+    PRIVATE_DASHBOARD_CACHE.update({"expires_at": time.monotonic() + PRIVATE_DASHBOARD_CACHE_SECONDS, "packet": packet})
+    return jsonify(packet), 200
 
 
 @charlie_bp.route("/charlie/private/message", methods=["POST"])
@@ -174,6 +188,7 @@ def charlie_private_message_route():
         headers={"X-Telegram-Bot-Api-Secret-Token": policy["secret"]},
         sender=web_sender,
     )
+    PRIVATE_DASHBOARD_CACHE.update({"expires_at": 0.0, "packet": None})
     return jsonify({**result, "reply": replies[-1] if replies else result.get("reply", ""), "channel": "owner_web"}), status_code
 
 
@@ -184,6 +199,7 @@ def charlie_private_decision_route(bundle_id):
         return denied
     decision = str((request.get_json(silent=True) or {}).get("decision") or "").strip().lower()
     result, status_code = decide_bundle(bundle_id, decision)
+    PRIVATE_DASHBOARD_CACHE.update({"expires_at": 0.0, "packet": None})
     return jsonify(result), status_code
 
 
