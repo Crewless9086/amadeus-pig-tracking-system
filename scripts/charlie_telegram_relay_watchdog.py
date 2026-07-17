@@ -49,7 +49,7 @@ def watchdog_tick(
     config_result = config_check() if config_check else validate_config(load_config())
     if config_result.action != "config_ok":
         result = {
-            "status": "relay_disabled" if config_result.action == "disabled" else "relay_config_failed",
+            "status": "relay_webhook_managed" if config_result.action == "webhook_managed" else ("relay_disabled" if config_result.action == "disabled" else "relay_config_failed"),
             "started": False,
             "reason": config_result.reason,
         }

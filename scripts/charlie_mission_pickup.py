@@ -47,6 +47,7 @@ CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
 ANALYST_THREAD = None
 ANALYST_THREAD_LOCK = threading.Lock()
 RECOVERED_STALE_MISSIONS = set()
+NOTIFICATION_FINGERPRINTS = {}
 BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
@@ -1458,8 +1459,15 @@ def _send_blocked_notification(title, message, mission_id=""):
 
 def _send_notification(level, title, message, mission_id=""):
     notification_mode = str(os.environ.get("CHARLIE_CORE_NOTIFICATION_MODE") or "all").strip().lower()
-    if notification_mode == "executive_only" and str(level or "").strip().lower() in {"running", "done", "info", "success"}:
+    normalized_level = str(level or "").strip().lower()
+    if notification_mode == "executive_only" and normalized_level not in {"needs_owner_approval", "hard_stop"}:
         return 0
+    fingerprint = (normalized_level, str(mission_id or ""), str(title or ""), str(message or ""))
+    now = time.time()
+    ttl = 1800 if normalized_level == "hard_stop" else 21600
+    if now - float(NOTIFICATION_FINGERPRINTS.get(fingerprint) or 0) < ttl:
+        return 0
+    NOTIFICATION_FINGERPRINTS[fingerprint] = now
     notification_level = {
         "running": "info",
         "pr_ready": "success",
@@ -1494,7 +1502,8 @@ def _send_notification(level, title, message, mission_id=""):
 
 
 def _deliver_executive_outbox():
-    if private_policy().get("enabled"):
+    policy = private_policy()
+    if policy.get("enabled"):
         queue_due_private_briefs()
     claimed, status_code = claim_pending_outbox(limit=10)
     if status_code >= 400:
@@ -1502,8 +1511,13 @@ def _deliver_executive_outbox():
     delivered = []
     for item in claimed.get("items", []):
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-        if item.get("event_type") == "private_executive_brief" and payload.get("private_text"):
-            _send_result, send_status = send_private_telegram_message(payload.get("chat_id"), payload.get("private_text"))
+        private_text = payload.get("private_text")
+        if not private_text and item.get("event_type") != "private_executive_brief":
+            mission_id = str(payload.get("mission_id") or "")
+            reason = str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required.")
+            private_text = f"CHARLIE needs your decision\n{mission_id}\n{reason}".strip()
+        if policy.get("enabled") and private_text:
+            _send_result, send_status = send_private_telegram_message(policy.get("owner_chat_id"), private_text)
             exit_code = 0 if send_status < 400 else 1
         else:
             exit_code = _send_notification(

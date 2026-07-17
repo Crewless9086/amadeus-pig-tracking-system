@@ -207,6 +207,8 @@ def load_config(environ: Mapping[str, str] | None = None) -> RelayConfig:
 
 
 def validate_config(config: RelayConfig) -> RelayResult:
+    if str(os.environ.get("CHARLIE_TELEGRAM_TRANSPORT") or "polling").strip().lower() == "webhook":
+        return RelayResult(ok=True, action="webhook_managed", reason="local_polling_disabled")
     if not config.enabled:
         return RelayResult(ok=True, action="disabled", reason="relay_disabled")
     if not config.token or not config.allowed_user_ids:

@@ -213,3 +213,49 @@ def remember_preference(key, value, source_message_id="", *, approved=False, dat
     except Exception as exc:
         return {"success": False, "status": "preference_write_failed", "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": status, "preference_id": preference_id}, 200
+
+
+def private_owner_snapshot(limit=30, database_url=None, connect_factory=None):
+    """Return the owner-facing private conversation, decisions, and learning evidence."""
+    try:
+        with _connect(_database_url(database_url), connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select b.binding_id,b.telegram_user_id,b.telegram_chat_id,b.last_seen_at,t.thread_id,t.summary
+                    from public.charlie_owner_bindings b
+                    left join public.charlie_conversation_threads t on t.binding_id=b.binding_id and t.status='active'
+                    where b.status='active' order by b.last_seen_at desc limit 1
+                """)
+                owner = cursor.fetchone()
+                messages = []
+                if owner and owner[4]:
+                    cursor.execute("""
+                        select message_id,role,content,media_json,metadata_json,created_at
+                        from public.charlie_conversation_messages where thread_id=%(thread)s
+                        order by created_at desc limit %(limit)s
+                    """, {"thread": owner[4], "limit": max(1, min(int(limit), 100))})
+                    messages = cursor.fetchall()
+                cursor.execute("""
+                    select bundle_id,status,title,summary,decisions_json,recommendation_json,expires_at,created_at
+                    from public.charlie_approval_bundles
+                    where status in ('pending','deferred') and expires_at>now()
+                    order by created_at desc limit 20
+                """)
+                bundles = cursor.fetchall()
+                cursor.execute("select count(*),count(*) filter (where status='succeeded'),count(*) filter (where status='failed') from public.charlie_tool_executions")
+                tool_counts = cursor.fetchone() or (0, 0, 0)
+                cursor.execute("select count(*),count(*) filter (where status='clarification') from public.charlie_owner_intents")
+                intent_counts = cursor.fetchone() or (0, 0)
+                cursor.execute("select preference_key,preference_value_json,updated_at from public.charlie_owner_preferences where status='approved' order by updated_at desc limit 20")
+                preferences = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "status": "private_snapshot_failed", "error_type": exc.__class__.__name__}, 503
+    return {
+        "success": True,
+        "status": "private_snapshot_ready",
+        "owner": ({"binding_id": owner[0], "telegram_user_id": owner[1], "telegram_chat_id": owner[2], "last_seen_at": owner[3].isoformat(), "thread_id": owner[4], "summary": owner[5]} if owner else None),
+        "messages": [{"message_id": row[0], "role": row[1], "content": row[2], "media": row[3] or [], "metadata": row[4] or {}, "created_at": row[5].isoformat()} for row in reversed(messages)],
+        "decisions": [{"bundle_id": row[0], "status": row[1], "title": row[2], "summary": row[3], "decisions": row[4] or [], "recommendation": row[5] or {}, "expires_at": row[6].isoformat(), "created_at": row[7].isoformat()} for row in bundles],
+        "preferences": [{"key": row[0], "value": row[1], "updated_at": row[2].isoformat()} for row in preferences],
+        "evaluation": {"tool_runs": tool_counts[0], "tool_successes": tool_counts[1], "tool_failures": tool_counts[2], "intents": intent_counts[0], "clarifications": intent_counts[1]},
+    }, 200

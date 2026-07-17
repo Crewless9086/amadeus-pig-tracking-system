@@ -8,7 +8,7 @@ This interface reduces owner workload without granting customer, money, stock, l
 
 ## Runtime Spine
 
-1. Telegram sends one signed webhook update to the existing Render ingress.
+1. Charl uses either the owner-only `/charlie` web interface or CHARLIE's dedicated Telegram bot. Telegram sends one signed webhook update to the Render ingress.
 2. The ingress requires the configured owner user ID, owner private chat ID, and webhook secret.
 3. `charlie_inbound_updates` claims the Telegram `update_id` before any reply or action.
 4. The owner message and media metadata are stored in the active private conversation thread.
@@ -27,17 +27,19 @@ Required:
 - `CHARLIE_PRIVATE_TELEGRAM_OWNER_USER_ID`
 - `CHARLIE_PRIVATE_TELEGRAM_OWNER_CHAT_ID`
 
-The private variables may temporarily fall back to the existing Build Relay bot token, secret, and first allowed owner ID. A dedicated private bot remains the recommended final identity.
+The private variables may temporarily fall back to the existing Build Relay bot token, secret, and first allowed owner ID. Production operation must use a dedicated private bot so CORE cannot compete with CHARLIE for the same updates or flood the owner channel.
 
 Optional:
 
 - `CHARLIE_CORE_NOTIFICATION_MODE=executive_only` suppresses routine running/done chatter while preserving genuine owner decisions.
+- `CHARLIE_TELEGRAM_TRANSPORT=webhook` prevents the legacy local polling relay and watchdog from starting against the webhook-managed bot.
 - Private LLM classification requires `CHARLIE_PRIVATE_LLM_ENABLED=1`, a valid `CHARLIE_PRIVATE_LLM_MODEL`, and `OPENAI_API_KEY`. Model output never grants authority.
 - Voice transcription requires `CHARLIE_PRIVATE_TRANSCRIPTION_ENABLED=1`, `CHARLIE_PRIVATE_TRANSCRIPTION_MODEL`, and `OPENAI_API_KEY`. Audio is downloaded in memory, size-limited, transcribed, and not persisted by CHARLIE.
 
 ## Supported Owner Commands
 
 - `status`, `queue`, `blocked`, `brief`, `workforce`, `analyst`, `decisions`
+- `business`, `sam`, `beacon`, `orders`, and `farm` provide typed read-only operating summaries.
 - Ask about a mission by ID.
 - Explicitly create a CORE mission.
 - Explicitly approve, pause, reject, or send back a CORE mission.
@@ -51,6 +53,13 @@ Non-delegated and red-zone requests become expiring approval records. A Telegram
 ## Briefings
 
 The first verified owner binding receives a default morning subscription at 06:30 Africa/Johannesburg. Due briefs enter the durable executive outbox once per local date and retain the existing retry/dead-letter behavior.
+
+## Owner Interfaces
+
+- `/charlie` is the private executive cockpit: durable conversation, business/CORE status, evidence metrics, approved preferences, and genuine owner decisions.
+- `/charlie-v2` remains CORE engineering control and detailed mission evidence. It is not the normal owner inbox.
+- `/charlie-agents` remains workforce readiness and training evidence.
+- Routine CORE stage events do not contact Charl in `executive_only` mode. Only deduplicated owner decisions and hard stops may surface through CHARLIE.
 
 ## Rollback
 

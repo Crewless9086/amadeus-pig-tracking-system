@@ -1,12 +1,13 @@
 import os
 import re
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_from_directory
 
-from modules.auth.owner_access import require_owner_read_access
+from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
 from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
@@ -67,6 +68,7 @@ from modules.charlie.executive_runtime import executive_mode, run_executive_cycl
 from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
+from modules.charlie.private_store import decide_bundle, private_owner_snapshot
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.beacon.workforce import beacon_workforce_scorecard
 
@@ -112,6 +114,77 @@ def charlie_private_policy_route():
         return denied
     policy = private_policy()
     return jsonify({"success": True, "status": "charlie_private_policy", "policy": {key: value for key, value in policy.items() if key not in {"token", "secret"}}}), 200
+
+
+@charlie_bp.route("/charlie/private/dashboard", methods=["GET"])
+def charlie_private_dashboard_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    private, private_status = private_owner_snapshot(limit=request.args.get("limit", 40))
+    missions, mission_status = mission_status_summary()
+    executive, executive_status = executive_scorecard()
+    analyst, analyst_status = analyst_scorecard(limit=50)
+    runner = local_runner_status(include_git=False, include_ledger=False)
+    policy = private_policy()
+    component_status = {"private": private_status, "missions": mission_status, "executive": executive_status, "analyst": analyst_status}
+    degraded = any(code >= 400 for code in component_status.values())
+    return jsonify({
+        "success": True,
+        "status": "charlie_private_dashboard_degraded" if degraded else "charlie_private_dashboard_ready",
+        "component_status": component_status,
+        "private": private,
+        "missions": missions,
+        "executive": executive,
+        "analyst": analyst,
+        "runner": runner,
+        "policy": {key: value for key, value in policy.items() if key not in {"token", "secret"}},
+    }), 200
+
+
+@charlie_bp.route("/charlie/private/message", methods=["POST"])
+def charlie_private_message_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    policy = private_policy()
+    if not policy.get("enabled"):
+        return jsonify({"success": False, "status": "private_charlie_not_ready"}), 503
+    text = str((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if not text:
+        return jsonify({"success": False, "status": "message_required"}), 400
+    replies = []
+
+    def web_sender(_chat_id, reply_text, **_kwargs):
+        replies.append(reply_text)
+        return {"success": True, "status": "web_reply_captured"}, 200
+
+    update_id = "WEB-" + uuid.uuid4().hex.upper()
+    payload = {
+        "update_id": update_id,
+        "message": {
+            "message_id": update_id,
+            "from": {"id": int(policy["owner_user_id"]), "username": "charlie_owner_web"},
+            "chat": {"id": int(policy["owner_chat_id"]), "type": "private"},
+            "text": text,
+        },
+    }
+    result, status_code = handle_private_telegram_webhook(
+        payload,
+        headers={"X-Telegram-Bot-Api-Secret-Token": policy["secret"]},
+        sender=web_sender,
+    )
+    return jsonify({**result, "reply": replies[-1] if replies else result.get("reply", ""), "channel": "owner_web"}), status_code
+
+
+@charlie_bp.route("/charlie/private/decisions/<bundle_id>", methods=["POST"])
+def charlie_private_decision_route(bundle_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    decision = str((request.get_json(silent=True) or {}).get("decision") or "").strip().lower()
+    result, status_code = decide_bundle(bundle_id, decision)
+    return jsonify(result), status_code
 
 
 @charlie_bp.route("/charlie/build-relay/missions", methods=["GET"])
