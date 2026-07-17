@@ -131,6 +131,12 @@ if ($hasPython) {
         "tests.test_model_budget_guard",
         "tests.test_model_routing_plan",
         "tests.test_trust_log"
+        "tests.test_charlie_private_policy"
+        "tests.test_charlie_private_planner"
+        "tests.test_charlie_private_runtime"
+        "tests.test_charlie_private_media"
+        "tests.test_charlie_private_tools"
+        "tests.test_charlie_private_migration"
     )
     foreach ($test in $missionLoopTests) {
         $testFile = "tests\" + (($test -replace '^tests\.', '') -replace '\.', '\') + ".py"

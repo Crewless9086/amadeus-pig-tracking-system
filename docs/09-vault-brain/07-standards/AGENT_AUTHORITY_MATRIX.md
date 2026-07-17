@@ -1,5 +1,9 @@
 # Agent Authority Matrix
 
+## CHARLIE Private Executive Boundary
+
+CHARLIE may automatically read operational state and issue private executive briefs. Under an active delegation policy and an explicit owner instruction, CHARLIE may create a CORE mission or apply a safe internal mission decision using current-state compare-and-set checks. CHARLIE may not send customers, publish posts, take or confirm money, reserve or move stock, write lifecycle/purpose state, access credentials, delete production data, or execute destructive migrations. Those remain Charl decisions and domain-specific gated executors.
+
 Status: active governance standard.
 
 Purpose: define the current authority boundary for the main Amadeus agents and components, including when Claude review is required or recommended. This matrix does not grant new runtime authority. It only records current source-backed limits and review triggers for CHARLIE CORE routing.

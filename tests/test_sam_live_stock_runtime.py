@@ -1514,6 +1514,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(packet["draft_ready"], packet)
         self.assertTrue(packet["owner_review_required"])
         self.assertEqual(packet["order_payload"]["requested_category"], "Weaner")
+        self.assertEqual(packet["order_payload"]["order_stream"], "Livestock")
         self.assertEqual(packet["order_payload"]["requested_weight_range"], "10_to_14_Kg")
         self.assertEqual(packet["order_payload"]["quoted_total"], 1500.0)
         self.assertTrue(packet["pricing"]["found"], packet["pricing"])

@@ -65,6 +65,8 @@ from modules.charlie.owner_approval_inbox import (
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
 from modules.charlie.executive_store import executive_scorecard
+from modules.charlie.private_policy import private_policy
+from modules.charlie.private_runtime import handle_private_telegram_webhook
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.beacon.workforce import beacon_workforce_scorecard
 
@@ -95,8 +97,20 @@ def charlie_build_relay_policy_route():
 @charlie_bp.route("/charlie/build-relay/telegram/webhook", methods=["POST"])
 def charlie_build_relay_telegram_webhook_route():
     payload = request.get_json(silent=True) or {}
-    result, status_code = handle_charlie_telegram_webhook(payload, headers=request.headers)
+    if private_policy().get("explicitly_enabled"):
+        result, status_code = handle_private_telegram_webhook(payload, headers=request.headers)
+    else:
+        result, status_code = handle_charlie_telegram_webhook(payload, headers=request.headers)
     return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/private/policy", methods=["GET"])
+def charlie_private_policy_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    policy = private_policy()
+    return jsonify({"success": True, "status": "charlie_private_policy", "policy": {key: value for key, value in policy.items() if key not in {"token", "secret"}}}), 200
 
 
 @charlie_bp.route("/charlie/build-relay/missions", methods=["GET"])

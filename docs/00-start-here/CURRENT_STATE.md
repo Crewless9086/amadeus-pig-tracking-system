@@ -2,6 +2,16 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## CHARLIE Private Executive Interface - 2026-07-17
+
+- A single-owner, private-chat Telegram interface is implemented over the existing Render webhook ingress.
+- Supabase stores verified owner bindings, conversation threads/messages, typed intents, idempotent tool executions, approval bundles, preferences, brief subscriptions, and inbound-update dedupe.
+- CHARLIE can read CORE/workforce/ANALYST state and perform explicit, bounded CORE mission creation and status decisions. Every mission write reloads current state and uses compare-and-set protection.
+- Telegram cannot execute shell commands. Customer sends, public posts, payments, reservations, stock/lifecycle writes, credentials, destructive migrations, and production deletion remain outside delegated authority.
+- Morning executive briefs use the durable notification outbox. `CHARLIE_CORE_NOTIFICATION_MODE=executive_only` removes routine CORE chatter.
+- Private LLM classification and voice transcription remain disabled unless their complete explicit configuration is present; deterministic planning is the operational floor.
+- Full operating and rollback instructions are in `docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md`.
+
 ## CHARLIE Executive Control Plane - 2026-07-17
 
 - The approved control-plane program is documented in `docs/06-operations/CHARLIE_EXECUTIVE_CONTROL_PLANE.md`.

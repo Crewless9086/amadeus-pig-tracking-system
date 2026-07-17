@@ -25,6 +25,9 @@ from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
+from modules.charlie.private_briefing import queue_due_private_briefs
+from modules.charlie.private_policy import private_policy
+from modules.charlie.private_runtime import send_private_telegram_message
 from modules.charlie.executive_control import portfolio_priority
 from modules.charlie.executive_store import claim_pending_outbox, complete_outbox, record_capability_outcome
 from modules.charlie.execution_bridge import (
@@ -1454,6 +1457,9 @@ def _send_blocked_notification(title, message, mission_id=""):
 
 
 def _send_notification(level, title, message, mission_id=""):
+    notification_mode = str(os.environ.get("CHARLIE_CORE_NOTIFICATION_MODE") or "all").strip().lower()
+    if notification_mode == "executive_only" and str(level or "").strip().lower() in {"running", "done", "info", "success"}:
+        return 0
     notification_level = {
         "running": "info",
         "pr_ready": "success",
@@ -1488,18 +1494,24 @@ def _send_notification(level, title, message, mission_id=""):
 
 
 def _deliver_executive_outbox():
+    if private_policy().get("enabled"):
+        queue_due_private_briefs()
     claimed, status_code = claim_pending_outbox(limit=10)
     if status_code >= 400:
         return claimed
     delivered = []
     for item in claimed.get("items", []):
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-        exit_code = _send_notification(
-            "needs_owner_approval",
-            "CHARLIE needs an owner decision",
-            str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required."),
-            mission_id=payload.get("mission_id", ""),
-        )
+        if item.get("event_type") == "private_executive_brief" and payload.get("private_text"):
+            _send_result, send_status = send_private_telegram_message(payload.get("chat_id"), payload.get("private_text"))
+            exit_code = 0 if send_status < 400 else 1
+        else:
+            exit_code = _send_notification(
+                "needs_owner_approval",
+                "CHARLIE needs an owner decision",
+                str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required."),
+                mission_id=payload.get("mission_id", ""),
+            )
         complete_outbox(item.get("outbox_id"), sent=exit_code == 0, error="" if exit_code == 0 else f"notify_exit_{exit_code}")
         delivered.append({"outbox_id": item.get("outbox_id"), "sent": exit_code == 0})
     return {"success": True, "status": "outbox_delivery_complete", "delivered": delivered}
