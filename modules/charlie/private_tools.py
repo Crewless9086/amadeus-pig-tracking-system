@@ -38,7 +38,8 @@ def _core_status(_args):
     summary, ss = mission_status_summary()
     local = runner_status(include_git=False, include_ledger=False)
     counts = summary.get("counts") or {}
-    text = f"CORE: {counts.get('in_progress',0)} active, {counts.get('approved',0)} approved, {counts.get('pr_ready',0)} ready for review, {counts.get('blocked',0)} blocked. Runner: {local.get('status','unknown')}."
+    runner_label = "healthy" if local.get("process_alive") and local.get("heartbeat_fresh") else local.get("status", "unknown")
+    text = f"CORE: {counts.get('in_progress',0)} active, {counts.get('approved',0)} approved, {counts.get('pr_ready',0)} ready for review, {counts.get('blocked',0)} blocked. Runner: {runner_label}."
     return {"success": ss < 400, "status": "core_status_ready", "summary": text, "counts": counts, "runner": local}, 200 if ss < 400 else ss
 
 
@@ -76,7 +77,8 @@ def _mission(args):
 def _workforce(_args):
     summary, ss = mission_status_summary()
     local = runner_status(include_git=False, include_ledger=False)
-    return {"success": ss < 400, "status": "workforce_ready", "summary": f"Workforce: CORE runner {local.get('status')}; active missions {(summary.get('counts') or {}).get('in_progress',0)}. Detailed agent training remains on /charlie-agents.", "link": "/charlie-agents"}, 200
+    runner_label = "healthy" if local.get("process_alive") and local.get("heartbeat_fresh") else local.get("status")
+    return {"success": ss < 400, "status": "workforce_ready", "summary": f"Workforce: CORE runner {runner_label}; active missions {(summary.get('counts') or {}).get('in_progress',0)}. Detailed agent training remains on /charlie-agents.", "link": "/charlie-agents"}, 200
 
 
 def _analyst(_args):
