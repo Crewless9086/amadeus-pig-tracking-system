@@ -42,7 +42,10 @@ def _deterministic_plan(text, context):
         return _intent("protected_business_action", .99, {"action_summary": text[:2000]}, [protected], explicit=True)
     if lower in {"/brief", "brief", "morning charlie", "what happened overnight", "give me the morning brief"} or "morning brief" in lower:
         return _intent("executive_brief", .99)
-    if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower or ("core" in lower and any(word in lower for word in ("happening", "status", "running", "doing", "progress"))):
+    active_mission_question = "mission" in lower and any(
+        phrase in lower for phrase in ("running now", "active mission", "currently running", "running mission", "working on now")
+    )
+    if active_mission_question or lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower or ("core" in lower and any(word in lower for word in ("happening", "status", "running", "doing", "progress"))):
         return _intent("read_core_status", .98)
     if lower in {"/business", "business", "business status", "how is the business"}:
         return _intent("read_business_status", .98)
@@ -115,7 +118,8 @@ def _mission_id(text, context):
     match = MISSION_ID_RE.search(text)
     if match:
         value = match.group(0).upper()
-        return value if value.startswith("CHARLIE-") else value
+        if value.startswith("CHARLIE-") or any(char.isdigit() for char in value):
+            return value
     open_context = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
     return str(open_context.get("mission_id") or "") if any(word in text.lower() for word in ("that mission", "it", "this one")) else ""
 

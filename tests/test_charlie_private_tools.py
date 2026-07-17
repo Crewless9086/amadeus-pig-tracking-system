@@ -54,10 +54,21 @@ class CharliePrivateToolsTests(unittest.TestCase):
 
     @patch("modules.charlie.private_tools.runner_status", return_value={"status": "runner_stale_or_stopped", "process_alive": True, "heartbeat_fresh": True})
     @patch("modules.charlie.private_tools.mission_status_summary", return_value=({"counts": {}}, 200))
-    def test_core_status_uses_process_and_heartbeat_health(self, _summary, _runner):
+    @patch("modules.charlie.private_tools.list_missions", return_value=({"missions": []}, 200))
+    def test_core_status_uses_process_and_heartbeat_health(self, _missions, _summary, _runner):
         result, status = execute_private_tool("read_core_status", {})
         self.assertEqual(status, 200)
         self.assertIn("Runner: healthy", result["summary"])
+
+    @patch("modules.charlie.private_tools.runner_status", return_value={"status": "runner_active", "process_alive": True, "heartbeat_fresh": True, "current_agent": "builder"})
+    @patch("modules.charlie.private_tools.mission_status_summary", return_value=({"counts": {"in_progress": 1}}, 200))
+    @patch("modules.charlie.private_tools.list_missions", return_value=({"missions": [{"mission_id": "M-12345678", "title": "Improve CORE", "metadata": {"progress_pct": 42}}]}, 200))
+    def test_core_status_names_active_mission(self, _missions, _summary, _runner):
+        result, status = execute_private_tool("read_core_status", {})
+        self.assertEqual(status, 200)
+        self.assertIn("Improve CORE [M-12345678]", result["summary"])
+        self.assertIn("stage builder", result["summary"])
+        self.assertIn("42% progress", result["summary"])
 
 
 if __name__ == "__main__":

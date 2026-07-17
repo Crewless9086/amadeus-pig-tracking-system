@@ -10,6 +10,12 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan_owner_intent("/next", {}, environ={})["type"], "read_queue")
         self.assertEqual(plan_owner_intent("/review", {}, environ={})["type"], "read_decisions")
         self.assertEqual(plan_owner_intent("What is happening with CORE?", {}, environ={})["type"], "read_core_status")
+        self.assertEqual(plan_owner_intent("What mission is running now?", {}, environ={})["type"], "read_core_status")
+        self.assertEqual(plan_owner_intent("What is the active mission now?", {}, environ={})["type"], "read_core_status")
+
+    def test_plain_words_are_not_mission_ids(self):
+        result = plan_owner_intent("You do not need my permission for this", {}, environ={})
+        self.assertNotEqual(result.get("args", {}).get("mission_id"), "PERMISSION")
 
     def test_business_department_reads_are_typed(self):
         expected = {
