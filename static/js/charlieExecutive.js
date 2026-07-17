@@ -34,8 +34,10 @@
     ];
     el.summary.innerHTML = metrics.map(([label, value, note]) => `<div class="metric"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(note)}</small></div>`).join("");
     el.identity.className = `chip ${p.policy?.enabled ? "green" : "red"}`; el.identity.innerHTML = `<span class="dot"></span>${p.policy?.enabled ? "Private identity active" : "Identity incomplete"}`;
-    const runnerActive = runner.active === true; el.runner.className = `chip ${runnerActive ? "green" : "red"}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerActive ? "active" : "stopped"}`;
-    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = runnerActive ? `CORE is ${runner.operating_state || "active"}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE is intentionally stopped while notification separation is being completed.";
+    const runnerHealthy = runner.active === true || (runner.process_alive === true && runner.heartbeat_fresh === true);
+    const runnerLabel = runner.active === true ? "working" : (runnerHealthy ? "ready" : "stopped");
+    el.runner.className = `chip ${runnerHealthy ? "green" : "red"}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
+    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.";
     renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || []);
     el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Memory</span><b>${privateState.owner ? "Durable" : "Waiting owner"}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
   }

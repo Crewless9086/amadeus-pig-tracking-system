@@ -47,6 +47,13 @@ class CharliePrivateToolsTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["counts"], {"total": 2, "active": 1, "ready": 2})
 
+    @patch("modules.charlie.private_tools.runner_status", return_value={"status": "runner_stale_or_stopped", "process_alive": True, "heartbeat_fresh": True})
+    @patch("modules.charlie.private_tools.mission_status_summary", return_value=({"counts": {}}, 200))
+    def test_core_status_uses_process_and_heartbeat_health(self, _summary, _runner):
+        result, status = execute_private_tool("read_core_status", {})
+        self.assertEqual(status, 200)
+        self.assertIn("Runner: healthy", result["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()
