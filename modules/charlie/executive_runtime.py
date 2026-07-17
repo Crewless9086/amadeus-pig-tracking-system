@@ -29,7 +29,7 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
     mode = executive_mode()
     if mode == "off":
         return {"success": True, "status": "executive_disabled", "mode": mode}, 200
-    loaded, loaded_status = list_missions(limit=100, database_url=database_url, connect_factory=connect_factory)
+    loaded, loaded_status = _load_executive_missions(database_url=database_url, connect_factory=connect_factory)
     context, context_status = load_executive_context(database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400 or context_status >= 400:
         return {"success": False, "status": "executive_context_unavailable", "mode": mode, "mission_status": loaded_status, "policy_status": context_status}, 503
@@ -188,6 +188,23 @@ def _child_id(parent_id, rows):
 def _finish_failure(command, command_id, result, error, database_url, connect_factory):
     complete_control_command(command_id, success=False, result=result, error=error, database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": error, "result": result}
+
+
+def _load_executive_missions(*, database_url=None, connect_factory=None):
+    """Load every actionable queue independently so old terminal rows cannot hide work."""
+    statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new")
+    missions = []
+    seen = set()
+    for status in statuses:
+        result, status_code = list_missions(status=status, limit=100, database_url=database_url, connect_factory=connect_factory)
+        if status_code >= 400:
+            return {"success": False, "status": "executive_mission_bucket_unavailable", "failed_bucket": status, "missions": []}, status_code
+        for mission in result.get("missions", []):
+            mission_id = mission.get("mission_id")
+            if mission_id and mission_id not in seen:
+                seen.add(mission_id)
+                missions.append(mission)
+    return {"success": True, "status": "ok", "missions": missions}, 200
 
 
 def _execute_delegated_review(command, command_id, database_url, connect_factory):

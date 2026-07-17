@@ -37,6 +37,17 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         cycle = build_executive_cycle([review], DELEGATED_POLICIES, runner={"active_mission_id": "ACTIVE"})
         self.assertIn("verify_and_delegate_review", [item["action"] for item in cycle["commands"]])
 
+    def test_delegated_review_retries_in_a_later_hour(self):
+        review = {
+            "mission_id": "M-REVIEW", "status": "pr_ready", "title": "Docs", "raw_text": "Docs", "approval_level": "LEVEL 3",
+            "metadata": {"review_packet": {"review_status": "ready_for_owner_review", "changed_files": ["docs/a.md"], "test_evidence": ["pass"], "pr_url": "https://github.com/o/r/pull/1"}},
+        }
+        first = build_executive_cycle([review], DELEGATED_POLICIES, runner={"active_mission_id": "ACTIVE"}, now=datetime(2026, 7, 17, 20, tzinfo=timezone.utc))
+        later = build_executive_cycle([review], DELEGATED_POLICIES, runner={"active_mission_id": "ACTIVE"}, now=datetime(2026, 7, 17, 21, tzinfo=timezone.utc))
+        first_key = next(item["idempotency_key"] for item in first["commands"] if item["action"] == "verify_and_delegate_review")
+        later_key = next(item["idempotency_key"] for item in later["commands"] if item["action"] == "verify_and_delegate_review")
+        self.assertNotEqual(first_key, later_key)
+
     def test_cycle_maintains_three_mission_runway(self):
         missions = [{"mission_id": f"M-{i}", "status": "new", "title": f"Safe {i}", "raw_text": "Improve docs", "urgency": "P1", "approval_level": "LEVEL 3", "metadata": {}} for i in range(5)]
         cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})

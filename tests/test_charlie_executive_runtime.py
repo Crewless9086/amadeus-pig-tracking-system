@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from modules.charlie.executive_runtime import (
-    _execute_decomposition, _execute_delegated_review, _execute_queue_selection,
+    _execute_decomposition, _execute_delegated_review, _execute_queue_selection, _load_executive_missions,
     _execute_recovery, run_executive_cycle,
 )
 
@@ -19,6 +19,16 @@ POLICY = {"policy_id": "POLICY-1", "capability": "core.internal_recovery", "auth
 
 
 class CharlieExecutiveRuntimeTests(unittest.TestCase):
+    @patch("modules.charlie.executive_runtime.list_missions")
+    def test_executive_loads_each_actionable_bucket_so_reviews_are_not_hidden(self, list_missions):
+        def bucket(*, status, **_kwargs):
+            return ({"missions": [{"mission_id": f"M-{status}", "status": status}]}, 200)
+        list_missions.side_effect = bucket
+        result, status = _load_executive_missions()
+        self.assertEqual(status, 200)
+        self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new"})
+        self.assertEqual(list_missions.call_count, 6)
+
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.query_pr_state")
