@@ -36,11 +36,32 @@ def execute_private_tool(intent_type, args):
 
 def _core_status(_args):
     summary, ss = mission_status_summary()
+    active_result, active_status = list_missions(status="in_progress", limit=5, compact=False)
     local = runner_status(include_git=False, include_ledger=False)
     counts = summary.get("counts") or {}
     runner_label = "healthy" if local.get("process_alive") and local.get("heartbeat_fresh") else local.get("status", "unknown")
     text = f"CORE: {counts.get('in_progress',0)} active, {counts.get('approved',0)} approved, {counts.get('pr_ready',0)} ready for review, {counts.get('blocked',0)} blocked. Runner: {runner_label}."
-    return {"success": ss < 400, "status": "core_status_ready", "summary": text, "counts": counts, "runner": local}, 200 if ss < 400 else ss
+    active = active_result.get("missions") or []
+    if active:
+        lines = []
+        for mission in active:
+            metadata = mission.get("metadata") or {}
+            packet = metadata.get("review_packet") or {}
+            progress = metadata.get("progress_pct") or packet.get("progress_pct") or mission.get("progress_pct")
+            stage = metadata.get("current_agent") or packet.get("current_agent") or packet.get("responsible_stage") or local.get("current_agent")
+            detail = f"{mission.get('title') or mission.get('mission_id')} [{mission.get('mission_id')}]"
+            if stage:
+                detail += f", stage {stage}"
+            if progress is not None:
+                detail += f", {progress}% progress"
+            lines.append(detail)
+        text += " Active now: " + "; ".join(lines) + "."
+    elif local.get("process_alive") and local.get("last_mission_id"):
+        text += f" The local runner last reported mission {local['last_mission_id']}, but Supabase currently has no mission marked in_progress."
+    else:
+        text += " No mission is currently marked in_progress."
+    ok = ss < 400 and active_status < 400
+    return {"success": ok, "status": "core_status_ready", "summary": text, "counts": counts, "active_missions": active, "runner": local}, 200 if ok else max(ss, active_status)
 
 
 def _queue(_args):
