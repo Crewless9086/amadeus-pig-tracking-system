@@ -5817,7 +5817,10 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
     reconciliation = resolve_effective_agent_results(
         artifacts,
         manifest,
-        workflow=mission.get("agent_workflow"),
+        # A targeted resume intentionally omits already-completed prefix stages.
+        # Validate every artifact participating in this candidate without
+        # manufacturing missing-evidence blockers for stages outside this run.
+        workflow=[{"agent": agent} for agent in sequence if agent in artifacts],
         judgement=_judgement_evidence_quality_gate,
     )
     if reconciliation.get("active_blockers"):

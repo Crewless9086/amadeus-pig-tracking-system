@@ -13,6 +13,25 @@ def mission(ui=False, visual=False):
     }
 
 
+def reconciled_mission(*, active_blockers=None, requires_revalidation=None, candidate_revision="abc123"):
+    value = mission()
+    value["status"] = "pr_ready"
+    value["metadata"]["review_packet"].update({
+        "tested_revision": "abc123",
+        "recommended_owner_decision": "approve_final_release",
+        "errors": ["Historical pre-build concern that a later candidate resolved."],
+        "bugs": ["Historical implementation finding retained for audit."],
+        "evidence_reconciliation": {
+            "version": "charlie_evidence_reconciliation_v1",
+            "candidate_manifest": {"source_commit": candidate_revision},
+            "active_blockers": active_blockers or [],
+            "requires_revalidation": requires_revalidation or [],
+            "resolved_findings": [{"state": "resolved", "finding": "Historical concern"}],
+        },
+    })
+    return value
+
+
 def pr(mergeable="MERGEABLE", state="OPEN", conclusion="SUCCESS"):
     return {
         "success": True,
@@ -60,6 +79,45 @@ class CharliePrReconciliationTests(unittest.TestCase):
         result = reconciliation_decision(value, pr(), {"PARENT-1": "pr_ready"})
         self.assertEqual(result["action"], "wait_dependencies")
         self.assertEqual(result["target_status"], "approved")
+
+    def test_current_candidate_pass_ignores_historical_prebuild_findings(self):
+        result = reconciliation_decision(reconciled_mission(), pr())
+
+        self.assertEqual(result["action"], "mark_pr_ready")
+        self.assertTrue(result["readiness"]["passed"])
+
+    def test_current_candidate_active_blocker_still_queues_recovery(self):
+        value = reconciled_mission(active_blockers=[{"agent": "risk_agent", "reason": "current risk"}])
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["action"], "queue_recovery")
+        self.assertIn("unresolved_review_findings", result["readiness"]["reasons"])
+
+    def test_changed_pr_head_requires_candidate_revalidation(self):
+        value = reconciled_mission(candidate_revision="old-head")
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["action"], "queue_recovery")
+        self.assertIn("candidate_revision_mismatch", result["readiness"]["reasons"])
+
+    def test_candidate_refresh_requirement_still_queues_recovery(self):
+        value = reconciled_mission(requires_revalidation=[{"agent": "tester", "reason": "different_revision"}])
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["action"], "queue_recovery")
+        self.assertIn("evidence_revalidation_required", result["readiness"]["reasons"])
+
+    def test_legacy_explicit_findings_remain_strict(self):
+        value = mission()
+        value["metadata"]["review_packet"]["bugs"] = ["Still unresolved"]
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["action"], "queue_recovery")
+        self.assertIn("unresolved_review_findings", result["readiness"]["reasons"])
 
 
 if __name__ == "__main__":

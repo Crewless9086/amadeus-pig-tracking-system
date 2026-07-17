@@ -35,8 +35,7 @@ def validate_review_readiness(mission, pr_state, dependency_states=None, release
     recommendation = str(packet.get("recommended_owner_decision") or "approve_final_release").strip().lower()
     if recommendation not in {"approve", "approve_final", "approve_final_release"}:
         reasons.append("owner_approval_not_recommended")
-    if packet.get("errors") or packet.get("bugs") or packet.get("unresolved_blockers"):
-        reasons.append("unresolved_review_findings")
+    reasons.extend(_review_finding_reasons(packet, head_sha))
 
     governance = (mission.get("metadata") or {}).get("mission_governance") if isinstance(mission.get("metadata"), dict) else {}
     matrix = governance.get("acceptance_matrix") if isinstance(governance, dict) and isinstance(governance.get("acceptance_matrix"), list) else []
@@ -103,6 +102,26 @@ def _mission_ui_related(mission):
     core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
     truth = core.get("project_truth") if isinstance(core.get("project_truth"), dict) else {}
     return str(truth.get("workflow_template") or "").strip() == "ui_product_build"
+
+
+def _review_finding_reasons(packet, head_sha):
+    """Use candidate-bound evidence when available; retain strict legacy behavior."""
+    reconciliation = packet.get("evidence_reconciliation") if isinstance(packet.get("evidence_reconciliation"), dict) else {}
+    if not reconciliation.get("version"):
+        return ["unresolved_review_findings"] if (
+            packet.get("errors") or packet.get("bugs") or packet.get("unresolved_blockers")
+        ) else []
+
+    reasons = []
+    manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
+    candidate_revision = str(manifest.get("source_commit") or "").strip()
+    if candidate_revision and head_sha and candidate_revision != head_sha:
+        reasons.append("candidate_revision_mismatch")
+    if reconciliation.get("active_blockers"):
+        reasons.append("unresolved_review_findings")
+    if reconciliation.get("requires_revalidation"):
+        reasons.append("evidence_revalidation_required")
+    return reasons
 
 
 def _check_conclusion(item):
