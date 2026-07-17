@@ -42,7 +42,7 @@ def _deterministic_plan(text, context):
         return _intent("protected_business_action", .99, {"action_summary": text[:2000]}, [protected], explicit=True)
     if lower in {"/brief", "brief", "morning charlie", "what happened overnight", "give me the morning brief"} or "morning brief" in lower:
         return _intent("executive_brief", .99)
-    if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower:
+    if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower or ("core" in lower and any(word in lower for word in ("happening", "status", "running", "doing", "progress"))):
         return _intent("read_core_status", .98)
     if lower in {"/business", "business", "business status", "how is the business"}:
         return _intent("read_business_status", .98)
@@ -103,9 +103,12 @@ def _llm_plan(text, context, policy, *, environ=None, http_open=None):
     intent_type = str(result.get("type") or "clarify")
     if intent_type not in ALLOWED_INTENTS:
         intent_type = "clarify"
+    args = result.get("args") if isinstance(result.get("args"), dict) else {}
+    if intent_type == "read_mission" and not str(args.get("mission_id") or "").strip():
+        return _intent("clarify", .5, {"question": "Which CORE mission do you want me to inspect? Send its mission ID."})
     # A classifier may identify an action, but only deterministic parsing of the
     # owner's exact text can establish explicit command authority.
-    return _intent(intent_type, min(max(float(result.get("confidence") or 0), 0), 1), result.get("args") or {}, result.get("risk_flags") or [], False)
+    return _intent(intent_type, min(max(float(result.get("confidence") or 0), 0), 1), args, result.get("risk_flags") or [], False)
 
 
 def _mission_id(text, context):

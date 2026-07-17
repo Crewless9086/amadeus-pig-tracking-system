@@ -34,10 +34,11 @@
     ];
     el.summary.innerHTML = metrics.map(([label, value, note]) => `<div class="metric"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(note)}</small></div>`).join("");
     el.identity.className = `chip ${p.policy?.enabled ? "green" : "red"}`; el.identity.innerHTML = `<span class="dot"></span>${p.policy?.enabled ? "Private identity active" : "Identity incomplete"}`;
+    const cloudRunnerUnknown = runner.local_runner_scope === "render_cannot_see_laptop_runner";
     const runnerHealthy = runner.active === true || (runner.process_alive === true && runner.heartbeat_fresh === true);
-    const runnerLabel = runner.active === true ? "working" : (runnerHealthy ? "ready" : "stopped");
-    el.runner.className = `chip ${runnerHealthy ? "green" : "red"}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
-    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.";
+    const runnerLabel = cloudRunnerUnknown ? "local status unknown" : (runner.active === true ? "working" : (runnerHealthy ? "ready" : "stopped"));
+    el.runner.className = `chip ${runnerHealthy ? "green" : (cloudRunnerUnknown ? "" : "red")}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
+    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = cloudRunnerUnknown ? `Render cannot inspect the laptop heartbeat. Supabase shows ${count("in_progress")} active mission(s), ${count("blocked")} blocked and ${count("pr_ready")} ready for review.` : (runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.");
     renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || []);
     el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Memory</span><b>${privateState.owner ? "Durable" : "Waiting owner"}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
   }
@@ -66,10 +67,11 @@
 
   async function send(text) {
     el.send.disabled = true; el.input.disabled = true;
+    el.messages.insertAdjacentHTML("beforeend", `<div class="message owner">${esc(text)}<div class="meta">owner | sending</div></div>`); el.messages.scrollTop = el.messages.scrollHeight;
     try {
       const response = await fetch("/api/charlie/private/message", { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
       const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.status || `HTTP ${response.status}`);
-      el.input.value = ""; await load();
+      el.input.value = ""; if (result.reply) { el.messages.insertAdjacentHTML("beforeend", `<div class="message">${esc(result.reply)}<div class="meta">charlie | now</div></div>`); el.messages.scrollTop = el.messages.scrollHeight; } load();
     } catch (error) { el.notice.className = "status-band warn"; el.notice.textContent = `CHARLIE could not respond: ${error.message}`; }
     finally { el.send.disabled = false; el.input.disabled = false; el.input.focus(); }
   }

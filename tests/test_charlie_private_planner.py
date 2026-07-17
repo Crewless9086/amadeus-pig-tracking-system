@@ -9,6 +9,7 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan_owner_intent("give me the morning brief", {}, environ={})["type"], "executive_brief")
         self.assertEqual(plan_owner_intent("/next", {}, environ={})["type"], "read_queue")
         self.assertEqual(plan_owner_intent("/review", {}, environ={})["type"], "read_decisions")
+        self.assertEqual(plan_owner_intent("What is happening with CORE?", {}, environ={})["type"], "read_core_status")
 
     def test_business_department_reads_are_typed(self):
         expected = {

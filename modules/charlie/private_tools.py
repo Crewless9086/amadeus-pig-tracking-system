@@ -63,8 +63,13 @@ def _blocked(_args):
 
 
 def _mission(args):
-    result, status = get_mission(args.get("mission_id"))
+    mission_id = str(args.get("mission_id") or "").strip()
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required", "summary": "Send me the CORE mission ID you want inspected."}, 400
+    result, status = get_mission(mission_id)
     mission = result.get("mission") or {}
+    if status >= 400 or not mission:
+        return {"success": False, "status": "mission_not_found", "summary": f"I could not find CORE mission {mission_id}."}, 404 if status < 500 else status
     packet = ((mission.get("metadata") or {}).get("review_packet") or {})
     text = f"{mission.get('title') or mission.get('mission_id')} is {mission.get('status')}."
     if packet.get("blocked_reason"):
