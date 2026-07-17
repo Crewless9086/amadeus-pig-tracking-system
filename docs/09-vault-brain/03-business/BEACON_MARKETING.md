@@ -12,6 +12,8 @@ Beacon projects append-only campaign performance evidence into an authenticated 
 
 STOP, CHANGE, BOOST, and REUSE classifications are server-owned recommendations. The dashboard may prepare an authenticated campaign-decision or CORE-work review packet, but preparation creates neither decision nor mission and grants no approval, posting, sending, spending, ordering, reservation, stock, farm-write, Meta, Chatwoot, or n8n authority.
 
+Beacon may identify a recurring campaign weakness only from the latest non-superseded, fresh evidence for at least two distinct campaigns with compatible measurement windows, metric definitions, currencies where relevant, and evidence states. It uses a fixed server-owned weakness taxonomy and produces a stable, evidence-linked follow-up suggestion with visibly estimated-or-unavailable expected value, uncertainty, bounded scope, non-goals, proposed tests, controlled safety level, and disabled authority flags. Preview is read-only. A separate authenticated owner-admin action may create one deduplicated CORE mission in `new` status; it does not approve or execute that mission.
+
 ## Private Creative Studio Evaluation
 
 Beacon Creative Studio supports private, owner-only evaluation of only `elevenlabs` and `happy_horse_1_0`. Both adapters are deterministic disabled mocks: provider calls, network access, credentials, source transfer, and actual provider cost remain fixed at zero/false. Happy Horse identity, licensing, retention, privacy, pricing, API stability, and output quality remain unverified.
