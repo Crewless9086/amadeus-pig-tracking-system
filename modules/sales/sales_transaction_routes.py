@@ -131,6 +131,8 @@ from modules.sales.conversation_learning import (
     live_stock_learning_scorecard,
 )
 from modules.sales.beacon_campaign import (
+    beacon_follow_up_mission,
+    build_beacon_follow_up_suggestions,
     build_beacon_campaign_publish_packet,
     build_beacon_campaign_selection,
     build_beacon_facebook_image_launch_packet,
@@ -144,6 +146,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
 )
+from modules.charlie.mission_store import record_mission
 from modules.sales.beacon_facebook_history import import_beacon_facebook_history
 from modules.beacon.post_composer import build_beacon_caption_suggestions, revise_beacon_caption
 from modules.beacon.media_library import (
@@ -1092,6 +1095,36 @@ def beacon_weekly_command_brief():
         return jsonify(result), status_code
     brief = build_beacon_weekly_command_brief(result.get("performance_events", []))
     return jsonify({"success": True, "weekly_command_brief": brief}), 200
+
+
+@sales_bp.route("/beacon/follow-up-suggestions", methods=["GET"])
+def beacon_follow_up_suggestions_preview():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    source, source_status = list_beacon_campaign_performance_events(limit=request.args.get("limit", 100))
+    if source_status >= 400:
+        return jsonify(source), source_status
+    return jsonify(build_beacon_follow_up_suggestions(source.get("performance_events", []))), 200
+
+
+@sales_bp.route("/beacon/follow-up-suggestions/create-mission", methods=["POST"])
+def beacon_follow_up_suggestion_create_mission():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    requested_id = str((request.get_json(silent=True) or {}).get("suggestion_id") or "").strip()
+    if not requested_id:
+        return jsonify({"success": False, "status": "suggestion_id_required"}), 400
+    source, source_status = list_beacon_campaign_performance_events(limit=100)
+    if source_status >= 400:
+        return jsonify(source), source_status
+    analysis = build_beacon_follow_up_suggestions(source.get("performance_events", []))
+    suggestion = next((item for item in analysis["suggestions"] if item["suggestion_id"] == requested_id), None)
+    if suggestion is None:
+        return jsonify({"success": False, "status": "suggestion_not_current_or_not_found"}), 409
+    result, status_code = record_mission(beacon_follow_up_mission(suggestion), source_context={"source": "beacon_follow_up_suggestion"})
+    return jsonify({**result, "suggestion_id": requested_id}), status_code
 
 
 @sales_bp.route("/beacon/facebook-history-import", methods=["POST"])

@@ -8,6 +8,8 @@
 6. Public post/send/spend remains blocked unless its separate exact gate is approved.
 7. Manual or controlled execution evidence is recorded.
 8. Performance evidence informs future recommendations.
+9. Compatible recurring weaknesses may produce deterministic follow-up suggestions for owner review. Single-campaign, stale, malformed, duplicated, superseded, missing, or incompatible evidence cannot establish recurrence.
+10. Previewing a suggestion writes nothing. Only a separate authenticated owner-admin action may create the stable suggestion as a deduplicated CORE mission with status `new`, no owner decision, and no approval or execution state.
 
 ## Campaign Outcome Evidence
 

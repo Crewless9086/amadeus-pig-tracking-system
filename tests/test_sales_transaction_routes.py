@@ -18,6 +18,44 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.owner_money_path_guard.start()
         self.addCleanup(self.owner_money_path_guard.stop)
 
+    def test_beacon_follow_up_preview_is_read_only_and_owner_creation_is_separate(self):
+        events = [{"performance_event_id": "e1"}, {"performance_event_id": "e2"}]
+        suggestion = {"suggestion_id": "BEACON-FOLLOWUP-1", "title": "Follow up"}
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), \
+             patch.object(sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"performance_events": events}, 200)), \
+             patch.object(sales_transaction_routes, "build_beacon_follow_up_suggestions", return_value={"success": True, "suggestions": [suggestion]}) as analyze, \
+             patch.object(sales_transaction_routes, "record_mission") as record:
+            response = self.client.get("/api/beacon/follow-up-suggestions")
+        self.assertEqual(response.status_code, 200)
+        analyze.assert_called_once_with(events)
+        record.assert_not_called()
+
+        mission = {"mission_id": suggestion["suggestion_id"], "status": "new", "owner_decision": ""}
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"performance_events": events}, 200)), \
+             patch.object(sales_transaction_routes, "build_beacon_follow_up_suggestions", return_value={"suggestions": [suggestion]}), \
+             patch.object(sales_transaction_routes, "beacon_follow_up_mission", return_value=mission), \
+             patch.object(sales_transaction_routes, "record_mission", return_value=({"stored": True, "mission_id": suggestion["suggestion_id"]}, 201)) as record:
+            response = self.client.post("/api/beacon/follow-up-suggestions/create-mission", json={"suggestion_id": suggestion["suggestion_id"], "status": "approved", "safety_level": "low"})
+        self.assertEqual(response.status_code, 201)
+        record.assert_called_once_with(mission, source_context={"source": "beacon_follow_up_suggestion"})
+
+    def test_beacon_follow_up_creation_requires_admin_and_current_server_suggestion(self):
+        denied = ({"success": False, "status": "owner_admin_required"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \
+             patch.object(sales_transaction_routes, "record_mission") as record:
+            response = self.client.post("/api/beacon/follow-up-suggestions/create-mission", json={"suggestion_id": "x"})
+        self.assertEqual(response.status_code, 403)
+        record.assert_not_called()
+
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"performance_events": []}, 200)), \
+             patch.object(sales_transaction_routes, "build_beacon_follow_up_suggestions", return_value={"suggestions": []}), \
+             patch.object(sales_transaction_routes, "record_mission") as record:
+            response = self.client.post("/api/beacon/follow-up-suggestions/create-mission", json={"suggestion_id": "stale"})
+        self.assertEqual(response.status_code, 409)
+        record.assert_not_called()
+
     def test_sales_transaction_list_route_is_read_only(self):
         service_result = {
             "success": True,

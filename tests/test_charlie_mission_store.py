@@ -57,12 +57,20 @@ class FakeCursor:
     def fetchall(self):
         return list(self.rows)
 
+    def fetchone(self):
+        return self.rows[0] if self.rows else ("inserted",)
+
 
 class FailingCursor(FakeCursor):
     def execute(self, sql, params=None):
         super().execute(sql, params)
         if "insert into public.charlie_agent_runs" in sql:
             raise RuntimeError("column agent does not exist")
+
+
+class ConflictCursor(FakeCursor):
+    def fetchone(self):
+        return None
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
@@ -369,6 +377,21 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["stored"])
         self.assertEqual(result["status"], "duplicate_open_mission")
         self.assertEqual(result["mission_id"], "MISSION-1")
+
+    def test_record_mission_returns_existing_result_on_atomic_id_conflict(self):
+        connection = FakeConnection()
+        connection.cursor_instance = ConflictCursor([])
+        result, status_code = record_mission(
+            {"mission_id": "BEACON-FOLLOWUP-1", "title": "Reduce repeated campaign weakness", "raw_text": "Reduce repeated campaign weakness using compatible evidence."},
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "duplicate_open_mission")
+        self.assertEqual(result["mission_id"], "BEACON-FOLLOWUP-1")
+        insert_sql = connection.cursor_instance.executed[1][0]
+        self.assertIn("on conflict (mission_id) do nothing", insert_sql)
+        self.assertIn("returning mission_id", insert_sql)
 
     def test_agent_sequence_for_agent_build_adds_specialists_and_qa(self):
         sequence = agent_sequence_for_mission("agent build")
