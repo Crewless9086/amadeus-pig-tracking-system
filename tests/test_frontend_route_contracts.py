@@ -33,6 +33,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/charlie/private/dashboard", script)
         self.assertIn("/api/charlie/private/message", script)
         self.assertIn("/api/charlie/private/decisions/", script)
+        self.assertIn("No customer, order, conversation or mission target is attached", script)
+        self.assertIn("Approval records your authority only", script)
         self.assertIn("credentials: \"same-origin\"", script)
         self.assertIn("@charlie_bp.route(\"/charlie/private/dashboard\"", charlie_routes)
         return
