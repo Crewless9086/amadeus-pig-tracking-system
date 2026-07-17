@@ -110,7 +110,10 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             if assessment.get("allowed"):
                 authority = authority_decision("core.review_delegate", policies, trust=trust, now=now)
                 if authority.get("allowed"):
-                    fingerprint = stable_fingerprint({"mission_id": mission.get("mission_id"), "review": assessment})
+                    fingerprint = stable_fingerprint({
+                        "mission_id": mission.get("mission_id"), "review": assessment,
+                        "retry_window": now.strftime("%Y%m%d%H"),
+                    })
                     commands.append({
                         "action": "verify_and_delegate_review", "capability": "core.review_delegate",
                         "mission_id": mission.get("mission_id"), "assessment": assessment,
