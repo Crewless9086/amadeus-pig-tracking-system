@@ -32,6 +32,8 @@ def plan_owner_intent(text, context=None, *, environ=None, http_open=None):
 def _deterministic_plan(text, context):
     lower = text.lower().strip()
     mission_id = _mission_id(text, context)
+    open_context = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
+    active_subject = open_context.get("active_subject") if isinstance(open_context.get("active_subject"), dict) else {}
     if lower in {"/start", "/help", "help", "what can you do"}:
         return _intent("help", 1)
     if lower.startswith(("remember that ", "remember this: ", "my preference is ")):
@@ -47,6 +49,11 @@ def _deterministic_plan(text, context):
     )
     if active_mission_question or lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower or ("core" in lower and any(word in lower for word in ("happening", "status", "running", "doing", "progress"))):
         return _intent("read_core_status", .98)
+    if lower in {"why", "why?", "what changed", "any update", "update", "how is it going", "what happens next"}:
+        if active_subject.get("type") == "mission" and active_subject.get("mission_id"):
+            return _intent("read_mission", .98, {"mission_id": active_subject["mission_id"]})
+        if open_context.get("last_intent") in {"read_core_status", "executive_brief"}:
+            return _intent("read_core_status", .98)
     if lower in {"/business", "business", "business status", "how is the business"}:
         return _intent("read_business_status", .98)
     if lower in {"/sam", "sam", "sam status", "how is sam"} or "livestock sales agent" in lower:
@@ -121,7 +128,8 @@ def _mission_id(text, context):
         if value.startswith("CHARLIE-") or any(char.isdigit() for char in value):
             return value
     open_context = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
-    return str(open_context.get("mission_id") or "") if any(word in text.lower() for word in ("that mission", "it", "this one")) else ""
+    subject = open_context.get("active_subject") if isinstance(open_context.get("active_subject"), dict) else {}
+    return str(subject.get("mission_id") or open_context.get("mission_id") or "") if any(word in text.lower() for word in ("that mission", "it", "this one")) else ""
 
 
 def _intent(intent_type, confidence, args=None, risk_flags=None, explicit=False):

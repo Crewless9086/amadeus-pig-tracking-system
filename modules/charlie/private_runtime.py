@@ -7,12 +7,14 @@ import urllib.error
 import urllib.request
 
 from modules.charlie.private_media import normalize_private_media, transcribe_voice
+from modules.charlie.private_executive import build_executive_plan, compose_executive_reply, context_after_plan, run_executive_plan
 from modules.charlie.private_planner import plan_owner_intent
 from modules.charlie.private_policy import authenticate_private_update, authority_for_intent, private_policy
 from modules.charlie.private_store import (
     bind_owner, claim_update, complete_update, create_approval_bundle, decide_bundle,
     recent_context, record_intent, record_message, record_tool_execution, stable_id,
     remember_preference,
+    update_thread_context,
 )
 from modules.charlie.private_tools import TOOL_FOR_INTENT, execute_private_tool
 
@@ -85,8 +87,24 @@ def _handle_message(payload, binding, store, sender, environ):
         bundle = _approval_for_intent(binding["thread_id"], intent, store)
         reply = "I have prepared this as an owner decision instead of executing it. Confirm it from the decision card after checking the exact action."
         return _reply(binding, reply, store, sender, update_id, [], environ, reply_markup=_bundle_keyboard(bundle))
+    if intent["type"].startswith("read_") or intent["type"] == "executive_brief":
+        plan = build_executive_plan(text, intent, context)
+        evidence = run_executive_plan(plan, intent_record["intent_id"], recorder=store.record_tool_execution)
+        reply = compose_executive_reply(plan, evidence)
+        durable_context = context_after_plan(plan, evidence)
+        if hasattr(store, "update_thread_context"):
+            store.update_thread_context(binding["thread_id"], durable_context, summary=str(durable_context.get("goal") or "")[:1000])
+        status_code = 200 if evidence and evidence[0].get("success") else int((evidence[0] if evidence else {}).get("status") or 503)
+        return _reply(binding, reply, store, sender, update_id, [], environ, status_code=status_code)
     result, status = execute_private_tool(intent["type"], intent.get("args") or {})
     store.record_tool_execution(intent_record["intent_id"], TOOL_FOR_INTENT.get(intent["type"], intent["type"]), authority["tier"], intent.get("args") or {}, result, status="succeeded" if status < 400 else "failed")
+    if hasattr(store, "update_thread_context"):
+        plan = build_executive_plan(text, intent, context)
+        durable_context = context_after_plan(plan, [{
+            "step": 1, "intent_type": intent["type"], "tool": TOOL_FOR_INTENT.get(intent["type"], intent["type"]),
+            "success": status < 400 and result.get("success") is not False, "status": status, "result": result,
+        }])
+        store.update_thread_context(binding["thread_id"], durable_context, summary=str(durable_context.get("goal") or "")[:1000])
     reply = result.get("summary") or "The action completed." if status < 400 else result.get("summary") or "I could not complete that safely."
     return _reply(binding, reply, store, sender, update_id, [], environ, status_code=status)
 
@@ -182,3 +200,4 @@ class _StoreFacade:
     create_approval_bundle = staticmethod(create_approval_bundle)
     decide_bundle = staticmethod(decide_bundle)
     remember_preference = staticmethod(remember_preference)
+    update_thread_context = staticmethod(update_thread_context)

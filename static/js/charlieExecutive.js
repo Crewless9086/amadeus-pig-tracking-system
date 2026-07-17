@@ -26,6 +26,7 @@
 
   function render() {
     const p = state.packet, privateState = p.private || {}, evaluation = privateState.evaluation || {}, runner = p.runner || {};
+    const executiveContext = privateState.owner?.open_context || {};
     const successRate = evaluation.tool_runs ? Math.round((evaluation.tool_successes / evaluation.tool_runs) * 100) : 0;
     const metrics = [
       ["CORE active", count("in_progress"), `${count("approved")} approved`], ["Owner review", count("pr_ready"), `${privateState.decisions?.length || 0} private decisions`],
@@ -38,9 +39,10 @@
     const runnerHealthy = runner.active === true || (runner.process_alive === true && runner.heartbeat_fresh === true);
     const runnerLabel = cloudRunnerUnknown ? "local status unknown" : (runner.active === true ? "working" : (runnerHealthy ? "ready" : "stopped"));
     el.runner.className = `chip ${runnerHealthy ? "green" : (cloudRunnerUnknown ? "" : "red")}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
-    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = cloudRunnerUnknown ? `Render cannot inspect the laptop heartbeat. Supabase shows ${count("in_progress")} active mission(s), ${count("blocked")} blocked and ${count("pr_ready")} ready for review.` : (runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.");
+    const goalNote = executiveContext.goal ? ` Current goal: ${executiveContext.goal}` : "";
+    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = (cloudRunnerUnknown ? `Render cannot inspect the laptop heartbeat. Supabase shows ${count("in_progress")} active mission(s), ${count("blocked")} blocked and ${count("pr_ready")} ready for review.` : (runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.")) + goalNote;
     renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || []);
-    el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Memory</span><b>${privateState.owner ? "Durable" : "Waiting owner"}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
+    el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Executive state</span><b>${esc(executiveContext.stage || (privateState.owner ? "Durable" : "Waiting owner"))}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
   }
 
   function renderMessages(messages) {

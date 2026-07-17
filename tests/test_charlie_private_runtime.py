@@ -21,6 +21,7 @@ class FakeStore:
         self.intents = []
         self.tools = []
         self.bundles = {}
+        self.context = {}
 
     def claim_update(self, update, callback=""):
         created = update not in self.claimed
@@ -43,6 +44,9 @@ class FakeStore:
         return {"bundle_id": "BUNDLE-1"}, 201
     def decide_bundle(self, bundle, decision): return {"success": True, "status": decision, "bundle_id": bundle}, 200
     def remember_preference(self, key, value, message, approved=False): return {"success": True, "status": "approved"}, 200
+    def update_thread_context(self, thread, context, summary=""):
+        self.context = context
+        return {"success": True, "status": "context_updated"}, 200
 
 
 def payload(update_id, text="status"):
@@ -98,6 +102,19 @@ class CharliePrivateRuntimeTests(unittest.TestCase):
         self.assertEqual(ack, ["CB-1"])
         self.assertEqual(len(self.sent), 1)
         self.assertIn("approved and recorded", self.sent[0][1])
+
+    @patch("modules.charlie.private_executive.execute_private_tool")
+    def test_core_question_runs_evidence_plan_and_persists_goal(self, execute):
+        execute.side_effect = lambda intent_type, _args: {
+            "read_core_status": ({"success": True, "summary": "CORE has one active mission.", "active_missions": [{"mission_id": "M-12345678", "title": "Runtime v2"}]}, 200),
+            "read_blocked": ({"success": True, "missions": []}, 200),
+            "read_decisions": ({"success": True, "items": []}, 200),
+        }[intent_type]
+        result, code = handle_private_telegram_webhook(payload("7", "What is happening with CORE?"), HEADERS, environ=ENV, sender=self.sender, store=self.store)
+        self.assertEqual(code, 200)
+        self.assertIn("one active mission", result["reply"])
+        self.assertEqual(execute.call_count, 2)
+        self.assertEqual(self.store.context["active_subject"]["mission_id"], "M-12345678")
 
 
 if __name__ == "__main__":
