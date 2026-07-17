@@ -1516,7 +1516,16 @@ def _deliver_executive_outbox():
         if not private_text and item.get("event_type") != "private_executive_brief":
             mission_id = str(payload.get("mission_id") or "")
             reason = str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required.")
-            private_text = f"CHARLIE needs your decision\n{mission_id}\n{reason}".strip()
+            title = str(payload.get("title") or mission_id or "Protected CORE decision")
+            risks = payload.get("risk_flags") if isinstance(payload.get("risk_flags"), list) else []
+            risk_text = ", ".join(str(value) for value in risks[:5])
+            private_text = (
+                f"CHARLIE needs your decision\n{title}\nMission: {mission_id}\n"
+                f"Why: {reason}"
+                + (f"\nProtected signals: {risk_text}" if risk_text else "")
+                + f"\nRecommendation: {payload.get('recommended_action') or 'Review, then approve or send back.'}"
+                + f"\nOpen CHARLIE or send: mission {mission_id}"
+            ).strip()
         if policy.get("enabled") and private_text:
             _send_result, send_status = send_private_telegram_message(policy.get("owner_chat_id"), private_text)
             exit_code = 0 if send_status < 400 else 1

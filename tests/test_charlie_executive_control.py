@@ -12,6 +12,10 @@ POLICIES = [{
     "policy_id": "POLICY-1", "capability": "core.internal_recovery",
     "authority_tier": "auto", "enabled": True, "expires_at": None,
 }]
+DELEGATED_POLICIES = POLICIES + [
+    {"policy_id": "POLICY-REVIEW", "capability": "core.review_delegate", "authority_tier": "auto", "enabled": True},
+    {"policy_id": "POLICY-SELECT", "capability": "core.queue_select", "authority_tier": "auto", "enabled": True},
+]
 
 
 def blocked(owner_required=False, block_class="implementation_fix_required"):
@@ -25,6 +29,25 @@ def blocked(owner_required=False, block_class="implementation_fix_required"):
 
 
 class CharlieExecutiveControlTests(unittest.TestCase):
+    def test_cycle_delegates_green_low_risk_review(self):
+        review = {
+            "mission_id": "M-REVIEW", "status": "pr_ready", "title": "Docs", "raw_text": "Docs", "approval_level": "LEVEL 3",
+            "metadata": {"review_packet": {"review_status": "ready_for_owner_review", "changed_files": ["docs/a.md"], "test_evidence": ["pass"], "pr_url": "https://github.com/o/r/pull/1"}},
+        }
+        cycle = build_executive_cycle([review], DELEGATED_POLICIES, runner={"active_mission_id": "ACTIVE"})
+        self.assertIn("verify_and_delegate_review", [item["action"] for item in cycle["commands"]])
+
+    def test_cycle_maintains_three_mission_runway(self):
+        missions = [{"mission_id": f"M-{i}", "status": "new", "title": f"Safe {i}", "raw_text": "Improve docs", "urgency": "P1", "approval_level": "LEVEL 3", "metadata": {}} for i in range(5)]
+        cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
+        selected = [item for item in cycle["commands"] if item["action"] == "approve_next_work"]
+        self.assertEqual(len(selected), 3)
+
+    def test_protected_new_mission_is_not_selected(self):
+        mission = {"mission_id": "M-X", "status": "new", "title": "Payment migration", "raw_text": "Change payment schema migration", "approval_level": "LEVEL 3", "metadata": {}}
+        cycle = build_executive_cycle([mission], DELEGATED_POLICIES, runner={})
+        self.assertFalse(any(item["action"] == "approve_next_work" for item in cycle["commands"]))
+
     def test_red_zone_cannot_be_delegated_by_normal_policy(self):
         result = authority_decision("core.internal_recovery", POLICIES, risk_flags=["payment"])
         self.assertFalse(result["allowed"])
