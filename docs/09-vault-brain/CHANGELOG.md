@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-17 - Beacon advisory autonomy readiness
+
+- Recorded the owner-approved, content-addressed `beacon_advisory_readiness_v1` seven-gate policy and deterministic AND evaluation.
+- Defined notification-only threshold passage, deduplicated regression suspension alerts, and fresh all-pass recovery.
+- Preserved separate owner gates for every public post, Meta call, boost, and advertising spend action.
+
 ## 2026-07-16 - Beacon attribution identity and revenue integrity
 
 - Required stable, non-conflicting campaign, lead, and sale identities in the read-only Beacon-to-SAM attribution projection.

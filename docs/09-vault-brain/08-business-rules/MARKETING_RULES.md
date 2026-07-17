@@ -4,6 +4,8 @@ Beacon must not post publicly without owner-approved gates, spend money without 
 
 Public copy must not overpromise stock, timing, delivery, final booking, or price.
 
+Beacon advisory promotion uses only the owner-approved `beacon_advisory_readiness_v1` content-addressed policy. All seven campaign-evidence, unedited-approval, attribution, recommendation-accuracy, safety, trust, and budget gates must pass; no weighted score may hide a failed gate. Threshold passage prepares an idempotent owner review notification only. Regression suspends readiness and recovery requires a fresh all-pass evaluation. Posting, Meta calls, boosting, and advertising spend remain false and separately owner-gated in every readiness state.
+
 Objectives, brand rules, channel allowlists, KPI definitions, attribution windows, thresholds, and targets must show whether they are proposed or owner-approved. Approval may not be inferred from a default.
 
 Demand ceilings require fresh fulfilment provenance and subtract commitments, operational reserve, and safety buffer from verified availability. Unknown channels, unresolved public-media permission, and missing, stale, invalid, incompatible, or zero-capacity evidence fail closed.
