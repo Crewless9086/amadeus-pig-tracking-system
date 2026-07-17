@@ -31,9 +31,19 @@ def load_executive_context(database_url=None, connect_factory=None):
                     order by priority desc, created_at
                 """)
                 goals = [_goal_row(row) for row in cursor.fetchall()]
+                cursor.execute("""
+                    select capability_key,runs,clean_passes,recoveries,escaped_defects,
+                           human_edits,rollbacks,tier,last_result,evidence_version,last_evaluated_at
+                    from public.charlie_capability_trust
+                """)
+                trust = [{
+                    "capability_key": row[0], "runs": row[1], "clean_passes": row[2], "recoveries": row[3],
+                    "escaped_defects": row[4], "human_edits": row[5], "rollbacks": row[6], "tier": row[7],
+                    "last_result": row[8], "evidence_version": row[9], "last_evaluated_at": row[10].isoformat() if row[10] else None,
+                } for row in cursor.fetchall()]
     except Exception as exc:
         return {"success": False, "status": "executive_context_read_failed", "error_type": exc.__class__.__name__, "policies": [], "goals": []}, 503
-    return {"success": True, "status": "ok", "policies": policies, "goals": goals}, 200
+    return {"success": True, "status": "ok", "policies": policies, "goals": goals, "trust": trust}, 200
 
 
 def record_control_command(command, database_url=None, connect_factory=None):
@@ -241,6 +251,27 @@ def record_capability_outcome(capability_key, *, clean_pass=False, recovered=Fal
     except Exception as exc:
         return {"success": False, "status": "capability_outcome_write_failed", "error_type": exc.__class__.__name__}, 503
     return {"success": True, "status": "ok", "capability_key": capability_key, "tier": tier, "runs": row[0]}, 200
+
+
+def list_capability_trust(limit=50, database_url=None, connect_factory=None):
+    database_url = _database_url(database_url)
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select capability_key,runs,clean_passes,recoveries,escaped_defects,
+                           human_edits,rollbacks,tier,last_result,evidence_version,last_evaluated_at
+                    from public.charlie_capability_trust
+                    order by runs desc, capability_key limit %(limit)s
+                """, {"limit": max(1, min(int(limit or 50), 200))})
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "status": "capability_trust_read_failed", "error_type": exc.__class__.__name__, "capabilities": []}, 503
+    return {"success": True, "status": "capability_trust_ready", "capabilities": [{
+        "capability_key": row[0], "runs": row[1], "clean_passes": row[2], "recoveries": row[3],
+        "escaped_defects": row[4], "human_edits": row[5], "rollbacks": row[6], "tier": row[7],
+        "last_result": row[8], "evidence_version": row[9], "last_evaluated_at": row[10].isoformat() if row[10] else None,
+    } for row in rows]}, 200
 
 
 def register_eval_spec(spec, database_url=None, connect_factory=None):

@@ -59,19 +59,26 @@ Natural follow-ups such as `why?`, `what changed?`, `any update`, and `what happ
 - CORE's existing executive cycle remains the only recovery supervisor. It performs policy-authorized, bounded internal recovery and durable escalation; the private runtime does not create a parallel controller.
 - Render reports that it cannot see the laptop heartbeat instead of claiming the local runner is stopped. Supabase mission state remains visible.
 
-## Next Logged Phases
+## Executive Runtime v2: Phases C-E
 
-### Phase C - Business Operations
+### Phase C - Business Operations (implemented)
 
-Add authoritative multi-tool plans for orders and quotes, SAM conversations and stock, BEACON campaigns, Herdmaster and farm operations. CHARLIE prepares complete action bundles and verifies every result; customer sends, public posts, payments, reservations, and lifecycle writes remain owner-confirmed.
+CHARLIE has typed cross-business reads for orders, SAM, Beacon, farm operations, workforce, ANALYST, trust, and CORE. A specific order ID can be inspected conversationally. An explicit order-pack instruction prepares and verifies the quote, loading sheet, removal certificate, and health declaration through the existing owner-gated sales-pack service. Beacon caption instructions use the existing historical-style and Meta-safety composer. Preparation never sends, posts, reserves, confirms payment, or changes livestock state.
 
-### Phase D - Delegated Autonomy
+### Phase D - Delegated Autonomy (implemented foundation)
 
-Promote narrowly scoped capabilities using measured trust, add automatic idempotent recovery for proven yellow actions, score unnecessary escalations, and consolidate related owner decisions. No capability receives global trust.
+Verified private write outcomes and owner bundle corrections feed `charlie_capability_trust`. Trust is visible through the private `trust` query and remains capability-specific. Existing promotion thresholds and executive delegation policies govern CORE internal recovery. Explicit yellow actions use current-state validation and post-write verification. Red-zone actions cannot be promoted or bypassed by trust, model output, or conversation text.
 
-### Phase E - Voice And Proactive Operation
+### Phase E - Voice And Proactive Operation (implemented)
 
-Add private voice interaction, event-driven follow-ups, deadlines, daily executive briefs, cross-department coordination, and proactive owner alerts through the durable outbox. Scheduled work remains bounded by authority, retries, and completion conditions.
+Telegram voice notes use the existing size-limited transcription path and store no audio. The private web interface supports browser speech recognition where available. `Check ... in N minutes/hours` stores a durable follow-up in the conversation context. The supervised runner evaluates due follow-ups, gathers fresh authoritative evidence, and queues one idempotent private outbox message. Morning briefs now use the bounded multi-tool executive plan and the same durable retry/dead-letter outbox.
+
+## Current Limits
+
+- CHARLIE can prepare but cannot send a customer quote, publish or boost a Beacon post, confirm payment, reserve stock, or change animal lifecycle without the existing exact owner confirmation and domain executor.
+- Browser speech availability depends on browser support and microphone permission. Telegram voice is the reliable mobile path when private transcription is enabled.
+- Capability promotion is evidence-driven. New business actions start supervised and cannot be declared autonomous merely because implementation tests pass.
+- New business modules still require a typed authoritative tool before CHARLIE may operate them. The runtime never uses generic shell access as a substitute.
 
 ## Approval Bundles
 

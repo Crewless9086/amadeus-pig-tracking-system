@@ -116,6 +116,13 @@ class CharliePrivateRuntimeTests(unittest.TestCase):
         self.assertEqual(execute.call_count, 2)
         self.assertEqual(self.store.context["active_subject"]["mission_id"], "M-12345678")
 
+    def test_follow_up_is_persisted_without_business_action(self):
+        result, code = handle_private_telegram_webhook(payload("8", "Check CORE again in 20 minutes"), HEADERS, environ=ENV, sender=self.sender, store=self.store)
+        self.assertEqual(code, 200)
+        self.assertIn("20 minute", result["reply"])
+        self.assertEqual(self.store.context["stage"], "monitoring")
+        self.assertEqual(self.store.context["pending_follow_ups"][0]["status"], "pending")
+
 
 if __name__ == "__main__":
     unittest.main()

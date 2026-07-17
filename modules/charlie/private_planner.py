@@ -16,6 +16,7 @@ ALLOWED_INTENTS = {
     "create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "clarify",
     "remember_preference",
     "protected_business_action",
+    "read_order", "prepare_order_pack", "prepare_beacon_draft", "read_trust", "schedule_follow_up", "read_sam_conversation",
 }
 
 
@@ -34,11 +35,19 @@ def _deterministic_plan(text, context):
     mission_id = _mission_id(text, context)
     open_context = context.get("open_context") if isinstance(context.get("open_context"), dict) else {}
     active_subject = open_context.get("active_subject") if isinstance(open_context.get("active_subject"), dict) else {}
+    order_match = re.search(r"\bORD-[A-Z0-9-]{6,40}\b", text, re.I)
+    order_id = order_match.group(0).upper() if order_match else ""
+    conversation_match = re.search(r"(?:conversation|chat\s*id)\s*[:#-]?\s*(\d{2,20})", text, re.I)
     if lower in {"/start", "/help", "help", "what can you do"}:
         return _intent("help", 1)
     if lower.startswith(("remember that ", "remember this: ", "my preference is ")):
         preference = re.sub(r"^(remember that|remember this:|my preference is)\s*", "", text, flags=re.I).strip()
         return _intent("remember_preference", .98, {"key": "owner_instruction", "value": preference[:2000]}, explicit=True)
+    follow_up = re.search(r"(?:check|remind me|follow up)(?:\s+on)?\s+(.+?)\s+in\s+(\d+)\s*(minute|minutes|hour|hours)\b", text, re.I)
+    if follow_up:
+        amount = min(10080, int(follow_up.group(2)))
+        minutes = amount * 60 if follow_up.group(3).lower().startswith("hour") else amount
+        return _intent("schedule_follow_up", .99, {"request": follow_up.group(1).strip()[:1000], "delay_minutes": minutes}, explicit=True)
     protected = _protected_action(text)
     if protected:
         return _intent("protected_business_action", .99, {"action_summary": text[:2000]}, [protected], explicit=True)
@@ -58,10 +67,22 @@ def _deterministic_plan(text, context):
         return _intent("read_business_status", .98)
     if lower in {"/sam", "sam", "sam status", "how is sam"} or "livestock sales agent" in lower:
         return _intent("read_sam_status", .98)
+    if conversation_match:
+        return _intent("read_sam_conversation", .99, {"conversation_id": conversation_match.group(1)})
     if lower in {"/beacon", "beacon", "beacon status", "marketing status"} or "how is beacon" in lower:
         return _intent("read_beacon_status", .98)
     if lower in {"/orders", "orders", "orders status", "sales orders"}:
         return _intent("read_orders_status", .98)
+    if order_id and any(word in lower for word in ("prepare", "generate", "document", "paperwork", "sales pack")):
+        return _intent("prepare_order_pack", .99, {"order_id": order_id}, explicit=True)
+    if order_id:
+        return _intent("read_order", .99, {"order_id": order_id})
+    if lower.startswith(("draft a beacon post", "draft beacon post", "prepare a beacon post", "write a beacon post")):
+        brief = re.sub(r"^(draft a beacon post|draft beacon post|prepare a beacon post|write a beacon post)(?:\s+(?:about|for))?\s*", "", text, flags=re.I)
+        lane = "meat_launch" if "meat" in lower else "live_stock_awareness"
+        return _intent("prepare_beacon_draft", .98, {"brief": brief[:1200], "campaign_lane": lane}, explicit=True)
+    if lower in {"trust", "trust status", "charlie trust", "autonomy status"} or "capability trust" in lower:
+        return _intent("read_trust", .98)
     if lower in {"/farm", "farm", "farm status", "farm operations"}:
         return _intent("read_farm_status", .98)
     if lower in {"/queue", "queue", "/next", "/missions", "missions"} or "missions in the queue" in lower:

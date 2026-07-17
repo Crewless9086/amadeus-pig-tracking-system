@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from modules.charlie.executive_store import executive_scorecard
+from modules.charlie.executive_store import list_capability_trust
 from modules.charlie.improvement_analyst import analyst_scorecard
 from modules.charlie.mission_store import (
     get_mission, list_missions, mission_status_summary, record_mission,
@@ -13,7 +14,13 @@ from modules.charlie.mission_store import (
 from modules.charlie.owner_approval_inbox import list_owner_approval_inbox
 from modules.charlie.runner_control import runner_status
 from modules.beacon.workforce import beacon_workforce_scorecard
-from modules.orders.order_read import list_orders
+from modules.orders.order_read import get_order_detail, get_order_operator_summary, list_orders
+from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
+from modules.sales.sam_conversation_state import plan_live_stock_next_action
+from modules.orders.order_intake_service import get_intake_context
+from modules.sales.sam_live_stock_runtime import load_chatwoot_conversation_history
+from modules.beacon.post_composer import build_beacon_caption_suggestions
+from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 
 
@@ -26,6 +33,9 @@ TOOL_FOR_INTENT = {
     "read_business_status": "business_status", "read_sam_status": "sam_status",
     "read_beacon_status": "beacon_status", "read_orders_status": "orders_status",
     "read_farm_status": "farm_status",
+    "read_order": "order", "prepare_order_pack": "order_pack",
+    "prepare_beacon_draft": "beacon_draft", "read_trust": "trust",
+    "read_sam_conversation": "sam_conversation",
 }
 
 
@@ -154,6 +164,24 @@ def _sam_status(_args):
     return {"success": status < 400, "status": "sam_status_ready", "summary": summary, "scorecard": card}, status
 
 
+def _sam_conversation(args):
+    conversation_id = str(args.get("conversation_id") or "").strip()
+    if not conversation_id:
+        return {"success": False, "status": "conversation_id_required", "summary": "Tell me the Chatwoot conversation ID."}, 400
+    try:
+        intake = get_intake_context(conversation_id)
+        history = load_chatwoot_conversation_history(conversation_id, limit=12)
+        plan = plan_live_stock_next_action(intake, {})
+    except Exception as exc:
+        return {"success": False, "status": "sam_conversation_read_failed", "summary": f"I could not verify conversation {conversation_id}: {exc.__class__.__name__}."}, 503
+    messages = history.get("messages") if isinstance(history, dict) else history if isinstance(history, list) else []
+    goal = plan.get("goal") or "not established"
+    summary = f"SAM conversation {conversation_id}: goal {goal}; stage {plan.get('stage')}; next action {plan.get('next_action')}; {len(messages or [])} recent message(s) inspected."
+    if plan.get("missing_fields"):
+        summary += " Missing: " + ", ".join(plan["missing_fields"]) + "."
+    return {"success": True, "status": "sam_conversation_ready", "summary": summary, "conversation_id": conversation_id, "intake": intake, "conversation_plan": plan, "recent_messages": messages}, 200
+
+
 def _beacon_status(_args):
     result = beacon_workforce_scorecard(limit=500)
     card = result.get("scorecard") or {}
@@ -172,11 +200,68 @@ def _orders_status(_args):
     return {"success": True, "status": "orders_status_ready", "summary": f"Orders: {len(orders)} total, {len(active)} active, {len(ready)} approved or quote-ready.", "counts": {"total": len(orders), "active": len(active), "ready": len(ready)}, "orders": orders[:10]}, 200
 
 
+def _order(args):
+    order_id = str(args.get("order_id") or "").strip().upper()
+    if not order_id:
+        return {"success": False, "status": "order_id_required", "summary": "Tell me which order you want inspected."}, 400
+    try:
+        detail = get_order_detail(order_id)
+        operator = get_order_operator_summary(order_id) or {}
+    except Exception as exc:
+        return {"success": False, "status": "order_read_failed", "summary": f"I could not verify order {order_id}: {exc.__class__.__name__}."}, 503
+    if not detail:
+        return {"success": False, "status": "order_not_found", "summary": f"I could not find order {order_id}."}, 404
+    order = detail.get("order") if isinstance(detail, dict) and isinstance(detail.get("order"), dict) else detail
+    lines = detail.get("lines") if isinstance(detail, dict) else []
+    status = order.get("Order_Status") or order.get("order_status") or order.get("status") or "unknown"
+    approval = order.get("Approval_Status") or order.get("approval_status") or "not set"
+    summary = f"Order {order_id} is {status}; approval {approval}; {len(lines or [])} line(s)."
+    actions = operator.get("outstanding_actions") if isinstance(operator, dict) else []
+    if actions:
+        labels = [str(item.get("label") or item.get("code") or "") if isinstance(item, dict) else str(item) for item in actions[:4]]
+        summary += " Next: " + "; ".join(item for item in labels if item) + "."
+    return {"success": True, "status": "order_ready", "summary": summary, "order_id": order_id, "detail": detail, "operator_summary": operator}, 200
+
+
+def _order_pack(args):
+    order_id = str(args.get("order_id") or "").strip().upper()
+    if not order_id:
+        return {"success": False, "status": "order_id_required", "summary": "Tell me which order needs the document pack."}, 400
+    try:
+        result = prepare_live_stock_sales_pack(order_id, {"created_by": "CHARLIE private executive"})
+    except (ValueError, RuntimeError) as exc:
+        return {"success": False, "status": "order_pack_preparation_failed", "summary": str(exc)}, 409
+    success = result.get("success") is True
+    summary = f"Prepared and verified the livestock sales pack for {order_id}. Nothing was sent or reserved." if success else f"The sales pack for {order_id} still needs input: {', '.join(result.get('missing_fields') or [row.get('reason','') for row in result.get('errors') or []])}."
+    return {**result, "success": success, "summary": summary, "prepared_only": True}, 200 if success else 409
+
+
+def _beacon_draft(args):
+    result, status = build_beacon_caption_suggestions({"brief": args.get("brief"), "campaign_lane": args.get("campaign_lane")})
+    suggestions = result.get("suggestions") or []
+    summary = "Beacon prepared three owner-review caption options. Nothing was posted.\n" + "\n\n".join(f"Option {index + 1}: {value}" for index, value in enumerate(suggestions)) if status < 400 else "Beacon could not prepare a safe draft: " + str(result.get("status") or "unknown reason")
+    return {**result, "summary": summary, "prepared_only": True, "posts_publicly": False}, status
+
+
+def _trust(_args):
+    result, status = list_capability_trust(limit=50)
+    rows = result.get("capabilities") or []
+    delegated = [row for row in rows if row.get("tier") in {"delegated", "auto"}]
+    summary = f"CHARLIE capability trust: {len(rows)} measured capabilities; {len(delegated)} delegated or auto. Trust is capability-specific and never overrides red-zone approval."
+    return {"success": status < 400, "status": "trust_ready", "summary": summary, "capabilities": rows}, status
+
+
 def _farm_status(_args):
     orders, status = _orders_status({})
     if status >= 400:
         return {"success": False, "status": "farm_status_degraded", "summary": "Farm status is partially unavailable. " + orders["summary"]}, status
-    return {"success": True, "status": "farm_status_ready", "summary": "Farm operational read access is active. " + orders["summary"], "orders": orders.get("counts")}, 200
+    try:
+        availability = get_sales_availability()
+        rows = availability.get("rows") if isinstance(availability, dict) else availability if isinstance(availability, list) else []
+        stock_note = f" Livestock availability has {len(rows or [])} candidate record(s)."
+    except Exception:
+        rows, stock_note = [], " Livestock availability could not be verified."
+    return {"success": True, "status": "farm_status_ready", "summary": "Farm operational read access is active. " + orders["summary"] + stock_note, "orders": orders.get("counts"), "availability_count": len(rows or [])}, 200
 
 
 def _business_status(_args):

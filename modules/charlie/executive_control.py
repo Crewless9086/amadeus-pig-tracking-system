@@ -20,7 +20,7 @@ RECOVERABLE_CLASSES = {
 TERMINAL_STATUSES = {"done", "merged", "deployed", "rejected", "cancelled"}
 
 
-def authority_decision(capability, policies, *, risk_flags=None, now=None):
+def authority_decision(capability, policies, *, risk_flags=None, trust=None, now=None):
     risk_flags = {str(item).strip().lower() for item in (risk_flags or []) if str(item).strip()}
     if risk_flags & RED_ZONE_TERMS:
         return _decision(False, "charl_human", "red_zone_owner_approval_required")
@@ -38,10 +38,14 @@ def authority_decision(capability, policies, *, risk_flags=None, now=None):
     tier = str(policy.get("authority_tier") or "charl_human")
     if tier == "charl_human":
         return _decision(False, tier, "policy_requires_human", policy)
+    if tier == "charlie_delegated" and trust is not None:
+        trust_row = next((row for row in trust if isinstance(row, dict) and row.get("capability_key") == capability), {})
+        if trust_row.get("tier") not in {"delegated", "auto"}:
+            return _decision(False, "charl_human", "capability_trust_not_promoted", policy)
     return _decision(True, tier, "delegation_policy_allows", policy)
 
 
-def recovery_decision(mission, policies, *, now=None):
+def recovery_decision(mission, policies, *, trust=None, now=None):
     mission = mission if isinstance(mission, dict) else {}
     packet = _review_packet(mission)
     disposition = packet.get("block_disposition") if isinstance(packet.get("block_disposition"), dict) else {}
@@ -54,7 +58,7 @@ def recovery_decision(mission, policies, *, now=None):
             "action": "escalate_owner", "reason": "genuine_owner_decision_required",
             "block_class": block_class or "unclassified", "authority_tier": "charl_human",
         }
-    authority = authority_decision("core.internal_recovery", policies, now=now)
+    authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
     if not authority["allowed"]:
         return {"action": "escalate_owner", "block_class": block_class, **authority}
     target = str(disposition.get("responsible_stage") or packet.get("return_to_stage") or "planner").strip()
@@ -89,7 +93,7 @@ def portfolio_priority(mission, *, active_goal_ids=None):
     return max(0, min(150, score))
 
 
-def build_executive_cycle(missions, policies, *, runner=None, goals=None, now=None):
+def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=None, now=None):
     now = now or datetime.now(timezone.utc)
     missions = [item for item in (missions or []) if isinstance(item, dict)]
     goals = [item for item in (goals or []) if isinstance(item, dict) and item.get("status") == "active"]
@@ -98,14 +102,14 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, now=No
     escalations = []
     for mission in missions:
         if mission.get("status") == "blocked":
-            decision = recovery_decision(mission, policies, now=now)
+            decision = recovery_decision(mission, policies, trust=trust, now=now)
             target = commands if decision.get("action") == "schedule_recovery" else escalations
             target.append({"mission_id": mission.get("mission_id"), **decision})
     approved = [item for item in missions if item.get("status") == "approved"]
     ranked = sorted(approved, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
     runner = runner if isinstance(runner, dict) else {}
     if ranked and not runner.get("active_mission_id"):
-        queue_authority = authority_decision("core.queue_continue", policies, now=now)
+        queue_authority = authority_decision("core.queue_continue", policies, trust=trust, now=now)
         if queue_authority["allowed"]:
             commands.append({
                 "action": "ensure_queue_progress", "capability": "core.queue_continue",

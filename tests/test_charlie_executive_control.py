@@ -74,6 +74,13 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         self.assertEqual(capability_tier({"runs": 50, "clean_passes": 49}), "auto")
         self.assertEqual(capability_tier({"runs": 50, "clean_passes": 50, "escaped_defects": 1}), "watch")
 
+    def test_delegated_policy_requires_promoted_capability_trust(self):
+        policy = [{"policy_id": "P-YELLOW", "capability": "orders.prepare_pack", "authority_tier": "charlie_delegated", "enabled": True}]
+        denied = authority_decision("orders.prepare_pack", policy, trust=[{"capability_key": "orders.prepare_pack", "tier": "watch"}])
+        allowed = authority_decision("orders.prepare_pack", policy, trust=[{"capability_key": "orders.prepare_pack", "tier": "delegated"}])
+        self.assertFalse(denied["allowed"])
+        self.assertTrue(allowed["allowed"])
+
     def test_assurance_requires_every_metric(self):
         result = evaluate_autonomy_metrics({"unattended_completion_rate": 1.0})
         self.assertFalse(result["promotion_allowed"])

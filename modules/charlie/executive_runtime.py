@@ -29,7 +29,7 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
     context, context_status = load_executive_context(database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400 or context_status >= 400:
         return {"success": False, "status": "executive_context_unavailable", "mode": mode, "mission_status": loaded_status, "policy_status": context_status}, 503
-    cycle = build_executive_cycle(loaded.get("missions", []), context.get("policies", []), runner=runner, goals=context.get("goals", []))
+    cycle = build_executive_cycle(loaded.get("missions", []), context.get("policies", []), runner=runner, goals=context.get("goals", []), trust=context.get("trust", []))
     results = []
     for command in cycle["commands"]:
         recorded, record_status = record_control_command(command, database_url=database_url, connect_factory=connect_factory)
