@@ -5,6 +5,20 @@ from modules.charlie.private_tools import execute_private_tool
 
 
 class CharliePrivateToolsTests(unittest.TestCase):
+    @patch("modules.charlie.private_tools.list_missions")
+    def test_blocked_summary_reconciles_legacy_false_owner_label(self, list_missions):
+        list_missions.return_value = ({"missions": [{
+            "mission_id": "M-OLD", "title": "Old retry", "status": "blocked",
+            "metadata": {"review_packet": {
+                "blocked_reason": "Repeated same blocker loop detected; durable loop cap exhausted.",
+                "block_disposition": {"block_class": "owner_decision_required", "owner_required": True},
+            }},
+        }]}, 200)
+        result, status = execute_private_tool("read_blocked", {})
+        self.assertEqual(status, 200)
+        self.assertFalse(result["missions"][0]["owner_required"])
+        self.assertIn("next: builder", result["summary"])
+
     @patch("modules.charlie.private_tools.update_mission_status")
     @patch("modules.charlie.private_tools.get_mission")
     def test_approve_reloads_and_uses_compare_and_set(self, get_mission, update_status):

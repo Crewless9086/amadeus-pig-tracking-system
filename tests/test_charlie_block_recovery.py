@@ -42,10 +42,10 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["block_class"], "red_zone_owner_approval_required")
         self.assertTrue(result["owner_required"])
 
-    def test_exhausted_recovery_loop_becomes_honest_owner_block(self):
+    def test_exhausted_recovery_loop_changes_strategy_without_owner_work(self):
         result = classify_block("builder", "Repeated same blocker loop detected; durable loop cap exhausted.")
-        self.assertEqual(result["block_class"], "owner_decision_required")
-        self.assertFalse(result["recoverable"])
+        self.assertEqual(result["block_class"], "implementation_fix_required")
+        self.assertTrue(result["recoverable"])
 
     def test_merge_conflict_never_consumes_correction_budget_into_owner_block(self):
         result = classify_block(
@@ -55,14 +55,14 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["block_class"], "branch_repair_required")
         self.assertFalse(result["owner_required"])
 
-    def test_exhausted_frozen_matrix_becomes_honest_owner_block(self):
+    def test_exhausted_frozen_matrix_is_still_internal_work(self):
         result = classify_block(
             "qa_red_team",
             "Frozen acceptance criteria remain failed after the bounded correction budget was exhausted.",
         )
-        self.assertEqual(result["block_class"], "owner_decision_required")
-        self.assertEqual(result["responsible_stage"], "owner")
-        self.assertFalse(result["recoverable"])
+        self.assertEqual(result["block_class"], "implementation_fix_required")
+        self.assertEqual(result["responsible_stage"], "builder")
+        self.assertTrue(result["recoverable"])
 
     def test_governance_owner_block_cannot_be_reclassified_as_recoverable(self):
         result = classify_block(

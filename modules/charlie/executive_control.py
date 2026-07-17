@@ -46,14 +46,14 @@ def authority_decision(capability, policies, *, risk_flags=None, trust=None, now
 
 
 def recovery_decision(mission, policies, *, trust=None, now=None):
+    from modules.charlie.block_adjudication import adjudicate_block
+
     mission = mission if isinstance(mission, dict) else {}
-    packet = _review_packet(mission)
-    disposition = packet.get("block_disposition") if isinstance(packet.get("block_disposition"), dict) else {}
-    block_class = str(disposition.get("block_class") or "").strip()
-    owner_required = disposition.get("owner_required") is True
-    if mission.get("status") != "blocked":
-        return {"action": "none", "reason": "mission_not_blocked"}
-    if owner_required or block_class not in RECOVERABLE_CLASSES:
+    adjudication = adjudicate_block(mission)
+    block_class = str(adjudication.get("block_class") or "").strip()
+    if adjudication.get("action") == "none":
+        return adjudication
+    if adjudication.get("owner_required"):
         return {
             "action": "escalate_owner", "reason": "genuine_owner_decision_required",
             "block_class": block_class or "unclassified", "authority_tier": "charl_human",
@@ -61,16 +61,14 @@ def recovery_decision(mission, policies, *, trust=None, now=None):
     authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
     if not authority["allowed"]:
         return {"action": "escalate_owner", "block_class": block_class, **authority}
-    target = str(disposition.get("responsible_stage") or packet.get("return_to_stage") or "planner").strip()
-    fingerprint = stable_fingerprint({
-        "mission_id": mission.get("mission_id"), "block_class": block_class,
-        "target": target, "reason": disposition.get("reason") or packet.get("blocked_reason"),
-    })
+    target = adjudication.get("target_stage") or "planner"
+    fingerprint = adjudication.get("fingerprint")
+    action = {"recover_stage": "schedule_recovery", "decompose_acceptance": "decompose_acceptance", "reconcile_pr": "reconcile_pr"}.get(adjudication.get("action"), adjudication.get("action"))
     return {
-        "action": "schedule_recovery", "capability": "core.internal_recovery",
+        **adjudication, "action": action, "capability": "core.internal_recovery",
         "authority_tier": authority["authority_tier"], "policy_id": authority.get("policy_id", ""),
         "target_stage": target, "block_class": block_class, "fingerprint": fingerprint,
-        "idempotency_key": f"recover:{mission.get('mission_id')}:{fingerprint}",
+        "idempotency_key": f"{action}:{mission.get('mission_id')}:{fingerprint}",
     }
 
 
@@ -103,7 +101,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     for mission in missions:
         if mission.get("status") == "blocked":
             decision = recovery_decision(mission, policies, trust=trust, now=now)
-            target = commands if decision.get("action") == "schedule_recovery" else escalations
+            target = commands if decision.get("action") in {"schedule_recovery", "decompose_acceptance", "reconcile_pr"} else escalations
             target.append({"mission_id": mission.get("mission_id"), **decision})
     approved = [item for item in missions if item.get("status") == "approved"]
     ranked = sorted(approved, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
