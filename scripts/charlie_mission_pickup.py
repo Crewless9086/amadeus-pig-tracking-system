@@ -977,6 +977,10 @@ def _ensure_base_branch():
     default_base = "charlie-runner-clean-base" if ".charlie_runner" in REPO_ROOT.parts else ""
     base_branch = configured_base or default_base
 
+    marker_recovery = _recover_empty_git_operation_markers()
+    if not marker_recovery["success"]:
+        return marker_recovery
+
     def run(command):
         try:
             completed = subprocess.run(
@@ -1020,6 +1024,9 @@ def _ensure_base_branch():
             "base_branch": base_branch,
             "current_branch": current_branch,
         }
+    codex_chat_recovery = _preserve_generated_codex_chat_before_switch()
+    if not codex_chat_recovery["success"]:
+        return codex_chat_recovery
     switched = run(["git", "switch", base_branch])
     if switched["returncode"] != 0:
         return {
@@ -1049,7 +1056,90 @@ def _ensure_base_branch():
         "status": "base_branch_restored",
         "base_branch": base_branch,
         "previous_branch": current_branch,
+        "codex_chat_recovery": codex_chat_recovery,
     }
+
+
+def _recover_empty_git_operation_markers(repo_root=REPO_ROOT):
+    """Remove only empty stale Git-operation markers left by an interrupted process."""
+    recovered = []
+    for marker_name in ("rebase-merge", "rebase-apply"):
+        try:
+            resolved = subprocess.run(
+                ["git", "rev-parse", "--git-path", marker_name],
+                cwd=repo_root,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+        except Exception as exc:
+            return {
+                "success": False,
+                "status": "git_operation_marker_check_failed",
+                "marker": marker_name,
+                "stderr": f"{exc.__class__.__name__}: {exc}",
+            }
+        if resolved.returncode != 0:
+            return {
+                "success": False,
+                "status": "git_operation_marker_check_failed",
+                "marker": marker_name,
+                "stderr": (resolved.stderr or "").strip(),
+            }
+        marker = Path((resolved.stdout or "").strip())
+        if not marker.is_absolute():
+            marker = Path(repo_root) / marker
+        if not marker.exists():
+            continue
+        if not marker.is_dir() or any(marker.iterdir()):
+            return {
+                "success": False,
+                "status": "git_operation_in_progress",
+                "marker": marker_name,
+                "marker_path": str(marker),
+                "recommended_action": "Inspect and complete or abort the non-empty Git operation before restarting CORE.",
+            }
+        marker.rmdir()
+        recovered.append(str(marker))
+    return {"success": True, "status": "empty_git_markers_recovered" if recovered else "no_git_markers", "recovered": recovered}
+
+
+def _preserve_generated_codex_chat_before_switch(repo_root=REPO_ROOT, codex_chat_path=None, run_factory=None):
+    codex_chat_path = Path(codex_chat_path or CODEX_CHAT_PATH)
+    run_factory = subprocess.run if run_factory is None else run_factory
+    relative_path = Path("planning") / "CODEX_CHAT.md"
+    try:
+        dirty = run_factory(
+            ["git", "status", "--porcelain", "--", str(relative_path).replace("\\", "/")],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"success": False, "status": "codex_chat_preservation_check_failed", "error_type": exc.__class__.__name__}
+    if dirty.returncode != 0:
+        return {"success": False, "status": "codex_chat_preservation_check_failed", "stderr": (dirty.stderr or "").strip()}
+    if not (dirty.stdout or "").strip():
+        return {"success": True, "status": "codex_chat_clean", "backup_path": ""}
+    recovery_dir = Path(repo_root) / ".charlie_runner" / "recovery"
+    recovery_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup_path = recovery_dir / f"CODEX_CHAT-{stamp}.md"
+    try:
+        backup_path.write_text(codex_chat_path.read_text(encoding="utf-8"), encoding="utf-8")
+        restored = run_factory(
+            ["git", "restore", "--worktree", "--", str(relative_path).replace("\\", "/")],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        return {"success": False, "status": "codex_chat_preservation_failed", "error_type": exc.__class__.__name__, "backup_path": str(backup_path)}
+    if restored.returncode != 0:
+        return {"success": False, "status": "codex_chat_restore_failed", "stderr": (restored.stderr or "").strip(), "backup_path": str(backup_path)}
+    return {"success": True, "status": "codex_chat_preserved", "backup_path": str(backup_path)}
 
 
 def _codex_chat_content(mission):

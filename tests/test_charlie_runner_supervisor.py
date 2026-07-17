@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import sys
 import subprocess
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -107,6 +108,28 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
 
         popen.assert_not_called()
         self.assertEqual(result["cycles"], 0)
+
+    def test_identical_infrastructure_failure_enters_hold_after_three_exits(self):
+        children = [Mock(pid=101), Mock(pid=102), Mock(pid=103)]
+        for child in children:
+            child.wait.return_value = 1
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            heartbeat.write_text('{"last_result_status":"base_branch_checkout_failed"}', encoding="utf-8")
+            with patch.object(supervisor, "RUNNER_DIR", root), patch.object(supervisor, "SUPERVISOR_PATH", root / "supervisor.json"), patch.object(supervisor, "RUNNER_HEARTBEAT_PATH", heartbeat), patch.object(supervisor, "STOP_PATH", root / "stop"):
+                result = supervisor.supervise_runner(
+                    popen_factory=Mock(side_effect=children),
+                    sleep_fn=lambda _delay: None,
+                    max_cycles=10,
+                    notifier=notifier,
+                )
+            state = json.loads((root / "supervisor.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertEqual(result["restart_count"], 3)
+        self.assertEqual(state["identical_failure_count"], 3)
+        notifier.assert_called_once()
 
 
 if __name__ == "__main__":

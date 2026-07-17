@@ -21,6 +21,17 @@ RUNNER_DIR = REPO_ROOT / ".charlie_runner"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
 LOCK_PATH = RUNNER_DIR / "supervisor.lock"
+RUNNER_HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
+INFRASTRUCTURE_FAILURE_LIMIT = 3
+NON_RETRYABLE_RUNNER_STATUSES = {
+    "base_branch_checkout_failed",
+    "base_branch_current_failed",
+    "base_branch_switch_failed",
+    "base_branch_verify_failed",
+    "git_operation_in_progress",
+    "git_operation_marker_check_failed",
+    "runner_preflight_failed",
+}
 
 
 class SupervisorInstanceLock:
@@ -105,12 +116,14 @@ RUNNER_COMMAND = [
 ]
 
 
-def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cycles=None):
+def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cycles=None, notifier=None):
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     generation = uuid.uuid4().hex
     _recover_stale_owned_child()
     restart_count = 0
     cycles = 0
+    repeated_failure = ""
+    repeated_failure_count = 0
     while not STOP_PATH.exists():
         cycles += 1
         child_env = {
@@ -130,12 +143,69 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             _write_status("supervisor_stopped", child_pid=child.pid, restart_count=restart_count, return_code=return_code, generation=generation)
             break
         restart_count += 1
+        failure = _runner_failure_signature()
+        if failure and failure == repeated_failure:
+            repeated_failure_count += 1
+        elif failure:
+            repeated_failure = failure
+            repeated_failure_count = 1
+        else:
+            repeated_failure = ""
+            repeated_failure_count = 0
+        if failure and repeated_failure_count >= INFRASTRUCTURE_FAILURE_LIMIT:
+            payload = _write_status(
+                "infrastructure_hold",
+                child_pid=child.pid,
+                restart_count=restart_count,
+                return_code=return_code,
+                failure_status=failure,
+                identical_failure_count=repeated_failure_count,
+                generation=generation,
+                recommended_action="Resolve the recorded infrastructure failure, then explicitly restart CORE.",
+            )
+            if notifier:
+                notifier(payload)
+            return {"status": "infrastructure_hold", "restart_count": restart_count, "cycles": cycles, "failure_status": failure}
         delay = min(5 * (2 ** min(restart_count - 1, 4)), 60)
         _write_status("runner_exited_restart_pending", child_pid=child.pid, restart_count=restart_count, return_code=return_code, restart_delay_seconds=delay, generation=generation)
         if max_cycles is not None and cycles >= max_cycles:
             break
         sleep_fn(delay)
     return {"status": "supervisor_stopped", "restart_count": restart_count, "cycles": cycles}
+
+
+def _runner_failure_signature(path=None):
+    path = RUNNER_HEARTBEAT_PATH if path is None else path
+    try:
+        status = str(json.loads(Path(path).read_text(encoding="utf-8")).get("last_result_status") or "").strip()
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+    return status if status in NON_RETRYABLE_RUNNER_STATUSES else ""
+
+
+def _notify_infrastructure_hold(payload):
+    failure = str((payload or {}).get("failure_status") or "unknown_infrastructure_failure")
+    message = (
+        f"CORE stopped after {INFRASTRUCTURE_FAILURE_LIMIT} identical infrastructure failures: {failure}. "
+        "The watchdog will not restart it until the recorded hold is resolved and CORE is explicitly restarted."
+    )
+    try:
+        completed = subprocess.run(
+            [
+                _python_executable(),
+                str(REPO_ROOT / "scripts" / "charlie_notify.py"),
+                "--level", "blocked",
+                "--title", "CORE infrastructure hold",
+                "--message", message,
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as exc:
+        return {"success": False, "status": "notification_failed", "error_type": exc.__class__.__name__}
+    return {"success": completed.returncode == 0, "status": "sent" if completed.returncode == 0 else "notification_failed"}
 
 
 def _recover_stale_owned_child():
@@ -276,7 +346,7 @@ def main():
         if recovery_status >= 400:
             _write_status("final_artifact_recovery_blocked", recovery=recovery)
             return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
-        return supervise_runner()
+        return supervise_runner(notifier=_notify_infrastructure_hold)
     finally:
         instance_lock.release()
 

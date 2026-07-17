@@ -134,6 +134,12 @@ Safety boundaries:
 
 If Supabase is unavailable or the live owner queue is empty, `/next` falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the message as `Source: fallback docs menu`. The fallback is only a backup; the live mission queue is the preferred source of truth.
 
+## CORE Infrastructure Holds
+
+The runner may recover an interrupted Git operation only when the corresponding `rebase-merge` or `rebase-apply` marker directory exists and is completely empty. Non-empty Git operation metadata is never removed automatically. Before switching a mission branch back to the clean runner base, a changed generated `planning/CODEX_CHAT.md` is archived under `.charlie_runner/recovery/`.
+
+Three identical deterministic runner failures, including base-branch checkout and runner-preflight failures, place the supervisor in `infrastructure_hold`. The owner receives one actionable notification, and the outer watchdog does not restart the same failure indefinitely. Resolve the recorded cause and explicitly restart CORE to clear the hold.
+
 ## Loop 8 Trust, Budget, And Model Routing Dry Run
 
 `scripts/model_routing_plan.py` now produces deterministic routing recommendations. It does not import a provider SDK or make a model call. Every decision keeps `live_call_allowed=false`; red-zone work is blocked before model selection, and future activation must pass both the trust ledger and budget guard.

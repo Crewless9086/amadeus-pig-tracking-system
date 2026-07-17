@@ -206,8 +206,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         thread.assert_called_once()
 
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
+    @patch("scripts.charlie_mission_pickup._recover_empty_git_operation_markers", return_value={"success": True, "status": "no_git_markers", "recovered": []})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
-    def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run):
+    def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run, _markers):
         def fake_run(command, **_kwargs):
             if command == ["git", "branch", "--show-current"]:
                 return SimpleNamespace(returncode=0, stdout="charlie/some-mission\n", stderr="")
@@ -225,8 +226,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertIn("will not pick another mission", result["recommended_action"])
 
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
+    @patch("scripts.charlie_mission_pickup._recover_empty_git_operation_markers", return_value={"success": True, "status": "no_git_markers", "recovered": []})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
-    def test_ensure_base_branch_verifies_switch_result(self, run):
+    def test_ensure_base_branch_verifies_switch_result(self, run, _markers):
         calls = {"branch": 0}
 
         def fake_run(command, **_kwargs):
@@ -245,6 +247,63 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "base_branch_restored")
         self.assertEqual(result["previous_branch"], "charlie/some-mission")
+
+    def test_empty_git_rebase_marker_is_recovered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "rebase-merge"
+            marker.mkdir()
+
+            def fake_run(command, **_kwargs):
+                path = marker if command[-1] == "rebase-merge" else Path(tmp) / "rebase-apply"
+                return SimpleNamespace(returncode=0, stdout=f"{path}\n", stderr="")
+
+            with patch("scripts.charlie_mission_pickup.subprocess.run", side_effect=fake_run):
+                result = charlie_mission_pickup._recover_empty_git_operation_markers(repo_root=Path(tmp))
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "empty_git_markers_recovered")
+        self.assertFalse(marker.exists())
+
+    def test_nonempty_git_rebase_marker_is_never_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "rebase-merge"
+            marker.mkdir()
+            (marker / "git-rebase-todo").write_text("pick abc", encoding="utf-8")
+
+            def fake_run(command, **_kwargs):
+                path = marker if command[-1] == "rebase-merge" else Path(tmp) / "rebase-apply"
+                return SimpleNamespace(returncode=0, stdout=f"{path}\n", stderr="")
+
+            with patch("scripts.charlie_mission_pickup.subprocess.run", side_effect=fake_run):
+                result = charlie_mission_pickup._recover_empty_git_operation_markers(repo_root=Path(tmp))
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["status"], "git_operation_in_progress")
+            self.assertTrue(marker.exists())
+
+    def test_generated_codex_chat_is_archived_before_restore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            chat = root / "planning" / "CODEX_CHAT.md"
+            chat.parent.mkdir(parents=True)
+            chat.write_text("active mission evidence", encoding="utf-8")
+            calls = []
+
+            def fake_run(command, **_kwargs):
+                calls.append(command)
+                if command[:3] == ["git", "status", "--porcelain"]:
+                    return SimpleNamespace(returncode=0, stdout=" M planning/CODEX_CHAT.md\n", stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            result = charlie_mission_pickup._preserve_generated_codex_chat_before_switch(
+                repo_root=root,
+                codex_chat_path=chat,
+                run_factory=fake_run,
+            )
+            backup = Path(result["backup_path"])
+            self.assertEqual(backup.read_text(encoding="utf-8"), "active mission evidence")
+            self.assertIn(["git", "restore", "--worktree", "--", "planning/CODEX_CHAT.md"], calls)
+        self.assertEqual(result["status"], "codex_chat_preserved")
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_pickup_reports_no_available_mission(self, list_owner_work_missions):

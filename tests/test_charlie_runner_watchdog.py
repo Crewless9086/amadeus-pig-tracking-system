@@ -77,6 +77,19 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
         self.assertEqual(result["status"], "supervisor_healthy_runner_starting")
         self.assertEqual(result["supervisor_pid"], 4321)
 
+    def test_infrastructure_hold_prevents_watchdog_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = watchdog_tick(
+                status_reader=lambda: {"active": False, "status": "runner_stale_or_stopped", "orphan_processes": []},
+                starter=lambda: self.fail("must not restart an infrastructure hold"),
+                state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
+                hold_reader=lambda: {"status": "infrastructure_hold", "failure_status": "base_branch_checkout_failed", "identical_failure_count": 3},
+            )
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertFalse(result["started"])
+        self.assertEqual(result["identical_failure_count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
