@@ -7,6 +7,8 @@ class CharliePrivatePlannerTests(unittest.TestCase):
     def test_status_and_brief_are_deterministic(self):
         self.assertEqual(plan_owner_intent("status", {}, environ={})["type"], "read_core_status")
         self.assertEqual(plan_owner_intent("give me the morning brief", {}, environ={})["type"], "executive_brief")
+        self.assertEqual(plan_owner_intent("/next", {}, environ={})["type"], "read_queue")
+        self.assertEqual(plan_owner_intent("/review", {}, environ={})["type"], "read_decisions")
 
     def test_explicit_create_and_action(self):
         create = plan_owner_intent("Create a mission to improve the loading sheet", {}, environ={})
