@@ -16,7 +16,7 @@ OWNER_CLASSES = {"owner_decision_required", "red_zone_owner_approval_required"}
 PASS_STATUSES = {"pass", "passed", "complete", "completed"}
 
 
-def adjudicate_block(mission, *, pr_state=None):
+def adjudicate_block(mission, *, pr_state=None, dependency_states=None):
     mission = mission if isinstance(mission, dict) else {}
     if mission.get("status") != "blocked":
         return {"action": "none", "reason": "mission_not_blocked", "owner_required": False}
@@ -47,7 +47,9 @@ def adjudicate_block(mission, *, pr_state=None):
     if pr_reference:
         if pr_state is None:
             return _result(mission, "reconcile_pr", disposition, reason, pr_reference=pr_reference)
-        pr_decision = reconciliation_decision(mission, pr_state)
+        pr_decision = reconciliation_decision(
+            mission, pr_state, dependency_states=dependency_states,
+        )
         if pr_decision.get("action") in {"mark_pr_ready", "mark_merged"}:
             action = "reconcile_pr_ready" if pr_decision["action"] == "mark_pr_ready" else "reconcile_merged"
             return _result(mission, action, disposition, pr_decision.get("reason", reason), pr_reference=pr_reference, pr_decision=pr_decision)

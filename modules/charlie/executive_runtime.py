@@ -17,7 +17,7 @@ from modules.charlie.executive_store import (
 )
 from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state, update_mission_status
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state
-from modules.charlie.review_readiness import cleared_review_packet
+from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
 
 
 def executive_mode():
@@ -98,7 +98,17 @@ def _execute_pr_reconciliation(command, command_id, database_url, connect_factor
         return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
     mission = loaded.get("mission") or {}
     pr_state = query_pr_state(mission_pr_reference(mission))
-    decision = adjudicate_block(mission, pr_state=pr_state)
+    dependency_states, dependency_error = _load_dependency_states(
+        mission, database_url=database_url, connect_factory=connect_factory,
+    )
+    if dependency_error:
+        return _finish_failure(
+            command, command_id, dependency_error, "dependency_state_reload_failed",
+            database_url, connect_factory,
+        )
+    decision = adjudicate_block(
+        mission, pr_state=pr_state, dependency_states=dependency_states,
+    )
     if decision.get("action") == "recover_stage":
         recovery = {**command, **decision, "action": "schedule_recovery"}
         return _execute_recovery(recovery, command_id, database_url, connect_factory)
@@ -217,7 +227,17 @@ def _execute_delegated_review(command, command_id, database_url, connect_factory
     if not preliminary.get("allowed"):
         return _finish_failure(command, command_id, preliminary, "delegated_review_denied", database_url, connect_factory)
     pr_state = query_pr_state(preliminary.get("pr_reference"))
-    assessment = delegated_review_assessment(mission, pr_state=pr_state)
+    dependency_states, dependency_error = _load_dependency_states(
+        mission, database_url=database_url, connect_factory=connect_factory,
+    )
+    if dependency_error:
+        return _finish_failure(
+            command, command_id, dependency_error, "dependency_state_reload_failed",
+            database_url, connect_factory,
+        )
+    assessment = delegated_review_assessment(
+        mission, pr_state=pr_state, dependency_states=dependency_states,
+    )
     if not assessment.get("allowed") or assessment.get("action") != "delegate_final_review":
         return _finish_failure(command, command_id, assessment, "delegated_review_verification_failed", database_url, connect_factory)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
@@ -240,6 +260,23 @@ def _execute_delegated_review(command, command_id, database_url, connect_factory
     success = status < 400 and result.get("success")
     complete_control_command(command_id, success=success, result={"assessment": assessment, "transition": result}, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": "delegated_review_approved" if success else "transition_failed", "result": result}
+
+
+def _load_dependency_states(mission, *, database_url=None, connect_factory=None):
+    states = {}
+    for dependency_id in mission_dependency_ids(mission):
+        loaded, status = get_mission(
+            dependency_id, database_url=database_url, connect_factory=connect_factory,
+        )
+        if status >= 400:
+            return {}, {
+                "status": "dependency_state_unavailable",
+                "dependency_id": dependency_id,
+                "status_code": status,
+            }
+        dependency = loaded.get("mission") if isinstance(loaded.get("mission"), dict) else {}
+        states[dependency_id] = str(dependency.get("status") or "unknown").lower()
+    return states, None
 
 
 def _execute_queue_selection(command, command_id, database_url, connect_factory):
