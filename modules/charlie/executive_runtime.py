@@ -6,6 +6,7 @@ import os
 import hashlib
 
 from modules.charlie.block_adjudication import adjudicate_block
+from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
 from modules.charlie.executive_control import build_executive_cycle
 from modules.charlie.executive_store import (
     complete_control_command,
@@ -14,7 +15,7 @@ from modules.charlie.executive_store import (
     record_control_command,
     upsert_recovery_case,
 )
-from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state
+from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state, update_mission_status
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state
 from modules.charlie.review_readiness import cleared_review_packet
 
@@ -52,6 +53,10 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
             results.append(_execute_pr_reconciliation(command, recorded["command_id"], database_url, connect_factory))
         elif command.get("action") == "decompose_acceptance":
             results.append(_execute_decomposition(command, recorded["command_id"], database_url, connect_factory))
+        elif command.get("action") == "verify_and_delegate_review":
+            results.append(_execute_delegated_review(command, recorded["command_id"], database_url, connect_factory))
+        elif command.get("action") == "approve_next_work":
+            results.append(_execute_queue_selection(command, recorded["command_id"], database_url, connect_factory))
         else:
             complete_control_command(recorded["command_id"], success=True, result={"status": "runner_will_pick_approved_queue"}, database_url=database_url, connect_factory=connect_factory)
             results.append({"command": command, "status": "queue_progress_observed"})
@@ -183,3 +188,59 @@ def _child_id(parent_id, rows):
 def _finish_failure(command, command_id, result, error, database_url, connect_factory):
     complete_control_command(command_id, success=False, result=result, error=error, database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": error, "result": result}
+
+
+def _execute_delegated_review(command, command_id, database_url, connect_factory):
+    mission_id = command.get("mission_id")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    preliminary = delegated_review_assessment(mission)
+    if not preliminary.get("allowed"):
+        return _finish_failure(command, command_id, preliminary, "delegated_review_denied", database_url, connect_factory)
+    pr_state = query_pr_state(preliminary.get("pr_reference"))
+    assessment = delegated_review_assessment(mission, pr_state=pr_state)
+    if not assessment.get("allowed") or assessment.get("action") != "delegate_final_review":
+        return _finish_failure(command, command_id, assessment, "delegated_review_verification_failed", database_url, connect_factory)
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = dict(metadata.get("review_packet") or {})
+    packet.update({
+        "review_status": "charlie_delegated_final_approved",
+        "recommended_next_action": "CORE release bridge will merge, deploy, and verify the approved low-risk change.",
+        "delegated_review": {
+            "version": "charlie_delegated_review_v1", "decision": "approve_final_release",
+            "authority_tier": command.get("authority_tier"), "policy_id": command.get("policy_id"),
+            "reason": assessment.get("reason"), "pr_head_sha": (assessment.get("reconciliation") or {}).get("head_sha"),
+        },
+    })
+    result, status = transition_mission_review_state(
+        mission_id, "release_approved", packet, expected_status="pr_ready",
+        owner_decision="CHARLIE approved final release under bounded delegated review policy.",
+        notes="CHARLIE delegated review passed current PR, evidence, acceptance, and protected-surface gates.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    complete_control_command(command_id, success=success, result={"assessment": assessment, "transition": result}, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "delegated_review_approved" if success else "transition_failed", "result": result}
+
+
+def _execute_queue_selection(command, command_id, database_url, connect_factory):
+    mission_id = command.get("mission_id")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    assessment = queue_candidate_assessment(mission)
+    if not assessment.get("allowed"):
+        return _finish_failure(command, command_id, assessment, "queue_selection_denied", database_url, connect_factory)
+    result, status = update_mission_status(
+        mission_id, "approved", expected_status="new",
+        owner_decision="CHARLIE selected this low-risk mission as the next goal-aligned work item.",
+        notes="CHARLIE maintained the bounded three-mission execution runway.",
+        metadata={"charlie_queue_selection": {"policy_id": command.get("policy_id"), "priority_score": command.get("priority_score")}},
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "queue_selected" if success else "transition_failed", "result": result}

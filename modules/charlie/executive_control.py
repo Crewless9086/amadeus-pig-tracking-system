@@ -92,6 +92,8 @@ def portfolio_priority(mission, *, active_goal_ids=None):
 
 
 def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=None, now=None):
+    from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
+
     now = now or datetime.now(timezone.utc)
     missions = [item for item in (missions or []) if isinstance(item, dict)]
     goals = [item for item in (goals or []) if isinstance(item, dict) and item.get("status") == "active"]
@@ -103,6 +105,26 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             decision = recovery_decision(mission, policies, trust=trust, now=now)
             target = commands if decision.get("action") in {"schedule_recovery", "decompose_acceptance", "reconcile_pr"} else escalations
             target.append({"mission_id": mission.get("mission_id"), **decision})
+        elif mission.get("status") == "pr_ready":
+            assessment = delegated_review_assessment(mission)
+            if assessment.get("allowed"):
+                authority = authority_decision("core.review_delegate", policies, trust=trust, now=now)
+                if authority.get("allowed"):
+                    fingerprint = stable_fingerprint({"mission_id": mission.get("mission_id"), "review": assessment})
+                    commands.append({
+                        "action": "verify_and_delegate_review", "capability": "core.review_delegate",
+                        "mission_id": mission.get("mission_id"), "assessment": assessment,
+                        "authority_tier": authority["authority_tier"], "policy_id": authority.get("policy_id", ""),
+                        "idempotency_key": f"delegate-review:{mission.get('mission_id')}:{fingerprint}",
+                    })
+            elif assessment.get("reason") == "protected_surface_requires_owner":
+                escalations.append({
+                    "action": "review_owner_required", "mission_id": mission.get("mission_id"),
+                    "title": mission.get("title") or mission.get("mission_id"),
+                    "reason": assessment.get("reason"), "risk_flags": assessment.get("risk_flags", []),
+                    "recommended_action": "Review the protected change and explicitly approve or send it back.",
+                    "authority_tier": "charl_human", "block_class": "protected_review",
+                })
     approved = [item for item in missions if item.get("status") == "approved"]
     ranked = sorted(approved, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
     runner = runner if isinstance(runner, dict) else {}
@@ -118,6 +140,20 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             })
         else:
             escalations.append({"mission_id": ranked[0].get("mission_id"), "action": "queue_progress_not_authorized", **queue_authority})
+    runway = len(approved) + (1 if runner.get("active_mission_id") else 0)
+    if runway < 3:
+        selection_authority = authority_decision("core.queue_select", policies, trust=trust, now=now)
+        candidates = [item for item in missions if item.get("status") == "new" and queue_candidate_assessment(item).get("allowed")]
+        candidates = sorted(candidates, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
+        if selection_authority.get("allowed"):
+            for item in candidates[:3 - runway]:
+                fingerprint = stable_fingerprint({"mission_id": item.get("mission_id"), "goal_ids": active_goal_ids, "date": now.date().isoformat()})
+                commands.append({
+                    "action": "approve_next_work", "capability": "core.queue_select",
+                    "mission_id": item.get("mission_id"), "priority_score": portfolio_priority(item, active_goal_ids=active_goal_ids),
+                    "authority_tier": selection_authority["authority_tier"], "policy_id": selection_authority.get("policy_id", ""),
+                    "idempotency_key": f"queue-select:{item.get('mission_id')}:{fingerprint}",
+                })
     return {
         "version": "charlie_executive_cycle_v1", "observed_at": now.isoformat(),
         "mission_count": len(missions), "active_goal_count": len(goals),

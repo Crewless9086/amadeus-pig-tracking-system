@@ -2,7 +2,10 @@ import os
 import unittest
 from unittest.mock import patch
 
-from modules.charlie.executive_runtime import _execute_decomposition, _execute_recovery, run_executive_cycle
+from modules.charlie.executive_runtime import (
+    _execute_decomposition, _execute_delegated_review, _execute_queue_selection,
+    _execute_recovery, run_executive_cycle,
+)
 
 
 BLOCKED = {
@@ -16,6 +19,30 @@ POLICY = {"policy_id": "POLICY-1", "capability": "core.internal_recovery", "auth
 
 
 class CharlieExecutiveRuntimeTests(unittest.TestCase):
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.query_pr_state")
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_delegated_review_rechecks_pr_and_uses_compare_and_set(self, get_mission, query, transition, _complete):
+        get_mission.return_value = ({"mission": {
+            "mission_id": "M-READY", "status": "pr_ready", "title": "Docs", "raw_text": "Docs", "approval_level": "LEVEL 3",
+            "metadata": {"review_packet": {"review_status": "ready_for_owner_review", "changed_files": ["docs/a.md"], "test_evidence": ["pass"], "pr_url": "https://github.com/o/r/pull/1", "tested_revision": "abc"}},
+        }}, 200)
+        query.return_value = {"success": True, "state": "OPEN", "mergeable": "MERGEABLE", "baseRefName": "main", "headRefOid": "abc", "statusCheckRollup": [{"conclusion": "SUCCESS"}]}
+        result = _execute_delegated_review({"mission_id": "M-READY", "policy_id": "P", "authority_tier": "auto"}, "CMD", None, None)
+        self.assertEqual(result["status"], "delegated_review_approved")
+        self.assertEqual(transition.call_args.args[1], "release_approved")
+        self.assertEqual(transition.call_args.kwargs["expected_status"], "pr_ready")
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.update_mission_status", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_queue_selection_reloads_and_claims_only_new(self, get_mission, update, _complete):
+        get_mission.return_value = ({"mission": {"mission_id": "M-NEW", "status": "new", "title": "Docs", "raw_text": "Improve docs", "approval_level": "LEVEL 3", "metadata": {}}}, 200)
+        result = _execute_queue_selection({"mission_id": "M-NEW", "policy_id": "P", "priority_score": 90}, "CMD", None, None)
+        self.assertEqual(result["status"], "queue_selected")
+        self.assertEqual(update.call_args.kwargs["expected_status"], "new")
+
     @patch("modules.charlie.executive_runtime.queue_outbox")
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.upsert_recovery_case", return_value=({"recovery_id": "REC-X", "attempt_count": 4, "attempt_limit": 3}, 200))
