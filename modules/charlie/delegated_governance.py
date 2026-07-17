@@ -21,7 +21,7 @@ PROTECTED_PATH_MARKERS = (
 )
 
 
-def delegated_review_assessment(mission, *, pr_state=None):
+def delegated_review_assessment(mission, *, pr_state=None, dependency_states=None):
     mission = mission if isinstance(mission, dict) else {}
     if mission.get("status") != "pr_ready":
         return _decision(False, "mission_not_pr_ready")
@@ -36,7 +36,9 @@ def delegated_review_assessment(mission, *, pr_state=None):
         return _decision(False, "authoritative_pr_required", readiness=readiness)
     if pr_state is None:
         return _decision(True, "authoritative_pr_check_required", action="verify_and_delegate_review", pr_reference=reference, readiness=readiness)
-    reconciliation = reconciliation_decision(mission, pr_state)
+    reconciliation = reconciliation_decision(
+        mission, pr_state, dependency_states=dependency_states,
+    )
     if reconciliation.get("action") != "mark_pr_ready":
         return _decision(False, "authoritative_pr_not_green", reconciliation=reconciliation, readiness=readiness)
     return _decision(True, "delegated_review_ready", action="delegate_final_review", pr_reference=reference, reconciliation=reconciliation, readiness=readiness)

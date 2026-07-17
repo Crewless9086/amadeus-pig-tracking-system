@@ -45,6 +45,38 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(transition.call_args.kwargs["expected_status"], "pr_ready")
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.query_pr_state")
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_delegated_review_reloads_live_dependency_state(self, get_mission, query, transition, _complete):
+        mission = {
+            "mission_id": "M-READY", "status": "pr_ready", "title": "Docs", "raw_text": "Docs",
+            "approval_level": "LEVEL 3", "metadata": {
+                "depends_on_mission_ids": ["M-DEPENDENCY"],
+                "review_packet": {
+                    "review_status": "ready_for_owner_review", "changed_files": ["docs/a.md"],
+                    "test_evidence": ["pass"], "pr_url": "https://github.com/o/r/pull/1",
+                    "tested_revision": "abc",
+                },
+            },
+        }
+        get_mission.side_effect = [
+            ({"mission": mission}, 200),
+            ({"mission": {"mission_id": "M-DEPENDENCY", "status": "deployed"}}, 200),
+        ]
+        query.return_value = {
+            "success": True, "state": "OPEN", "mergeable": "MERGEABLE", "baseRefName": "main",
+            "headRefOid": "abc", "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+        }
+        result = _execute_delegated_review(
+            {"mission_id": "M-READY", "policy_id": "P", "authority_tier": "auto"},
+            "CMD", None, None,
+        )
+        self.assertEqual(result["status"], "delegated_review_approved")
+        self.assertEqual(get_mission.call_args_list[1].args[0], "M-DEPENDENCY")
+        self.assertEqual(transition.call_args.args[1], "release_approved")
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.update_mission_status", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.get_mission")
     def test_queue_selection_reloads_and_claims_only_new(self, get_mission, update, _complete):
