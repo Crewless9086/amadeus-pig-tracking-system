@@ -20,6 +20,10 @@ from modules.charlie.core_workflow import (
 from modules.charlie import vault_store
 from modules.charlie.mission_governance import ensure_acceptance_matrix
 from modules.charlie.final_readiness import evaluate_final_readiness
+from modules.charlie.evidence_reconciliation import (
+    applicable_passing_agents,
+    targeted_workflow_return,
+)
 
 
 MISSION_STATUSES = {
@@ -913,8 +917,11 @@ def consume_final_agent_artifact(
                 ingestion.update({"version": "charlie_final_artifact_ingestion_v1", "claims": claims[-100:], "last_claim": claim})
                 review_packet = dict(metadata.get("review_packet") or {})
                 agent_artifacts = dict(review_packet.get("agent_artifacts") or {})
+                artifact_history = list(review_packet.get("agent_artifact_history") or [])
                 agent_artifacts[agent] = artifact
                 review_packet["agent_artifacts"] = agent_artifacts
+                artifact_history.append(artifact)
+                review_packet["agent_artifact_history"] = artifact_history[-120:]
                 vault = dict(metadata.get("mission_vault") or {})
                 handoffs = list(vault.get("handoff_notes") or [])
                 handoffs.append({"agent": agent, "status": "complete", "findings": _clean_text(artifact.get("summary"), 1200), "artifact_identity": identity})
@@ -1305,7 +1312,15 @@ def record_mission_review_decision(
         "owner_review_decisions": decisions[-20:],
     }
     if decision == "send_back":
-        workflow = _return_workflow_to_stage(mission.get("agent_workflow") or [], target_stage, comments)
+        agent_artifacts = review_packet.get("agent_artifacts") if isinstance(review_packet.get("agent_artifacts"), dict) else {}
+        candidate_manifest = review_packet.get("candidate_manifest") if isinstance(review_packet.get("candidate_manifest"), dict) else {}
+        preserved_agents = applicable_passing_agents(agent_artifacts, candidate_manifest)
+        workflow = targeted_workflow_return(
+            mission.get("agent_workflow") or [],
+            target_stage,
+            comments,
+            preserve_agents=preserved_agents,
+        )
         vault = dict(mission.get("vault") or {})
         vault["mission_stage"] = f"returned_to_{target_stage}"
         if comments:
@@ -1314,6 +1329,13 @@ def record_mission_review_decision(
             vault["owner_review_comments"] = review_comments[-12:]
         metadata_update["agent_workflow"] = workflow
         metadata_update["mission_vault"] = vault
+        metadata_update["targeted_invalidation"] = {
+            "version": "charlie_targeted_invalidation_v1",
+            "target_agent": target_stage,
+            "preserved_agents": preserved_agents,
+            "candidate_fingerprint": candidate_manifest.get("candidate_fingerprint", ""),
+            "recorded_at": decision_record["recorded_at"],
+        }
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -1419,6 +1441,13 @@ def build_mission_review_packet(mission):
         "release_notes": _packet_list(packet, "release_notes", []),
         "agent_execution": packet.get("agent_execution") if isinstance(packet.get("agent_execution"), dict) else metadata.get("agent_execution", {}),
         "agent_artifacts": packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {},
+        "candidate_manifest": packet.get("candidate_manifest") if isinstance(packet.get("candidate_manifest"), dict) else {},
+        "evidence_reconciliation": packet.get("evidence_reconciliation") if isinstance(packet.get("evidence_reconciliation"), dict) else {},
+        "active_blockers": packet.get("active_blockers") if isinstance(packet.get("active_blockers"), list) else [],
+        "resolved_findings": packet.get("resolved_findings") if isinstance(packet.get("resolved_findings"), list) else [],
+        "follow_up_findings": packet.get("follow_up_findings") if isinstance(packet.get("follow_up_findings"), list) else [],
+        "evidence_requiring_refresh": packet.get("evidence_requiring_refresh") if isinstance(packet.get("evidence_requiring_refresh"), list) else [],
+        "recommended_action": packet.get("recommended_action") if isinstance(packet.get("recommended_action"), dict) else {},
         "quality_gates": packet.get("quality_gates") if isinstance(packet.get("quality_gates"), list) else [],
         "qa_evidence": _packet_list(packet, "qa_evidence", []),
         "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else vault.get("handoff_reports", []),

@@ -62,6 +62,11 @@ from modules.charlie.mission_governance import (
     update_acceptance_matrix,
 )
 from modules.charlie.block_recovery import classify_block, normalize_findings
+from modules.charlie.evidence_reconciliation import (
+    bind_artifact_to_candidate,
+    build_candidate_manifest,
+    resolve_effective_agent_results,
+)
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.source_map import (
     implementation_source_packet,
@@ -452,7 +457,14 @@ def run_agent_execution_bridge_v2(
         "workspace-write",
     ]
 
-    agent_queue = _agent_queue_from(start_agent, agent_sequence)
+    agent_queue, preserved_agents = _targeted_agent_queue(mission, start_agent, agent_sequence)
+    if preserved_agents:
+        agent_queue = [agent for agent in agent_queue if agent == start_agent or agent not in preserved_agents]
+        ledger["targeted_invalidation"] = {
+            "target_agent": start_agent,
+            "preserved_agents": sorted(preserved_agents),
+            "skipped_replay_agents": sorted(set(agent_sequence).intersection(preserved_agents) - {start_agent}),
+        }
     stage_attempts = {agent: 0 for agent in agent_sequence}
     backflow_counts = {agent: 0 for agent in agent_sequence}
     contract_retry_used = {}
@@ -693,6 +705,20 @@ def run_agent_execution_bridge_v2(
                     database_url=database_url,
                     connect_factory=connect_factory,
                 )
+        manifest_artifacts = {**artifacts, agent: artifact}
+        candidate_manifest = build_candidate_manifest(
+            mission,
+            manifest_artifacts,
+            source_commit=_builder_revision_sha(mission, manifest_artifacts),
+        )
+        artifact = bind_artifact_to_candidate(
+            artifact,
+            agent,
+            execution_id,
+            stage_attempts[agent],
+            candidate_manifest,
+            previous_artifact=artifacts.get(agent),
+        )
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
             governance_decision = evaluate_quality_failure(mission, agent, artifact, quality)
@@ -2885,6 +2911,15 @@ def _run_parallel_read_only_agents(
                     connect_factory=connect_factory,
                 )
                 return {"blocked": True, "result": result, "status_code": status_code}
+        manifest_artifacts = {**artifacts, **parallel_artifacts, agent: artifact}
+        artifact = bind_artifact_to_candidate(
+            artifact,
+            agent,
+            execution_id,
+            context["attempt"],
+            build_candidate_manifest(mission, manifest_artifacts, source_commit=_builder_revision_sha(mission, manifest_artifacts)),
+            previous_artifact=artifacts.get(agent),
+        )
         quality = _parallel_read_only_quality_gate(agent, artifact)
         if not quality["passed"]:
             result, status_code = _block_agent_stage(
@@ -3232,11 +3267,13 @@ def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=Non
     if start_agent not in agent_sequence:
         return {}
     start_index = agent_sequence.index(start_agent)
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    explicitly_preserved = set(targeted.get("preserved_agents") or [])
     preserved = {
         agent: artifact
         for agent, artifact in existing.items()
         if agent in agent_sequence
-        and agent_sequence.index(agent) < start_index
+        and (agent_sequence.index(agent) < start_index or agent in explicitly_preserved)
         and isinstance(artifact, dict)
     }
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
@@ -5208,6 +5245,17 @@ def _agent_queue_from(target_agent, agent_sequence=None):
     return list(agent_sequence[target_index:])
 
 
+def _targeted_agent_queue(mission, start_agent, agent_sequence=None):
+    agent_sequence = list(agent_sequence or _mission_agent_sequence(mission))
+    queue = _agent_queue_from(start_agent, agent_sequence)
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    preserved = {str(agent or "").strip().lower() for agent in targeted.get("preserved_agents") or []}
+    if preserved:
+        queue = [agent for agent in queue if agent == start_agent or agent not in preserved]
+    return queue, preserved
+
+
 def _block_agent_stage(
     mission_id,
     execution_id,
@@ -5514,6 +5562,27 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         },
         ledger,
     )
+    candidate_manifest = build_candidate_manifest(
+        mission,
+        artifacts,
+        source_commit=_builder_revision_sha(mission, artifacts),
+    )
+    evidence_reconciliation = resolve_effective_agent_results(
+        artifacts,
+        candidate_manifest,
+        workflow=mission.get("agent_workflow"),
+        judgement=_judgement_evidence_quality_gate,
+    )
+    existing_review_packet = (
+        mission.get("metadata", {}).get("review_packet", {})
+        if isinstance(mission.get("metadata"), dict)
+        and isinstance(mission.get("metadata", {}).get("review_packet"), dict)
+        else {}
+    )
+    artifact_history = [
+        *list(existing_review_packet.get("agent_artifact_history") or []),
+        *[artifact for artifact in artifacts.values() if isinstance(artifact, dict)],
+    ][-120:]
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -5546,8 +5615,16 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "brain_guard": brain_guard,
             "normalized_vault_writes": normalized_vault_writes,
             "mission_quality": mission_quality,
+            "candidate_manifest": candidate_manifest,
+            "evidence_reconciliation": evidence_reconciliation,
+            "active_blockers": evidence_reconciliation.get("active_blockers", []),
+            "resolved_findings": evidence_reconciliation.get("resolved_findings", []),
+            "follow_up_findings": evidence_reconciliation.get("follow_ups", []),
+            "evidence_requiring_refresh": evidence_reconciliation.get("requires_revalidation", []),
+            "recommended_action": evidence_reconciliation.get("recommended_action", {}),
             "repo_test_command_memory": repo_test_command_memory(changed_files),
             "agent_artifacts": _compact_agent_artifacts_for_review(artifacts),
+            "agent_artifact_history": artifact_history,
             "handoff_reports": {
                 agent: artifact.get("handoff_report", {})
                 for agent, artifact in artifacts.items()
@@ -5713,20 +5790,53 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
     sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
     if not sequence:
         return False, {"reason": "Owner-review workflow is empty."}
-    for agent in sequence:
-        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
-        if not artifact:
-            # Resume runs may intentionally reuse upstream durable evidence that
-            # is not rehydrated into this execution's compact artifact map.
-            continue
-        judgement = _judgement_evidence_quality_gate(agent, artifact)
-        if not judgement.get("passed"):
-            return False, {
-                "blocked_agent": agent,
-                "stage_status": "non_passing",
-                "reason": f"Owner review is not ready: {agent} is non-passing ({judgement.get('reason') or 'quality gate failed'}).",
-            }
-    return True, {"reason": "all_workflow_artifacts_passing"}
+    # Older stored missions predate candidate-bound lineage. Preserve their
+    # established gate until a targeted rerun creates versioned evidence.
+    if not any(
+        isinstance(artifact, dict) and isinstance(artifact.get("evidence_lineage"), dict)
+        for artifact in artifacts.values()
+    ):
+        for agent in sequence:
+            artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+            if not artifact:
+                continue
+            judgement = _judgement_evidence_quality_gate(agent, artifact)
+            if not judgement.get("passed"):
+                return False, {
+                    "blocked_agent": agent,
+                    "stage_status": "non_passing",
+                    "reason": f"Owner review is not ready: {agent} is non-passing ({judgement.get('reason') or 'quality gate failed'}).",
+                    "legacy_evidence": True,
+                }
+        return True, {"reason": "all_workflow_artifacts_passing", "legacy_evidence": True}
+    manifest = build_candidate_manifest(
+        mission,
+        artifacts,
+        source_commit=_builder_revision_sha(mission, artifacts),
+    )
+    reconciliation = resolve_effective_agent_results(
+        artifacts,
+        manifest,
+        workflow=mission.get("agent_workflow"),
+        judgement=_judgement_evidence_quality_gate,
+    )
+    if reconciliation.get("active_blockers"):
+        blocker = reconciliation["active_blockers"][0]
+        return False, {
+            "blocked_agent": blocker.get("agent") or "reviewer",
+            "stage_status": "current_candidate_non_passing",
+            "reason": f"Owner review is not ready: {blocker.get('agent') or 'reviewer'} has a current applicable blocker ({blocker.get('reason') or 'quality gate failed'}).",
+            "evidence_reconciliation": reconciliation,
+        }
+    if reconciliation.get("requires_revalidation"):
+        refresh = reconciliation["requires_revalidation"][0]
+        return False, {
+            "blocked_agent": refresh.get("agent") or "reviewer",
+            "stage_status": "targeted_recheck_required",
+            "reason": f"Owner review needs a targeted {refresh.get('agent') or 'reviewer'} recheck for the current release candidate ({refresh.get('reason')}).",
+            "evidence_reconciliation": reconciliation,
+        }
+    return True, {"reason": "current_candidate_evidence_passing", "evidence_reconciliation": reconciliation}
 
 
 def _verify_owner_review_packet_persisted(mission_id, *, database_url=None, connect_factory=None):
@@ -6256,6 +6366,12 @@ def _compact_agent_artifacts_for_review(artifacts):
         "first_attempt_artifact_path",
         "expected_revision",
         "tested_revision",
+        "artifact_id",
+        "source_commit",
+        "candidate_fingerprint",
+        "scope_hash",
+        "evidence_lineage",
+        "structured_findings",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):

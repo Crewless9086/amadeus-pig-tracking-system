@@ -671,6 +671,7 @@
         ${field("Reason", headlineReason(mission) || "No reason recorded.")}
         ${executionWarning ? `<div class="notice danger">${escapeHtml(executionWarning)}</div>` : ""}
         ${renderFinalReadiness(review.final_readiness)}
+        ${renderEvidenceReconciliation(review)}
         ${renderOwnerGuidance(mission, guidance)}
         ${actionButtons(mission)}
         ${runnerBox()}
@@ -687,6 +688,22 @@
       <strong>${escapeHtml(text(readiness.headline, "READINESS UNKNOWN"))}</strong>
       <p>${escapeHtml(text(readiness.next_action, "Review the required gates."))}</p>
       <div class="matrix-list">${gates.map((gate) => `<div class="matrix-row ${escapeAttr(text(gate.status, "pending"))}"><span class="matrix-dot"></span><b>${escapeHtml(text(gate.label, gate.key))}</b><span>${escapeHtml(statusLabel(gate.status))}</span></div>`).join("")}</div>
+    </section>`;
+  }
+
+  function renderEvidenceReconciliation(review) {
+    const blockers = Array.isArray(review.active_blockers) ? review.active_blockers : [];
+    const refresh = Array.isArray(review.evidence_requiring_refresh) ? review.evidence_requiring_refresh : [];
+    const resolved = Array.isArray(review.resolved_findings) ? review.resolved_findings : [];
+    const followUps = Array.isArray(review.follow_up_findings) ? review.follow_up_findings : [];
+    const candidate = review.candidate_manifest || {};
+    if (!blockers.length && !refresh.length && !resolved.length && !followUps.length && !candidate.candidate_fingerprint) return "";
+    const next = blockers[0] || refresh[0] || {};
+    return `<section class="decision-guidance${blockers.length ? " danger" : ""}">
+      <span>Release evidence</span>
+      <strong>${blockers.length ? `${blockers.length} active blocker${blockers.length === 1 ? "" : "s"}` : refresh.length ? `${refresh.length} targeted recheck${refresh.length === 1 ? "" : "s"}` : "Current candidate reconciled"}</strong>
+      ${next.agent ? `<p>${escapeHtml(cleanAgentName(next.agent))}: ${escapeHtml(text(next.reason, "Review required"))}</p>` : ""}
+      <small>${escapeHtml(text(candidate.source_commit, "Unversioned legacy evidence"))} | ${resolved.length} resolved | ${followUps.length} follow-up</small>
     </section>`;
   }
 
@@ -932,6 +949,7 @@
         ${field("Recommended", text(packet.recommended_next_action, "No recommendation recorded."))}
         ${field("Blocked agent", text(packet.blocked_agent, "n/a"))}
         ${renderFinalReadiness(readiness)}
+        ${renderEvidenceReconciliation(packet)}
         <details class="disclosure"><summary>Test evidence (${tests.length})</summary><div>${tests.length ? tests.map((item, index) => field(`Evidence ${index + 1}`, typeof item === "string" ? item : JSON.stringify(item))).join("") : '<div class="notice">No test evidence was recorded.</div>'}</div></details>
         <div class="button-grid">
           ${approve}
