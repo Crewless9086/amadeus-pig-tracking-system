@@ -26,6 +26,7 @@ from modules.charlie.mission_store import (
     list_missions,
     record_mission,
     consume_final_agent_artifact,
+    transition_mission_review_state,
     update_mission_status,
     update_mission_vault,
     update_mission_workflow_step,
@@ -949,10 +950,17 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
     artifact.update({"agent": agent, "artifact_path": str(path), "recovered_after_restart": True})
     validation = _validate_agent_artifact(agent, artifact)
     if not validation["valid"]:
-        return {"success": False, "status": "pending_final_artifact_invalid", "missing_keys": validation["missing_keys"]}, 409
+        return _quarantine_pending_final_artifact(
+            mission, agent,
+            "Recovered final artifact is invalid; missing keys: " + ", ".join(validation["missing_keys"]),
+            database_url=database_url, connect_factory=connect_factory,
+        )
     quality = _agent_quality_gate(agent, artifact)
     if not quality["passed"]:
-        return {"success": False, "status": "pending_final_artifact_quality_failed", "reason": quality["reason"]}, 409
+        return _quarantine_pending_final_artifact(
+            mission, agent, quality["reason"],
+            database_url=database_url, connect_factory=connect_factory,
+        )
     artifact["quality_gate"] = quality
     execution_id = str(status.get("agent_ledger", {}).get("execution_id") or path.name.split(f".{agent}.")[0] or "recovered")
     result, status_code = consume_final_agent_artifact(
@@ -968,6 +976,45 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
             "execution_artifact": str(path), "final_artifact_present": True,
         })
     return result, status_code
+
+
+def _quarantine_pending_final_artifact(mission, agent, reason, *, database_url=None, connect_factory=None):
+    """Block one stale mission honestly without stopping the supervised queue."""
+    mission_id = str((mission or {}).get("mission_id") or "").strip()
+    metadata = mission.get("metadata") if isinstance((mission or {}).get("metadata"), dict) else {}
+    packet = dict(metadata.get("review_packet") or {})
+    packet.update({
+        "review_status": "internal_recovery_required",
+        "blocked_agent": str(agent or "reviewer"),
+        "blocked_reason": str(reason or "Recovered final artifact failed validation."),
+        "recommended_owner_decision": "",
+        "recommended_next_action": "CHARLIE will adjudicate and recover this internal artifact failure; unrelated queue work continues.",
+        "block_disposition": {
+            "block_class": "evidence_repair_required",
+            "owner_required": False,
+            "responsible_stage": str(agent or "reviewer"),
+            "reason": str(reason or "Recovered final artifact failed validation."),
+        },
+    })
+    result, status_code = transition_mission_review_state(
+        mission_id, "blocked", packet, expected_status="in_progress",
+        notes="Supervisor quarantined a non-passing recovered artifact instead of stopping the queue.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return {
+            "success": False, "status": "pending_final_artifact_quarantine_failed",
+            "reason": reason, "transition": result,
+        }, status_code
+    write_runner_heartbeat({
+        "status": "pending_final_artifact_quarantined", "mission_id": "",
+        "current_agent": "", "current_action": "Stale artifact quarantined; queue may continue.",
+        "execution_artifact": "", "final_artifact_present": False,
+    })
+    return {
+        "success": True, "status": "pending_final_artifact_quarantined",
+        "mission_id": mission_id, "reason": reason,
+    }, 200
 
 
 def complete_codex_execution_from_artifact(
