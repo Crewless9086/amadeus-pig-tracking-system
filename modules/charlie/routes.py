@@ -97,7 +97,8 @@ def charlie_build_relay_policy_route():
 @charlie_bp.route("/charlie/build-relay/telegram/webhook", methods=["POST"])
 def charlie_build_relay_telegram_webhook_route():
     payload = request.get_json(silent=True) or {}
-    if private_policy().get("explicitly_enabled"):
+    callback_data = str(((payload.get("callback_query") or {}).get("data") or ""))
+    if private_policy().get("explicitly_enabled") and (not callback_data or callback_data.startswith("cp:")):
         result, status_code = handle_private_telegram_webhook(payload, headers=request.headers)
     else:
         result, status_code = handle_charlie_telegram_webhook(payload, headers=request.headers)

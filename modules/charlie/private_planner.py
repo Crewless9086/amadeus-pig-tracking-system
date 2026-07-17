@@ -43,7 +43,7 @@ def _deterministic_plan(text, context):
         return _intent("executive_brief", .99)
     if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower:
         return _intent("read_core_status", .98)
-    if lower in {"/queue", "queue"} or "missions in the queue" in lower:
+    if lower in {"/queue", "queue", "/next", "/missions", "missions"} or "missions in the queue" in lower:
         return _intent("read_queue", .98)
     if lower in {"/blocked", "blocked"} or "blocked missions" in lower:
         return _intent("read_blocked", .98)
@@ -51,7 +51,7 @@ def _deterministic_plan(text, context):
         return _intent("read_workforce", .97)
     if lower in {"/analyst", "analyst"} or "analyst suggestions" in lower:
         return _intent("read_analyst", .97)
-    if lower in {"/decisions", "decisions", "what needs me"} or "need my decision" in lower:
+    if lower in {"/decisions", "decisions", "/review", "review", "what needs me"} or "need my decision" in lower:
         return _intent("read_decisions", .97)
     if mission_id and any(word in lower for word in ("why", "explain", "status", "happening", "mission")):
         return _intent("read_mission", .97, {"mission_id": mission_id})
