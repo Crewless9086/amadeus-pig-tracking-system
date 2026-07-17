@@ -10,6 +10,8 @@ Purpose: define the current authority boundary for the main Amadeus agents and c
 - Claude review is advisory evidence only. A Claude pass cannot unlock authority unless owner approval, runtime flags, source-map evidence, tests, and the relevant backend gate also pass.
 - CHARLIE CORE must inspect the matched source-map section before planning or building authority, automation, customer/public output, payment, meat, slaughter, butcher, or agent-runtime changes.
 - Atlas, Sentinel, and Forge are currently Oom Sakkie specialist runtime components, not standalone canonical Vault agents. Registering them as independent agents requires a separate owner-reviewed mission.
+- CHARLIE executive authority is deny-by-default and comes only from an enabled, unexpired Supabase delegation policy with bounded scope, audit, rollback, and deterministic-gate requirements.
+- Internal branch, environment, implementation, evidence, stale-state, queue-continuation, and notification mechanics may be delegated after trust gates. Customer sends, public posts, payments, reservations, stock/lifecycle/purpose writes, destructive migrations, production deletion, and credentials remain Charl gates.
 
 ## Matrix
 
