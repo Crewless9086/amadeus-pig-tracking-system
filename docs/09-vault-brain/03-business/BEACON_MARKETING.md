@@ -6,6 +6,12 @@ Beacon should support meat preorder, live pig sales, slaughter/abattoir fallback
 
 Beacon remains gated by owner approval, approved media, channel rules, spend caps, and backend fulfilment readiness.
 
+## Advisory Autonomy Readiness
+
+The owner-approved `beacon_advisory_readiness_v1` policy is a deterministic, content-addressed advisory promotion gate. Readiness requires all seven gates: at least 10 completed campaigns across 6 weeks; at least 85% unedited approvals from 10 reviews; at least 95% attribution completeness; at least 80% accuracy across 10 matured recommendations; zero high/critical incidents in 90 days and zero unresolved incidents; 8 clean evaluated trust weeks; and 100% compliance with compatible owner-approved budgets.
+
+Passing prepares one idempotent owner-only promotion-review notification. Regression suspends readiness and prepares one deduplicated owner alert; recovery requires a new all-pass evaluation. Readiness and promotion can expand advisory drafting and recommendation preparation only. They never authorize posting, Meta calls, boosting, advertising spend, customer sends, orders, reservations, stock changes, or farm writes.
+
 ## Weekly Marketing Command Brief
 
 Beacon projects append-only campaign performance evidence into an authenticated owner brief. Comparisons use the latest evidence calendar week and only compatible measurement windows and currencies, with one latest snapshot per campaign. Weekly spend and qualified-lead targets must identify an explicit `proposed`, `owner_approved`, or `blocked` source state; missing or malformed target authority is `unavailable`, never inferred from a default. Attributed revenue remains unavailable until a canonical paid/completed-sale join is proven.

@@ -9,6 +9,15 @@
 7. Manual or controlled execution evidence is recorded.
 8. Performance evidence informs future recommendations.
 
+## Advisory Readiness Lifecycle
+
+1. Evaluate the current owner-approved, content-addressed policy against fresh, non-superseded campaign, approval, attribution, recommendation-outcome, safety, trust, and budget evidence using AND semantics.
+2. Missing, malformed, stale, ambiguous, insufficient, proposed, expired, superseded, incompatible, edited, inaccurate, unsafe, untrusted, or over-budget evidence fails closed with metric lineage and a machine-readable reason.
+3. The first all-pass evaluation becomes `ready_for_owner_review` and prepares one idempotent owner-only notification. It does not promote Beacon automatically.
+4. A later failed gate becomes `suspended`, preserves prior history, and prepares one deduplicated owner alert.
+5. Corrected or newly sufficient evidence creates a new evaluation; recovery occurs only when every gate passes under the current approved policy.
+6. Advisory promotion never satisfies the separate exact owner gates for public posting, Meta execution, boosting, or advertising spend.
+
 ## Campaign Outcome Evidence
 
 The authenticated owner may retrieve only provider-supported, allowlisted post metrics. Each metric retains its source, source reference, retrieval time, and evidence status. A numeric zero is verified only when the source explicitly returns zero; absent, unsupported, malformed, or provider-error values remain unavailable and cannot support recommendations or cost calculations.
