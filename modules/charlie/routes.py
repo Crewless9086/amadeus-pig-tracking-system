@@ -932,6 +932,13 @@ def _mission_dashboard_summary(mission):
             "runner_recovery_history",
             "repo_test_command_memory",
             "final_readiness",
+            "candidate_manifest",
+            "evidence_reconciliation",
+            "active_blockers",
+            "resolved_findings",
+            "follow_up_findings",
+            "evidence_requiring_refresh",
+            "recommended_action",
         )
         if key in review_packet
     }
@@ -1086,7 +1093,12 @@ def _owner_action_guidance(mission, review_packet, workflow):
     review_packet = review_packet if isinstance(review_packet, dict) else {}
     workflow_agents = [str(item.get("agent") or "").strip().lower() for item in workflow if isinstance(item, dict)]
     recommendation = str(review_packet.get("recommended_next_action") or "").strip()
+    reconciled_action = review_packet.get("recommended_action") if isinstance(review_packet.get("recommended_action"), dict) else {}
+    if not recommendation and reconciled_action:
+        recommendation = str(reconciled_action.get("reason") or "").strip()
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
+    if not target and reconciled_action.get("target_agent") not in {None, "", "owner"}:
+        target = str(reconciled_action.get("target_agent") or "").strip().lower()
     disposition = review_packet.get("block_disposition") if isinstance(review_packet.get("block_disposition"), dict) else {}
     if not target and disposition.get("responsible_stage") not in {None, "", "owner"}:
         target = str(disposition.get("responsible_stage") or "").strip().lower()
@@ -1175,6 +1187,12 @@ def _compact_owner_review_packet(packet, mission_id=""):
         "blocked_reason": _short_text(packet.get("blocked_reason"), 800),
         "unresolved_blockers": _compact_event_list(packet.get("unresolved_blockers"), limit=6),
         "recommended_next_action": _short_text(packet.get("recommended_next_action"), 800),
+        "candidate_manifest": packet.get("candidate_manifest") if isinstance(packet.get("candidate_manifest"), dict) else {},
+        "active_blockers": _compact_event_list(packet.get("active_blockers"), limit=8),
+        "resolved_findings": _compact_event_list(packet.get("resolved_findings"), limit=8),
+        "follow_up_findings": _compact_event_list(packet.get("follow_up_findings"), limit=8),
+        "evidence_requiring_refresh": _compact_event_list(packet.get("evidence_requiring_refresh"), limit=8),
+        "recommended_action": packet.get("recommended_action") if isinstance(packet.get("recommended_action"), dict) else {},
         "final_readiness": packet.get("final_readiness") if isinstance(packet.get("final_readiness"), dict) else {},
         "can_approve_final_release": packet.get("can_approve_final_release") is True,
         "can_send_back": packet.get("can_send_back") is True,

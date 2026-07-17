@@ -134,6 +134,17 @@ Safety boundaries:
 
 If Supabase is unavailable or the live owner queue is empty, `/next` falls back to `docs/00-start-here/NEXT_STEPS.md` and labels the message as `Source: fallback docs menu`. The fallback is only a backup; the live mission queue is the preferred source of truth.
 
+## Candidate-Bound Review Evidence
+
+CORE release gates use `charlie_evidence_reconciliation_v1`. Every new agent artifact is bound to an immutable artifact ID, execution, candidate commit, candidate fingerprint, and frozen scope hash. Historical artifacts remain available for audit and ANALYST learning, but only the latest applicable artifact per agent can affect the current release decision.
+
+- A resolved or superseded pre-build finding cannot override a later verified release candidate.
+- A non-passing result for another commit or scope triggers a targeted recheck, not a generic full rerun.
+- A current applicable failure remains a hard release blocker.
+- Owner send-back preserves completed downstream stages whose candidate-bound evidence still applies; the runner skips those stages instead of spending another full pass.
+- The owner review packet separates active blockers, resolved findings, follow-ups, and evidence requiring refresh, and records the exact candidate commit/fingerprint.
+- Older missions without lineage retain the legacy gate until a targeted rerun creates candidate-bound evidence. No destructive database migration or history rewrite is required.
+
 ## CORE Infrastructure Holds
 
 The runner may recover an interrupted Git operation only when the corresponding `rebase-merge` or `rebase-apply` marker directory exists and is completely empty. Non-empty Git operation metadata is never removed automatically. Before switching a mission branch back to the clean runner base, a changed generated `planning/CODEX_CHAT.md` is archived under `.charlie_runner/recovery/`.
