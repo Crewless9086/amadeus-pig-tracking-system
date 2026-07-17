@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from modules.charlie.executive_runtime import run_executive_cycle
+from modules.charlie.executive_runtime import _execute_decomposition, _execute_recovery, run_executive_cycle
 
 
 BLOCKED = {
@@ -16,6 +16,34 @@ POLICY = {"policy_id": "POLICY-1", "capability": "core.internal_recovery", "auth
 
 
 class CharlieExecutiveRuntimeTests(unittest.TestCase):
+    @patch("modules.charlie.executive_runtime.queue_outbox")
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.upsert_recovery_case", return_value=({"recovery_id": "REC-X", "attempt_count": 4, "attempt_limit": 3}, 200))
+    def test_exhausted_mechanical_recovery_does_not_wake_owner(self, _case, _complete, outbox):
+        result = _execute_recovery({"mission_id": "M-1", "fingerprint": "fp"}, "CMD", None, None)
+        self.assertEqual(result["status"], "recovery_strategy_exhausted")
+        outbox.assert_not_called()
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.record_mission", return_value=({"stored": True}, 201))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_decomposition_creates_bounded_children_and_pauses_parent(self, get_mission, record, transition, _complete):
+        rows = [{"id": f"A-{index}", "requirement": f"Requirement {index}", "status": "pending"} for index in range(7)]
+        get_mission.return_value = ({"mission": {
+            "mission_id": "M-PARENT", "status": "blocked", "title": "Large mission", "urgency": "P1",
+            "metadata": {
+                "mission_governance": {"acceptance_matrix": rows},
+                "review_packet": {"blocked_reason": "Frozen acceptance criteria remain failed after the bounded correction budget was exhausted.", "blocked_agent": "tester"},
+            },
+        }}, 200)
+        result = _execute_decomposition({"mission_id": "M-PARENT"}, "CMD", None, None)
+        self.assertEqual(result["status"], "decomposed")
+        self.assertEqual(record.call_count, 4)
+        self.assertTrue(all(len(call.args[0]["metadata"]["mission_governance"]["acceptance_matrix"]) <= 2 for call in record.call_args_list))
+        self.assertEqual(transition.call_args.args[1], "paused")
+        self.assertEqual(transition.call_args.kwargs["expected_status"], "blocked")
+
     @patch("modules.charlie.executive_runtime.load_executive_context", return_value=({"policies": [POLICY], "goals": []}, 200))
     @patch("modules.charlie.executive_runtime.list_missions", return_value=({"missions": [BLOCKED]}, 200))
     @patch("modules.charlie.executive_runtime.record_control_command", return_value=({"created": True, "command_id": "CMD-1"}, 201))

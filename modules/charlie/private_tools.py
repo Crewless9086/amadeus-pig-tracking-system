@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from modules.charlie.block_adjudication import adjudicate_block
 from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.executive_store import list_capability_trust
 from modules.charlie.improvement_analyst import analyst_scorecard
@@ -91,8 +92,14 @@ def _blocked(_args):
     rows = []
     for mission in missions:
         packet = ((mission.get("metadata") or {}).get("review_packet") or {})
-        disposition = packet.get("block_disposition") or {}
-        rows.append({"mission_id": mission.get("mission_id"), "title": mission.get("title"), "reason": disposition.get("reason") or packet.get("blocked_reason"), "owner_required": disposition.get("owner_required") is True, "responsible_stage": disposition.get("responsible_stage") or packet.get("return_to_stage")})
+        decision = adjudicate_block(mission)
+        rows.append({
+            "mission_id": mission.get("mission_id"), "title": mission.get("title"),
+            "reason": decision.get("reason") or packet.get("blocked_reason"),
+            "owner_required": decision.get("owner_required") is True,
+            "responsible_stage": decision.get("target_stage") or packet.get("return_to_stage"),
+            "charlie_action": decision.get("action"),
+        })
     lines = [f"- {row['title']} [{row['mission_id']}]: {row['reason'] or 'reason unavailable'}; next: {'Charl decision' if row['owner_required'] else row['responsible_stage'] or 'CHARLIE recovery'}" for row in rows]
     return {"success": status < 400, "status": "blocked_ready", "summary": "Blocked missions:\n" + ("\n".join(lines) or "No blocked missions."), "missions": rows}, status
 

@@ -41,10 +41,12 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         result = recovery_decision(blocked(), POLICIES)
         self.assertEqual(result["action"], "schedule_recovery")
         self.assertEqual(result["target_stage"], "builder")
-        self.assertTrue(result["idempotency_key"].startswith("recover:MISSION-1:"))
+        self.assertTrue(result["idempotency_key"].startswith("schedule_recovery:MISSION-1:"))
 
     def test_owner_block_never_auto_recovers(self):
-        result = recovery_decision(blocked(owner_required=True), POLICIES)
+        owner_mission = blocked(owner_required=True)
+        owner_mission["metadata"]["review_packet"]["blocked_reason"] = "Owner must decide the pricing business choice."
+        result = recovery_decision(owner_mission, POLICIES)
         self.assertEqual(result["action"], "escalate_owner")
 
     def test_cycle_keeps_unrelated_queue_productive(self):

@@ -61,8 +61,8 @@ def classify_block(agent="", reason="", artifact=None):
         "recovery attempts exhausted", "bounded correction budget was exhausted",
         "frozen acceptance criteria remain failed",
     )):
-        block_class = OWNER_DECISION_REQUIRED
-        route = "owner"
+        block_class = "implementation_fix_required"
+        route = "builder"
     elif _contains(text, (
         "owner must decide", "owner decision required", "needs owner decision",
         "missing owner decision", "business choice", "ambiguous owner intent",
