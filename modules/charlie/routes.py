@@ -63,6 +63,8 @@ from modules.charlie.owner_approval_inbox import (
     record_owner_approval_decision,
 )
 from modules.charlie.agent_workforce import build_agent_workforce_packet
+from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
+from modules.charlie.executive_store import executive_scorecard
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.beacon.workforce import beacon_workforce_scorecard
 
@@ -365,6 +367,11 @@ def charlie_build_relay_command_center_route():
         "local_runner_scope": "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine",
         "execution_boundary": "Dashboard records decisions and evidence. Local runner/Codex executes builds and release bridge actions.",
     }
+    if detailed:
+        executive, executive_status = executive_scorecard()
+        response["charlie_executive"] = {**executive, "mode": executive_mode(), "http_status": executive_status}
+    else:
+        response["charlie_executive"] = {"mode": executive_mode(), "status": "detail_required_for_scorecard"}
     response["autonomy_readiness"] = autonomy_readiness_packet(response)
     return jsonify(response), 200
 
@@ -505,6 +512,26 @@ def charlie_core_vault_health_route():
     if denied:
         return denied
     result, status_code = vault_tables_health()
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/executive", methods=["GET"])
+def charlie_core_executive_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = executive_scorecard()
+    result["mode"] = executive_mode()
+    result["authority_boundary"] = "Only current Supabase delegation policies may authorize non-red internal commands."
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/executive/cycle", methods=["POST"])
+def charlie_core_executive_cycle_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = run_executive_cycle(runner={"source": "owner_manual_observation"})
     return jsonify(result), status_code
 
 

@@ -24,6 +24,9 @@ from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_sta
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
+from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
+from modules.charlie.executive_control import portfolio_priority
+from modules.charlie.executive_store import claim_pending_outbox, complete_outbox, record_capability_outcome
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -153,6 +156,12 @@ def watch_for_mission(
                 recovery["checks"] = checks
                 write_runner_heartbeat(recovery)
             if checks == 1 or checks % 5 == 0:
+                executive, _executive_status = run_executive_cycle(runner={"active_mission_id": (_active_mission() or {}).get("mission_id", "")})
+                if executive.get("status") not in {"executive_disabled", "executive_cycle_complete"} or executive.get("results"):
+                    executive["checks"] = checks
+                    write_runner_heartbeat({"status": "executive_cycle_observed", "executive": executive, "checks": checks})
+                if notify:
+                    _deliver_executive_outbox()
                 reconciliation = reconcile_blocked_pr_missions(notify=notify)
                 if reconciliation.get("changed_count"):
                     reconciliation["checks"] = checks
@@ -553,6 +562,13 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
         timeout_seconds=timeout_seconds,
         artifact_consumer=consume_final_agent_artifact,
     )
+    capability_key = f"core.mission.{str(mission.get('mission_type') or 'unknown').strip().lower().replace(' ', '_')}"
+    result["capability_trust"] = record_capability_outcome(
+        capability_key,
+        clean_pass=result.get("mission_status") == "pr_ready" and not result.get("backflow_events"),
+        recovered=result.get("status") == "agent_stage_recovery_queued" or bool(result.get("backflow_events")),
+        evidence_version=str(result.get("agent_runner_version") or ""),
+    )[0]
     if result.get("mission_status") in {"pr_ready", "blocked", "rejected"}:
         result["analyst"] = _queue_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
     if notify:
@@ -682,6 +698,8 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "mission_count": 0,
         }, 200
 
+    if clean_status == "approved" and executive_mode() == "active":
+        missions = sorted(missions, key=lambda item: (-portfolio_priority(item), str(item.get("created_at") or ""), str(item.get("mission_id") or "")))
     mission = missions[0]
     mission_id = mission.get("mission_id", "")
     codex_chat_preview = _codex_chat_content(mission)
@@ -1467,6 +1485,24 @@ def _send_notification(level, title, message, mission_id=""):
         return exit_code
     finally:
         sys.argv = original_argv
+
+
+def _deliver_executive_outbox():
+    claimed, status_code = claim_pending_outbox(limit=10)
+    if status_code >= 400:
+        return claimed
+    delivered = []
+    for item in claimed.get("items", []):
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        exit_code = _send_notification(
+            "needs_owner_approval",
+            "CHARLIE needs an owner decision",
+            str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required."),
+            mission_id=payload.get("mission_id", ""),
+        )
+        complete_outbox(item.get("outbox_id"), sent=exit_code == 0, error="" if exit_code == 0 else f"notify_exit_{exit_code}")
+        delivered.append({"outbox_id": item.get("outbox_id"), "sent": exit_code == 0})
+    return {"success": True, "status": "outbox_delivery_complete", "delivered": delivered}
 
 
 if __name__ == "__main__":

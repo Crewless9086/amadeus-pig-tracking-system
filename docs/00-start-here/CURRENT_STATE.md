@@ -2,6 +2,14 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## CHARLIE Executive Control Plane - 2026-07-17
+
+- The approved control-plane program is documented in `docs/06-operations/CHARLIE_EXECUTIVE_CONTROL_PLANE.md`.
+- Supabase remains authoritative for executive goals, delegation policies, idempotent commands, recovery cases, capability trust, eval packs, research evidence, and notification outbox state.
+- CORE remains the mission executor. CHARLIE supervises CORE and may repair only recoverable non-red internal failures under an active delegation policy.
+- The runtime supports `CHARLIE_EXECUTIVE_MODE=off|observe|active`; observe is the safe default before migration/canary activation.
+- Evidence Memory cannot silently change Doctrine Vault rules. Doctrine promotion still requires sources, deterministic tests, and owner approval.
+
 ## CHARLIE CORE Conveyor Integrity Repair - 2026-07-16
 
 - Runner ownership recovery now requires an expired durable lease plus a dead/stale process; the former idle-observer heuristic is retired.

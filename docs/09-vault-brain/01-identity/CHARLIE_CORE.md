@@ -31,6 +31,12 @@ Its purpose is to take a simple owner idea and craft it into an operational resu
 - dashboard command center;
 - improvement analyst foundation;
 - Vault tables and mission metadata.
+- candidate-bound evidence and targeted rechecks;
+- CHARLIE executive observation, durable recovery commands, delegation policy checks, portfolio priority, notification outbox, capability trust, evaluations, and research-radar rails.
+
+## Supervisory Boundary
+
+CORE executes missions. CHARLIE supervises CORE. Recoverable non-red blocks should enter bounded recovery with a responsible stage, attempt budget, deadline, and idempotent command. Genuine owner decisions remain blocked. A blocked family must not stop unrelated approved work.
 
 ## Required Operating Standard
 
