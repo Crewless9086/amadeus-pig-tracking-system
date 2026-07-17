@@ -24,7 +24,7 @@ from modules.pig_weights.pig_weights_utils import (
     generate_pen_id,
     generate_litter_id,
 )
-from modules.pig_weights.mating_service import link_litter_to_mating
+from modules.pig_weights.mating_service import get_breeding_analytics, link_litter_to_mating
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
@@ -4843,13 +4843,132 @@ def _herdmaster_alert_summary(alerts, litter_alerts):
     }
 
 
-def get_herdmaster_pig_allocation_alerts(today=None, allocation=None, litter_attention=None, litter_limit=10):
+def _herdmaster_breeding_index(analytics):
+    index = {}
+    for role in ("sows", "boars"):
+        for row in analytics.get(role, []) if isinstance(analytics.get(role), list) else []:
+            pig_id = to_clean_string(row.get("pig_id", ""))
+            if pig_id:
+                index[pig_id] = {"role": role[:-1], **row}
+    return index
+
+
+def _herdmaster_reasoning_decision(pig, alerts, breeding_metric):
+    categories = {alert.get("category") for alert in alerts}
+    missing_data = []
+    if not to_clean_string(pig.get("tag_number", "")):
+        missing_data.append("tag_number")
+    if not to_clean_string(pig.get("sex", "")):
+        missing_data.append("sex")
+    if pig.get("latest_weight_kg") in (None, ""):
+        missing_data.append("latest_weight_kg")
+    if not to_clean_string(pig.get("current_pen_id", "")):
+        missing_data.append("current_pen_id")
+
+    contradictions = []
+    if "lifecycle_inconsistency" in categories:
+        contradictions.append("status_and_on_farm_state_conflict")
+    if "breeding_candidate" in categories and categories.intersection({"meat_window_candidate", "slaughter_candidate"}):
+        contradictions.append("breeding_and_meat_outcomes_conflict")
+
+    if missing_data or contradictions:
+        outcome = "ask_charl"
+    elif "breeding_candidate" in categories:
+        outcome = "breeding_review"
+    elif "purpose_review_due" in categories:
+        outcome = "purpose_review"
+    elif categories.intersection({"meat_window_candidate", "slaughter_candidate"}):
+        outcome = "sell"
+    elif categories.intersection({"slow_grower", "stale_weight"}):
+        outcome = "watch"
+    else:
+        outcome = "keep"
+
+    confidence = 1.0
+    alert_confidence_penalty = {"medium": 0.08, "low": 0.15}
+    confidence -= max((alert_confidence_penalty.get(to_clean_string(alert.get("confidence", "")).lower(), 0.0) for alert in alerts), default=0.0)
+    confidence -= 0.12 * len(missing_data)
+    confidence -= 0.18 * len(contradictions)
+    if "stale_weight" in categories:
+        confidence -= 0.08
+    if outcome == "breeding_review" and not breeding_metric:
+        missing_data.append("breeding_analytics")
+        confidence -= 0.12
+    confidence = round(max(0.0, min(1.0, confidence)), 2)
+    if confidence < 0.96 and outcome != "ask_charl":
+        advisory_only = True
+    else:
+        advisory_only = outcome == "ask_charl"
+
+    question = ""
+    if outcome == "ask_charl":
+        if contradictions:
+            question = f"Charl, please resolve {contradictions[0].replace('_', ' ')} for {pig.get('tag_number') or pig.get('pig_id')}."
+        else:
+            question = f"Charl, can you provide {missing_data[0].replace('_', ' ')} for {pig.get('tag_number') or pig.get('pig_id')}?"
+
+    evidence = [{
+        "category": alert.get("category", ""),
+        "reason": alert.get("reason", ""),
+        "source_fields": alert.get("source_fields", []),
+    } for alert in alerts]
+    if breeding_metric:
+        evidence.append({
+            "category": "breeding_analytics",
+            "reason": f"Read-only {breeding_metric.get('role')} breeding performance is available.",
+            "source_fields": ["mating_count", "litter_count", "pregnancy_rate", "average_weaned"],
+        })
+
+    return {
+        "pig_id": pig.get("pig_id", ""),
+        "tag_number": pig.get("tag_number", ""),
+        "outcome": outcome,
+        "confidence": confidence,
+        "confidence_threshold": 0.96,
+        "advisory_only": advisory_only,
+        "owner_approval_required": True,
+        "question_for_charl": question,
+        "missing_data": missing_data,
+        "contradictions": contradictions,
+        "evidence": evidence,
+        "breeding_analytics": breeding_metric or {},
+        "forbidden_actions": HERDMASTER_ALERT_FORBIDDEN_ACTIONS,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+    }
+
+
+def _read_herdmaster_breeding_analytics():
+    try:
+        return get_breeding_analytics()
+    except Exception:
+        return {
+            "success": False,
+            "mode": "read_only_unavailable",
+            "sows": [],
+            "boars": [],
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": False,
+        }
+
+
+def get_herdmaster_pig_allocation_alerts(today=None, allocation=None, litter_attention=None, litter_limit=10, breeding_analytics=None):
     today = today or datetime.now().date()
     allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)
     thresholds = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
+    pigs = allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []
+    alerts_by_pig = {}
     pig_alerts = []
-    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        pig_alerts.extend(_herdmaster_alerts_for_pig(pig, thresholds))
+    for pig in pigs:
+        alerts_by_pig[pig.get("pig_id", "")] = _herdmaster_alerts_for_pig(pig, thresholds)
+        pig_alerts.extend(alerts_by_pig[pig.get("pig_id", "")])
+
+    breeding_analytics = breeding_analytics if isinstance(breeding_analytics, dict) else _read_herdmaster_breeding_analytics()
+    breeding_index = _herdmaster_breeding_index(breeding_analytics)
+    decisions = [
+        _herdmaster_reasoning_decision(pig, alerts_by_pig.get(pig.get("pig_id", ""), []), breeding_index.get(pig.get("pig_id", "")))
+        for pig in pigs
+    ]
 
     if not isinstance(litter_attention, dict):
         litter_attention = get_litter_attention_summary(limit=litter_limit, today=today)
@@ -4864,12 +4983,19 @@ def get_herdmaster_pig_allocation_alerts(today=None, allocation=None, litter_att
         "generated_date": today.isoformat(),
         "owner_agent": "Herdmaster",
         "status": "owner_review_required",
-        "source": "pig_allocation_readiness_and_litter_attention",
+        "source": "pig_allocation_alerts_litter_breeding_and_farm_rules",
         "allocation_source": allocation.get("source", ""),
         "summary": _herdmaster_alert_summary(pig_alerts, litter_alerts),
         "alerts": pig_alerts,
         "pig_alerts": pig_alerts,
         "litter_alerts": litter_alerts,
+        "decisions": decisions,
+        "reasoning_contract": {
+            "outcomes": ["keep", "sell", "watch", "purpose_review", "breeding_review", "ask_charl"],
+            "confidence_threshold": 0.96,
+            "deterministic_alerts_are_grounding": True,
+            "breeding_source_mode": breeding_analytics.get("mode", "read_only"),
+        },
         "business_rules": {
             "advisory_only": True,
             "owner_approval_required": True,

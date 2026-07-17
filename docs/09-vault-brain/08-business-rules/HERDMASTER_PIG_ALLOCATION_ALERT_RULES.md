@@ -111,6 +111,17 @@ The first implementation:
 6. Keeps all alert actions advisory. The packet does not write sheets, Supabase, orders, sales, slaughter, reservations, stock, customer messages, public posts, or farm lifecycle records.
 7. Uses focused tests for alert categories, owner-read guard coverage, litter attention inclusion, and no-write flags.
 
+## Agentic Reasoning Layer v1
+
+The read-only alert API also returns one normalized advisory decision per allocation pig. The allowed outcomes are `keep`, `sell`, `watch`, `purpose_review`, `breeding_review`, and `ask_charl`.
+
+- Deterministic allocation alerts remain the grounding facts; reasoning must cite their category, reason, and source fields.
+- Read-only breeding performance is joined by stable pig ID when available. Unavailable breeding analytics must not invent evidence or trigger a write.
+- Numeric confidence uses a `0.96` threshold and degrades for missing, stale, medium/low-confidence, or contradictory evidence.
+- A decision below `0.96` must be `ask_charl` with a targeted question or carry `advisory_only=true`.
+- Lifecycle conflicts and competing breeding/meat signals require clarification instead of a final recommendation.
+- Every decision requires owner approval and inherits the alert layer's forbidden-action and no-write boundary.
+
 ## Test And Evidence Expectations
 
 Future builds must record exact commands and results. Minimum focused coverage:

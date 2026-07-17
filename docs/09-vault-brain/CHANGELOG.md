@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-17 - Herdmaster advisory reasoning v1
+
+- Added one normalized advisory outcome per pig grounded in deterministic Pig Allocation alerts and enriched with read-only litter, growth, breeding, meat-planning, and farm-rule evidence.
+- Required numeric confidence, missing/conflicting fact reporting, and either a targeted Charl question or explicit advisory status below `0.96`.
+- Preserved owner approval and zero autonomous farm, order, sales, slaughter, customer-send, or public-post authority.
+
 ## 2026-07-16 - Beacon attribution identity and revenue integrity
 
 - Required stable, non-conflicting campaign, lead, and sale identities in the read-only Beacon-to-SAM attribution projection.
