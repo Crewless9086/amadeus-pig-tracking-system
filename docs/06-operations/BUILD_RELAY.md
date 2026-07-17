@@ -4,6 +4,8 @@ Last updated: 2026-07-11
 
 This document covers the Mission Loop foundation notification stub. It is deliberately smaller than the full CHARLIE Build Relay: it formats and optionally sends status notifications, but it does not execute shell commands, merge PRs, send customer messages, run migrations, or call model APIs.
 
+The private executive interface now uses the Render webhook as the primary single ingress. Local polling remains a diagnostic fallback and must not run against the same bot while its webhook is active. See `CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md`.
+
 ## Environment
 
 Primary env names:

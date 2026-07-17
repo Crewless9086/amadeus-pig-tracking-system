@@ -1220,6 +1220,7 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
         "customer_channel": _clean(inbound.get("channel"), 80) or "chatwoot",
         "customer_language": "unknown",
         "order_source": "SAM Live Stock",
+        "order_stream": "Livestock",
         "requested_category": _normal_intake_category(facts.get("category")),
         "requested_weight_range": _normal_intake_weight_range(facts.get("weight_range"), _normal_intake_category(facts.get("category"))),
         "requested_sex": _normal_intake_sex(facts.get("sex")),
