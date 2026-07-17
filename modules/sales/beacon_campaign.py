@@ -1002,13 +1002,23 @@ def build_beacon_follow_up_suggestions(events, now=None, stale_after_hours=168):
         except (KeyError, TypeError, ValueError):
             exclusions.add("missing_or_malformed_metrics")
             continue
+        metric_evidence = event.get("metric_evidence")
+        required_evidence = _follow_up_required_metric_evidence(metric_evidence, spend, leads)
+        if required_evidence is None:
+            exclusions.add("missing_malformed_or_unavailable_metric_evidence")
+            continue
         window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
         currency = _clean_text(event.get("spend_currency")).upper()
         if not window or (spend > 0 and not currency):
             exclusions.add("incompatible_evidence")
             continue
         normalized = dict(event, spend_amount=spend, qualified_buyer_leads=leads)
-        normalized["_compatibility"] = (window, currency if spend > 0 else "NO_SPEND", "spend_and_qualified_leads_v1", "recorded")
+        normalized["_compatibility"] = (
+            window,
+            currency if spend > 0 else "NO_SPEND",
+            required_evidence["metric_definition"],
+            required_evidence["evidence_state"],
+        )
         latest_by_campaign[campaign_id] = normalized
 
     groups = {}
@@ -1047,6 +1057,42 @@ def build_beacon_follow_up_suggestions(events, now=None, stale_after_hours=168):
     return {"success": True, "status": status, "mode": "beacon_follow_up_suggestions_read_only",
             "suggestions": suggestions, "evidence_result": {"eligible_campaign_count": len(latest_by_campaign), "exclusions": sorted(exclusions)},
             "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS)}
+
+
+def _follow_up_required_metric_evidence(metric_evidence, spend, leads):
+    """Return compatibility metadata only for trusted, snapshot-matching evidence."""
+    if not isinstance(metric_evidence, dict):
+        return None
+    requirements = (
+        ("spend_amount", float(spend), "currency_amount_v1"),
+        ("qualified_buyer_leads", int(leads), "whole_number_count_v1"),
+    )
+    states = []
+    definitions = []
+    for name, expected_value, server_definition in requirements:
+        evidence = metric_evidence.get(name)
+        if not isinstance(evidence, dict):
+            return None
+        status = _clean_text(evidence.get("status")).lower()
+        if status not in {"verified", "owner_correction"}:
+            return None
+        supplied_definition = _clean_text(evidence.get("metric_definition") or server_definition).lower()
+        if supplied_definition != server_definition:
+            return None
+        try:
+            actual_value = float(evidence.get("value"))
+        except (TypeError, ValueError):
+            return None
+        if actual_value < 0 or actual_value != float(expected_value):
+            return None
+        if name == "qualified_buyer_leads" and not actual_value.is_integer():
+            return None
+        states.append(status)
+        definitions.append(server_definition)
+    return {
+        "metric_definition": "+".join(definitions),
+        "evidence_state": "+".join(states),
+    }
 
 
 def beacon_follow_up_mission(suggestion):
