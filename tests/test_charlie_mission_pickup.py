@@ -165,6 +165,46 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.transition_mission_review_state")
     @patch("scripts.charlie_mission_pickup._owner_queue_missions")
+    def test_startup_reconciliation_does_not_reopen_resolved_historical_findings(self, owner_queue, transition):
+        ready = {
+            **MISSION,
+            "status": "pr_ready",
+            "metadata": {
+                "charlie_core": {"project_truth": {"workflow_template": "software_build"}},
+                "review_packet": {
+                    "links": {"pr": "https://github.com/example/repo/pull/12"},
+                    "tested_revision": "abc123",
+                    "recommended_owner_decision": "approve_final_release",
+                    "bugs": ["Resolved pre-build finding retained for audit."],
+                    "evidence_reconciliation": {
+                        "version": "charlie_evidence_reconciliation_v1",
+                        "candidate_manifest": {"source_commit": "abc123"},
+                        "active_blockers": [],
+                        "requires_revalidation": [],
+                        "resolved_findings": [{"state": "resolved", "finding": "pre-build finding"}],
+                    },
+                },
+            },
+        }
+        owner_queue.return_value = ([ready], 200)
+        transition.return_value = ({"success": True}, 200)
+
+        def fake_runner(*_args, **_kwargs):
+            return SimpleNamespace(
+                returncode=0,
+                stdout='{"number":12,"url":"https://github.com/example/repo/pull/12","state":"OPEN","mergeable":"MERGEABLE","baseRefName":"main","headRefOid":"abc123","statusCheckRollup":[{"conclusion":"SUCCESS"}]}',
+                stderr="",
+            )
+
+        result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
+
+        self.assertEqual(result["changed_count"], 1)
+        self.assertEqual(transition.call_args.args[1], "pr_ready")
+        self.assertEqual(transition.call_args.args[2]["review_status"], "ready_for_owner_review")
+        self.assertNotIn("return_to_stage", transition.call_args.args[2])
+
+    @patch("scripts.charlie_mission_pickup.transition_mission_review_state")
+    @patch("scripts.charlie_mission_pickup._owner_queue_missions")
     def test_reconcile_conflicting_pr_queues_publisher_recovery(self, owner_queue, transition):
         blocked = {
             **MISSION,
