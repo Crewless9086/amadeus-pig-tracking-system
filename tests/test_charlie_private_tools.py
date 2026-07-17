@@ -30,6 +30,23 @@ class CharliePrivateToolsTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(result["success"])
 
+    @patch("modules.charlie.private_tools.live_stock_learning_scorecard")
+    def test_sam_status_is_read_only_scorecard(self, scorecard):
+        scorecard.return_value = ({"scorecard": {"total_events": 12, "owner_edit_events": 3}}, 200)
+        result, status = execute_private_tool("read_sam_status", {})
+        self.assertEqual(status, 200)
+        self.assertIn("12 captured", result["summary"])
+
+    @patch("modules.charlie.private_tools.list_orders")
+    def test_orders_status_summarizes_without_writes(self, list_orders):
+        list_orders.return_value = [
+            {"order_status": "Draft", "approval_status": "Approved"},
+            {"order_status": "Completed", "approval_status": "Approved"},
+        ]
+        result, status = execute_private_tool("read_orders_status", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["counts"], {"total": 2, "active": 1, "ready": 2})
+
 
 if __name__ == "__main__":
     unittest.main()

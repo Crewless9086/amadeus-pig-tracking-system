@@ -12,6 +12,7 @@ MISSION_ID_RE = re.compile(r"\b(?:CHARLIE-(?:MISSION|SCOPE)-)?[A-Z0-9]{8,32}\b",
 ALLOWED_INTENTS = {
     "help", "executive_brief", "read_core_status", "read_queue", "read_blocked",
     "read_mission", "read_workforce", "read_analyst", "read_decisions",
+    "read_business_status", "read_sam_status", "read_beacon_status", "read_orders_status", "read_farm_status",
     "create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "clarify",
     "remember_preference",
     "protected_business_action",
@@ -43,6 +44,16 @@ def _deterministic_plan(text, context):
         return _intent("executive_brief", .99)
     if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower:
         return _intent("read_core_status", .98)
+    if lower in {"/business", "business", "business status", "how is the business"}:
+        return _intent("read_business_status", .98)
+    if lower in {"/sam", "sam", "sam status", "how is sam"} or "livestock sales agent" in lower:
+        return _intent("read_sam_status", .98)
+    if lower in {"/beacon", "beacon", "beacon status", "marketing status"} or "how is beacon" in lower:
+        return _intent("read_beacon_status", .98)
+    if lower in {"/orders", "orders", "orders status", "sales orders"}:
+        return _intent("read_orders_status", .98)
+    if lower in {"/farm", "farm", "farm status", "farm operations"}:
+        return _intent("read_farm_status", .98)
     if lower in {"/queue", "queue", "/next", "/missions", "missions"} or "missions in the queue" in lower:
         return _intent("read_queue", .98)
     if lower in {"/blocked", "blocked"} or "blocked missions" in lower:

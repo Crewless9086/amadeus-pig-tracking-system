@@ -10,6 +10,9 @@ from modules.charlie.mission_store import (
 )
 from modules.charlie.owner_approval_inbox import list_owner_approval_inbox
 from modules.charlie.runner_control import runner_status
+from modules.beacon.workforce import beacon_workforce_scorecard
+from modules.orders.order_read import list_orders
+from modules.sales.conversation_learning import live_stock_learning_scorecard
 
 
 TOOL_FOR_INTENT = {
@@ -18,6 +21,9 @@ TOOL_FOR_INTENT = {
     "read_analyst": "analyst", "read_decisions": "decisions", "create_mission": "create_mission",
     "approve_mission": "approve_mission", "pause_mission": "pause_mission", "reject_mission": "reject_mission",
     "send_back_mission": "send_back_mission",
+    "read_business_status": "business_status", "read_sam_status": "sam_status",
+    "read_beacon_status": "beacon_status", "read_orders_status": "orders_status",
+    "read_farm_status": "farm_status",
 }
 
 
@@ -95,6 +101,48 @@ def _executive_brief(_args):
     executive, _ = executive_scorecard()
     summary = f"Executive brief\n{core['summary']}\n{blocked['summary']}\n{analyst['summary']}\nExecutive recoveries open: {executive.get('open_recoveries',0)}; notification failures: {executive.get('notification_failures',0)}."
     return {"success": True, "status": "executive_brief_ready", "summary": summary, "sections": {"core": core, "blocked": blocked, "analyst": analyst, "executive": executive}}, 200
+
+
+def _sam_status(_args):
+    result, status = live_stock_learning_scorecard(limit=500)
+    card = result.get("scorecard") or {}
+    total = int(card.get("total_events") or card.get("events") or 0)
+    edits = int(card.get("owner_edit_events") or card.get("edited_replies") or 0)
+    summary = f"SAM livestock learning: {total} captured event(s), {edits} owner edit(s). Owner approval remains active."
+    return {"success": status < 400, "status": "sam_status_ready", "summary": summary, "scorecard": card}, status
+
+
+def _beacon_status(_args):
+    result = beacon_workforce_scorecard(limit=500)
+    card = result.get("scorecard") or {}
+    summary = (f"Beacon: {card.get('progress_percent', 0)}% readiness, {card.get('approved_assets', 0)} approved asset(s), "
+               f"{card.get('production_posts_sent', 0)} published post(s), {card.get('media_review_backlog', 0)} awaiting media review.")
+    return {"success": bool(result.get("success")), "status": "beacon_status_ready", "summary": summary, "scorecard": card}, 200 if result.get("success") else 503
+
+
+def _orders_status(_args):
+    try:
+        orders = list_orders()
+    except Exception as exc:
+        return {"success": False, "status": "orders_status_failed", "summary": f"Orders could not be read: {exc.__class__.__name__}."}, 503
+    active = [row for row in orders if str(row.get("order_status") or "").lower() not in {"completed", "cancelled", "rejected"}]
+    ready = [row for row in orders if str(row.get("approval_status") or "").lower() in {"approved", "quote_ready"}]
+    return {"success": True, "status": "orders_status_ready", "summary": f"Orders: {len(orders)} total, {len(active)} active, {len(ready)} approved or quote-ready.", "counts": {"total": len(orders), "active": len(active), "ready": len(ready)}, "orders": orders[:10]}, 200
+
+
+def _farm_status(_args):
+    orders, status = _orders_status({})
+    if status >= 400:
+        return {"success": False, "status": "farm_status_degraded", "summary": "Farm status is partially unavailable. " + orders["summary"]}, status
+    return {"success": True, "status": "farm_status_ready", "summary": "Farm operational read access is active. " + orders["summary"], "orders": orders.get("counts")}, 200
+
+
+def _business_status(_args):
+    sections = {}
+    for name, reader in (("core", _core_status), ("sam", _sam_status), ("beacon", _beacon_status), ("orders", _orders_status), ("farm", _farm_status)):
+        sections[name], _ = reader({})
+    summary = "Business status\n" + "\n".join(f"{name.upper()}: {value.get('summary')}" for name, value in sections.items())
+    return {"success": all(value.get("success") for value in sections.values()), "status": "business_status_ready", "summary": summary, "sections": sections}, 200
 
 
 def _create_mission(args):

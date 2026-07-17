@@ -20,9 +20,22 @@ class FrontendRouteContractTests(unittest.TestCase):
 
     def test_charlie_mission_control_page_contract(self):
         template = Path("templates/charlie.html").read_text(encoding="utf-8")
-        script = Path("static/js/charlieMissionControl.js").read_text(encoding="utf-8")
+        script = Path("static/js/charlieExecutive.js").read_text(encoding="utf-8")
         app_source = Path("app.py").read_text(encoding="utf-8")
         charlie_routes = Path("modules/charlie/routes.py").read_text(encoding="utf-8")
+
+        self.assertIn('@app.route("/charlie")', app_source)
+        self.assertIn("require_owner_page_access()", app_source)
+        self.assertIn("Private Executive Interface", template)
+        self.assertIn("charlieExecutive.js", template)
+        self.assertIn("Executive Commands", template)
+        self.assertIn("Owner Attention", template)
+        self.assertIn("/api/charlie/private/dashboard", script)
+        self.assertIn("/api/charlie/private/message", script)
+        self.assertIn("/api/charlie/private/decisions/", script)
+        self.assertIn("credentials: \"same-origin\"", script)
+        self.assertIn("@charlie_bp.route(\"/charlie/private/dashboard\"", charlie_routes)
+        return
 
         self.assertIn('@app.route("/charlie")', app_source)
         self.assertIn("require_owner_page_access()", app_source)

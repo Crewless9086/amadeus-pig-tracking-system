@@ -82,6 +82,18 @@ class CharlieTelegramRelayWatchdogTests(unittest.TestCase):
             self.assertFalse(result["started"])
             self.assertEqual(starts, [])
 
+    def test_webhook_transport_does_not_start_polling_relay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            starts = []
+            result = watchdog.watchdog_tick(
+                lock_path=Path(tmp) / "relay.lock",
+                state_path=Path(tmp) / "state.json",
+                popen_factory=lambda *args, **kwargs: starts.append((args, kwargs)),
+                config_check=lambda: RelayResult(ok=True, action="webhook_managed", reason="local_polling_disabled"),
+            )
+            self.assertEqual(result["status"], "relay_webhook_managed")
+            self.assertEqual(starts, [])
+
     def test_invalid_configuration_does_not_restart_forever(self):
         with tempfile.TemporaryDirectory() as tmp:
             starts = []

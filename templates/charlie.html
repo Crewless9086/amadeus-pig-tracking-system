@@ -1,299 +1,51 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CHARLIE Mission Control</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CHARLIE Private Executive</title>
+  <style>
+    :root{--ink:#171a18;--muted:#68726c;--line:#d9dfdb;--paper:#f3f5f2;--surface:#fff;--charcoal:#202724;--green:#176b4b;--green-soft:#e4f2ea;--amber:#a9620a;--amber-soft:#fff0d8;--red:#a43c34;--red-soft:#f9e7e4;--blue:#2d657b}
+    *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:0}button,input,textarea,a{font:inherit}.app{height:100vh;min-height:720px;display:grid;grid-template-rows:64px 78px minmax(0,1fr) 42px;overflow:hidden}.topbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px;padding:0 22px;background:var(--charcoal);color:#fff;border-bottom:3px solid #e8b44c}.brand{display:flex;align-items:center;gap:11px}.mark{width:35px;height:35px;display:grid;place-items:center;border-radius:6px;background:#e8b44c;color:var(--charcoal);font-size:12px;font-weight:900}.brand h1{margin:0;font-size:17px}.brand p{margin:3px 0 0;color:#bdc7c1;font-size:10px}.nav{display:flex;gap:4px}.nav a{padding:8px 12px;border-radius:5px;color:#cfd8d3;text-decoration:none;font-size:11px;font-weight:800}.nav a.active{color:#fff;background:rgba(255,255,255,.12)}.top-state{display:flex;justify-content:flex-end;gap:7px}.chip{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:5px 9px;border:1px solid #d5dbd7;border-radius:4px;background:#eef1ef;color:#445049;font-size:9px;font-weight:850}.topbar .chip{color:#eef4f0;background:transparent;border-color:rgba(255,255,255,.22)}.dot{width:7px;height:7px;border-radius:50%;background:#e8b44c}.chip.green .dot{background:#45b982}.chip.red .dot{background:#d85c52}.summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:#fff;border-bottom:1px solid var(--line)}.metric{padding:13px 18px;border-right:1px solid var(--line);min-width:0}.metric:last-child{border-right:0}.metric span{display:block;color:var(--muted);font-size:8px;font-weight:850;text-transform:uppercase}.metric b{display:block;margin-top:5px;font-size:21px;line-height:1}.metric small{display:block;margin-top:4px;color:var(--muted);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.workspace{min-height:0;display:grid;grid-template-columns:minmax(230px,22%) minmax(480px,52%) minmax(280px,26%);background:#fff}.panel{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}.panel:last-child{border-right:0}.panel-head{min-height:62px;padding:13px 15px 10px;border-bottom:1px solid var(--line)}.panel-head h2{margin:0;font-size:13px}.panel-head p{margin:4px 0 0;color:var(--muted);font-size:9px;line-height:1.35}.body{min-height:0;overflow:auto}.command-list{padding:7px 0}.command{width:100%;display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:center;padding:10px 14px;border:0;border-left:3px solid transparent;background:#fff;text-align:left;cursor:pointer}.command:hover{background:#f6f8f6}.command strong{display:block;font-size:10px}.command small{display:block;margin-top:3px;color:var(--muted);font-size:8px}.command .icon{width:30px;height:30px;display:grid;place-items:center;border-radius:5px;background:var(--green-soft);color:var(--green);font-size:10px;font-weight:900}.status-band{margin:10px 13px;padding:10px;border-left:3px solid var(--green);background:var(--green-soft);font-size:9px;line-height:1.45}.status-band.warn{border-color:var(--amber);background:var(--amber-soft)}.conversation{background:#f7f9f7}.messages{min-height:0;overflow:auto;padding:18px 18px 8px}.message{max-width:78%;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:11px;line-height:1.5;white-space:pre-wrap}.message.owner{margin-left:auto;border-color:#afd2bf;background:var(--green-soft)}.message .meta{margin-top:6px;color:var(--muted);font-size:7px;text-transform:uppercase}.composer{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:#fff}.composer textarea{width:100%;min-height:58px;max-height:130px;resize:vertical;padding:9px 10px;border:1px solid #cbd3ce;border-radius:5px}.composer button,.decision-actions button,.refresh{min-height:34px;padding:7px 12px;border:1px solid var(--green);border-radius:5px;background:var(--green);color:#fff;font-size:9px;font-weight:850;cursor:pointer}.composer button:disabled{opacity:.55}.empty{padding:18px;color:var(--muted);font-size:10px;line-height:1.5}.decision{padding:12px 14px;border-bottom:1px solid var(--line)}.decision h3{margin:0;font-size:11px}.decision p{margin:6px 0;color:#4c5751;font-size:9px;line-height:1.45}.decision small{color:var(--muted);font-size:8px}.decision-actions{display:flex;gap:5px;margin-top:9px}.decision-actions button{min-height:29px;padding:5px 8px}.decision-actions .reject{color:#7f2e28;background:var(--red-soft);border-color:#dfaaa5}.decision-actions .later{color:#6f4309;background:var(--amber-soft);border-color:#efc886}.section-label{padding:9px 14px;border-bottom:1px solid var(--line);background:#f0f3f1;color:var(--muted);font-size:8px;font-weight:850;text-transform:uppercase}.preference{padding:9px 14px;border-bottom:1px solid #edf0ee;font-size:9px}.footer{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:#edf0ee}.footer div{display:flex;align-items:center;gap:6px;padding:0 14px;border-right:1px solid var(--line);font-size:8px}.footer span{color:var(--muted);text-transform:uppercase}.loading{opacity:.55}.hidden{display:none!important}
+    @media(max-width:1050px){.app{height:auto;min-height:100vh;overflow:auto;grid-template-rows:auto auto auto auto}.topbar{grid-template-columns:1fr auto;padding:12px 16px}.nav{grid-column:1/-1}.summary{grid-template-columns:repeat(3,1fr)}.workspace{grid-template-columns:260px 1fr}.decisions{grid-column:1/-1;min-height:420px;border-top:1px solid var(--line)}}
+    @media(max-width:720px){.topbar{grid-template-columns:1fr}.top-state{justify-content:flex-start;flex-wrap:wrap}.summary{grid-template-columns:1fr 1fr}.workspace{display:block}.panel{min-height:450px;border-right:0;border-bottom:1px solid var(--line)}.message{max-width:92%}.footer{grid-template-columns:1fr 1fr}.footer div{min-height:36px}}
+  </style>
 </head>
-<body class="charlie-body">
-  <main class="charlie-shell">
-    <header class="charlie-header">
-      <div>
-        <span class="ops-kicker">Owner Command Layer</span>
-        <h1>CHARLIE Mission Control</h1>
-        <p id="charlie_status_line">Loading mission queue...</p>
-      </div>
-      <div class="charlie-system-status" aria-label="System status">
-        <span>System Status</span>
-        <strong id="charlie_header_system_state">Checking</strong>
-        <small id="charlie_header_runner_state">Runner check pending</small>
-      </div>
-      <nav class="ops-header-actions" aria-label="CHARLIE navigation">
-        <a href="/">Dashboard</a>
-        <a href="/oom-sakkie">Oom Sakkie</a>
-        <a href="/sales/meat-leads">SAM</a>
-      </nav>
-    </header>
-
-    <section class="charlie-command-strip" aria-label="Mission status summary">
-      <article>
-        <span>New</span>
-        <strong id="charlie_count_new">--</strong>
-      </article>
-      <article>
-        <span>Approved</span>
-        <strong id="charlie_count_approved">--</strong>
-      </article>
-      <article>
-        <span>In Progress</span>
-        <strong id="charlie_count_in_progress">--</strong>
-      </article>
-      <article>
-        <span>Blocked</span>
-        <strong id="charlie_count_blocked">--</strong>
-      </article>
-      <article>
-        <span>Review Ready</span>
-        <strong id="charlie_count_pr_ready">--</strong>
-      </article>
-      <article>
-        <span>Release</span>
-        <strong id="charlie_count_release">--</strong>
-      </article>
-      <article>
-        <span>Merged</span>
-        <strong id="charlie_count_merged">--</strong>
-      </article>
-      <article>
-        <span>Deployed</span>
-        <strong id="charlie_count_deployed">--</strong>
-      </article>
-    </section>
-
-    <section class="charlie-control-room" aria-label="Live mission control room">
-      <aside class="charlie-panel charlie-menu-rail">
-        <div class="ops-panel-header">
-          <div>
-            <span class="ops-panel-kicker">Controls</span>
-            <h2>Mission Queue</h2>
-          </div>
-          <div class="charlie-rail-actions">
-            <button type="button" id="charlie_add_mission" class="charlie-icon-button" aria-expanded="false" aria-controls="charlie_mission_create_form" title="Add mission">+</button>
-            <button type="button" id="charlie_refresh">Refresh</button>
-          </div>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="brand"><div class="mark">CH</div><div><h1>CHARLIE</h1><p>Private Executive Interface</p></div></div>
+    <nav class="nav"><a class="active" href="/charlie">Executive</a><a href="/charlie-v2">CORE</a><a href="/charlie-agents">Workforce</a></nav>
+    <div class="top-state"><span id="identityChip" class="chip"><span class="dot"></span>Identity</span><span id="runnerChip" class="chip"><span class="dot"></span>CORE</span><button id="refreshBtn" class="refresh">Refresh</button></div>
+  </header>
+  <section id="summary" class="summary"></section>
+  <section class="workspace">
+    <aside class="panel">
+      <div class="panel-head"><h2>Executive Commands</h2><p>Ask CHARLIE. Open CORE only for detailed engineering evidence.</p></div>
+      <div class="body">
+        <div class="command-list">
+          <button class="command" data-command="/brief"><span class="icon">BR</span><span><strong>Executive brief</strong><small>Priorities, blocks and overnight outcomes</small></span></button>
+          <button class="command" data-command="/business"><span class="icon">ST</span><span><strong>Business status</strong><small>CORE, SAM, Beacon, orders and farm</small></span></button>
+          <button class="command" data-command="/review"><span class="icon">DR</span><span><strong>My decisions</strong><small>Only genuine owner approvals</small></span></button>
+          <button class="command" data-command="/blocked"><span class="icon">BL</span><span><strong>Blocked work</strong><small>Reason and responsible next action</small></span></button>
+          <button class="command" data-command="/analyst"><span class="icon">AN</span><span><strong>ANALYST</strong><small>Learning and improvement proposals</small></span></button>
+          <button class="command" data-command="/workforce"><span class="icon">WF</span><span><strong>Workforce</strong><small>Agent readiness and training</small></span></button>
         </div>
-        <form id="charlie_mission_create_form" class="charlie-intake-form is-collapsed">
-          <h3>New Mission</h3>
-          <label for="charlie_new_title">Title</label>
-          <input id="charlie_new_title" type="text" placeholder="Short mission title" maxlength="160">
-          <label for="charlie_new_concept">Concept / issue / idea</label>
-          <textarea id="charlie_new_concept" rows="5" placeholder="Dump the rough idea here. CHARLIE stores it as the mission source." required></textarea>
-          <label for="charlie_new_outcome">Desired outcome</label>
-          <textarea id="charlie_new_outcome" rows="3" placeholder="Optional: what should be true when this is done?"></textarea>
-          <label for="charlie_new_media">Media / reference links</label>
-          <textarea id="charlie_new_media" rows="3" placeholder="Optional: one screenshot path, URL, or note per line"></textarea>
-          <div id="charlie_new_media_drop" class="charlie-media-drop" tabindex="0" role="button" aria-label="Paste, drop, or choose mission screenshots">
-            <strong>Paste or drop screenshots here</strong>
-            <span>Images are attached to this mission's vault for agent reference.</span>
-            <input id="charlie_new_media_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
-          </div>
-          <div id="charlie_new_media_previews" class="charlie-media-preview-list" aria-live="polite"></div>
-          <div class="charlie-form-row">
-            <label for="charlie_new_urgency">
-              Urgency
-              <select id="charlie_new_urgency">
-                <option value="P2">P2</option>
-                <option value="P0">P0</option>
-                <option value="P1">P1</option>
-                <option value="P3">P3</option>
-                <option value="P4">P4</option>
-              </select>
-            </label>
-            <label for="charlie_new_type">
-              Type
-              <select id="charlie_new_type">
-                <option value="feature build">Feature</option>
-                <option value="bugfix">Bugfix</option>
-                <option value="planning/docs">Planning</option>
-                <option value="live verification">Live verification</option>
-                <option value="agent build">Agent build</option>
-                <option value="system improvement">System improvement</option>
-                <option value="business plan">Business plan</option>
-                <option value="content engine">Content engine</option>
-                <option value="automation workflow">Automation workflow</option>
-                <option value="income stream">Income stream</option>
-              </select>
-            </label>
-          </div>
-          <button type="submit">Create Mission</button>
-        </form>
-        <p class="charlie-safety-boundary">Dashboard decisions cannot run shell commands, merge, deploy, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.</p>
-        <label for="charlie_status_filter">Status</label>
-        <select id="charlie_status_filter">
-          <option value="owner_queue" selected>Owner Queue</option>
-          <option value="">All</option>
-          <option value="new">New</option>
-          <option value="approved">Approved</option>
-          <option value="in_progress">In Progress</option>
-          <option value="blocked">Blocked</option>
-          <option value="pr_ready">Review Ready</option>
-          <option value="release_approved">Release Approved</option>
-          <option value="release_in_progress">Release In Progress</option>
-          <option value="paused">Paused</option>
-          <option value="rejected">Rejected</option>
-          <option value="done">Done</option>
-        </select>
-        <div id="charlie_message" class="message-box hidden"></div>
-
-        <section class="charlie-queue-preview" aria-label="Mission queue preview">
-          <h3>Active List</h3>
-          <div id="charlie_mission_list" class="charlie-mission-list" aria-live="polite"></div>
-        </section>
-      </aside>
-
-      <section class="charlie-mission-stage" aria-label="Live CHARLIE workflow">
-        <section class="charlie-panel charlie-live-panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Live Flow</span>
-              <h2>CHARLIE Workflow</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="charlie_loaded_at">Loading</span>
-          </div>
-          <div id="charlie_live_notice" class="charlie-live-notice" aria-live="polite">Loading local runner heartbeat and mission ledger...</div>
-          <div id="charlie_workflow_map" class="charlie-workflow-map" aria-live="polite"></div>
-        </section>
-
-        <section class="charlie-panel charlie-command-center-panel" aria-label="CHARLIE CORE command center">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">CHARLIE CORE</span>
-              <h2>Command Center</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="charlie_command_center_loaded_at">Loading</span>
-          </div>
-          <div id="charlie_command_center" class="charlie-command-center-grid" aria-live="polite">
-            <p class="charlie-muted">Loading command center...</p>
-          </div>
-        </section>
-
-        <section class="charlie-panel charlie-improvements-panel" aria-label="CHARLIE Improvements">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">CORE Intelligence</span>
-              <h2>ANALYST Improvements</h2>
-            </div>
-            <div class="charlie-panel-actions">
-              <button type="button" id="charlie_improvements_analyze">Run Analysis</button>
-              <button type="button" id="charlie_improvements_create_owner_gated">Create Missions</button>
-            </div>
-          </div>
-          <div id="charlie_improvements_list" class="charlie-improvements-list" aria-live="polite">
-            <p class="charlie-muted">Loading improvement proposals...</p>
-          </div>
-        </section>
-
-        <section class="charlie-panel charlie-missions-panel">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Details</span>
-              <h2>Expanded Mission Records</h2>
-            </div>
-          </div>
-          <p class="charlie-muted">Short mission cards stay in the left rail. Open card details only when deeper vault or technical evidence is needed.</p>
-        </section>
-      </section>
-
-      <aside class="charlie-side-rail" aria-label="Active mission summary">
-        <section class="charlie-panel charlie-runner-panel" aria-label="Local runner handoff status">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Runner</span>
-              <h2>Codex Handoff</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="charlie_runner_state">Checking</span>
-          </div>
-          <p id="charlie_runner_message" class="charlie-muted">Checking approved mission handoff status...</p>
-          <dl class="charlie-mission-meta">
-            <div><dt>Active Mission</dt><dd id="charlie_runner_active">--</dd></div>
-            <div><dt>Next Approved</dt><dd id="charlie_runner_next">--</dd></div>
-            <div><dt>Release Approved</dt><dd id="charlie_runner_release_next">--</dd></div>
-            <div><dt>Local Runner</dt><dd id="charlie_runner_local">--</dd></div>
-            <div><dt>Last Seen</dt><dd id="charlie_runner_seen">--</dd></div>
-          </dl>
-          <details>
-            <summary>Local runner commands</summary>
-            <pre id="charlie_runner_command">.\venv\Scripts\python.exe scripts\charlie_mission_pickup.py --watch --continuous --notify --execute-codex --watch-release --auto-merge-pr --interval-seconds 30</pre>
-            <pre id="charlie_runner_control_commands">.\venv\Scripts\python.exe scripts\charlie_runner_control.py status</pre>
-          </details>
-        </section>
-
-        <section class="charlie-panel charlie-active-summary-panel" aria-label="Active workflow summary">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Now</span>
-              <h2>Active Summary</h2>
-            </div>
-          </div>
-          <div id="charlie_active_summary" aria-live="polite">
-            <p class="charlie-muted">Waiting for mission state...</p>
-          </div>
-        </section>
-
-        <section class="charlie-panel charlie-owner-inbox-panel" aria-label="Owner approval inbox">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Agent Suggestions</span>
-              <h2>Owner Approval Inbox</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="charlie_owner_inbox_loaded_at">Loading</span>
-          </div>
-          <div id="charlie_owner_inbox_summary" class="charlie-owner-inbox-summary" aria-live="polite">
-            <p class="charlie-muted">Loading exact agent actions waiting for owner review...</p>
-          </div>
-          <div id="charlie_owner_inbox_list" class="charlie-owner-inbox-list" aria-live="polite"></div>
-        </section>
-
-        <section class="charlie-panel charlie-review-panel" aria-label="Owner review gate">
-          <div class="ops-panel-header">
-            <div>
-              <span class="ops-panel-kicker">Stage 8</span>
-              <h2>Owner Review</h2>
-            </div>
-            <span class="status-pill status-pill-muted" id="charlie_review_loaded_at">Loading</span>
-          </div>
-          <div id="charlie_review_list" class="charlie-review-list" aria-live="polite"></div>
-        </section>
-      </aside>
-    </section>
-
-    <section class="charlie-bottom-rail" aria-label="Command center health strip">
-      <article>
-        <span>System Health</span>
-        <strong id="charlie_bottom_health">Checking</strong>
-        <small id="charlie_bottom_health_detail">Vault and data readiness</small>
-      </article>
-      <article>
-        <span>Runner Status</span>
-        <strong id="charlie_bottom_runner">Checking</strong>
-        <small id="charlie_bottom_runner_detail">Local runner boundary</small>
-      </article>
-      <article>
-        <span>Review Quality</span>
-        <strong id="charlie_bottom_review">Checking</strong>
-        <small id="charlie_bottom_review_detail">Owner review evidence</small>
-      </article>
-      <article>
-        <span>Source Truth</span>
-        <strong id="charlie_bottom_truth">Vault Brain</strong>
-        <small id="charlie_bottom_truth_detail">Supabase runtime plus Vault guidance</small>
-      </article>
-    </section>
-
-    <div id="charlie_review_modal" class="charlie-review-modal hidden" role="dialog" aria-modal="true" aria-label="Owner Review">
-      <div class="charlie-review-modal-panel">
-        <div class="ops-panel-header">
-          <div>
-            <span class="ops-panel-kicker">Focused Review</span>
-            <h2 id="charlie_review_modal_title">Owner Review</h2>
-          </div>
-          <button type="button" id="charlie_review_modal_close">Close</button>
-        </div>
-        <div id="charlie_review_modal_body"></div>
+        <div id="coreNotice" class="status-band">Loading executive state...</div>
       </div>
-    </div>
-  </main>
-  <script src="{{ url_for('static', filename='js/charlieMissionControl.js') }}"></script>
+    </aside>
+    <section class="panel conversation">
+      <div class="panel-head"><h2>Conversation</h2><p>Your private, durable conversation with CHARLIE.</p></div>
+      <div id="messages" class="messages body"><div class="empty">Loading conversation...</div></div>
+      <form id="composer" class="composer"><textarea id="messageInput" placeholder="Tell CHARLIE what you need..." required></textarea><button id="sendBtn" type="submit">Send</button></form>
+    </section>
+    <aside class="panel decisions">
+      <div class="panel-head"><h2>Owner Attention</h2><p>Decisions, preferences and delegated-action evidence.</p></div>
+      <div id="decisionBody" class="body"><div class="empty">Loading decisions...</div></div>
+    </aside>
+  </section>
+  <footer id="footer" class="footer"></footer>
+</main>
+<script src="{{ url_for('static', filename='js/charlieExecutive.js') }}"></script>
 </body>
 </html>

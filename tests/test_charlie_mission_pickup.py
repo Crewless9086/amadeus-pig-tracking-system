@@ -1006,5 +1006,20 @@ class CharlieMissionPickupTests(unittest.TestCase):
         sleep.assert_not_called()
 
 
+    @patch("scripts.charlie_mission_pickup.notify_main")
+    def test_executive_only_suppresses_direct_core_noise(self, notify_main):
+        with patch.dict("scripts.charlie_mission_pickup.os.environ", {"CHARLIE_CORE_NOTIFICATION_MODE": "executive_only"}, clear=False):
+            self.assertEqual(charlie_mission_pickup._send_notification("blocked", "Retry", "recoverable", "M1"), 0)
+        notify_main.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.notify_main", return_value=0)
+    def test_owner_decision_notification_is_deduplicated(self, notify_main):
+        charlie_mission_pickup.NOTIFICATION_FINGERPRINTS.clear()
+        with patch.dict("scripts.charlie_mission_pickup.os.environ", {"CHARLIE_CORE_NOTIFICATION_MODE": "executive_only"}, clear=False):
+            for _ in range(2):
+                self.assertEqual(charlie_mission_pickup._send_notification("needs_owner_approval", "Decision", "Choose", "M1"), 0)
+        notify_main.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

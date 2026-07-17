@@ -10,6 +10,16 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan_owner_intent("/next", {}, environ={})["type"], "read_queue")
         self.assertEqual(plan_owner_intent("/review", {}, environ={})["type"], "read_decisions")
 
+    def test_business_department_reads_are_typed(self):
+        expected = {
+            "/business": "read_business_status", "/sam": "read_sam_status",
+            "/beacon": "read_beacon_status", "/orders": "read_orders_status",
+            "/farm": "read_farm_status",
+        }
+        for command, intent_type in expected.items():
+            with self.subTest(command=command):
+                self.assertEqual(plan_owner_intent(command, {}, environ={})["type"], intent_type)
+
     def test_explicit_create_and_action(self):
         create = plan_owner_intent("Create a mission to improve the loading sheet", {}, environ={})
         self.assertEqual(create["type"], "create_mission")
