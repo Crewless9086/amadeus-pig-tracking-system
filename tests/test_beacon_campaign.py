@@ -95,10 +95,16 @@ class BeaconCampaignTests(unittest.TestCase):
         }
 
     def recurring_events(self):
-        return [
+        events = [
             {"performance_event_id": "e2", "publish_packet_id": "p2", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 100, "qualified_buyer_leads": 0, "created_at": "2026-07-16T08:00:00+00:00"},
             {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": " 7 DAYS ", "spend_currency": "zar", "spend_amount": 50, "qualified_buyer_leads": 0, "created_at": "2026-07-16T07:00:00+00:00"},
         ]
+        for event in events:
+            event["metric_evidence"] = {
+                "spend_amount": {"status": "verified", "value": event["spend_amount"]},
+                "qualified_buyer_leads": {"status": "verified", "value": event["qualified_buyer_leads"]},
+            }
+        return events
 
     def test_recurring_weakness_suggestion_is_deterministic_complete_and_safe(self):
         now = datetime(2026, 7, 16, 9, tzinfo=timezone.utc)
@@ -128,6 +134,19 @@ class BeaconCampaignTests(unittest.TestCase):
             "incompatible_currency": [self.recurring_events()[0], {**self.recurring_events()[1], "spend_currency": "USD"}],
             "stale": [{**item, "created_at": "2026-06-01T00:00:00+00:00"} for item in self.recurring_events()],
             "missing_metric": [{**self.recurring_events()[0]}, {key: value for key, value in self.recurring_events()[1].items() if key != "qualified_buyer_leads"}],
+            "missing_evidence": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {}}],
+            "provider_error": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 50},
+                "qualified_buyer_leads": {"status": "provider_error", "value": None},
+            }}],
+            "incompatible_definition": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 50, "metric_definition": "cents_v1"},
+                "qualified_buyer_leads": {"status": "verified", "value": 0},
+            }}],
+            "mismatched_value": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 999},
+                "qualified_buyer_leads": {"status": "verified", "value": 0},
+            }}],
             "superseded": [self.recurring_events()[0], {**self.recurring_events()[1], "supersedes_event_id": "e2"}],
         }
         for label, events in cases.items():
