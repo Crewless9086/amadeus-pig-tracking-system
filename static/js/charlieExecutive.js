@@ -48,7 +48,17 @@
   }
 
   function renderDecisions(decisions, preferences) {
-    const decisionHtml = decisions.length ? decisions.map((d) => `<article class="decision"><h3>${esc(d.title)}</h3><p>${esc(d.summary)}</p><small>Expires ${esc(time(d.expires_at))}</small><div class="decision-actions"><button data-bundle="${esc(d.bundle_id)}" data-decision="approve">Approve</button><button class="reject" data-bundle="${esc(d.bundle_id)}" data-decision="reject">Reject</button><button class="later" data-bundle="${esc(d.bundle_id)}" data-decision="defer">Later</button></div></article>`).join("") : '<div class="empty">No genuine owner decisions are waiting.</div>';
+    const decisionHtml = decisions.length ? decisions.map((d) => {
+      const packet = d.decisions && !Array.isArray(d.decisions) ? d.decisions : {};
+      const args = packet.args && typeof packet.args === "object" ? packet.args : {};
+      const requested = args.action_summary || d.summary || "No requested action supplied";
+      const protectedAction = packet.intent === "protected_business_action";
+      const hasTarget = ["mission_id", "order_id", "customer_id", "conversation_id", "chat_id"].some((key) => args[key]);
+      const incomplete = protectedAction && !hasTarget;
+      const recommendation = d.recommendation?.recommended || "review manually";
+      const warning = incomplete ? "No customer, order, conversation or mission target is attached. Reject this item and give CHARLIE a complete instruction." : "Approval records your authority only. The domain executor still reloads and validates current state before acting.";
+      return `<article class="decision"><h3>${esc(d.title)}</h3><p>${esc(d.summary)}</p><div class="decision-detail ${incomplete ? "warn" : ""}"><b>Requested action</b>${esc(requested)}</div><p><strong>Recommendation:</strong> ${esc(recommendation)}<br>${esc(warning)}</p><small>Bundle ${esc(d.bundle_id)} | Expires ${esc(time(d.expires_at))}</small><div class="decision-actions"><button data-bundle="${esc(d.bundle_id)}" data-decision="approve" ${incomplete ? "disabled title=\"Missing action target\"" : ""}>Authorize</button><button class="reject" data-bundle="${esc(d.bundle_id)}" data-decision="reject">Reject</button><button class="later" data-bundle="${esc(d.bundle_id)}" data-decision="defer">Later</button></div></article>`;
+    }).join("") : '<div class="empty">No genuine owner decisions are waiting.</div>';
     const preferenceHtml = preferences.length ? `<div class="section-label">Approved preferences</div>${preferences.map((p) => `<div class="preference"><strong>${esc(p.key)}</strong><br>${esc(typeof p.value === "string" ? p.value : JSON.stringify(p.value))}</div>`).join("")}` : "";
     el.decisions.innerHTML = decisionHtml + preferenceHtml;
     el.decisions.querySelectorAll("[data-bundle]").forEach((button) => button.addEventListener("click", () => decide(button.dataset.bundle, button.dataset.decision)));
