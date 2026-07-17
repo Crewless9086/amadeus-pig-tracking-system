@@ -15,7 +15,7 @@ TRUST_LEDGER_PATH = REPO_ROOT / "loop" / "memory" / "trust.tsv"
 
 
 WORKFORCE_DEFINITIONS = (
-    {"id": "charlie", "name": "CHARLIE", "team": "Owner Command", "role": "Charl's private digital executive, conversational interface and cross-system commander.", "stage": "planned"},
+    {"id": "charlie", "name": "CHARLIE", "team": "Owner Command", "role": "Charl's private digital executive, conversational interface and cross-system commander.", "stage": "live_supervised"},
     {"id": "charlie-core", "name": "CORE", "team": "Execution", "role": "Owner-gated agentic mission engine for building, repairing, testing and upgrading systems.", "stage": "live_supervised"},
     {"id": "analyst", "name": "ANALYST", "team": "CORE Intelligence", "role": "Observes CORE outcomes, detects recurring weaknesses, proposes owner-gated improvements and validates whether they worked.", "stage": "observing"},
     {"id": "codex-builder", "name": "Codex Builder", "team": "Build", "role": "Primary repository builder under CHARLIE mission contracts.", "stage": "live_supervised"},

@@ -8,7 +8,10 @@ class CharliePrivateToolsTests(unittest.TestCase):
     @patch("modules.charlie.private_tools.update_mission_status")
     @patch("modules.charlie.private_tools.get_mission")
     def test_approve_reloads_and_uses_compare_and_set(self, get_mission, update_status):
-        get_mission.return_value = ({"mission": {"mission_id": "M1", "status": "new"}}, 200)
+        get_mission.side_effect = [
+            ({"mission": {"mission_id": "M1", "status": "new"}}, 200),
+            ({"mission": {"mission_id": "M1", "status": "approved"}}, 200),
+        ]
         update_status.return_value = ({"success": True, "status": "ok"}, 200)
         result, status = execute_private_tool("approve_mission", {"mission_id": "M1"})
         self.assertEqual(status, 200)
@@ -18,7 +21,10 @@ class CharliePrivateToolsTests(unittest.TestCase):
     @patch("modules.charlie.private_tools.transition_mission_review_state")
     @patch("modules.charlie.private_tools.get_mission")
     def test_send_back_uses_authoritative_review_transition(self, get_mission, transition):
-        get_mission.return_value = ({"mission": {"mission_id": "M1", "status": "blocked", "metadata": {"review_packet": {"responsible_stage": "builder"}}}}, 200)
+        get_mission.side_effect = [
+            ({"mission": {"mission_id": "M1", "status": "blocked", "metadata": {"review_packet": {"responsible_stage": "builder"}}}}, 200),
+            ({"mission": {"mission_id": "M1", "status": "blocked", "metadata": {"review_packet": {"return_to_stage": "builder"}}}}, 200),
+        ]
         transition.return_value = ({"success": True, "status": "review_state_transitioned"}, 200)
         result, status = execute_private_tool("send_back_mission", {"mission_id": "M1"})
         self.assertEqual(status, 200)

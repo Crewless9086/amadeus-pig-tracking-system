@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.improvement_analyst import analyst_scorecard
 from modules.charlie.mission_store import (
@@ -39,7 +41,9 @@ def _core_status(_args):
     active_result, active_status = list_missions(status="in_progress", limit=5, compact=False)
     local = runner_status(include_git=False, include_ledger=False)
     counts = summary.get("counts") or {}
-    runner_label = "healthy" if local.get("process_alive") and local.get("heartbeat_fresh") else local.get("status", "unknown")
+    cloud_cannot_see_local = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+    runner_label = ("local heartbeat not visible from Render" if cloud_cannot_see_local else
+                    "healthy" if local.get("process_alive") and local.get("heartbeat_fresh") else local.get("status", "unknown"))
     text = f"CORE: {counts.get('in_progress',0)} active, {counts.get('approved',0)} approved, {counts.get('pr_ready',0)} ready for review, {counts.get('blocked',0)} blocked. Runner: {runner_label}."
     active = active_result.get("missions") or []
     if active:
@@ -56,7 +60,7 @@ def _core_status(_args):
                 detail += f", {progress}% progress"
             lines.append(detail)
         text += " Active now: " + "; ".join(lines) + "."
-    elif local.get("process_alive") and local.get("last_mission_id"):
+    elif not cloud_cannot_see_local and local.get("process_alive") and local.get("last_mission_id"):
         text += f" The local runner last reported mission {local['last_mission_id']}, but Supabase currently has no mission marked in_progress."
     else:
         text += " No mission is currently marked in_progress."
@@ -92,11 +96,21 @@ def _mission(args):
     if status >= 400 or not mission:
         return {"success": False, "status": "mission_not_found", "summary": f"I could not find CORE mission {mission_id}."}, 404 if status < 500 else status
     packet = ((mission.get("metadata") or {}).get("review_packet") or {})
-    text = f"{mission.get('title') or mission.get('mission_id')} is {mission.get('status')}."
+    metadata = mission.get("metadata") or {}
+    progress = metadata.get("progress_pct") or packet.get("progress_pct") or mission.get("progress_pct")
+    stage = metadata.get("current_agent") or packet.get("current_agent") or packet.get("responsible_stage") or packet.get("return_to_stage")
+    text = f"{mission.get('title') or mission.get('mission_id')} [{mission.get('mission_id')}] is {mission.get('status')}."
+    if stage:
+        text += f" Current stage: {stage}."
+    if progress is not None:
+        text += f" Progress: {progress}%."
     if packet.get("blocked_reason"):
         text += f" Blocked because: {packet['blocked_reason']}."
     if packet.get("recommended_next_action"):
         text += f" Recommended next action: {packet['recommended_next_action']}"
+    attempts = metadata.get("attempt_count") or packet.get("attempt_count")
+    if attempts:
+        text += f" Attempts recorded: {attempts}."
     return {"success": status < 400, "status": "mission_ready", "summary": text, "mission": mission}, status
 
 
@@ -179,7 +193,12 @@ def _create_mission(args):
         return {"success": False, "status": "mission_text_required", "summary": "Tell me what outcome the mission must deliver."}, 400
     result, status = record_mission({"title": title[:180], "raw_text": str(args.get("raw_text") or title)[:6000], "urgency": str(args.get("urgency") or "P2"), "mission_type": str(args.get("mission_type") or "feature build"), "approval_level": "LEVEL 3", "metadata": {"created_from": "charlie_private_executive", "owner_work": True}}, source_context={"source": "charlie_private_executive"})
     mission_id = result.get("mission_id")
-    return {"success": status < 400, "status": "mission_created" if status < 400 else result.get("status"), "summary": f"Mission created in CORE: {title} [{mission_id}]. It is waiting in New for approval.", "mission_id": mission_id}, status
+    verified = False
+    if status < 400 and mission_id:
+        loaded, loaded_status = get_mission(mission_id)
+        verified = loaded_status < 400 and (loaded.get("mission") or {}).get("mission_id") == mission_id
+    code = status if status >= 400 else (200 if verified else 503)
+    return {"success": verified, "status": "mission_created_verified" if verified else result.get("status") or "mission_create_unverified", "summary": f"Mission created and verified in CORE: {title} [{mission_id}]. It is waiting in New for approval." if verified else "CORE did not provide enough evidence to verify the mission creation.", "mission_id": mission_id, "verified": verified}, code
 
 
 def _mission_transition(args, target):
@@ -192,7 +211,12 @@ def _mission_transition(args, target):
     if current not in allowed[target]:
         return {"success": False, "status": "transition_not_allowed", "summary": f"I did not change it because {current} cannot safely move to {target}."}, 409
     result, code = update_mission_status(mission_id, target, owner_decision=f"Explicit private CHARLIE owner instruction: {target}", expected_status=current)
-    return {"success": code < 400, "status": result.get("status"), "summary": f"Mission {mission_id} moved from {current} to {target}." if code < 400 else "The mission changed before execution, so I made no stale update.", "mission_id": mission_id}, code
+    verified = False
+    if code < 400:
+        reloaded, reload_status = get_mission(mission_id)
+        verified = reload_status < 400 and (reloaded.get("mission") or {}).get("status") == target
+    final_code = code if code >= 400 else (200 if verified else 503)
+    return {"success": verified, "status": f"mission_{target}_verified" if verified else result.get("status") or "mission_transition_unverified", "summary": f"Mission {mission_id} moved from {current} to {target}, and I verified the new state." if verified else "The mission action could not be verified against current Supabase state.", "mission_id": mission_id, "verified": verified}, final_code
 
 
 def _approve_mission(args): return _mission_transition(args, "approved")
@@ -223,10 +247,18 @@ def _send_back_mission(args):
         owner_decision="Explicit private CHARLIE owner instruction: send back",
         notes=f"Owner returned mission to {stage} through private CHARLIE.",
     )
+    verified = False
+    if code < 400:
+        reloaded, reload_status = get_mission(mission_id)
+        updated = reloaded.get("mission") or {}
+        updated_packet = ((updated.get("metadata") or {}).get("review_packet") or {})
+        verified = reload_status < 400 and updated.get("status") == "blocked" and updated_packet.get("return_to_stage") == stage
+    final_code = code if code >= 400 else (200 if verified else 503)
     return {
-        "success": code < 400,
-        "status": result.get("status"),
-        "summary": f"Mission {mission_id} was returned to {stage}." if code < 400 else "The mission changed before execution, so I made no stale update.",
+        "success": verified,
+        "status": "mission_send_back_verified" if verified else result.get("status") or "mission_send_back_unverified",
+        "summary": f"Mission {mission_id} was returned to {stage}, and I verified the recovery state." if verified else "The send-back could not be verified against current Supabase state.",
         "mission_id": mission_id,
         "target_stage": stage,
-    }, code
+        "verified": verified,
+    }, final_code

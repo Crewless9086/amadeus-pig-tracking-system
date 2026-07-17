@@ -116,6 +116,24 @@ def recent_context(thread_id, limit=12, database_url=None, connect_factory=None)
     return {"success": True, "status": "ok", "summary": thread[0] or "", "open_context": thread[1] or {}, "preferences": preferences, "messages": messages}, 200
 
 
+def update_thread_context(thread_id, context, *, summary="", database_url=None, connect_factory=None):
+    """Persist the current executive goal, subject, plan, and follow-ups across restarts."""
+    try:
+        with _connect(_database_url(database_url), connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    update public.charlie_conversation_threads
+                    set open_context_json=%(context)s::jsonb,
+                        summary=case when %(summary)s='' then summary else %(summary)s end,
+                        updated_at=now()
+                    where thread_id=%(thread)s returning thread_id
+                """, {"thread": thread_id, "context": json.dumps(context or {}, default=str), "summary": str(summary or "")[:1000]})
+                found = bool(cursor.fetchall())
+    except Exception as exc:
+        return {"success": False, "status": "context_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": found, "status": "context_updated" if found else "thread_not_found"}, 200 if found else 404
+
+
 def record_intent(thread_id, owner_message_id, intent, database_url=None, connect_factory=None):
     intent_id = stable_id("INTENT", owner_message_id, intent.get("type"), json.dumps(intent.get("args") or {}, sort_keys=True))
     try:
@@ -221,7 +239,7 @@ def private_owner_snapshot(limit=30, database_url=None, connect_factory=None):
         with _connect(_database_url(database_url), connect_factory) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    select b.binding_id,b.telegram_user_id,b.telegram_chat_id,b.last_seen_at,t.thread_id,t.summary
+                    select b.binding_id,b.telegram_user_id,b.telegram_chat_id,b.last_seen_at,t.thread_id,t.summary,t.open_context_json
                     from public.charlie_owner_bindings b
                     left join public.charlie_conversation_threads t on t.binding_id=b.binding_id and t.status='active'
                     where b.status='active' order by b.last_seen_at desc limit 1
@@ -253,7 +271,7 @@ def private_owner_snapshot(limit=30, database_url=None, connect_factory=None):
     return {
         "success": True,
         "status": "private_snapshot_ready",
-        "owner": ({"binding_id": owner[0], "telegram_user_id": owner[1], "telegram_chat_id": owner[2], "last_seen_at": owner[3].isoformat(), "thread_id": owner[4], "summary": owner[5]} if owner else None),
+        "owner": ({"binding_id": owner[0], "telegram_user_id": owner[1], "telegram_chat_id": owner[2], "last_seen_at": owner[3].isoformat(), "thread_id": owner[4], "summary": owner[5], "open_context": owner[6] or {}} if owner else None),
         "messages": [{"message_id": row[0], "role": row[1], "content": row[2], "media": row[3] or [], "metadata": row[4] or {}, "created_at": row[5].isoformat()} for row in reversed(messages)],
         "decisions": [{"bundle_id": row[0], "status": row[1], "title": row[2], "summary": row[3], "decisions": row[4] or [], "recommendation": row[5] or {}, "expires_at": row[6].isoformat(), "created_at": row[7].isoformat()} for row in bundles],
         "preferences": [{"key": row[0], "value": row[1], "updated_at": row[2].isoformat()} for row in preferences],

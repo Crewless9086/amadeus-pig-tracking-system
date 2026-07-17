@@ -12,10 +12,11 @@ This interface reduces owner workload without granting customer, money, stock, l
 2. The ingress requires the configured owner user ID, owner private chat ID, and webhook secret.
 3. `charlie_inbound_updates` claims the Telegram `update_id` before any reply or action.
 4. The owner message and media metadata are stored in the active private conversation thread.
-5. The planner emits one typed intent. Deterministic commands are preferred; optional LLM classification is disabled unless its complete configuration is present.
-6. The authority policy either permits a read/bounded CORE action, asks a clarification, or creates an owner approval bundle.
-7. Typed tools reload current CORE state and use compare-and-set transitions. Telegram cannot run shell commands.
-8. The result, intent, tool execution, and CHARLIE reply are stored durably.
+5. Executive Runtime v2 derives a durable goal and active subject, then creates a bounded evidence plan of up to five typed tools. Deterministic commands are preferred; optional LLM classification cannot grant authority.
+6. Read questions may inspect several authoritative sources before CHARLIE replies. The response is composed only from successful tool evidence; failed reads are reported rather than guessed.
+7. The authority policy permits reads, asks one clarification when context is insufficient, or creates an owner approval bundle for protected actions.
+8. Typed write tools reload current CORE state, use compare-and-set transitions, and reload again to verify the outcome. Telegram cannot run shell commands.
+9. The goal, active subject, plan, evidence status, pending follow-ups, intent, tool executions, and reply are stored durably in Supabase.
 
 ## Configuration
 
@@ -45,6 +46,32 @@ Optional:
 - Explicitly approve, pause, reject, or send back a CORE mission.
 
 Ambiguous commands produce one clarification. Attachments are recorded as metadata and never treated as instructions. Voice notes are transcribed only through the explicit private gate; raw audio is not persisted by CHARLIE.
+
+Natural follow-ups such as `why?`, `what changed?`, `any update`, and `what happens next?` reuse the durable active mission or CORE context. Read-only inspection never requires owner permission.
+
+## Executive Runtime v2: Phases A-B
+
+- Durable conversation goal and active-subject state uses `charlie_conversation_threads.open_context_json`; it survives Render and runner restarts.
+- Broad CORE and executive-brief questions use bounded multi-tool evidence plans instead of one classifier-to-one-template execution.
+- CORE answers combine authoritative mission state, blocked-mission disposition, genuine owner decisions, and ANALYST evidence where relevant.
+- Ordinary language cannot be treated as a mission ID unless it matches an explicit CHARLIE ID or contains a numeric identifier.
+- Mission creates and transitions are not reported complete until current Supabase state verifies the outcome.
+- CORE's existing executive cycle remains the only recovery supervisor. It performs policy-authorized, bounded internal recovery and durable escalation; the private runtime does not create a parallel controller.
+- Render reports that it cannot see the laptop heartbeat instead of claiming the local runner is stopped. Supabase mission state remains visible.
+
+## Next Logged Phases
+
+### Phase C - Business Operations
+
+Add authoritative multi-tool plans for orders and quotes, SAM conversations and stock, BEACON campaigns, Herdmaster and farm operations. CHARLIE prepares complete action bundles and verifies every result; customer sends, public posts, payments, reservations, and lifecycle writes remain owner-confirmed.
+
+### Phase D - Delegated Autonomy
+
+Promote narrowly scoped capabilities using measured trust, add automatic idempotent recovery for proven yellow actions, score unnecessary escalations, and consolidate related owner decisions. No capability receives global trust.
+
+### Phase E - Voice And Proactive Operation
+
+Add private voice interaction, event-driven follow-ups, deadlines, daily executive briefs, cross-department coordination, and proactive owner alerts through the durable outbox. Scheduled work remains bounded by authority, retries, and completion conditions.
 
 ## Approval Bundles
 
