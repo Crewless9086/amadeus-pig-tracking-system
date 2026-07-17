@@ -1071,6 +1071,56 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             self.assertFalse(alert["writes_to_sheets"])
             self.assertFalse(alert["writes_to_supabase"])
 
+    def test_herdmaster_reasoning_uses_sanitized_real_herd_patterns_for_all_outcomes(self):
+        """Sanitized shapes mirror farm allocation records; tags and IDs are fictional."""
+        common = {"status": "Active", "on_farm": "Yes", "sex": "Female", "current_pen_id": "PEN-A", "latest_weight_kg": 45, "days_since_weight": 3}
+        pigs = [
+            {**common, "pig_id": "REAL-KEEP", "tag_number": "R1", "purpose": "Grow_Out", "readiness_bucket": "Livestock Candidate"},
+            {**common, "pig_id": "REAL-SELL", "tag_number": "R2", "purpose": "Grow_Out", "readiness_bucket": "Meat Candidate", "meat_window_status": "In meat window", "latest_weight_kg": 68},
+            {**common, "pig_id": "REAL-WATCH", "tag_number": "R3", "purpose": "Grow_Out", "readiness_bucket": "Livestock Candidate", "growth_class": "Slow", "growth_reason": "Lifetime ADG is below the farm threshold."},
+            {**common, "pig_id": "REAL-PURPOSE", "tag_number": "R4", "purpose": "Unknown", "readiness_bucket": "Needs Classification", "suggested_purpose": "Grow Out", "suggested_purpose_reason": "Purpose is not owner-approved.", "suggested_purpose_confidence": "Medium"},
+            {**common, "pig_id": "REAL-BREED", "tag_number": "R5", "purpose": "Breeding", "readiness_bucket": "Retain / Breeding Candidate", "suggested_purpose": "Breeding Review", "suggested_purpose_reason": "Strong litter and growth evidence.", "suggested_purpose_confidence": "High"},
+            {**common, "pig_id": "REAL-ASK", "tag_number": "", "sex": "", "latest_weight_kg": None, "days_since_weight": None, "purpose": "Unknown", "readiness_bucket": "Needs Data", "readiness_reason": "Identity and weight facts are incomplete."},
+        ]
+        breeding = {
+            "success": True,
+            "mode": "read_only",
+            "sows": [{"pig_id": "REAL-BREED", "mating_count": 2, "litter_count": 1, "pregnancy_rate": 1.0, "average_weaned": 8}],
+            "boars": [],
+        }
+
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            today=date(2026, 7, 1),
+            allocation={"source": "sanitized_real_herd_fixture", "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30}, "pigs": pigs},
+            litter_attention={"items": []},
+            breeding_analytics=breeding,
+        )
+
+        decisions = {row["pig_id"]: row for row in result["decisions"]}
+        self.assertEqual({row["outcome"] for row in decisions.values()}, {"keep", "sell", "watch", "purpose_review", "breeding_review", "ask_charl"})
+        self.assertEqual(decisions["REAL-BREED"]["breeding_analytics"]["role"], "sow")
+        self.assertTrue(decisions["REAL-ASK"]["question_for_charl"])
+        self.assertLess(decisions["REAL-ASK"]["confidence"], 0.96)
+        self.assertTrue(decisions["REAL-WATCH"]["advisory_only"])
+        self.assertTrue(all(row["owner_approval_required"] for row in decisions.values()))
+        self.assertTrue(all(not row["writes_to_sheets"] and not row["writes_to_supabase"] for row in decisions.values()))
+
+    def test_herdmaster_conflicting_deterministic_facts_force_clarification(self):
+        pig = {
+            "pig_id": "PIG-CONFLICT", "tag_number": "C1", "sex": "Female", "current_pen_id": "PEN-A",
+            "status": "Active", "on_farm": "Yes", "purpose": "Breeding", "latest_weight_kg": 82,
+            "days_since_weight": 2, "readiness_bucket": "Retain / Breeding Candidate",
+            "suggested_purpose": "Breeding Review", "meat_window_status": "Past meat window",
+        }
+        result = pig_weights_service.get_herdmaster_pig_allocation_alerts(
+            allocation={"thresholds": {"stale_weight_days": 30}, "pigs": [pig]},
+            litter_attention={"items": []}, breeding_analytics={"mode": "read_only", "sows": [], "boars": []},
+        )
+        decision = result["decisions"][0]
+        self.assertEqual(decision["outcome"], "ask_charl")
+        self.assertIn("breeding_and_meat_outcomes_conflict", decision["contradictions"])
+        self.assertTrue(decision["advisory_only"])
+
     def test_pig_allocation_alert_route_uses_owner_read_guard(self):
         from app import app
         from modules.pig_weights import pig_weights_routes
