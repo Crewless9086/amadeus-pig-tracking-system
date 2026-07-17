@@ -22,6 +22,7 @@ from modules.charlie.runner_control import RUNNER_DIR, _pid_alive, runner_status
 STATE_PATH = RUNNER_DIR / "watchdog.json"
 GIT_CONFIG_PATH = RUNNER_DIR / "task-gitconfig"
 SUPERVISOR_LOCK_PATH = RUNNER_DIR / "supervisor.lock"
+SUPERVISOR_STATE_PATH = RUNNER_DIR / "supervisor.json"
 DEFAULT_RUNNER_BASE_BRANCH = "charlie-runner-core-live-base"
 
 
@@ -46,12 +47,28 @@ def _fast_runner_status():
     return runner_status(include_orphans=False, include_git=False, include_ledger=False)
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock):
+def _infrastructure_hold(path=SUPERVISOR_STATE_PATH):
+    try:
+        state = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return state if state.get("status") == "infrastructure_hold" else {}
+
+
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=_infrastructure_hold):
     _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
     os.environ.setdefault("CHARLIE_RUNNER_BASE_BRANCH", DEFAULT_RUNNER_BASE_BRANCH)
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
-    if status.get("active"):
+    hold = hold_reader()
+    if hold:
+        result = {
+            "status": "infrastructure_hold",
+            "started": False,
+            "failure_status": hold.get("failure_status", ""),
+            "identical_failure_count": hold.get("identical_failure_count", 0),
+        }
+    elif status.get("active"):
         result = {"status": "runner_healthy", "started": False}
     elif supervisor_pid:
         result = {"status": "supervisor_healthy_runner_starting", "started": False, "supervisor_pid": supervisor_pid}
