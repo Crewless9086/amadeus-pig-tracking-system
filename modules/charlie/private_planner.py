@@ -14,6 +14,7 @@ ALLOWED_INTENTS = {
     "read_mission", "read_workforce", "read_analyst", "read_decisions",
     "create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "clarify",
     "remember_preference",
+    "protected_business_action",
 }
 
 
@@ -35,6 +36,9 @@ def _deterministic_plan(text, context):
     if lower.startswith(("remember that ", "remember this: ", "my preference is ")):
         preference = re.sub(r"^(remember that|remember this:|my preference is)\s*", "", text, flags=re.I).strip()
         return _intent("remember_preference", .98, {"key": "owner_instruction", "value": preference[:2000]}, explicit=True)
+    protected = _protected_action(text)
+    if protected:
+        return _intent("protected_business_action", .99, {"action_summary": text[:2000]}, [protected], explicit=True)
     if lower in {"/brief", "brief", "morning charlie", "what happened overnight", "give me the morning brief"} or "morning brief" in lower:
         return _intent("executive_brief", .99)
     if lower in {"/status", "status", "where are we", "what is happening", "what's happening"} or "core doing" in lower:
@@ -104,3 +108,17 @@ def _mission_id(text, context):
 
 def _intent(intent_type, confidence, args=None, risk_flags=None, explicit=False):
     return {"type": intent_type, "confidence": confidence, "args": args or {}, "risk_flags": risk_flags or [], "explicit_owner_command": explicit}
+
+
+def _protected_action(text):
+    lower = str(text or "").lower()
+    groups = (
+        ("customer_send", ("send the quote", "send quote", "message the customer", "send to the customer")),
+        ("public_post", ("publish the post", "post this ad", "boost the post", "publish this")),
+        ("payment", ("take payment", "confirm payment", "mark as paid", "confirm deposit")),
+        ("reservation", ("reserve the pigs", "reserve stock", "move stock")),
+        ("lifecycle_write", ("mark the pig sold", "change lifecycle", "change purpose")),
+        ("destructive_migration", ("delete production", "drop table", "destructive migration")),
+        ("credential_access", ("show me the api key", "send me the password", "reveal the token")),
+    )
+    return next((risk for risk, phrases in groups if any(phrase in lower for phrase in phrases)), "")

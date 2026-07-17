@@ -82,6 +82,13 @@ class CharliePrivateRuntimeTests(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn("saved", result["reply"])
 
+    def test_red_zone_request_creates_bundle_without_execution(self):
+        result, code = handle_private_telegram_webhook(payload("6", "Send the quote to the customer"), HEADERS, environ=ENV, sender=self.sender, store=self.store)
+        self.assertEqual(code, 200)
+        self.assertIn("owner decision", result["reply"])
+        self.assertEqual(len(self.store.bundles), 1)
+        self.assertEqual(self.store.tools, [])
+
     def test_callback_acknowledged_once_and_duplicate_skipped(self):
         ack = []
         callback = {"update_id": "4", "callback_query": {"id": "CB-1", "from": {"id": 10}, "message": {"chat": {"id": 10, "type": "private"}}, "data": "cp:BUNDLE-1:approve"}}
