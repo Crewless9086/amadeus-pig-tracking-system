@@ -25,6 +25,11 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan["type"], "remember_preference")
         self.assertTrue(plan["explicit_owner_command"])
 
+    def test_red_zone_request_becomes_protected_intent(self):
+        plan = plan_owner_intent("Send the quote to the customer", {}, environ={})
+        self.assertEqual(plan["type"], "protected_business_action")
+        self.assertEqual(plan["risk_flags"], ["customer_send"])
+
 
 if __name__ == "__main__":
     unittest.main()
