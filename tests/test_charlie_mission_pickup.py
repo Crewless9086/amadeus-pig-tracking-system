@@ -675,9 +675,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.execute_codex_for_mission")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
-    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_continuous_watch_does_not_rerun_existing_in_progress_mission(self, list_owner_work_missions, write_heartbeat, execute_codex, sleep):
-        def fake_list_owner_work_missions(status="", limit=10):
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_does_not_rerun_existing_in_progress_mission(self, list_missions, write_heartbeat, execute_codex, sleep):
+        def fake_list_missions(status="", limit=10, **_kwargs):
             if status == "in_progress":
                 return ({
                     "success": True,
@@ -690,7 +690,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_owner_work_missions.side_effect = fake_list_owner_work_missions
+        list_missions.side_effect = fake_list_missions
         result, status_code = charlie_mission_pickup.watch_for_mission(
             interval_seconds=5,
             max_checks=1,
@@ -723,8 +723,8 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     @patch("scripts.charlie_mission_pickup.runner_status")
-    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_recover_stranded_mission_blocks_and_notifies(self, list_owner_work_missions, runner_status, update_status, update_vault, send_blocked):
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_recover_stranded_mission_blocks_and_notifies(self, list_missions, runner_status, update_status, update_vault, send_blocked):
         active = {
             **MISSION,
             "status": "in_progress",
@@ -732,7 +732,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             "agent_workflow": [{"agent": "builder", "status": "active"}],
             "metadata": {"execution_lease": {"lease_id": "lease-1", "expires_at": "2020-01-01T00:00:00+00:00"}},
         }
-        list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [active]}, 200)
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": [active]}, 200)
         runner_status.return_value = {
             "status": "runner_stale_or_stopped",
             "active": False,
@@ -755,6 +755,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(packet["blocked_agent"], "builder")
         self.assertEqual(packet["return_to_stage"], "builder")
         send_blocked.assert_called_once()
+
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_active_execution_observes_non_owner_queue_rows(self, list_missions):
+        active = {
+            **MISSION,
+            "mission_id": "CHARLIE-MISSION-SYSTEM-ACTIVE",
+            "status": "in_progress",
+            "metadata": {"intake_quality": {"queue_class": "system_recovery"}},
+        }
+        list_missions.return_value = ({"success": True, "status": "ok", "missions": [active]}, 200)
+
+        result = charlie_mission_pickup._active_mission()
+
+        self.assertEqual(result["mission_id"], "CHARLIE-MISSION-SYSTEM-ACTIVE")
+        list_missions.assert_called_once_with(status="in_progress", limit=1, compact=False)
 
     def test_live_process_is_never_recovered_from_idle_observer_shape(self):
         decision = charlie_mission_pickup._stranded_recovery_decision(
@@ -919,9 +934,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
-    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_continuous_watch_waits_when_mission_is_active_without_execute_flag(self, list_owner_work_missions, write_heartbeat, sleep):
-        def fake_list_owner_work_missions(status="", limit=10):
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_waits_when_mission_is_active_without_execute_flag(self, list_missions, write_heartbeat, sleep):
+        def fake_list_missions(status="", limit=10, **_kwargs):
             if status == "in_progress":
                 return ({
                     "success": True,
@@ -934,7 +949,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_owner_work_missions.side_effect = fake_list_owner_work_missions
+        list_missions.side_effect = fake_list_missions
 
         result, status_code = charlie_mission_pickup.watch_for_mission(
             interval_seconds=5,
@@ -950,9 +965,9 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.time.sleep")
     @patch("scripts.charlie_mission_pickup.write_runner_heartbeat")
-    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
-    def test_continuous_watch_waits_when_release_is_in_progress(self, list_owner_work_missions, write_heartbeat, sleep):
-        def fake_list_owner_work_missions(status="", limit=10):
+    @patch("scripts.charlie_mission_pickup.list_missions")
+    def test_continuous_watch_waits_when_release_is_in_progress(self, list_missions, write_heartbeat, sleep):
+        def fake_list_missions(status="", limit=10, **_kwargs):
             if status == "release_in_progress":
                 return ({
                     "success": True,
@@ -965,7 +980,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
                 }, 200)
             return {"success": True, "status": "ok", "missions": []}, 200
 
-        list_owner_work_missions.side_effect = fake_list_owner_work_missions
+        list_missions.side_effect = fake_list_missions
 
         result, status_code = charlie_mission_pickup.watch_for_mission(
             interval_seconds=5,

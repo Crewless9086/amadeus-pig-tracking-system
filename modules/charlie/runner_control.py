@@ -339,8 +339,25 @@ def _display_command(command=None):
 
 
 def _current_git_commit():
+    # The deployed branch is authoritative. A dirty or intentionally divergent
+    # primary checkout must not make a healthy dedicated runner look stale.
     try:
         completed = subprocess.run(
+            ["git", "rev-parse", "refs/remotes/origin/main"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(CONTROL_ROOT),
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode == 0:
+        return completed.stdout.strip()
+    try:
+        fallback = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
@@ -352,7 +369,7 @@ def _current_git_commit():
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
-    return completed.stdout.strip() if completed.returncode == 0 else ""
+    return fallback.stdout.strip() if fallback.returncode == 0 else ""
 
 
 def _current_git_branch():

@@ -337,7 +337,7 @@ def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
 
 
 def _active_mission():
-    missions, status_code = _owner_queue_missions(
+    missions, status_code = _execution_state_missions(
         statuses=("in_progress", "release_in_progress"),
         limit=1,
     )
@@ -347,7 +347,7 @@ def _active_mission():
 
 
 def recover_stranded_missions(notify=False):
-    missions, status_code = _owner_queue_missions(statuses=("in_progress",), limit=5)
+    missions, status_code = _execution_state_missions(statuses=("in_progress",), limit=100)
     if status_code >= 400:
         return {"success": False, "status": "stranded_recovery_queue_unavailable", "recovered_count": 0, "status_code": status_code}
     local_status = runner_status(include_orphans=False, include_git=False, include_ledger=True)
@@ -548,6 +548,28 @@ def _owner_queue_missions(statuses, limit=10):
                 if _mission_dependencies_ready(mission, status_cache=dependency_status_cache)
             ]
         missions.extend(candidates)
+        if len(missions) >= parsed_limit:
+            break
+    return missions[:parsed_limit], status_code
+
+
+def _execution_state_missions(statuses, limit=100):
+    """Read every active execution row, including legacy/system queue classes.
+
+    Pickup remains owner-work only. Liveness and stranded recovery cannot use that
+    filter because an invisible active row still owns the global execution slot.
+    """
+    parsed_limit = max(int(limit or 1), 1)
+    missions = []
+    status_code = 200
+    for status in statuses:
+        clean_status = str(status or "").strip()
+        if not clean_status:
+            continue
+        loaded, status_code = list_missions(status=clean_status, limit=parsed_limit, compact=False)
+        if status_code >= 400:
+            return [], status_code
+        missions.extend(loaded.get("missions") or [])
         if len(missions) >= parsed_limit:
             break
     return missions[:parsed_limit], status_code
