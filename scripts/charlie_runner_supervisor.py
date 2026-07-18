@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
