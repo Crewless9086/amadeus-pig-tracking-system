@@ -91,6 +91,29 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         self.assertIn("schedule_recovery", actions)
         self.assertIn("ensure_queue_progress", actions)
 
+    def test_dependency_blocked_approved_rows_do_not_count_as_runway(self):
+        missions = [
+            {"mission_id": "BLOCKED-CHILD", "status": "approved", "metadata": {"depends_on_mission_ids": ["PARENT"]}},
+            {"mission_id": "PARENT", "status": "blocked", "metadata": {"review_packet": {"block_disposition": {"block_class": "owner_decision_required", "owner_required": True}}}},
+            {"mission_id": "SAFE-NEW", "status": "new", "title": "Safe docs", "raw_text": "Improve docs", "approval_level": "LEVEL 3", "metadata": {}},
+        ]
+        cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
+        selected = [item for item in cycle["commands"] if item["action"] == "approve_next_work"]
+        self.assertEqual([item["mission_id"] for item in selected], ["SAFE-NEW"])
+        self.assertTrue(cycle["queue_health"]["deadlocked"])
+
+    def test_recovery_slice_is_runnable_while_parent_is_blocked(self):
+        missions = [
+            {"mission_id": "PARENT", "status": "blocked", "metadata": {"review_packet": {"block_disposition": {"block_class": "owner_decision_required", "owner_required": True}}}},
+            {"mission_id": "RECOVERY", "status": "approved", "metadata": {
+                "depends_on_mission_ids": ["PARENT"],
+                "mission_family": {"relationship": "acceptance_recovery", "parent_mission_id": "PARENT"},
+            }},
+        ]
+        cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
+        self.assertEqual(cycle["queue_health"]["runnable_count"], 1)
+        self.assertEqual(cycle["queue_rank"][0]["mission_id"], "RECOVERY")
+
     def test_queue_progress_fails_closed_without_policy(self):
         cycle = build_executive_cycle([{"mission_id": "MISSION-2", "status": "approved"}], [], runner={})
         self.assertFalse(any(item.get("action") == "ensure_queue_progress" for item in cycle["commands"]))

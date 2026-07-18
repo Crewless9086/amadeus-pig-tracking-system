@@ -10,6 +10,21 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_worktree_resolves_primary_checkout_for_runtime_truth(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            worktree = root / ".charlie_runner" / "live"
+            git_dir = root / ".git" / "worktrees" / "live"
+            git_dir.mkdir(parents=True)
+            worktree.mkdir(parents=True)
+            (worktree / ".git").write_text(f"gitdir: {git_dir}", encoding="utf-8")
+            self.assertEqual(runner_control._shared_repository_root(worktree), root)
+
+    def test_windows_powershell_probes_are_hidden(self):
+        source = Path(runner_control.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count('["powershell", "-NoProfile", "-Command", script]'), 2)
+        self.assertGreaterEqual(source.count('creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)'), 2)
+
     def test_shared_repo_venv_is_used_from_runner_worktree(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

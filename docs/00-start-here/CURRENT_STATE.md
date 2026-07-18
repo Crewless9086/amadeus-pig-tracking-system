@@ -328,3 +328,11 @@ The deployed implementation is governed by `docs/06-operations/CHARLIE_PRIVATE_E
 CHARLIE Live Executive v1 is being delivered under `docs/06-operations/CHARLIE_LIVE_EXECUTIVE_V1.md`. It adds SSE-streamed runtime progress, structured spoken/display packets, push-to-talk, server and browser voice fallbacks, a live full-screen presence, durable commitment visibility, and domain-aware decision cards without changing authority boundaries or creating a second runtime.
 
 CHARLIE Live Executive v1 was merged and deployed on 2026-07-18. GitHub Postgres/browser checks, 708 CHARLIE tests, focused HTTP and real-browser gates, Render asset verification, and an authenticated live SSE canary passed. Browser speech is the active zero-config voice path; server transcription and ElevenLabs speech remain provider-gated until their environment variables are configured.
+# 2026-07-18 - CHARLIE executive liveness repair
+
+- `docs/06-operations/CHARLIE_EXECUTIVE_LIVENESS_CONTRACT.md` is the active portfolio-momentum contract.
+- Recovery slices repair blocked parents and are not gated by those parents.
+- CORE filters dependencies before queue limits, preventing blocked family rows from hiding runnable work.
+- CHARLIE distinguishes approved, runnable, dependency-blocked, and active work; zero-runnable approved queues are executive incidents.
+- Worktree runners publish one canonical local heartbeat, and Windows control probes run without visible PowerShell consoles.
+- Protected business authority remains unchanged.

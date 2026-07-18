@@ -365,7 +365,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "no_mission_available")
-        list_owner_work_missions.assert_called_once_with("approved", limit=10)
+        list_owner_work_missions.assert_called_once_with("approved", limit=100)
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_dry_run_does_not_write_or_update_status(self, list_owner_work_missions):
@@ -379,7 +379,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
         self.assertEqual(result["runner_mode"], "code_test_pr")
         update_status.assert_not_called()
-        list_owner_work_missions.assert_called_once_with("approved", limit=10)
+        list_owner_work_missions.assert_called_once_with("approved", limit=100)
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_default_pickup_uses_status_specific_owner_work_query(self, list_owner_work_missions):
@@ -395,7 +395,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-OWNER")
-        list_owner_work_missions.assert_called_once_with("approved", limit=10)
+        list_owner_work_missions.assert_called_once_with("approved", limit=100)
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_default_pickup_finds_approved_owner_mission_without_mixed_page_probe(self, list_owner_work_missions):
@@ -411,7 +411,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-DEEP")
-        list_owner_work_missions.assert_called_once_with("approved", limit=10)
+        list_owner_work_missions.assert_called_once_with("approved", limit=100)
 
     @patch("scripts.charlie_mission_pickup.notify_main")
     def test_pickup_notification_passes_mission_status_button_id(self, notify_main):
@@ -834,6 +834,27 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission, status_cache=cache))
         self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission, status_cache=cache))
         get_mission.assert_called_once_with("PARENT-1")
+
+    def test_recovery_slice_does_not_wait_for_parent_it_repairs(self):
+        mission = {"metadata": {
+            "depends_on_mission_ids": ["PARENT-1"],
+            "mission_family": {"relationship": "acceptance_recovery", "parent_mission_id": "PARENT-1"},
+        }}
+        self.assertTrue(charlie_mission_pickup._mission_dependencies_ready(mission))
+
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    def test_dependency_blocked_first_row_does_not_hide_runnable_recovery(self, get_mission, list_owner):
+        blocked_child = {"mission_id": "CHILD", "metadata": {"depends_on_mission_ids": ["PARENT"]}}
+        recovery = {"mission_id": "RECOVERY", "metadata": {"mission_family": {
+            "relationship": "acceptance_recovery", "parent_mission_id": "BROKEN",
+        }}}
+        list_owner.return_value = ({"missions": [blocked_child, recovery]}, 200)
+        get_mission.return_value = ({"mission": {"status": "blocked"}}, 200)
+        rows, status = charlie_mission_pickup._owner_queue_missions(("approved",), limit=1)
+        self.assertEqual(status, 200)
+        self.assertEqual([row["mission_id"] for row in rows], ["RECOVERY"])
+        list_owner.assert_called_once_with("approved", limit=100)
 
     def test_execution_lease_includes_expiry(self):
         lease = charlie_mission_pickup._execution_lease_packet("MISSION-1")
