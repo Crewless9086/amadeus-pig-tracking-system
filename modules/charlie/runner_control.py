@@ -87,15 +87,24 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     orphan_processes = [] if payload or not include_orphans else _find_runner_processes()
     supervisor = _read_json(SUPERVISOR_PATH) if heartbeat_path == HEARTBEAT_PATH else {}
     supervisor_alive = _pid_alive(supervisor.get("pid"))
+    supervisor_child_alive = _pid_alive(supervisor.get("child_pid"))
+    generation_owned = bool(
+        str(supervisor.get("generation") or "")
+        and str(supervisor.get("generation") or "") == str(payload.get("supervisor_generation") or "")
+    )
     supervisor_owns_runner = bool(
         supervisor_alive
+        and supervisor_child_alive
         and process_alive
+        and generation_owned
         and (
             int(supervisor.get("child_pid") or 0) == int(payload.get("pid") or -1)
             or _pid_descends_from(payload.get("pid"), supervisor.get("child_pid"))
+            # The generation is an unguessable token injected only into this
+            # child tree. It is the reliable fallback when a Windows process
+            # ancestry probe transiently fails.
+            or generation_owned
         )
-        and str(supervisor.get("generation") or "")
-        and str(supervisor.get("generation") or "") == str(payload.get("supervisor_generation") or "")
     )
     if heartbeat_path == HEARTBEAT_PATH:
         active = active and supervisor_owns_runner
