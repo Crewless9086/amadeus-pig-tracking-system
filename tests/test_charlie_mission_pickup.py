@@ -343,7 +343,18 @@ class CharlieMissionPickupTests(unittest.TestCase):
             backup = Path(result["backup_path"])
             self.assertEqual(backup.read_text(encoding="utf-8"), "active mission evidence")
             self.assertIn(["git", "restore", "--worktree", "--", "planning/CODEX_CHAT.md"], calls)
-        self.assertEqual(result["status"], "codex_chat_preserved")
+            self.assertEqual(result["status"], "codex_chat_preserved")
+
+    def test_permission_denied_git_marker_becomes_typed_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "rebase-merge"
+            fake_marker = Mock()
+            fake_marker.is_absolute.return_value = True
+            fake_marker.exists.side_effect = PermissionError("access denied")
+            with patch("scripts.charlie_mission_pickup.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=f"{marker}\n", stderr="")), patch("modules.charlie.repository_guard.Path", return_value=fake_marker):
+                result = charlie_mission_pickup._recover_empty_git_operation_markers(repo_root=Path(tmp))
+        self.assertEqual(result["status"], "git_operation_marker_permission_denied")
+        self.assertTrue(result["recoverable_by_supervisor"])
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     def test_pickup_reports_no_available_mission(self, list_owner_work_missions):

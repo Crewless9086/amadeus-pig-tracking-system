@@ -55,12 +55,21 @@ def _infrastructure_hold(path=SUPERVISOR_STATE_PATH):
     return state if state.get("status") == "infrastructure_hold" else {}
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=_infrastructure_hold):
+def _supervisor_state(path=SUPERVISOR_STATE_PATH):
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=_infrastructure_hold, supervisor_state_reader=_supervisor_state):
     _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
     os.environ.setdefault("CHARLIE_RUNNER_BASE_BRANCH", DEFAULT_RUNNER_BASE_BRANCH)
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
     hold = hold_reader()
+    supervisor_state = supervisor_state_reader()
     if hold:
         result = {
             "status": "infrastructure_hold",
@@ -71,7 +80,17 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
     elif status.get("active"):
         result = {"status": "runner_healthy", "started": False}
     elif supervisor_pid:
-        result = {"status": "supervisor_healthy_runner_starting", "started": False, "supervisor_pid": supervisor_pid}
+        supervisor_status = str(supervisor_state.get("status") or "")
+        if supervisor_status == "runner_exited_restart_pending":
+            result = {
+                "status": "supervisor_child_crash_restarting", "started": False,
+                "supervisor_pid": supervisor_pid,
+                "restart_count": int(supervisor_state.get("restart_count") or 0),
+                "identical_failure_count": int(supervisor_state.get("identical_failure_count") or 0),
+                "latest_failure": supervisor_state.get("latest_failure") or {},
+            }
+        else:
+            result = {"status": "supervisor_healthy_runner_starting", "started": False, "supervisor_pid": supervisor_pid, "restart_count": int(supervisor_state.get("restart_count") or 0)}
     elif status.get("orphan_processes"):
         result = {"status": "orphan_requires_cleanup", "started": False}
     else:

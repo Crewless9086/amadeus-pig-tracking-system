@@ -3,6 +3,7 @@ import unittest
 import sys
 import subprocess
 import json
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -130,6 +131,46 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 3)
         self.assertEqual(state["identical_failure_count"], 3)
         notifier.assert_called_once()
+
+    def test_three_identical_unclassified_child_crashes_enter_hold(self):
+        children = [Mock(pid=201), Mock(pid=202), Mock(pid=203)]
+        for child in children:
+            child.wait.return_value = 3221225794
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            heartbeat = root / "runner.json"
+            heartbeat.write_text('{"last_result_status":"executive_cycle_observed"}', encoding="utf-8")
+            with patch.object(supervisor, "RUNNER_DIR", root), patch.object(supervisor, "SUPERVISOR_PATH", root / "supervisor.json"), patch.object(supervisor, "RUNNER_HEARTBEAT_PATH", heartbeat), patch.object(supervisor, "STOP_PATH", root / "stop"):
+                result = supervisor.supervise_runner(Mock(side_effect=children), lambda _delay: None, max_cycles=10, notifier=notifier)
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertIn("child_exit:3221225794", result["failure_status"])
+        notifier.assert_called_once()
+
+    @patch("modules.charlie.improvement_analyst.run_operational_analyst", return_value=({"success": True, "status": "analyst_cycle_complete", "lifecycle": {"updated_count": 1}}, 200))
+    def test_conveyor_repair_triggers_analyst_validation_cycle(self, analyst):
+        result = supervisor._run_analyst_repair_validation()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["lifecycle"]["updated_count"], 1)
+        analyst.assert_called_once_with(trigger="conveyor_repair_completed", limit=50)
+
+    def test_typed_damage_recreates_only_dedicated_runner_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            canonical = Path(tmp)
+            worktree = canonical / ".charlie_runner" / "runner"
+            worktree.mkdir(parents=True)
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                return Mock(returncode=0, stdout="", stderr="")
+
+            with patch.object(supervisor, "REPO_ROOT", worktree), patch.dict(os.environ, {"CHARLIE_RUNNER_BASE_BRANCH": "runner-base"}):
+                result = supervisor._recreate_damaged_runner_worktree(
+                    {"status": "git_operation_marker_permission_denied"}, run_factory=fake_run
+                )
+        self.assertTrue(result["success"])
+        self.assertEqual(commands[-1], ["git", "worktree", "add", "--force", str(worktree), "runner-base"])
 
 
 if __name__ == "__main__":

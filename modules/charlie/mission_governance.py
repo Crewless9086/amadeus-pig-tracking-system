@@ -98,6 +98,27 @@ def update_acceptance_matrix(governance, agent, artifact, passed):
     return _governance_packet(governance, rows)
 
 
+def validate_acceptance_scope(rows, allowed_files=None):
+    """Prove that a bounded child's path-bearing criteria fit its allowed scope."""
+    rows = [dict(row) for row in (rows or []) if isinstance(row, dict)]
+    allowed = [str(item or "").replace("\\", "/").strip() for item in (allowed_files or []) if str(item or "").strip()]
+    violations = []
+    if allowed:
+        for row in rows:
+            text = " ".join(str(row.get(key) or "") for key in ("requirement", "test_scope", "evidence_required"))
+            referenced = re.findall(r"(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+", text.replace("\\", "/"))
+            outside = [path for path in referenced if not any(path == root or path.startswith(root.rstrip("/") + "/") for root in allowed)]
+            if outside:
+                violations.append({"acceptance_id": row.get("id", ""), "outside_paths": outside})
+    return {
+        "satisfiable": not violations,
+        "checked_rows": len(rows),
+        "allowed_files": allowed,
+        "violations": violations,
+        "status": "acceptance_scope_satisfiable" if not violations else "acceptance_scope_unsatisfiable",
+    }
+
+
 def evaluate_quality_failure(mission, agent, artifact, quality):
     mission = mission if isinstance(mission, dict) else {}
     artifact = artifact if isinstance(artifact, dict) else {}

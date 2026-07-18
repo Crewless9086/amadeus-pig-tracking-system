@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
+from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
@@ -671,9 +672,11 @@ def _run_analyst_cycle(mission_id, trigger, notify=False):
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
     checkout = _ensure_base_branch()
     if not checkout["success"]:
+        failure_status = str(checkout.get("status") or "base_branch_checkout_failed")
         return {
             **checkout,
-            "status": "base_branch_checkout_failed",
+            "status": failure_status,
+            "last_failure": checkout,
             "mission_count": 0,
             "next_action": "Resolve the git checkout problem before CHARLIE picks up another mission.",
         }, 409
@@ -999,6 +1002,23 @@ def _ensure_base_branch():
     default_base = "charlie-runner-clean-base" if ".charlie_runner" in REPO_ROOT.parts else ""
     base_branch = configured_base or default_base
 
+    repository_lock = RepositoryOperationLock(repository_lock_path(REPO_ROOT))
+    acquired, owner = repository_lock.acquire()
+    if not acquired:
+        return {
+            "success": False,
+            "status": "repository_operation_locked",
+            "failure_class": "repository_infrastructure",
+            "lock_owner": owner,
+            "recommended_action": "Wait for the active repository operation or recover its stale lock.",
+        }
+    try:
+        return _ensure_base_branch_locked(base_branch)
+    finally:
+        repository_lock.release()
+
+
+def _ensure_base_branch_locked(base_branch):
     marker_recovery = _recover_empty_git_operation_markers()
     if not marker_recovery["success"]:
         return marker_recovery
@@ -1084,46 +1104,7 @@ def _ensure_base_branch():
 
 def _recover_empty_git_operation_markers(repo_root=REPO_ROOT):
     """Remove only empty stale Git-operation markers left by an interrupted process."""
-    recovered = []
-    for marker_name in ("rebase-merge", "rebase-apply"):
-        try:
-            resolved = subprocess.run(
-                ["git", "rev-parse", "--git-path", marker_name],
-                cwd=repo_root,
-                text=True,
-                capture_output=True,
-                timeout=10,
-            )
-        except Exception as exc:
-            return {
-                "success": False,
-                "status": "git_operation_marker_check_failed",
-                "marker": marker_name,
-                "stderr": f"{exc.__class__.__name__}: {exc}",
-            }
-        if resolved.returncode != 0:
-            return {
-                "success": False,
-                "status": "git_operation_marker_check_failed",
-                "marker": marker_name,
-                "stderr": (resolved.stderr or "").strip(),
-            }
-        marker = Path((resolved.stdout or "").strip())
-        if not marker.is_absolute():
-            marker = Path(repo_root) / marker
-        if not marker.exists():
-            continue
-        if not marker.is_dir() or any(marker.iterdir()):
-            return {
-                "success": False,
-                "status": "git_operation_in_progress",
-                "marker": marker_name,
-                "marker_path": str(marker),
-                "recommended_action": "Inspect and complete or abort the non-empty Git operation before restarting CORE.",
-            }
-        marker.rmdir()
-        recovered.append(str(marker))
-    return {"success": True, "status": "empty_git_markers_recovered" if recovered else "no_git_markers", "recovered": recovered}
+    return inspect_git_operation_markers(repo_root, run_factory=subprocess.run)
 
 
 def _preserve_generated_codex_chat_before_switch(repo_root=REPO_ROOT, codex_chat_path=None, run_factory=None):
