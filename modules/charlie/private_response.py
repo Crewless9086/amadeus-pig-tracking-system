@@ -48,7 +48,7 @@ def build_executive_response_packet(reply, *, plan=None, evidence=None, context=
 
 
 def spoken_summary(text, max_chars=520):
-    clean = _clean(text, 3900)
+    clean = _spoken_text(text, 3900)
     if len(clean) <= max_chars:
         return clean
     sentences = re.split(r"(?<=[.!?])\s+", clean)
@@ -60,6 +60,17 @@ def spoken_summary(text, max_chars=520):
         selected.append(sentence)
         length += len(sentence) + 1
     return " ".join(selected).strip() or clean[:max_chars].rsplit(" ", 1)[0] + "."
+
+
+def _spoken_text(value, limit):
+    text = str(value or "").replace("\x00", "")
+    text = re.sub(r"```[\s\S]*?```", " ", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"^\s{0,3}(?:#{1,6}|[-*+]\s|\d+[.)]\s|>\s?)", "", text, flags=re.MULTILINE)
+    text = re.sub(r"[*_~]+", "", text)
+    return " ".join(text.split())[:limit]
 
 
 def _recommendation(text):

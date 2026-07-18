@@ -21,6 +21,13 @@ class CharliePrivateResponseTests(unittest.TestCase):
         text = "First fact. " + "Second detail " * 80 + ". Final note."
         self.assertLessEqual(len(spoken_summary(text)), 520)
 
+    def test_spoken_summary_removes_markdown_without_losing_words(self):
+        text = "**CORE is active.** [Open mission](https://example.test) and `review` it.\n- Next action"
+        summary = spoken_summary(text)
+        self.assertEqual(summary, "CORE is active. Open mission and review it. Next action")
+        self.assertNotIn("*", summary)
+        self.assertNotIn("https://", summary)
+
 
 if __name__ == "__main__":
     unittest.main()
