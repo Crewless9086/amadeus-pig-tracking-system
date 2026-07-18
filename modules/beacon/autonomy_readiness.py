@@ -194,11 +194,26 @@ def _policy_definition_errors(policy):
     for key in ("policy_id", "effective_at", "expires_at", "evidence_schema_version"):
         if not _text(policy.get(key)): errors.append(key + "_required")
     if not isinstance(policy.get("policy_version"), int) or policy.get("policy_version", 0) < 1: errors.append("policy_version_invalid")
-    if _parse_datetime(policy.get("effective_at")) is None or _parse_datetime(policy.get("expires_at")) is None: errors.append("policy_window_invalid")
+    effective, expires = _parse_datetime(policy.get("effective_at")), _parse_datetime(policy.get("expires_at"))
+    if effective is None or expires is None or expires <= effective: errors.append("policy_window_invalid")
     if not isinstance(policy.get("thresholds"), dict) or set(policy.get("thresholds", {})) != set(GATE_NAMES): errors.append("policy_thresholds_invalid")
-    if _number(policy.get("max_evidence_age_seconds")) is None: errors.append("max_evidence_age_seconds_invalid")
-    budget_threshold = policy.get("thresholds", {}).get("budget_compliance") if isinstance(policy.get("thresholds"), dict) else {}
-    if not isinstance(budget_threshold, dict) or not _valid_currency(budget_threshold.get("currency")):
+    if not _nonnegative_whole(policy.get("max_evidence_age_seconds")): errors.append("max_evidence_age_seconds_invalid")
+    thresholds = policy.get("thresholds", {}) if isinstance(policy.get("thresholds"), dict) else {}
+    campaign = thresholds.get("campaign_evidence", {})
+    if not _threshold_shape(campaign, {"minimum_count"}) or not _nonnegative_whole(campaign.get("minimum_count")):
+        errors.append("campaign_evidence_threshold_invalid")
+    for name in ("unedited_approval_rate", "attribution_completeness", "recommendation_accuracy"):
+        threshold = thresholds.get(name, {})
+        if not _threshold_shape(threshold, {"minimum_rate"}) or not _probability(threshold.get("minimum_rate")):
+            errors.append(name + "_threshold_invalid")
+    safety = thresholds.get("safety_incidents", {})
+    if not _threshold_shape(safety, {"maximum_open_incidents"}) or not _nonnegative_whole(safety.get("maximum_open_incidents")):
+        errors.append("safety_incidents_threshold_invalid")
+    trust = thresholds.get("trust_history", {})
+    if not _threshold_shape(trust, {"minimum_score", "minimum_completed_evaluations"}) or not _probability(trust.get("minimum_score")) or not _nonnegative_whole(trust.get("minimum_completed_evaluations")):
+        errors.append("trust_history_threshold_invalid")
+    budget_threshold = thresholds.get("budget_compliance", {})
+    if not _threshold_shape(budget_threshold, {"currency"}) or not _valid_currency(budget_threshold.get("currency")):
         errors.append("budget_currency_invalid")
     return errors
 
@@ -219,6 +234,7 @@ def _valid_currency(value):
     return len(currency) == 3 and currency.isascii() and currency.isalpha() and currency == currency.upper()
 def _number(value):
     try:
+        if isinstance(value, bool): return None
         number = float(value)
         return number if math.isfinite(number) else None
     except (TypeError, ValueError): return None
@@ -226,6 +242,14 @@ def _parse_datetime(value):
     try:
         parsed = datetime.fromisoformat(_text(value).replace("Z", "+00:00")); return parsed if parsed.tzinfo else None
     except ValueError: return None
+def _nonnegative_whole(value):
+    number = _number(value)
+    return number is not None and number >= 0 and number.is_integer()
+def _probability(value):
+    number = _number(value)
+    return number is not None and 0 <= number <= 1
+def _threshold_shape(value, keys):
+    return isinstance(value, dict) and set(value) == keys
 def _utc(value):
     if isinstance(value, datetime):
         if value.tzinfo is None: raise ValueError("datetime must be timezone-aware")

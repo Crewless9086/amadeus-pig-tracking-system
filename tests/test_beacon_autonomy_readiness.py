@@ -57,6 +57,37 @@ class BeaconAutonomyReadinessTests(unittest.TestCase):
         result = evaluate_autonomy_readiness(malformed_payload["policy_id"], evidence(), now=NOW, registry=self.registry)
         self.assertFalse(result["can_promote"])
         self.assertIn("policy_not_found", result["errors"])
+    def test_invalid_threshold_domains_are_never_recorded(self):
+        invalid_cases = (
+            ("max_evidence_age_seconds", -1, "max_evidence_age_seconds_invalid"),
+            ("campaign_evidence.minimum_count", -1, "campaign_evidence_threshold_invalid"),
+            ("unedited_approval_rate.minimum_rate", 1.1, "unedited_approval_rate_threshold_invalid"),
+            ("attribution_completeness.minimum_rate", -0.1, "attribution_completeness_threshold_invalid"),
+            ("recommendation_accuracy.minimum_rate", float("nan"), "recommendation_accuracy_threshold_invalid"),
+            ("safety_incidents.maximum_open_incidents", -1, "safety_incidents_threshold_invalid"),
+            ("trust_history.minimum_score", 1.1, "trust_history_threshold_invalid"),
+            ("trust_history.minimum_completed_evaluations", -1, "trust_history_threshold_invalid"),
+        )
+        for path, value, error in invalid_cases:
+            with self.subTest(path=path):
+                payload = policy_payload()
+                if path == "max_evidence_age_seconds":
+                    payload[path] = value
+                else:
+                    gate, field = path.split(".")
+                    payload["thresholds"][gate][field] = value
+                proposal = propose_threshold_policy(payload, now=NOW, registry=self.registry)
+                self.assertFalse(proposal["success"])
+                self.assertIn(error, proposal["errors"])
+                self.assertEqual(self.registry.latest_policy(payload["policy_id"]), {})
+
+    def test_incoherent_policy_window_is_never_recorded(self):
+        payload = policy_payload()
+        payload["expires_at"] = payload["effective_at"]
+        proposal = propose_threshold_policy(payload, now=NOW, registry=self.registry)
+        self.assertFalse(proposal["success"])
+        self.assertIn("policy_window_invalid", proposal["errors"])
+        self.assertEqual(self.registry.latest_policy(payload["policy_id"]), {})
     def test_each_gate_fails_independently_under_explicit_and_semantics(self):
         approved = self.approved()
         mutations = {"campaign_evidence": {"value": 2}, "unedited_approval_rate": {"value": .1}, "attribution_completeness": {"value": .1}, "recommendation_accuracy": {"value": .1}, "safety_incidents": {"value": 1}, "trust_history": {"value": .1}, "budget_compliance": {"actual_spend": 101}}
