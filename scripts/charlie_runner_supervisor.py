@@ -12,12 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 RUNNER_DIR = REPO_ROOT / ".charlie_runner"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"

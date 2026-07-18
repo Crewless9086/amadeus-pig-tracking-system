@@ -49,6 +49,10 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
     def test_repo_root_is_available_for_supervisor_module_imports(self):
         self.assertIn(str(supervisor.REPO_ROOT), sys.path)
 
+    def test_repo_local_imports_follow_sys_path_bootstrap(self):
+        source = (Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py").read_text(encoding="utf-8")
+        self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.repository_guard"))
+
     @patch.object(supervisor, "_process_identity")
     @patch.object(supervisor, "_pid_alive")
     @patch.object(supervisor.subprocess, "run")
