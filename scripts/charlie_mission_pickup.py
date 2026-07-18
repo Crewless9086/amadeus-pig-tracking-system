@@ -1082,11 +1082,15 @@ def _ensure_base_branch_locked(base_branch):
             "current_branch": current_branch,
         }
     if current_branch == base_branch:
+        codex_chat_recovery = _preserve_generated_codex_chat_before_switch()
+        if not codex_chat_recovery["success"]:
+            return codex_chat_recovery
         return {
             "success": True,
             "status": "base_branch_already_active",
             "base_branch": base_branch,
             "current_branch": current_branch,
+            "codex_chat_recovery": codex_chat_recovery,
         }
     codex_chat_recovery = _preserve_generated_codex_chat_before_switch()
     if not codex_chat_recovery["success"]:
