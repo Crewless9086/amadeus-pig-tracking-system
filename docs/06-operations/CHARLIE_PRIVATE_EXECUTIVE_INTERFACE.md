@@ -12,7 +12,7 @@ This interface reduces owner workload without granting customer, money, stock, l
 2. The ingress requires the configured owner user ID, owner private chat ID, and webhook secret.
 3. `charlie_inbound_updates` claims the Telegram `update_id` before any reply or action.
 4. The owner message and media metadata are stored in the active private conversation thread.
-5. Executive Runtime v2 derives a durable goal and active subject, then creates a bounded evidence plan of up to five typed tools. Deterministic commands are preferred; optional LLM classification cannot grant authority.
+5. The adaptive executive runtime derives a durable goal and active subject, discovers governed capabilities, then creates a bounded evidence plan. Optional LLM classification or synthesis cannot grant authority.
 6. Read questions may inspect several authoritative sources before CHARLIE replies. The response is composed only from successful tool evidence; failed reads are reported rather than guessed.
 7. The authority policy permits reads, asks one clarification when context is insufficient, or creates an owner approval bundle for protected actions.
 8. Typed write tools reload current CORE state, use compare-and-set transitions, and reload again to verify the outcome. Telegram cannot run shell commands.
@@ -36,6 +36,7 @@ Optional:
 - `CHARLIE_TELEGRAM_TRANSPORT=webhook` prevents the legacy local polling relay and watchdog from starting against the webhook-managed bot.
 - Private LLM classification requires `CHARLIE_PRIVATE_LLM_ENABLED=1`, a valid `CHARLIE_PRIVATE_LLM_MODEL`, and `OPENAI_API_KEY`. Model output never grants authority.
 - Voice transcription requires `CHARLIE_PRIVATE_TRANSCRIPTION_ENABLED=1`, `CHARLIE_PRIVATE_TRANSCRIPTION_MODEL`, and `OPENAI_API_KEY`. Audio is downloaded in memory, size-limited, transcribed, and not persisted by CHARLIE.
+- Optional ElevenLabs speech requires `CHARLIE_PRIVATE_TTS_ENABLED=1`, `CHARLIE_PRIVATE_TTS_PROVIDER=elevenlabs`, `CHARLIE_PRIVATE_TTS_MODEL`, `CHARLIE_PRIVATE_TTS_VOICE_ID`, and `ELEVENLABS_API_KEY`. Browser speech synthesis remains the safe fallback.
 
 ## Supported Owner Commands
 
@@ -90,7 +91,7 @@ The first verified owner binding receives a default morning subscription at 06:3
 
 ## Owner Interfaces
 
-- `/charlie` is the private executive cockpit: durable conversation, business/CORE status, evidence metrics, approved preferences, and genuine owner decisions.
+- `/charlie` is CHARLIE Live Executive: SSE-streamed runtime states, durable conversation, push-to-talk, server/browser transcription, provider/browser speech, stop/replay/mute, active commitments, structured evidence, and genuine owner decisions.
 - `/charlie-v2` remains CORE engineering control and detailed mission evidence. It is not the normal owner inbox.
 - `/charlie-agents` remains workforce readiness and training evidence.
 - Routine CORE stage events do not contact Charl in `executive_only` mode. Only deduplicated owner decisions and hard stops may surface through CHARLIE.
@@ -107,3 +108,9 @@ Set `CHARLIE_PRIVATE_EXECUTIVE_ENABLED=0`. The existing Build Relay webhook hand
 - Every allowed write uses current state and compare-and-set protection.
 - Red-zone execution from this runtime remains zero.
 - Required deterministic tests pass before deployment.
+
+## Live Executive v1
+
+`POST /api/charlie/private/message/stream` is the owner-admin SSE ingress. It emits owner-safe progress while the same private runtime gathers evidence and persists the turn. `POST /api/charlie/private/voice/transcribe` accepts size-limited owner audio; `POST /api/charlie/private/voice/speech` returns no-store speech audio only when the provider gate is configured. The browser falls back to Web Speech input/output when providers are unavailable. The response packet separates spoken summary, display answer, verified facts, recommendation, commitments, decisions, and source evidence.
+
+Push-to-talk is explicit. Always-on listening is not enabled. Speech can be muted, stopped, replayed, or interrupted by the next owner turn.

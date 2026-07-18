@@ -1,98 +1,50 @@
 (() => {
   "use strict";
-  const state = { packet: null, loading: false };
-  const el = {
-    summary: document.getElementById("summary"), identity: document.getElementById("identityChip"), runner: document.getElementById("runnerChip"),
-    messages: document.getElementById("messages"), decisions: document.getElementById("decisionBody"), footer: document.getElementById("footer"),
-    notice: document.getElementById("coreNotice"), refresh: document.getElementById("refreshBtn"), composer: document.getElementById("composer"),
-    input: document.getElementById("messageInput"), send: document.getElementById("sendBtn"), voice: document.getElementById("voiceBtn"),
-  };
-  const esc = (v) => String(v == null ? "" : v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  const state = { packet:null, busy:false, liveState:"idle", lastPacket:null, lastSpoken:"", muted:localStorage.getItem("charlie-muted")==="1", recorder:null, mediaStream:null, chunks:[], recognition:null };
+  const $ = (id) => document.getElementById(id);
+  const el = { metrics:$("metrics"), commitments:$("commitments"), messages:$("messages"), right:$("rightRail"), footer:$("footer"), identity:$("identityChip"), runner:$("runnerChip"), subject:$("activeSubject"), label:$("presenceLabel"), detail:$("presenceDetail"), composer:$("composer"), input:$("messageInput"), send:$("sendBtn"), mic:$("micBtn"), mute:$("muteBtn"), stop:$("stopBtn"), replay:$("replayBtn"), toast:$("toast"), canvas:$("presenceCanvas") };
+  const esc = (v) => String(v ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
   const count = (key) => Number(state.packet?.missions?.counts?.[key] || 0);
-  const time = (value) => value ? new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "--";
-
-  async function load() {
-    if (state.loading) return;
-    state.loading = true; el.refresh.disabled = true;
-    try {
-      const response = await fetch("/api/charlie/private/dashboard?limit=50", { credentials: "same-origin" });
-      const packet = await response.json().catch(() => ({}));
-      if (!response.ok || !packet.success) throw new Error(packet.status || `HTTP ${response.status}`);
-      state.packet = packet; render();
-    } catch (error) {
-      el.notice.className = "status-band warn"; el.notice.textContent = `CHARLIE evidence unavailable: ${error.message}`;
-    } finally { state.loading = false; el.refresh.disabled = false; }
+  const time = (v) => v ? new Date(v).toLocaleString([], {month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "--";
+  function toast(text){ el.toast.textContent=text; el.toast.classList.remove("hidden"); setTimeout(()=>el.toast.classList.add("hidden"),2600); }
+  function setLive(name, detail="") { state.liveState=name; el.label.textContent={idle:"CHARLIE is ready",listening:"Listening",understanding:"Understanding",investigating:"Checking the system",speaking:"CHARLIE is speaking",error:"Something needs attention"}[name]||name; el.detail.textContent=detail||({idle:"Speak naturally or type what you need",listening:"Press again when you are done",understanding:"Working out what you need",investigating:"Gathering current evidence",speaking:"You can stop or interrupt",error:"Your conversation is still safe"}[name]||""); }
+  async function load(){
+    try { const r=await fetch("/api/charlie/private/dashboard?limit=60",{credentials:"same-origin"}); const p=await r.json(); if(!r.ok||!p.success)throw new Error(p.status||`HTTP ${r.status}`); state.packet=p; render(); }
+    catch(error){ setLive("error",`Dashboard evidence unavailable: ${error.message}`); }
   }
-
-  function render() {
-    const p = state.packet, privateState = p.private || {}, evaluation = privateState.evaluation || {}, runner = p.runner || {};
-    const executiveContext = privateState.owner?.open_context || {};
-    const successRate = evaluation.tool_runs ? Math.round((evaluation.tool_successes / evaluation.tool_runs) * 100) : 0;
-    const metrics = [
-      ["CORE active", count("in_progress"), `${count("approved")} approved`], ["Owner review", count("pr_ready"), `${privateState.decisions?.length || 0} private decisions`],
-      ["Blocked", count("blocked"), "CHARLIE filters genuine decisions"], ["Tool success", `${successRate}%`, `${evaluation.tool_runs || 0} durable runs`],
-      ["Follow-ups", executiveContext.pending_follow_ups?.filter((item) => item.status === "pending").length || 0, `${evaluation.clarifications || 0} clarifications`], ["Recoveries", p.executive?.open_recoveries || 0, "executive control plane"],
-    ];
-    el.summary.innerHTML = metrics.map(([label, value, note]) => `<div class="metric"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(note)}</small></div>`).join("");
-    el.identity.className = `chip ${p.policy?.enabled ? "green" : "red"}`; el.identity.innerHTML = `<span class="dot"></span>${p.policy?.enabled ? "Private identity active" : "Identity incomplete"}`;
-    const cloudRunnerUnknown = runner.local_runner_scope === "render_cannot_see_laptop_runner";
-    const runnerHealthy = runner.active === true || (runner.process_alive === true && runner.heartbeat_fresh === true);
-    const runnerLabel = cloudRunnerUnknown ? "local status unknown" : (runner.active === true ? "working" : (runnerHealthy ? "ready" : "stopped"));
-    el.runner.className = `chip ${runnerHealthy ? "green" : (cloudRunnerUnknown ? "" : "red")}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
-    const goalNote = executiveContext.goal ? ` Current goal: ${executiveContext.goal}` : "";
-    el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = (cloudRunnerUnknown ? `Render cannot inspect the laptop heartbeat. Supabase shows ${count("in_progress")} active mission(s), ${count("blocked")} blocked and ${count("pr_ready")} ready for review.` : (runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.")) + goalNote;
-    renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || [], executiveContext.commitments || []);
-    el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Executive state</span><b>${esc(executiveContext.stage || (privateState.owner ? "Durable" : "Waiting owner"))}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
+  function render(){
+    const p=state.packet||{}, own=p.private||{}, ctx=own.owner?.open_context||{}, runner=p.runner||{}, evals=own.evaluation||{};
+    const healthy=runner.active===true||(runner.process_alive===true&&runner.heartbeat_fresh===true), cloud=runner.local_runner_scope==="render_cannot_see_laptop_runner";
+    el.identity.className=`chip ${p.policy?.enabled?"green":"red"}`; el.runner.className=`chip ${healthy?"green":cloud?"":"red"}`; el.runner.innerHTML=`<span class="dot"></span>CORE ${cloud?"cloud view":healthy?"active":"stopped"}`;
+    const rate=evals.tool_runs?Math.round((evals.tool_successes/evals.tool_runs)*100):0;
+    el.metrics.innerHTML=[["Active",count("in_progress")],["Approved",count("approved")],["Review",count("pr_ready")],["Blocked",count("blocked")],["Tool truth",`${rate}%`],["Decisions",own.decisions?.length||0]].map(([a,b])=>`<div class="metric"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("");
+    renderCommitments(ctx.commitments||[]); renderMessages(own.messages||[]); renderRight(state.lastPacket, own.decisions||[]);
+    const subject=ctx.active_subject||{}; el.subject.textContent=subject.title||subject.mission_id||subject.order_id||subject.pig_id||ctx.goal||"No active subject";
+    el.footer.innerHTML=`<div><span>Identity</span><b>${p.policy?.enabled?"Private":"Setup"}</b></div><div><span>Voice</span><b>${p.policy?.tts_enabled?"ElevenLabs":p.policy?.browser_speech_fallback?"Browser":"Text"}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals||0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</b></div>`;
+    el.mute.textContent=state.muted?"U":"M";
   }
-
-  function renderMessages(messages) {
-    el.messages.innerHTML = messages.length ? messages.map((m) => `<div class="message ${m.role === "owner" ? "owner" : ""}">${esc(m.content)}<div class="meta">${esc(m.role)} | ${esc(time(m.created_at))}</div></div>`).join("") : '<div class="empty">Start by asking CHARLIE for your executive brief.</div>';
-    el.messages.scrollTop = el.messages.scrollHeight;
+  function renderCommitments(items){ el.commitments.innerHTML=items.length?items.map(i=>`<article class="commitment"><strong>${esc(i.goal||i.type)}</strong><p>${esc(i.mission_id?`CORE ${i.mission_id}`:i.next_check||"")}</p><span class="status-pill ${i.status==="awaiting_owner_review"?"warn":""}">${esc(i.status||"monitoring")}</span></article>`).join(""):'<div class="empty">No open CHARLIE commitments.</div>'; }
+  function renderMessages(items){ if(state.busy)return; el.messages.innerHTML=items.length?items.map(m=>`<div class="message ${m.role==="owner"?"owner":""}">${esc(m.content)}<div class="meta">${esc(m.role)} | ${esc(time(m.created_at))}</div></div>`).join(""):'<div class="empty">Ask CHARLIE for your executive brief.</div>'; el.messages.scrollTop=el.messages.scrollHeight; const last=[...items].reverse().find(m=>m.role==="charlie"&&m.metadata?.executive_packet); if(last&&!state.lastPacket)state.lastPacket=last.metadata.executive_packet; }
+  function decisionDetails(d){ const rows=Array.isArray(d.decisions)?d.decisions:[]; const first=rows[0]||d.decisions||{}; const args=first.args||{}; const target=args.order_id||args.mission_id||args.conversation_id||args.customer_id||args.chat_id||""; const requested=args.action_summary||d.summary||first.intent||"Owner authority requested"; return {requested,target,incomplete:first.intent==="protected_business_action"&&!target,recommendation:d.recommendation?.recommended||"Review then confirm"}; }
+  function renderRight(packet, decisions){
+    const evidence=packet?.evidence||[]; let html="";
+    if(packet){ html+=`<div class="section-label">Latest answer</div><article class="evidence"><strong>${esc(packet.recommendation||"Verified executive response")}</strong><p>${esc(packet.display_answer||"")}</p><span class="status-pill">${Math.round(Number(packet.confidence||0)*100)}% evidence complete</span></article>`; if(evidence.length)html+=`<div class="section-label">Sources checked</div>`+evidence.map(e=>`<article class="evidence"><strong>${esc(e.capability||e.domain)}</strong><p>${esc(e.summary||e.source||"No summary")}</p><span class="status-pill ${e.success?"":"warn"}">${e.success?"verified":"unavailable"}</span></article>`).join(""); }
+    if(decisions.length){ html+=`<div class="section-label">Needs your authority</div>`+decisions.map(d=>{const x=decisionDetails(d);return `<article class="decision"><strong>${esc(d.title||"CHARLIE decision")}</strong><p>${esc(x.requested)}</p><div class="decision-detail"><b>${x.target?`Target: ${esc(x.target)}`:"No target attached"}</b><br>Recommendation: ${esc(x.recommendation)}<br>${x.incomplete?"Reject and give CHARLIE the exact target.":"Current state is revalidated before execution."}</div><div class="actions"><button class="action-btn" data-bundle="${esc(d.bundle_id)}" data-decision="approve" ${x.incomplete?"disabled":""}>Authorize</button><button class="action-btn reject" data-bundle="${esc(d.bundle_id)}" data-decision="reject">Reject</button><button class="action-btn later" data-bundle="${esc(d.bundle_id)}" data-decision="defer">Later</button></div></article>`}).join(""); }
+    el.right.innerHTML=html||'<div class="empty">Evidence and genuine decisions appear here as CHARLIE works.</div>'; el.right.querySelectorAll("[data-bundle]").forEach(b=>b.addEventListener("click",()=>decide(b.dataset.bundle,b.dataset.decision)));
   }
-
-  function renderDecisions(decisions, preferences, commitments) {
-    const decisionHtml = decisions.length ? decisions.map((d) => {
-      const packet = d.decisions && !Array.isArray(d.decisions) ? d.decisions : {};
-      const args = packet.args && typeof packet.args === "object" ? packet.args : {};
-      const requested = args.action_summary || d.summary || "No requested action supplied";
-      const protectedAction = packet.intent === "protected_business_action";
-      const hasTarget = ["mission_id", "order_id", "customer_id", "conversation_id", "chat_id"].some((key) => args[key]);
-      const incomplete = protectedAction && !hasTarget;
-      const recommendation = d.recommendation?.recommended || "review manually";
-      const warning = incomplete ? "No customer, order, conversation or mission target is attached. Reject this item and give CHARLIE a complete instruction." : "Approval records your authority only. The domain executor still reloads and validates current state before acting.";
-      return `<article class="decision"><h3>${esc(d.title)}</h3><p>${esc(d.summary)}</p><div class="decision-detail ${incomplete ? "warn" : ""}"><b>Requested action</b>${esc(requested)}</div><p><strong>Recommendation:</strong> ${esc(recommendation)}<br>${esc(warning)}</p><small>Bundle ${esc(d.bundle_id)} | Expires ${esc(time(d.expires_at))}</small><div class="decision-actions"><button data-bundle="${esc(d.bundle_id)}" data-decision="approve" ${incomplete ? "disabled title=\"Missing action target\"" : ""}>Authorize</button><button class="reject" data-bundle="${esc(d.bundle_id)}" data-decision="reject">Reject</button><button class="later" data-bundle="${esc(d.bundle_id)}" data-decision="defer">Later</button></div></article>`;
-    }).join("") : '<div class="empty">No genuine owner decisions are waiting.</div>';
-    const preferenceHtml = preferences.length ? `<div class="section-label">Approved preferences</div>${preferences.map((p) => `<div class="preference"><strong>${esc(p.key)}</strong><br>${esc(typeof p.value === "string" ? p.value : JSON.stringify(p.value))}</div>`).join("")}` : "";
-    const commitmentHtml = commitments.length ? `<div class="section-label">CHARLIE commitments</div>${commitments.map((item) => `<div class="commitment"><strong>${esc(item.goal || item.type)}</strong><span>${esc(item.status || "monitoring")}</span><small>${esc(item.mission_id ? `CORE ${item.mission_id}` : item.next_check || "")}</small></div>`).join("")}` : "";
-    el.decisions.innerHTML = decisionHtml + commitmentHtml + preferenceHtml;
-    el.decisions.querySelectorAll("[data-bundle]").forEach((button) => button.addEventListener("click", () => decide(button.dataset.bundle, button.dataset.decision)));
-  }
-
-  async function send(text) {
-    el.send.disabled = true; el.input.disabled = true;
-    el.messages.insertAdjacentHTML("beforeend", `<div class="message owner">${esc(text)}<div class="meta">owner | sending</div></div>`); el.messages.scrollTop = el.messages.scrollHeight;
-    try {
-      const response = await fetch("/api/charlie/private/message", { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
-      const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.status || `HTTP ${response.status}`);
-      el.input.value = ""; if (result.reply) { el.messages.insertAdjacentHTML("beforeend", `<div class="message">${esc(result.reply)}<div class="meta">charlie | now</div></div>`); el.messages.scrollTop = el.messages.scrollHeight; } load();
-    } catch (error) { el.notice.className = "status-band warn"; el.notice.textContent = `CHARLIE could not respond: ${error.message}`; }
-    finally { el.send.disabled = false; el.input.disabled = false; el.input.focus(); }
-  }
-  async function decide(bundle, decision) {
-    const response = await fetch(`/api/charlie/private/decisions/${encodeURIComponent(bundle)}`, { method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body:JSON.stringify({decision}) });
-    const result = await response.json().catch(() => ({})); if (!response.ok) { el.notice.className="status-band warn"; el.notice.textContent=result.status || `Decision failed (${response.status})`; return; } await load();
-  }
-  function setupVoice() {
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!el.voice || !Recognition) { if (el.voice) el.voice.classList.add("hidden"); return; }
-    const recognition = new Recognition(); recognition.lang = "en-ZA"; recognition.interimResults = false; recognition.continuous = false;
-    recognition.addEventListener("start", () => { el.voice.classList.add("listening"); el.voice.textContent = "Listening"; });
-    recognition.addEventListener("end", () => { el.voice.classList.remove("listening"); el.voice.textContent = "Voice"; });
-    recognition.addEventListener("result", (event) => { const transcript = event.results?.[0]?.[0]?.transcript || ""; if (transcript) { el.input.value = transcript; el.input.focus(); } });
-    recognition.addEventListener("error", () => { el.notice.className = "status-band warn"; el.notice.textContent = "Voice capture was unavailable. Type the instruction or use a Telegram voice note."; });
-    el.voice.addEventListener("click", () => recognition.start());
-  }
-  el.composer.addEventListener("submit", (event) => { event.preventDefault(); const text = el.input.value.trim(); if (text) send(text); });
-  document.querySelectorAll("[data-command]").forEach((button) => button.addEventListener("click", () => send(button.dataset.command)));
-  el.refresh.addEventListener("click", load); setupVoice(); load(); setInterval(load, 30000);
+  function appendMessage(text,owner=false,meta="now"){ el.messages.querySelector(".empty")?.remove(); el.messages.insertAdjacentHTML("beforeend",`<div class="message ${owner?"owner":""}">${esc(text)}<div class="meta">${owner?"owner":"charlie"} | ${esc(meta)}</div></div>`);el.messages.scrollTop=el.messages.scrollHeight; }
+  function showThinking(){ el.messages.insertAdjacentHTML("beforeend",'<div id="thinking" class="thinking"><i></i><i></i><i></i><span>CHARLIE is investigating</span></div>');el.messages.scrollTop=el.messages.scrollHeight; }
+  function parseSseBlock(block){ const lines=block.split("\n"); const event=(lines.find(l=>l.startsWith("event:"))||"").slice(6).trim(); const data=lines.filter(l=>l.startsWith("data:")).map(l=>l.slice(5).trim()).join("\n"); return {event,data:data?JSON.parse(data):{}}; }
+  async function send(text){ if(state.busy)return; stopSpeech(); state.busy=true; el.send.disabled=true;el.mic.disabled=true;el.input.disabled=true;appendMessage(text,true,"sending");showThinking();setLive("understanding");
+    try{ const r=await fetch("/api/charlie/private/message/stream",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});if(!r.ok||!r.body){const e=await r.json().catch(()=>({}));throw new Error(e.status||`HTTP ${r.status}`)} const reader=r.body.getReader(),decoder=new TextDecoder();let buffer="";while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let cut;while((cut=buffer.indexOf("\n\n"))>=0){const block=buffer.slice(0,cut);buffer=buffer.slice(cut+2);if(block.trim())handleEvent(parseSseBlock(block));}}
+    }catch(error){setLive("error",error.message);toast(`CHARLIE could not respond: ${error.message}`)}finally{state.busy=false;el.send.disabled=false;el.mic.disabled=false;el.input.disabled=false;el.input.value="";$("thinking")?.remove();if(state.liveState!=="speaking"&&state.liveState!=="error")setLive("idle");await load();el.input.focus();}}
+  function handleEvent({event,data}){ if(event==="intent_understood")setLive("understanding",`Understood: ${String(data.intent_type||"").replaceAll("_"," ")}`); if(event==="capability_started")setLive("investigating",`Checking ${data.domain||data.capability}`); if(event==="evidence_received")setLive("investigating",data.success?`Verified ${data.domain||data.capability}`:`Evidence unavailable from ${data.domain||data.capability}`); if(event==="reply_ready"){ $("thinking")?.remove();state.lastPacket=data.executive_packet||null;appendMessage(data.reply||state.lastPacket?.display_answer||"CHARLIE completed the turn.");renderRight(state.lastPacket,state.packet?.private?.decisions||[]);speak(state.lastPacket?.spoken_summary||data.reply||""); } if(event==="turn_failed")setLive("error",data.status||"The turn could not complete safely"); }
+  async function speak(text){ const clean=String(text||"").trim();if(!clean||state.muted)return;state.lastSpoken=clean;stopSpeech();setLive("speaking"); if(state.packet?.policy?.tts_enabled){try{const r=await fetch("/api/charlie/private/voice/speech",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:clean})});if(r.ok){const blob=await r.blob();state.audio=new Audio(URL.createObjectURL(blob));state.audio.onended=()=>setLive("idle");await state.audio.play();return;}}catch(_e){/* browser fallback */}} if("speechSynthesis" in window){const u=new SpeechSynthesisUtterance(clean);u.lang="en-ZA";u.rate=.98;u.onend=()=>setLive("idle");state.utterance=u;window.speechSynthesis.speak(u);}else setLive("idle"); }
+  function stopSpeech(){ if(state.audio){state.audio.pause();state.audio=null}if("speechSynthesis" in window)window.speechSynthesis.cancel();if(state.liveState==="speaking")setLive("idle"); }
+  async function toggleMic(){ if(state.recorder?.state==="recording"){state.recorder.stop();return} if(navigator.mediaDevices&&window.MediaRecorder){try{state.mediaStream=await navigator.mediaDevices.getUserMedia({audio:true});state.chunks=[];state.recorder=new MediaRecorder(state.mediaStream);state.recorder.ondataavailable=e=>{if(e.data.size)state.chunks.push(e.data)};state.recorder.onstop=uploadVoice;state.recorder.start();el.mic.classList.add("recording");el.mic.textContent="STOP";setLive("listening");return}catch(_e){/* recognition fallback */}} startRecognition(); }
+  async function uploadVoice(){el.mic.classList.remove("recording");el.mic.textContent="TALK";state.mediaStream?.getTracks().forEach(t=>t.stop());setLive("understanding","Transcribing your voice");const blob=new Blob(state.chunks,{type:state.recorder?.mimeType||"audio/webm"}),form=new FormData();form.append("audio",blob,"charlie-owner.webm");try{const r=await fetch("/api/charlie/private/voice/transcribe",{method:"POST",credentials:"same-origin",body:form});const data=await r.json();if(!r.ok)throw new Error(data.status);el.input.value=data.text;await send(data.text);}catch(error){setLive("idle");toast("Server transcription unavailable. Using browser voice when supported.");startRecognition();}}
+  function startRecognition(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){setLive("error","Voice capture is unavailable in this browser. Type your message.");return}state.recognition=new Recognition();state.recognition.lang="en-ZA";state.recognition.interimResults=true;state.recognition.onstart=()=>{el.mic.classList.add("recording");el.mic.textContent="STOP";setLive("listening")};state.recognition.onresult=e=>{el.input.value=Array.from(e.results).map(r=>r[0].transcript).join("")};state.recognition.onend=()=>{state.recognition=null;el.mic.classList.remove("recording");el.mic.textContent="TALK";const text=el.input.value.trim();if(text)send(text);else setLive("idle")};state.recognition.onerror=()=>setLive("error","I could not hear that clearly. Try again or type it.");state.recognition.start();}
+  async function decide(bundle,decision){try{const r=await fetch(`/api/charlie/private/decisions/${encodeURIComponent(bundle)}`,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({decision})});const data=await r.json();if(!r.ok)throw new Error(data.status);toast(`Decision ${data.status}`);await load();}catch(error){toast(`Decision failed: ${error.message}`)}}
+  function animate(){const c=el.canvas,ctx=c.getContext("2d");function frame(t){const dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(c.width!==w*dpr||c.height!==h*dpr){c.width=w*dpr;c.height=h*dpr}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);const active={idle:.8,listening:1.8,understanding:1.25,investigating:1.45,speaking:2.1,error:.5}[state.liveState]||1;const cx=w/2,cy=h/2+4;for(let ring=3;ring>=0;ring--){const wave=Math.sin(t/700*active+ring)*5*active,r=35+ring*20+wave;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.strokeStyle=`rgba(${state.liveState==="error"?"218,92,82":"64,190,132"},${.08+ring*.045})`;ctx.lineWidth=1.5;ctx.stroke()}const glow=ctx.createRadialGradient(cx,cy,4,cx,cy,48);glow.addColorStop(0,"rgba(225,170,61,.85)");glow.addColorStop(.35,"rgba(44,168,118,.45)");glow.addColorStop(1,"rgba(44,168,118,0)");ctx.fillStyle=glow;ctx.fillRect(cx-55,cy-55,110,110);requestAnimationFrame(frame)}requestAnimationFrame(frame)}
+  el.composer.addEventListener("submit",e=>{e.preventDefault();const text=el.input.value.trim();if(text)send(text)});el.mic.addEventListener("click",()=>{if(state.recognition){state.recognition.stop();state.recognition=null}else toggleMic()});el.mute.addEventListener("click",()=>{state.muted=!state.muted;localStorage.setItem("charlie-muted",state.muted?"1":"0");el.mute.textContent=state.muted?"U":"M";if(state.muted)stopSpeech();toast(state.muted?"Spoken replies muted":"Spoken replies enabled")});el.stop.addEventListener("click",stopSpeech);el.replay.addEventListener("click",()=>speak(state.lastSpoken));document.querySelectorAll("[data-command]").forEach(b=>b.addEventListener("click",()=>send(b.dataset.command)));animate();load();setInterval(()=>{if(!state.busy)load()},30000);
 })();
