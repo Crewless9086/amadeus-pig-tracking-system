@@ -1753,6 +1753,8 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     mission_memory = memory_prompt_context(metadata)
     mission_governance = ensure_acceptance_matrix(mission)
+    metadata_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    agentic_architecture = metadata.get("agentic_architecture") or metadata_core.get("agentic_architecture") or (metadata_core.get("project_truth") or {}).get("agentic_architecture") or {}
     pre_builder_scope = analyze_pre_builder_scope(mission)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
     runner_preflight = runner_environment_preflight(require_browser=bool(ui_contract.get("ui_related")))
@@ -1820,6 +1822,11 @@ Mission memory from previous attempts and handoffs:
 Frozen acceptance matrix and discovery rules:
 {json.dumps(mission_governance, indent=2)[:7000]}
 
+Frozen Agentic Architecture Packet:
+{json.dumps(agentic_architecture, indent=2)[:7000]}
+
+This packet is an acceptance contract. Do not solve domain reasoning with a question-specific route, UI branch, regex reply, or transport handler. Build or extend the owning operational agent and keep deterministic code limited to canonical reads, calculations, validation, permissions, idempotency, audit, and safe execution.
+
 Mission media/reference attachments:
 {_format_media_references(_mission_media_references(mission))}
 
@@ -1880,9 +1887,12 @@ def _ensure_execution_governance(mission, database_url=None, connect_factory=Non
     pre_builder_scope = analyze_pre_builder_scope(mission)
     mission.setdefault("metadata", {})["mission_governance"] = governance
     mission["metadata"]["pre_builder_scope"] = pre_builder_scope
+    from modules.charlie.agentic_architecture import build_agentic_architecture_packet
+    architecture = build_agentic_architecture_packet(mission)
+    mission["metadata"]["agentic_architecture"] = architecture
     update_mission_vault(
         mission.get("mission_id", ""),
-        {"mission_governance": governance, "pre_builder_scope": pre_builder_scope},
+        {"mission_governance": governance, "pre_builder_scope": pre_builder_scope, "agentic_architecture": architecture},
         notes="CHARLIE froze the mission acceptance matrix and pre-Builder scope contract before execution.",
         database_url=database_url,
         connect_factory=connect_factory,
@@ -2362,6 +2372,7 @@ def _agent_required_schema(agent):
         "confidence": "96% or higher when final; use a decimal like 0.97 or a percent like 97%",
         "confidence_reason": "evidence-backed reason citing source truth, tests, screenshots, logs, runtime data, or owner-approved context",
         "next_action": "next handoff",
+        "agentic_architecture": {"compliant": True, "owning_agent": "agent id", "deterministic_code_only": [], "reasoning_delegated_to": [], "generalization_evidence": [], "reason": "short architecture verdict"},
     }
     if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
         base["acceptance_results"] = [
@@ -6135,6 +6146,9 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
             + ", ".join(f"{item['agent']} -> {item['path'] or 'no path'}" for item in missing_doctrine)
         )
     workflow_contract = _authoritative_workflow_contract(mission, agent_sequence)
+    from modules.charlie.agentic_architecture import evaluate_agentic_architecture
+    agentic_gate = evaluate_agentic_architecture(mission, artifacts)
+    findings.extend(agentic_gate.get("findings") or [])
     if workflow_contract["ui_related"]:
         for required_agent in ["product_architect", "product_reviewer", "evidence_reviewer"]:
             if required_agent in workflow_contract["required_agents"] and required_agent not in agent_sequence:
@@ -6187,6 +6201,7 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         "source_coverage": source_coverage,
         "agent_sequence": agent_sequence,
         "workflow_contract": workflow_contract,
+        "agentic_architecture": agentic_gate,
         "missing_doctrine": missing_doctrine,
         "retrieval": retrieval,
         "owner_preferences": context.get("owner_preferences", {}),

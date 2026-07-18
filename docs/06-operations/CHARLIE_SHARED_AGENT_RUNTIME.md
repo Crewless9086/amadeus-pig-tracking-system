@@ -19,6 +19,10 @@ Herdmaster is the first reference agent. It reads the canonical pig master view 
 
 Herdmaster does not write lifecycle, movement, weight, health, purpose, breeding or reservation state. Pre-wean piglets remain litter-managed and are not falsely flagged because an individual tag or weight has not yet been assigned.
 
+## Coordinators And Peer Evidence
+
+Oom Sakkie Operational V1 uses the same bus to coordinate specialist farm evidence. Precise herd questions may still route directly from CHARLIE to Herdmaster; broad farm outcomes route through Oom Sakkie. Ledger Operational V1 validates current livestock price evidence for SAM without changing prices, asserting payment, quoting a customer or gaining money-path authority.
+
 ## Evidence Contract
 
 Every successful operational result must include a direct answer, provenance, freshness and calibrated confidence. It may also include facts, metrics, breakdowns, anomalies, inferences, recommendations and unresolved questions. Missing evidence triggers one bounded repair attempt; the runtime then reports the gap honestly.

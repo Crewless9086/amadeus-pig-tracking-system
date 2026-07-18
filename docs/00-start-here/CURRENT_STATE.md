@@ -2,6 +2,16 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## Agentic Operating Architecture Enforcement - 2026-07-18
+
+- CORE freezes an Agentic Architecture Packet before Builder and carries it through planning, implementation, review and Brain Guard.
+- The Doctrine Vault and operational Evidence Memory are explicitly separate; evidence can propose but cannot silently rewrite doctrine or authority.
+- The shared agent bus registers Herdmaster, Oom Sakkie and Ledger under one governed request/evidence contract.
+- Oom Sakkie Operational V1 coordinates farm evidence through specialists without inheriting write authority.
+- SAM livestock's production stock read delegates to Herdmaster and its deterministic price evidence is validated by Ledger before synthesis. Existing customer-send, order, reservation, payment and lifecycle gates remain unchanged.
+- ANALYST now classifies leaf-handler, reasoning-in-transport, agent-bypass and shadow-truth evidence as agentic architecture drift and can produce measurable owner-gated improvement proposals.
+- Full operating doctrine and rollout sequence are recorded in `docs/06-operations/AGENTIC_OPERATING_SYSTEM_PROGRAM.md`.
+
 ## Shared Agent Runtime And Herdmaster Operational V1 - 2026-07-18
 
 - CHARLIE now delegates farm outcomes through a shared governed agent runtime instead of adding question-specific chatbot handlers.

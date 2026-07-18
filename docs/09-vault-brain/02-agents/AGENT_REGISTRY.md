@@ -57,18 +57,18 @@ Confidence rule:
 
 | Agent | Environment | Department | Commander | Status | File |
 | --- | --- | --- | --- | --- | --- |
-| Oom Sakkie | Amadeus Farm | Farm Command | CHARLIE | Active direction | `farm/OOM_SAKKIE.md` |
+| Oom Sakkie | Amadeus Farm | Farm Command | CHARLIE | Operational V1 read-only coordinator | `farm/OOM_SAKKIE.md` |
 | Herdmaster | Amadeus Farm | Farm Operations | Oom Sakkie / delegated by CHARLIE | Operational V1 read-only; production trust measured | `farm/HERDMASTER.md` |
 | Rootline | Amadeus Farm | Farm Operations | Oom Sakkie | Read-only/gated | `farm/ROOTLINE.md` |
 | Gatekeeper | Amadeus Farm | Farm Operations / Safety | Oom Sakkie | Active/planned | `farm/GATEKEEPER.md` |
 | Quartermaster | Amadeus Farm | Farm Operations | Oom Sakkie | Planned | `farm/QUARTERMASTER.md` |
-| SAM | Amadeus Farm | Farm Sales | Oom Sakkie / CHARLIE | Active money path | `sales/SAM.md` |
+| SAM | Amadeus Farm | Farm Sales | Oom Sakkie / CHARLIE | Active owner-reviewed shared-agent sales path | `sales/SAM.md` |
 | Meat Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned specialization | `sales/MEAT_SALES_AGENT.md` |
 | Live Pig Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned | `sales/LIVE_PIG_SALES_AGENT.md` |
 | Slaughter / Abattoir Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned | `sales/SLAUGHTER_ABATTOIR_SALES_AGENT.md` |
 | Butcher / Custom Cuts Sales Agent | Amadeus Farm | Farm Sales | SAM | Planned/advisory | `sales/BUTCHER_CUSTOM_CUTS_SALES_AGENT.md` |
 | Butcher | Amadeus Farm | Farm Sales / Meat Pipeline | SAM | Advisory/gated | `sales/BUTCHER.md` |
-| Ledger | Amadeus Farm | Farm Sales / Business | SAM | Advisory/planned | `sales/LEDGER.md` |
+| Ledger | Amadeus Farm | Farm Sales / Business | SAM / CHARLIE | Operational V1 read-only price evidence; broader finance advisory planned | `sales/LEDGER.md` |
 | FRED | Amadeus Private Transfers | Transport Command | CHARLIE | Planned | `transport/FRED.md` |
 
 ## Shared Department Agents

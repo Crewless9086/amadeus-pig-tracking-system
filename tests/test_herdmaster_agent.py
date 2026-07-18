@@ -83,6 +83,26 @@ class HerdmasterAgentTests(unittest.TestCase):
         self.assertNotIn("active_pig_missing_tag", codes)
         self.assertNotIn("active_pig_missing_weight", codes)
 
+    def test_sales_availability_exposes_canonical_rows_for_sam(self):
+        result = run_herdmaster({"question": "What livestock can SAM consider?", "capability": "sales_availability"}, readers={
+            "sales_availability": lambda: [{"pig_id": "P1", "available_for_sale": True, "weight_band": "20_to_24_Kg"}],
+        })
+        self.assertEqual(result["capability"], "sales_availability")
+        self.assertEqual(result["metrics"]["candidate_count"], 1)
+        self.assertEqual(result["availability_rows"][0]["pig_id"], "P1")
+        self.assertEqual(result["sources"][0]["name"], "sales_availability")
+
+    def test_sales_availability_reuses_bounded_live_snapshot(self):
+        calls = {"count": 0}
+        def load():
+            calls["count"] += 1
+            return [{"pig_id": "P1", "available_for_sale": True}]
+        with patch.object(herdmaster, "get_sales_availability", side_effect=load):
+            herdmaster._SNAPSHOT_CACHE.clear()
+            run_herdmaster({"capability": "sales_availability"})
+            run_herdmaster({"capability": "sales_availability"})
+        self.assertEqual(calls["count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

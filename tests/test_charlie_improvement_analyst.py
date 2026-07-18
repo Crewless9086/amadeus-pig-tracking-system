@@ -53,6 +53,15 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
 
         self.assertEqual(proposals, [])
 
+    def test_analyzer_turns_repeated_leaf_handlers_into_agentic_proposal(self):
+        proposals = analyze_improvement_opportunities([
+            {"mission_id": "A1", "status": "blocked", "metadata": {"review_packet": {"errors": ["Added a question-specific reply branch instead of the domain agent."]}}},
+            {"mission_id": "A2", "status": "blocked", "metadata": {"review_packet": {"errors": ["Special-case handler caused agent bypass."]}}},
+        ])
+        proposal = next(item for item in proposals if item["target_area"] == "agentic_architecture")
+        self.assertIn("owning operational agent", proposal["recommendation"])
+        self.assertFalse(proposal["applies_automatically"])
+
     def test_replay_analysis_turns_known_failure_into_owner_gated_proposal(self):
         result, status = analyze_mission_replay({
             "mission_id": "MISSION-KNOWN",

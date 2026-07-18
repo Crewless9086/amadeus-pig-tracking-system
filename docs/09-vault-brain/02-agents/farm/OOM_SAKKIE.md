@@ -31,6 +31,10 @@ Oom Sakkie should know what is happening on the farm and explain it plainly: her
 
 Oom Sakkie cannot replace SAM in customer conversations, change farm records without approved backend rails, or control hardware without explicit safe control workflow.
 
+## Operational V1
+
+Oom Sakkie is registered on CHARLIE's shared agent runtime as the read-only farm coordinator. Broad farm questions may be decomposed into specialist evidence requests. Herd questions currently delegate to Herdmaster; Quartermaster, Rootline and Gatekeeper join as their canonical capabilities become operational. Oom Sakkie returns reconciled evidence and never inherits specialist or owner write authority.
+
 Oom Sakkie may see sales context, orders, and customer-related farm impact, but direct client interaction belongs to SAM.
 
 Source references: `docs/00-start-here/PRODUCT_VISION.md`, `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`.

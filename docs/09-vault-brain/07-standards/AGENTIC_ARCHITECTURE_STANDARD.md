@@ -42,3 +42,15 @@ Full access means CHARLIE can discover and delegate reads across every approved 
 ## Completion Evidence
 
 Agent readiness is measured through real delegated runs, clean evidence rate, owner corrections, escaped defects, latency and source coverage. A workforce label or unit test alone does not prove an agent operational. Production evidence grows capability trust but never silently expands authority.
+
+## Two-Brain Boundary
+
+Doctrine Vault stores stable identity, authority, ownership, business rules and source-of-truth contracts. Evidence Memory stores runs, corrections, outcomes, failures, latency and proposal validation. Evidence may recommend a Doctrine change but cannot apply or promote one without a bounded CORE mission, deterministic proof and the required owner gate.
+
+## CORE Mission Gate
+
+Every new CORE mission must freeze an `Agentic Architecture Packet` before Builder. The packet identifies the owning, coordinating and supporting agents and separates agent reasoning from deterministic code and governed actions. Every stage must preserve the packet; Brain Guard blocks a missing/stale packet or explicit non-compliance.
+
+## Shared Bus
+
+Agent-to-agent requests use the same governed runtime as CHARLIE delegation. Direct specialist access is permitted for bounded questions. Department commanders remain responsible for broad multi-discipline outcomes. The bus carries evidence and authority; it never grants authority.

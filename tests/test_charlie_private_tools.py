@@ -5,6 +5,16 @@ from modules.charlie.private_tools import execute_private_tool
 
 
 class CharliePrivateToolsTests(unittest.TestCase):
+    @patch("modules.charlie.private_tools.delegate_to_agent", return_value=({"success": True}, 200))
+    def test_broad_farm_question_routes_through_oom_sakkie(self, delegate):
+        execute_private_tool("read_farm_status", {"owner_question": "What needs attention on the farm today?"})
+        self.assertEqual(delegate.call_args.args[0], "oom-sakkie")
+
+    @patch("modules.charlie.private_tools.delegate_to_agent", return_value=({"success": True}, 200))
+    def test_precise_herd_question_routes_directly_to_herdmaster(self, delegate):
+        execute_private_tool("read_farm_status", {"owner_question": "How many pigs are on the farm?"})
+        self.assertEqual(delegate.call_args.args[0], "herdmaster")
+
     @patch("modules.agents.herdmaster.get_pig_detail")
     def test_read_pig_returns_authoritative_profile_summary(self, get_detail):
         get_detail.return_value = {"pig_id": "PIG-104", "tag_number": "104", "status": "Active", "on_farm": "Yes", "sex": "Female", "current_pen_id": "PEN-3", "current_pen_name": "PEN-3", "current_weight_kg": 8.4}
