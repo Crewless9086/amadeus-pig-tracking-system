@@ -52,7 +52,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout="", stderr="")
         result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
         self.assertTrue(result["success"])
-        self.assertIn(["git", "switch", "--detach", "origin/feature/test"], commands)
+        self.assertIn(["git", "switch", "--detach", "FETCH_HEAD"], commands)
         self.assertNotIn(["git", "switch", "feature/test"], commands)
         self.assertFalse(any(command[:3] == ["git", "merge", "--ff-only"] for command in commands))
     def setUp(self):
@@ -93,7 +93,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["status"], "mission_branch_restored")
         self.assertEqual(commands, [
             ["git", "fetch", "origin", "feature/beacon-opportunity-scanner"],
-            ["git", "switch", "--detach", "origin/feature/beacon-opportunity-scanner"],
+            ["git", "switch", "--detach", "FETCH_HEAD"],
         ])
 
     def test_restore_mission_branch_uses_detached_remote_when_branch_is_owned_elsewhere(self):
@@ -107,8 +107,23 @@ class CharlieMissionPickupTests(unittest.TestCase):
         result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
 
         self.assertTrue(result["success"])
-        self.assertIn(["git", "switch", "--detach", "origin/feature/beacon-work"], commands)
+        self.assertIn(["git", "switch", "--detach", "FETCH_HEAD"], commands)
         self.assertNotIn(["git", "switch", "--track", "-c", "feature/beacon-work", "origin/feature/beacon-work"], commands)
+
+    def test_existing_local_branch_never_triggers_branch_creation_fallback(self):
+        mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "feature/already-local"}}}}}
+        commands = []
+
+        def run(command):
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["revision_source"], "FETCH_HEAD")
+        self.assertEqual(commands[-1], ["git", "switch", "--detach", "FETCH_HEAD"])
+        self.assertFalse(any("-c" in command for command in commands))
 
     def test_restore_mission_branch_for_resume_rejects_unsafe_branch(self):
         mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "../unsafe"}}}}}

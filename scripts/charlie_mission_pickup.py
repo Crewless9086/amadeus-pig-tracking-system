@@ -877,15 +877,10 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     fetched = run(["git", "fetch", "origin", branch_name])
     if fetched.returncode != 0:
         return {"success": False, "status": "mission_branch_fetch_failed", "branch_name": branch_name, "stderr": (fetched.stderr or "")[-500:]}
-    if recovery_stash:
-        switched = run(["git", "switch", branch_name])
-        if switched.returncode != 0:
-            switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
-    else:
-        # Review stages consume the exact fetched revision, never a divergent local branch.
-        switched = run(["git", "switch", "--detach", f"origin/{branch_name}"])
-        if switched.returncode != 0:
-            switched = run(["git", "switch", "--track", "-c", branch_name, f"origin/{branch_name}"])
+    # The preceding fetch makes FETCH_HEAD the authoritative packaged revision.
+    # Detached checkout avoids collisions with a same-named local branch owned by
+    # another worktree and prevents a stale local branch from changing evidence.
+    switched = run(["git", "switch", "--detach", "FETCH_HEAD"])
     if switched.returncode != 0:
         return {"success": False, "status": "mission_branch_switch_failed", "branch_name": branch_name, "stderr": (switched.stderr or "")[-500:]}
     if recovery_stash:
@@ -904,6 +899,7 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
         "branch_name": branch_name,
         "recovery_stash": recovery_stash,
         "recovery_stash_applied": bool(recovery_stash),
+        "revision_source": "FETCH_HEAD",
     }
 
 
