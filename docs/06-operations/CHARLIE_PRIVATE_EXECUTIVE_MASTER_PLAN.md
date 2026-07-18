@@ -170,4 +170,4 @@ create a second mission system or move coding responsibility from CORE to CHARLI
 - [x] Commitments preserved across later turns and shown in the private dashboard.
 - [x] Existing red-zone policy, approval bundles, fresh-state validation, Telegram dedupe, and owner-only identity retained.
 - [x] Dashboard, Telegram, browser voice input, brief scheduler, follow-up scheduler, and outbox remain on one private runtime.
-- [ ] Full regression gate and live deployment verification.
+- [x] Full regression gate and live deployment verification: 696 CHARLIE tests, focused 91-test gate, repository verify script, both GitHub checks, Render asset confirmation, and an owner-only live CORE-status canary passed on 2026-07-18.
