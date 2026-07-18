@@ -55,4 +55,24 @@ class BeaconAutonomyReadinessTests(unittest.TestCase):
                 self.assertFalse(result["gates"][name]["passed"])
                 self.assertTrue(all(gate["passed"] for key, gate in result["gates"].items() if key != name))
 
+    def test_future_dated_evidence_fails_closed(self):
+        approved = self.approved()
+        sample = evidence()
+        sample["campaign_evidence"]["recorded_at"] = "2026-07-18T10:00:01+00:00"
+
+        result = evaluate_autonomy_readiness(approved["policy_id"], sample, now=NOW, registry=self.registry)
+
+        self.assertFalse(result["can_promote"])
+        self.assertIn("evidence_stale_or_invalid", result["gates"]["campaign_evidence"]["blockers"])
+
+    def test_negative_safety_incidents_fails_closed(self):
+        approved = self.approved()
+        sample = evidence()
+        sample["safety_incidents"]["value"] = -1
+
+        result = evaluate_autonomy_readiness(approved["policy_id"], sample, now=NOW, registry=self.registry)
+
+        self.assertFalse(result["can_promote"])
+        self.assertIn("safety_incidents_invalid", result["gates"]["safety_incidents"]["blockers"])
+
 if __name__ == "__main__": unittest.main()
