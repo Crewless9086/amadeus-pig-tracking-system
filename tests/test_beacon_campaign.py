@@ -9,6 +9,8 @@ from modules.sales.beacon_campaign import (
     build_beacon_campaign_selection,
     build_beacon_boost_recommendation_packet,
     build_beacon_weekly_command_brief,
+    build_beacon_follow_up_suggestions,
+    beacon_follow_up_mission,
     build_live_stock_awareness_campaign_packet,
     build_live_stock_awareness_campaign_publish_packet,
     build_live_stock_awareness_campaign_selection,
@@ -91,6 +93,67 @@ class BeaconCampaignTests(unittest.TestCase):
             "spend_amount": {"status": spend_status, "value": spend},
             "qualified_buyer_leads": {"status": lead_status, "value": leads},
         }
+
+    def recurring_events(self):
+        events = [
+            {"performance_event_id": "e2", "publish_packet_id": "p2", "measurement_window": "7 days", "spend_currency": "ZAR", "spend_amount": 100, "qualified_buyer_leads": 0, "created_at": "2026-07-16T08:00:00+00:00"},
+            {"performance_event_id": "e1", "publish_packet_id": "p1", "measurement_window": " 7 DAYS ", "spend_currency": "zar", "spend_amount": 50, "qualified_buyer_leads": 0, "created_at": "2026-07-16T07:00:00+00:00"},
+        ]
+        for event in events:
+            event["metric_evidence"] = {
+                "spend_amount": {"status": "verified", "value": event["spend_amount"]},
+                "qualified_buyer_leads": {"status": "verified", "value": event["qualified_buyer_leads"]},
+            }
+        return events
+
+    def test_recurring_weakness_suggestion_is_deterministic_complete_and_safe(self):
+        now = datetime(2026, 7, 16, 9, tzinfo=timezone.utc)
+        first = build_beacon_follow_up_suggestions(self.recurring_events(), now=now)
+        second = build_beacon_follow_up_suggestions(list(reversed(self.recurring_events())), now=now)
+        self.assertEqual(first, second)
+        self.assertEqual(first["status"], "recurring_weaknesses_found")
+        suggestion = first["suggestions"][0]
+        self.assertEqual(suggestion["recurrence_count"], 2)
+        self.assertEqual(len(suggestion["evidence_lineage"]), 2)
+        self.assertEqual(suggestion["expected_value"]["status"], "estimated")
+        self.assertIn("not guaranteed", suggestion["expected_value"]["uncertainty"])
+        self.assertIn(suggestion["safety_level"], {"low", "medium", "high"})
+        self.assertTrue(suggestion["scope"] and suggestion["non_goals"] and suggestion["proposed_tests"])
+        self.assertTrue(all(value is False for value in suggestion["authority"].values()))
+        mission = beacon_follow_up_mission(suggestion)
+        self.assertEqual(mission["status"], "new")
+        self.assertEqual(mission["owner_decision"], "")
+        self.assertTrue(mission["metadata"]["owner_approval_required"])
+
+    def test_recurring_weakness_rejects_single_duplicate_stale_superseded_and_incompatible_evidence(self):
+        now = datetime(2026, 7, 16, 9, tzinfo=timezone.utc)
+        cases = {
+            "single": self.recurring_events()[:1],
+            "same_campaign": [self.recurring_events()[0], {**self.recurring_events()[1], "publish_packet_id": "p2"}],
+            "incompatible_window": [self.recurring_events()[0], {**self.recurring_events()[1], "measurement_window": "24 hours"}],
+            "incompatible_currency": [self.recurring_events()[0], {**self.recurring_events()[1], "spend_currency": "USD"}],
+            "stale": [{**item, "created_at": "2026-06-01T00:00:00+00:00"} for item in self.recurring_events()],
+            "missing_metric": [{**self.recurring_events()[0]}, {key: value for key, value in self.recurring_events()[1].items() if key != "qualified_buyer_leads"}],
+            "missing_evidence": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {}}],
+            "provider_error": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 50},
+                "qualified_buyer_leads": {"status": "provider_error", "value": None},
+            }}],
+            "incompatible_definition": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 50, "metric_definition": "cents_v1"},
+                "qualified_buyer_leads": {"status": "verified", "value": 0},
+            }}],
+            "mismatched_value": [{**self.recurring_events()[0]}, {**self.recurring_events()[1], "metric_evidence": {
+                "spend_amount": {"status": "verified", "value": 999},
+                "qualified_buyer_leads": {"status": "verified", "value": 0},
+            }}],
+            "superseded": [self.recurring_events()[0], {**self.recurring_events()[1], "supersedes_event_id": "e2"}],
+        }
+        for label, events in cases.items():
+            with self.subTest(label=label):
+                result = build_beacon_follow_up_suggestions(events, now=now)
+                self.assertEqual(result["status"], "insufficient_evidence")
+                self.assertEqual(result["suggestions"], [])
 
     def test_weekly_command_brief_compares_compatible_latest_snapshots_only(self):
         events = [

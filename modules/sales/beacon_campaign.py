@@ -70,6 +70,32 @@ PERFORMANCE_AUTHORITY_FLAGS = {
     "boost_requires_owner_approval": True,
 }
 
+FOLLOW_UP_AUTHORITY_FLAGS = {
+    "creates_core_mission": False, "approves_core_mission": False,
+    "advances_core_mission": False, "executes_core_mission": False,
+    "posts_publicly": False, "boosts_post": False, "sends_customer_message": False,
+    "spends_money": False, "calls_meta": False, "calls_chatwoot": False,
+    "calls_n8n": False, "creates_order": False, "reserves_stock": False,
+    "changes_stock": False, "takes_payment": False, "writes_farm_data": False,
+}
+FOLLOW_UP_SAFETY_LEVELS = ("low", "medium", "high")
+FOLLOW_UP_TAXONOMY = {
+    "paid_spend_without_qualified_leads": {
+        "title": "Reduce repeated paid spend without qualified leads",
+        "safety_level": "medium",
+        "scope": ["Review campaign targeting and offer evidence", "Propose a bounded campaign experiment"],
+        "non_goals": ["No campaign execution", "No post, boost, send, spend, order, stock, payment, or farm action"],
+        "tests": ["Verify targeting change against two compatible campaign snapshots", "Verify every execution authority remains disabled"],
+    },
+    "insufficient_evidence_or_adjustment_needed": {
+        "title": "Improve repeated low-signal campaign evidence",
+        "safety_level": "low",
+        "scope": ["Review repeated low-signal campaign evidence", "Propose measurable copy or targeting changes"],
+        "non_goals": ["No campaign execution", "No post, boost, send, spend, order, stock, payment, or farm action"],
+        "tests": ["Verify the proposed measurement contract", "Verify every execution authority remains disabled"],
+    },
+}
+
 BOOST_RECOMMENDATION_SPEND_CAP = 500
 FACEBOOK_POSTING_ENABLED_ENV = "BEACON_FACEBOOK_POSTING_ENABLED"
 FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
@@ -948,6 +974,136 @@ def prepare_beacon_owner_decision(performance_event, destination):
         "next_gate": "owner_records_separate_campaign_decision" if destination == "campaign_decision" else "owner_creates_or_approves_separate_core_mission",
         **_decision_authority(),
     }, 200
+
+
+def build_beacon_follow_up_suggestions(events, now=None, stale_after_hours=168):
+    """Build deterministic, read-only CORE mission suggestions from recurring weaknesses."""
+    now = now or datetime.now(timezone.utc)
+    events = [item for item in (events or []) if isinstance(item, dict)]
+    superseded = {_clean_text(item.get("supersedes_event_id")) for item in events if _clean_text(item.get("supersedes_event_id"))}
+    latest_by_campaign = {}
+    exclusions = set()
+    for event in sorted(events, key=lambda item: (_event_datetime(item) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True):
+        event_id = _clean_text(event.get("performance_event_id"))
+        campaign_id = _clean_text(event.get("publish_packet_id") or event.get("manual_post_event_id"))
+        if not event_id or not campaign_id or event_id in superseded:
+            exclusions.add("malformed_or_superseded_evidence")
+            continue
+        if campaign_id in latest_by_campaign:
+            exclusions.add("duplicate_campaign_snapshot")
+            continue
+        created_at = _event_datetime(event)
+        if not created_at or (now - created_at).total_seconds() > stale_after_hours * 3600:
+            exclusions.add("stale_evidence")
+            continue
+        try:
+            spend = float(event["spend_amount"])
+            leads = int(event["qualified_buyer_leads"])
+        except (KeyError, TypeError, ValueError):
+            exclusions.add("missing_or_malformed_metrics")
+            continue
+        metric_evidence = event.get("metric_evidence")
+        required_evidence = _follow_up_required_metric_evidence(metric_evidence, spend, leads)
+        if required_evidence is None:
+            exclusions.add("missing_malformed_or_unavailable_metric_evidence")
+            continue
+        window = " ".join(_clean_text(event.get("measurement_window")).lower().split())
+        currency = _clean_text(event.get("spend_currency")).upper()
+        if not window or (spend > 0 and not currency):
+            exclusions.add("incompatible_evidence")
+            continue
+        normalized = dict(event, spend_amount=spend, qualified_buyer_leads=leads)
+        normalized["_compatibility"] = (
+            window,
+            currency if spend > 0 else "NO_SPEND",
+            required_evidence["metric_definition"],
+            required_evidence["evidence_state"],
+        )
+        latest_by_campaign[campaign_id] = normalized
+
+    groups = {}
+    for campaign_id, event in latest_by_campaign.items():
+        recommendation = _command_recommendation(event)
+        category = recommendation["reason"]
+        if category not in FOLLOW_UP_TAXONOMY:
+            continue
+        groups.setdefault((category, event["_compatibility"]), []).append((campaign_id, event))
+
+    suggestions = []
+    for (category, compatibility), matches in groups.items():
+        if len(matches) < 2:
+            continue
+        matches.sort(key=lambda item: item[0])
+        lineage = [{"campaign_id": campaign_id, "performance_event_id": _clean_text(event.get("performance_event_id"))}
+                   for campaign_id, event in matches]
+        identity_seed = json.dumps({"category": category, "compatibility": compatibility, "lineage": lineage}, sort_keys=True, separators=(",", ":"))
+        suggestion_id = "BEACON-FOLLOWUP-" + hashlib.sha256(identity_seed.encode("utf-8")).hexdigest()[:20].upper()
+        contract = FOLLOW_UP_TAXONOMY[category]
+        suggestions.append({
+            "suggestion_id": suggestion_id, "weakness_category": category,
+            "title": contract["title"], "recurrence_count": len(matches),
+            "recurrence_rationale": f"{len(matches)} distinct compatible campaigns share the server-classified weakness.",
+            "evidence_lineage": lineage,
+            "compatibility": {"measurement_window": compatibility[0], "currency": compatibility[1], "metric_definition": compatibility[2], "evidence_state": compatibility[3]},
+            "expected_value": {"status": "estimated", "estimate": "Improved evidence quality and reduced repeat weak-campaign risk", "provenance": "server_classified_campaign_performance", "uncertainty": "Outcome and revenue impact are not guaranteed"},
+            "scope": list(contract["scope"]), "non_goals": list(contract["non_goals"]),
+            "proposed_tests": list(contract["tests"]), "safety_level": contract["safety_level"],
+            "owner_review_status": "new", "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS),
+        })
+    suggestions.sort(key=lambda item: (item["weakness_category"], item["suggestion_id"]))
+    status = "recurring_weaknesses_found" if suggestions else "insufficient_evidence"
+    if len(latest_by_campaign) < 2:
+        exclusions.add("at_least_two_distinct_campaigns_required")
+    return {"success": True, "status": status, "mode": "beacon_follow_up_suggestions_read_only",
+            "suggestions": suggestions, "evidence_result": {"eligible_campaign_count": len(latest_by_campaign), "exclusions": sorted(exclusions)},
+            "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS)}
+
+
+def _follow_up_required_metric_evidence(metric_evidence, spend, leads):
+    """Return compatibility metadata only for trusted, snapshot-matching evidence."""
+    if not isinstance(metric_evidence, dict):
+        return None
+    requirements = (
+        ("spend_amount", float(spend), "currency_amount_v1"),
+        ("qualified_buyer_leads", int(leads), "whole_number_count_v1"),
+    )
+    states = []
+    definitions = []
+    for name, expected_value, server_definition in requirements:
+        evidence = metric_evidence.get(name)
+        if not isinstance(evidence, dict):
+            return None
+        status = _clean_text(evidence.get("status")).lower()
+        if status not in {"verified", "owner_correction"}:
+            return None
+        supplied_definition = _clean_text(evidence.get("metric_definition") or server_definition).lower()
+        if supplied_definition != server_definition:
+            return None
+        try:
+            actual_value = float(evidence.get("value"))
+        except (TypeError, ValueError):
+            return None
+        if actual_value < 0 or actual_value != float(expected_value):
+            return None
+        if name == "qualified_buyer_leads" and not actual_value.is_integer():
+            return None
+        states.append(status)
+        definitions.append(server_definition)
+    return {
+        "metric_definition": "+".join(definitions),
+        "evidence_state": "+".join(states),
+    }
+
+
+def beacon_follow_up_mission(suggestion):
+    """Translate a server-built suggestion into a new, unapproved CORE mission contract."""
+    return {
+        "mission_id": suggestion["suggestion_id"], "status": "new", "title": suggestion["title"],
+        "raw_text": suggestion["recurrence_rationale"] + " Prepare the bounded follow-up described in the attached Beacon evidence contract.",
+        "urgency": "P2", "mission_type": "system improvement", "approval_level": "LEVEL 3",
+        "owner_decision": "", "metadata": {"beacon_follow_up_suggestion": suggestion,
+            "authority": dict(FOLLOW_UP_AUTHORITY_FLAGS), "owner_approval_required": True},
+    }
 
 
 def _event_datetime(event):

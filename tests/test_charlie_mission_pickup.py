@@ -246,6 +246,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         thread.assert_called_once()
 
     @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
+    @patch("scripts.charlie_mission_pickup._preserve_generated_codex_chat_before_switch")
+    @patch("scripts.charlie_mission_pickup._recover_empty_git_operation_markers", return_value={"success": True, "status": "no_git_markers", "recovered": []})
+    @patch("scripts.charlie_mission_pickup.subprocess.run")
+    def test_ensure_base_branch_cleans_generated_handoff_when_already_active(self, run, _markers, preserve):
+        run.return_value = SimpleNamespace(returncode=0, stdout="charlie-runner-clean-base\n", stderr="")
+        preserve.return_value = {"success": True, "status": "codex_chat_recovered", "backup_path": "backup.md"}
+
+        result = charlie_mission_pickup._ensure_base_branch()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "base_branch_already_active")
+        self.assertEqual(result["codex_chat_recovery"]["status"], "codex_chat_recovered")
+        preserve.assert_called_once_with()
+
+    @patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-clean-base"})
     @patch("scripts.charlie_mission_pickup._recover_empty_git_operation_markers", return_value={"success": True, "status": "no_git_markers", "recovered": []})
     @patch("scripts.charlie_mission_pickup.subprocess.run")
     def test_ensure_base_branch_fails_instead_of_accepting_mission_branch(self, run, _markers):

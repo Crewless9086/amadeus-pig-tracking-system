@@ -26,6 +26,12 @@
 - Defined recognized attribution revenue as canonical sales evidence that is both `Completed` and `Paid`, with malformed or conflicting evidence failing closed.
 - Kept persistence, migrations, ingestion, UI, automation, and operational writes outside this bounded data-model correction.
 
+## 2026-07-17 - Beacon recurring-weakness CORE suggestions
+
+- Added deterministic recurring campaign-weakness analysis over at least two distinct compatible, fresh, non-superseded campaign snapshots.
+- Defined structured evidence lineage, expected-value uncertainty, bounded scope, tests, safety, stable identity, and server-owned authority for follow-up suggestions.
+- Kept preview read-only and limited CORE creation to a separate authenticated owner-admin action that creates one deduplicated `new` mission without approval or execution authority.
+
 ## 2026-07-16 - Beacon outcome evidence capture
 
 - Defined per-metric provenance and explicit verified, missing, unsupported, malformed, provider-error, and owner-correction evidence states.

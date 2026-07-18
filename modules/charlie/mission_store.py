@@ -278,11 +278,17 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                         now(),
                         now()
                     )
-                    on conflict (mission_id) do update set
-                        updated_at = now()
+                    on conflict (mission_id) do nothing
+                    returning mission_id
                     """,
                     params,
                 )
+                inserted = cursor.fetchone()
+                if not inserted:
+                    return {
+                        "stored": False, "configured": True, "status": "duplicate_open_mission",
+                        "mission_id": params["mission_id"], "existing_status": "new", "title": params["title"],
+                    }, 200
                 _insert_event(cursor, params["mission_id"], "created", "Mission intake recorded.", {
                     "source": params["source"],
                     "telegram_user_id": params["telegram_user_id"],
