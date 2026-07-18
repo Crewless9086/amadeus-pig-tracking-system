@@ -75,4 +75,17 @@ class BeaconAutonomyReadinessTests(unittest.TestCase):
         self.assertFalse(result["can_promote"])
         self.assertIn("safety_incidents_invalid", result["gates"]["safety_incidents"]["blockers"])
 
+    def test_negative_budget_amounts_fail_closed(self):
+        approved = self.approved()
+        for field, blocker in (("actual_spend", "budget_actual_spend_invalid"), ("approved_cap", "budget_approved_cap_invalid")):
+            with self.subTest(field=field):
+                sample = evidence()
+                sample["budget_compliance"][field] = -1
+
+                result = evaluate_autonomy_readiness(approved["policy_id"], sample, now=NOW, registry=self.registry)
+
+                self.assertFalse(result["can_promote"])
+                self.assertFalse(result["gates"]["budget_compliance"]["passed"])
+                self.assertIn(blocker, result["gates"]["budget_compliance"]["blockers"])
+
 if __name__ == "__main__": unittest.main()
