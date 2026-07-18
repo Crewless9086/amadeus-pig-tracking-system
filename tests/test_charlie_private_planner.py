@@ -54,6 +54,12 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan["type"], "protected_business_action")
         self.assertEqual(plan["risk_flags"], ["customer_send"])
 
+    def test_protected_request_carries_domain_target_into_decision(self):
+        plan = plan_owner_intent("Send the quote for ORD-2026-12BCCC to conversation 1871", {}, environ={})
+        self.assertEqual(plan["type"], "protected_business_action")
+        self.assertEqual(plan["args"]["order_id"], "ORD-2026-12BCCC")
+        self.assertEqual(plan["args"]["conversation_id"], "1871")
+
     def test_business_preparation_and_follow_up_intents_are_typed(self):
         order = plan_owner_intent("Prepare all documents for ORD-2026-12BCCC", {}, environ={})
         self.assertEqual(order["type"], "prepare_order_pack")

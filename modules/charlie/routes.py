@@ -5,7 +5,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
 from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
 from modules.charlie.build_relay import (
@@ -68,6 +68,8 @@ from modules.charlie.executive_runtime import executive_mode, run_executive_cycl
 from modules.charlie.executive_store import executive_scorecard
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
+from modules.charlie.private_stream import stream_private_turn
+from modules.charlie.private_voice import synthesize_private_speech, transcribe_web_audio
 from modules.charlie.private_store import decide_bundle, private_owner_snapshot
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 from modules.beacon.workforce import beacon_workforce_scorecard
@@ -190,6 +192,69 @@ def charlie_private_message_route():
     )
     PRIVATE_DASHBOARD_CACHE.update({"expires_at": 0.0, "packet": None})
     return jsonify({**result, "reply": replies[-1] if replies else result.get("reply", ""), "channel": "owner_web"}), status_code
+
+
+@charlie_bp.route("/charlie/private/message/stream", methods=["POST"])
+def charlie_private_message_stream_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    policy = private_policy()
+    if not policy.get("enabled"):
+        return jsonify({"success": False, "status": "private_charlie_not_ready"}), 503
+    text = str((request.get_json(silent=True) or {}).get("text") or "").strip()
+    if not text:
+        return jsonify({"success": False, "status": "message_required"}), 400
+    update_id = "WEBSTREAM-" + uuid.uuid4().hex.upper()
+    payload = {
+        "update_id": update_id,
+        "message": {
+            "message_id": update_id,
+            "from": {"id": int(policy["owner_user_id"]), "username": "charlie_owner_live"},
+            "chat": {"id": int(policy["owner_chat_id"]), "type": "private"},
+            "text": text,
+        },
+    }
+
+    def runner(emit):
+        def web_sender(_chat_id, _reply_text, **_kwargs):
+            return {"success": True, "status": "web_stream_reply_captured"}, 200
+        result, status = handle_private_telegram_webhook(
+            payload, headers={"X-Telegram-Bot-Api-Secret-Token": policy["secret"]},
+            sender=web_sender, event_sink=emit,
+        )
+        PRIVATE_DASHBOARD_CACHE.update({"expires_at": 0.0, "packet": None})
+        return result, status
+
+    response = Response(stream_with_context(stream_private_turn(text, runner)), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
+    return response
+
+
+@charlie_bp.route("/charlie/private/voice/transcribe", methods=["POST"])
+def charlie_private_voice_transcribe_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    upload = request.files.get("audio")
+    if not upload:
+        return jsonify({"success": False, "status": "voice_audio_required"}), 400
+    result, status = transcribe_web_audio(upload.read(), upload.filename, upload.mimetype, private_policy())
+    return jsonify(result), status
+
+
+@charlie_bp.route("/charlie/private/voice/speech", methods=["POST"])
+def charlie_private_voice_speech_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    text = str((request.get_json(silent=True) or {}).get("text") or "").strip()
+    result, status = synthesize_private_speech(text, private_policy())
+    if status >= 400:
+        return jsonify({key: value for key, value in result.items() if key != "audio"}), status
+    return Response(result["audio"], status=200, mimetype=result.get("content_type") or "audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @charlie_bp.route("/charlie/private/decisions/<bundle_id>", methods=["POST"])

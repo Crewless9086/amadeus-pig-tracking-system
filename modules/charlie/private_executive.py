@@ -58,17 +58,17 @@ def build_executive_plan(owner_text, intent, context=None):
     }
 
 
-def run_executive_plan(plan, intent_id, *, recorder=None):
-    evidence = _run_steps((plan.get("tools") or [])[:MAX_INITIAL_TOOLS], plan, intent_id, recorder, start_index=1)
+def run_executive_plan(plan, intent_id, *, recorder=None, event_sink=None):
+    evidence = _run_steps((plan.get("tools") or [])[:MAX_INITIAL_TOOLS], plan, intent_id, recorder, event_sink=event_sink, start_index=1)
     selected = [item.get("intent_type") for item in evidence]
     follow_ups = follow_up_capabilities(evidence, selected, limit=MAX_TOOLS_PER_TURN - len(evidence))
     if follow_ups:
         steps = [{"intent_type": name, "args": {}} for name in follow_ups]
-        evidence.extend(_run_steps(steps, plan, intent_id, recorder, start_index=len(evidence) + 1))
+        evidence.extend(_run_steps(steps, plan, intent_id, recorder, event_sink=event_sink, start_index=len(evidence) + 1))
     return sorted(evidence, key=lambda item: item.get("step") or 0)
 
 
-def _run_steps(steps, plan, intent_id, recorder, *, start_index):
+def _run_steps(steps, plan, intent_id, recorder, *, event_sink=None, start_index):
     authorized = []
     evidence = []
     for index, step in enumerate(steps, start=start_index):
@@ -77,6 +77,8 @@ def _run_steps(steps, plan, intent_id, recorder, *, start_index):
         if not authority["allowed"]:
             evidence.append({"step": index, "intent_type": intent_type, "success": False, "status": "authority_denied", "authority": authority})
             break
+        if event_sink:
+            event_sink("capability_started", {"capability": intent_type, "domain": capability_metadata(intent_type).get("domain")})
         authorized.append((index, step, authority))
     with ThreadPoolExecutor(max_workers=max(1, len(authorized))) as pool:
         futures = [(index, step, authority, pool.submit(execute_private_tool, step.get("intent_type"), step.get("args") or {})) for index, step, authority in authorized]
@@ -89,6 +91,8 @@ def _run_steps(steps, plan, intent_id, recorder, *, start_index):
                 "domain": metadata.get("domain"), "source_of_truth": metadata.get("source_of_truth"), "freshness_seconds": metadata.get("freshness_seconds"),
                 "observed_at": datetime.now(timezone.utc).isoformat()}
         evidence.append(item)
+        if event_sink:
+            event_sink("evidence_received", {"capability": intent_type, "domain": item.get("domain"), "success": succeeded, "status": status, "summary": str(result.get("summary") or "")[:240]})
         if recorder:
             recorder(intent_id, item["tool"], authority["tier"], step.get("args") or {}, result, status="succeeded" if succeeded else "failed")
     return evidence

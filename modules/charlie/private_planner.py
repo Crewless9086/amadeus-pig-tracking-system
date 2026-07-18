@@ -52,7 +52,14 @@ def _deterministic_plan(text, context):
         return _intent("schedule_follow_up", .99, {"request": follow_up.group(1).strip()[:1000], "delay_minutes": minutes}, explicit=True)
     protected = _protected_action(text)
     if protected:
-        return _intent("protected_business_action", .99, {"action_summary": text[:2000]}, [protected], explicit=True)
+        protected_args = {"action_summary": text[:2000], "protected_action": protected}
+        protected_order = re.search(r"\bORD-[A-Z0-9-]{6,40}\b", text, re.I)
+        protected_conversation = re.search(r"(?:conversation|chat\s*id)\s*[:#-]?\s*(\d{2,20})", text, re.I)
+        if protected_order:
+            protected_args["order_id"] = protected_order.group(0).upper()
+        if protected_conversation:
+            protected_args["conversation_id"] = protected_conversation.group(1)
+        return _intent("protected_business_action", .99, protected_args, [protected], explicit=True)
     if lower in {"/brief", "brief", "morning charlie", "what happened overnight", "give me the morning brief"} or "morning brief" in lower:
         return _intent("executive_brief", .99)
     active_mission_question = "mission" in lower and any(

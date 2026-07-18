@@ -15,6 +15,10 @@ LLM_MODEL_ENV = "CHARLIE_PRIVATE_LLM_MODEL"
 LLM_URL_ENV = "CHARLIE_PRIVATE_LLM_URL"
 TRANSCRIPTION_ENABLED_ENV = "CHARLIE_PRIVATE_TRANSCRIPTION_ENABLED"
 TRANSCRIPTION_MODEL_ENV = "CHARLIE_PRIVATE_TRANSCRIPTION_MODEL"
+TTS_ENABLED_ENV = "CHARLIE_PRIVATE_TTS_ENABLED"
+TTS_PROVIDER_ENV = "CHARLIE_PRIVATE_TTS_PROVIDER"
+TTS_MODEL_ENV = "CHARLIE_PRIVATE_TTS_MODEL"
+TTS_VOICE_ENV = "CHARLIE_PRIVATE_TTS_VOICE_ID"
 
 RED_ZONE_FLAGS = {
     "customer_send", "public_post", "payment", "deposit", "reservation", "stock_write",
@@ -41,10 +45,15 @@ def private_policy(environ=None):
         "llm_url": str(source.get(LLM_URL_ENV) or "https://api.openai.com/v1/chat/completions").strip(),
         "transcription_enabled": _truthy(source.get(TRANSCRIPTION_ENABLED_ENV)) and bool(source.get(TRANSCRIPTION_MODEL_ENV)) and bool(source.get("OPENAI_API_KEY")),
         "transcription_model": str(source.get(TRANSCRIPTION_MODEL_ENV) or "").strip(),
+        "tts_enabled": _truthy(source.get(TTS_ENABLED_ENV)) and str(source.get(TTS_PROVIDER_ENV) or "").lower() == "elevenlabs" and bool(source.get(TTS_VOICE_ENV)) and bool(source.get("ELEVENLABS_API_KEY")),
+        "tts_provider": str(source.get(TTS_PROVIDER_ENV) or "browser").strip().lower(),
+        "tts_model": str(source.get(TTS_MODEL_ENV) or "eleven_multilingual_v2").strip(),
+        "tts_voice_id": str(source.get(TTS_VOICE_ENV) or "").strip(),
         "openai_api_key_present": bool(source.get("OPENAI_API_KEY")),
         "single_owner": True,
         "groups_allowed": False,
         "can_run_shell": False,
+        "browser_speech_fallback": True,
         "red_zone_requires_exact_confirmation": True,
     }
 

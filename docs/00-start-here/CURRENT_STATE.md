@@ -305,3 +305,5 @@ SAM safety remains unchanged:
 # CHARLIE Private Executive Adaptive Runtime (2026-07-18)
 
 The deployed implementation is governed by `docs/06-operations/CHARLIE_PRIVATE_EXECUTIVE_MASTER_PLAN.md`. CHARLIE now uses a typed capability registry, adaptive multi-domain evidence selection, bounded evidence-gap investigation, optional evidence-grounded natural synthesis, deduplicated CORE delegation, and durable commitments visible on the private dashboard. CORE remains the engineering workforce and Codex remains its builder; CHARLIE does not write code. Red-zone authority remains owner-gated. Full regression, GitHub checks, Render asset verification, and an owner-only live CORE-status canary passed on 2026-07-18.
+
+CHARLIE Live Executive v1 is being delivered under `docs/06-operations/CHARLIE_LIVE_EXECUTIVE_V1.md`. It adds SSE-streamed runtime progress, structured spoken/display packets, push-to-talk, server and browser voice fallbacks, a live full-screen presence, durable commitment visibility, and domain-aware decision cards without changing authority boundaries or creating a second runtime.
