@@ -147,7 +147,11 @@ def _evaluate_gate(name, item, policy, now):
     if name == "campaign_evidence": blockers.extend(_minimum(value, threshold.get("minimum_count"), "campaign_evidence_below_minimum"))
     elif name in {"unedited_approval_rate", "attribution_completeness", "recommendation_accuracy"}:
         blockers.extend(_rate(value, threshold.get("minimum_rate"), name + "_below_minimum"))
-    elif name == "safety_incidents": blockers.extend(_maximum(value, threshold.get("maximum_open_incidents"), "safety_incidents_above_maximum"))
+    elif name == "safety_incidents":
+        if _number(value) is None or _number(value) < 0:
+            blockers.append("safety_incidents_invalid")
+        else:
+            blockers.extend(_maximum(value, threshold.get("maximum_open_incidents"), "safety_incidents_above_maximum"))
     elif name == "trust_history":
         blockers.extend(_minimum(value, threshold.get("minimum_score"), "trust_history_below_minimum"))
         blockers.extend(_minimum(item.get("completed_evaluations"), threshold.get("minimum_completed_evaluations"), "trust_history_insufficient_evaluations"))
@@ -162,7 +166,7 @@ def _evidence_errors(item, policy, now):
     if _text(item.get("schema_version")) != policy["evidence_schema_version"]: errors.append("evidence_schema_incompatible")
     if not _text(item.get("evidence_id")) or not _text(item.get("source")): errors.append("evidence_provenance_required")
     recorded = _parse_datetime(item.get("recorded_at")); max_age = _number(policy.get("max_evidence_age_seconds"))
-    if not recorded or max_age is None or max_age < 0 or (now - recorded).total_seconds() > max_age: errors.append("evidence_stale_or_invalid")
+    if not recorded or max_age is None or max_age < 0 or recorded > now or (now - recorded).total_seconds() > max_age: errors.append("evidence_stale_or_invalid")
     if item.get("superseded") is True or item.get("malformed") is True or item.get("conflicting") is True: errors.append("evidence_not_current")
     return errors
 
