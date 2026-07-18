@@ -96,7 +96,8 @@ foreach ($file in $changedArray) {
 
 $python = ".\venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {
-    $python = "python"
+    $sharedWorktreePython = "..\..\venv\Scripts\python.exe"
+    $python = if (Test-Path $sharedWorktreePython) { $sharedWorktreePython } else { "python" }
 }
 
 if ($hasDocs) {

@@ -104,10 +104,10 @@ def _handle_message(payload, binding, store, sender, environ):
         result = {"success": updated_status < 400, "status": updated.get("status"), "summary": f"I will check {follow_up['request']} again in {delay} minute(s) and report through your private CHARLIE channel.", "follow_up": follow_up}
         store.record_tool_execution(intent_record["intent_id"], "schedule_follow_up", authority["tier"], intent.get("args") or {}, result, status="succeeded" if updated_status < 400 else "failed")
         return _reply(binding, result["summary"], store, sender, update_id, [], environ, status_code=updated_status)
-    if intent["type"].startswith("read_") or intent["type"] == "executive_brief":
+    if intent["type"].startswith("read_") or intent["type"] in {"investigate", "executive_brief"}:
         plan = build_executive_plan(text, intent, context)
         evidence = run_executive_plan(plan, intent_record["intent_id"], recorder=store.record_tool_execution)
-        reply = compose_executive_reply(plan, evidence)
+        reply = compose_executive_reply(plan, evidence, environ=environ)
         durable_context = context_after_plan(plan, evidence)
         if hasattr(store, "update_thread_context"):
             store.update_thread_context(binding["thread_id"], durable_context, summary=str(durable_context.get("goal") or "")[:1000])

@@ -10,13 +10,13 @@ from modules.charlie.private_policy import private_policy
 
 MISSION_ID_RE = re.compile(r"\b(?:CHARLIE-(?:MISSION|SCOPE)-)?[A-Z0-9]{8,32}\b", re.I)
 ALLOWED_INTENTS = {
-    "help", "executive_brief", "read_core_status", "read_queue", "read_blocked",
+    "help", "investigate", "executive_brief", "read_core_status", "read_queue", "read_blocked",
     "read_mission", "read_workforce", "read_analyst", "read_decisions",
     "read_business_status", "read_sam_status", "read_beacon_status", "read_orders_status", "read_farm_status",
     "create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "clarify",
     "remember_preference",
     "protected_business_action",
-    "read_order", "prepare_order_pack", "prepare_beacon_draft", "read_trust", "schedule_follow_up", "read_sam_conversation",
+    "read_order", "read_pig", "prepare_order_pack", "prepare_beacon_draft", "read_trust", "schedule_follow_up", "read_sam_conversation",
 }
 
 
@@ -37,6 +37,8 @@ def _deterministic_plan(text, context):
     active_subject = open_context.get("active_subject") if isinstance(open_context.get("active_subject"), dict) else {}
     order_match = re.search(r"\bORD-[A-Z0-9-]{6,40}\b", text, re.I)
     order_id = order_match.group(0).upper() if order_match else ""
+    pig_match = re.search(r"\b(?:pig|tag)\s*(?:id|number|no\.?|#)?\s*[:#-]?\s*([A-Z0-9-]{2,40})\b", text, re.I)
+    pig_id = pig_match.group(1).upper() if pig_match else ""
     conversation_match = re.search(r"(?:conversation|chat\s*id)\s*[:#-]?\s*(\d{2,20})", text, re.I)
     if lower in {"/start", "/help", "help", "what can you do"}:
         return _intent("help", 1)
@@ -77,6 +79,8 @@ def _deterministic_plan(text, context):
         return _intent("prepare_order_pack", .99, {"order_id": order_id}, explicit=True)
     if order_id:
         return _intent("read_order", .99, {"order_id": order_id})
+    if pig_id:
+        return _intent("read_pig", .99, {"pig_id": pig_id})
     if lower.startswith(("draft a beacon post", "draft beacon post", "prepare a beacon post", "write a beacon post")):
         brief = re.sub(r"^(draft a beacon post|draft beacon post|prepare a beacon post|write a beacon post)(?:\s+(?:about|for))?\s*", "", text, flags=re.I)
         lane = "meat_launch" if "meat" in lower else "live_stock_awareness"
@@ -105,7 +109,11 @@ def _deterministic_plan(text, context):
         for phrase, intent_type in action_map.items():
             if lower.startswith(phrase) or f" {phrase} " in f" {lower} ":
                 return _intent(intent_type, .98, {"mission_id": mission_id}, explicit=True)
-    return _intent("clarify", .45, {"question": "I want to act on the right thing. Are you asking for a CORE update, a specific mission, a new mission, or an owner decision?"})
+    if lower in {"please sort it", "sort it", "fix it", "do it"}:
+        return _intent("clarify", .4, {"question": "I want to act on the right thing. Which outcome or active item do you mean?"})
+    if len(lower.split()) >= 3:
+        return _intent("investigate", .7, {"owner_question": text[:3000]})
+    return _intent("clarify", .45, {"question": "Tell me the outcome or question you want me to investigate."})
 
 
 def _llm_plan(text, context, policy, *, environ=None, http_open=None):

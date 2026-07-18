@@ -5,6 +5,22 @@ from modules.charlie.private_tools import execute_private_tool
 
 
 class CharliePrivateToolsTests(unittest.TestCase):
+    @patch("modules.charlie.private_tools.get_pig_detail")
+    def test_read_pig_returns_authoritative_profile_summary(self, get_detail):
+        get_detail.return_value = {"pig": {"Tag_Number": "104", "Sex": "Female", "Current_Pen_ID": "PEN-3", "Latest_Weight_KG": 8.4}}
+        result, status = execute_private_tool("read_pig", {"pig_id": "104"})
+        self.assertEqual(status, 200)
+        self.assertIn("Female", result["summary"])
+        self.assertIn("8.4 kg", result["summary"])
+
+    @patch("modules.charlie.private_tools.list_missions")
+    def test_create_mission_reuses_active_duplicate(self, list_missions):
+        list_missions.return_value = ({"missions": [{"mission_id": "M-EXISTING", "title": "Improve Beacon workflow", "status": "approved"}]}, 200)
+        result, status = execute_private_tool("create_mission", {"title": "Improve Beacon workflow"})
+        self.assertEqual(status, 200)
+        self.assertTrue(result["duplicate_prevented"])
+        self.assertEqual(result["mission_id"], "M-EXISTING")
+
     @patch("modules.charlie.private_tools.list_missions")
     def test_blocked_summary_reconciles_legacy_false_owner_label(self, list_missions):
         list_missions.return_value = ({"missions": [{

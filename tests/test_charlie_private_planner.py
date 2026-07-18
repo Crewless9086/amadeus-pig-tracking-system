@@ -39,6 +39,11 @@ class CharliePrivatePlannerTests(unittest.TestCase):
         self.assertEqual(plan["type"], "clarify")
         self.assertLess(plan["confidence"], .5)
 
+    def test_unencoded_meaningful_question_enters_investigation(self):
+        plan = plan_owner_intent("How are livestock sales and the farm doing this week?", {}, environ={})
+        self.assertEqual(plan["type"], "investigate")
+        self.assertEqual(plan["args"]["owner_question"], "How are livestock sales and the farm doing this week?")
+
     def test_explicit_remember_command_is_typed(self):
         plan = plan_owner_intent("Remember that I prefer morning briefs at 06:30", {}, environ={})
         self.assertEqual(plan["type"], "remember_preference")
