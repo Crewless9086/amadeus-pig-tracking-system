@@ -274,6 +274,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             [],
         )
 
+    def test_recovery_hint_cannot_skip_earlier_incomplete_durable_stage(self):
+        mission = {
+            **MISSION,
+            "metadata": {"review_packet": {
+                "return_to_stage": "builder",
+                "review_status": "internal_recovery_queued",
+                "blocked_reason": "final_artifact_stage_mismatch",
+            }},
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "pending"},
+                {"agent": "source_mapper", "status": "complete"},
+                {"agent": "architect", "status": "pending"},
+                {"agent": "builder", "status": "blocked"},
+            ],
+        }
+        sequence = ["idea_expander", "source_mapper", "architect", "builder"]
+
+        self.assertEqual(execution_bridge._execution_start_agent(mission, sequence), "idea_expander")
+
     def test_blocked_at_mission_stage_resume_starts_from_agent(self):
         mission = {
             **MISSION,

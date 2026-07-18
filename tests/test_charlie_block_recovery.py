@@ -47,6 +47,15 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["block_class"], "implementation_fix_required")
         self.assertTrue(result["recoverable"])
 
+    def test_builder_authorization_refusal_routes_to_architect(self):
+        result = classify_block(
+            "builder",
+            "Builder authorization is disabled pending Architect resolution; builder_allowed=false.",
+        )
+        self.assertEqual(result["block_class"], "system_repair_required")
+        self.assertEqual(result["responsible_stage"], "architect")
+        self.assertTrue(result["recoverable"])
+
     def test_merge_conflict_never_consumes_correction_budget_into_owner_block(self):
         result = classify_block(
             "publisher",

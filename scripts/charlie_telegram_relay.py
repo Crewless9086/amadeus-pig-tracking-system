@@ -336,6 +336,12 @@ def handle_relay_update(
                 telegram.answer_callback_query(callback_id, "Not authorized.")
         return RelayResult(ok=False, action="ignored", reason="unauthorized_user")
 
+    if mission_loader is None or runner_status_loader is None:
+        from modules.charlie import mission_store, runner_control
+
+        mission_loader = mission_loader or mission_store.list_missions
+        runner_status_loader = runner_status_loader or runner_control.runner_status
+
     if "callback_query" in update:
         result = build_relay_telegram_buttons.handle_update(
             update,
@@ -347,18 +353,13 @@ def handle_relay_update(
             client=telegram,
             next_steps_path=next_steps_path,
             codex_chat_path=codex_chat_path,
+            option_source_loader=mission_loader,
         )
         return RelayResult(ok=result.ok, action=result.action, reason=result.reason)
 
     text = _message_text(update)
     chat_id = _chat_id_from_update(update)
     command = text.lower().split(maxsplit=1)[0] if text else ""
-    if mission_loader is None or runner_status_loader is None:
-        from modules.charlie import mission_store, runner_control
-
-        mission_loader = mission_loader or mission_store.list_missions
-        runner_status_loader = runner_status_loader or runner_control.runner_status
-
     if command == "/start":
         telegram.send_message(
             chat_id,
@@ -390,6 +391,7 @@ def handle_relay_update(
             client=telegram,
             next_steps_path=next_steps_path,
             codex_chat_path=codex_chat_path,
+            option_source_loader=mission_loader,
         )
         return RelayResult(ok=result.ok, action=result.action, reason=result.reason)
 

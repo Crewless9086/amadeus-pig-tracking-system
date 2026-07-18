@@ -64,6 +64,13 @@ def classify_block(agent="", reason="", artifact=None):
         block_class = "implementation_fix_required"
         route = "builder"
     elif _contains(text, (
+        "builder authorization is disabled", "builder authorization is disabled pending architect",
+        "builder_allowed: false", "builder_allowed=false", "pending architect resolution",
+        "architect-approved enablement", "architect enablement",
+    )):
+        block_class = "system_repair_required"
+        route = "architect"
+    elif _contains(text, (
         "owner must decide", "owner decision required", "needs owner decision",
         "missing owner decision", "business choice", "ambiguous owner intent",
     )):
