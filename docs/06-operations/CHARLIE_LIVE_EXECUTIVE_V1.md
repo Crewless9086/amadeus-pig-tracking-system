@@ -63,3 +63,7 @@ Read investigation is automatic. Customer sends, public posts, payments, reserva
 - desktop and mobile show no overlapping controls;
 - all CHARLIE and repository verification tests pass;
 - Render deployment and owner-only live canary verified.
+
+## Deployment Evidence
+
+On 2026-07-18 the Render SSE canary authenticated through the owner session and emitted `turn_started`, `intent_understood`, two `capability_started`, two `evidence_received`, `reply_ready`, and `turn_completed`. The terminal packet was `charlie_live_executive_response_v1`, contained a spoken summary and two authoritative evidence rows, and reported complete evidence for the canary question.
