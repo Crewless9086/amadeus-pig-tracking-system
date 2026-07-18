@@ -11,6 +11,25 @@ from scripts import charlie_runner_supervisor as supervisor
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_duplicate_supervisor_does_not_overwrite_live_owner_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            supervisor_path = root / "supervisor.json"
+            lock_path = root / "supervisor.lock"
+            live_state = {"pid": 123, "status": "runner_started", "child_pid": 456}
+            supervisor_path.write_text(json.dumps(live_state), encoding="utf-8")
+            lock_path.write_text(json.dumps({"pid": 123}), encoding="utf-8")
+            with (
+                patch.object(supervisor, "SUPERVISOR_PATH", supervisor_path),
+                patch.object(supervisor, "LOCK_PATH", lock_path),
+                patch.object(supervisor, "SupervisorInstanceLock", return_value=supervisor.SupervisorInstanceLock(lock_path)),
+                patch.object(supervisor, "_pid_alive", return_value=True),
+            ):
+                result = supervisor.main()
+
+            self.assertEqual(result["status"], "duplicate_supervisor_refused")
+            self.assertEqual(json.loads(supervisor_path.read_text(encoding="utf-8")), live_state)
+
     def test_instance_lock_refuses_live_owner_and_recovers_stale_owner(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "supervisor.lock"

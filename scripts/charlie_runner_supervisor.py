@@ -432,7 +432,6 @@ def main():
     instance_lock = SupervisorInstanceLock()
     acquired, owner_pid = instance_lock.acquire()
     if not acquired:
-        _write_status("duplicate_supervisor_refused", existing_supervisor_pid=owner_pid)
         return {"status": "duplicate_supervisor_refused", "existing_supervisor_pid": owner_pid}
     try:
         if STOP_PATH.exists():
