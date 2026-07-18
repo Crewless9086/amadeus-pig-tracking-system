@@ -78,7 +78,17 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
             "identical_failure_count": hold.get("identical_failure_count", 0),
         }
     elif status.get("active"):
-        result = {"status": "runner_healthy", "started": False}
+        queue_health = status.get("queue_health") if isinstance(status.get("queue_health"), dict) else {}
+        if queue_health.get("deadlocked"):
+            result = {
+                "status": "runner_queue_deadlocked", "started": False,
+                "approved_count": int(queue_health.get("approved_count") or 0),
+                "runnable_count": int(queue_health.get("runnable_count") or 0),
+                "dependency_blocked_ids": queue_health.get("dependency_blocked_ids") or [],
+                "recommended_action": "CHARLIE must adjudicate the dependency deadlock or select independent safe work.",
+            }
+        else:
+            result = {"status": "runner_healthy", "started": False}
     elif supervisor_pid:
         supervisor_status = str(supervisor_state.get("status") or "")
         if supervisor_status == "runner_exited_restart_pending":

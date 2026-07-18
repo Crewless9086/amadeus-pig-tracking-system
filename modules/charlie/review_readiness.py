@@ -78,6 +78,18 @@ def mission_dependency_ids(mission):
     return list(dict.fromkeys(str(value).strip() for value in values if str(value or "").strip()))
 
 
+def mission_execution_dependency_ids(mission):
+    """Return true prerequisites, excluding the parent a recovery slice repairs."""
+    dependencies = mission_dependency_ids(mission)
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
+    relationship = str(family.get("relationship") or family.get("discovery_source") or "").strip().lower()
+    if relationship not in {"acceptance_recovery", "internal_recovery", "block_recovery"}:
+        return dependencies
+    parent_id = str(family.get("parent_mission_id") or "").strip()
+    return [dependency_id for dependency_id in dependencies if dependency_id != parent_id]
+
+
 def cleared_review_packet(packet, *, reason, return_to_stage):
     packet = dict(packet if isinstance(packet, dict) else {})
     packet.update({

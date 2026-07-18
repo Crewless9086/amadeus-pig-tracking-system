@@ -32,6 +32,21 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
         self.assertFalse(result["started"])
         self.assertEqual(calls, [])
 
+    def test_live_process_with_deadlocked_queue_is_not_reported_healthy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = watchdog_tick(
+                status_reader=lambda: {"active": True, "status": "runner_active", "queue_health": {
+                    "deadlocked": True, "approved_count": 5, "runnable_count": 0,
+                    "dependency_blocked_ids": ["M-1", "M-2"],
+                }},
+                starter=lambda: self.fail("must not restart a live runner"),
+                state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
+            )
+        self.assertEqual(result["status"], "runner_queue_deadlocked")
+        self.assertEqual(result["approved_count"], 5)
+        self.assertEqual(result["runnable_count"], 0)
+
     def test_stopped_runner_starts_supervisor(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = watchdog_tick(

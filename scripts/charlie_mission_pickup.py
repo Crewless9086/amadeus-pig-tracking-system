@@ -19,7 +19,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from modules.charlie.core_workflow import build_core_plan
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
-from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
+from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
@@ -164,7 +164,11 @@ def watch_for_mission(
                 executive, _executive_status = run_executive_cycle(runner={"active_mission_id": (_active_mission() or {}).get("mission_id", "")})
                 if executive.get("status") not in {"executive_disabled", "executive_cycle_complete"} or executive.get("results"):
                     executive["checks"] = checks
-                    write_runner_heartbeat({"status": "executive_cycle_observed", "executive": executive, "checks": checks})
+                    cycle = executive.get("cycle") if isinstance(executive.get("cycle"), dict) else {}
+                    write_runner_heartbeat({
+                        "status": "executive_cycle_observed", "executive": executive, "checks": checks,
+                        "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
+                    })
                 if notify:
                     _deliver_executive_outbox()
                 reconciliation = reconcile_blocked_pr_missions(notify=notify)
@@ -530,7 +534,11 @@ def _owner_queue_missions(statuses, limit=10):
         clean_status = str(status or "").strip()
         if not clean_status or clean_status not in wanted:
             continue
-        loaded, status_code = list_owner_work_missions(clean_status, limit=parsed_limit)
+        # Approved rows must be dependency-filtered before applying the caller's
+        # limit. Otherwise one blocked family child can hide runnable work later
+        # in the queue and make a healthy runner wait forever.
+        query_limit = max(parsed_limit * 10, 100) if clean_status == "approved" else parsed_limit
+        loaded, status_code = list_owner_work_missions(clean_status, limit=query_limit)
         if status_code >= 400:
             return [], status_code
         candidates = loaded.get("missions") or []
@@ -547,7 +555,7 @@ def _owner_queue_missions(statuses, limit=10):
 
 def _mission_dependencies_ready(mission, status_cache=None):
     status_cache = status_cache if isinstance(status_cache, dict) else {}
-    dependency_ids = mission_dependency_ids(mission)
+    dependency_ids = mission_execution_dependency_ids(mission)
     if not dependency_ids:
         return True
     for dependency_id in dependency_ids:
@@ -558,6 +566,24 @@ def _mission_dependencies_ready(mission, status_cache=None):
         if status_cache[dependency_id] not in {"done", "merged", "deployed"}:
             return False
     return True
+
+
+def _queue_health_snapshot():
+    loaded, status_code = list_owner_work_missions("approved", limit=100)
+    if status_code >= 400:
+        return {"available": False, "status": loaded.get("status", "mission_queue_unavailable")}
+    approved = loaded.get("missions") or []
+    cache = {}
+    runnable = [mission for mission in approved if _mission_dependencies_ready(mission, status_cache=cache)]
+    return {
+        "available": True,
+        "approved_count": len(approved),
+        "runnable_count": len(runnable),
+        "dependency_blocked_count": len(approved) - len(runnable),
+        "dependency_blocked_ids": [mission.get("mission_id") for mission in approved if mission not in runnable],
+        "deadlocked": bool(approved and not runnable),
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _retryable_queue_error(result, status_code):

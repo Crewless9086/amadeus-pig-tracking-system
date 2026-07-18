@@ -384,6 +384,7 @@ def _windows_process_command(pid):
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True, text=True, check=False, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
         )
     except subprocess.SubprocessError:
         return ""

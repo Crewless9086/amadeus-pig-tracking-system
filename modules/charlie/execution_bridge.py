@@ -125,7 +125,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "business_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "security_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
     "evidence_reviewer": ["summary", "recommended_owner_decision", "commands_run", "files_inspected", "vault_sources_used"],
-    "reviewer": ["summary", "recommended_owner_decision", "release_notes", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
+    "reviewer": ["summary", "recommended_owner_decision", "changed_files", "test_evidence", "commands_run", "files_inspected", "vault_sources_used"],
 }
 AGENT_CONFIDENCE_REQUIRED_KEYS = ["confidence", "confidence_reason"]
 AGENT_CONFIDENCE_MINIMUM = 0.96
@@ -3791,6 +3791,10 @@ def _validate_agent_artifact(agent, artifact):
         value = artifact.get(key)
         if value == "" or value == [] or value == {}:
             missing.append(key)
+    if agent == "reviewer":
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        if decision in {"approve", "approve_final", "approve_final_release"} and not artifact.get("release_notes"):
+            missing.append("release_notes")
     return {"valid": not missing, "missing_keys": missing}
 
 

@@ -93,6 +93,7 @@ def portfolio_priority(mission, *, active_goal_ids=None):
 
 def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=None, now=None):
     from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
+    from modules.charlie.review_readiness import mission_execution_dependency_ids
 
     now = now or datetime.now(timezone.utc)
     missions = [item for item in (missions or []) if isinstance(item, dict)]
@@ -128,8 +129,11 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "recommended_action": "Review the protected change and explicitly approve or send it back.",
                     "authority_tier": "charl_human", "block_class": "protected_review",
                 })
+    status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
     approved = [item for item in missions if item.get("status") == "approved"]
-    ranked = sorted(approved, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
+    runnable = [item for item in approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
+    dependency_blocked = [item for item in approved if item not in runnable]
+    ranked = sorted(runnable, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
     runner = runner if isinstance(runner, dict) else {}
     if ranked and not runner.get("active_mission_id"):
         queue_authority = authority_decision("core.queue_continue", policies, trust=trust, now=now)
@@ -143,10 +147,15 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             })
         else:
             escalations.append({"mission_id": ranked[0].get("mission_id"), "action": "queue_progress_not_authorized", **queue_authority})
-    runway = len(approved) + (1 if runner.get("active_mission_id") else 0)
+    runway = len(runnable) + (1 if runner.get("active_mission_id") else 0)
     if runway < 3:
         selection_authority = authority_decision("core.queue_select", policies, trust=trust, now=now)
-        candidates = [item for item in missions if item.get("status") == "new" and queue_candidate_assessment(item).get("allowed")]
+        candidates = [
+            item for item in missions
+            if item.get("status") == "new"
+            and queue_candidate_assessment(item).get("allowed")
+            and _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)
+        ]
         candidates = sorted(candidates, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
         if selection_authority.get("allowed"):
             for item in candidates[:3 - runway]:
@@ -157,12 +166,30 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "authority_tier": selection_authority["authority_tier"], "policy_id": selection_authority.get("policy_id", ""),
                     "idempotency_key": f"queue-select:{item.get('mission_id')}:{fingerprint}",
                 })
+    if approved and not runnable and not runner.get("active_mission_id"):
+        escalations.append({
+            "action": "queue_deadlock", "block_class": "queue_dependency_deadlock",
+            "authority_tier": "charlie_delegated", "reason": "approved_work_exists_but_none_is_runnable",
+            "mission_ids": [item.get("mission_id") for item in dependency_blocked],
+            "recommended_action": "CHARLIE must repair dependency semantics or select independent safe work; Charl is not required unless the dependency contains genuine business discretion.",
+            "private_text": f"CHARLIE detected a CORE queue deadlock: {len(approved)} approved mission(s), but none can run. I am preserving the queue and escalating the exact dependency chain for automatic repair.",
+        })
     return {
         "version": "charlie_executive_cycle_v1", "observed_at": now.isoformat(),
         "mission_count": len(missions), "active_goal_count": len(goals),
         "commands": commands, "escalations": escalations,
+        "queue_health": {
+            "approved_count": len(approved), "runnable_count": len(runnable),
+            "dependency_blocked_count": len(dependency_blocked),
+            "dependency_blocked_ids": [item.get("mission_id") for item in dependency_blocked],
+            "deadlocked": bool(approved and not runnable and not runner.get("active_mission_id")),
+        },
         "queue_rank": [{"mission_id": item.get("mission_id"), "score": portfolio_priority(item, active_goal_ids=active_goal_ids)} for item in ranked],
     }
+
+
+def _dependencies_ready(mission, status_by_id, dependency_loader):
+    return all(status_by_id.get(dependency_id) in TERMINAL_STATUSES for dependency_id in dependency_loader(mission))
 
 
 def capability_tier(metrics):

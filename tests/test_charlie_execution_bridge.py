@@ -4101,6 +4101,28 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         release_packet = update_vault.call_args.args[1]["release_packet"]
         self.assertIn("deployment_watch", release_packet)
 
+    def test_reviewer_send_back_does_not_require_release_notes(self):
+        artifact = {
+            "summary": "Two blockers remain.", "recommended_owner_decision": "send_back",
+            "changed_files": ["modules/a.py"], "test_evidence": ["focused tests failed"],
+            "commands_run": ["python -m unittest focused"], "files_inspected": ["modules/a.py"],
+            "vault_sources_used": ["docs/09-vault-brain/README.md"],
+            "confidence": 0.99, "confidence_reason": "Current failure reproduced.",
+        }
+        self.assertTrue(execution_bridge._validate_agent_artifact("reviewer", artifact)["valid"])
+
+    def test_reviewer_approval_still_requires_release_notes(self):
+        artifact = {
+            "summary": "Ready.", "recommended_owner_decision": "approve_final_release",
+            "changed_files": ["modules/a.py"], "test_evidence": ["focused tests passed"],
+            "commands_run": ["python -m unittest focused"], "files_inspected": ["modules/a.py"],
+            "vault_sources_used": ["docs/09-vault-brain/README.md"],
+            "confidence": 0.99, "confidence_reason": "All evidence passed.",
+        }
+        result = execution_bridge._validate_agent_artifact("reviewer", artifact)
+        self.assertFalse(result["valid"])
+        self.assertIn("release_notes", result["missing_keys"])
+
 
 if __name__ == "__main__":
     unittest.main()

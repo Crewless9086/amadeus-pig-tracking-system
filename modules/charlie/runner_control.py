@@ -9,7 +9,27 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RUNNER_DIR = REPO_ROOT / ".charlie_runner"
+
+
+def _shared_repository_root(repo_root=REPO_ROOT):
+    """Resolve the primary checkout so all worktrees publish one runtime truth."""
+    dot_git = Path(repo_root) / ".git"
+    if dot_git.is_dir():
+        return Path(repo_root)
+    try:
+        marker = dot_git.read_text(encoding="utf-8").strip()
+    except OSError:
+        return Path(repo_root)
+    if not marker.lower().startswith("gitdir:"):
+        return Path(repo_root)
+    git_dir = Path(marker.split(":", 1)[1].strip())
+    if not git_dir.is_absolute():
+        git_dir = (Path(repo_root) / git_dir).resolve()
+    return git_dir.parent.parent.parent if git_dir.parent.name == "worktrees" else Path(repo_root)
+
+
+CONTROL_ROOT = _shared_repository_root()
+RUNNER_DIR = CONTROL_ROOT / ".charlie_runner"
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
@@ -90,6 +110,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
             "running_agent": "CORE is actively executing the displayed agent stage.",
             "between_stages": "CORE is healthy and transitioning between agent stages.",
             "waiting_for_queue": "CORE is healthy and waiting for an approved mission.",
+            "queue_deadlocked": "CORE is alive but cannot run approved work; CHARLIE must repair the dependency deadlock.",
         }.get(operating_state, "CORE is healthy and processing the mission queue.")
     elif orphan_processes:
         status = "runner_orphaned"
@@ -128,6 +149,8 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "notify_failing": bool(payload.get("notify_failing")),
         "notification_level": payload.get("notification_level", ""),
         "notification_title": payload.get("notification_title", ""),
+        "queue_health": payload.get("queue_health") if isinstance(payload.get("queue_health"), dict) else {},
+        "last_progress_at": payload.get("last_progress_at", ""),
         "agent_ledger": ledger_summary,
         "orphan_processes": orphan_processes,
         "supervisor_active": supervisor_alive,
@@ -160,13 +183,15 @@ def _runner_operating_state(payload, ledger, active):
         return "running_agent"
     if payload.get("last_mission_id") and (current_agent or stage_status in {"complete", "completed", "passed"}):
         return "between_stages"
-    return "waiting_for_queue"
+    queue_health = payload.get("queue_health") if isinstance(payload.get("queue_health"), dict) else {}
+    return "queue_deadlocked" if queue_health.get("deadlocked") else "waiting_for_queue"
 
 
 def write_runner_heartbeat(result=None, heartbeat_path=None):
     heartbeat_path = Path(heartbeat_path or HEARTBEAT_PATH)
     heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
     result = result if isinstance(result, dict) else {}
+    previous = _read_json(heartbeat_path)
     payload = {
         "pid": os.getpid(),
         "last_seen": datetime.now(timezone.utc).isoformat(),
@@ -196,9 +221,14 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "error_type",
         "marker_path",
         "recommended_action",
+        "queue_health",
+        "executive",
+        "last_progress_at",
     ):
         if key in result:
             payload[key] = result.get(key)
+        elif key in {"queue_health", "executive", "last_progress_at"} and key in previous:
+            payload[key] = previous.get(key)
     heartbeat_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 
@@ -529,6 +559,7 @@ def _pid_descends_from(pid, ancestor_pid):
                 text=True,
                 timeout=15,
                 check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
             )
         except (OSError, subprocess.TimeoutExpired):
             return False
@@ -571,6 +602,7 @@ def _find_runner_processes_windows():
             check=False,
             text=True,
             timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
