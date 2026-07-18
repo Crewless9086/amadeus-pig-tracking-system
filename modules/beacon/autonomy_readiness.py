@@ -197,6 +197,9 @@ def _policy_definition_errors(policy):
     if _parse_datetime(policy.get("effective_at")) is None or _parse_datetime(policy.get("expires_at")) is None: errors.append("policy_window_invalid")
     if not isinstance(policy.get("thresholds"), dict) or set(policy.get("thresholds", {})) != set(GATE_NAMES): errors.append("policy_thresholds_invalid")
     if _number(policy.get("max_evidence_age_seconds")) is None: errors.append("max_evidence_age_seconds_invalid")
+    budget_threshold = policy.get("thresholds", {}).get("budget_compliance") if isinstance(policy.get("thresholds"), dict) else {}
+    if not isinstance(budget_threshold, dict) or not _valid_currency(budget_threshold.get("currency")):
+        errors.append("budget_currency_invalid")
     return errors
 
 
@@ -211,6 +214,9 @@ def _policy_content(policy):
 def _packet(success, status, errors, **extra): return {"success": success, "status": status, "errors": sorted(set(errors)), "authority": deepcopy(READ_ONLY_AUTHORITY), **extra}
 def _digest(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
 def _text(value): return str(value or "").strip()
+def _valid_currency(value):
+    currency = _text(value)
+    return len(currency) == 3 and currency.isascii() and currency.isalpha() and currency == currency.upper()
 def _number(value):
     try:
         number = float(value)
