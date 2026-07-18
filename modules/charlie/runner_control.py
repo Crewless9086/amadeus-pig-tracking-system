@@ -514,10 +514,11 @@ def _pid_descends_from(pid, ancestor_pid):
     if os.name == "nt":
         script = (
             f"$current={pid}; $ancestor={ancestor_pid}; $seen=@{{}}; "
+            "$rows=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue; $parents=@{}; "
+            "foreach($item in $rows){ $parents[[int]$item.ProcessId]=[int]$item.ParentProcessId }; "
             "for($i=0; $i -lt 12; $i++){ "
             "if($seen.ContainsKey($current)){ break }; $seen[$current]=$true; "
-            "$row=Get-CimInstance Win32_Process -Filter \"ProcessId = $current\" -ErrorAction SilentlyContinue; "
-            "if(-not $row){ break }; $parent=[int]$row.ParentProcessId; "
+            "if(-not $parents.ContainsKey($current)){ break }; $parent=[int]$parents[$current]; "
             "if($parent -eq $ancestor){ Write-Output 'true'; exit 0 }; "
             "if($parent -le 0){ break }; $current=$parent }; Write-Output 'false'"
         )
@@ -526,7 +527,7 @@ def _pid_descends_from(pid, ancestor_pid):
                 ["powershell", "-NoProfile", "-Command", script],
                 capture_output=True,
                 text=True,
-                timeout=8,
+                timeout=15,
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
