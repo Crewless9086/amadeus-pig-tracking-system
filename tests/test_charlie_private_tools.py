@@ -5,13 +5,14 @@ from modules.charlie.private_tools import execute_private_tool
 
 
 class CharliePrivateToolsTests(unittest.TestCase):
-    @patch("modules.charlie.private_tools.get_pig_detail")
+    @patch("modules.agents.herdmaster.get_pig_detail")
     def test_read_pig_returns_authoritative_profile_summary(self, get_detail):
-        get_detail.return_value = {"pig": {"Tag_Number": "104", "Sex": "Female", "Current_Pen_ID": "PEN-3", "Latest_Weight_KG": 8.4}}
+        get_detail.return_value = {"pig_id": "PIG-104", "tag_number": "104", "status": "Active", "on_farm": "Yes", "sex": "Female", "current_pen_id": "PEN-3", "current_pen_name": "PEN-3", "current_weight_kg": 8.4}
         result, status = execute_private_tool("read_pig", {"pig_id": "104"})
         self.assertEqual(status, 200)
-        self.assertIn("Female", result["summary"])
-        self.assertIn("8.4 kg", result["summary"])
+        self.assertEqual(result["agent"]["agent_id"], "herdmaster")
+        self.assertIn("Female", result["direct_answer"])
+        self.assertEqual(next(row["value"] for row in result["facts"] if row["name"] == "current_weight_kg"), 8.4)
 
     @patch("modules.charlie.private_tools.list_missions")
     def test_create_mission_reuses_active_duplicate(self, list_missions):

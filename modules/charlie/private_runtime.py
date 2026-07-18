@@ -110,6 +110,16 @@ def _handle_message(payload, binding, store, sender, environ, *, event_sink=None
     if intent["type"].startswith("read_") or intent["type"] in {"investigate", "executive_brief"}:
         plan = build_executive_plan(text, intent, context)
         evidence = run_executive_plan(plan, intent_record["intent_id"], recorder=store.record_tool_execution, event_sink=event_sink)
+        if hasattr(store, "record_capability_outcome"):
+            for item in evidence:
+                agent = (item.get("result") or {}).get("agent") if isinstance(item.get("result"), dict) else None
+                if isinstance(agent, dict) and agent.get("agent_id"):
+                    store.record_capability_outcome(
+                        f"agent.{agent['agent_id']}.{agent.get('capability') or 'investigate'}",
+                        clean_pass=item.get("success") is True,
+                        escaped_defect=int(item.get("status") or 0) >= 500,
+                        evidence_version="shared_agent_runtime_v1",
+                    )
         reply = compose_executive_reply(plan, evidence, environ=environ)
         durable_context = context_after_plan(plan, evidence)
         if hasattr(store, "update_thread_context"):

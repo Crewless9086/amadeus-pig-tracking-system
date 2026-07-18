@@ -88,7 +88,21 @@ class CharlieAgentWorkforceTests(unittest.TestCase):
         herdmaster = next(agent for agent in packet["agents"] if agent["id"] == "herdmaster")
         self.assertFalse(herdmaster["evidence"]["measured"])
         self.assertIsNone(herdmaster["evidence"]["progress_percent"])
-        self.assertEqual(herdmaster["evidence"]["label"], "Not measured")
+        self.assertEqual(herdmaster["evidence"]["label"], "Operational; awaiting live evidence")
+        self.assertEqual(herdmaster["stage"], "operational_v1")
+
+    def test_herdmaster_progress_uses_durable_delegation_evidence(self):
+        packet = build_agent_workforce_packet(
+            registry={"agents": []},
+            herdmaster_learning={"capabilities": [
+                {"capability_key": "agent.herdmaster.herd_inventory", "runs": 10, "clean_passes": 9, "escaped_defects": 0},
+                {"capability_key": "agent.herdmaster.pen_occupancy", "runs": 2, "clean_passes": 2, "escaped_defects": 0},
+            ]},
+        )
+        herdmaster = next(agent for agent in packet["agents"] if agent["id"] == "herdmaster")
+        self.assertTrue(herdmaster["evidence"]["measured"])
+        self.assertEqual(herdmaster["evidence"]["progress_percent"], 92)
+        self.assertEqual(herdmaster["metrics"][0]["value"], 12)
 
     def test_packet_preserves_executive_core_and_transport_boundaries(self):
         packet = build_agent_workforce_packet(registry={"agents": []})

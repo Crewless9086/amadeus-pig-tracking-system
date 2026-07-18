@@ -24,6 +24,7 @@ from modules.sales.sam_live_stock_runtime import load_chatwoot_conversation_hist
 from modules.beacon.post_composer import build_beacon_caption_suggestions
 from modules.pig_weights.pig_weights_service import get_pig_detail, get_sales_availability
 from modules.sales.conversation_learning import live_stock_learning_scorecard
+from modules.charlie.agent_runtime import delegate_to_agent
 
 
 TOOL_FOR_INTENT = {
@@ -42,10 +43,14 @@ TOOL_FOR_INTENT = {
 }
 
 
-def execute_private_tool(intent_type, args):
+def execute_private_tool(intent_type, args, runtime_context=None):
     tool = TOOL_FOR_INTENT.get(intent_type)
     if not tool:
         return {"success": False, "status": "tool_not_available", "summary": "That action is not available through CHARLIE yet."}, 400
+    if tool == "farm_status":
+        return _farm_status(args or {}, runtime_context=runtime_context)
+    if tool == "pig":
+        return _pig(args or {}, runtime_context=runtime_context)
     return globals()[f"_{tool}"](args or {})
 
 
@@ -260,38 +265,26 @@ def _trust(_args):
     return {"success": status < 400, "status": "trust_ready", "summary": summary, "capabilities": rows}, status
 
 
-def _farm_status(_args):
-    orders, status = _orders_status({})
-    if status >= 400:
-        return {"success": False, "status": "farm_status_degraded", "summary": "Farm status is partially unavailable. " + orders["summary"]}, status
-    try:
-        availability = get_sales_availability()
-        rows = availability.get("rows") if isinstance(availability, dict) else availability if isinstance(availability, list) else []
-        stock_note = f" Livestock availability has {len(rows or [])} candidate record(s)."
-    except Exception:
-        rows, stock_note = [], " Livestock availability could not be verified."
-    return {"success": True, "status": "farm_status_ready", "summary": "Farm operational read access is active. " + orders["summary"] + stock_note, "orders": orders.get("counts"), "availability_count": len(rows or [])}, 200
+def _farm_status(args, runtime_context=None):
+    context = runtime_context if isinstance(runtime_context, dict) else {}
+    question = str(args.get("owner_question") or context.get("owner_question") or "Give me the current farm and herd position.")
+    return delegate_to_agent(
+        "herdmaster",
+        {"goal": question, "question": question, "capability": "herd_overview", "subject": context.get("subject") or {}, "required_freshness": "live"},
+        intent_id=context.get("intent_id") or "", recorder=context.get("recorder"), event_sink=context.get("event_sink"),
+    )
 
 
-def _pig(args):
+def _pig(args, runtime_context=None):
     pig_id = str(args.get("pig_id") or "").strip().upper()
     if not pig_id:
         return {"success": False, "status": "pig_id_required", "summary": "Tell me the pig ID or tag number you want inspected."}, 400
-    try:
-        detail = get_pig_detail(pig_id)
-    except Exception as exc:
-        return {"success": False, "status": "pig_read_failed", "summary": f"I could not verify pig {pig_id}: {exc.__class__.__name__}."}, 503
-    if not detail:
-        return {"success": False, "status": "pig_not_found", "summary": f"I could not find pig {pig_id} in the authoritative herd records."}, 404
-    pig = detail.get("pig") if isinstance(detail, dict) and isinstance(detail.get("pig"), dict) else detail
-    tag = pig.get("Tag_Number") or pig.get("tag_number") or pig_id
-    sex = pig.get("Sex") or pig.get("sex") or "unknown sex"
-    pen = pig.get("Current_Pen_ID") or pig.get("current_pen_id") or pig.get("Pen_ID") or "no current pen"
-    weight = pig.get("Latest_Weight_KG") or pig.get("latest_weight_kg") or pig.get("Weight_KG")
-    summary = f"Pig {tag} ({pig_id}) is {sex} and is in {pen}."
-    if weight not in (None, ""):
-        summary += f" Latest recorded weight: {weight} kg."
-    return {"success": True, "status": "pig_ready", "summary": summary, "pig_id": pig_id, "detail": detail}, 200
+    context = runtime_context if isinstance(runtime_context, dict) else {}
+    return delegate_to_agent(
+        "herdmaster",
+        {"goal": f"Inspect pig {pig_id}", "question": str(context.get("owner_question") or f"Tell me about pig {pig_id}"), "capability": "pig_profile", "subject": {"type": "pig", "pig_id": pig_id}},
+        intent_id=context.get("intent_id") or "", recorder=context.get("recorder"), event_sink=context.get("event_sink"),
+    )
 
 
 def _business_status(_args):

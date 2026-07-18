@@ -65,3 +65,7 @@ The second runtime pass adds stronger operating rails:
 - The command center exposes autonomy readiness, Vault retrieval counts, owner preference rules, tool permissions, model registry, and remaining safety boundaries.
 
 Brain Guard still cannot self-approve. It can only prove whether Vault discipline is strong enough for owner review.
+
+## Agentic Architecture Gate
+
+Brain Guard must enforce `../07-standards/AGENTIC_ARCHITECTURE_STANDARD.md`. A mission may not add a question-specific CHARLIE handler when the outcome belongs to a domain agent. Review evidence must identify the owning agent and explain why new code is deterministic calculation, validation, governance or execution infrastructure rather than substituted domain intelligence.

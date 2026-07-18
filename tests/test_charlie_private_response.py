@@ -28,6 +28,21 @@ class CharliePrivateResponseTests(unittest.TestCase):
         self.assertNotIn("*", summary)
         self.assertNotIn("https://", summary)
 
+    def test_packet_attributes_evidence_to_operational_agent(self):
+        packet = build_executive_response_packet("You have six pigs.", evidence=[{
+            "intent_type": "read_farm_status", "domain": "farm", "success": True,
+            "result": {"summary": "Herd verified.", "direct_answer": "There are 6 pigs.", "agent": {"agent_id": "herdmaster", "name": "Herdmaster"}},
+        }])
+        self.assertEqual(packet["evidence"][0]["agent"]["agent_id"], "herdmaster")
+        self.assertEqual(packet["evidence"][0]["direct_answer"], "There are 6 pigs.")
+
+    def test_packet_confidence_inherits_agent_evidence_confidence(self):
+        packet = build_executive_response_packet("There is a source mismatch.", evidence=[{
+            "intent_type": "read_farm_status", "domain": "farm", "success": True,
+            "result": {"summary": "Mismatch found.", "confidence": 0.94},
+        }])
+        self.assertEqual(packet["confidence"], 0.94)
+
 
 if __name__ == "__main__":
     unittest.main()

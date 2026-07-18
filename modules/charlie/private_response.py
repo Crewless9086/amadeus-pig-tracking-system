@@ -28,6 +28,8 @@ def build_executive_response_packet(reply, *, plan=None, evidence=None, context=
             "observed_at": item.get("observed_at"),
             "success": bool(item.get("success")),
             "summary": summary,
+            "agent": result.get("agent") if isinstance(result.get("agent"), dict) else None,
+            "direct_answer": _clean(result.get("direct_answer"), 800),
         })
     commitments = list(context.get("commitments") or [])[-10:]
     recommendation = _recommendation(text)
@@ -42,7 +44,7 @@ def build_executive_response_packet(reply, *, plan=None, evidence=None, context=
         "owner_decision": None,
         "evidence": evidence_rows,
         "active_subject": context.get("active_subject") or plan.get("subject") or {},
-        "confidence": round(len(successful) / max(1, len(evidence)), 2) if evidence else (1.0 if action_status_code < 400 else 0.0),
+        "confidence": _evidence_confidence(evidence, successful, action_status_code),
         "status_code": int(action_status_code or 200),
     }
 
@@ -82,3 +84,19 @@ def _recommendation(text):
 
 def _clean(value, limit):
     return " ".join(str(value or "").replace("\x00", "").split())[:limit]
+
+
+def _evidence_confidence(evidence, successful, status_code):
+    if not evidence:
+        return 1.0 if status_code < 400 else 0.0
+    scores = []
+    for item in successful:
+        result = item.get("result") if isinstance(item.get("result"), dict) else {}
+        try:
+            scores.append(max(0.0, min(1.0, float(result.get("confidence")))))
+        except (TypeError, ValueError):
+            scores.append(1.0)
+    if not scores:
+        return 0.0
+    completion = len(successful) / len(evidence)
+    return round((sum(scores) / len(scores)) * completion, 2)

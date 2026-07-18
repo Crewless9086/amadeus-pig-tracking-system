@@ -65,7 +65,7 @@ from modules.charlie.owner_approval_inbox import (
 )
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
-from modules.charlie.executive_store import executive_scorecard
+from modules.charlie.executive_store import executive_scorecard, list_capability_trust
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
 from modules.charlie.private_stream import stream_private_turn
@@ -129,7 +129,7 @@ def charlie_private_dashboard_route():
     now = time.monotonic()
     if not refresh and PRIVATE_DASHBOARD_CACHE.get("packet") and now < float(PRIVATE_DASHBOARD_CACHE.get("expires_at") or 0):
         return jsonify({**PRIVATE_DASHBOARD_CACHE["packet"], "cache": "fresh"}), 200
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         private_future = pool.submit(private_owner_snapshot, limit=request.args.get("limit", 40))
         mission_future = pool.submit(mission_status_summary)
         executive_future = pool.submit(executive_scorecard)
@@ -642,10 +642,12 @@ def charlie_agent_workforce_route():
         learning_future = pool.submit(live_stock_learning_scorecard, limit=limit)
         analyst_future = pool.submit(analyst_scorecard, limit=50)
         beacon_future = pool.submit(beacon_workforce_scorecard, limit=limit)
+        trust_future = pool.submit(list_capability_trust, limit=200)
         mission_summary, mission_status = mission_future.result()
         sam_learning, sam_status = learning_future.result()
         analyst_learning, analyst_status = analyst_future.result()
         beacon_learning = beacon_future.result()
+        herdmaster_learning, herdmaster_status = trust_future.result()
     runner = _compact_runner_status(local_runner_status(include_orphans=False, include_git=False, include_ledger=not _running_on_render()))
     packet = build_agent_workforce_packet(
         mission_summary=mission_summary if mission_status < 400 else {},
@@ -661,6 +663,7 @@ def charlie_agent_workforce_route():
             "scorecard": {},
         },
         beacon_learning=beacon_learning,
+        herdmaster_learning=herdmaster_learning if herdmaster_status < 400 else {"success": False, "capabilities": []},
     )
     packet["sources"] = {
         "charlie_missions": {"status_code": mission_status, "authoritative": True},
@@ -668,7 +671,7 @@ def charlie_agent_workforce_route():
         "charlie_improvement_analyst": {"status_code": analyst_status, "authoritative": True},
         "beacon_marketing_evidence": {"status_code": 200 if beacon_learning.get("success") else 503, "authoritative": True},
         "agent_registry": {"status_code": 200, "authoritative": True},
-        "trust_ledger": {"status_code": 200, "authoritative": True},
+        "trust_ledger": {"status_code": herdmaster_status, "authoritative": True},
     }
     packet["cache"] = "refreshed"
     AGENT_WORKFORCE_CACHE.update({"expires_at": time.monotonic() + AGENT_WORKFORCE_CACHE_SECONDS, "packet": packet})
