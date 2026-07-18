@@ -44,6 +44,19 @@ class BeaconAutonomyReadinessTests(unittest.TestCase):
         superseded = evaluate_autonomy_readiness(first["policy_id"], evidence(), now=NOW, registry=self.registry, supplied_policy_sha256=first["policy_sha256"])
         self.assertIn("caller_policy_hash_mismatch", superseded["errors"])
         self.assertFalse(superseded["can_promote"])
+
+    def test_malformed_policy_with_empty_budget_currency_is_never_recorded_or_ready(self):
+        malformed_payload = policy_payload()
+        malformed_payload["thresholds"]["budget_compliance"]["currency"] = ""
+
+        proposed = propose_threshold_policy(malformed_payload, now=NOW, registry=self.registry)
+
+        self.assertFalse(proposed["success"])
+        self.assertIn("budget_currency_invalid", proposed["errors"])
+        self.assertEqual(self.registry.latest_policy(malformed_payload["policy_id"]), {})
+        result = evaluate_autonomy_readiness(malformed_payload["policy_id"], evidence(), now=NOW, registry=self.registry)
+        self.assertFalse(result["can_promote"])
+        self.assertIn("policy_not_found", result["errors"])
     def test_each_gate_fails_independently_under_explicit_and_semantics(self):
         approved = self.approved()
         mutations = {"campaign_evidence": {"value": 2}, "unedited_approval_rate": {"value": .1}, "attribution_completeness": {"value": .1}, "recommendation_accuracy": {"value": .1}, "safety_incidents": {"value": 1}, "trust_history": {"value": .1}, "budget_compliance": {"actual_spend": 101}}
