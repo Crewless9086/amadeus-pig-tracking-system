@@ -10,6 +10,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -157,7 +158,11 @@ def _evaluate_gate(name, item, policy, now):
         blockers.extend(_minimum(item.get("completed_evaluations"), threshold.get("minimum_completed_evaluations"), "trust_history_insufficient_evaluations"))
     else:
         if _text(item.get("currency")) != _text(threshold.get("currency")): blockers.append("budget_currency_mismatch")
-        blockers.extend(_maximum(item.get("actual_spend"), item.get("approved_cap"), "budget_cap_exceeded"))
+        actual_spend, approved_cap = _number(item.get("actual_spend")), _number(item.get("approved_cap"))
+        if actual_spend is None or actual_spend < 0: blockers.append("budget_actual_spend_invalid")
+        if approved_cap is None or approved_cap < 0: blockers.append("budget_approved_cap_invalid")
+        if actual_spend is not None and approved_cap is not None and actual_spend >= 0 and approved_cap >= 0:
+            blockers.extend(_maximum(actual_spend, approved_cap, "budget_cap_exceeded"))
     return {"passed": not blockers, "blockers": sorted(set(blockers))}
 
 
@@ -207,7 +212,9 @@ def _packet(success, status, errors, **extra): return {"success": success, "stat
 def _digest(value): return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
 def _text(value): return str(value or "").strip()
 def _number(value):
-    try: return float(value)
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
     except (TypeError, ValueError): return None
 def _parse_datetime(value):
     try:
