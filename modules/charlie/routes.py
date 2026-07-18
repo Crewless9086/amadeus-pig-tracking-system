@@ -637,7 +637,10 @@ def charlie_agent_workforce_route():
     if not refresh and AGENT_WORKFORCE_CACHE.get("packet") and now < float(AGENT_WORKFORCE_CACHE.get("expires_at") or 0):
         return jsonify({**AGENT_WORKFORCE_CACHE["packet"], "cache": "fresh"}), 200
     limit = request.args.get("limit", 500)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # Every scorecard is independent. Keep the pool aligned with the number of
+    # sources so the fifth source cannot sit behind a slow production read and
+    # push the owner-facing Workforce request past Render's timeout.
+    with ThreadPoolExecutor(max_workers=5) as pool:
         mission_future = pool.submit(mission_status_summary)
         learning_future = pool.submit(live_stock_learning_scorecard, limit=limit)
         analyst_future = pool.submit(analyst_scorecard, limit=50)
