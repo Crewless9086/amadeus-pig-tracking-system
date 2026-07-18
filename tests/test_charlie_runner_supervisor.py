@@ -12,6 +12,19 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_runner_child_is_windowless_on_windows(self):
+        self.assertEqual(supervisor._windowless_process_kwargs("nt"), {"creationflags": 0x08000000})
+        self.assertEqual(supervisor._windowless_process_kwargs("posix"), {"start_new_session": True})
+
+    def test_windows_named_mutex_refuses_second_supervisor(self):
+        kernel32 = Mock()
+        kernel32.CreateMutexW.return_value = 123
+        kernel32.GetLastError.return_value = 183
+        acquired, handle = supervisor._acquire_windows_supervisor_mutex(Path("runner.lock"), kernel32=kernel32)
+        self.assertFalse(acquired)
+        self.assertIsNone(handle)
+        kernel32.CloseHandle.assert_called_once_with(123)
+
     def test_supervisor_and_runner_publish_one_canonical_control_directory(self):
         self.assertEqual(supervisor.RUNNER_DIR, runner_control.RUNNER_DIR)
         self.assertEqual(supervisor.SUPERVISOR_PATH.parent, runner_control.HEARTBEAT_PATH.parent)

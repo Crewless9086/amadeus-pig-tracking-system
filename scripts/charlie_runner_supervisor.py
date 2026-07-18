@@ -7,6 +7,7 @@ import sys
 import time
 import uuid
 import ctypes
+import hashlib
 from urllib.parse import urlsplit, urlunsplit
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,27 +45,36 @@ class SupervisorInstanceLock:
     def __init__(self, path=LOCK_PATH):
         self.path = Path(path)
         self.owned = False
+        self.mutex_handle = None
 
     def acquire(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            acquired, handle = _acquire_windows_supervisor_mutex(self.path)
+            if not acquired:
+                return False, 0
+            self.mutex_handle = handle
         for _attempt in range(2):
             try:
                 descriptor = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             except FileExistsError:
                 owner_pid = _lock_owner_pid(self.path)
                 if owner_pid and _pid_alive(owner_pid):
+                    self._release_mutex()
                     return False, owner_pid
                 try:
                     self.path.unlink()
                 except FileNotFoundError:
                     pass
                 except OSError:
+                    self._release_mutex()
                     return False, owner_pid
                 continue
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 json.dump({"pid": os.getpid(), "created_at": datetime.now(timezone.utc).isoformat()}, stream)
             self.owned = True
             return True, os.getpid()
+        self._release_mutex()
         return False, _lock_owner_pid(self.path)
 
     def release(self):
@@ -77,6 +87,29 @@ class SupervisorInstanceLock:
             pass
         finally:
             self.owned = False
+            self._release_mutex()
+
+    def _release_mutex(self):
+        if self.mutex_handle and os.name == "nt":
+            ctypes.windll.kernel32.CloseHandle(self.mutex_handle)
+        self.mutex_handle = None
+
+
+def _acquire_windows_supervisor_mutex(path, kernel32=None):
+    kernel32 = kernel32 or ctypes.windll.kernel32
+    digest = hashlib.sha256(str(Path(path).resolve()).lower().encode("utf-8")).hexdigest()[:24]
+    handle = kernel32.CreateMutexW(None, False, f"Local\\CHARLIE_CORE_SUPERVISOR_{digest}")
+    if not handle:
+        return False, None
+    if kernel32.GetLastError() == 183:
+        kernel32.CloseHandle(handle)
+        return False, None
+    return True, handle
+
+
+def _windowless_process_kwargs(platform_name=None):
+    platform_name = os.name if platform_name is None else platform_name
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)} if platform_name == "nt" else {"start_new_session": True}
 
 
 def _lock_owner_pid(path=LOCK_PATH):
@@ -136,7 +169,7 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
-        child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env)
+        child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = _process_identity(child.pid)
         _write_status(
             "runner_started", child_pid=child.pid, child_identity=child_identity,

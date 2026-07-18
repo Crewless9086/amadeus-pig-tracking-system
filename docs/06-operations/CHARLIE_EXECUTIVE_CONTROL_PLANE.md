@@ -21,7 +21,7 @@ The control plane must keep productive work moving, resolve recoverable exceptio
 
 - `auto`: reversible internal mechanics with deterministic verification.
 - `charlie_delegated`: bounded authority explicitly delegated by Charl, with expiry, scope, budget, rollback, and audit requirements.
-- `charl_human`: red-zone, strategic ambiguity, exhausted recovery, or authority not delegated.
+- `charl_human`: red-zone, material business discretion, or authority not delegated.
 
 Prompt text and model confidence never grant authority. Policies are deny-by-default and stored in Supabase.
 
@@ -30,6 +30,12 @@ Prompt text and model confidence never grant authority. Policies are deny-by-def
 Every control-plane action is represented by a command with an idempotency key. Recovery cases have a responsible stage, retry budget, next attempt time, deadline, and terminal disposition. Notifications use an outbox so process crashes cannot silently lose them.
 
 CORE may not leave a recoverable failure sitting in an owner-blocked state. It must schedule recovery, preserve passing evidence, and continue unrelated work. Genuine owner decisions remain blocked and visible.
+
+Every mission carries a frozen closure contract owned by CHARLIE. Planning, implementation, testing, repair, rerouting, bounded decomposition, branch/PR mechanics, and creation of an unapplied additive migration are internal delivery authority. Applying a production migration, destructive production data work, customer sends, payments, reservations, public posts, material business-policy decisions, and secret disclosure remain Charl-only.
+
+Idempotency suppresses duplicate effects, not unfinished work. When a durable command already exists, the executive reloads authoritative mission state: it confirms the command only when the desired outcome exists, otherwise it resumes the command. Repeated identical recovery attempts change strategy through fresh planning or bounded decomposition. They do not become a silent stop or false owner task.
+
+When bounded recovery children finish, CHARLIE automatically resumes the paused parent at evidence reconciliation. Child completion therefore closes the original objective instead of creating a second, disconnected backlog.
 
 ## Learning
 
@@ -73,5 +79,5 @@ The control plane starts in observe-only mode. Delegated commands are enabled pe
 - `CHARLIE_EXECUTIVE_MODE=off` disables the cycle.
 - `CHARLIE_EXECUTIVE_MODE=observe` records proposed commands without mission mutation.
 - `CHARLIE_EXECUTIVE_MODE=active` executes only policy-authorized internal recovery and queue-continuation commands.
-- Missing tables, missing policies, invalid state, exhausted retries, or ambiguous ownership fail closed.
+- Missing tables, missing policies, invalid state, or ambiguous ownership fail closed. Exhausted identical internal retries change strategy; they do not loop indefinitely.
 - Activation requires migration verification, the full CHARLIE test suite, verify gate, live canary observation, and a recorded rollback path.

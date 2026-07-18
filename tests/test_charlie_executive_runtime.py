@@ -26,8 +26,8 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         list_missions.side_effect = bucket
         result, status = _load_executive_missions()
         self.assertEqual(status, 200)
-        self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new"})
-        self.assertEqual(list_missions.call_count, 6)
+        self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused"})
+        self.assertEqual(list_missions.call_count, 7)
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
@@ -86,12 +86,40 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(update.call_args.kwargs["expected_status"], "new")
 
     @patch("modules.charlie.executive_runtime.queue_outbox")
+    @patch("modules.charlie.executive_runtime.get_mission", return_value=({"mission": BLOCKED}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.upsert_recovery_case", return_value=({"recovery_id": "REC-X", "attempt_count": 4, "attempt_limit": 3}, 200))
-    def test_exhausted_mechanical_recovery_does_not_wake_owner(self, _case, _complete, outbox):
+    def test_exhausted_mechanical_recovery_changes_strategy_without_owner(self, _case, _complete, transition, _get, outbox):
         result = _execute_recovery({"mission_id": "M-1", "fingerprint": "fp"}, "CMD", None, None)
-        self.assertEqual(result["status"], "recovery_strategy_exhausted")
+        self.assertEqual(result["status"], "alternate_recovery_queued")
+        self.assertEqual(transition.call_args.args[2]["executive_recovery"]["strategy"], "alternate_planning")
         outbox.assert_not_called()
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.upsert_recovery_case", return_value=({"recovery_id": "REC-1", "attempt_count": 1, "attempt_limit": 3}, 200))
+    @patch("modules.charlie.executive_runtime.get_mission", return_value=({"mission": BLOCKED}, 200))
+    @patch("modules.charlie.executive_runtime.record_control_command", return_value=({"created": False, "existing": True, "command_id": "CMD-OLD"}, 200))
+    @patch("modules.charlie.executive_runtime.load_executive_context", return_value=({"policies": [POLICY], "goals": []}, 200))
+    @patch("modules.charlie.executive_runtime.list_missions", return_value=({"missions": [BLOCKED]}, 200))
+    def test_unresolved_duplicate_command_is_reexecuted(self, _missions, _context, _record, _get, _case, transition, _complete):
+        with patch.dict(os.environ, {"CHARLIE_EXECUTIVE_MODE": "active"}):
+            result, status = run_executive_cycle(runner={"active_mission_id": "ACTIVE"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["results"][0]["status"], "recovery_queued")
+        transition.assert_called_once()
+
+    @patch("modules.charlie.executive_runtime.get_mission", return_value=({"mission": {**BLOCKED, "status": "approved"}}, 200))
+    @patch("modules.charlie.executive_runtime.record_control_command", return_value=({"created": False, "existing": True, "command_id": "CMD-OLD"}, 200))
+    @patch("modules.charlie.executive_runtime.load_executive_context", return_value=({"policies": [POLICY], "goals": []}, 200))
+    @patch("modules.charlie.executive_runtime.list_missions", return_value=({"missions": [BLOCKED]}, 200))
+    def test_duplicate_with_desired_outcome_is_confirmed(self, _missions, _context, _record, _get):
+        with patch.dict(os.environ, {"CHARLIE_EXECUTIVE_MODE": "active"}), patch("modules.charlie.executive_runtime.transition_mission_review_state") as transition:
+            result, status = run_executive_cycle(runner={"active_mission_id": "ACTIVE"})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["results"][0]["status"], "duplicate_outcome_confirmed")
+        transition.assert_not_called()
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
@@ -170,6 +198,22 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         with patch.dict(os.environ, {"CHARLIE_EXECUTIVE_MODE": "observe"}):
             run_executive_cycle(runner={"active_mission_id": "ACTIVE"})
         outbox.assert_not_called()
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_family_reconciliation_resumes_parent_at_evidence_reviewer(self, get_mission, transition, _complete):
+        get_mission.side_effect = [
+            ({"mission": {"mission_id": "PARENT", "status": "paused", "metadata": {"review_packet": {}}}}, 200),
+            ({"mission": {"mission_id": "CHILD", "status": "done"}}, 200),
+        ]
+        from modules.charlie.executive_runtime import _execute_family_reconciliation
+        result = _execute_family_reconciliation(
+            {"mission_id": "PARENT", "child_states": {"CHILD": "done"}}, "CMD", None, None,
+        )
+        self.assertEqual(result["status"], "family_reconciled")
+        self.assertEqual(transition.call_args.args[1], "approved")
+        self.assertEqual(transition.call_args.args[2]["return_to_stage"], "evidence_reviewer")
 
 
 if __name__ == "__main__":

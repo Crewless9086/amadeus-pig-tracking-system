@@ -413,6 +413,28 @@ def semantic_finding_family(value):
 
 def _governance_packet(existing, matrix, frozen=False, source=""):
     packet = dict(existing if isinstance(existing, dict) else {})
+    closure = packet.get("closure_contract") if isinstance(packet.get("closure_contract"), dict) else {}
+    closure.update({
+        "version": "charlie_mission_closure_v1",
+        "closure_owner": "CHARLIE",
+        "objective_locked": True,
+        "internal_authority": [
+            "plan", "implement", "test", "repair", "send_back", "reroute",
+            "create_branch", "commit", "open_pr", "reconcile_pr",
+            "create_additive_unapplied_migration", "delegate_review",
+        ],
+        "human_only_authority": [
+            "apply_production_migration", "destructive_production_data_change",
+            "customer_send", "payment", "reservation", "public_post",
+            "material_business_policy_change", "secret_disclosure",
+        ],
+        "done_when": [
+            "all acceptance rows passed",
+            "required deterministic verification passed",
+            "release evidence is bound to the candidate revision",
+            "no unresolved red-zone decision remains",
+        ],
+    })
     packet.update({
         "version": GOVERNANCE_VERSION,
         "acceptance_matrix": matrix,
@@ -422,6 +444,7 @@ def _governance_packet(existing, matrix, frozen=False, source=""):
             "per_family": DEFAULT_FAMILY_BACKFLOW_LIMIT,
         },
         "updated_at": _utc_now(),
+        "closure_contract": closure,
     })
     if source:
         packet["matrix_source"] = source

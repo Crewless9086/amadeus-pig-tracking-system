@@ -96,13 +96,21 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["responsible_stage"], "builder")
         self.assertTrue(result["recoverable"])
 
-    def test_unapproved_additive_migration_requires_owner(self):
+    def test_unapplied_additive_migration_creation_is_internal_engineering(self):
         result = classify_block(
             "builder",
-            "The additive migration is not explicitly owner-authorized.",
+            "Create an additive migration file but do not apply it to production.",
+        )
+        self.assertNotEqual(result["block_class"], "red_zone_owner_approval_required")
+        self.assertTrue(result["recoverable"])
+
+    def test_applying_production_migration_remains_owner_red_zone(self):
+        result = classify_block(
+            "publisher",
+            "Apply production migration without owner approval.",
         )
         self.assertEqual(result["block_class"], "red_zone_owner_approval_required")
-        self.assertFalse(result["recoverable"])
+        self.assertTrue(result["owner_required"])
 
     def test_normalized_findings_include_scope_and_responsible_stage(self):
         findings = normalize_findings(

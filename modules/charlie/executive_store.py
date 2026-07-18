@@ -79,9 +79,25 @@ def record_control_command(command, database_url=None, connect_factory=None):
                     "status": "authorized", "payload": json.dumps(command),
                 })
                 created = bool(cursor.fetchall())
+                existing = False
+                existing_status = ""
+                if not created:
+                    cursor.execute(
+                        "select status from public.charlie_control_commands where idempotency_key = %(key)s",
+                        {"key": key},
+                    )
+                    row = cursor.fetchone()
+                    existing = bool(row)
+                    existing_status = str(row[0] or "") if row else ""
     except Exception as exc:
         return {"success": False, "status": "control_command_write_failed", "error_type": exc.__class__.__name__}, 503
-    return {"success": True, "status": "created" if created else "duplicate", "command_id": command_id, "created": created}, 201 if created else 200
+    if not created and not existing:
+        return {"success": False, "status": "control_command_not_authorized", "command_id": command_id, "created": False, "existing": False}, 403
+    return {
+        "success": True, "status": "created" if created else "duplicate",
+        "command_id": command_id, "created": created, "existing": existing,
+        "existing_status": existing_status,
+    }, 201 if created else 200
 
 
 def complete_control_command(command_id, *, success, result=None, error="", database_url=None, connect_factory=None):

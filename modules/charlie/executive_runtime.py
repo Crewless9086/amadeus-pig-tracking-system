@@ -43,42 +43,76 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
             results.append({"command": command, "status": "record_failed"})
             continue
         if not recorded.get("created"):
-            results.append({"command": command, "status": "duplicate_skipped"})
-            continue
+            outcome = _command_outcome(command, database_url, connect_factory)
+            if outcome.get("satisfied"):
+                results.append({"command": command, "status": "duplicate_outcome_confirmed", "outcome": outcome})
+                continue
+            if mode != "active" or not recorded.get("existing"):
+                results.append({"command": command, "status": "duplicate_observed", "outcome": outcome})
+                continue
         if mode != "active":
             complete_control_command(recorded["command_id"], success=True, result={"status": "observed_no_execution"}, database_url=database_url, connect_factory=connect_factory)
             results.append({"command": command, "status": "observed"})
             continue
-        if command.get("action") == "schedule_recovery":
-            results.append(_execute_recovery(command, recorded["command_id"], database_url, connect_factory))
-        elif command.get("action") == "reconcile_pr":
-            results.append(_execute_pr_reconciliation(command, recorded["command_id"], database_url, connect_factory))
-        elif command.get("action") == "decompose_acceptance":
-            results.append(_execute_decomposition(command, recorded["command_id"], database_url, connect_factory))
-        elif command.get("action") == "verify_and_delegate_review":
-            results.append(_execute_delegated_review(command, recorded["command_id"], database_url, connect_factory))
-        elif command.get("action") == "approve_next_work":
-            results.append(_execute_queue_selection(command, recorded["command_id"], database_url, connect_factory))
-        else:
-            complete_control_command(recorded["command_id"], success=True, result={"status": "runner_will_pick_approved_queue"}, database_url=database_url, connect_factory=connect_factory)
-            results.append({"command": command, "status": "queue_progress_observed"})
+        results.append(_execute_command(command, recorded["command_id"], database_url, connect_factory))
     if mode == "active":
         for escalation in cycle["escalations"]:
             queue_outbox("NEEDS_OWNER_APPROVAL", escalation, idempotency_key=f"owner:{escalation.get('mission_id')}:{escalation.get('block_class')}", database_url=database_url, connect_factory=connect_factory)
     return {"success": True, "status": "executive_cycle_complete", "mode": mode, "cycle": cycle, "results": results}, 200
 
 
+def _command_outcome(command, database_url, connect_factory):
+    action = str(command.get("action") or "")
+    mission_id = str(command.get("mission_id") or "")
+    if action == "ensure_queue_progress" or not mission_id:
+        return {"satisfied": True, "reason": "observation_command"}
+    loaded, status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if status >= 400:
+        return {"satisfied": False, "reason": "mission_reload_failed"}
+    mission = loaded.get("mission") or {}
+    current = str(mission.get("status") or "")
+    targets = {
+        "schedule_recovery": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
+        "reconcile_pr": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
+        "decompose_acceptance": {"paused"},
+        "verify_and_delegate_review": {"release_approved", "merged", "deployed", "done"},
+        "approve_next_work": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
+        "reconcile_family": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
+    }.get(action, set())
+    return {"satisfied": current in targets, "reason": "desired_state_present" if current in targets else "desired_state_missing", "mission_status": current}
+
+
+def _execute_command(command, command_id, database_url, connect_factory):
+    action = command.get("action")
+    if action == "schedule_recovery":
+        return _execute_recovery(command, command_id, database_url, connect_factory)
+    if action == "reconcile_pr":
+        return _execute_pr_reconciliation(command, command_id, database_url, connect_factory)
+    if action == "decompose_acceptance":
+        return _execute_decomposition(command, command_id, database_url, connect_factory)
+    if action == "verify_and_delegate_review":
+        return _execute_delegated_review(command, command_id, database_url, connect_factory)
+    if action == "approve_next_work":
+        return _execute_queue_selection(command, command_id, database_url, connect_factory)
+    if action == "reconcile_family":
+        return _execute_family_reconciliation(command, command_id, database_url, connect_factory)
+    complete_control_command(command_id, success=True, result={"status": "runner_will_pick_approved_queue"}, database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "queue_progress_observed"}
+
+
 def _execute_recovery(command, command_id, database_url, connect_factory):
     mission_id = command.get("mission_id")
     case, case_status = upsert_recovery_case(mission_id, command, database_url=database_url, connect_factory=connect_factory)
-    if case_status >= 400 or int(case.get("attempt_count") or 0) > int(case.get("attempt_limit") or 3):
+    if case_status >= 400:
         complete_control_command(command_id, success=False, result=case, error="recovery_budget_exhausted_or_unavailable", database_url=database_url, connect_factory=connect_factory)
-        return {"command": command, "status": "recovery_strategy_exhausted", "recovery": case}
+        return {"command": command, "status": "recovery_state_unavailable", "recovery": case}
     loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400:
         complete_control_command(command_id, success=False, result=loaded, error="mission_reload_failed", database_url=database_url, connect_factory=connect_factory)
         return {"command": command, "status": "mission_reload_failed", "result": loaded, "recovery": case}
     mission = loaded.get("mission") if isinstance(loaded.get("mission"), dict) else {}
+    if int(case.get("attempt_count") or 0) > int(case.get("attempt_limit") or 3):
+        return _execute_alternate_recovery(command, command_id, mission, case, database_url, connect_factory)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     current_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     packet = cleared_review_packet(current_packet, reason="CHARLIE scheduled deterministic internal recovery", return_to_stage=command.get("target_stage") or "planner")
@@ -91,6 +125,51 @@ def _execute_recovery(command, command_id, database_url, connect_factory):
     success = status < 400 and result.get("success")
     complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": "recovery_queued" if success else "transition_failed", "result": result, "recovery": case}
+
+
+def _execute_alternate_recovery(command, command_id, mission, case, database_url, connect_factory):
+    """Change the repair strategy after repeated identical attempts; never spin or silently stop."""
+    decision = adjudicate_block(mission)
+    pending = decision.get("pending_rows") if isinstance(decision.get("pending_rows"), list) else []
+    if decision.get("action") == "decompose_acceptance" or len(pending) >= 3:
+        alternate = {**command, **decision, "action": "decompose_acceptance"}
+        return _execute_decomposition(alternate, command_id, database_url, connect_factory)
+
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    current_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    original_stage = str(command.get("target_stage") or current_packet.get("return_to_stage") or "builder")
+    target_stage = "planner" if original_stage in {"builder", "tester", "qa_red_team", "reviewer"} else "architect"
+    packet = cleared_review_packet(
+        current_packet,
+        reason="CHARLIE changed recovery strategy after the identical repair budget was exhausted.",
+        return_to_stage=target_stage,
+    )
+    packet["executive_recovery"] = {
+        "recovery_id": case.get("recovery_id"),
+        "fingerprint": command.get("fingerprint"),
+        "strategy": "alternate_planning",
+        "prior_target_stage": original_stage,
+        "authority_tier": command.get("authority_tier"),
+        "policy_id": command.get("policy_id"),
+    }
+    result, status = transition_mission_review_state(
+        mission.get("mission_id") or command.get("mission_id"), "approved", packet,
+        notes="CHARLIE exhausted an identical repair strategy and routed the mission through fresh planning.",
+        expected_status="blocked", database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    complete_control_command(
+        command_id, success=success, result=result,
+        error="" if success else result.get("status", "alternate_recovery_transition_failed"),
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    return {
+        "command": command,
+        "status": "alternate_recovery_queued" if success else "transition_failed",
+        "result": result,
+        "recovery": case,
+        "target_stage": target_stage,
+    }
 
 
 def _execute_pr_reconciliation(command, command_id, database_url, connect_factory):
@@ -225,7 +304,7 @@ def _finish_failure(command, command_id, result, error, database_url, connect_fa
 
 def _load_executive_missions(*, database_url=None, connect_factory=None):
     """Load every actionable queue independently so old terminal rows cannot hide work."""
-    statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new")
+    statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused")
     missions = []
     seen = set()
     for status in statuses:
@@ -238,6 +317,43 @@ def _load_executive_missions(*, database_url=None, connect_factory=None):
                 seen.add(mission_id)
                 missions.append(mission)
     return {"success": True, "status": "ok", "missions": missions}, 200
+
+
+def _execute_family_reconciliation(command, command_id, database_url, connect_factory):
+    mission_id = command.get("mission_id")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    child_states = command.get("child_states") if isinstance(command.get("child_states"), dict) else {}
+    current_states = {}
+    for child_id in child_states:
+        child, child_status = get_mission(child_id, database_url=database_url, connect_factory=connect_factory)
+        if child_status >= 400:
+            return _finish_failure(command, command_id, child, "family_child_reload_failed", database_url, connect_factory)
+        current_states[child_id] = str((child.get("mission") or {}).get("status") or "").lower()
+    terminal = {"done", "merged", "deployed", "rejected", "cancelled"}
+    if not current_states or any(status not in terminal for status in current_states.values()):
+        return _finish_failure(command, command_id, {"child_states": current_states}, "family_children_incomplete", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = cleared_review_packet(
+        metadata.get("review_packet") or {},
+        reason="all bounded child repairs reached terminal state and their evidence must be reconciled",
+        return_to_stage="evidence_reviewer",
+    )
+    packet["mission_family_reconciliation"] = {
+        "version": "charlie_family_reconciliation_v1",
+        "child_states": current_states,
+        "closure_owner": "CHARLIE",
+    }
+    result, status = transition_mission_review_state(
+        mission_id, "approved", packet, expected_status="paused",
+        notes="CHARLIE resumed the parent after every bounded recovery child reached terminal state.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "family_reconciled" if success else "transition_failed", "result": result}
 
 
 def _execute_delegated_review(command, command_id, database_url, connect_factory):
