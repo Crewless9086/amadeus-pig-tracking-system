@@ -41,6 +41,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("decodeAudioData", script)
         self.assertIn("spokenText", script)
         self.assertIn("ElevenLabs unavailable", script)
+        self.assertIn("agent_delegated", script)
+        self.assertIn("agent_completed", script)
         self.assertIn("MediaRecorder", script)
         self.assertIn('credentials:"same-origin"', script)
         self.assertIn("@charlie_bp.route(\"/charlie/private/dashboard\"", charlie_routes)

@@ -19,6 +19,30 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
         reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "true", "CHARLIE_PRIVATE_LLM_MODEL": "test-model", "OPENAI_API_KEY": "secret"}, http_open=lambda *_args, **_kwargs: Response())
         self.assertEqual(reply, "CORE is moving. No owner action is required.")
 
+    def test_synthesis_receives_structured_agent_evidence_and_owner_context(self):
+        captured = {}
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def read(self): return json.dumps({"choices": [{"message": {"content": "You have 6 pigs on the farm."}}]}).encode()
+        def open_request(request, **_kwargs):
+            captured.update(json.loads(request.data.decode("utf-8")))
+            return Response()
+        context = {"preferences": {"owner_instruction": "Be direct"}, "messages": [{"role": "owner", "content": "Keep answers practical"}]}
+        plan = build_executive_plan("How many pigs do we have?", {"type": "read_farm_status", "args": {}, "risk_flags": []}, context)
+        evidence = [{"success": True, "intent_type": "read_farm_status", "status": 200, "result": {
+            "summary": "There are 6 pigs.", "direct_answer": "There are 6 pigs physically recorded on the farm.",
+            "metrics": {"on_farm_total": 6}, "breakdown": {"by_type": {"piglets": 2}},
+            "sources": [{"name": "pig_current_state"}], "freshness": {"mode": "live"}, "confidence": .99,
+            "agent": {"agent_id": "herdmaster", "capability": "herd_inventory"},
+        }}]
+        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "1", "CHARLIE_PRIVATE_LLM_MODEL": "test", "OPENAI_API_KEY": "secret"}, http_open=open_request)
+        user = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(reply, "You have 6 pigs on the farm.")
+        self.assertEqual(user["owner_preferences"]["owner_instruction"], "Be direct")
+        self.assertEqual(user["agent_evidence"][0]["structured_result"]["metrics"]["on_farm_total"], 6)
+        self.assertEqual(user["agent_evidence"][0]["structured_result"]["agent"]["agent_id"], "herdmaster")
+
     def test_core_question_builds_bounded_multi_tool_plan(self):
         plan = build_executive_plan("What is happening with CORE?", {"type": "read_core_status", "args": {}, "risk_flags": []}, {})
         self.assertEqual([row["intent_type"] for row in plan["tools"]], ["read_core_status", "read_blocked"])

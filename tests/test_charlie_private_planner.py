@@ -4,6 +4,17 @@ from modules.charlie.private_planner import plan_owner_intent
 
 
 class CharliePrivatePlannerTests(unittest.TestCase):
+    def test_farm_question_routes_to_herdmaster_domain_without_llm_classifier(self):
+        called = []
+        plan = plan_owner_intent(
+            "How many pigs do we have on the farm?", {},
+            environ={"CHARLIE_PRIVATE_LLM_ENABLED": "1", "CHARLIE_PRIVATE_LLM_MODEL": "test-model", "OPENAI_API_KEY": "secret"},
+            http_open=lambda *_args, **_kwargs: called.append(True),
+        )
+        self.assertEqual(plan["type"], "read_farm_status")
+        self.assertGreaterEqual(plan["confidence"], .92)
+        self.assertEqual(called, [])
+
     def test_status_and_brief_are_deterministic(self):
         self.assertEqual(plan_owner_intent("status", {}, environ={})["type"], "read_core_status")
         self.assertEqual(plan_owner_intent("give me the morning brief", {}, environ={})["type"], "executive_brief")

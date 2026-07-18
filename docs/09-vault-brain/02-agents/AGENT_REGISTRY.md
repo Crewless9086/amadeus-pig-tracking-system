@@ -58,7 +58,7 @@ Confidence rule:
 | Agent | Environment | Department | Commander | Status | File |
 | --- | --- | --- | --- | --- | --- |
 | Oom Sakkie | Amadeus Farm | Farm Command | CHARLIE | Active direction | `farm/OOM_SAKKIE.md` |
-| Herdmaster | Amadeus Farm | Farm Operations | Oom Sakkie | Active/planned | `farm/HERDMASTER.md` |
+| Herdmaster | Amadeus Farm | Farm Operations | Oom Sakkie / delegated by CHARLIE | Operational V1 read-only; production trust measured | `farm/HERDMASTER.md` |
 | Rootline | Amadeus Farm | Farm Operations | Oom Sakkie | Read-only/gated | `farm/ROOTLINE.md` |
 | Gatekeeper | Amadeus Farm | Farm Operations / Safety | Oom Sakkie | Active/planned | `farm/GATEKEEPER.md` |
 | Quartermaster | Amadeus Farm | Farm Operations | Oom Sakkie | Planned | `farm/QUARTERMASTER.md` |

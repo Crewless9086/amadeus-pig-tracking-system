@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-18 - Shared agent runtime and Herdmaster Operational V1
+
+- Made Supabase-grounded domain-agent delegation the mandatory architecture and prohibited question-specific CHARLIE handlers where a domain agent owns the outcome.
+- Activated Herdmaster V1 as a read-only operational agent for herd inventory, overview, pens, weights, breeding, litters and pig profiles.
+- Required structured evidence, provenance, freshness, sufficiency checks, bounded repair and natural executive synthesis while preserving zero farm-write authority.
+
 ## 2026-07-17 - Herdmaster advisory reasoning v1
 
 - Added one normalized advisory outcome per pig grounded in deterministic Pig Allocation alerts and enriched with read-only litter, growth, breeding, meat-planning, and farm-rule evidence.

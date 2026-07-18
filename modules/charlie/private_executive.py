@@ -54,6 +54,8 @@ def build_executive_plan(owner_text, intent, context=None):
         "completion_condition": "Return a direct answer supported by authoritative evidence, identify unresolved gaps, and recommend or delegate the next bounded action.",
         "risk_flags": list(intent.get("risk_flags") or []),
         "existing_commitments": list(((context.get("open_context") or {}).get("commitments") or []))[-20:],
+        "owner_preferences": dict(context.get("preferences") or {}),
+        "recent_conversation": [{"role": row.get("role"), "content": str(row.get("content") or "")[:700]} for row in (context.get("messages") or [])[-6:]],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -81,7 +83,9 @@ def _run_steps(steps, plan, intent_id, recorder, *, event_sink=None, start_index
             event_sink("capability_started", {"capability": intent_type, "domain": capability_metadata(intent_type).get("domain")})
         authorized.append((index, step, authority))
     with ThreadPoolExecutor(max_workers=max(1, len(authorized))) as pool:
-        futures = [(index, step, authority, pool.submit(execute_private_tool, step.get("intent_type"), step.get("args") or {})) for index, step, authority in authorized]
+        futures = [(index, step, authority, pool.submit(
+            _execute_step, step, plan, intent_id, recorder, event_sink,
+        )) for index, step, authority in authorized]
         completed = [(index, step, authority, future.result()) for index, step, authority, future in futures]
     for index, step, authority, (result, status) in completed:
         intent_type = step.get("intent_type")
@@ -96,6 +100,17 @@ def _run_steps(steps, plan, intent_id, recorder, *, event_sink=None, start_index
         if recorder:
             recorder(intent_id, item["tool"], authority["tier"], step.get("args") or {}, result, status="succeeded" if succeeded else "failed")
     return evidence
+
+
+def _execute_step(step, plan, intent_id, recorder, event_sink):
+    intent_type = step.get("intent_type")
+    args = step.get("args") or {}
+    if intent_type in {"read_farm_status", "read_pig"}:
+        return execute_private_tool(intent_type, args, {
+            "intent_id": intent_id, "recorder": recorder, "event_sink": event_sink,
+            "owner_question": plan.get("goal"), "subject": plan.get("subject") or {},
+        })
+    return execute_private_tool(intent_type, args)
 
 
 def compose_executive_reply(plan, evidence, *, environ=None, http_open=None):
@@ -150,17 +165,18 @@ def _grounded_synthesis(plan, evidence, fallback, *, environ=None, http_open=Non
     for item in evidence:
         result = item.get("result") if isinstance(item.get("result"), dict) else {}
         safe_evidence.append({
-            "capability": item.get("intent_type"),
-            "success": item.get("success"),
-            "status": item.get("status"),
-            "summary": str(result.get("summary") or "")[:2000],
-        })
+              "capability": item.get("intent_type"),
+              "success": item.get("success"),
+              "status": item.get("status"),
+              "summary": str(result.get("summary") or "")[:2000],
+              "structured_result": _bounded_agent_result(result),
+          })
     payload = {
         "model": policy["llm_model"],
         "temperature": 0.2,
         "messages": [
-            {"role": "system", "content": "You are CHARLIE, Charl's private executive. Give a direct, natural, concise answer using only supplied evidence. Separate verified facts from inference. State business impact and a recommendation when useful. Never claim an action occurred unless evidence says so. Never request approval for reads. Do not expose internal JSON."},
-            {"role": "user", "content": json.dumps({"goal": plan.get("goal"), "subject": plan.get("subject"), "evidence": safe_evidence, "deterministic_fallback": fallback})},
+            {"role": "system", "content": "You are CHARLIE, Charl's private digital executive. Think across the supplied agent evidence, do not copy tool text. Answer the question directly in the first sentence, then add only useful context, anomalies, business impact, and a practical recommendation. Sound like a calm, capable human executive speaking to Charl. Use plain language and natural paragraphs, not labels such as Verified facts or Inference unless uncertainty truly matters. Distinguish verified facts from inference without exposing JSON, agent internals, capability names, or code. Never invent facts or actions, never request approval for reads, and never claim an action occurred unless evidence proves it."},
+            {"role": "user", "content": json.dumps({"goal": plan.get("goal"), "subject": plan.get("subject"), "owner_preferences": plan.get("owner_preferences") or {}, "recent_conversation": plan.get("recent_conversation") or [], "agent_evidence": safe_evidence, "deterministic_fallback": fallback})},
         ],
     }
     source = environ if environ is not None else __import__("os").environ
@@ -176,6 +192,17 @@ def _grounded_synthesis(plan, evidence, fallback, *, environ=None, http_open=Non
         return text[:3900] if text else fallback
     except Exception:
         return fallback
+
+
+def _bounded_agent_result(result):
+    if not isinstance(result, dict):
+        return {}
+    allowed = ("direct_answer", "facts", "metrics", "breakdown", "anomalies", "inferences", "recommendations", "unresolved_questions", "sources", "freshness", "confidence", "agent")
+    packet = {key: result.get(key) for key in allowed if result.get(key) not in (None, "", [], {})}
+    encoded = json.dumps(packet, default=str)
+    if len(encoded) <= 12000:
+        return packet
+    return {key: packet.get(key) for key in ("direct_answer", "facts", "metrics", "anomalies", "recommendations", "freshness", "confidence", "agent") if key in packet}
 
 
 def context_after_plan(plan, evidence):

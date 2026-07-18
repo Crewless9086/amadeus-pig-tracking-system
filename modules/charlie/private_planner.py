@@ -96,6 +96,8 @@ def _deterministic_plan(text, context):
         return _intent("read_trust", .98)
     if lower in {"/farm", "farm", "farm status", "farm operations"}:
         return _intent("read_farm_status", .98)
+    if _farm_domain_question(lower):
+        return _intent("read_farm_status", .96, {"owner_question": text[:3000]})
     if lower in {"/queue", "queue", "/next", "/missions", "missions"} or "missions in the queue" in lower:
         return _intent("read_queue", .98)
     if lower in {"/blocked", "blocked"} or "blocked missions" in lower:
@@ -184,3 +186,13 @@ def _protected_action(text):
         ("credential_access", ("show me the api key", "send me the password", "reveal the token")),
     )
     return next((risk for risk, phrases in groups if any(phrase in lower for phrase in phrases)), "")
+
+
+def _farm_domain_question(lower):
+    """Route broad farm questions to Herdmaster without spending a classifier call."""
+    farm_terms = {"pig", "pigs", "herd", "sow", "sows", "boar", "boars", "gilt", "gilts", "piglet", "piglets", "weaner", "weaners", "grower", "growers", "finisher", "finishers", "litter", "litters", "wean", "pen", "pens", "breeding", "farm"}
+    question_terms = {"how", "what", "which", "where", "when", "many", "count", "total", "status", "attention", "missing", "need", "doing", "have", "available"}
+    words = set(re.findall(r"[a-z0-9]+", str(lower or "")))
+    if words & {"sales", "orders", "customer", "marketing", "profit", "revenue"}:
+        return False
+    return bool(words & farm_terms) and bool(words & question_terms)

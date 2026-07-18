@@ -23,7 +23,7 @@ WORKFORCE_DEFINITIONS = (
     {"id": "sam-live-stock", "name": "SAM Live Stock", "team": "Sales", "role": "Owner-reviewed live-stock conversations, sales preparation and learning.", "stage": "evidence_gathering", "registry_id": "sam"},
     {"id": "sam-meat", "name": "SAM Meat Sales", "team": "Sales", "role": "Meat lead intake and future owner-reviewed sales workflow.", "stage": "built_not_live", "registry_id": "butcher"},
     {"id": "oom-sakkie", "name": "Oom Sakkie", "team": "Farm Command", "role": "Farm managers' conversational AI with oversight of farm operations and farm agents.", "stage": "live_supervised", "registry_id": "oom-sakkie"},
-    {"id": "herdmaster", "name": "Herdmaster", "team": "Farm", "role": "Pig, litter, breeding, weaning and health intelligence.", "stage": "planned", "registry_id": "herdmaster"},
+    {"id": "herdmaster", "name": "Herdmaster", "team": "Farm", "role": "Operational read-only herd intelligence over canonical pig, lifecycle, pen, litter, weight and breeding truth.", "stage": "operational_v1", "registry_id": "herdmaster"},
     {"id": "fred", "name": "FRED", "team": "Private Transfers", "role": "Planned client-facing transport enquiry and booking agent for Amadeus Private Transfers.", "stage": "planned"},
     {"id": "ledger", "name": "Ledger", "team": "Business", "role": "Sales, money, opportunities and business-readiness intelligence.", "stage": "planned", "registry_id": "ledger"},
     {"id": "beacon", "name": "Beacon", "team": "Marketing", "role": "Marketing department leader for profitable demand, brand control, campaigns, media and performance learning.", "stage": "owner_approved_posting", "registry_id": "beacon", "links": [{"label": "Marketing workspace", "href": "/sales/beacon-media"}]},
@@ -76,6 +76,7 @@ def build_agent_workforce_packet(
     sam_learning: Mapping[str, Any] | None = None,
     analyst_learning: Mapping[str, Any] | None = None,
     beacon_learning: Mapping[str, Any] | None = None,
+    herdmaster_learning: Mapping[str, Any] | None = None,
     registry: Mapping[str, Any] | None = None,
     trust_entries: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -84,6 +85,7 @@ def build_agent_workforce_packet(
     sam_learning = dict(sam_learning or {})
     analyst_learning = dict(analyst_learning or {})
     beacon_learning = dict(beacon_learning or {})
+    herdmaster_learning = dict(herdmaster_learning or {})
     registry = dict(registry or load_agent_registry())
     trust_entries = dict(trust_entries or load_trust_ledger())
     registry_by_id = {str(item.get("agent_id")): item for item in registry.get("agents", []) if isinstance(item, Mapping)}
@@ -112,6 +114,8 @@ def build_agent_workforce_packet(
             item.update(_trust_evidence("mission_loop_foundation", trust_entries, "Shared mission verification evidence"))
         elif item["id"] == "sam-live-stock":
             item.update(_sam_evidence(scorecard, sam_learning))
+        elif item["id"] == "herdmaster":
+            item.update(_herdmaster_evidence(herdmaster_learning))
         elif item["id"] == "beacon":
             item.update(_beacon_evidence(beacon_learning))
         agents.append(item)
@@ -203,6 +207,22 @@ def _sam_evidence(scorecard: Mapping[str, Any], sam_learning: Mapping[str, Any])
         "blockers": blockers,
         "owner_action": "Review graduation evidence" if candidates else "Continue owner-reviewed conversations",
         "source_status": sam_learning.get("status") or "scorecard_unknown",
+    }
+
+
+def _herdmaster_evidence(learning: Mapping[str, Any]) -> dict[str, Any]:
+    rows = [row for row in (learning.get("capabilities") or []) if str(row.get("capability_key") or "").startswith("agent.herdmaster.")]
+    runs = sum(int(row.get("runs") or 0) for row in rows)
+    passes = sum(int(row.get("clean_passes") or 0) for row in rows)
+    defects = sum(int(row.get("escaped_defects") or 0) for row in rows)
+    rate = passes / runs if runs else 0.0
+    return {
+        "stage": "operational_v1",
+        "evidence": {"measured": runs > 0, "progress_percent": round(rate * 100) if runs else None, "label": "Live delegated farm answers" if runs else "Operational; awaiting live evidence"},
+        "metrics": [_metric("Delegated answers", runs, 20, "count"), _metric("Clean evidence", rate, .95, "rate"), _metric("Escaped defects", defects, 0, "count")],
+        "blockers": [] if runs else ["No production CHARLIE-to-Herdmaster delegation has been measured yet"],
+        "owner_action": "Use CHARLIE for real farm questions" if runs < 20 else "Review Herdmaster trust evidence",
+        "capabilities": ["Herd inventory", "Pig profiles", "Pen occupancy", "Weight attention", "Breeding inventory", "Litter attention"],
     }
 
 

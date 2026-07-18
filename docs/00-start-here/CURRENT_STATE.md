@@ -2,6 +2,15 @@
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
+## Shared Agent Runtime And Herdmaster Operational V1 - 2026-07-18
+
+- CHARLIE now delegates farm outcomes through a shared governed agent runtime instead of adding question-specific chatbot handlers.
+- Herdmaster Operational V1 reads canonical Supabase pig state and owns herd inventory, overview, pen, weight, breeding, litter and pig-profile reasoning. It returns direct answers, metrics, anomalies, provenance, freshness and calibrated confidence with no write authority.
+- The first live acceptance question, "How many pigs do we have on the farm?", resolved through CHARLIE -> Herdmaster -> canonical Supabase evidence. The measured result was 148 physically on-farm pigs at 0.99 evidence confidence.
+- Workforce evidence records delegated Herdmaster runs and capability trust. A label alone does not increase autonomy; live clean runs and owner corrections remain the proof.
+- `docs/09-vault-brain/07-standards/AGENTIC_ARCHITECTURE_STANDARD.md` is the mandatory anti-drift rule: domain reasoning belongs to operational agents, while deterministic code is reserved for safety, validation, calculations, permissions, audit and execution rails.
+- SAM, Beacon, Oom Sakkie and other domain leaders should migrate onto this same runtime incrementally; Herdmaster is the first operational reference implementation.
+
 ## CHARLIE Executive Runtime v2 Phases A-E - 2026-07-17
 
 - Supabase stores durable conversation goals, active subjects, evidence plans, pending follow-ups, tool outcomes, capability trust, and owner decisions.
