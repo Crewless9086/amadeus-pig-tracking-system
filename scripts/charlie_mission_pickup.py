@@ -439,6 +439,16 @@ def _stranded_recovery_decision(mission, local_status):
     lease = ((mission.get("metadata") or {}).get("execution_lease") or {}) if isinstance(mission, dict) else {}
     lease_expired = _execution_lease_expired(lease)
     lease_pid = _execution_lease_pid(lease)
+    missing_lease = not isinstance(lease, dict) or not lease.get("lease_id")
+    observer_only = (
+        str(local_status.get("last_mission_id") or "").strip() == mission_id
+        and str(local_status.get("last_result_status") or "").strip() == "active_mission_in_progress"
+        and not str(local_status.get("current_agent") or "").strip()
+        and not str(local_status.get("execution_artifact") or "").strip()
+    )
+    mission_stale = _mission_update_age_seconds(mission) >= max(STALE_SECONDS * 2, 240)
+    if missing_lease and observer_only and mission_stale:
+        return {"recover": True, "reason": "in_progress_missing_execution_lease_and_no_active_stage"}
     if lease_pid and not _pid_alive(lease_pid) and lease_expired:
         return {"recover": True, "reason": "execution_lease_owner_dead_and_expired"}
     if process_dead and heartbeat_stale and lease_expired:
@@ -446,6 +456,18 @@ def _stranded_recovery_decision(mission, local_status):
     if runner_not_active and heartbeat_stale and lease_expired:
         return {"recover": True, "reason": "runner_inactive_and_heartbeat_stale"}
     return {"recover": False, "reason": "execution_alive_or_lease_not_expired"}
+
+
+def _mission_update_age_seconds(mission, now=None):
+    now = now or datetime.now(timezone.utc)
+    updated_at = str((mission or {}).get("updated_at") or "").strip()
+    if not updated_at:
+        return 0
+    try:
+        updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        return max(int((now - updated).total_seconds()), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _execution_lease_pid(lease):

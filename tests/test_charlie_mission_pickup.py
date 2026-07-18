@@ -774,6 +774,29 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertFalse(decision["recover"])
         self.assertEqual(decision["reason"], "execution_alive_or_lease_not_expired")
 
+    def test_stale_lease_less_observer_mission_is_recovered(self):
+        decision = charlie_mission_pickup._stranded_recovery_decision(
+            {
+                "mission_id": "CHARLIE-MISSION-ORPHAN",
+                "status": "in_progress",
+                "updated_at": "2020-01-01T00:00:00+00:00",
+                "metadata": {},
+            },
+            {
+                "status": "runner_active",
+                "active": True,
+                "process_alive": True,
+                "age_seconds": 10,
+                "last_mission_id": "CHARLIE-MISSION-ORPHAN",
+                "last_result_status": "active_mission_in_progress",
+                "current_agent": "",
+                "execution_artifact": "",
+            },
+        )
+
+        self.assertTrue(decision["recover"])
+        self.assertEqual(decision["reason"], "in_progress_missing_execution_lease_and_no_active_stage")
+
     @patch("scripts.charlie_mission_pickup._pid_alive", return_value=False)
     def test_expired_lease_uses_recorded_owner_pid_not_new_runner_pid(self, _pid_alive):
         decision = charlie_mission_pickup._stranded_recovery_decision(
