@@ -233,11 +233,12 @@ def _valid_currency(value):
     currency = _text(value)
     return len(currency) == 3 and currency.isascii() and currency.isalpha() and currency == currency.upper()
 def _number(value):
-    try:
-        if isinstance(value, bool): return None
-        number = float(value)
-        return number if math.isfinite(number) else None
-    except (TypeError, ValueError): return None
+    # The policy and evidence contracts are JSON-native: numeric strings are
+    # malformed rather than a permissive alternate representation.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
 def _parse_datetime(value):
     try:
         parsed = datetime.fromisoformat(_text(value).replace("Z", "+00:00")); return parsed if parsed.tzinfo else None

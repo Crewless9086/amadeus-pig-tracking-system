@@ -81,6 +81,30 @@ class BeaconAutonomyReadinessTests(unittest.TestCase):
                 self.assertIn(error, proposal["errors"])
                 self.assertEqual(self.registry.latest_policy(payload["policy_id"]), {})
 
+    def test_numeric_string_policy_thresholds_are_never_recorded(self):
+        invalid_cases = (
+            ("max_evidence_age_seconds", "3600", "max_evidence_age_seconds_invalid"),
+            ("campaign_evidence.minimum_count", "3", "campaign_evidence_threshold_invalid"),
+            ("unedited_approval_rate.minimum_rate", "0.9", "unedited_approval_rate_threshold_invalid"),
+            ("attribution_completeness.minimum_rate", "0.9", "attribution_completeness_threshold_invalid"),
+            ("recommendation_accuracy.minimum_rate", "0.8", "recommendation_accuracy_threshold_invalid"),
+            ("safety_incidents.maximum_open_incidents", "0", "safety_incidents_threshold_invalid"),
+            ("trust_history.minimum_score", "0.95", "trust_history_threshold_invalid"),
+            ("trust_history.minimum_completed_evaluations", "10", "trust_history_threshold_invalid"),
+        )
+        for path, value, error in invalid_cases:
+            with self.subTest(path=path):
+                payload = policy_payload()
+                if path == "max_evidence_age_seconds":
+                    payload[path] = value
+                else:
+                    gate, field = path.split(".")
+                    payload["thresholds"][gate][field] = value
+                proposal = propose_threshold_policy(payload, now=NOW, registry=self.registry)
+                self.assertFalse(proposal["success"])
+                self.assertIn(error, proposal["errors"])
+                self.assertEqual(self.registry.latest_policy(payload["policy_id"]), {})
+
     def test_incoherent_policy_window_is_never_recorded(self):
         payload = policy_payload()
         payload["expires_at"] = payload["effective_at"]
