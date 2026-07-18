@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from modules.charlie.block_adjudication import adjudicate_block
 from modules.charlie.executive_store import executive_scorecard
@@ -21,7 +22,7 @@ from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.orders.order_intake_service import get_intake_context
 from modules.sales.sam_live_stock_runtime import load_chatwoot_conversation_history
 from modules.beacon.post_composer import build_beacon_caption_suggestions
-from modules.pig_weights.pig_weights_service import get_sales_availability
+from modules.pig_weights.pig_weights_service import get_pig_detail, get_sales_availability
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 
 
@@ -34,6 +35,7 @@ TOOL_FOR_INTENT = {
     "read_business_status": "business_status", "read_sam_status": "sam_status",
     "read_beacon_status": "beacon_status", "read_orders_status": "orders_status",
     "read_farm_status": "farm_status",
+    "read_pig": "pig",
     "read_order": "order", "prepare_order_pack": "order_pack",
     "prepare_beacon_draft": "beacon_draft", "read_trust": "trust",
     "read_sam_conversation": "sam_conversation",
@@ -271,6 +273,27 @@ def _farm_status(_args):
     return {"success": True, "status": "farm_status_ready", "summary": "Farm operational read access is active. " + orders["summary"] + stock_note, "orders": orders.get("counts"), "availability_count": len(rows or [])}, 200
 
 
+def _pig(args):
+    pig_id = str(args.get("pig_id") or "").strip().upper()
+    if not pig_id:
+        return {"success": False, "status": "pig_id_required", "summary": "Tell me the pig ID or tag number you want inspected."}, 400
+    try:
+        detail = get_pig_detail(pig_id)
+    except Exception as exc:
+        return {"success": False, "status": "pig_read_failed", "summary": f"I could not verify pig {pig_id}: {exc.__class__.__name__}."}, 503
+    if not detail:
+        return {"success": False, "status": "pig_not_found", "summary": f"I could not find pig {pig_id} in the authoritative herd records."}, 404
+    pig = detail.get("pig") if isinstance(detail, dict) and isinstance(detail.get("pig"), dict) else detail
+    tag = pig.get("Tag_Number") or pig.get("tag_number") or pig_id
+    sex = pig.get("Sex") or pig.get("sex") or "unknown sex"
+    pen = pig.get("Current_Pen_ID") or pig.get("current_pen_id") or pig.get("Pen_ID") or "no current pen"
+    weight = pig.get("Latest_Weight_KG") or pig.get("latest_weight_kg") or pig.get("Weight_KG")
+    summary = f"Pig {tag} ({pig_id}) is {sex} and is in {pen}."
+    if weight not in (None, ""):
+        summary += f" Latest recorded weight: {weight} kg."
+    return {"success": True, "status": "pig_ready", "summary": summary, "pig_id": pig_id, "detail": detail}, 200
+
+
 def _business_status(_args):
     sections = {}
     for name, reader in (("core", _core_status), ("sam", _sam_status), ("beacon", _beacon_status), ("orders", _orders_status), ("farm", _farm_status)):
@@ -283,7 +306,14 @@ def _create_mission(args):
     title = str(args.get("title") or args.get("raw_text") or "").strip()
     if not title:
         return {"success": False, "status": "mission_text_required", "summary": "Tell me what outcome the mission must deliver."}, 400
-    result, status = record_mission({"title": title[:180], "raw_text": str(args.get("raw_text") or title)[:6000], "urgency": str(args.get("urgency") or "P2"), "mission_type": str(args.get("mission_type") or "feature build"), "approval_level": "LEVEL 3", "metadata": {"created_from": "charlie_private_executive", "owner_work": True}}, source_context={"source": "charlie_private_executive"})
+    existing, existing_status = list_missions(limit=100, compact=True)
+    if existing_status < 400:
+        fingerprint = _mission_fingerprint(title)
+        duplicate = next((row for row in existing.get("missions") or [] if row.get("status") not in {"done", "merged", "deployed", "rejected"} and _mission_fingerprint(row.get("title")) == fingerprint), None)
+        if duplicate:
+            mission_id = duplicate.get("mission_id")
+            return {"success": True, "status": "existing_mission_reused", "summary": f"CORE already has this active outcome [{mission_id}]. I reused it instead of creating a duplicate.", "mission_id": mission_id, "verified": True, "duplicate_prevented": True}, 200
+    result, status = record_mission({"title": title[:180], "raw_text": str(args.get("raw_text") or title)[:6000], "urgency": str(args.get("urgency") or "P2"), "mission_type": str(args.get("mission_type") or "feature build"), "approval_level": "LEVEL 3", "metadata": {"created_from": "charlie_private_executive", "owner_work": True, "executive_outcome": title[:500]}}, source_context={"source": "charlie_private_executive"})
     mission_id = result.get("mission_id")
     verified = False
     if status < 400 and mission_id:
@@ -291,6 +321,10 @@ def _create_mission(args):
         verified = loaded_status < 400 and (loaded.get("mission") or {}).get("mission_id") == mission_id
     code = status if status >= 400 else (200 if verified else 503)
     return {"success": verified, "status": "mission_created_verified" if verified else result.get("status") or "mission_create_unverified", "summary": f"Mission created and verified in CORE: {title} [{mission_id}]. It is waiting in New for approval." if verified else "CORE did not provide enough evidence to verify the mission creation.", "mission_id": mission_id, "verified": verified}, code
+
+
+def _mission_fingerprint(value):
+    return " ".join(re.findall(r"[a-z0-9]+", str(value or "").lower()))
 
 
 def _mission_transition(args, target):

@@ -71,7 +71,7 @@ def authority_for_intent(intent_type, risk_flags=None, *, explicit_owner_command
     risks = {str(item).lower() for item in (risk_flags or [])}
     if risks & RED_ZONE_FLAGS:
         return {"allowed": False, "tier": "charl_human", "reason": "exact_owner_confirmation_required"}
-    if intent_type.startswith("read_") or intent_type in {"executive_brief", "help", "clarify"}:
+    if intent_type.startswith("read_") or intent_type in {"investigate", "executive_brief", "help", "clarify"}:
         return {"allowed": True, "tier": "auto", "reason": "read_only"}
     if intent_type in {"create_mission", "approve_mission", "pause_mission", "reject_mission", "send_back_mission", "remember_preference", "prepare_order_pack", "prepare_beacon_draft", "schedule_follow_up"}:
         return {"allowed": bool(explicit_owner_command), "tier": "charlie_delegated", "reason": "explicit_owner_command" if explicit_owner_command else "approval_bundle_required"}

@@ -41,7 +41,7 @@
     el.runner.className = `chip ${runnerHealthy ? "green" : (cloudRunnerUnknown ? "" : "red")}`; el.runner.innerHTML = `<span class="dot"></span>CORE ${runnerLabel}`;
     const goalNote = executiveContext.goal ? ` Current goal: ${executiveContext.goal}` : "";
     el.notice.className = `status-band ${count("blocked") ? "warn" : ""}`; el.notice.textContent = (cloudRunnerUnknown ? `Render cannot inspect the laptop heartbeat. Supabase shows ${count("in_progress")} active mission(s), ${count("blocked")} blocked and ${count("pr_ready")} ready for review.` : (runnerHealthy ? `CORE is ${runnerLabel}. ${count("blocked")} blocked mission(s); ${count("pr_ready")} ready for review.` : "CORE runner is not healthy. CHARLIE will surface a genuine recovery decision if required.")) + goalNote;
-    renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || []);
+    renderMessages(privateState.messages || []); renderDecisions(privateState.decisions || [], privateState.preferences || [], executiveContext.commitments || []);
     el.footer.innerHTML = `<div><span>Telegram</span><b>${p.policy?.enabled ? "Private webhook" : "Setup needed"}</b></div><div><span>Executive state</span><b>${esc(executiveContext.stage || (privateState.owner ? "Durable" : "Waiting owner"))}</b></div><div><span>ANALYST</span><b>${esc(p.analyst?.scorecard?.pending_proposals || 0)} proposals</b></div><div><span>Updated</span><b>${new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</b></div>`;
   }
 
@@ -50,7 +50,7 @@
     el.messages.scrollTop = el.messages.scrollHeight;
   }
 
-  function renderDecisions(decisions, preferences) {
+  function renderDecisions(decisions, preferences, commitments) {
     const decisionHtml = decisions.length ? decisions.map((d) => {
       const packet = d.decisions && !Array.isArray(d.decisions) ? d.decisions : {};
       const args = packet.args && typeof packet.args === "object" ? packet.args : {};
@@ -63,7 +63,8 @@
       return `<article class="decision"><h3>${esc(d.title)}</h3><p>${esc(d.summary)}</p><div class="decision-detail ${incomplete ? "warn" : ""}"><b>Requested action</b>${esc(requested)}</div><p><strong>Recommendation:</strong> ${esc(recommendation)}<br>${esc(warning)}</p><small>Bundle ${esc(d.bundle_id)} | Expires ${esc(time(d.expires_at))}</small><div class="decision-actions"><button data-bundle="${esc(d.bundle_id)}" data-decision="approve" ${incomplete ? "disabled title=\"Missing action target\"" : ""}>Authorize</button><button class="reject" data-bundle="${esc(d.bundle_id)}" data-decision="reject">Reject</button><button class="later" data-bundle="${esc(d.bundle_id)}" data-decision="defer">Later</button></div></article>`;
     }).join("") : '<div class="empty">No genuine owner decisions are waiting.</div>';
     const preferenceHtml = preferences.length ? `<div class="section-label">Approved preferences</div>${preferences.map((p) => `<div class="preference"><strong>${esc(p.key)}</strong><br>${esc(typeof p.value === "string" ? p.value : JSON.stringify(p.value))}</div>`).join("")}` : "";
-    el.decisions.innerHTML = decisionHtml + preferenceHtml;
+    const commitmentHtml = commitments.length ? `<div class="section-label">CHARLIE commitments</div>${commitments.map((item) => `<div class="commitment"><strong>${esc(item.goal || item.type)}</strong><span>${esc(item.status || "monitoring")}</span><small>${esc(item.mission_id ? `CORE ${item.mission_id}` : item.next_check || "")}</small></div>`).join("")}` : "";
+    el.decisions.innerHTML = decisionHtml + commitmentHtml + preferenceHtml;
     el.decisions.querySelectorAll("[data-bundle]").forEach((button) => button.addEventListener("click", () => decide(button.dataset.bundle, button.dataset.decision)));
   }
 

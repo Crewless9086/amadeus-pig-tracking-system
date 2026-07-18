@@ -1,4 +1,6 @@
 import unittest
+import json
+from io import BytesIO
 from unittest.mock import patch
 
 from modules.charlie.private_executive import (
@@ -7,10 +9,32 @@ from modules.charlie.private_executive import (
 
 
 class CharliePrivateExecutiveTests(unittest.TestCase):
+    def test_grounded_llm_synthesis_uses_evidence_and_falls_under_existing_policy(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def read(self): return json.dumps({"choices": [{"message": {"content": "CORE is moving. No owner action is required."}}]}).encode()
+        plan = build_executive_plan("What is CORE doing?", {"type": "read_core_status", "args": {}, "risk_flags": []}, {})
+        evidence = [{"success": True, "intent_type": "read_core_status", "status": 200, "result": {"summary": "One mission is active."}}]
+        reply = compose_executive_reply(plan, evidence, environ={"CHARLIE_PRIVATE_LLM_ENABLED": "true", "CHARLIE_PRIVATE_LLM_MODEL": "test-model", "OPENAI_API_KEY": "secret"}, http_open=lambda *_args, **_kwargs: Response())
+        self.assertEqual(reply, "CORE is moving. No owner action is required.")
+
     def test_core_question_builds_bounded_multi_tool_plan(self):
         plan = build_executive_plan("What is happening with CORE?", {"type": "read_core_status", "args": {}, "risk_flags": []}, {})
         self.assertEqual([row["intent_type"] for row in plan["tools"]], ["read_core_status", "read_blocked"])
         self.assertLessEqual(len(plan["tools"]), 5)
+
+    def test_verified_delegation_becomes_durable_commitment(self):
+        plan = build_executive_plan("Fix Beacon", {"type": "create_mission", "args": {"title": "Fix Beacon"}, "risk_flags": []}, {})
+        context = context_after_plan(plan, [{"success": True, "tool": "create_mission", "status": 200, "result": {"success": True, "mission_id": "M-123"}}])
+        self.assertEqual(context["commitments"][0]["mission_id"], "M-123")
+        self.assertEqual(context["commitments"][0]["status"], "monitoring")
+
+    def test_later_read_preserves_existing_commitment(self):
+        existing = {"type": "core_mission", "mission_id": "M-123", "status": "monitoring"}
+        plan = build_executive_plan("What is CORE doing?", {"type": "read_core_status", "args": {}, "risk_flags": []}, {"open_context": {"commitments": [existing]}})
+        context = context_after_plan(plan, [{"success": True, "tool": "core_status", "status": 200, "result": {"summary": "CORE is active"}}])
+        self.assertEqual(context["commitments"], [existing])
 
     @patch("modules.charlie.private_executive.execute_private_tool")
     def test_plan_uses_all_read_evidence_and_composes_direct_answer(self, execute):
