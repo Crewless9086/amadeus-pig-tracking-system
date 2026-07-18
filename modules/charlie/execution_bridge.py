@@ -968,6 +968,18 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
         hashlib.sha256(final_text.encode("utf-8")).hexdigest(),
         database_url=database_url, connect_factory=connect_factory,
     )
+    if status_code == 409 and result.get("status") == "final_artifact_stage_mismatch":
+        return _quarantine_pending_final_artifact(
+            mission,
+            agent,
+            (
+                f"Recovered artifact belongs to {agent}, while the durable workflow expects "
+                f"{result.get('expected_agent') or 'another stage'}. The stale artifact was quarantined "
+                "so it cannot be picked repeatedly."
+            ),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     if status_code < 400:
         write_runner_heartbeat({
             "status": result.get("status"), "mission_id": mission_id,
@@ -1511,10 +1523,14 @@ def run_release_execution(
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
+        existing_metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        existing_release = existing_metadata.get("release_packet") if isinstance(existing_metadata.get("release_packet"), dict) else {}
+        existing_review = existing_metadata.get("review_packet") if isinstance(existing_metadata.get("review_packet"), dict) else {}
         update_mission_vault(
             mission_id,
             {
                 "release_packet": {
+                    **existing_release,
                     "mode": "merge_pr",
                     "release_packet_path": release_packet_path,
                     "merge_result": merge_result,
@@ -1523,6 +1539,7 @@ def run_release_execution(
                     "recommended_next_action": release_failure["recommended_next_action"],
                 },
                 "review_packet": {
+                    **existing_review,
                     "review_status": release_failure["status"],
                     "blocked_reason": release_failure["owner_reason"],
                     "recommended_next_action": release_failure["recommended_next_action"],

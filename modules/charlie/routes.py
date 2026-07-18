@@ -1435,6 +1435,10 @@ def _compact_runner_status(status):
             "supervisor_child_pid",
             "supervisor_generation",
             "owner_process_pid",
+            "supervisor_restart_count",
+            "supervisor_identical_failure_count",
+            "supervisor_latest_failure",
+            "supervisor_recommended_action",
         )
         if key in status
     }

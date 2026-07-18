@@ -10,6 +10,7 @@ from modules.charlie.mission_governance import (
     mission_governance_summary,
     semantic_finding_family,
     update_acceptance_matrix,
+    validate_acceptance_scope,
 )
 
 
@@ -35,6 +36,20 @@ def mission_with_events(events=None):
 
 
 class CharlieMissionGovernanceTests(unittest.TestCase):
+    def test_bounded_child_scope_rejects_out_of_scope_acceptance_path(self):
+        result = validate_acceptance_scope(
+            [{"id": "one", "requirement": "Update modules/charlie/runner.py and tests."}],
+            ["static/js"],
+        )
+        self.assertFalse(result["satisfiable"])
+        self.assertEqual(result["status"], "acceptance_scope_unsatisfiable")
+
+    def test_bounded_child_scope_accepts_owned_path(self):
+        result = validate_acceptance_scope(
+            [{"id": "one", "requirement": "Update modules/charlie/runner.py."}],
+            ["modules/charlie"],
+        )
+        self.assertTrue(result["satisfiable"])
     def test_large_cross_domain_mission_is_split_before_builder(self):
         result = analyze_pre_builder_scope({
             "title": "Add SAM sales order lifecycle UI and Supabase migration then deploy",

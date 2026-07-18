@@ -3,6 +3,11 @@ from pathlib import Path
 
 
 class CharlieMissionControlFrontendTests(unittest.TestCase):
+    def test_runner_strip_exposes_restarts_and_latest_failure(self):
+        script = (Path(__file__).parents[1] / "static" / "js" / "charlieMissionControlV2.js").read_text(encoding="utf-8")
+        self.assertIn('strip("Restarts"', script)
+        self.assertIn("supervisor_restart_count", script)
+        self.assertIn("supervisor_latest_failure", script)
     def test_mission_control_uses_glanceable_full_page_contract(self):
         template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")

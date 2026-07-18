@@ -90,6 +90,18 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
         self.assertFalse(result["started"])
         self.assertEqual(result["identical_failure_count"], 3)
 
+    def test_restart_pending_is_not_reported_as_healthy_startup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = watchdog_tick(
+                status_reader=lambda: {"active": False, "status": "runner_stale_or_stopped", "orphan_processes": []},
+                starter=lambda: self.fail("must not start over live supervisor"),
+                state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 4321,
+                supervisor_state_reader=lambda: {"status": "runner_exited_restart_pending", "restart_count": 7, "identical_failure_count": 2, "latest_failure": {"status": "child_process_exited"}},
+            )
+        self.assertEqual(result["status"], "supervisor_child_crash_restarting")
+        self.assertEqual(result["restart_count"], 7)
+
 
 if __name__ == "__main__":
     unittest.main()

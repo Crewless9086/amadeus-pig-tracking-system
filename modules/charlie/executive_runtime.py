@@ -18,6 +18,8 @@ from modules.charlie.executive_store import (
 from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state, update_mission_status
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
+from modules.charlie.core_workflow import build_workflow_from_template, workflow_template
+from modules.charlie.mission_governance import validate_acceptance_scope
 
 
 def executive_mode():
@@ -148,12 +150,25 @@ def _execute_decomposition(command, command_id, database_url, connect_factory):
         return _finish_failure(command, command_id, decision, "decomposition_no_longer_applicable", database_url, connect_factory)
     rows = decision.get("pending_rows") or []
     groups = [rows[index:index + 2] for index in range(0, min(len(rows), 8), 2)]
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
+    allowed_files = metadata.get("allowed_files") or vault.get("allowed_files") or vault.get("scope_files") or []
     child_ids = []
     child_results = []
     for index, group in enumerate(groups, start=1):
+        scope_validation = validate_acceptance_scope(group, allowed_files)
+        if not scope_validation["satisfiable"]:
+            return _finish_failure(
+                command, command_id,
+                {"scope_validation": scope_validation, "slice": index},
+                "child_acceptance_scope_unsatisfiable",
+                database_url, connect_factory,
+            )
         child_id = _child_id(mission_id, group)
         child_ids.append(child_id)
         criteria = [str(row.get("requirement") or row.get("criterion") or row.get("summary") or row.get("id") or "").strip() for row in group]
+        recovery_template = workflow_template("software_build")
+        recovery_template["agent_order"] = ["source_mapper", "builder", "tester", "evidence_reviewer", "reviewer"]
         child = {
             "mission_id": child_id, "status": "approved",
             "title": f"{mission.get('title') or mission_id} - recovery slice {index}",
@@ -164,14 +179,22 @@ def _execute_decomposition(command, command_id, database_url, connect_factory):
                 "mission_family": {"parent_mission_id": mission_id, "relationship": "acceptance_recovery"},
                 "acceptance_criteria": criteria,
                 "mission_governance": {"acceptance_matrix": group, "frozen": True},
-                "charlie_adjudication": {"parent_fingerprint": decision.get("fingerprint"), "slice": index},
+                "agent_workflow": build_workflow_from_template(recovery_template),
+                "charlie_core": {
+                    "workflow_template": {**recovery_template, "pipeline_profile": "bounded_recovery_slice", "right_sized": True},
+                    "project_truth": {"workflow_template": "software_build", "pipeline_profile": "bounded_recovery_slice"},
+                },
+                "allowed_files": allowed_files,
+                "charlie_adjudication": {
+                    "parent_fingerprint": decision.get("fingerprint"), "slice": index,
+                    "scope_validation": scope_validation,
+                },
             },
         }
         stored, stored_status = record_mission(child, {"source": "charlie_executive_adjudication", "message_id": child_id}, database_url=database_url, connect_factory=connect_factory)
         child_results.append({"mission_id": child_id, "status_code": stored_status, "result": stored})
         if stored_status >= 400:
             return _finish_failure(command, command_id, {"children": child_results}, "child_creation_failed", database_url, connect_factory)
-    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     packet = dict(metadata.get("review_packet") or {})
     packet.update({
         "review_status": "decomposed_recovery_waiting", "blocked_agent": "", "blocked_reason": "",

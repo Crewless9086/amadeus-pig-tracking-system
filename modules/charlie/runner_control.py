@@ -138,6 +138,9 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "supervisor_generation": supervisor.get("generation", ""),
         "owner_process_pid": supervisor.get("pid") if supervisor_owns_runner else None,
         "supervisor_restart_count": int(supervisor.get("restart_count") or 0),
+        "supervisor_identical_failure_count": int(supervisor.get("identical_failure_count") or 0),
+        "supervisor_latest_failure": supervisor.get("latest_failure") or supervisor.get("failure_detail") or {},
+        "supervisor_recommended_action": supervisor.get("recommended_action", ""),
         "log_path": str(LOG_PATH),
         "heartbeat_path": str(heartbeat_path),
         "command": _display_command(),
@@ -188,6 +191,11 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "notify_failing",
         "notification_level",
         "notification_title",
+        "last_failure",
+        "failure_class",
+        "error_type",
+        "marker_path",
+        "recommended_action",
     ):
         if key in result:
             payload[key] = result.get(key)

@@ -797,6 +797,7 @@
       strip("Queue", `New ${(state.buckets.new || []).length} | Approved ${(state.buckets.approved || []).length}`),
       strip("Review", `Ready ${(state.buckets.review || []).length} | Blocked ${(state.buckets.blocked || []).length}`),
       strip("Runner", activeLabel),
+      strip("Restarts", `${Number(local.supervisor_restart_count || 0)} | ${text((local.supervisor_latest_failure || {}).status || local.last_result_status, "No failure")}`),
       strip("Telegram", policy.enabled ? "Ready" : "Check config"),
       strip("Updated", state.lastUpdated ? state.lastUpdated.toLocaleTimeString() : "--"),
     ].join("");
