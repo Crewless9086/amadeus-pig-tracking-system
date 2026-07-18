@@ -22,6 +22,7 @@ from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, c
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.sales.sam_live_stock_understanding import understand_live_stock_inbound
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
+from modules.charlie.agent_runtime import delegate_to_agent
 
 
 WEBHOOK_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED"
@@ -425,9 +426,19 @@ def load_live_stock_read_context(
         except Exception as exc:
             context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
             chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
+    herdmaster_evidence = {}
     try:
-        loader = availability_loader or get_sales_availability
-        availability_rows = loader()
+        if availability_loader is not None:
+            availability_rows = availability_loader()
+        else:
+            herdmaster_evidence, herdmaster_status = delegate_to_agent("herdmaster", {
+                "goal": "Provide governed livestock sales candidates for SAM.",
+                "question": str(inbound.get("content") or "Current livestock sales availability"),
+                "capability": "sales_availability", "required_freshness": "live",
+            })
+            if herdmaster_status >= 400:
+                raise RuntimeError(herdmaster_evidence.get("status") or "herdmaster_availability_failed")
+            availability_rows = herdmaster_evidence.get("availability_rows") or []
         availability_facts = merge_prior_live_stock_context(facts, prior_context)
         availability = summarize_live_stock_availability(availability_rows, availability_facts)
     except Exception as exc:
@@ -444,6 +455,7 @@ def load_live_stock_read_context(
             current_message_id=inbound.get("message_id"),
         ),
         "availability": availability,
+        "agent_evidence": {"herdmaster": herdmaster_evidence} if herdmaster_evidence else {},
         "context_errors": context_errors,
     }
 
@@ -717,6 +729,15 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
     match_packet = build_live_stock_match_packet(facts, availability)
     draft_packet = build_live_stock_draft_order_packet(inbound, facts, match_packet)
     price_answer_packet = build_live_stock_price_answer_packet(facts, match_packet)
+    ledger_evidence, _ledger_status = delegate_to_agent("ledger", {
+        "goal": "Validate the active livestock price evidence for SAM's reply.",
+        "question": str(inbound.get("content") or "Validate livestock price"),
+        "capability": "livestock_price_evidence",
+        "known_context": {"pricing": price_answer_packet.get("pricing") or {}},
+    })
+    agent_evidence = dict(context_packet.get("agent_evidence") or {})
+    agent_evidence["ledger"] = ledger_evidence
+    context_packet = {**context_packet, "agent_evidence": agent_evidence}
     durable_action = _durable_live_stock_next_action(
         inbound,
         facts,
@@ -788,6 +809,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
         "draft_order_packet": draft_packet,
@@ -2219,6 +2241,18 @@ def _llm_reply_context_packet(
         "blockers": blockers if isinstance(blockers, list) else [],
         "match_packet": match_packet if isinstance(match_packet, dict) else {},
         "price_answer_packet": price_answer_packet if isinstance(price_answer_packet, dict) else {},
+        "agent_evidence": {
+            name: {
+                "direct_answer": evidence.get("direct_answer"),
+                "facts": evidence.get("facts"),
+                "sources": evidence.get("sources"),
+                "freshness": evidence.get("freshness"),
+                "confidence": evidence.get("confidence"),
+                "authority": (evidence.get("agent") or {}).get("authority_tier"),
+            }
+            for name, evidence in (context_packet.get("agent_evidence") or {}).items()
+            if isinstance(evidence, dict)
+        },
         "availability_status": {
             "success": availability.get("success"),
             "matched_count": availability.get("matched_count"),

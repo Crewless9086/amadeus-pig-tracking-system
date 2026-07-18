@@ -5,10 +5,12 @@ from modules.charlie.agent_runtime import AgentDefinition, assess_evidence, dele
 
 class CharlieAgentRuntimeTests(unittest.TestCase):
     def test_default_registry_exposes_operational_herdmaster_contract(self):
-        herdmaster = next(row for row in registered_agents() if row["agent_id"] == "herdmaster")
+        agents = registered_agents()
+        herdmaster = next(row for row in agents if row["agent_id"] == "herdmaster")
         self.assertEqual(herdmaster["authority_tier"], "read_only")
         self.assertIn("herd_inventory", herdmaster["capabilities"])
         self.assertIn("Supabase pig_current_state", herdmaster["source_contract"])
+        self.assertEqual({"herdmaster", "oom-sakkie", "ledger"} - {row["agent_id"] for row in agents}, set())
 
     def test_delegate_wraps_evidence_and_records_agent_telemetry(self):
         recorded = []

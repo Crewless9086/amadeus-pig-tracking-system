@@ -1,5 +1,13 @@
 # Vault Brain Changelog
 
+## 2026-07-18 - Agentic operating architecture enforcement
+
+- Made the Agentic Architecture Packet a frozen CORE mission contract and Brain Guard gate.
+- Separated Doctrine Vault from Evidence Memory and formalized the governed shared agent bus.
+- Activated Oom Sakkie Operational V1 coordination and Ledger Operational V1 commercial evidence validation.
+- Routed SAM livestock availability through Herdmaster and attached Ledger price evidence without expanding send, reservation, payment or lifecycle authority.
+- Added ANALYST architecture-drift classification and recorded the full operating program.
+
 ## 2026-07-18 - Shared agent runtime and Herdmaster Operational V1
 
 - Made Supabase-grounded domain-agent delegation the mandatory architecture and prohibited question-specific CHARLIE handlers where a domain agent owns the outcome.

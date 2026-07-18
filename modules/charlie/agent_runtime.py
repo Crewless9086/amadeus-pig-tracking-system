@@ -131,3 +131,9 @@ def _ensure_defaults():
     if "herdmaster" not in _REGISTRY:
         from modules.agents.herdmaster import HERDMASTER_DEFINITION
         register_agent(HERDMASTER_DEFINITION)
+    if "ledger" not in _REGISTRY:
+        from modules.agents.ledger import LEDGER_DEFINITION
+        register_agent(LEDGER_DEFINITION)
+    if "oom-sakkie" not in _REGISTRY:
+        from modules.agents.oom_sakkie import OOM_SAKKIE_DEFINITION
+        register_agent(OOM_SAKKIE_DEFINITION)

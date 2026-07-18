@@ -13,6 +13,7 @@ from modules.charlie.agent_runtime import AgentDefinition
 from modules.pig_weights.farm_supabase_read_service import (
     get_litter_attention_summary, get_open_reservation_counts, get_pens, get_pig_detail, get_pig_master_rows,
 )
+from modules.pig_weights.pig_weights_service import get_sales_availability
 
 
 HERDMASTER_DEFINITION = AgentDefinition(
@@ -20,7 +21,7 @@ HERDMASTER_DEFINITION = AgentDefinition(
     name="Herdmaster",
     domain="farm",
     authority_tier="read_only",
-    capabilities=("herd_inventory", "herd_overview", "pen_occupancy", "weight_attention", "breeding_inventory", "pig_profile", "litter_attention"),
+    capabilities=("herd_inventory", "herd_overview", "sales_availability", "pen_occupancy", "weight_attention", "breeding_inventory", "pig_profile", "litter_attention"),
     source_contract=("Supabase pig_current_state", "Supabase pigs", "Supabase pens", "Supabase litters"),
     handler=lambda request: run_herdmaster(request),
     repair_handler=lambda request, _result, _gaps: run_herdmaster({**request, "capability": "herd_overview"}, force_broad=True),
@@ -40,11 +41,14 @@ def run_herdmaster(request, *, readers=None, force_broad=False):
         "pens": get_pens,
         "litter_attention": get_litter_attention_summary,
         "pig_detail": get_pig_detail,
+        "sales_availability": get_sales_availability,
     }
     question = str(request.get("question") or request.get("goal") or "")
     capability = _select_capability(question, request.get("capability"), request.get("subject"))
     if capability == "pig_profile":
         return _pig_profile(request, readers)
+    if capability == "sales_availability":
+        return _sales_availability(question, readers, use_cache)
     names = ["pig_rows"] if "pig_rows" in readers else ["dashboard", "active_pigs"]
     if force_broad or capability in {"herd_overview", "pen_occupancy"}:
         names.append("pens")
@@ -180,6 +184,25 @@ def _pig_profile(request, readers):
         "sources": [{"name": "pig_current_state", "authority": "canonical"}, {"name": "pigs", "authority": "canonical lifecycle identity"}],
         "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"}, "confidence": 0.99,
         "summary": f"Herdmaster verified pig {detail.get('tag_number') or pig_id}.", "detail": detail,
+    }
+
+
+def _sales_availability(question, readers, use_cache=False):
+    rows = list(_cached_read("sales_availability", readers["sales_availability"], use_cache) or [])
+    eligible = [row for row in rows if str(row.get("availability_status") or row.get("status") or "").strip().lower() in {"available", "ready", "available_for_sale"} or row.get("available_for_sale") is True]
+    # The canonical service already excludes unsafe candidates; preserve its
+    # rows and provenance for SAM instead of reimplementing eligibility here.
+    effective = eligible if eligible else rows
+    return {
+        "success": True, "status": "herdmaster_sales_availability_ready", "capability": "sales_availability",
+        "direct_answer": f"Herdmaster found {len(effective)} canonical live-stock sale candidate(s) for SAM to evaluate.",
+        "facts": [{"name": "live_stock_candidate_count", "value": len(effective)}],
+        "metrics": {"candidate_count": len(effective)}, "breakdown": {}, "anomalies": [], "inferences": [],
+        "recommendations": ["SAM must match customer requirements before preparing an offer."], "unresolved_questions": [],
+        "sources": [{"name": "sales_availability", "authority": "Herdmaster/Pig Allocation canonical read model"}],
+        "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"},
+        "confidence": 0.99, "summary": f"Herdmaster supplied {len(effective)} governed live-stock candidate(s).",
+        "availability_rows": effective, "question": question,
     }
 
 

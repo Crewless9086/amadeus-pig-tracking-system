@@ -268,9 +268,12 @@ def _trust(_args):
 def _farm_status(args, runtime_context=None):
     context = runtime_context if isinstance(runtime_context, dict) else {}
     question = str(args.get("owner_question") or context.get("owner_question") or "Give me the current farm and herd position.")
+    lower = question.lower()
+    precise_herd_question = any(token in lower for token in ("how many pig", "pig ", "herd", "litter", "sow", "boar", "weaner", "grower", "breeding", "weight", "pen"))
+    agent_id = "herdmaster" if precise_herd_question else "oom-sakkie"
     return delegate_to_agent(
-        "herdmaster",
-        {"goal": question, "question": question, "capability": "herd_overview", "subject": context.get("subject") or {}, "required_freshness": "live"},
+        agent_id,
+        {"goal": question, "question": question, "capability": "herd_overview" if agent_id == "herdmaster" else "farm_operating_brief", "subject": context.get("subject") or {}, "required_freshness": "live"},
         intent_id=context.get("intent_id") or "", recorder=context.get("recorder"), event_sink=context.get("event_sink"),
     )
 

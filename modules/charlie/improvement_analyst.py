@@ -5,6 +5,7 @@ from modules.charlie import mission_store, vault_store
 from modules.charlie.mission_memory import replay_packet
 from modules.charlie.mission_quality import classify_known_failures, score_mission_quality
 from modules.charlie.final_readiness import evaluate_final_readiness
+from modules.charlie.agentic_architecture import architecture_drift_signals
 
 
 PROPOSAL_ARTIFACT_TYPE = "charlie_improvement_proposal"
@@ -15,6 +16,10 @@ TERMINAL_MISSION_STATUSES = {"pr_ready", "done", "merged", "deployed", "blocked"
 VALIDATION_SAMPLE_MINIMUM = 3
 
 TARGET_AREAS = {
+    "agentic_architecture": {
+        "keywords": ["question-specific", "special-case handler", "reply branch", "agent bypass", "shadow truth", "business reasoning in route", "regex business logic"],
+        "recommendation": "Move domain reasoning into the owning operational agent through the shared evidence bus; retain code only for canonical reads, calculations, validation, permissions, audit, idempotency, and safe execution.",
+    },
     "tests": {
         "keywords": ["test", "tests", "failed", "failure", "regression", "qa"],
         "recommendation": "Tighten test gates and require clearer automated evidence before owner review.",
@@ -201,6 +206,7 @@ def record_mission_observation(mission_id, trigger="mission_terminal", database_
         "evidence": _mission_evidence_texts(mission)[:20],
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "applies_automatically": False,
+        "agentic_architecture_drift": architecture_drift_signals(mission),
     }
     written, write_status = vault_store.write_artifact(
         mission_id,

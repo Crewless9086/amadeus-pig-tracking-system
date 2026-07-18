@@ -562,6 +562,7 @@ def agent_instruction_pack(agent):
             "may_not": definition.get("may_not", []),
         },
         "vault_rules": [
+            "Follow the frozen Agentic Architecture Packet. Domain reasoning belongs to the owning operational agent, not a question-specific route, UI, regex, or transport handler.",
             "Check mission vault before opinion.",
             "Cite vault/source context when making claims.",
             "Mark assumptions and uncertainty.",
@@ -613,6 +614,7 @@ def build_project_truth(mission):
         mission.get("title", ""),
     )
     template = right_sized_workflow_template(template_id, mission)
+    from modules.charlie.agentic_architecture import build_agentic_architecture_packet
     return {
         "version": CHARLIE_CORE_VERSION,
         "project_key": clean_text(mission.get("project_key") or _project_key_for_mission(mission_type), 80),
@@ -626,6 +628,7 @@ def build_project_truth(mission):
         "required_artifacts": list(template["required_artifacts"]),
         "owner_gates": list(template["owner_gates"]),
         "created_at": utc_now(),
+        "agentic_architecture": build_agentic_architecture_packet(mission),
     }
 
 
@@ -647,6 +650,7 @@ def build_core_plan(mission):
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
         "project_truth": project_truth,
+        "agentic_architecture": project_truth["agentic_architecture"],
         "workflow_template": template,
         "agent_workflow": agent_workflow,
         "review_board": build_review_board_packet({}),

@@ -26,6 +26,16 @@ def inbound_payload(**overrides):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
+    def test_production_availability_path_delegates_to_herdmaster(self, delegate):
+        delegate.return_value = ({
+            "success": True, "availability_rows": [{"pig_id": "P1", "available_for_sale": True}],
+            "agent": {"agent_id": "herdmaster"}, "sources": [{"name": "sales_availability"}],
+        }, 200)
+        context = sam_live_stock_runtime.load_live_stock_read_context({}, {"category": "piglet"}, environ={})
+        self.assertEqual(delegate.call_args.args[0], "herdmaster")
+        self.assertEqual(context["agent_evidence"]["herdmaster"]["agent"]["agent_id"], "herdmaster")
+
     def test_afrikaans_location_question_gets_afrikaans_farm_answer(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(content="Waar is julle asseblief?"),
