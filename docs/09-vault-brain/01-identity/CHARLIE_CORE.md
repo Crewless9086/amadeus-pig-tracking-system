@@ -78,6 +78,8 @@ The workflow mechanics are ahead of the operating brain. The Vault Brain closes 
 
 CORE must produce one honest outcome for every claimed mission: verified owner review, an explicit red-zone owner decision, dependency waiting, or an internally recoverable stage. Generic ownership uncertainty is never an owner block.
 
+CHARLIE owns mission closure above CORE. A duplicate control command is complete only when authoritative mission state proves its intended outcome. Exhausted internal recovery changes strategy rather than waking Charl, and completed recovery children return their parent to evidence reconciliation. Charl is required only for genuine red-zone authority or material business discretion.
+
 - Supabase mission state and the durable execution lease are authoritative.
 - One supervisor generation owns one runner process tree.
 - Split parents coordinate; ordered child missions deliver.

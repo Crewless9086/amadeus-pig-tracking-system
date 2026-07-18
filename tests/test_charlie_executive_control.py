@@ -82,6 +82,9 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         owner_mission["metadata"]["review_packet"]["blocked_reason"] = "Owner must decide the pricing business choice."
         result = recovery_decision(owner_mission, POLICIES)
         self.assertEqual(result["action"], "escalate_owner")
+        self.assertEqual(result["requested_authority"], "material_owner_decision")
+        self.assertIn("if_approved", result)
+        self.assertIn("if_declined", result)
 
     def test_cycle_keeps_unrelated_queue_productive(self):
         missions = [blocked(), {"mission_id": "MISSION-2", "status": "approved", "urgency": "P0", "metadata": {}}]
@@ -113,6 +116,17 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
         self.assertEqual(cycle["queue_health"]["runnable_count"], 1)
         self.assertEqual(cycle["queue_rank"][0]["mission_id"], "RECOVERY")
+
+    def test_completed_recovery_children_resume_paused_parent(self):
+        missions = [
+            {"mission_id": "PARENT", "status": "paused", "metadata": {}},
+            {"mission_id": "CHILD-1", "status": "done", "metadata": {"mission_family": {"parent_mission_id": "PARENT", "relationship": "acceptance_recovery"}}},
+            {"mission_id": "CHILD-2", "status": "merged", "metadata": {"mission_family": {"parent_mission_id": "PARENT", "relationship": "acceptance_recovery"}}},
+        ]
+        cycle = build_executive_cycle(missions, POLICIES, runner={"active_mission_id": "ACTIVE"})
+        command = next(item for item in cycle["commands"] if item["action"] == "reconcile_family")
+        self.assertEqual(command["mission_id"], "PARENT")
+        self.assertEqual(command["child_states"]["CHILD-1"], "done")
 
     def test_queue_progress_fails_closed_without_policy(self):
         cycle = build_executive_cycle([{"mission_id": "MISSION-2", "status": "approved"}], [], runner={})

@@ -25,6 +25,15 @@ This repair hardens the shared workflow kernel. It does not patch individual mis
 11. CORE exposes supervisor restarts, identical failure count, latest failure, attempts, stage runtime, and changed-file evidence. The dashboard strip shows restart and latest-failure truth.
 12. A successful automated conveyor repair immediately runs an ANALYST lifecycle refresh. Improvement proposals then move through deployed validation using later mission outcomes rather than remaining advisory forever.
 
+## Executive Closure
+
+- Every frozen acceptance matrix includes a CHARLIE-owned closure contract.
+- An existing idempotency key is not treated as success until the desired Supabase mission state is present.
+- An exhausted identical repair changes strategy through Planner/Architect or bounded child decomposition.
+- Terminal bounded children automatically return their paused parent to Evidence Reviewer.
+- Creating an unapplied additive migration is internal engineering work. Applying it to production remains an explicit Charl decision.
+- The Windows supervisor uses an operating-system named mutex as well as the durable lock file, and runner children start without a visible console window.
+
 ## Contract-Aware Recovery
 
 - A recovery hint cannot jump past an earlier incomplete durable workflow stage. Artifact ingestion and execution therefore agree on the stage that owns the next result.

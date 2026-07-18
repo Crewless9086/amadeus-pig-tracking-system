@@ -44,7 +44,7 @@ def classify_block(agent="", reason="", artifact=None):
     )) and _contains(text, ("owner approval", "requires owner", "owner decision", "not approved", "red zone")):
         block_class = RED_ZONE_OWNER_APPROVAL_REQUIRED
         route = "owner"
-    elif _contains(text, ("migration", "schema change")) and _contains(text, (
+    elif _contains(text, ("apply migration", "production migration", "run migration", "schema change in production")) and _contains(text, (
         "not explicitly owner-authorized", "not owner-authorized", "without owner approval",
         "requires owner approval", "owner approval is required", "not approved",
     )):

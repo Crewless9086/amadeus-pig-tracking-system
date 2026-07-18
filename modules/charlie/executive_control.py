@@ -54,9 +54,19 @@ def recovery_decision(mission, policies, *, trust=None, now=None):
     if adjudication.get("action") == "none":
         return adjudication
     if adjudication.get("owner_required"):
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+        reason = str(adjudication.get("reason") or packet.get("blocked_reason") or "A genuine owner decision is required.")
         return {
             "action": "escalate_owner", "reason": "genuine_owner_decision_required",
             "block_class": block_class or "unclassified", "authority_tier": "charl_human",
+            "title": mission.get("title") or mission.get("mission_id"),
+            "requested_authority": _requested_owner_authority(reason),
+            "decision_context": reason,
+            "recommended_action": str(packet.get("recommended_next_action") or "Review the stated protected decision; approve only if the business outcome is intended."),
+            "if_approved": "CHARLIE will re-read current state and continue the bounded mission through the existing safe executor.",
+            "if_declined": "The protected action remains unchanged; CHARLIE will preserve evidence and continue unrelated work.",
+            "private_text": f"{mission.get('title') or mission.get('mission_id')} needs one genuine owner decision: {reason}",
         }
     authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
     if not authority["allowed"]:
@@ -101,6 +111,12 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     active_goal_ids = [item.get("goal_id") for item in goals]
     commands = []
     escalations = []
+    children_by_parent = {}
+    for item in missions:
+        family = ((item.get("metadata") or {}).get("mission_family") or {}) if isinstance(item.get("metadata"), dict) else {}
+        parent_id = str(family.get("parent_mission_id") or "").strip()
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(item)
     for mission in missions:
         if mission.get("status") == "blocked":
             decision = recovery_decision(mission, policies, trust=trust, now=now)
@@ -129,6 +145,19 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "recommended_action": "Review the protected change and explicitly approve or send it back.",
                     "authority_tier": "charl_human", "block_class": "protected_review",
                 })
+        elif mission.get("status") == "paused":
+            children = children_by_parent.get(str(mission.get("mission_id") or ""), [])
+            if children and all(str(child.get("status") or "").lower() in TERMINAL_STATUSES for child in children):
+                authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
+                if authority.get("allowed"):
+                    child_state = {str(child.get("mission_id")): str(child.get("status")) for child in children}
+                    fingerprint = stable_fingerprint(child_state)
+                    commands.append({
+                        "action": "reconcile_family", "capability": "core.internal_recovery",
+                        "mission_id": mission.get("mission_id"), "child_states": child_state,
+                        "authority_tier": authority["authority_tier"], "policy_id": authority.get("policy_id", ""),
+                        "idempotency_key": f"family-reconcile:{mission.get('mission_id')}:{fingerprint}",
+                    })
     status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
     approved = [item for item in missions if item.get("status") == "approved"]
     runnable = [item for item in approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
@@ -237,3 +266,18 @@ def _not_expired(value, now):
         return parsed > now
     except ValueError:
         return False
+
+
+def _requested_owner_authority(reason):
+    text = str(reason or "").lower()
+    for label, needles in (
+        ("apply_production_migration", ("apply migration", "production migration", "schema change in production")),
+        ("customer_send", ("customer send", "send to customer")),
+        ("public_post", ("public post",)),
+        ("payment_or_deposit", ("payment", "deposit")),
+        ("reservation", ("reservation", "reserve stock")),
+        ("destructive_production_change", ("destructive", "production data deletion", "delete production")),
+    ):
+        if any(needle in text for needle in needles):
+            return label
+    return "material_owner_decision"

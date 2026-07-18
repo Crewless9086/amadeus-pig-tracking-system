@@ -90,6 +90,15 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertEqual(len(packet["acceptance_matrix"]), 3)
         self.assertEqual(packet["acceptance_matrix"][-1]["id"], "authority-boundary")
 
+    def test_closure_contract_assigns_internal_delivery_to_charlie(self):
+        packet = ensure_acceptance_matrix(mission_with_events())
+        contract = packet["closure_contract"]
+        self.assertEqual(contract["closure_owner"], "CHARLIE")
+        self.assertTrue(contract["objective_locked"])
+        self.assertIn("create_additive_unapplied_migration", contract["internal_authority"])
+        self.assertIn("apply_production_migration", contract["human_only_authority"])
+        self.assertIn("all acceptance rows passed", contract["done_when"])
+
     def test_planner_replaces_fallback_matrix_before_builder(self):
         mission = mission_with_events()
         mission["vault"]["acceptance_criteria"] = []
