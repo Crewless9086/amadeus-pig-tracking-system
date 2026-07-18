@@ -8,9 +8,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts import charlie_runner_supervisor as supervisor
+from modules.charlie import runner_control
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_supervisor_and_runner_publish_one_canonical_control_directory(self):
+        self.assertEqual(supervisor.RUNNER_DIR, runner_control.RUNNER_DIR)
+        self.assertEqual(supervisor.SUPERVISOR_PATH.parent, runner_control.HEARTBEAT_PATH.parent)
+
     def test_duplicate_supervisor_does_not_overwrite_live_owner_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
