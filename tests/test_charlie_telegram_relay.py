@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import inspect
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,6 +54,7 @@ def enabled_env():
 
 
 class CharlieTelegramRelayTests(unittest.TestCase):
+    @patch.dict(os.environ, {"CHARLIE_TELEGRAM_TRANSPORT": "polling"}, clear=True)
     def test_disabled_relay_does_nothing_safely(self):
         client = FakeRelayClient()
 
@@ -66,6 +68,7 @@ class CharlieTelegramRelayTests(unittest.TestCase):
         self.assertEqual(result.action, "disabled")
         self.assertEqual(client.messages, [])
 
+    @patch.dict(os.environ, {"CHARLIE_TELEGRAM_TRANSPORT": "polling"}, clear=True)
     def test_enabled_missing_env_fails_safely(self):
         result = charlie_telegram_relay.validate_config(
             charlie_telegram_relay.load_config({"CHARLIE_BUILD_RELAY_ENABLED": "1"})
@@ -154,6 +157,7 @@ class CharlieTelegramRelayTests(unittest.TestCase):
                 client=client,
                 next_steps_path=next_steps,
                 codex_chat_path=codex_chat,
+                mission_loader=lambda **_kwargs: ({"missions": []}, 200),
             )
 
             self.assertTrue(result.ok)

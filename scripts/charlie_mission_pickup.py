@@ -598,6 +598,8 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
     )[0]
     if result.get("mission_status") in {"pr_ready", "blocked", "rejected"}:
         result["analyst"] = _queue_analyst_cycle(mission_id, "mission_execution_terminal", notify=notify)
+    elif result.get("status") == "agent_stage_recovery_queued":
+        result["analyst"] = _queue_analyst_cycle(mission_id, "mission_recovery_queued", notify=notify)
     if notify:
         if status_code < 400 and result.get("mission_status") == "pr_ready":
             _send_review_ready_notification(result)

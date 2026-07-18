@@ -2547,6 +2547,21 @@ def _execution_start_agent(mission, agent_sequence=None):
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
     stale_resume_hint = bool(target)
     if target in agent_sequence:
+        internal_recovery = str(review_packet.get("review_status") or "").strip().lower().startswith("internal_recovery")
+        mismatch_recovery = "stage_mismatch" in str(review_packet.get("blocked_reason") or "").lower()
+        if internal_recovery or mismatch_recovery:
+            workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+            statuses = {
+                str(item.get("agent") or "").strip().lower(): str(item.get("status") or "").strip().lower()
+                for item in workflow if isinstance(item, dict)
+            }
+            target_index = agent_sequence.index(target)
+            earlier_incomplete = next((
+                agent for agent in agent_sequence[:target_index]
+                if agent in statuses and statuses.get(agent) != "complete"
+            ), "")
+            if earlier_incomplete:
+                return earlier_incomplete
         return target
     blocked_agent = str(review_packet.get("blocked_agent") or "").strip().lower()
     stale_resume_hint = stale_resume_hint or bool(blocked_agent)
@@ -8067,11 +8082,17 @@ def _wait_for_file_handles_released(paths, timeout_seconds=2.0):
         for path in paths:
             if not path.exists():
                 continue
+            probe = path.with_name(f"{path.name}.release-probe-{os.getpid()}")
             try:
-                with path.open("a", encoding="utf-8", errors="replace"):
-                    pass
+                path.replace(probe)
+                probe.replace(path)
             except OSError:
                 locked.append(path)
+                if probe.exists() and not path.exists():
+                    try:
+                        probe.replace(path)
+                    except OSError:
+                        pass
         if not locked:
             return True
         paths = locked
