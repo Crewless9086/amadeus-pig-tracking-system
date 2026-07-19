@@ -16,7 +16,7 @@ from urllib.error import URLError
 from datetime import datetime, timezone
 from pathlib import Path
 
-from modules.charlie import vault_store
+from modules.charlie import runtime_path_root, vault_store
 from modules.charlie.mission_store import (
     AGENT_SEQUENCE,
     AGENT_STAGE_MAP,
@@ -37,7 +37,7 @@ from modules.charlie.runner_control import (
     runner_status,
     write_runner_heartbeat,
 )
-from modules.charlie.process_ownership import inspect_process, make_ownership_record, validate_termination
+from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.core_workflow import (
@@ -89,10 +89,11 @@ from modules.charlie.vault_retrieval import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXECUTION_DIR = REPO_ROOT / ".charlie_runner" / "executions"
-REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
-LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
-MISSION_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "mission_media"
+RUNTIME_ROOT = runtime_path_root(REPO_ROOT)
+EXECUTION_DIR = RUNTIME_ROOT / ".charlie_runner" / "executions"
+REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review-media"
+MISSION_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "mission_media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 INLINE_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(?P<kind>png|jpe?g|webp|gif);base64,(?P<data>[A-Za-z0-9+/=\s]+)$", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 3600
@@ -7265,7 +7266,7 @@ def _resolve_local_visual_evidence_path(candidate):
     if not resolved.exists() or not resolved.is_file() or resolved.suffix.lower() not in REVIEW_MEDIA_EXTENSIONS:
         return None
     allowed_roots = [
-        REPO_ROOT / ".charlie_runner",
+        RUNTIME_ROOT / ".charlie_runner",
         REVIEW_MEDIA_DIR,
         LEGACY_REVIEW_MEDIA_DIR,
     ]
@@ -8091,6 +8092,8 @@ def _terminate_process_tree(ownership_record, expected_ownership=None, inspector
     if emergency_process_cleanup_disabled():
         requested_pid = ownership_record.get("pid") if isinstance(ownership_record, dict) else ownership_record
         return record_emergency_cleanup_refusal("_terminate_process_tree", requested_pid)
+    if not process_termination_enabled():
+        return {"authorized": False, "reason": "process_termination_not_enabled"}
     decision = validate_termination(ownership_record, expected_ownership, inspector)
     if not decision["authorized"]:
         return decision

@@ -308,18 +308,36 @@ class CharlieRunnerControlTests(unittest.TestCase):
         popen.assert_not_called()
 
     @patch("modules.charlie.runner_control._stop_process_tree")
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
     @patch("modules.charlie.runner_control.runner_status")
-    def test_stop_runner_refuses_orphans_without_identity_records(self, status, _disabled, stop_tree):
+    def test_stop_runner_refuses_orphans_without_identity_records(self, status, _disabled, _enabled, stop_tree):
         status.return_value = {
             "pid": None,
             "orphan_processes": [{"pid": 1234}, {"pid": 5678}],
         }
 
-        result, status_code = runner_control.stop_runner()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"):
+            result, status_code = runner_control.stop_runner()
 
         self.assertEqual(status_code, 409)
         self.assertEqual(result["status"], "runner_process_ownership_not_proven")
+        stop_tree.assert_not_called()
+
+    @patch("modules.charlie.runner_control.process_termination_enabled", return_value=False)
+    @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)
+    @patch("modules.charlie.runner_control.runner_status")
+    def test_stop_runner_without_capability_has_no_control_path_side_effects(self, status, _disabled, _enabled):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            result, status_code = runner_control.stop_runner()
+            self.assertFalse((Path(tmp) / "supervisor.stop").exists())
+        self.assertEqual(status_code, 423)
+        self.assertEqual(result["status"], "process_termination_not_enabled")
+        status.assert_not_called()
 
     @patch("modules.charlie.runner_control._git_worktree_prune", return_value={"status": "ok", "returncode": 0})
     @patch("modules.charlie.runner_control.emergency_process_cleanup_disabled", return_value=False)

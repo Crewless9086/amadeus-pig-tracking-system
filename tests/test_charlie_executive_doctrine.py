@@ -11,7 +11,3 @@ class CharlieExecutiveDoctrineTests(unittest.TestCase):
         self.assertIn("CORE executes missions. CHARLIE supervises CORE.", core)
         self.assertIn("Supabase operational records remain authoritative", plan)
         self.assertIn("CHARLIE does not write code", plan)
-
-
-if __name__ == "__main__":
-    unittest.main()

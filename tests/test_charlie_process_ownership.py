@@ -88,25 +88,48 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         self.assertEqual(self.validate(live)["reason"], "current_process_ancestry")
 
     @patch.object(execution_bridge, "emergency_process_cleanup_disabled", return_value=True)
+    @patch.object(execution_bridge, "record_emergency_cleanup_refusal", return_value={"status": "emergency_process_cleanup_disabled"})
+    @patch.object(execution_bridge.os, "killpg", create=True)
+    @patch.object(execution_bridge.os, "kill")
     @patch.object(execution_bridge.subprocess, "run")
-    def test_emergency_containment_overrides_valid_execution_ownership(self, run, _disabled):
+    def test_emergency_containment_overrides_valid_execution_ownership(
+        self, run, kill, killpg, _record, _disabled
+    ):
         result = execution_bridge._terminate_process_tree(self.record, self.expected, lambda _pid: self.live)
         self.assertEqual(result["status"], "emergency_process_cleanup_disabled")
         run.assert_not_called()
+        kill.assert_not_called()
+        killpg.assert_not_called()
 
     @patch.object(runner_control, "emergency_process_cleanup_disabled", return_value=False)
+    @patch.object(runner_control, "process_termination_enabled", return_value=True)
+    @patch.object(runner_control.os, "kill")
     @patch.object(runner_control.subprocess, "run")
-    def test_runner_control_validates_complete_identity_before_kill(self, run, _disabled):
+    def test_runner_control_validates_complete_identity_before_kill(self, run, kill, _enabled, _disabled):
         with patch.object(runner_control.os, "name", "nt"):
             result = runner_control._stop_process_tree(self.record, self.expected, lambda _pid: self.live)
         self.assertTrue(result["authorized"])
         run.assert_called_once()
+        kill.assert_not_called()
+
+    @patch.object(runner_control, "emergency_process_cleanup_disabled", return_value=False)
+    @patch.object(runner_control.os, "kill")
+    @patch.object(runner_control.subprocess, "run")
+    def test_runner_control_refuses_kill_without_explicit_capability(self, run, kill, _disabled):
+        result = runner_control._stop_process_tree(self.record, self.expected, lambda _pid: self.live)
+        self.assertEqual(result["reason"], "process_termination_not_enabled")
+        run.assert_not_called()
+        kill.assert_not_called()
 
     @patch.object(charlie_runner_supervisor, "emergency_process_cleanup_disabled", return_value=True)
+    @patch.object(charlie_runner_supervisor, "record_emergency_cleanup_refusal")
+    @patch.object(charlie_runner_supervisor.os, "kill")
     @patch.object(charlie_runner_supervisor.subprocess, "run")
-    def test_emergency_containment_overrides_supervisor_recovery(self, run, _disabled):
+    def test_emergency_containment_overrides_supervisor_recovery(self, run, kill, record, _disabled):
         self.assertFalse(charlie_runner_supervisor._recover_stale_owned_child())
+        record.assert_called_once()
         run.assert_not_called()
+        kill.assert_not_called()
 
 
 if __name__ == "__main__":

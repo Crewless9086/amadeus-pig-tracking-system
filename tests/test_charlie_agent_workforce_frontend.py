@@ -18,7 +18,3 @@ class CharlieAgentWorkforceFrontendTests(unittest.TestCase):
         self.assertIn('name: "Charl"', script)
         self.assertIn('["charlie-core", "oom-sakkie", "fred", "ledger", "beacon"]', script)
         self.assertNotIn("setInterval(() => { state.packet = null", script)
-
-
-if __name__ == "__main__":
-    unittest.main()

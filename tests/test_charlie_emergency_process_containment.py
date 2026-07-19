@@ -73,12 +73,14 @@ class CharlieEmergencyProcessContainmentTests(unittest.TestCase):
             patch.object(execution_bridge, "record_emergency_cleanup_refusal", return_value=refusal) as record,
             patch.object(execution_bridge.subprocess, "run") as run,
             patch.object(execution_bridge.os, "kill") as kill,
+            patch.object(execution_bridge.os, "killpg", create=True) as killpg,
         ):
             result = execution_bridge._terminate_process_tree(54321)
         self.assertEqual(result["status"], "emergency_process_cleanup_disabled")
         record.assert_called_once_with("_terminate_process_tree", 54321)
         run.assert_not_called()
         kill.assert_not_called()
+        killpg.assert_not_called()
 
 
 if __name__ == "__main__":

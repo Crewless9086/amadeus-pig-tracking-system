@@ -8,7 +8,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from scripts import charlie_runner_supervisor as supervisor
-from modules.charlie import runner_control
+from modules.charlie import process_ownership, runner_control
+
+
+SUBPROCESS_TESTS_ENABLED = os.getenv("CHARLIE_SUBPROCESS_TESTS_ENABLED") == "1"
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
@@ -95,6 +98,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.repository_guard"))
         self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.process_policy"))
 
+    @unittest.skipUnless(SUBPROCESS_TESTS_ENABLED, "real subprocess tests require explicit opt-in")
     def test_supervisor_script_loads_standalone_outside_repo_cwd(self):
         script = Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py"
         with tempfile.TemporaryDirectory() as tmp:
@@ -104,39 +108,63 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    @patch.object(supervisor, "_process_identity")
+    @patch.object(supervisor, "inspect_process")
     @patch.object(supervisor, "_pid_alive")
+    @patch.object(supervisor.os, "kill")
     @patch.object(supervisor.subprocess, "run")
-    def test_stale_owned_child_is_recovered_only_when_prior_supervisor_is_dead(self, run, pid_alive, process_identity):
+    @patch.object(supervisor, "process_termination_enabled", return_value=True)
+    def test_stale_owned_child_is_recovered_only_when_prior_supervisor_is_dead(
+        self, _enabled, run, kill, pid_alive, inspect_process
+    ):
         pid_alive.side_effect = lambda pid: int(pid) == 222
-        process_identity.return_value = {
-            "created": "123", "executable": "python.exe", "command": "python runner.py"
+        live = {
+            "pid": 222, "creation_time": "123", "executable_path": "C:/Python/python.exe",
+            "command_line": "python runner.py", "parent_pid": 111, "name": "python.exe",
+            "ancestry": [], "current_process_ancestry": [],
         }
-        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"):
-            supervisor.SUPERVISOR_PATH.write_text(
-                '{"pid": 111, "child_pid": 222, "child_identity": '
-                '{"created": "123", "executable": "python.exe", "command": "python runner.py"}}',
-                encoding="utf-8",
-            )
-            self.assertTrue(supervisor._recover_stale_owned_child())
-        run.assert_called_once()
+        inspect_process.return_value = live
+        record = process_ownership.make_ownership_record(
+            live, "gen-1", "charlie-control", "gen-1", "charlie_runner"
+        )
+        for platform_name in ("nt", "posix"):
+            with self.subTest(platform_name=platform_name), tempfile.TemporaryDirectory() as tmp, patch.object(
+                supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+            ), patch.object(supervisor.os, "name", platform_name):
+                run.reset_mock()
+                kill.reset_mock()
+                supervisor.SUPERVISOR_PATH.write_text(
+                    json.dumps({"pid": 111, "child_pid": 222, "child_identity": record}),
+                    encoding="utf-8",
+                )
+                self.assertTrue(supervisor._recover_stale_owned_child())
+                if platform_name == "nt":
+                    run.assert_called_once()
+                    kill.assert_not_called()
+                else:
+                    run.assert_not_called()
+                    kill.assert_called_once_with(222, supervisor.signal.SIGTERM)
 
-    @patch.object(supervisor, "_process_identity")
+    @patch.object(supervisor, "inspect_process")
     @patch.object(supervisor, "_pid_alive")
+    @patch.object(supervisor.os, "kill")
     @patch.object(supervisor.subprocess, "run")
-    def test_reused_child_pid_is_not_terminated(self, run, pid_alive, process_identity):
+    @patch.object(supervisor, "process_termination_enabled", return_value=True)
+    def test_reused_child_pid_is_not_terminated(self, _enabled, run, kill, pid_alive, inspect_process):
         pid_alive.side_effect = lambda pid: int(pid) == 222
-        process_identity.return_value = {
-            "created": "new-process", "executable": "unrelated.exe", "command": "unrelated.exe"
+        recorded = {
+            "pid": 222, "creation_time": "old-process", "executable_path": "C:/Python/python.exe",
+            "command_line": "python runner.py", "parent_pid": 111, "name": "python.exe",
+            "ancestry": [], "current_process_ancestry": [],
         }
+        record = process_ownership.make_ownership_record(
+            recorded, "gen-1", "charlie-control", "gen-1", "charlie_runner"
+        )
+        inspect_process.return_value = {**recorded, "creation_time": "new-process"}
         with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"):
-            supervisor.SUPERVISOR_PATH.write_text(
-                '{"pid": 111, "child_pid": 222, "child_identity": '
-                '{"created": "old-process", "executable": "python.exe", "command": "python runner.py"}}',
-                encoding="utf-8",
-            )
+            supervisor.SUPERVISOR_PATH.write_text(json.dumps({"pid": 111, "child_pid": 222, "child_identity": record}), encoding="utf-8")
             self.assertFalse(supervisor._recover_stale_owned_child())
         run.assert_not_called()
+        kill.assert_not_called()
 
     def test_unexpected_exit_restarts_with_backoff(self):
         children = [Mock(pid=101), Mock(pid=102)]

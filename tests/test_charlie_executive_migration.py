@@ -19,7 +19,3 @@ class CharlieExecutiveMigrationTests(unittest.TestCase):
         self.assertIn("core.internal_recovery", sql)
         for capability in ("customer.send", "payment.confirm", "stock.reserve", "public.post", "lifecycle.write"):
             self.assertNotIn(f"'{capability}'", sql)
-
-
-if __name__ == "__main__":
-    unittest.main()

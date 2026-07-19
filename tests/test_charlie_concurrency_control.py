@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from modules.charlie.concurrency_control import (
     ReleaseCoordinator,
@@ -13,6 +14,7 @@ from modules.charlie.concurrency_control import (
     release_file_lease,
     revision_truth,
     workspace_role,
+    activation_readiness,
 )
 
 
@@ -25,6 +27,13 @@ class SequenceRunner:
 
 
 class CoreConcurrencyControlTests(unittest.TestCase):
+    def test_activation_readiness_requires_containment_quiet_scheduler_and_revision_convergence(self):
+        with patch("modules.charlie.concurrency_control.workspace_inventory", return_value={"success": True}), patch(
+            "modules.charlie.concurrency_control.revision_truth", return_value={"all_observed_match": True}
+        ):
+            self.assertTrue(activation_readiness(".")["ready"])
+            blocked = activation_readiness(".", containment_active=False, scheduler_enabled=True, active_process_count=1)
+        self.assertEqual(set(blocked["blockers"]), {"containment_not_active_during_preflight", "scheduler_enabled_during_preflight", "charlie_processes_active_during_preflight"})
     def test_workspace_roles_keep_owner_and_core_execution_distinct(self):
         root = Path("C:/repo")
         self.assertEqual(workspace_role(root, root, "main"), "owner_checkout")
@@ -95,12 +104,13 @@ class CoreConcurrencyControlTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             first = ReleaseCoordinator(tmp, "MISSION-1", "297")
             second = ReleaseCoordinator(tmp, "MISSION-2", "298")
-            self.assertTrue(first.acquire()[0])
-            self.assertFalse(second.acquire()[0])
-            first.record("merged", source_commit="abc", merged_commit="def")
-            first.release()
-            self.assertTrue(second.acquire()[0])
-            second.release()
+            with patch("modules.charlie.repository_guard._pid_alive", return_value=True):
+                self.assertTrue(first.acquire()[0])
+                self.assertFalse(second.acquire()[0])
+                first.record("merged", source_commit="abc", merged_commit="def")
+                first.release()
+                self.assertTrue(second.acquire()[0])
+                second.release()
             rows = (Path(tmp) / ".charlie_runner/release-ledger.jsonl").read_text(encoding="utf-8").splitlines()
             self.assertTrue(any(json.loads(row)["status"] == "merged" for row in rows))
 
@@ -110,7 +120,6 @@ class CoreConcurrencyControlTests(unittest.TestCase):
             (root / ".charlie_runner").mkdir()
             (root / ".charlie_runner/runtime-manifest.json").write_text(json.dumps({"promoted_commit": "same"}), encoding="utf-8")
             (root / ".charlie_runner/runner.json").write_text(json.dumps({"runner_source_commit": "same"}), encoding="utf-8")
-            from unittest.mock import patch
             with patch("modules.charlie.concurrency_control._git_output", side_effect=["same", "owner"]):
                 result = revision_truth(root, render_deployed_commit="same")
             self.assertTrue(result["all_observed_match"])

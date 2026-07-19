@@ -222,6 +222,19 @@ def revision_truth(repo_root, *, render_deployed_commit=""):
     return {"version": VERSION, "status": "revision_truth_ready", "owner_checkout_commit": owner, "accepted_commit": accepted, "promoted_commit": promoted, "runner_commit": runner, "deployed_commit": deployed, "accepted_promoted_match": bool(accepted and accepted == promoted), "promoted_runner_match": bool(promoted and promoted == runner), "all_observed_match": bool(compared and len(set(compared)) == 1)}
 
 
+def activation_readiness(repo_root, *, render_deployed_commit="", containment_active=True, scheduler_enabled=False, active_process_count=0):
+    inventory = workspace_inventory(repo_root)
+    truth = revision_truth(repo_root, render_deployed_commit=render_deployed_commit)
+    blockers = []
+    if not inventory.get("success"): blockers.append("workspace_inventory_failed")
+    if not truth.get("all_observed_match"): blockers.append("revision_truth_not_converged")
+    if not containment_active: blockers.append("containment_not_active_during_preflight")
+    if scheduler_enabled: blockers.append("scheduler_enabled_during_preflight")
+    if int(active_process_count or 0): blockers.append("charlie_processes_active_during_preflight")
+    return {"ready": not blockers, "status": "activation_preflight_ready" if not blockers else "activation_preflight_blocked",
+            "blockers": blockers, "workspace": inventory, "revision_truth": truth}
+
+
 def _git_output(cwd, command):
     try:
         result = subprocess.run(command, cwd=str(cwd), capture_output=True, text=True, timeout=20, check=False)

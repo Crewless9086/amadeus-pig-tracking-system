@@ -22,7 +22,7 @@ from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
-from modules.charlie.process_ownership import inspect_process, make_ownership_record, validate_termination
+from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
@@ -350,6 +350,8 @@ def _run_analyst_repair_validation():
 def _recover_stale_owned_child():
     if emergency_process_cleanup_disabled():
         record_emergency_cleanup_refusal("supervisor_recover_stale_owned_child", "recorded-child")
+        return False
+    if not process_termination_enabled():
         return False
     try:
         state = json.loads(SUPERVISOR_PATH.read_text(encoding="utf-8"))

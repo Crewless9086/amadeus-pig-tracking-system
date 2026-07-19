@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
+from modules.charlie import runtime_path_root
 from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
 from modules.charlie.environment import env_value
 from modules.charlie.build_relay import (
@@ -78,8 +79,9 @@ from modules.beacon.workforce import beacon_workforce_scorecard
 
 charlie_bp = Blueprint("charlie", __name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
-LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
+RUNTIME_ROOT = runtime_path_root(REPO_ROOT)
+REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review-media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 AGENT_WORKFORCE_CACHE = {"expires_at": 0.0, "packet": None}
 AGENT_WORKFORCE_CACHE_SECONDS = 30

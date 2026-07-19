@@ -9,7 +9,3 @@ class CharliePrivateMigrationTests(unittest.TestCase):
             self.assertIn(table, sql)
         for forbidden in ("customer_send", "payment", "reservation", "lifecycle"):
             self.assertNotIn(f"'charlie.{forbidden}'", sql)
-
-
-if __name__ == "__main__":
-    unittest.main()

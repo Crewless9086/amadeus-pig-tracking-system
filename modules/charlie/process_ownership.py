@@ -12,6 +12,18 @@ REQUIRED_IDENTITY_FIELDS = (
     "parent_pid", "runner_generation", "mission_id", "execution_id", "ownership_type",
 )
 
+TERMINATION_ENABLE_ENV = "CHARLIE_PROCESS_TERMINATION_ENABLED"
+TERMINATION_ENABLE_VALUE = "I_UNDERSTAND_THIS_CAN_TERMINATE_PROCESSES"
+TEST_ISOLATION_ENV = "CHARLIE_TEST_ISOLATION"
+
+
+def process_termination_enabled(environ=None):
+    """Require an explicit capability grant in addition to ownership proof."""
+    values = os.environ if environ is None else environ
+    if str(values.get(TEST_ISOLATION_ENV) or "") == "1":
+        return False
+    return str(values.get(TERMINATION_ENABLE_ENV) or "") == TERMINATION_ENABLE_VALUE
+
 
 def normalize_command_fingerprint(command):
     normalized = " ".join(str(command or "").split()).casefold()
@@ -108,18 +120,48 @@ def inspect_process(pid):
 
 
 def _inspect_proc(pid):
-    stat = Path(f"/proc/{int(pid)}/stat").read_text(encoding="utf-8").split()
-    command = Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode().strip()
-    return {"pid": int(pid), "parent_pid": int(stat[3]), "creation_time": stat[21],
-            "executable_path": str(Path(f"/proc/{int(pid)}/exe").resolve()), "command_line": command,
-            "name": Path(f"/proc/{int(pid)}/comm").read_text().strip(), "ancestry": [],
-            "current_process_ancestry": []}
+    target = _proc_row(pid)
+    target["ancestry"] = _proc_ancestry(target["parent_pid"])
+    target["current_process_ancestry"] = _proc_ancestry(os.getpid(), include_start=True)
+    return target
 
 
 def _current_ancestry_windows():
-    # The target inspection supplies the authoritative ancestry; at minimum the
-    # caller itself is always protected, and failure to inspect target ancestry closes the gate.
-    return [{"pid": os.getpid()}]
+    script = (
+        "$rows=@();$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + str(os.getpid()) + "';"
+        "while($p){$rows+=@{pid=$p.ProcessId;parent_pid=$p.ParentProcessId;name=[string]$p.Name;"
+        "executable_path=[string]$p.ExecutablePath;command_line=[string]$p.CommandLine};"
+        "if(!$p.ParentProcessId){break};$p=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$p.ParentProcessId)};"
+        "$rows|ConvertTo-Json -Compress"
+    )
+    result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True, timeout=8, check=False)
+    if result.returncode or not result.stdout.strip():
+        raise OSError("current process ancestry inspection failed")
+    rows = json.loads(result.stdout)
+    return [rows] if isinstance(rows, dict) else rows
+
+
+def _proc_row(pid):
+    pid = int(pid)
+    stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
+    command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode().strip()
+    return {"pid": pid, "parent_pid": int(stat[3]), "creation_time": stat[21],
+            "executable_path": str(Path(f"/proc/{pid}/exe").resolve()), "command_line": command,
+            "name": Path(f"/proc/{pid}/comm").read_text().strip()}
+
+
+def _proc_ancestry(pid, include_start=False):
+    rows, seen = [], set()
+    current = int(pid)
+    while current > 0 and current not in seen:
+        seen.add(current)
+        row = _proc_row(current)
+        if include_start or current != int(pid):
+            rows.append(row)
+        elif not include_start:
+            rows.append(row)
+        current = int(row.get("parent_pid") or 0)
+    return rows
 
 
 def _protected(process):
