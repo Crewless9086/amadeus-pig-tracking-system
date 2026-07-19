@@ -12,6 +12,10 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_control_runtime_and_mission_execution_roots_are_isolated(self):
+        self.assertNotEqual(supervisor.REPO_ROOT, supervisor.EXECUTION_ROOT)
+        self.assertEqual(Path(supervisor.RUNNER_COMMAND[1]).parent.parent, supervisor.EXECUTION_ROOT)
+
     def test_runner_child_is_windowless_on_windows(self):
         self.assertEqual(supervisor._windowless_process_kwargs("nt"), {"creationflags": 0x08000000})
         self.assertEqual(supervisor._windowless_process_kwargs("posix"), {"start_new_session": True})

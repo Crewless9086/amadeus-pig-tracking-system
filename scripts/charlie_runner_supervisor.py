@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
+EXECUTION_ROOT = Path(os.getenv("CHARLIE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
 LOCK_PATH = RUNNER_DIR / "supervisor.lock"
@@ -145,7 +146,7 @@ def _python_executable(repo_root=REPO_ROOT):
 
 RUNNER_COMMAND = [
     _python_executable(),
-    str(REPO_ROOT / "scripts" / "charlie_mission_pickup.py"),
+    str(EXECUTION_ROOT / "scripts" / "charlie_mission_pickup.py"),
     "--watch", "--continuous", "--notify", "--execute-codex", "--watch-release",
     "--auto-merge-pr", "--release-verify-url",
     "https://amadeus-pig-tracking-system.onrender.com/charlie", "--interval-seconds", "30",
@@ -168,7 +169,8 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
-        child = popen_factory(RUNNER_COMMAND, cwd=str(REPO_ROOT), env=child_env, **_windowless_process_kwargs())
+        child_env["CHARLIE_RUNNER_BASE_BRANCH"] = "charlie-core-execution-base"
+        child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = _process_identity(child.pid)
         _write_status(
             "runner_started", child_pid=child.pid, child_identity=child_identity,
