@@ -184,6 +184,25 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertIn("GIT_CONFIG_GLOBAL", child_env)
         self.assertEqual(inspect_process.call_count, 2)
 
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_child_base_branch_aliases_override_conflicting_legacy_environment(self, inspect_process):
+        child = Mock(pid=101)
+        child.wait.return_value = 0
+        popen = Mock(return_value=child)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {"CHARLIE_RUNNER_BASE_BRANCH": "charlie-runner-core-live-base"},
+        ), patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1)
+
+        child_env = popen.call_args.kwargs["env"]
+        self.assertEqual(child_env["CORE_EXECUTION_BASE_BRANCH"], "charlie-core-execution-base")
+        self.assertEqual(child_env["CHARLIE_RUNNER_BASE_BRANCH"], "charlie-core-execution-base")
+        self.assertEqual(inspect_process.call_count, 1)
+
     def test_stop_marker_prevents_child_start(self):
         popen = Mock()
         with tempfile.TemporaryDirectory() as tmp:

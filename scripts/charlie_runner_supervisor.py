@@ -172,7 +172,12 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
+        # The legacy alias can still be present in the scheduled-task
+        # environment.  Child configuration is a single supervisor-owned
+        # value, so keep both names identical instead of triggering the
+        # fail-closed alias conflict before mission pickup.
         child_env["CORE_EXECUTION_BASE_BRANCH"] = "charlie-core-execution-base"
+        child_env["CHARLIE_RUNNER_BASE_BRANCH"] = "charlie-core-execution-base"
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = make_ownership_record(
             inspect_process(child.pid), generation, "charlie-control", generation, "charlie_runner"
