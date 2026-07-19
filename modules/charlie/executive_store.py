@@ -9,6 +9,47 @@ from datetime import datetime, timedelta, timezone
 from modules.charlie.mission_store import _connect, _database_url
 
 
+def upsert_executive_goal(goal, database_url=None, connect_factory=None):
+    """Record an explicit owner goal without deriving business intent from a model."""
+    goal = goal if isinstance(goal, dict) else {}
+    required = ("goal_id", "title", "objective", "business_area")
+    missing = [field for field in required if not str(goal.get(field) or "").strip()]
+    metrics = goal.get("success_metrics")
+    constraints = goal.get("constraints")
+    if missing or not isinstance(metrics, list) or not metrics:
+        return {"success": False, "status": "executive_goal_fields_required", "missing_fields": missing}, 400
+    if constraints is not None and not isinstance(constraints, list):
+        return {"success": False, "status": "executive_goal_constraints_invalid"}, 400
+    priority = max(0, min(int(goal.get("priority") or 50), 100))
+    database_url = _database_url(database_url)
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    insert into public.charlie_executive_goals (
+                        goal_id,title,objective,business_area,priority,status,
+                        success_metrics_json,constraints_json,created_by
+                    ) values (
+                        %(id)s,%(title)s,%(objective)s,%(area)s,%(priority)s,'active',
+                        %(metrics)s::jsonb,%(constraints)s::jsonb,'charl'
+                    ) on conflict (goal_id) do update set
+                        title=excluded.title,objective=excluded.objective,
+                        business_area=excluded.business_area,priority=excluded.priority,
+                        status='active',success_metrics_json=excluded.success_metrics_json,
+                        constraints_json=excluded.constraints_json,updated_at=now()
+                    returning goal_id
+                """, {
+                    "id": str(goal["goal_id"]), "title": str(goal["title"]),
+                    "objective": str(goal["objective"]), "area": str(goal["business_area"]),
+                    "priority": priority, "metrics": json.dumps(metrics),
+                    "constraints": json.dumps(constraints or []),
+                })
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "executive_goal_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": bool(row), "status": "executive_goal_recorded", "goal_id": row[0] if row else str(goal["goal_id"])}, 200
+
+
 def load_executive_context(database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:

@@ -130,6 +130,26 @@ def _execute_recovery(command, command_id, database_url, connect_factory):
 def _execute_alternate_recovery(command, command_id, mission, case, database_url, connect_factory):
     """Change the repair strategy after repeated identical attempts; never spin or silently stop."""
     decision = adjudicate_block(mission)
+    block_class = str(command.get("block_class") or decision.get("block_class") or "").strip()
+    if block_class in {"system_repair_required", "environment_retry_required", "branch_repair_required"}:
+        result = {
+            "success": False,
+            "status": "system_incident_halted",
+            "mission_id": mission.get("mission_id") or command.get("mission_id"),
+            "block_class": block_class,
+            "fingerprint": command.get("fingerprint"),
+            "attempt_count": case.get("attempt_count"),
+            "attempt_limit": case.get("attempt_limit"),
+            "next_action": "Repair or change the shared system condition before explicitly resuming this mission.",
+        }
+        complete_control_command(
+            command_id,
+            success=True,
+            result=result,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        return {"command": command, "status": "system_incident_halted", "result": result, "recovery": case}
     pending = decision.get("pending_rows") if isinstance(decision.get("pending_rows"), list) else []
     if decision.get("action") == "decompose_acceptance" or len(pending) >= 3:
         alternate = {**command, **decision, "action": "decompose_acceptance"}

@@ -2,7 +2,7 @@
 
 Status: integrated and deployed on 2026-07-19. This file does not grant runtime authority or claim owner evidence that has not been supplied.
 
-Accepted revision: `29a0ce214d6ad8ada7189030477ea3ff46dd8bd7` (PR #300). All required PR checks passed before merge. Render deployed that exact revision and retained the preceding deploy as rollback.
+Implementation revision: `29a0ce214d6ad8ada7189030477ea3ff46dd8bd7` (PR #300). Evidence revision: `1dfaa81647830a715bedb1434ea8300856ee6eef` (PR #301). All required checks passed before both merges. Render, the promoted runtime and the local runner now use the exact accepted evidence revision; the preceding Render deploy remains available for rollback.
 
 ## Phase 2 - Concurrent development and release control
 
@@ -17,9 +17,7 @@ Implemented:
 
 Evidence: `tests.test_charlie_concurrency_control`, focused Builder/release tests in `tests.test_charlie_execution_bridge`.
 
-Live evidence: the owner-authenticated mission-control canary returned `mission_control_snapshot_ready`, identified Supabase missions as authoritative, and reported the GitHub accepted and Render deployed revision as `29a0ce214d6ad8ada7189030477ea3ff46dd8bd7`.
-
-Remaining local-promotion gate: the live runner remains safely pinned to `48164980c950b2f44ca45407c3c67332077835e4`. Its execution worktree contains unrelated dirty runtime/user changes, so it was not overwritten or restarted. Local promotion remains fail-closed until that state is reconciled by the runner owner.
+Live evidence: the owner-authenticated mission-control canary returned `mission_control_snapshot_ready` and identified Supabase missions as authoritative. Interrupted execution-worktree changes were preserved without modification as commit `215440f8a2e0ed16639e48644472f29aeed7bdd1` on `safety/core-execution-wip-20260719-2100`. Promotion then passed 117 focused tests and `core_cold_start_ready`. The scheduled watchdog started the runner normally; two fresh heartbeat cycles passed with zero restarts. GitHub accepted, promoted runtime, runner and Render deployed revisions all converge on `1dfaa81647830a715bedb1434ea8300856ee6eef`. The dirty owner checkout was not changed.
 
 ## Phase 3 - Unified operational event and business state
 
@@ -55,9 +53,9 @@ Implemented:
 
 Known evidence gap: Ledger currently reads order payment state and explicitly reports that a dedicated cross-order cash-reconciliation source is unavailable.
 
-Live evidence: one explicitly invoked read-only cycle completed and persisted four observer runs. Every result remained `authority_tier=observe`, `writes_authorized=false`, and `sends_authorized=false`. SAM inspected its learning source; Ledger inspected 29 orders and proposed review of three payment exceptions; Herdmaster inspected 213 animals and proposed review because none were confirmed sale-ready; Beacon reported 60% readiness, no review backlog and one production post. All sources reported live freshness. The Ledger gap for dedicated cross-order cash reconciliation remains explicit.
+Live evidence: the first explicitly invoked read-only cycle exposed three payment warnings and an incorrect zero-readiness result. Owner review confirmed the two completed-order payment warnings were useful, the cancelled-order warning was a false positive, and the farm dashboard held 51 live-sale-ready pigs, six meat-window pigs and 15 slaughter/cull candidates. The observer defect was corrected to consume canonical sales-dashboard metrics and to exclude cancelled pending-payment rows. A second live cycle persisted exactly those corrected figures. Breeding animals remain unavailable for sale or slaughter until an explicit purpose change. Every run remained `authority_tier=observe`, `writes_authorized=false`, and `sends_authorized=false`; owner usefulness/false-positive feedback is durable. The Ledger gap for dedicated cross-order cash reconciliation remains explicit.
 
-Remaining owner evidence: usefulness/false-positive feedback for the two recommendations. The continuous-runner activation flag remains disabled; no autonomous observer execution was enabled.
+The continuous-runner activation flag remains disabled; no autonomous observer execution was enabled.
 
 ## Phase 5 - CHARLIE executive planning loop
 
@@ -73,7 +71,7 @@ Evidence: executive control/runtime/governance/private-executive suites.
 
 Live evidence: a controlled production cycle completed in `observe` mode over 76 missions. It found five runnable approved missions, two dependency-blocked missions and no queue deadlock; all three generated commands were duplicates or already-satisfied observations, so no operational execution occurred. Fifteen durable recovery cases are scheduled/running, proving stale-plan recovery state is active.
 
-Remaining owner decision: there are zero active executive goals. CHARLIE will not invent business goals; an owner-approved active goal is required before evidence-linked portfolio priority can be claimed live.
+The owner then activated `GOAL-PROFITABLE-SALES-2026`: reach R100,000 profitable monthly pig and meat sales by 31 December 2026, with SAM Live Stock operational first, Beacon promotion support, Herdmaster stock truth, Ledger payment accuracy and staged meat-sales expansion. Constraints prohibit selling or slaughtering breeding animals without an explicit purpose change and require SAM authority to graduate per measured capability rather than through blanket autonomy. A follow-up observe-only executive cycle loaded one active goal successfully.
 
 ## Phase 6 - Controlled authority graduation
 
