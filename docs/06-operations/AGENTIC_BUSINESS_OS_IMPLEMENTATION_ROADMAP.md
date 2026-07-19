@@ -47,6 +47,8 @@ Exit gates:
 
 Introduce canonical `CHARLIE_*` Executive and `CORE_*` workflow namespaces with legacy fallbacks, mismatch blocking, staged local/Render rollout, observation windows and independently tested rollback. Remove old names only in a later reviewed change.
 
+Progress log: compatibility implementation and secrets-safe migration tooling are documented in `PHASE_1_SAFE_NAMESPACE_MIGRATION.md`. Live rollout remains gated on merge/deploy/promotion and canary evidence.
+
 Exit gates: old/new parity, conflict tests, local cold start, hosted canary, no secret exposure, rollback rehearsal and owner-approved retirement list.
 
 ## Phase 2 — Concurrent-development and release control
@@ -90,4 +92,3 @@ Exit gates: one authoritative dashboard and daily brief, source freshness visibl
 Each phase uses: inspect → design → owner hard-stop review where authority changes → isolated build → focused tests → expanded regression → CI → merge → promotion/deployment when applicable → live canary → evidence log → next-phase approval.
 
 No later phase may hide an unresolved foundation defect from an earlier phase. Independent safe work may proceed only when its source, authority and merge ownership do not overlap.
-

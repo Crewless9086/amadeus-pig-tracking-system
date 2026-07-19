@@ -16,6 +16,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping
 
+from modules.charlie.environment import alias_environment
+
 
 STATUSES = {
     "RUNNING",
@@ -28,9 +30,9 @@ STATUSES = {
     "BUDGET_STOP",
 }
 
-TOKEN_ENV = "CHARLIE_BUILD_RELAY_BOT_TOKEN"
-USERS_ENV = "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS"
-ENABLED_ENV = "CHARLIE_BUILD_RELAY_ENABLED"
+TOKEN_ENV = "CORE_RELAY_BOT_TOKEN"
+USERS_ENV = "CORE_RELAY_ALLOWED_USER_IDS"
+ENABLED_ENV = "CORE_RELAY_ENABLED"
 
 
 @dataclass(frozen=True)
@@ -125,7 +127,7 @@ def notify(
     environ: Mapping[str, str] | None = None,
     sender: Callable[[str, str], None] | None = None,
 ) -> NotifyResult:
-    env = dict(os.environ if environ is None else environ)
+    env = alias_environment(os.environ if environ is None else environ)
     message = build_message(status, mission_id=mission_id, title=title, detail=detail, url=url)
 
     if not _truthy(env.get(ENABLED_ENV)):

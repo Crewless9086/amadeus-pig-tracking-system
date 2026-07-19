@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
 from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
+from modules.charlie.environment import env_value
 from modules.charlie.build_relay import (
     build_relay_policy,
     handle_charlie_telegram_webhook,
@@ -514,7 +515,7 @@ def charlie_build_relay_command_center_route():
             "in_progress": release_in_progress,
             "merged_waiting_live_verify": merged.get("missions", []),
             "deployed": deployed.get("missions", []),
-            "verify_url_configured": bool(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
+            "verify_url_configured": bool(env_value("CORE_RELEASE_VERIFY_URL") or os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or os.getenv("RENDER_EXTERNAL_HOSTNAME")),
         },
         "queue": {
             "approved": approved_queue,

@@ -4,6 +4,8 @@ import time
 from urllib import request as url_request
 from urllib.error import HTTPError, URLError
 
+from modules.charlie.environment import env_value
+
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -34,7 +36,7 @@ def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAU
             "status": "anthropic_api_key_missing",
             "error": "Set ANTHROPIC_API_KEY. ANTROPIC_API_KEY is accepted as a temporary typo alias.",
         }, 503
-    model = str(model or os.getenv("CHARLIE_CLAUDE_MODEL") or "claude-sonnet-5").strip()
+    model = str(model or env_value("CORE_CLAUDE_MODEL") or "claude-sonnet-5").strip()
     max_tokens = _anthropic_max_tokens(max_tokens)
     payload = {
         "model": model,
@@ -110,7 +112,7 @@ def run_anthropic_prompt(prompt, model="", timeout_seconds=600, max_tokens=DEFAU
 
 
 def _anthropic_max_tokens(max_tokens=None):
-    configured = str(os.getenv("CHARLIE_ANTHROPIC_MAX_TOKENS") or "").strip()
+    configured = str(env_value("CORE_ANTHROPIC_MAX_TOKENS") or "").strip()
     raw = configured or max_tokens or DEFAULT_MAX_TOKENS
     try:
         parsed = int(raw)

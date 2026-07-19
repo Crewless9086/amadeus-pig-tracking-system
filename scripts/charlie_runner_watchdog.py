@@ -71,7 +71,6 @@ def _cold_start_readiness():
 def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness):
     state_path = Path(state_path)
     _configure_git_safe_directory(state_path.with_name("task-gitconfig"))
-    os.environ.setdefault("CHARLIE_RUNNER_BASE_BRANCH", DEFAULT_RUNNER_BASE_BRANCH)
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
     hold = hold_reader() if hold_reader else _infrastructure_hold(state_path.with_name("supervisor.json"))

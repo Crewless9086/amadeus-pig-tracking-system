@@ -29,6 +29,7 @@ from modules.documents.document_service import (
     get_next_document_version,
     get_order_document,
 )
+from modules.charlie.environment import env_value
 from modules.documents import document_service
 from modules.orders.order_service import get_order_detail
 from services.database_service import DATABASE_URL_ENV
@@ -376,7 +377,7 @@ def _owner_telegram_chat_ids():
         return [item.strip() for item in explicit.split(",") if item.strip()]
     raw = (
         os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "").strip()
-        or os.getenv("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS", "").strip()
+        or str(env_value("CORE_RELAY_ALLOWED_USER_IDS", "") or "").strip()
     )
     ids = [item.strip() for item in raw.split(",") if item.strip()]
     return ids[:1]

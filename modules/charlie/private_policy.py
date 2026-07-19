@@ -5,20 +5,22 @@ from __future__ import annotations
 import hmac
 import os
 
-ENABLED_ENV = "CHARLIE_PRIVATE_EXECUTIVE_ENABLED"
-TOKEN_ENV = "CHARLIE_PRIVATE_TELEGRAM_BOT_TOKEN"
-SECRET_ENV = "CHARLIE_PRIVATE_TELEGRAM_WEBHOOK_SECRET"
-OWNER_USER_ENV = "CHARLIE_PRIVATE_TELEGRAM_OWNER_USER_ID"
-OWNER_CHAT_ENV = "CHARLIE_PRIVATE_TELEGRAM_OWNER_CHAT_ID"
-LLM_ENABLED_ENV = "CHARLIE_PRIVATE_LLM_ENABLED"
-LLM_MODEL_ENV = "CHARLIE_PRIVATE_LLM_MODEL"
-LLM_URL_ENV = "CHARLIE_PRIVATE_LLM_URL"
-TRANSCRIPTION_ENABLED_ENV = "CHARLIE_PRIVATE_TRANSCRIPTION_ENABLED"
-TRANSCRIPTION_MODEL_ENV = "CHARLIE_PRIVATE_TRANSCRIPTION_MODEL"
-TTS_ENABLED_ENV = "CHARLIE_PRIVATE_TTS_ENABLED"
-TTS_PROVIDER_ENV = "CHARLIE_PRIVATE_TTS_PROVIDER"
-TTS_MODEL_ENV = "CHARLIE_PRIVATE_TTS_MODEL"
-TTS_VOICE_ENV = "CHARLIE_PRIVATE_TTS_VOICE_ID"
+from modules.charlie.environment import alias_environment
+
+ENABLED_ENV = "CHARLIE_EXECUTIVE_ENABLED"
+TOKEN_ENV = "CHARLIE_TELEGRAM_BOT_TOKEN"
+SECRET_ENV = "CHARLIE_TELEGRAM_WEBHOOK_SECRET"
+OWNER_USER_ENV = "CHARLIE_TELEGRAM_OWNER_USER_ID"
+OWNER_CHAT_ENV = "CHARLIE_TELEGRAM_OWNER_CHAT_ID"
+LLM_ENABLED_ENV = "CHARLIE_LLM_ENABLED"
+LLM_MODEL_ENV = "CHARLIE_LLM_MODEL"
+LLM_URL_ENV = "CHARLIE_LLM_URL"
+TRANSCRIPTION_ENABLED_ENV = "CHARLIE_TRANSCRIPTION_ENABLED"
+TRANSCRIPTION_MODEL_ENV = "CHARLIE_TRANSCRIPTION_MODEL"
+TTS_ENABLED_ENV = "CHARLIE_TTS_ENABLED"
+TTS_PROVIDER_ENV = "CHARLIE_TTS_PROVIDER"
+TTS_MODEL_ENV = "CHARLIE_TTS_MODEL"
+TTS_VOICE_ENV = "CHARLIE_TTS_VOICE_ID"
 
 RED_ZONE_FLAGS = {
     "customer_send", "public_post", "payment", "deposit", "reservation", "stock_write",
@@ -27,10 +29,10 @@ RED_ZONE_FLAGS = {
 
 
 def private_policy(environ=None):
-    source = environ if environ is not None else os.environ
-    token = str(source.get(TOKEN_ENV) or source.get("CHARLIE_BUILD_RELAY_BOT_TOKEN") or "").strip()
-    secret = str(source.get(SECRET_ENV) or source.get("CHARLIE_BUILD_RELAY_WEBHOOK_SECRET") or "").strip()
-    owner_user = str(source.get(OWNER_USER_ENV) or source.get("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS") or "").split(",")[0].strip()
+    source = alias_environment(environ if environ is not None else os.environ)
+    token = str(source.get(TOKEN_ENV) or "").strip()
+    secret = str(source.get(SECRET_ENV) or "").strip()
+    owner_user = str(source.get(OWNER_USER_ENV) or "").split(",")[0].strip()
     owner_chat = str(source.get(OWNER_CHAT_ENV) or owner_user).strip()
     explicit = _truthy(source.get(ENABLED_ENV))
     return {

@@ -32,6 +32,7 @@ from modules.charlie.mission_store import (
     update_mission_workflow_step,
 )
 from modules.charlie.runner_control import runner_status, write_runner_heartbeat
+from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.core_workflow import (
     AGENT_DOCTRINE_PATHS,
@@ -2721,7 +2722,7 @@ def _retry_parallel_contract_failure(
 
 
 def _parallel_read_only_prefix(agent_queue):
-    if str(os.getenv("CHARLIE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
+    if str(env_value("CORE_PARALLEL_READONLY_DISABLED") or "").strip().lower() in {"1", "true", "yes", "on"}:
         return []
     agents = []
     for agent in agent_queue or []:
@@ -2749,7 +2750,7 @@ def _run_parallel_read_only_agents(
     started_at = datetime.now(timezone.utc).isoformat()
     parallel_artifacts = {}
     futures = {}
-    max_workers = max(1, min(int(os.getenv("CHARLIE_PARALLEL_READONLY_WORKERS") or 3), len(agents)))
+    max_workers = max(1, min(int(env_value("CORE_PARALLEL_READONLY_WORKERS", "3") or 3), len(agents)))
     ledger["parallel_planning_execution"] = {
         "version": "charlie_parallel_agent_execution_v1",
         "mode": "read_only_specialists_parallel",
@@ -3347,7 +3348,7 @@ def _agent_command_base(command_base, model_assignment):
 
 
 def _strict_agent_model_routing_required():
-    return str(os.getenv("CHARLIE_REQUIRE_AGENT_MODEL_ROUTING", "")).strip().lower() in {"1", "true", "yes", "on"}
+    return str(env_value("CORE_REQUIRE_AGENT_MODEL_ROUTING", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _existing_agent_artifacts_for_rerun(mission, start_agent, agent_sequence=None):
@@ -6871,7 +6872,7 @@ def _infer_local_preview_url(command_text=""):
         if port:
             candidates.append(f"http://127.0.0.1:{port}/charlie")
     candidates.extend([
-        os.getenv("CHARLIE_LOCAL_PREVIEW_URL", "").strip(),
+        str(env_value("CORE_LOCAL_PREVIEW_URL", "") or "").strip(),
         "http://127.0.0.1:5002/charlie",
         "http://127.0.0.1:5000/charlie",
     ])
@@ -8218,7 +8219,7 @@ def _wait_for_release_verification(verify_url, attempts=AGENT_RELEASE_VERIFY_ATT
 
 
 def _default_release_verify_url():
-    explicit_url = str(os.getenv("CHARLIE_RELEASE_VERIFY_URL") or "").strip()
+    explicit_url = str(env_value("CORE_RELEASE_VERIFY_URL") or "").strip()
     if explicit_url:
         return explicit_url
     base_url = str(os.getenv("AMADEUS_BACKEND_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
