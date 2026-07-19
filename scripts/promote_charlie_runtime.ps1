@@ -5,7 +5,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$canonical = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$commonGitDir = git -C $sourceRoot rev-parse --path-format=absolute --git-common-dir
+if ($LASTEXITCODE -ne 0 -or -not $commonGitDir) { throw "Could not resolve the canonical repository Git directory." }
+$canonical = (Split-Path $commonGitDir.Trim() -Parent)
 if (-not $RuntimeRoot) {
     $RuntimeRoot = Join-Path $canonical ".charlie_runner\core-runtime-current"
 }
