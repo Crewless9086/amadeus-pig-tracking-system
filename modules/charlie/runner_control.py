@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+from modules.charlie.process_ownership import inspect_process, validate_termination
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -309,30 +310,39 @@ def stop_runner():
     status = runner_status()
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-    pids = [status.get("pid")]
-    pids.append(status.get("supervisor_pid"))
-    pids.extend(process.get("pid") for process in status.get("orphan_processes", []))
-    pids = [int(pid) for pid in pids if str(pid or "").isdigit()]
-    if not pids:
+    supervisor = _read_json(SUPERVISOR_PATH)
+    records = [supervisor.get("child_identity")]
+    records = [record for record in records if isinstance(record, dict)]
+    if not records:
         return {"success": True, "status": "runner_not_started", "runner": status}, 200
     stopped = []
     try:
-        for pid in sorted(set(pids)):
-            _stop_process_tree(pid)
-            stopped.append(pid)
+        for record in records:
+            expected = {field: record.get(field) for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")}
+            decision = _stop_process_tree(record, expected)
+            if isinstance(decision, dict) and decision.get("terminated") and str(record.get("pid") or "").isdigit():
+                stopped.append(int(record["pid"]))
     except OSError:
         if not stopped:
             return {"success": True, "status": "runner_already_stopped", "runner": status}, 200
+    if not stopped:
+        return {"success": False, "status": "runner_process_ownership_not_proven", "pids": []}, 409
     return {"success": True, "status": "runner_stop_requested", "pids": stopped}, 200
 
 
-def _stop_process_tree(pid):
+def _stop_process_tree(ownership_record, expected_ownership=None, inspector=inspect_process):
     if emergency_process_cleanup_disabled():
-        return record_emergency_cleanup_refusal("_stop_process_tree", pid)
+        requested_pid = ownership_record.get("pid") if isinstance(ownership_record, dict) else ownership_record
+        return record_emergency_cleanup_refusal("_stop_process_tree", requested_pid)
+    decision = validate_termination(ownership_record, expected_ownership, inspector)
+    if not decision["authorized"]:
+        return decision
+    pid = decision["pid"]
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15, **background_run_kwargs())
-        return
+        return {"authorized": True, "terminated": True, "pid": pid}
     os.kill(pid, signal.SIGTERM)
+    return {"authorized": True, "terminated": True, "pid": pid}
 
 
 def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
