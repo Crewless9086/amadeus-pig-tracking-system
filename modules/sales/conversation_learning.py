@@ -416,8 +416,8 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
                     select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
                     from public.meat_sales_conversation_learning_events
                     where source_agent = 'sam_live_stock_backend'
-                      and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
-                      and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                      and captured_facts_json->>'learning_kind' in ('owner_reply_capture', 'owner_reply_historical_example')
+                      and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced', 'owner_reply_no_sam_draft')
                       {same_conversation_where}
                     order by created_at desc
                     limit %(limit)s
@@ -431,8 +431,8 @@ def list_live_stock_owner_reply_examples(conversation_id="", limit=3, database_u
                         select customer_message_excerpt, sam_reply_excerpt, captured_facts_json, created_at
                         from public.meat_sales_conversation_learning_events
                         where source_agent = 'sam_live_stock_backend'
-                          and captured_facts_json->>'learning_kind' = 'owner_reply_capture'
-                          and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced')
+                          and captured_facts_json->>'learning_kind' in ('owner_reply_capture', 'owner_reply_historical_example')
+                          and captured_facts_json->>'owner_reply_classification' in ('owner_edited', 'owner_replaced', 'owner_reply_no_sam_draft')
                         order by created_at desc
                         limit %(limit)s
                         """,

@@ -138,14 +138,16 @@ def charlie_private_dashboard_route():
         mission_future = pool.submit(mission_status_summary)
         executive_future = pool.submit(executive_scorecard)
         analyst_future = pool.submit(analyst_scorecard, limit=50)
+        sam_learning_future = pool.submit(live_stock_learning_scorecard, limit=500)
         private, private_status = private_future.result()
         missions, mission_status = mission_future.result()
         executive, executive_status = executive_future.result()
         analyst, analyst_status = analyst_future.result()
+        sam_learning, sam_learning_status = sam_learning_future.result()
     runner = local_runner_status(include_git=False, include_ledger=False)
     runner["local_runner_scope"] = "render_cannot_see_laptop_runner" if _running_on_render() else "local_machine"
     policy = private_policy()
-    component_status = {"private": private_status, "missions": mission_status, "executive": executive_status, "analyst": analyst_status}
+    component_status = {"private": private_status, "missions": mission_status, "executive": executive_status, "analyst": analyst_status, "sam_learning": sam_learning_status}
     degraded = any(code >= 400 for code in component_status.values())
     packet = {
         "success": True,
@@ -155,6 +157,7 @@ def charlie_private_dashboard_route():
         "missions": missions,
         "executive": executive,
         "analyst": analyst,
+        "sam_learning": sam_learning,
         "runner": runner,
         "policy": {key: value for key, value in policy.items() if key not in {"token", "secret"}},
     }
