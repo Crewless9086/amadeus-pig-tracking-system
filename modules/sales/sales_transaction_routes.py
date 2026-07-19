@@ -13,6 +13,7 @@ from modules.beacon.campaign_calendar import (
     propose_rule_version,
     revoke_rule_version,
 )
+from modules.beacon.sam_attribution_store import get_beacon_sam_attribution
 
 from modules.oom_sakkie.sales_campaign_store import (
     create_draft_order_from_sales_lead,
@@ -1095,6 +1096,15 @@ def beacon_weekly_command_brief():
         return jsonify(result), status_code
     brief = build_beacon_weekly_command_brief(result.get("performance_events", []))
     return jsonify({"success": True, "weekly_command_brief": brief}), 200
+
+
+@sales_bp.route("/beacon/sam-attribution", methods=["GET"])
+def beacon_sam_attribution():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = get_beacon_sam_attribution(limit=request.args.get("limit", 100))
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/beacon/follow-up-suggestions", methods=["GET"])

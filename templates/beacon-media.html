@@ -163,6 +163,29 @@
         </div>
       </section>
 
+      <section class="beacon-attribution-panel" aria-labelledby="beacon_attribution_title">
+        <div class="beacon-panel-heading">
+          <div>
+            <span class="beacon-eyebrow">Read-only evidence</span>
+            <h2 id="beacon_attribution_title">Beacon lead and sales attribution</h2>
+            <p>Canonical campaign, lead, order, completed-sale and fulfilment evidence. This view cannot post, spend, create orders or change stock.</p>
+          </div>
+          <div class="beacon-command-meta">
+            <span id="beacon_attribution_status" class="beacon-status-chip" data-state="loading">Loading attribution</span>
+            <button type="button" id="beacon_attribution_refresh" class="button-link button-link-secondary">Refresh attribution</button>
+          </div>
+        </div>
+        <div class="beacon-attribution-metrics" aria-label="Beacon attribution summary">
+          <article><span>Attributed</span><strong id="beacon_attribution_count">--</strong></article>
+          <article><span>Qualified</span><strong id="beacon_attribution_qualified">--</strong></article>
+          <article><span>Lost</span><strong id="beacon_attribution_lost">--</strong></article>
+          <article><span>Ambiguous</span><strong id="beacon_attribution_ambiguous">--</strong></article>
+          <article><span>Unmatched</span><strong id="beacon_attribution_unmatched">--</strong></article>
+        </div>
+        <p id="beacon_attribution_note" class="beacon-attribution-note" aria-live="polite">Checking canonical evidence…</p>
+        <div id="beacon_attribution_list" class="beacon-attribution-list" aria-live="polite"><div class="table-empty">Loading attribution evidence…</div></div>
+      </section>
+
       <details class="beacon-advanced-workspace">
         <summary><strong>Advanced campaign controls</strong><span>Performance, evidence, packet and detailed media tools</span></summary>
 

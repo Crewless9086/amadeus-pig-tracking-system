@@ -104,6 +104,15 @@
     recommendationList: byId("beacon_recommendation_list"),
     decisionCount: byId("beacon_decision_count"),
     decisionResult: byId("beacon_decision_result"),
+    attributionRefresh: byId("beacon_attribution_refresh"),
+    attributionStatus: byId("beacon_attribution_status"),
+    attributionCount: byId("beacon_attribution_count"),
+    attributionQualified: byId("beacon_attribution_qualified"),
+    attributionLost: byId("beacon_attribution_lost"),
+    attributionAmbiguous: byId("beacon_attribution_ambiguous"),
+    attributionUnmatched: byId("beacon_attribution_unmatched"),
+    attributionNote: byId("beacon_attribution_note"),
+    attributionList: byId("beacon_attribution_list"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -167,9 +176,61 @@
     const response = await fetch(url, options);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
-      throw new Error(payload.status || payload.error || `Request failed with ${response.status}`);
+      const error = new Error(payload.status || payload.error || `Request failed with ${response.status}`);
+      error.payload = payload;
+      throw error;
     }
     return payload;
+  }
+
+  const revenueText = (revenue) => Array.isArray(revenue) && revenue.length
+    ? revenue.map((item) => `${safe(item.currency, "currency")} ${safe(item.net_total, "--")}`).join(" · ")
+    : "No completed paid revenue";
+
+  function attributionState(result) {
+    if (!result || result.success === false) return "blocked";
+    if (result.status === "malformed_evidence") return "blocked";
+    return "ready";
+  }
+
+  function renderAttribution(result) {
+    const summary = result?.summary || {};
+    elements.attributionCount.textContent = summary.attributed ?? 0;
+    elements.attributionQualified.textContent = summary.qualified ?? 0;
+    elements.attributionLost.textContent = summary.lost ?? 0;
+    elements.attributionAmbiguous.textContent = summary.ambiguous ?? 0;
+    elements.attributionUnmatched.textContent = summary.unmatched ?? 0;
+    const stateName = attributionState(result);
+    elements.attributionStatus.dataset.state = stateName;
+    elements.attributionStatus.textContent = stateName === "ready" ? "Canonical evidence" : "Evidence unavailable";
+    const rows = Array.isArray(result?.attributions) ? result.attributions : [];
+    if (!rows.length) {
+      elements.attributionList.innerHTML = `<div class="table-empty">${escapeHtml(result?.status === "malformed_evidence" ? "Malformed evidence was not attributed. Review source records." : "No attributable campaign evidence is available yet.")}</div>`;
+    } else {
+      elements.attributionList.innerHTML = rows.map((row) => `
+        <article class="beacon-attribution-row" data-state="${escapeHtml(safe(row.status, "unresolved"))}">
+          <div><strong>${escapeHtml(safe(row.campaign_ref, "Campaign reference unavailable"))}</strong><small>${escapeHtml(safe(row.performance_event_id, "No performance event"))} · ${escapeHtml(safe(row.method, row.status))}</small></div>
+          <div><span>Lead</span><strong>${escapeHtml(safe(row.lead_id, row.status))}</strong><small>${escapeHtml(safe(row.qualification, "unresolved"))}</small></div>
+          <div><span>Order / fulfilment</span><strong>${escapeHtml(safe(row.order_id, "No order"))}</strong><small>${escapeHtml(safe(row.fulfilment, "unknown"))}</small></div>
+          <div><span>Completed revenue</span><strong>${escapeHtml(revenueText(row.revenue))}</strong><small>${escapeHtml(row.lost_reason?.status === "recorded" ? `Lost: ${row.lost_reason.code}` : "Lost reason: not recorded")}</small></div>
+        </article>`).join("");
+    }
+    const malformed = Array.isArray(result?.malformed_evidence_ids) ? result.malformed_evidence_ids : [];
+    elements.attributionNote.textContent = malformed.length
+      ? `Malformed evidence withheld from attribution: ${malformed.join(", ")}.`
+      : "Read-only projection. Revenue is shown only for completed, paid sales and is never converted across currencies.";
+  }
+
+  async function loadAttribution() {
+    elements.attributionStatus.dataset.state = "loading";
+    elements.attributionStatus.textContent = "Loading attribution";
+    try {
+      renderAttribution(await fetchJson("/api/beacon/sam-attribution?limit=100"));
+    } catch (error) {
+      const failure = error.payload && typeof error.payload === "object" ? error.payload : {success: false, status: error.message};
+      renderAttribution(failure);
+      if (failure.status !== "malformed_evidence") elements.attributionNote.textContent = `Attribution evidence could not be loaded: ${error.message}`;
+    }
   }
 
   async function loadBeaconMedia() {
@@ -1039,6 +1100,7 @@
       elements.ownerAlerts.innerHTML = `<strong>Could not load campaign evidence</strong><span>${escapeHtml(error.message)}</span>`;
       elements.ownerAlerts.dataset.state = "blocked";
     }));
+    elements.attributionRefresh.addEventListener("click", () => loadAttribution());
     elements.performanceRecord.addEventListener("click", () => recordCampaignPerformance().catch((error) => showMessage(error.message)));
     elements.historyImport.addEventListener("click", () => importFacebookHistory().catch((error) => { elements.historyImportStatus.textContent = error.message; elements.historyImportStatus.dataset.state = "blocked"; showMessage(error.message); }));
     elements.correctionSave.addEventListener("click", () => saveCorrection().catch((error) => showMessage(error.message)));
@@ -1051,5 +1113,6 @@
     elements.archive.addEventListener("click", () => recordReviewEvent("archived").catch((error) => showMessage(error.message)));
     setReviewDisabled(true);
     await loadBeaconMedia().catch((error) => showMessage(error.message));
+    await loadAttribution();
   });
 })();

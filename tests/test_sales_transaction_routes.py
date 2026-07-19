@@ -851,6 +851,30 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), record_result)
         record_event.assert_called_once_with(payload)
 
+    def test_beacon_sam_attribution_route_is_owner_read_only(self):
+        denied = ({"success": False, "status": "owner_authentication_required"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), patch.object(
+            sales_transaction_routes, "get_beacon_sam_attribution"
+        ) as projection:
+            response = self.client.get("/api/beacon/sam-attribution?limit=25")
+        self.assertEqual(response.status_code, 403)
+        projection.assert_not_called()
+
+        result = {
+            "success": True,
+            "mode": "beacon_sam_attribution_read_only",
+            "summary": {"attributed": 1, "ambiguous": 0, "unmatched": 0, "qualified": 1, "lost": 0},
+            "authority": {"read_only": True, "posts_publicly": False, "spends_money": False, "creates_order": False, "changes_stock": False},
+            "attributions": [],
+        }
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), patch.object(
+            sales_transaction_routes, "get_beacon_sam_attribution", return_value=(result, 200)
+        ) as projection:
+            response = self.client.get("/api/beacon/sam-attribution?limit=25")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), result)
+        projection.assert_called_once_with(limit="25")
+
     def test_beacon_weekly_command_routes_require_owner_and_prepare_without_execution(self):
         source = {"success": True, "performance_events": [{"performance_event_id": "BEACON-PERF-1"}]}
         brief = {"mode": "beacon_weekly_command_brief_read_only", "recommendations": []}
