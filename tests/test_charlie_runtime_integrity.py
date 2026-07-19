@@ -22,7 +22,7 @@ class CharlieRuntimeIntegrityTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout=revision + "\n", stderr="")
             if command[:3] == ["git", "branch", "--show-current"]:
                 return SimpleNamespace(returncode=0, stdout=branch + "\n", stderr="")
-            if command[:3] == ["gh", "auth", "status"]:
+            if command[:3] == ["gh", "repo", "view"]:
                 return SimpleNamespace(returncode=0 if gh_ok else 1, stdout="", stderr="" if gh_ok else "invalid token")
             if command[:3] == ["git", "credential", "fill"]:
                 return SimpleNamespace(returncode=0, stdout="protocol=https\nhost=github.com\npassword=test-token\n", stderr="")
@@ -61,7 +61,7 @@ class CharlieRuntimeIntegrityTests(unittest.TestCase):
                 environ={"CHARLIE_TELEGRAM_TRANSPORT": "webhook"},
             )
         self.assertFalse(checked["ready"])
-        self.assertIn("github_auth_invalid", checked["blockers"])
+        self.assertIn("github_repo_access_invalid", checked["blockers"])
 
     def test_git_credential_bootstrap_never_exposes_token_in_health(self):
         with tempfile.TemporaryDirectory() as tmp:
