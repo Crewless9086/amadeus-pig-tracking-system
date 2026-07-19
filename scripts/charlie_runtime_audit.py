@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.runtime_integrity import cold_start_readiness, write_runtime_manifest
+from modules.charlie.runner_control import RUNNER_DIR
 
 
 def main():
@@ -24,7 +25,7 @@ def main():
     parser.add_argument("--allow-missing-manifest", action="store_true")
     parser.add_argument("--skip-github", action="store_true")
     args = parser.parse_args()
-    runtime_dir = Path(args.runtime_dir).resolve() if args.runtime_dir else None
+    runtime_dir = Path(args.runtime_dir).resolve() if args.runtime_dir else RUNNER_DIR
     if args.action == "promote":
         result = write_runtime_manifest(REPO_ROOT, runtime_dir=runtime_dir)
     else:
