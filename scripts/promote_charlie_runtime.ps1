@@ -1,7 +1,8 @@
 param(
     [string]$SourceRef = "origin/main",
     [string]$RuntimeRoot = "",
-    [string]$TaskName = "CHARLIE CORE Runner Watchdog"
+    [string]$TaskName = "CHARLIE CORE Runner Watchdog",
+    [string]$RuntimeBranch = "charlie-core-runtime-base"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,11 +29,13 @@ if (Test-Path -LiteralPath $RuntimeRoot) {
     $dirty = git -C $RuntimeRoot status --porcelain
     if ($LASTEXITCODE -ne 0) { throw "Existing runtime path is not a healthy Git worktree." }
     if ($dirty) { throw "Existing runtime worktree is dirty; promotion refused without cleanup review." }
-    git -C $RuntimeRoot switch --detach $SourceRef
+    git -C $RuntimeRoot switch -C $RuntimeBranch $SourceRef
     if ($LASTEXITCODE -ne 0) { throw "Could not update the runtime worktree." }
 } else {
     git -C $canonical worktree add --detach $RuntimeRoot $SourceRef
     if ($LASTEXITCODE -ne 0) { throw "Could not create the runtime worktree." }
+    git -C $RuntimeRoot switch -C $RuntimeBranch $SourceRef
+    if ($LASTEXITCODE -ne 0) { throw "Could not establish the dedicated runtime base branch." }
 }
 
 $focused = @(
