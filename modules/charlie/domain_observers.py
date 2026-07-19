@@ -67,6 +67,32 @@ def observer_quality(runs, labels=None):
     }
 
 
+def run_observer_cycle(readers, *, last_runs=None, event_domains=None, recorder=None, now=None):
+    """Run only due observers; persistence is explicit and cannot execute proposals."""
+    readers = readers if isinstance(readers, dict) else {}
+    now = now or datetime.now(timezone.utc)
+    runs = []
+    for due in due_observers(last_runs, now=now, event_domains=event_domains):
+        key = due["observer_key"]
+        reader = readers.get(key) or readers.get(due["domain"])
+        if not callable(reader):
+            run = _result(OBSERVERS[key], key, due["trigger"], now, "failed", gaps=["evidence_reader_missing"])
+        else:
+            run = run_observer(key, reader, trigger=due["trigger"], now=now)
+        if callable(recorder):
+            recorded = recorder(run)
+            run["persistence"] = recorded if isinstance(recorded, dict) else {"status": "observer_recorded"}
+        runs.append(run)
+    return {
+        "success": all(item.get("status") != "failed" for item in runs),
+        "status": "observer_cycle_complete" if runs else "observer_cycle_not_due",
+        "runs": runs,
+        "authority_tier": "observe",
+        "writes_authorized": False,
+        "sends_authorized": False,
+    }
+
+
 def _result(spec, key, trigger, now, status, **fields):
     identity = hashlib.sha256(json.dumps({"key": key, "trigger": trigger, "at": now.isoformat()}, sort_keys=True).encode()).hexdigest()[:20]
     recommendations = fields.get("recommendations") or []

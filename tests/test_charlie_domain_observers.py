@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from modules.charlie.domain_observers import OBSERVERS, due_observers, observer_quality, run_observer
+from modules.charlie.domain_observers import OBSERVERS, due_observers, observer_quality, run_observer, run_observer_cycle
 
 
 class DomainObserverTests(unittest.TestCase):
@@ -37,6 +37,19 @@ class DomainObserverTests(unittest.TestCase):
         recommendation_id = observed["recommendations"][0]["recommendation_id"]
         quality = observer_quality([failed, observed], {recommendation_id: False})
         self.assertEqual(quality["false_positive_rate"], 1.0)
+
+    def test_cycle_runs_due_observers_and_persists_telemetry_only(self):
+        recorded = []
+        now = datetime(2026, 7, 19, 12, tzinfo=timezone.utc)
+        readers = {domain: (lambda selected: lambda _domain: {
+            "source_refs": [selected], "freshness": "live", "recommendations": [],
+        })(domain) for domain in {item["domain"] for item in OBSERVERS.values()}}
+        result = run_observer_cycle(readers, now=now, recorder=lambda run: recorded.append(run["run_id"]) or {"status": "recorded"})
+        self.assertEqual(len(result["runs"]), 4)
+        self.assertEqual(len(recorded), 4)
+        self.assertFalse(result["writes_authorized"])
+        self.assertFalse(result["sends_authorized"])
+        self.assertTrue(all(item["persistence"]["status"] == "recorded" for item in result["runs"]))
 
 
 if __name__ == "__main__":
