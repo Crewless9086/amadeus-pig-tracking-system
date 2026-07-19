@@ -24,7 +24,7 @@ STATE_PATH = RUNNER_DIR / "watchdog.json"
 GIT_CONFIG_PATH = RUNNER_DIR / "task-gitconfig"
 SUPERVISOR_LOCK_PATH = RUNNER_DIR / "supervisor.lock"
 SUPERVISOR_STATE_PATH = RUNNER_DIR / "supervisor.json"
-DEFAULT_RUNNER_BASE_BRANCH = "charlie-runner-core-live-base"
+DEFAULT_RUNNER_BASE_BRANCH = "charlie-core-runtime-base"
 
 
 def _live_supervisor_lock(path=SUPERVISOR_LOCK_PATH):
