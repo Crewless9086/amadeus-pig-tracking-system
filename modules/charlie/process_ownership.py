@@ -70,6 +70,8 @@ def validate_termination(record, expected, inspect_process, current_pid=None):
         return _deny("process_inspection_failed")
     if not isinstance(current, dict):
         return _deny("pid_not_found")
+    if current.get("inspection_complete") is False:
+        return _deny("process_inspection_failed")
     if int(current.get("pid") or -1) != pid:
         return _deny("pid_reused")
     if str(current.get("creation_time") or "") != str(record["creation_time"]):
@@ -121,8 +123,13 @@ def inspect_process(pid):
 
 def _inspect_proc(pid):
     target = _proc_row(pid)
-    target["ancestry"] = _proc_ancestry(target["parent_pid"])
-    target["current_process_ancestry"] = _proc_ancestry(os.getpid(), include_start=True)
+    ancestry, ancestry_complete = _proc_ancestry(target["parent_pid"])
+    current_ancestry, current_complete = _proc_ancestry(os.getpid(), include_start=True)
+    target["ancestry"] = ancestry
+    target["current_process_ancestry"] = current_ancestry
+    target["inspection_complete"] = bool(
+        target.pop("row_complete", True) and ancestry_complete and current_complete
+    )
     return target
 
 
@@ -144,24 +151,45 @@ def _current_ancestry_windows():
 def _proc_row(pid):
     pid = int(pid)
     stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
-    command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode().strip()
+    row_complete = True
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode().strip()
+    except OSError:
+        command = ""
+        row_complete = False
+    try:
+        executable_path = str(Path(f"/proc/{pid}/exe").resolve(strict=True))
+    except OSError:
+        executable_path = ""
+        row_complete = False
+    try:
+        name = Path(f"/proc/{pid}/comm").read_text(encoding="utf-8").strip()
+    except OSError:
+        name = ""
+        row_complete = False
     return {"pid": pid, "parent_pid": int(stat[3]), "creation_time": stat[21],
-            "executable_path": str(Path(f"/proc/{pid}/exe").resolve()), "command_line": command,
-            "name": Path(f"/proc/{pid}/comm").read_text().strip()}
+            "executable_path": executable_path, "command_line": command,
+            "name": name, "row_complete": row_complete}
 
 
 def _proc_ancestry(pid, include_start=False):
-    rows, seen = [], set()
+    rows, seen, complete = [], set(), True
     current = int(pid)
     while current > 0 and current not in seen:
         seen.add(current)
-        row = _proc_row(current)
+        try:
+            row = _proc_row(current)
+        except OSError:
+            complete = False
+            break
+        if not row.pop("row_complete", True):
+            complete = False
         if include_start or current != int(pid):
             rows.append(row)
         elif not include_start:
             rows.append(row)
         current = int(row.get("parent_pid") or 0)
-    return rows
+    return rows, complete
 
 
 def _protected(process):

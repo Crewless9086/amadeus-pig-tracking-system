@@ -60,6 +60,22 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
     def test_process_inspection_failure(self):
         self.assertEqual(self.validate(inspector=Mock(side_effect=OSError("denied")))["reason"], "process_inspection_failed")
 
+    def test_partial_process_inspection_fails_closed(self):
+        live = {**self.live, "inspection_complete": False}
+        self.assertEqual(self.validate(live)["reason"], "process_inspection_failed")
+
+    @patch.object(process_ownership, "_proc_ancestry")
+    @patch.object(process_ownership, "_proc_row")
+    def test_proc_inspection_returns_partial_evidence_for_inaccessible_ancestor(self, row, ancestry):
+        row.return_value = {
+            "pid": 222, "parent_pid": 111, "creation_time": "1", "executable_path": "/python",
+            "command_line": "python worker.py", "name": "python", "row_complete": True,
+        }
+        ancestry.side_effect = [([{"pid": 111, "executable_path": ""}], False), ([], True)]
+        result = process_ownership._inspect_proc(222)
+        self.assertFalse(result["inspection_complete"])
+        self.assertEqual(result["ancestry"][0]["pid"], 111)
+
     def test_missing_pid_fails_closed(self):
         self.assertEqual(self.validate(live=False)["reason"], "pid_not_found")
 
