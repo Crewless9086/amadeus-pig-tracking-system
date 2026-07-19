@@ -1,0 +1,38 @@
+{
+  "files.exclude": {
+    "**/.charlie_runner": true,
+    "**/.review_*": true,
+    "**/test-results": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/.venv": true
+  },
+  "files.watcherExclude": {
+    "**/.charlie_runner/**": true,
+    "**/.review_*/**": true,
+    "**/test-results/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/node_modules/**": true,
+    "**/venv/**": true,
+    "**/.venv/**": true
+  },
+  "search.exclude": {
+    "**/.charlie_runner/**": true,
+    "**/.review_*/**": true,
+    "**/test-results/**": true,
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/node_modules/**": true,
+    "**/venv/**": true,
+    "**/.venv/**": true
+  }
+}
