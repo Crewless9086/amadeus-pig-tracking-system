@@ -454,7 +454,9 @@ def _read_agent_ledger_summary(path):
     try:
         ledger_path = Path(raw_path).resolve()
         root = REPO_ROOT.resolve()
-        if root not in ledger_path.parents and ledger_path != root:
+        execution_root = (RUNNER_DIR / "core-execution-current").resolve()
+        allowed_roots = (root, execution_root)
+        if not any(candidate == ledger_path or candidate in ledger_path.parents for candidate in allowed_roots):
             return {"status": "ledger_path_outside_repo"}
         ledger = _read_json(ledger_path)
     except (OSError, ValueError):
