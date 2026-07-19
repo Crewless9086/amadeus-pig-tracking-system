@@ -37,6 +37,7 @@ from modules.charlie.runner_control import (
     runner_status,
     write_runner_heartbeat,
 )
+from modules.charlie.process_ownership import inspect_process, make_ownership_record, validate_termination
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.core_workflow import (
@@ -7917,6 +7918,7 @@ def _run_codex_process(
     stderr_path=None,
     final_path=None,
     mission_id="",
+    execution_id="",
     **_kwargs,
 ):
     stdout_path = Path(stdout_path)
@@ -7943,6 +7945,15 @@ def _run_codex_process(
         errors="replace",
         cwd=cwd,
         **background_process_kwargs(),
+    )
+    execution_id = str(execution_id or f"process-{process.pid}")
+    runner_generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "unmanaged-generation")
+    ownership_expected = {
+        "runner_generation": runner_generation, "mission_id": str(mission_id or "unscoped-mission"),
+        "execution_id": execution_id, "ownership_type": "charlie_agent",
+    }
+    ownership_record = make_ownership_record(
+        inspect_process(process.pid), **ownership_expected,
     )
     try:
         if process.stdin:
@@ -7983,20 +7994,20 @@ def _run_codex_process(
                 _refresh_execution_lease(mission_id, process.pid, supervisor_status)
                 last_lease_refresh_at = now
             if final_seen_at and now - final_seen_at >= FINAL_ARTIFACT_GRACE_SECONDS:
-                _terminate_process_tree(process.pid)
+                _terminate_process_tree(ownership_record, ownership_expected)
                 break
             if not final_exists and idle_seconds >= no_final_timeout:
-                _terminate_process_tree(process.pid)
+                _terminate_process_tree(ownership_record, ownership_expected)
                 break
             if elapsed >= int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS):
                 if final_exists:
-                    _terminate_process_tree(process.pid)
+                    _terminate_process_tree(ownership_record, ownership_expected)
                     break
                 raise subprocess.TimeoutExpired(command, timeout_seconds)
             time.sleep(POLL_SECONDS)
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        _terminate_process_tree(process.pid)
+        _terminate_process_tree(ownership_record, ownership_expected)
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
@@ -8076,15 +8087,14 @@ def _file_progress_signature(path):
     return (int(stat.st_size), int(stat.st_mtime_ns))
 
 
-def _terminate_process_tree(pid):
+def _terminate_process_tree(ownership_record, expected_ownership=None, inspector=inspect_process):
     if emergency_process_cleanup_disabled():
-        return record_emergency_cleanup_refusal("_terminate_process_tree", pid)
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return
-    if pid <= 0:
-        return
+        requested_pid = ownership_record.get("pid") if isinstance(ownership_record, dict) else ownership_record
+        return record_emergency_cleanup_refusal("_terminate_process_tree", requested_pid)
+    decision = validate_termination(ownership_record, expected_ownership, inspector)
+    if not decision["authorized"]:
+        return decision
+    pid = decision["pid"]
     if os.name == "nt":
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],
@@ -8094,14 +8104,15 @@ def _terminate_process_tree(pid):
             timeout=15,
             **background_run_kwargs(),
         )
-        return
+        return {"authorized": True, "terminated": True, "pid": pid}
     try:
         os.killpg(pid, signal.SIGTERM)
     except OSError:
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
-            return
+            return {"authorized": False, "reason": "termination_failed", "pid": pid}
+    return {"authorized": True, "terminated": True, "pid": pid}
 
 
 def _wait_for_file_handles_released(paths, timeout_seconds=2.0):

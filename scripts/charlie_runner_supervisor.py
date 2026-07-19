@@ -21,6 +21,8 @@ from modules.charlie.process_policy import background_process_kwargs, background
 from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
+from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
+from modules.charlie.process_ownership import inspect_process, make_ownership_record, validate_termination
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
@@ -172,7 +174,9 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
         child_env["CORE_EXECUTION_BASE_BRANCH"] = "charlie-core-execution-base"
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
-        child_identity = _process_identity(child.pid)
+        child_identity = make_ownership_record(
+            inspect_process(child.pid), generation, "charlie-control", generation, "charlie_runner"
+        )
         _write_status(
             "runner_started", child_pid=child.pid, child_identity=child_identity,
             restart_count=restart_count, generation=generation,
@@ -344,6 +348,9 @@ def _run_analyst_repair_validation():
 
 
 def _recover_stale_owned_child():
+    if emergency_process_cleanup_disabled():
+        record_emergency_cleanup_refusal("supervisor_recover_stale_owned_child", "recorded-child")
+        return False
     try:
         state = json.loads(SUPERVISOR_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -353,8 +360,14 @@ def _recover_stale_owned_child():
     if not child_pid or _pid_alive(supervisor_pid) or not _pid_alive(child_pid):
         return False
     recorded_identity = state.get("child_identity")
-    current_identity = _process_identity(child_pid)
-    if not _same_process_identity(recorded_identity, current_identity):
+    expected = {
+        "runner_generation": recorded_identity.get("runner_generation") if isinstance(recorded_identity, dict) else "",
+        "mission_id": "charlie-control",
+        "execution_id": recorded_identity.get("execution_id") if isinstance(recorded_identity, dict) else "",
+        "ownership_type": "charlie_runner",
+    }
+    decision = validate_termination(recorded_identity, expected, inspect_process)
+    if not decision["authorized"]:
         return False
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(child_pid), "/T", "/F"], capture_output=True, check=False, timeout=15)
