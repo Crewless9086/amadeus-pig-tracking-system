@@ -68,6 +68,7 @@ from modules.charlie.owner_approval_inbox import (
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
 from modules.charlie.executive_store import executive_scorecard, list_capability_trust
+from modules.charlie.concurrency_control import revision_truth
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
 from modules.charlie.private_stream import stream_private_turn
@@ -584,6 +585,10 @@ def charlie_mission_control_snapshot_route():
         "authoritative": True,
         "source_statuses": statuses,
         "counts_source": "mission_status_summary" if summary_status < 400 else "owner_queue_fallback",
+        "revision_truth": revision_truth(
+            REPO_ROOT,
+            render_deployed_commit=str(os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or ""),
+        ),
         "cache": "refreshed",
     }
     MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})

@@ -139,7 +139,7 @@ def build_admission(repo_root, mission_id, declared_files, *, holder="", now_epo
     if conflicts:
         return {"allowed": False, "status": "concurrent_source_overlap", "workspace": current, "declared_files": scope, "conflicts": conflicts}
     lease = acquire_file_lease(inventory["canonical_root"], mission_id, scope, holder=holder, now_epoch=now_epoch)
-    return {"allowed": bool(lease.get("acquired")), "status": "build_admitted" if lease.get("acquired") else lease.get("status"), "workspace": current, "declared_files": scope, "conflicts": lease.get("conflicts", []), "lease": lease}
+    return {"allowed": bool(lease.get("acquired")), "status": "build_admitted" if lease.get("acquired") else lease.get("status"), "workspace": current, "canonical_root": inventory["canonical_root"], "declared_files": scope, "conflicts": lease.get("conflicts", []), "lease": lease}
 
 
 def acquire_file_lease(canonical_root, mission_id, files, *, holder="", now_epoch=None):
@@ -210,16 +210,19 @@ class ReleaseCoordinator:
 
 
 def revision_truth(repo_root, *, render_deployed_commit=""):
-    canonical = _shared_repository_root(Path(repo_root).resolve())
+    current_root = Path(repo_root).resolve()
+    canonical = _shared_repository_root(current_root)
     manifest = _read_json(canonical / ".charlie_runner" / "runtime-manifest.json", {})
     heartbeat = _read_json(canonical / ".charlie_runner" / "runner.json", {})
     accepted = _git_output(canonical, ["git", "rev-parse", "origin/main"])
     owner = _git_output(canonical, ["git", "rev-parse", "HEAD"])
+    current = _git_output(current_root, ["git", "rev-parse", "HEAD"])
+    current_branch = _git_output(current_root, ["git", "branch", "--show-current"])
     promoted = str(manifest.get("promoted_commit") or "")
     runner = str(heartbeat.get("runner_source_commit") or "")
     deployed = str(render_deployed_commit or "")
     compared = [value for value in (accepted, promoted, runner, deployed) if value]
-    return {"version": VERSION, "status": "revision_truth_ready", "owner_checkout_commit": owner, "accepted_commit": accepted, "promoted_commit": promoted, "runner_commit": runner, "deployed_commit": deployed, "accepted_promoted_match": bool(accepted and accepted == promoted), "promoted_runner_match": bool(promoted and promoted == runner), "all_observed_match": bool(compared and len(set(compared)) == 1)}
+    return {"version": VERSION, "status": "revision_truth_ready", "current_workspace_root": str(current_root), "current_workspace_branch": current_branch, "current_workspace_commit": current, "owner_checkout_commit": owner, "github_accepted_commit": accepted, "accepted_commit": accepted, "promoted_commit": promoted, "runner_commit": runner, "render_deployed_commit": deployed, "deployed_commit": deployed, "accepted_promoted_match": bool(accepted and accepted == promoted), "promoted_runner_match": bool(promoted and promoted == runner), "all_observed_match": bool(compared and len(set(compared)) == 1)}
 
 
 def activation_readiness(repo_root, *, render_deployed_commit="", containment_active=True, scheduler_enabled=False, active_process_count=0):

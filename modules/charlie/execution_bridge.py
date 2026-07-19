@@ -40,6 +40,7 @@ from modules.charlie.runner_control import (
 from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+from modules.charlie.concurrency_control import ReleaseCoordinator, build_admission, declared_source_files, release_file_lease
 from modules.charlie.core_workflow import (
     AGENT_DOCTRINE_PATHS,
     build_handoff_report as build_core_handoff_report,
@@ -513,6 +514,33 @@ def run_agent_execution_bridge_v2(
             connect_factory=connect_factory,
         )
         stage_paths = _agent_stage_paths(output_dir, execution_id, agent, attempt=stage_attempts[agent])
+        concurrency_admission = None
+        if agent == "builder":
+            concurrency_admission = _builder_concurrency_admission(mission, artifacts, execution_id)
+            if not concurrency_admission.get("allowed"):
+                stage_started = datetime.now(timezone.utc).isoformat()
+                return _block_agent_stage(
+                    mission["mission_id"],
+                    execution_id,
+                    ledger,
+                    agent,
+                    stage_paths,
+                    SimpleNamespace(returncode=78, stdout="", stderr="Builder concurrency admission refused."),
+                    stage_started,
+                    blocked_reason=(
+                        "Builder concurrency admission refused before model execution: "
+                        f"{concurrency_admission.get('status') or 'unknown_status'}."
+                    ),
+                    artifact={
+                        "summary": "Builder did not start because workspace/source ownership was not safe.",
+                        "errors": [str(concurrency_admission.get("status") or "concurrency_admission_failed")],
+                        "concurrency_admission": concurrency_admission,
+                        "next_action": "Resolve the workspace overlap or declare a bounded source scope, then resume from Builder.",
+                    },
+                    artifacts=artifacts,
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
         write_runner_heartbeat({
             "status": "agent_stage_preparing",
             "mission_id": mission["mission_id"],
@@ -651,6 +679,9 @@ def run_agent_execution_bridge_v2(
             "model_assignment": model_assignment,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         })
+        if concurrency_admission:
+            artifact["concurrency_admission"] = concurrency_admission
+            artifact["concurrency_lease_release"] = _release_builder_concurrency_admission(concurrency_admission)
         validation = _validate_agent_artifact(agent, artifact)
         if not validation["valid"]:
             retry_reason = "malformed_json" if parse_failed else "missing_keys"
@@ -1443,6 +1474,46 @@ def run_release_execution(
     if mission_status >= 400:
         return error, mission_status
 
+    pr_reference = ""
+    release_coordinator = None
+    if merge_pr:
+        pr_reference = _review_pr_reference(mission)
+        if not pr_reference:
+            blocked, blocked_status = update_mission_status(
+                mission_id,
+                "blocked",
+                owner_decision="Release bridge could not merge because no PR reference was found in the review packet.",
+                event_type="status_changed",
+                notes="Local release bridge requires a PR URL or PR number before automatic merge/deploy.",
+                metadata={
+                    "script": "scripts/charlie_release_bridge.py",
+                    "release_packet_path": release_packet_path,
+                    "release_mode": "merge_pr",
+                },
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            if blocked_status >= 400:
+                return blocked, blocked_status
+            return {
+                "success": False,
+                "status": "release_pr_reference_required",
+                "mission_id": mission_id,
+                "mission_status": "blocked",
+                "release_packet_path": release_packet_path,
+            }, 409
+        release_coordinator = ReleaseCoordinator(runtime_path_root(REPO_ROOT), mission_id, pr_reference)
+        coordinated, coordination_owner = release_coordinator.acquire()
+        if not coordinated:
+            return {
+                "success": False,
+                "status": "release_coordination_locked",
+                "mission_id": mission_id,
+                "mission_status": "release_approved",
+                "release_packet_path": release_packet_path,
+                "lock_owner": coordination_owner,
+            }, 409
+
     started, start_status = update_mission_status(
         mission_id,
         "release_in_progress",
@@ -1458,6 +1529,8 @@ def run_release_execution(
         connect_factory=connect_factory,
     )
     if start_status >= 400:
+        if release_coordinator:
+            release_coordinator.release()
         return started, start_status
 
     if not merge_pr:
@@ -1470,44 +1543,22 @@ def run_release_execution(
             "next_action": "Run with merge_pr=True only when the review packet includes a PR link and owner final approval is recorded.",
         }, 200
 
-    pr_reference = _review_pr_reference(mission)
-    if not pr_reference:
-        blocked, blocked_status = update_mission_status(
-            mission_id,
-            "blocked",
-            owner_decision="Release bridge could not merge because no PR reference was found in the review packet.",
-            event_type="status_changed",
-            notes="Local release bridge requires a PR URL or PR number before automatic merge/deploy.",
-            metadata={
-                "script": "scripts/charlie_release_bridge.py",
-                "release_packet_path": release_packet_path,
-                "release_mode": "merge_pr",
-            },
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        if blocked_status >= 400:
-            return blocked, blocked_status
-        return {
-            "success": False,
-            "status": "release_pr_reference_required",
-            "mission_id": mission_id,
-            "mission_status": "blocked",
-            "release_packet_path": release_packet_path,
-        }, 409
-
     runner = run_subprocess or subprocess.run
     command = ["gh", "pr", "merge", pr_reference, "--squash", "--delete-branch"]
-    completed = runner(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=str(REPO_ROOT),
-        timeout=900,
-        check=False,
-    )
+    try:
+        completed = runner(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=900,
+            check=False,
+        )
+    except Exception:
+        release_coordinator.release()
+        raise
     merge_result = {
         "pr_reference": pr_reference,
         "command": " ".join(command),
@@ -1522,7 +1573,7 @@ def run_release_execution(
         release_failure = _classify_release_merge_failure(merge_result)
         if reconciliation.get("merged"):
             merge_result["reconciled_as_merged"] = True
-            return _complete_release_merge(
+            result = _complete_release_merge(
                 mission_id=mission_id,
                 release_packet_path=release_packet_path,
                 merge_result=merge_result,
@@ -1532,6 +1583,9 @@ def run_release_execution(
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
+            release_coordinator.record("release_reconciled", merge_result=merge_result)
+            release_coordinator.release()
+            return result
         existing_metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
         existing_release = existing_metadata.get("release_packet") if isinstance(existing_metadata.get("release_packet"), dict) else {}
         existing_review = existing_metadata.get("review_packet") if isinstance(existing_metadata.get("review_packet"), dict) else {}
@@ -1577,7 +1631,7 @@ def run_release_execution(
             database_url=database_url,
             connect_factory=connect_factory,
         )
-        return {
+        result = {
             "success": False,
             "status": release_failure["status"],
             "mission_id": mission_id,
@@ -1587,8 +1641,11 @@ def run_release_execution(
             "failure_class": release_failure["failure_class"],
             "recommended_next_action": release_failure["recommended_next_action"],
         }, 502
+        release_coordinator.record("release_merge_failed", merge_result=merge_result)
+        release_coordinator.release()
+        return result
 
-    return _complete_release_merge(
+    result = _complete_release_merge(
         mission_id=mission_id,
         release_packet_path=release_packet_path,
         merge_result=merge_result,
@@ -1598,6 +1655,9 @@ def run_release_execution(
         database_url=database_url,
         connect_factory=connect_factory,
     )
+    release_coordinator.record("release_completed", merge_result=merge_result)
+    release_coordinator.release()
+    return result
 
 
 def _complete_release_merge(
@@ -4933,6 +4993,27 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
     })
     return packaged
+
+
+def _builder_concurrency_admission(mission, artifacts, execution_id):
+    """Fail closed before Builder can touch a workspace or source file."""
+    declared_files = declared_source_files(mission, artifacts)
+    return build_admission(
+        REPO_ROOT,
+        str((mission or {}).get("mission_id") or ""),
+        declared_files,
+        holder=f"execution:{execution_id}:builder",
+    )
+
+
+def _release_builder_concurrency_admission(admission):
+    admission = admission if isinstance(admission, dict) else {}
+    lease = admission.get("lease") if isinstance(admission.get("lease"), dict) else {}
+    canonical_root = str(admission.get("canonical_root") or "").strip()
+    lease_id = str(lease.get("lease_id") or "").strip()
+    if not canonical_root or not lease_id:
+        return {"released": False, "status": "builder_lease_release_not_applicable"}
+    return release_file_lease(canonical_root, lease_id)
 
 
 def _runner_generated_path(path):

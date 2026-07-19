@@ -120,10 +120,13 @@ class CoreConcurrencyControlTests(unittest.TestCase):
             (root / ".charlie_runner").mkdir()
             (root / ".charlie_runner/runtime-manifest.json").write_text(json.dumps({"promoted_commit": "same"}), encoding="utf-8")
             (root / ".charlie_runner/runner.json").write_text(json.dumps({"runner_source_commit": "same"}), encoding="utf-8")
-            with patch("modules.charlie.concurrency_control._git_output", side_effect=["same", "owner"]):
+            with patch("modules.charlie.concurrency_control._git_output", side_effect=["same", "owner", "feature", "program/phases-2-7"]):
                 result = revision_truth(root, render_deployed_commit="same")
             self.assertTrue(result["all_observed_match"])
             self.assertEqual(result["owner_checkout_commit"], "owner")
+            self.assertEqual(result["github_accepted_commit"], "same")
+            self.assertEqual(result["current_workspace_commit"], "feature")
+            self.assertEqual(result["current_workspace_branch"], "program/phases-2-7")
 
 
 if __name__ == "__main__":

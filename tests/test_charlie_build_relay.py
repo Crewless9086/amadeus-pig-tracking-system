@@ -1087,7 +1087,15 @@ class CharlieBuildRelayTests(unittest.TestCase):
             {"mission_id": "BLOCK-1", "status": "blocked"},
         ]}, 200)
 
-        response = self.client.get("/api/charlie/build-relay/mission-control")
+        with patch("modules.charlie.routes.revision_truth", return_value={
+            "status": "revision_truth_ready",
+            "current_workspace_commit": "feature",
+            "github_accepted_commit": "accepted",
+            "promoted_commit": "promoted",
+            "runner_commit": "runner",
+            "render_deployed_commit": "render",
+        }):
+            response = self.client.get("/api/charlie/build-relay/mission-control")
         data = response.get_json()
 
         self.assertEqual(response.status_code, 200)
@@ -1095,6 +1103,8 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(data["source"], "supabase_charlie_missions")
         self.assertEqual(data["buckets"]["active"][0]["mission_id"], "ACTIVE-1")
         self.assertEqual(data["buckets"]["blocked"][0]["mission_id"], "BLOCK-1")
+        self.assertEqual(data["revision_truth"]["github_accepted_commit"], "accepted")
+        self.assertEqual(data["revision_truth"]["render_deployed_commit"], "render")
 
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes._dashboard_owner_queue")
