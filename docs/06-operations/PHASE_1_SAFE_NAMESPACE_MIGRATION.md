@@ -13,6 +13,8 @@ Separate the two identities that the former `CHARLIE_*` namespace mixed together
 
 Provider and shared integration names such as `OPENAI_*`, `ANTHROPIC_*`, `SUPABASE_*` and `RENDER_*` remain provider-owned. This phase does not rename them.
 
+Dynamic model-routing families (`CHARLIE_AGENT_MODEL_*`, `CHARLIE_AGENT_PROVIDER_*`, `CHARLIE_MODEL_*`, and `CHARLIE_PROVIDER_*`) migrate mechanically to the equivalent `CORE_*` name, including registry cost overrides. Their suffixes are runtime-defined, so the migration derives them from keys actually present instead of maintaining an incomplete static list.
+
 ## Compatibility contract
 
 Runtime reads use `modules/charlie/environment.py`.
