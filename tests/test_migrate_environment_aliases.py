@@ -19,6 +19,18 @@ class EnvironmentAliasMigrationTests(unittest.TestCase):
         self.assertEqual(additions, {})
         self.assertEqual(conflicts, ["CHARLIE_LLM_MODEL"])
 
+    def test_dynamic_agent_and_registry_model_keys_are_migrated(self):
+        additions, equal, conflicts = migration_plan({
+            "CHARLIE_AGENT_MODEL_SOURCE_MAPPER": "agent-model",
+            "CHARLIE_MODEL_BUSINESS_REVIEW": "review-model",
+            "CHARLIE_MODEL_BUSINESS_REVIEW_INPUT_COST_PER_1K": "0.1",
+        })
+        self.assertEqual(additions["CORE_AGENT_MODEL_SOURCE_MAPPER"], "agent-model")
+        self.assertEqual(additions["CORE_MODEL_BUSINESS_REVIEW"], "review-model")
+        self.assertEqual(additions["CORE_MODEL_BUSINESS_REVIEW_INPUT_COST_PER_1K"], "0.1")
+        self.assertEqual(equal, [])
+        self.assertEqual(conflicts, [])
+
     def test_dry_run_does_not_write(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / ".env"

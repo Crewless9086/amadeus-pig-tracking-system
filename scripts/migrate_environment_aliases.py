@@ -16,6 +16,12 @@ from modules.charlie.environment import ALIASES, EnvironmentConflictError, env_v
 
 
 MANAGED_HEADER = "# Phase 1 canonical CHARLIE/CORE aliases (legacy keys retained)"
+DYNAMIC_CORE_PREFIXES = (
+    "CHARLIE_AGENT_MODEL_",
+    "CHARLIE_AGENT_PROVIDER_",
+    "CHARLIE_MODEL_",
+    "CHARLIE_PROVIDER_",
+)
 
 
 def parse_dotenv(text):
@@ -36,14 +42,18 @@ def migration_plan(values, *, excluded=()):
     additions = {}
     equal = []
     conflicts = []
-    for canonical, legacy_names in ALIASES.items():
+    aliases = dict(ALIASES)
+    for legacy in values:
+        if legacy.startswith(DYNAMIC_CORE_PREFIXES):
+            aliases.setdefault("CORE_" + legacy[len("CHARLIE_"):], (legacy,))
+    for canonical, legacy_names in aliases.items():
         if canonical in excluded:
             continue
         present_legacy = [name for name in legacy_names if name in values]
         if not present_legacy and canonical not in values:
             continue
         try:
-            resolved = env_value(canonical, environ=values)
+            resolved = env_value(canonical, environ=values, aliases=legacy_names)
         except EnvironmentConflictError:
             conflicts.append(canonical)
             continue
