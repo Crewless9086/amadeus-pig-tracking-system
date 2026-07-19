@@ -2,7 +2,8 @@ param(
     [string]$SourceRef = "origin/main",
     [string]$RuntimeRoot = "",
     [string]$TaskName = "CHARLIE CORE Runner Watchdog",
-    [string]$RuntimeBranch = "charlie-core-runtime-base"
+    [string]$RuntimeBranch = "charlie-core-runtime-base",
+    [string]$ExecutionBranch = "charlie-core-execution-base"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,7 @@ if (-not $RuntimeRoot) {
     $RuntimeRoot = Join-Path $canonical ".charlie_runner\core-runtime-current"
 }
 $runtimeState = Join-Path $canonical ".charlie_runner"
+$executionRoot = Join-Path $runtimeState "core-execution-current"
 $python = Join-Path $canonical "venv\Scripts\python.exe"
 $pythonw = Join-Path $canonical "venv\Scripts\pythonw.exe"
 if (-not (Test-Path -LiteralPath $python) -or -not (Test-Path -LiteralPath $pythonw)) {
@@ -36,6 +38,19 @@ if (Test-Path -LiteralPath $RuntimeRoot) {
     if ($LASTEXITCODE -ne 0) { throw "Could not create the runtime worktree." }
     git -C $RuntimeRoot switch -C $RuntimeBranch $SourceRef
     if ($LASTEXITCODE -ne 0) { throw "Could not establish the dedicated runtime base branch." }
+}
+
+if (Test-Path -LiteralPath $executionRoot) {
+    $executionDirty = git -C $executionRoot status --porcelain
+    if ($LASTEXITCODE -ne 0) { throw "Existing execution path is not a healthy Git worktree." }
+    if ($executionDirty) { throw "Existing execution worktree is dirty; promotion refused without cleanup review." }
+    git -C $executionRoot switch -C $ExecutionBranch $SourceRef
+    if ($LASTEXITCODE -ne 0) { throw "Could not update the execution worktree." }
+} else {
+    git -C $canonical worktree add --detach $executionRoot $SourceRef
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the execution worktree." }
+    git -C $executionRoot switch -C $ExecutionBranch $SourceRef
+    if ($LASTEXITCODE -ne 0) { throw "Could not establish the dedicated execution base branch." }
 }
 
 $focused = @(
@@ -66,4 +81,5 @@ if ($installedAction.Execute -ne $pythonw -or $installedAction.WorkingDirectory 
 
 Write-Output "Promoted CORE runtime from $SourceRef"
 Write-Output "Runtime root: $RuntimeRoot"
+Write-Output "Execution root: $executionRoot"
 Write-Output "Task: $TaskName"
