@@ -116,6 +116,23 @@
   margin: 18px 0;
 }
 
+.beacon-attribution-panel { margin: 0 0 18px; padding: 18px; border: 1px solid #b8cab8; border-radius: 10px; background: #f8faf7; }
+.beacon-attribution-panel .beacon-panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.beacon-attribution-actions { display: grid; justify-items: end; gap: 8px; min-width: 150px; }
+.beacon-attribution-notice { margin-top: 14px; padding: 11px 12px; border-left: 4px solid #466a96; border-radius: 8px; background: #f4f8fc; color: #425047; }
+.beacon-attribution-notice[data-state="blocked"] { border-color: #a63f3f; background: #fff0f0; color: #7c2929; }
+.beacon-attribution-notice[data-state="unavailable"] { border-color: #b48019; background: #fff7e4; color: #765410; }
+.beacon-attribution-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.beacon-attribution-summary article, .beacon-attribution-row { min-width: 0; border: 1px solid #d7ded6; border-radius: 8px; background: #fff; padding: 11px; }
+.beacon-attribution-summary span, .beacon-attribution-row span, .beacon-attribution-row small { display: block; color: #607066; overflow-wrap: anywhere; }
+.beacon-attribution-summary strong { display: block; margin-top: 5px; color: #203528; font-size: 1.35rem; }
+.beacon-attribution-list { display: grid; gap: 10px; margin-top: 14px; }
+.beacon-attribution-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(110px, .8fr) minmax(140px, 1fr) minmax(170px, 1.25fr); gap: 12px; }
+.beacon-attribution-row > div { min-width: 0; }
+.beacon-attribution-row strong { display: block; overflow-wrap: anywhere; color: #203528; }
+.beacon-attribution-row[data-status="ambiguous"], .beacon-attribution-row[data-status="unmatched"] { border-left: 4px solid #b48019; }
+.beacon-attribution-boundary { margin: 13px 0 0; color: #607066; font-size: .82rem; }
+
 .beacon-media-summary article,
 .beacon-media-policy-panel,
 .beacon-media-campaign-panel,
@@ -482,6 +499,7 @@
   }
   .beacon-lane-boundary, .beacon-sales-truth-grid { grid-template-columns: 1fr; }
   .beacon-lane-boundary, .beacon-sales-truth-grid, .beacon-readiness-grid, .beacon-exact-review-grid { grid-template-columns: 1fr; }
+  .beacon-attribution-summary, .beacon-attribution-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -494,6 +512,9 @@
   .beacon-comparison-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .beacon-comparison-row > div { grid-column: 1 / -1; }
   .beacon-facebook-post-panel .beacon-media-actions .button-link { width: 100%; }
+  .beacon-attribution-panel .beacon-panel-heading { flex-direction: column; }
+  .beacon-attribution-actions { justify-items: stretch; width: 100%; }
+  .beacon-attribution-actions .button-link { width: 100%; }
   .beacon-outcome-import .button-link,.beacon-correction-panel .button-link{width:100%}.beacon-metric-grid{grid-template-columns:1fr}
 }
 .beacon-compose{margin:0 0 18px;padding:22px;background:#f7f9f7;border:1px solid #d8e0da;border-radius:8px}.beacon-compose-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.beacon-compose-header h2{margin:3px 0 4px;font-size:24px}.beacon-compose-header p{margin:0;color:#56615a}.beacon-compose-grid{display:grid;grid-template-columns:minmax(250px,.85fr) minmax(320px,1.15fr) minmax(280px,1fr);gap:14px}.beacon-compose-step{min-width:0;padding:16px;background:#fff;border:1px solid #dce3de;border-radius:6px}.beacon-step-title{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}.beacon-step-title>span{display:grid;place-items:center;width:28px;height:28px;flex:0 0 28px;border-radius:50%;background:#174f3c;color:#fff;font-weight:700}.beacon-step-title h3{margin:1px 0 2px;font-size:17px}.beacon-step-title p{margin:0;color:#69736d;font-size:13px}.beacon-dropzone{display:grid;gap:4px;padding:20px;margin-bottom:10px;border:1px dashed #8aa294;background:#f7faf8;text-align:center;cursor:pointer}.beacon-dropzone input{margin:8px auto 0;max-width:100%}.beacon-inline-status{min-height:22px;margin:8px 0;color:#4c5b52;font-size:13px}.beacon-quick-media{display:grid;gap:7px;max-height:355px;overflow:auto}.beacon-quick-asset{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:9px;border:1px solid #dde4df;background:#fff;text-align:left}.beacon-quick-asset strong,.beacon-quick-asset small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.beacon-quick-asset small{color:#728078}.beacon-quick-asset button{border:0;background:#e8f1eb;color:#174f3c;padding:6px 8px;cursor:pointer}.beacon-caption-options{display:grid;gap:8px;margin:12px 0}.beacon-caption-option{padding:11px;border:1px solid #dce3de;background:#fbfcfb;text-align:left;cursor:pointer}.beacon-caption-option:hover{border-color:#3b725c}.beacon-caption-option p{margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.beacon-safety-summary{display:grid;gap:3px;padding:11px;margin-bottom:12px;border-left:4px solid #b58b22;background:#fff8e5}.beacon-safety-summary[data-state=ready]{border-color:#2d7a54;background:#edf8f1}.beacon-safety-summary[data-state=blocked]{border-color:#a23a36;background:#fff0ef}.beacon-post-preview{min-height:180px;padding:16px;margin-bottom:12px;background:#f6f7f6;border:1px solid #dce3de;white-space:pre-wrap;overflow-wrap:anywhere}.beacon-compose-final .button-link{width:100%;justify-content:center;margin-top:8px}.beacon-advanced-workspace{margin-top:14px}.beacon-advanced-workspace>summary{display:flex;justify-content:space-between;gap:12px;padding:14px 16px;border:1px solid #d8e0da;background:#fff;cursor:pointer}.beacon-advanced-workspace>summary span{color:#68736d;font-size:13px}@media(max-width:1100px){.beacon-compose-grid{grid-template-columns:1fr 1fr}.beacon-compose-final{grid-column:1/-1}}@media(max-width:720px){.beacon-compose{padding:12px}.beacon-compose-header,.beacon-advanced-workspace>summary{display:block}.beacon-compose-grid{grid-template-columns:1fr}.beacon-compose-final{grid-column:auto}}

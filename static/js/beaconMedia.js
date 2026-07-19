@@ -10,6 +10,7 @@
     meatCapReady: false,
     exactImageReady: false,
     performanceEvents: [],
+    attribution: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -132,6 +133,15 @@
     reject: byId("beacon_media_reject"),
     archive: byId("beacon_media_archive"),
     reviewResult: byId("beacon_media_review_result"),
+    attributionRefresh: byId("beacon_attribution_refresh"),
+    attributionStatus: byId("beacon_attribution_status"),
+    attributionNotice: byId("beacon_attribution_notice"),
+    attributionList: byId("beacon_attribution_list"),
+    attributionAttributed: byId("beacon_attribution_attributed"),
+    attributionAmbiguous: byId("beacon_attribution_ambiguous"),
+    attributionUnmatched: byId("beacon_attribution_unmatched"),
+    attributionQualified: byId("beacon_attribution_qualified"),
+    attributionLost: byId("beacon_attribution_lost"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -193,12 +203,79 @@
     await loadFacebookPostExecutions();
     await loadManualPostEvidence();
     await loadCampaignPerformance();
+    await loadAttribution();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
       state.selectedAssetId = "";
       renderDetail(null);
     } else {
       renderDetail(selectedAsset());
     }
+  }
+
+  async function loadAttribution() {
+    setAttributionLoading();
+    try {
+      const attribution = await fetchJson("/api/beacon/sam-attribution");
+      state.attribution = attribution;
+      renderAttribution(attribution);
+    } catch (error) {
+      renderAttributionError(error.message);
+    }
+  }
+
+  function setAttributionLoading() {
+    elements.attributionStatus.textContent = "Loading evidence";
+    elements.attributionStatus.dataset.state = "loading";
+    elements.attributionNotice.textContent = "Reading canonical campaign and SAM evidence.";
+    elements.attributionNotice.dataset.state = "loading";
+  }
+
+  function renderAttribution(attribution) {
+    const summary = attribution?.summary || {};
+    const rows = Array.isArray(attribution?.attributions) ? attribution.attributions : [];
+    const malformed = Array.isArray(attribution?.malformed_evidence_ids) ? attribution.malformed_evidence_ids : [];
+    [[elements.attributionAttributed, summary.attributed], [elements.attributionAmbiguous, summary.ambiguous],
+      [elements.attributionUnmatched, summary.unmatched], [elements.attributionQualified, summary.qualified],
+      [elements.attributionLost, summary.lost]].forEach(([element, value]) => { element.textContent = String(Number(value || 0)); });
+    if (!attribution || attribution.status === "malformed_evidence") {
+      elements.attributionStatus.textContent = "Evidence needs correction";
+      elements.attributionStatus.dataset.state = "blocked";
+      elements.attributionNotice.textContent = `Malformed evidence is excluded: ${malformed.join(", ") || "source identity missing"}.`;
+      elements.attributionNotice.dataset.state = "blocked";
+    } else if (!rows.length) {
+      elements.attributionStatus.textContent = "No attributed evidence";
+      elements.attributionStatus.dataset.state = "unavailable";
+      elements.attributionNotice.textContent = "No matching canonical campaign-to-SAM evidence is available yet. Revenue and fulfilment remain unavailable.";
+      elements.attributionNotice.dataset.state = "unavailable";
+    } else {
+      elements.attributionStatus.textContent = "Read-only evidence";
+      elements.attributionStatus.dataset.state = "ready";
+      elements.attributionNotice.textContent = `Rule ${safe(attribution.rule_version, "version unavailable")} · ${safe(attribution.attribution_window_days, "--")}-day attribution window · no action authority.`;
+      elements.attributionNotice.dataset.state = "ready";
+    }
+    elements.attributionList.innerHTML = rows.length ? rows.map(renderAttributionRow).join("") : '<div class="table-empty">No attribution rows are available. Beacon will not infer a conversion from partial evidence.</div>';
+  }
+
+  function renderAttributionError(message) {
+    [elements.attributionAttributed, elements.attributionAmbiguous, elements.attributionUnmatched, elements.attributionQualified, elements.attributionLost].forEach((element) => { element.textContent = "--"; });
+    elements.attributionStatus.textContent = "Evidence unavailable";
+    elements.attributionStatus.dataset.state = "blocked";
+    elements.attributionNotice.textContent = `Attribution could not be loaded: ${message}. No conversion is shown.`;
+    elements.attributionNotice.dataset.state = "blocked";
+    elements.attributionList.innerHTML = '<div class="table-empty">Attribution evidence is unavailable. Refresh after canonical sources recover.</div>';
+  }
+
+  function renderAttributionRow(row) {
+    const revenue = Array.isArray(row.revenue) && row.revenue.length
+      ? row.revenue.map((item) => `${escapeHtml(safe(item.currency))} ${escapeHtml(safe(item.net_total))}`).join(" · ") : "Unavailable";
+    const candidates = Array.isArray(row.candidate_lead_ids) && row.candidate_lead_ids.length ? `Candidates: ${escapeHtml(row.candidate_lead_ids.join(", "))}` : "";
+    const lost = row.lost_reason?.status === "recorded" ? `Lost reason: ${escapeHtml(safe(row.lost_reason.code))}` : "";
+    return `<article class="beacon-attribution-row" data-status="${escapeHtml(safe(row.status, "unmatched"))}">
+      <div><strong>${escapeHtml(safe(row.campaign_ref, row.performance_event_id))}</strong><small>${escapeHtml(safe(row.method, row.status).replaceAll("_", " "))}</small></div>
+      <div><span>Lead</span><strong>${escapeHtml(safe(row.lead_id, "Not resolved"))}</strong><small>${escapeHtml(safe(row.qualification, "unresolved"))}</small></div>
+      <div><span>Order / fulfilment</span><strong>${escapeHtml(safe(row.order_id, "No resolvable order"))}</strong><small>${escapeHtml(safe(row.fulfilment, "unknown"))}</small></div>
+      <div><span>Completed paid revenue</span><strong>${revenue}</strong><small>${candidates || lost || "No inferred revenue"}</small></div>
+    </article>`;
   }
 
   async function loadCampaignSelection() {
@@ -1039,6 +1116,7 @@
       elements.ownerAlerts.innerHTML = `<strong>Could not load campaign evidence</strong><span>${escapeHtml(error.message)}</span>`;
       elements.ownerAlerts.dataset.state = "blocked";
     }));
+    elements.attributionRefresh.addEventListener("click", () => loadAttribution());
     elements.performanceRecord.addEventListener("click", () => recordCampaignPerformance().catch((error) => showMessage(error.message)));
     elements.historyImport.addEventListener("click", () => importFacebookHistory().catch((error) => { elements.historyImportStatus.textContent = error.message; elements.historyImportStatus.dataset.state = "blocked"; showMessage(error.message); }));
     elements.correctionSave.addEventListener("click", () => saveCorrection().catch((error) => showMessage(error.message)));

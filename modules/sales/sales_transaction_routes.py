@@ -149,6 +149,7 @@ from modules.sales.beacon_campaign import (
 from modules.charlie.mission_store import record_mission
 from modules.sales.beacon_facebook_history import import_beacon_facebook_history
 from modules.beacon.post_composer import build_beacon_caption_suggestions, revise_beacon_caption
+from modules.beacon.sam_attribution import build_beacon_sam_attribution
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -1083,6 +1084,34 @@ def beacon_campaign_performance():
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_campaign_performance_event(payload)
     return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/sam-attribution", methods=["GET"])
+def beacon_sam_attribution():
+    """Expose the deterministic Beacon-to-SAM projection for owner review only."""
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    campaign_result, campaign_status = list_beacon_campaign_performance_events(limit=100)
+    if campaign_status >= 400:
+        return jsonify(campaign_result), campaign_status
+    leads_result, leads_status = list_sales_leads(limit=100)
+    if leads_status >= 400:
+        return jsonify(leads_result), leads_status
+    sales_result, sales_status = list_sales_transactions(limit=100)
+    if sales_status >= 400:
+        return jsonify(sales_result), sales_status
+    result = build_beacon_sam_attribution({
+        "campaign_events": campaign_result.get("performance_events", []),
+        "leads": leads_result.get("sales_leads", []),
+        # Order, fulfilment, and loss ingestion is deliberately not inferred from
+        # partial records.  The projection therefore fails closed on those fields.
+        "orders": [],
+        "sales_transactions": sales_result.get("sales_transactions", []),
+        "fulfilment_events": [],
+        "loss_events": [],
+    })
+    return jsonify(result), 200
 
 
 @sales_bp.route("/beacon/weekly-command-brief", methods=["GET"])

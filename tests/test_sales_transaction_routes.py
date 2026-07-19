@@ -80,6 +80,37 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         list_transactions.assert_called_once_with(sale_stream="Slaughter", limit="10")
 
+    def test_beacon_sam_attribution_route_is_owner_read_only_and_never_infers_missing_records(self):
+        projection = {
+            "success": True,
+            "mode": "beacon_sam_attribution_read_only",
+            "summary": {"attributed": 0, "ambiguous": 0, "unmatched": 1, "qualified": 0, "lost": 0},
+            "attributions": [{"status": "unmatched", "revenue": [], "fulfilment": "unknown"}],
+            "authority": {"posts_publicly": False, "spends_money": False, "writes_farm_data": False},
+        }
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), \
+             patch.object(sales_transaction_routes, "list_beacon_campaign_performance_events", return_value=({"performance_events": [{"performance_event_id": "PERF-1"}]}, 200)), \
+             patch.object(sales_transaction_routes, "list_sales_leads", return_value=({"sales_leads": [{"lead_id": "LEAD-1"}]}, 200)), \
+             patch.object(sales_transaction_routes, "list_sales_transactions", return_value=({"sales_transactions": [{"sale_id": "SALE-1"}]}, 200)), \
+             patch.object(sales_transaction_routes, "build_beacon_sam_attribution", return_value=projection) as build:
+            response = self.client.get("/api/beacon/sam-attribution")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), projection)
+        payload = build.call_args.args[0]
+        self.assertEqual(payload["orders"], [])
+        self.assertEqual(payload["fulfilment_events"], [])
+        self.assertEqual(payload["loss_events"], [])
+
+    def test_beacon_sam_attribution_route_requires_owner_read_access_before_sources(self):
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), \
+             patch.object(sales_transaction_routes, "list_beacon_campaign_performance_events") as campaigns:
+            response = self.client.get("/api/beacon/sam-attribution")
+
+        self.assertEqual(response.status_code, 403)
+        campaigns.assert_not_called()
+
     def test_sales_transaction_list_route_returns_400_for_invalid_stream(self):
         with patch.object(
             sales_transaction_routes,

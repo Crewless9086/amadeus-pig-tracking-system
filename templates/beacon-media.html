@@ -25,6 +25,32 @@
 
       <div id="beacon_media_message" class="message-box hidden"></div>
 
+      <section class="beacon-attribution-panel" aria-labelledby="beacon_attribution_title">
+        <div class="beacon-panel-heading">
+          <div>
+            <span class="beacon-eyebrow">Read-only evidence</span>
+            <h2 id="beacon_attribution_title">Lead and sales attribution</h2>
+            <p>Beacon links campaign evidence to SAM leads without creating orders, changing stock, posting, or spending.</p>
+          </div>
+          <div class="beacon-attribution-actions">
+            <span id="beacon_attribution_status" class="beacon-status-chip" data-state="loading">Loading evidence</span>
+            <button type="button" id="beacon_attribution_refresh" class="button-link button-link-secondary">Refresh attribution</button>
+          </div>
+        </div>
+        <div id="beacon_attribution_notice" class="beacon-attribution-notice" data-state="loading" aria-live="polite">Reading canonical campaign and SAM evidence.</div>
+        <div class="beacon-attribution-summary" aria-label="Attribution summary">
+          <article><span>Attributed</span><strong id="beacon_attribution_attributed">--</strong></article>
+          <article><span>Ambiguous</span><strong id="beacon_attribution_ambiguous">--</strong></article>
+          <article><span>Unmatched</span><strong id="beacon_attribution_unmatched">--</strong></article>
+          <article><span>Qualified</span><strong id="beacon_attribution_qualified">--</strong></article>
+          <article><span>Lost</span><strong id="beacon_attribution_lost">--</strong></article>
+        </div>
+        <div id="beacon_attribution_list" class="beacon-attribution-list">
+          <div class="table-empty">Loading attribution evidence…</div>
+        </div>
+        <p class="beacon-attribution-boundary">Read-only projection. Completed, paid revenue is separated by currency; missing, ambiguous, malformed, order, fulfilment, and loss evidence is never inferred.</p>
+      </section>
+
       <main class="beacon-compose" aria-labelledby="beacon_compose_title">
         <header class="beacon-compose-header">
           <div>
