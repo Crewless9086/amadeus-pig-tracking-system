@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 from modules.charlie.mission_store import _connect, _database_url
 
@@ -57,3 +58,39 @@ def observer_last_runs(*, database_url=None, connect_factory=None):
     except Exception as exc:
         return {"success": False, "status": "observer_runs_read_failed", "error_type": exc.__class__.__name__, "last_runs": {}}, 503
     return {"success": True, "status": "observer_last_runs_ready", "last_runs": {key: value.isoformat() if hasattr(value, "isoformat") else str(value) for key, value in rows}}, 200
+
+
+def record_observer_feedback(
+    run_id, recommendation_id, *, useful, owner_note="", recorded_by="charl",
+    database_url=None, connect_factory=None,
+):
+    """Persist explicit owner usefulness feedback; never infer it from model output."""
+    run_id = str(run_id or "").strip()
+    recommendation_id = str(recommendation_id or "").strip()
+    if not run_id or not recommendation_id or not isinstance(useful, bool):
+        return {"success": False, "status": "observer_feedback_fields_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "status": "observer_store_not_configured"}, 503
+    feedback_id = "FB-" + hashlib.sha256(
+        f"{run_id}:{recommendation_id}:{recorded_by}".encode("utf-8")
+    ).hexdigest()[:20].upper()
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    insert into public.domain_observer_feedback (
+                        feedback_id,run_id,recommendation_id,useful,owner_note,recorded_by
+                    ) values (%(id)s,%(run)s,%(recommendation)s,%(useful)s,%(note)s,%(by)s)
+                    on conflict (recommendation_id,recorded_by) do update set
+                        useful=excluded.useful,owner_note=excluded.owner_note,created_at=now()
+                    returning feedback_id
+                """, {
+                    "id": feedback_id, "run": run_id, "recommendation": recommendation_id,
+                    "useful": useful, "note": str(owner_note or "")[:2000],
+                    "by": str(recorded_by or "charl")[:120],
+                })
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "observer_feedback_write_failed", "error_type": exc.__class__.__name__}, 503
+    return {"success": bool(row), "status": "observer_feedback_recorded", "feedback_id": row[0] if row else feedback_id}, 200

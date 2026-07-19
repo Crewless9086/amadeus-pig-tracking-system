@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from modules.beacon.workforce import beacon_workforce_scorecard
 from modules.orders.order_read import list_orders
-from modules.pig_weights.pig_weights_service import get_sales_availability
+from modules.pig_weights.pig_weights_service import get_sales_metrics
 from modules.sales.conversation_learning import live_stock_learning_scorecard
 
 
@@ -36,11 +36,27 @@ def read_ledger_cash_exceptions(_domain="finance"):
     except Exception as exc:
         return _failed("order_service", {"error_type": exc.__class__.__name__})
     orders = [row for row in (orders or []) if isinstance(row, dict)]
-    unresolved = [row for row in orders if str(row.get("Payment_Status") or row.get("payment_status") or "").strip().lower() in {"pending", "partial", "overdue"}]
+    cancelled = [
+        row for row in orders
+        if str(row.get("Order_Status") or row.get("order_status") or "").strip().lower() in {"cancelled", "canceled"}
+    ]
+    cancelled_pending = [
+        row for row in cancelled
+        if str(row.get("Payment_Status") or row.get("payment_status") or "").strip().lower() in {"pending", "partial", "overdue"}
+    ]
+    unresolved = [
+        row for row in orders
+        if row not in cancelled
+        and str(row.get("Payment_Status") or row.get("payment_status") or "").strip().lower() in {"pending", "partial", "overdue"}
+    ]
     recommendations = [{"summary": f"Review {len(unresolved)} order payment exception(s) with Ledger."}] if unresolved else []
     return _evidence(
         "order_service.payment_state",
-        {"orders_inspected": len(orders), "payment_exceptions": len(unresolved)},
+        {
+            "orders_inspected": len(orders),
+            "payment_exceptions": len(unresolved),
+            "cancelled_payment_exceptions_excluded": len(cancelled_pending),
+        },
         recommendations,
         gaps=["dedicated_cross_order_cash_reconciliation_source_not_available"],
     )
@@ -48,13 +64,26 @@ def read_ledger_cash_exceptions(_domain="finance"):
 
 def read_herdmaster_readiness(_domain="farm"):
     try:
-        rows = get_sales_availability()
+        metrics = get_sales_metrics()
     except Exception as exc:
-        return _failed("pig_sales_availability", {"error_type": exc.__class__.__name__})
-    rows = [row for row in (rows or []) if isinstance(row, dict)]
-    ready = [row for row in rows if str(row.get("Readiness") or row.get("readiness") or row.get("Availability") or "").lower() in {"ready", "available", "yes"}]
-    recommendations = [] if ready else [{"summary": "Review herd readiness inputs; no sale-ready animals were confirmed by the current read."}]
-    return _evidence("supabase_pig_sales_availability", {"animals_inspected": len(rows), "sale_ready": len(ready)}, recommendations)
+        return _failed("sales_dashboard_metrics", {"error_type": exc.__class__.__name__})
+    metrics = metrics if isinstance(metrics, dict) else {}
+    if metrics.get("status") not in {"ok", "configured"}:
+        return _failed("sales_dashboard_metrics", {"error_type": metrics.get("status") or "unavailable"})
+    live_ready = int(metrics.get("live_sale_ready") or 0)
+    meat_window = int(metrics.get("meat_window") or 0)
+    slaughter_ready = int(metrics.get("slaughter_cull_ready") or 0)
+    recommendations = [] if live_ready else [{"summary": "Review herd readiness inputs; no live-sale-ready animals were confirmed by the current read."}]
+    return _evidence(
+        "supabase_sales_dashboard_metrics",
+        {
+            "live_sale_ready": live_ready,
+            "meat_window": meat_window,
+            "slaughter_cull_ready": slaughter_ready,
+            "breeding_purpose_change_required_before_sale_or_slaughter": True,
+        },
+        recommendations,
+    )
 
 
 def read_beacon_opportunities(_domain="marketing"):

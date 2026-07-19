@@ -20,17 +20,28 @@ class DomainObserverReaderTests(unittest.TestCase):
 
     @patch("modules.charlie.domain_observer_readers.list_orders")
     def test_ledger_adapter_reports_payment_exceptions_and_known_gap(self, orders):
-        orders.return_value = [{"payment_status": "Pending"}, {"payment_status": "Paid"}]
+        orders.return_value = [
+            {"payment_status": "Pending", "order_status": "Completed"},
+            {"payment_status": "Pending", "order_status": "Cancelled"},
+            {"payment_status": "Paid", "order_status": "Completed"},
+        ]
         result = read_ledger_cash_exceptions()
         self.assertEqual(result["facts"][0]["payment_exceptions"], 1)
+        self.assertEqual(result["facts"][0]["cancelled_payment_exceptions_excluded"], 1)
         self.assertIn("dedicated_cross_order_cash_reconciliation_source_not_available", result["gaps"])
 
-    @patch("modules.charlie.domain_observer_readers.get_sales_availability")
-    def test_herdmaster_adapter_uses_availability_truth(self, availability):
-        availability.return_value = [{"Readiness": "Ready"}, {"Readiness": "Not ready"}]
+    @patch("modules.charlie.domain_observer_readers.get_sales_metrics")
+    def test_herdmaster_adapter_uses_dashboard_metric_truth(self, metrics):
+        metrics.return_value = {
+            "status": "ok", "live_sale_ready": 51, "meat_window": 6,
+            "slaughter_cull_ready": 15,
+        }
         result = read_herdmaster_readiness()
-        self.assertEqual(result["facts"][0]["sale_ready"], 1)
-        self.assertEqual(result["source_refs"], ["supabase_pig_sales_availability"])
+        self.assertEqual(result["facts"][0]["live_sale_ready"], 51)
+        self.assertEqual(result["facts"][0]["meat_window"], 6)
+        self.assertEqual(result["facts"][0]["slaughter_cull_ready"], 15)
+        self.assertEqual(result["recommendations"], [])
+        self.assertEqual(result["source_refs"], ["supabase_sales_dashboard_metrics"])
 
     @patch("modules.charlie.domain_observer_readers.beacon_workforce_scorecard")
     def test_beacon_adapter_uses_workforce_evidence(self, scorecard):

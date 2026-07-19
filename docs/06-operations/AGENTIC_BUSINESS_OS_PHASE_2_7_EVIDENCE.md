@@ -53,9 +53,9 @@ Implemented:
 
 Known evidence gap: Ledger currently reads order payment state and explicitly reports that a dedicated cross-order cash-reconciliation source is unavailable.
 
-Live evidence: one explicitly invoked read-only cycle completed and persisted four observer runs. Every result remained `authority_tier=observe`, `writes_authorized=false`, and `sends_authorized=false`. SAM inspected its learning source; Ledger inspected 29 orders and proposed review of three payment exceptions; Herdmaster inspected 213 animals and proposed review because none were confirmed sale-ready; Beacon reported 60% readiness, no review backlog and one production post. All sources reported live freshness. The Ledger gap for dedicated cross-order cash reconciliation remains explicit.
+Live evidence: the first explicitly invoked read-only cycle exposed three payment warnings and an incorrect zero-readiness result. Owner review confirmed the two completed-order payment warnings were useful, the cancelled-order warning was a false positive, and the farm dashboard held 51 live-sale-ready pigs, six meat-window pigs and 15 slaughter/cull candidates. The observer defect was corrected to consume canonical sales-dashboard metrics and to exclude cancelled pending-payment rows. A second live cycle persisted exactly those corrected figures. Breeding animals remain unavailable for sale or slaughter until an explicit purpose change. Every run remained `authority_tier=observe`, `writes_authorized=false`, and `sends_authorized=false`; owner usefulness/false-positive feedback is durable. The Ledger gap for dedicated cross-order cash reconciliation remains explicit.
 
-Remaining owner evidence: usefulness/false-positive feedback for the two recommendations. The continuous-runner activation flag remains disabled; no autonomous observer execution was enabled.
+The continuous-runner activation flag remains disabled; no autonomous observer execution was enabled.
 
 ## Phase 5 - CHARLIE executive planning loop
 
@@ -71,7 +71,7 @@ Evidence: executive control/runtime/governance/private-executive suites.
 
 Live evidence: a controlled production cycle completed in `observe` mode over 76 missions. It found five runnable approved missions, two dependency-blocked missions and no queue deadlock; all three generated commands were duplicates or already-satisfied observations, so no operational execution occurred. Fifteen durable recovery cases are scheduled/running, proving stale-plan recovery state is active.
 
-Remaining owner decision: there are zero active executive goals. CHARLIE will not invent business goals; an owner-approved active goal is required before evidence-linked portfolio priority can be claimed live.
+The owner then activated `GOAL-PROFITABLE-SALES-2026`: reach R100,000 profitable monthly pig and meat sales by 31 December 2026, with SAM Live Stock operational first, Beacon promotion support, Herdmaster stock truth, Ledger payment accuracy and staged meat-sales expansion. Constraints prohibit selling or slaughtering breeding animals without an explicit purpose change and require SAM authority to graduate per measured capability rather than through blanket autonomy. A follow-up observe-only executive cycle loaded one active goal successfully.
 
 ## Phase 6 - Controlled authority graduation
 
