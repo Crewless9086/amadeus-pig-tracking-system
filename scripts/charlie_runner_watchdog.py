@@ -17,6 +17,7 @@ os.environ.setdefault("GIT_CONFIG_KEY_0", "safe.directory")
 os.environ.setdefault("GIT_CONFIG_VALUE_0", str(REPO_ROOT))
 
 from modules.charlie.runner_control import RUNNER_DIR, _pid_alive, runner_status, start_runner
+from modules.charlie.runtime_integrity import cold_start_readiness
 
 
 STATE_PATH = RUNNER_DIR / "watchdog.json"
@@ -63,13 +64,18 @@ def _supervisor_state(path=SUPERVISOR_STATE_PATH):
         return {}
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=_infrastructure_hold, supervisor_state_reader=_supervisor_state):
-    _configure_git_safe_directory(Path(state_path).with_name("task-gitconfig"))
+def _cold_start_readiness():
+    return cold_start_readiness(REPO_ROOT, runtime_dir=RUNNER_DIR)
+
+
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness):
+    state_path = Path(state_path)
+    _configure_git_safe_directory(state_path.with_name("task-gitconfig"))
     os.environ.setdefault("CHARLIE_RUNNER_BASE_BRANCH", DEFAULT_RUNNER_BASE_BRANCH)
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
-    hold = hold_reader()
-    supervisor_state = supervisor_state_reader()
+    hold = hold_reader() if hold_reader else _infrastructure_hold(state_path.with_name("supervisor.json"))
+    supervisor_state = supervisor_state_reader() if supervisor_state_reader else _supervisor_state(state_path.with_name("supervisor.json"))
     if hold:
         result = {
             "status": "infrastructure_hold",
@@ -104,18 +110,24 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
     elif status.get("orphan_processes"):
         result = {"status": "orphan_requires_cleanup", "started": False}
     else:
-        started, status_code = starter(status_override=status) if starter is start_runner else starter()
-        result = {
-            "status": str(started.get("status") or "runner_start_failed"),
-            "started": status_code < 300 and started.get("status") == "runner_started",
-            "status_code": status_code,
-        }
+        readiness = readiness_reader()
+        if not readiness.get("ready"):
+            result = {
+                "status": "cold_start_preflight_blocked", "started": False,
+                "blockers": readiness.get("blockers") or [], "readiness": readiness,
+            }
+        else:
+            started, status_code = starter(status_override=status) if starter is start_runner else starter()
+            result = {
+                "status": str(started.get("status") or "runner_start_failed"),
+                "started": status_code < 300 and started.get("status") == "runner_started",
+                "status_code": status_code,
+            }
     payload = {
         **result,
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "runner_status_before": str(status.get("status") or "unknown"),
     }
-    state_path = Path(state_path)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
@@ -127,7 +139,7 @@ def main():
     args = parser.parse_args()
     result = watchdog_tick()
     print(json.dumps(result) if args.json else f"CHARLIE watchdog: {result['status']}")
-    return 0 if result["status"] not in {"runner_start_failed", "orphan_requires_cleanup"} else 1
+    return 0 if result["status"] not in {"runner_start_failed", "orphan_requires_cleanup", "cold_start_preflight_blocked"} else 1
 
 
 if __name__ == "__main__":

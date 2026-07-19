@@ -54,9 +54,22 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
                 starter=lambda: ({"status": "runner_started"}, 200),
                 state_path=Path(tmp) / "watchdog.json",
                 supervisor_lock_reader=lambda: 0,
+                readiness_reader=lambda: {"ready": True, "blockers": []},
             )
         self.assertEqual(result["status"], "runner_started")
         self.assertTrue(result["started"])
+
+    def test_cold_start_blockers_prevent_supervisor_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = watchdog_tick(
+                status_reader=lambda: {"active": False, "status": "runner_stale_or_stopped", "orphan_processes": []},
+                starter=lambda: self.fail("must not start before cold-start gates pass"),
+                state_path=Path(tmp) / "watchdog.json",
+                supervisor_lock_reader=lambda: 0,
+                readiness_reader=lambda: {"ready": False, "blockers": ["github_auth_invalid"]},
+            )
+        self.assertEqual(result["status"], "cold_start_preflight_blocked")
+        self.assertEqual(result["blockers"], ["github_auth_invalid"])
 
     def test_tick_writes_process_scoped_safe_git_config(self):
         with tempfile.TemporaryDirectory() as tmp:

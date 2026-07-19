@@ -6,6 +6,8 @@ This document covers the Mission Loop foundation notification stub. It is delibe
 
 The private executive interface now uses the Render webhook as the primary single ingress. Local polling remains a diagnostic fallback and must not run against the same bot while its webhook is active. See `CHARLIE_PRIVATE_EXECUTIVE_INTERFACE.md`.
 
+Local execution readiness is separately governed by `CHARLIE_CORE_RUNTIME_RECOVERY.md`. A successful Telegram response proves the command plane only; it does not prove the laptop CORE runtime, GitHub integration, or mission workforce is ready.
+
 ## Environment
 
 Primary env names:

@@ -23,6 +23,7 @@ from modules.charlie.review_readiness import cleared_review_packet, mission_depe
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
 from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
 from modules.charlie.runner_preflight import runner_environment_preflight
+from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
@@ -905,7 +906,11 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
 
 def _run_git_command(command):
     try:
-        return subprocess.run(command, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60)
+        return subprocess.run(
+            command, cwd=str(REPO_ROOT), capture_output=True, text=True,
+            encoding="utf-8", errors="replace", check=False, timeout=60,
+            **background_run_kwargs(),
+        )
     except subprocess.TimeoutExpired:
         return SimpleNamespace(returncode=124, stdout="", stderr=f"Command timed out after 60 seconds: {' '.join(command)}")
 

@@ -14,6 +14,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -108,8 +110,7 @@ def _acquire_windows_supervisor_mutex(path, kernel32=None):
 
 
 def _windowless_process_kwargs(platform_name=None):
-    platform_name = os.name if platform_name is None else platform_name
-    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)} if platform_name == "nt" else {"start_new_session": True}
+    return background_process_kwargs(platform_name)
 
 
 def _lock_owner_pid(path=LOCK_PATH):
@@ -280,6 +281,7 @@ def _notify_infrastructure_hold(payload):
             capture_output=True,
             text=True,
             timeout=30,
+            **background_run_kwargs(),
         )
     except Exception as exc:
         return {"success": False, "status": "notification_failed", "error_type": exc.__class__.__name__}

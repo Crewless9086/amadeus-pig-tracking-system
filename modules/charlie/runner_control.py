@@ -7,6 +7,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -256,14 +258,13 @@ def start_runner(status_override=None):
         python_path = sys.executable
     command = [python_path, *SUPERVISOR_COMMAND[1:]]
     with LOG_PATH.open("ab") as log:
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         process = subprocess.Popen(
             command,
             cwd=str(REPO_ROOT),
             stdout=log,
             stderr=log,
             stdin=subprocess.DEVNULL,
-            creationflags=creationflags,
+            **background_process_kwargs(),
         )
     write_runner_heartbeat({"status": "runner_started"}, HEARTBEAT_PATH)
     payload = _read_json(HEARTBEAT_PATH)
@@ -301,7 +302,7 @@ def stop_runner():
 
 def _stop_process_tree(pid):
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15)
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15, **background_run_kwargs())
         return
     os.kill(pid, signal.SIGTERM)
 
@@ -360,6 +361,7 @@ def _current_git_commit():
             cwd=str(CONTROL_ROOT),
             timeout=10,
             check=False,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -375,6 +377,7 @@ def _current_git_commit():
             cwd=str(REPO_ROOT),
             timeout=10,
             check=False,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -392,6 +395,7 @@ def _current_git_branch():
             cwd=str(REPO_ROOT),
             timeout=10,
             check=False,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -409,6 +413,7 @@ def _git_worktree_prune():
             cwd=str(REPO_ROOT),
             timeout=30,
             check=False,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"status": "failed", "error_type": exc.__class__.__name__, "error": str(exc)[:500]}
