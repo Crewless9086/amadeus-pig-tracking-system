@@ -52,7 +52,3 @@ class CharlieMissionControlFrontendTests(unittest.TestCase):
         self.assertIn("Latest check", script)
         self.assertIn("missionExecutionWarning", script)
         self.assertIn("last saved stage, not live progress", script)
-
-
-if __name__ == "__main__":
-    unittest.main()

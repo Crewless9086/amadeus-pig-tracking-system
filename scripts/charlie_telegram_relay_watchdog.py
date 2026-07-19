@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from modules.charlie import runtime_path_root
 from scripts.charlie_telegram_relay import (
     DEFAULT_LOCK_FILE,
     _lock_pid,
@@ -24,9 +25,10 @@ from scripts.charlie_telegram_relay import (
     validate_config,
 )
 
-STATE_PATH = REPO_ROOT / ".charlie_runner" / "telegram_relay_watchdog.json"
-STDOUT_PATH = REPO_ROOT / ".charlie_runner" / "telegram_relay.out.log"
-STDERR_PATH = REPO_ROOT / ".charlie_runner" / "telegram_relay.err.log"
+RUNTIME_ROOT = runtime_path_root(REPO_ROOT)
+STATE_PATH = RUNTIME_ROOT / ".charlie_runner" / "telegram_relay_watchdog.json"
+STDOUT_PATH = RUNTIME_ROOT / ".charlie_runner" / "telegram_relay.out.log"
+STDERR_PATH = RUNTIME_ROOT / ".charlie_runner" / "telegram_relay.err.log"
 
 
 def _windowless_process_kwargs(platform_name=None):

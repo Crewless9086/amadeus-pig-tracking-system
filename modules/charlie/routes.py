@@ -7,6 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
+from modules.charlie import runtime_path_root
 from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
 from modules.charlie.environment import env_value
 from modules.charlie.build_relay import (
@@ -67,6 +68,7 @@ from modules.charlie.owner_approval_inbox import (
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
 from modules.charlie.executive_store import executive_scorecard, list_capability_trust
+from modules.charlie.concurrency_control import revision_truth
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
 from modules.charlie.private_stream import stream_private_turn
@@ -78,8 +80,9 @@ from modules.beacon.workforce import beacon_workforce_scorecard
 
 charlie_bp = Blueprint("charlie", __name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review_media"
-LEGACY_REVIEW_MEDIA_DIR = REPO_ROOT / ".charlie_runner" / "review-media"
+RUNTIME_ROOT = runtime_path_root(REPO_ROOT)
+REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review_media"
+LEGACY_REVIEW_MEDIA_DIR = RUNTIME_ROOT / ".charlie_runner" / "review-media"
 REVIEW_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".mp4", ".webm"}
 AGENT_WORKFORCE_CACHE = {"expires_at": 0.0, "packet": None}
 AGENT_WORKFORCE_CACHE_SECONDS = 30
@@ -582,6 +585,10 @@ def charlie_mission_control_snapshot_route():
         "authoritative": True,
         "source_statuses": statuses,
         "counts_source": "mission_status_summary" if summary_status < 400 else "owner_queue_fallback",
+        "revision_truth": revision_truth(
+            REPO_ROOT,
+            render_deployed_commit=str(os.getenv("RENDER_GIT_COMMIT") or os.getenv("RENDER_COMMIT") or ""),
+        ),
         "cache": "refreshed",
     }
     MISSION_CONTROL_CACHE.update({"expires_at": time.monotonic() + MISSION_CONTROL_CACHE_SECONDS, "packet": packet})

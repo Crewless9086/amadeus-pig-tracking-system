@@ -136,6 +136,51 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def setUp(self):
+        self.builder_admission = patch(
+            "modules.charlie.execution_bridge.build_admission",
+            return_value={
+                "allowed": True,
+                "status": "build_admitted",
+                "canonical_root": "C:/tmp/test-control",
+                "declared_files": ["modules/charlie/execution_bridge.py"],
+                "lease": {"lease_id": "test-builder-lease"},
+            },
+        )
+        self.build_admission = self.builder_admission.start()
+        self.addCleanup(self.builder_admission.stop)
+        self.builder_lease_release = patch(
+            "modules.charlie.execution_bridge.release_file_lease",
+            return_value={"released": True, "status": "file_scope_released"},
+        )
+        self.release_file_lease = self.builder_lease_release.start()
+        self.addCleanup(self.builder_lease_release.stop)
+
+    def test_builder_concurrency_admission_uses_declared_scope_and_execution_holder(self):
+        mission = {
+            "mission_id": "MISSION-SAFE-BUILDER",
+            "metadata": {"review_packet": {"changed_files": ["modules/charlie/execution_bridge.py"]}},
+        }
+
+        result = execution_bridge._builder_concurrency_admission(mission, {}, "EXEC-123")
+
+        self.assertTrue(result["allowed"])
+        self.build_admission.assert_called_once_with(
+            execution_bridge.REPO_ROOT,
+            "MISSION-SAFE-BUILDER",
+            ["modules/charlie/execution_bridge.py"],
+            holder="execution:EXEC-123:builder",
+        )
+
+    def test_builder_concurrency_lease_release_uses_admission_registry(self):
+        result = execution_bridge._release_builder_concurrency_admission({
+            "canonical_root": "C:/tmp/control",
+            "lease": {"lease_id": "lease-123"},
+        })
+
+        self.assertTrue(result["released"])
+        self.release_file_lease.assert_called_once_with("C:/tmp/control", "lease-123")
+
     def test_owner_review_artifact_gate_rejects_send_back_stage(self):
         mission = {"mission_context_pack": {"agent_order": ["builder", "business_reviewer", "evidence_reviewer"]}}
         artifacts = {
@@ -3118,7 +3163,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0)
         self.assertTrue(final_exists)
-        self.assertTrue(any(call.args[0].get("idle_seconds") == 0 for call in write_heartbeat.call_args_list))
+        statuses = [call.args[0].get("status") for call in write_heartbeat.call_args_list]
+        self.assertIn("codex_final_artifact_seen", statuses)
+        self.assertNotIn("codex_no_final_artifact_warning", statuses)
+        self.assertNotIn("codex_no_final_artifact_timeout", statuses)
 
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_process_visual_review_cleanup_intent_updates_local_cleanup_status(self, update_vault):
@@ -3955,7 +4003,31 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(status_code, 409)
         self.assertEqual(result["status"], "release_pr_reference_required")
         statuses = [call.args[1] for call in update_status.call_args_list]
-        self.assertEqual(statuses, ["release_in_progress", "blocked"])
+        self.assertEqual(statuses, ["blocked"])
+
+    @patch("modules.charlie.execution_bridge.ReleaseCoordinator")
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_run_release_execution_keeps_approval_state_when_coordinator_is_locked(
+        self, get_mission, update_status, coordinator
+    ):
+        mission = dict(MISSION)
+        mission["status"] = "release_approved"
+        mission["metadata"] = {"review_packet": {"links": {"pr": "https://github.com/org/repo/pull/56"}}}
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": mission}, 200)
+        coordinator.return_value.acquire.return_value = (False, {"mission_id": "OTHER-MISSION"})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result, status_code = execution_bridge.run_release_execution(
+                mission_id="CHARLIE-MISSION-EXEC123",
+                output_dir=tmp,
+                merge_pr=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "release_coordination_locked")
+        self.assertEqual(result["mission_status"], "release_approved")
+        update_status.assert_not_called()
 
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.update_mission_vault")

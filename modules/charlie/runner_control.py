@@ -7,35 +7,38 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from modules.charlie import (
+    TEST_CONTROL_ROOT_ENV,
+    TEST_ISOLATION_ENV,
+    shared_repository_root,
+    test_isolation_enabled,
+    validated_test_control_root,
+)
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+from modules.charlie.process_ownership import inspect_process, process_termination_enabled, validate_termination
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _shared_repository_root(repo_root=REPO_ROOT):
-    """Resolve the primary checkout so all worktrees publish one runtime truth."""
-    dot_git = Path(repo_root) / ".git"
-    if dot_git.is_dir():
-        return Path(repo_root)
-    try:
-        marker = dot_git.read_text(encoding="utf-8").strip()
-    except OSError:
-        return Path(repo_root)
-    if not marker.lower().startswith("gitdir:"):
-        return Path(repo_root)
-    git_dir = Path(marker.split(":", 1)[1].strip())
-    if not git_dir.is_absolute():
-        git_dir = (Path(repo_root) / git_dir).resolve()
-    return git_dir.parent.parent.parent if git_dir.parent.name == "worktrees" else Path(repo_root)
+    return shared_repository_root(repo_root)
 
 
-CONTROL_ROOT = _shared_repository_root()
+def _control_root(repo_root=REPO_ROOT, environ=None):
+    if test_isolation_enabled(environ):
+        return validated_test_control_root(repo_root, environ)
+    return _shared_repository_root(repo_root)
+
+
+CONTROL_ROOT = _control_root()
 RUNNER_DIR = CONTROL_ROOT / ".charlie_runner"
 HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
+EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
+EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
 
 
@@ -244,6 +247,27 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
     return payload
 
 
+def emergency_process_cleanup_disabled(marker_path=None):
+    return Path(marker_path or EMERGENCY_CLEANUP_DISABLED_PATH).exists()
+
+
+def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
+    path = Path(log_path or EMERGENCY_CLEANUP_REFUSAL_LOG)
+    packet = {
+        "status": "emergency_process_cleanup_disabled",
+        "operation": str(operation or ""),
+        "requested_pid": str(requested_pid if requested_pid is not None else ""),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(packet, sort_keys=True) + "\n")
+    except OSError:
+        packet["refusal_log_status"] = "write_failed"
+    return packet
+
+
 def start_runner(status_override=None):
     status = status_override if isinstance(status_override, dict) else runner_status()
     if status["active"]:
@@ -280,34 +304,57 @@ def start_runner(status_override=None):
 
 
 def stop_runner():
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal("stop_runner", "all")
+        return {"success": False, **refusal}, 423
+    if not process_termination_enabled():
+        return {"success": False, "status": "process_termination_not_enabled"}, 423
     status = runner_status()
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-    pids = [status.get("pid")]
-    pids.append(status.get("supervisor_pid"))
-    pids.extend(process.get("pid") for process in status.get("orphan_processes", []))
-    pids = [int(pid) for pid in pids if str(pid or "").isdigit()]
-    if not pids:
+    supervisor = _read_json(SUPERVISOR_PATH)
+    records = [supervisor.get("child_identity")]
+    records = [record for record in records if isinstance(record, dict)]
+    if not records:
+        if status.get("orphan_processes"):
+            return {"success": False, "status": "runner_process_ownership_not_proven", "pids": []}, 409
         return {"success": True, "status": "runner_not_started", "runner": status}, 200
     stopped = []
     try:
-        for pid in sorted(set(pids)):
-            _stop_process_tree(pid)
-            stopped.append(pid)
+        for record in records:
+            expected = {field: record.get(field) for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")}
+            decision = _stop_process_tree(record, expected)
+            if isinstance(decision, dict) and decision.get("terminated") and str(record.get("pid") or "").isdigit():
+                stopped.append(int(record["pid"]))
     except OSError:
         if not stopped:
             return {"success": True, "status": "runner_already_stopped", "runner": status}, 200
+    if not stopped:
+        return {"success": False, "status": "runner_process_ownership_not_proven", "pids": []}, 409
     return {"success": True, "status": "runner_stop_requested", "pids": stopped}, 200
 
 
-def _stop_process_tree(pid):
+def _stop_process_tree(ownership_record, expected_ownership=None, inspector=inspect_process):
+    if emergency_process_cleanup_disabled():
+        requested_pid = ownership_record.get("pid") if isinstance(ownership_record, dict) else ownership_record
+        return record_emergency_cleanup_refusal("_stop_process_tree", requested_pid)
+    if not process_termination_enabled():
+        return {"authorized": False, "reason": "process_termination_not_enabled"}
+    decision = validate_termination(ownership_record, expected_ownership, inspector)
+    if not decision["authorized"]:
+        return decision
+    pid = decision["pid"]
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15, **background_run_kwargs())
-        return
+        return {"authorized": True, "terminated": True, "pid": pid}
     os.kill(pid, signal.SIGTERM)
+    return {"authorized": True, "terminated": True, "pid": pid}
 
 
 def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal("cleanup_runner_environment", "all")
+        return {"success": False, **refusal, "actions": []}, 423
     status = runner_status()
     actions = []
     stop_result = {}

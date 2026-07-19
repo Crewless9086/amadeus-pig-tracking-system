@@ -33,6 +33,9 @@ from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import send_private_telegram_message
 from modules.charlie.executive_control import portfolio_priority
 from modules.charlie.executive_store import claim_pending_outbox, complete_outbox, record_capability_outcome
+from modules.charlie.domain_observers import run_observer_cycle
+from modules.charlie.domain_observer_readers import observer_readers
+from modules.charlie.domain_observer_store import observer_last_runs, record_observer_run
 from modules.charlie.execution_bridge import (
     DEFAULT_TIMEOUT_SECONDS,
     complete_no_release_mission,
@@ -171,6 +174,9 @@ def watch_for_mission(
                         "status": "executive_cycle_observed", "executive": executive, "checks": checks,
                         "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
                     })
+                observers = _run_domain_observers()
+                if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
+                    write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
                 if notify:
                     _deliver_executive_outbox()
                 reconciliation = reconcile_blocked_pr_missions(notify=notify)
@@ -1602,6 +1608,25 @@ def _deliver_executive_outbox():
         complete_outbox(item.get("outbox_id"), sent=exit_code == 0, error="" if exit_code == 0 else f"notify_exit_{exit_code}")
         delivered.append({"outbox_id": item.get("outbox_id"), "sent": exit_code == 0})
     return {"success": True, "status": "outbox_delivery_complete", "delivered": delivered}
+
+
+def _run_domain_observers(environ=None):
+    values = os.environ if environ is None else environ
+    if str(values.get("CHARLIE_DOMAIN_OBSERVERS_ENABLED") or "").strip() != "1":
+        return {"success": True, "status": "domain_observers_disabled", "runs": []}
+    loaded, loaded_status = observer_last_runs()
+    if loaded_status >= 400:
+        return {**loaded, "success": False}
+
+    def recorder(run):
+        result, status = record_observer_run(run)
+        return {**result, "status_code": status}
+
+    return run_observer_cycle(
+        observer_readers(),
+        last_runs=loaded.get("last_runs") or {},
+        recorder=recorder,
+    )
 
 
 if __name__ == "__main__":

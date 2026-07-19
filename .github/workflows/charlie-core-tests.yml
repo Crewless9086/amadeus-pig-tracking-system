@@ -1,0 +1,42 @@
+name: CHARLIE CORE Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  charlie-core:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      CHARLIE_TEST_ISOLATION: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Run isolated CHARLIE modules with hard timeouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r test_file; do
+            (
+              control_root="$(mktemp -d "${RUNNER_TEMP}/charlie-test-control.XXXXXX")"
+              cleanup_control_root() {
+                case "$control_root" in
+                  "${RUNNER_TEMP}/charlie-test-control."*) rm -rf -- "$control_root" ;;
+                  *) echo "::error::Refusing unsafe CHARLIE test cleanup path: $control_root"; exit 1 ;;
+                esac
+              }
+              trap cleanup_control_root EXIT
+              export CHARLIE_TEST_CONTROL_ROOT="$control_root"
+              unset CHARLIE_PROCESS_TERMINATION_ENABLED CHARLIE_SUBPROCESS_TESTS_ENABLED
+              module="${test_file%.py}"
+              module="${module//\//.}"
+              echo "::group::$module"
+              timeout 120s python -m unittest "$module" -q
+              echo "::endgroup::"
+            )
+          done < <(find tests -maxdepth 1 -name 'test_charlie_*.py' -print | sort)

@@ -15,4 +15,9 @@ node_modules/
 venv/
 /.tools/
 .charlie_runner/
+.review_*/
+test-results/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 instance/*.sqlite3
