@@ -89,6 +89,16 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
     def test_repo_local_imports_follow_sys_path_bootstrap(self):
         source = (Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py").read_text(encoding="utf-8")
         self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.repository_guard"))
+        self.assertLess(source.index("sys.path.insert"), source.index("from modules.charlie.process_policy"))
+
+    def test_supervisor_script_loads_standalone_outside_repo_cwd(self):
+        script = Path(__file__).parents[1] / "scripts" / "charlie_runner_supervisor.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = subprocess.run(
+                [sys.executable, "-c", f"import runpy; runpy.run_path({str(script)!r})"],
+                cwd=tmp, capture_output=True, text=True, timeout=20, check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     @patch.object(supervisor, "_process_identity")
     @patch.object(supervisor, "_pid_alive")

@@ -14,12 +14,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
