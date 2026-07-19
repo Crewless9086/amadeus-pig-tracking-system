@@ -273,7 +273,10 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
                 commands.append(command)
                 return Mock(returncode=0, stdout="", stderr="")
 
-            with patch.object(supervisor, "REPO_ROOT", worktree), patch.dict(os.environ, {"CHARLIE_RUNNER_BASE_BRANCH": "runner-base"}):
+            with patch.object(supervisor, "REPO_ROOT", worktree), patch.dict(os.environ, {
+                "CORE_EXECUTION_BASE_BRANCH": "runner-base",
+                "CHARLIE_RUNNER_BASE_BRANCH": "runner-base",
+            }):
                 result = supervisor._recreate_damaged_runner_worktree(
                     {"status": "git_operation_marker_permission_denied"}, run_factory=fake_run
                 )
