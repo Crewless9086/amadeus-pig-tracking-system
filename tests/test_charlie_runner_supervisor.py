@@ -166,7 +166,8 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         run.assert_not_called()
         kill.assert_not_called()
 
-    def test_unexpected_exit_restarts_with_backoff(self):
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_unexpected_exit_restarts_with_backoff(self, inspect_process):
         children = [Mock(pid=101), Mock(pid=102)]
         children[0].wait.return_value = 1
         children[1].wait.return_value = 0
@@ -181,6 +182,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 2)
         child_env = popen.call_args_list[0].kwargs["env"]
         self.assertIn("GIT_CONFIG_GLOBAL", child_env)
+        self.assertEqual(inspect_process.call_count, 2)
 
     def test_stop_marker_prevents_child_start(self):
         popen = Mock()
@@ -193,7 +195,8 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         popen.assert_not_called()
         self.assertEqual(result["cycles"], 0)
 
-    def test_identical_infrastructure_failure_enters_hold_after_three_exits(self):
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_identical_infrastructure_failure_enters_hold_after_three_exits(self, inspect_process):
         children = [Mock(pid=101), Mock(pid=102), Mock(pid=103)]
         for child in children:
             child.wait.return_value = 1
@@ -214,8 +217,10 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 3)
         self.assertEqual(state["identical_failure_count"], 3)
         notifier.assert_called_once()
+        self.assertEqual(inspect_process.call_count, 3)
 
-    def test_three_identical_unclassified_child_crashes_enter_hold(self):
+    @patch.object(supervisor, "inspect_process", return_value={})
+    def test_three_identical_unclassified_child_crashes_enter_hold(self, inspect_process):
         children = [Mock(pid=201), Mock(pid=202), Mock(pid=203)]
         for child in children:
             child.wait.return_value = 3221225794
@@ -229,6 +234,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["status"], "infrastructure_hold")
         self.assertIn("child_exit:3221225794", result["failure_status"])
         notifier.assert_called_once()
+        self.assertEqual(inspect_process.call_count, 3)
 
     @patch("modules.charlie.improvement_analyst.run_operational_analyst", return_value=({"success": True, "status": "analyst_cycle_complete", "lifecycle": {"updated_count": 1}}, 200))
     def test_conveyor_repair_triggers_analyst_validation_cycle(self, analyst):
