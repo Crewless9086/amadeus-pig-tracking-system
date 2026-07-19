@@ -1,6 +1,6 @@
 # Phase 1 Safe Namespace Migration
 
-Status: compatibility implementation validated; live environment rollout pending.
+Status: complete; compatibility, local/Render rollout, cold start, hosted canary and rollback evidence passed.
 
 Started: 2026-07-19.
 
@@ -59,3 +59,18 @@ No secret value may be copied into Git, logs, test output, evidence documents or
 - Live `.env` and Render changes: none at this checkpoint.
 
 Final cold-start, hosted-canary, rollback-rehearsal and revision evidence will be appended after the compatibility commit is accepted and deployed.
+
+## Completion evidence
+
+- Compatibility PR #297 merged as `2b7903096e5d932a811e459ea59b00846c9cfc44`; dynamic migration completeness PR #298 merged as `1ee239fef4ba43af314eb8334887687d93c2e0ae`. Both required GitHub CI gates passed on both PRs.
+- Render deployed `1ee239fef4ba43af314eb8334887687d93c2e0ae`, then redeployed that exact commit after environment updates and reached `live`.
+- Local aliases were added backup-first; the execution base legacy/canonical pair was normalised to `charlie-core-execution-base`; the final audit reported every applicable pair equal and zero conflicts.
+- Render added 19 equal canonical aliases through per-key updates, retained every legacy key, and the post-write audit reported zero additions and zero conflicts.
+- Authenticated hosted canary passed owner login, `/charlie`, and the Executive SSE stream with `turn_started`, intent/capability/evidence events, `reply_ready`, `turn_completed`, and terminal status `private_charlie_replied`.
+- CORE promotion ran 116 focused tests, wrote a manifest for `1ee239f`, and the restart-path audit returned `core_cold_start_ready` with exact root/commit agreement, GitHub access ready and webhook transport ready.
+- Scheduled cold start produced one supervisor owning one runner, fresh heartbeats across sustained checks, zero supervisor restarts, no orphans, a non-deadlocked queue and active recovery mission work.
+- Rollback rehearsal passed without interrupting production: private pre-change dotenv backups are present and parseable, legacy keys remain sufficient for the compatibility reader, the preceding Render deploy remains available for platform rollback, and unit tests prove migration conflicts refuse writes. No legacy retirement is approved in Phase 1.
+
+## Corrected Render inventory finding
+
+The Phase 0 Render snapshot stopped at the API's default 20-item page. The pagination-complete Phase 1 snapshot records 110 direct-service key names and no values. All are classified; `N8N_API_KEY` and `N8N_BASE_URL` are the only plane mismatches because the contract treats them as local/operator credentials. They were pre-existing, were not used by this namespace migration, and must be reviewed separately before removal. This correction does not weaken the Phase 1 namespace result.

@@ -54,6 +54,16 @@ class EnvironmentOwnershipAuditTests(unittest.TestCase):
         self.assertTrue(result["ready"])
         self.assertEqual(result["unknown_keys"], [])
 
+    def test_phase1_paginated_render_snapshot_records_known_operator_misplacements(self):
+        snapshot = Path(__file__).parents[1] / "config" / "environment_snapshots" / "render_backend_keys_2026-07-19_phase1.json"
+        payload = json.loads(snapshot.read_text(encoding="utf-8"))
+        self.assertTrue(payload["pagination_complete"])
+        self.assertEqual(payload["key_count"], 110)
+        self.assertFalse(payload["values_captured"])
+        result = audit_keys(payload["keys"], self.contract, "render_backend")
+        self.assertEqual(result["unknown_keys"], [])
+        self.assertEqual(result["plane_mismatches"], ["N8N_API_KEY", "N8N_BASE_URL"])
+
 
 if __name__ == "__main__":
     unittest.main()
