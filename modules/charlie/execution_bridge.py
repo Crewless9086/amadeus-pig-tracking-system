@@ -32,6 +32,7 @@ from modules.charlie.mission_store import (
     update_mission_workflow_step,
 )
 from modules.charlie.runner_control import runner_status, write_runner_heartbeat
+from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.core_workflow import (
     AGENT_DOCTRINE_PATHS,
     build_handoff_report as build_core_handoff_report,
@@ -6833,6 +6834,7 @@ def _changed_files():
             text=True,
             cwd=str(REPO_ROOT),
             timeout=10,
+            **background_run_kwargs(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -7934,7 +7936,7 @@ def _run_codex_process(
         encoding="utf-8",
         errors="replace",
         cwd=cwd,
-        **_windowless_process_kwargs(),
+        **background_process_kwargs(),
     )
     try:
         if process.stdin:
@@ -8082,6 +8084,7 @@ def _terminate_process_tree(pid):
             text=True,
             check=False,
             timeout=15,
+            **background_run_kwargs(),
         )
         return
     try:
