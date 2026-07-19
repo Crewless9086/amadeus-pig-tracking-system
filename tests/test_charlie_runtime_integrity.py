@@ -85,6 +85,8 @@ class CharlieRuntimeIntegrityTests(unittest.TestCase):
     def test_promotion_script_is_manifest_gated_and_refuses_dirty_runtime(self):
         source = (Path(__file__).parents[1] / "scripts" / "promote_charlie_runtime.ps1").read_text(encoding="utf-8")
         self.assertIn("status --porcelain", source)
+        self.assertIn("--git-common-dir", source)
+        self.assertIn("$sourceRoot", source)
         self.assertIn("charlie_runtime_audit.py", source)
         self.assertIn("pythonw.exe", source)
         self.assertNotIn("git reset --hard", source)
