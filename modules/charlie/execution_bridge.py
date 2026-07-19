@@ -31,7 +31,12 @@ from modules.charlie.mission_store import (
     update_mission_vault,
     update_mission_workflow_step,
 )
-from modules.charlie.runner_control import runner_status, write_runner_heartbeat
+from modules.charlie.runner_control import (
+    emergency_process_cleanup_disabled,
+    record_emergency_cleanup_refusal,
+    runner_status,
+    write_runner_heartbeat,
+)
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.core_workflow import (
@@ -8072,6 +8077,8 @@ def _file_progress_signature(path):
 
 
 def _terminate_process_tree(pid):
+    if emergency_process_cleanup_disabled():
+        return record_emergency_cleanup_refusal("_terminate_process_tree", pid)
     try:
         pid = int(pid)
     except (TypeError, ValueError):

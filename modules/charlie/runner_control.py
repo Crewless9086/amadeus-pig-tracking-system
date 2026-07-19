@@ -36,6 +36,8 @@ HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 LOG_PATH = RUNNER_DIR / "runner.log"
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 SUPERVISOR_STOP_PATH = RUNNER_DIR / "supervisor.stop"
+EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABLED"
+EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
 
 
@@ -244,6 +246,27 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
     return payload
 
 
+def emergency_process_cleanup_disabled(marker_path=None):
+    return Path(marker_path or EMERGENCY_CLEANUP_DISABLED_PATH).exists()
+
+
+def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
+    path = Path(log_path or EMERGENCY_CLEANUP_REFUSAL_LOG)
+    packet = {
+        "status": "emergency_process_cleanup_disabled",
+        "operation": str(operation or ""),
+        "requested_pid": str(requested_pid if requested_pid is not None else ""),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(packet, sort_keys=True) + "\n")
+    except OSError:
+        packet["refusal_log_status"] = "write_failed"
+    return packet
+
+
 def start_runner(status_override=None):
     status = status_override if isinstance(status_override, dict) else runner_status()
     if status["active"]:
@@ -280,6 +303,9 @@ def start_runner(status_override=None):
 
 
 def stop_runner():
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal("stop_runner", "all")
+        return {"success": False, **refusal}, 423
     status = runner_status()
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -301,6 +327,8 @@ def stop_runner():
 
 
 def _stop_process_tree(pid):
+    if emergency_process_cleanup_disabled():
+        return record_emergency_cleanup_refusal("_stop_process_tree", pid)
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15, **background_run_kwargs())
         return
@@ -308,6 +336,9 @@ def _stop_process_tree(pid):
 
 
 def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
+    if emergency_process_cleanup_disabled():
+        refusal = record_emergency_cleanup_refusal("cleanup_runner_environment", "all")
+        return {"success": False, **refusal, "actions": []}, 423
     status = runner_status()
     actions = []
     stop_result = {}
