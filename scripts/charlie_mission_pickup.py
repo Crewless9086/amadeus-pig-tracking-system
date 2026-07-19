@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
+from modules.charlie.environment import env_value
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
@@ -50,8 +51,8 @@ ANALYST_THREAD = None
 ANALYST_THREAD_LOCK = threading.Lock()
 RECOVERED_STALE_MISSIONS = set()
 NOTIFICATION_FINGERPRINTS = {}
-BASE_BRANCH_ENV = "CHARLIE_RUNNER_BASE_BRANCH"
-LEASE_TTL_SECONDS = int(os.getenv("CHARLIE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
+BASE_BRANCH_ENV = "CORE_EXECUTION_BASE_BRANCH"
+LEASE_TTL_SECONDS = int(env_value("CORE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
 
 def _load_runner_dotenv():
@@ -674,7 +675,7 @@ def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_
 
 
 def _mission_requires_browser_preflight(mission):
-    if str(os.environ.get("CHARLIE_REQUIRE_BROWSER_PREFLIGHT") or "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if str(env_value("CORE_REQUIRE_BROWSER_PREFLIGHT") or "").strip().lower() not in {"1", "true", "yes", "on"}:
         return False
     mission = mission if isinstance(mission, dict) else {}
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
@@ -1071,7 +1072,7 @@ def _execution_lease_packet(mission_id):
 
 
 def _ensure_base_branch():
-    configured_base = str(os.getenv(BASE_BRANCH_ENV) or "").strip()
+    configured_base = str(env_value(BASE_BRANCH_ENV) or "").strip()
     # The promoted runtime owns this branch exclusively.  Mission revisions are
     # inspected detached and the next cycle returns here; sharing the legacy
     # runner branch with another worktree recreates the collision this guard is
@@ -1447,9 +1448,9 @@ def _write_codex_chat(content):
 
 def _notification_preflight():
     missing = []
-    if not str(os.getenv("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS") or "").strip():
+    if not str(env_value("CORE_RELAY_ALLOWED_USER_IDS") or "").strip():
         missing.append("CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS")
-    if not str(os.getenv("CHARLIE_BUILD_RELAY_BOT_TOKEN") or "").strip():
+    if not str(env_value("CORE_RELAY_BOT_TOKEN") or "").strip():
         missing.append("CHARLIE_BUILD_RELAY_BOT_TOKEN")
     policy = build_relay_policy()
     if not policy.get("webhook_secret_configured"):
@@ -1520,7 +1521,7 @@ def _send_blocked_notification(title, message, mission_id=""):
 
 
 def _send_notification(level, title, message, mission_id=""):
-    notification_mode = str(os.environ.get("CHARLIE_CORE_NOTIFICATION_MODE") or "all").strip().lower()
+    notification_mode = str(env_value("CORE_NOTIFICATION_MODE", "all") or "all").strip().lower()
     normalized_level = str(level or "").strip().lower()
     if notification_mode == "executive_only" and normalized_level not in {"needs_owner_approval", "hard_stop"}:
         return 0

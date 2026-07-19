@@ -18,9 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
+from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
-EXECUTION_ROOT = Path(os.getenv("CHARLIE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
+EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
 LOCK_PATH = RUNNER_DIR / "supervisor.lock"
@@ -169,7 +170,7 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             "GIT_CONFIG_GLOBAL": os.environ.get("GIT_CONFIG_GLOBAL", ""),
         }
         child_env["DATABASE_URL"] = _transaction_pool_url(child_env.get("DATABASE_URL"))
-        child_env["CHARLIE_RUNNER_BASE_BRANCH"] = "charlie-core-execution-base"
+        child_env["CORE_EXECUTION_BASE_BRANCH"] = "charlie-core-execution-base"
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = _process_identity(child.pid)
         _write_status(
@@ -293,7 +294,7 @@ def _recreate_damaged_runner_worktree(failure, run_factory=subprocess.run):
     if REPO_ROOT.parent.name != ".charlie_runner":
         return {"success": False, "status": "automatic_repair_refused_non_runner_worktree"}
     canonical = REPO_ROOT.parents[1]
-    base_branch = str(os.getenv("CHARLIE_RUNNER_BASE_BRANCH") or "charlie-runner-core-live-base").strip()
+    base_branch = str(env_value("CORE_EXECUTION_BASE_BRANCH", "charlie-core-execution-base") or "charlie-core-execution-base").strip()
     lock = RepositoryOperationLock(repository_lock_path(REPO_ROOT))
     acquired, owner = lock.acquire()
     if not acquired:

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from scripts import build_relay_notify, build_relay_telegram_buttons, codex_next_steps
+from modules.charlie.environment import alias_environment, env_value
 
 DEFAULT_LOCK_FILE = Path(".charlie_runner/telegram_relay.lock")
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -199,7 +200,7 @@ def load_local_env(path: Path = LOCAL_ENV_FILE, load_dotenv_func: Any | None = N
 
 
 def load_config(environ: Mapping[str, str] | None = None) -> RelayConfig:
-    env = dict(os.environ if environ is None else environ)
+    env = alias_environment(os.environ if environ is None else environ)
     enabled = build_relay_notify._truthy(env.get(build_relay_notify.ENABLED_ENV))  # type: ignore[attr-defined]
     token = str(env.get(build_relay_notify.TOKEN_ENV) or "").strip()
     allowed = set(build_relay_notify._split_chat_ids(env.get(build_relay_notify.USERS_ENV)))  # type: ignore[attr-defined]
@@ -207,7 +208,7 @@ def load_config(environ: Mapping[str, str] | None = None) -> RelayConfig:
 
 
 def validate_config(config: RelayConfig) -> RelayResult:
-    if str(os.environ.get("CHARLIE_TELEGRAM_TRANSPORT") or "polling").strip().lower() == "webhook":
+    if str(env_value("CORE_RELAY_TRANSPORT", "polling") or "polling").strip().lower() == "webhook":
         return RelayResult(ok=True, action="webhook_managed", reason="local_polling_disabled")
     if not config.enabled:
         return RelayResult(ok=True, action="disabled", reason="relay_disabled")

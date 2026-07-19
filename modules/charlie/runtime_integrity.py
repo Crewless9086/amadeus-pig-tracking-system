@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from modules.charlie.process_policy import background_run_kwargs
+from modules.charlie.environment import env_value
 
 MANIFEST_VERSION = "charlie_core_runtime_v1"
 DEFAULT_MANIFEST_NAME = "runtime-manifest.json"
@@ -72,7 +73,7 @@ def github_auth_health(repo_root, runner=subprocess.run, environ=None):
 
 def communication_plane_health(environ=None):
     environ = os.environ if environ is None else environ
-    transport = str(environ.get("CHARLIE_TELEGRAM_TRANSPORT") or "webhook").strip().lower()
+    transport = str(env_value("CORE_RELAY_TRANSPORT", "webhook", environ=environ) or "webhook").strip().lower()
     if transport not in {"webhook", "polling", "disabled"}:
         return {"ready": False, "status": "telegram_transport_invalid", "transport": transport}
     return {

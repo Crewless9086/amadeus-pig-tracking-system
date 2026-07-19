@@ -14,7 +14,7 @@ if ($trusted -notcontains $repo) {
 }
 
 $runnerBase = "charlie-runner-core-live-base"
-$env:CHARLIE_RUNNER_BASE_BRANCH = $runnerBase
+$env:CORE_EXECUTION_BASE_BRANCH = $runnerBase
 git show-ref --verify --quiet ("refs/heads/{0}" -f $runnerBase)
 if ($LASTEXITCODE -ne 0) {
     git branch $runnerBase HEAD

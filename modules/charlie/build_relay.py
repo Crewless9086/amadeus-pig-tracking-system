@@ -18,16 +18,17 @@ from modules.charlie.mission_store import (
     update_mission_workflow_step,
 )
 from modules.charlie.runner_control import runner_status as local_runner_status
+from modules.charlie.environment import alias_environment
 
 
 TRUTHY = {"1", "true", "yes", "on"}
-ENABLED_ENV = "CHARLIE_BUILD_RELAY_ENABLED"
-BOT_TOKEN_ENV = "CHARLIE_BUILD_RELAY_BOT_TOKEN"
-WEBHOOK_SECRET_ENV = "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET"
-ALLOWED_USER_IDS_ENV = "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS"
-CODEX_CHAT_WRITE_ENABLED_ENV = "CHARLIE_BUILD_RELAY_CODEX_CHAT_WRITE_ENABLED"
-MISSION_STORE_ENABLED_ENV = "CHARLIE_BUILD_RELAY_MISSION_STORE_ENABLED"
-REPO_ROOT_ENV = "CHARLIE_BUILD_RELAY_REPO_ROOT"
+ENABLED_ENV = "CORE_RELAY_ENABLED"
+BOT_TOKEN_ENV = "CORE_RELAY_BOT_TOKEN"
+WEBHOOK_SECRET_ENV = "CORE_RELAY_WEBHOOK_SECRET"
+ALLOWED_USER_IDS_ENV = "CORE_RELAY_ALLOWED_USER_IDS"
+CODEX_CHAT_WRITE_ENABLED_ENV = "CORE_RELAY_CODEX_CHAT_WRITE_ENABLED"
+MISSION_STORE_ENABLED_ENV = "CORE_RELAY_MISSION_STORE_ENABLED"
+REPO_ROOT_ENV = "CORE_RELAY_REPO_ROOT"
 MIN_SECRET_CHARS = 32
 MAX_TELEGRAM_TEXT_CHARS = 3000
 MAX_REPLY_CHARS = 3900
@@ -39,7 +40,7 @@ _AUTH_LOCKED_UNTIL = 0.0
 
 
 def build_relay_policy(environ=None):
-    source = environ if environ is not None else os.environ
+    source = alias_environment(environ if environ is not None else os.environ)
     explicitly_enabled = _truthy(source.get(ENABLED_ENV))
     bot_token = str(source.get(BOT_TOKEN_ENV, "") or "").strip()
     webhook_secret = str(source.get(WEBHOOK_SECRET_ENV, "") or "").strip()
@@ -92,7 +93,7 @@ def build_relay_policy(environ=None):
 
 
 def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
-    source = environ if environ is not None else os.environ
+    source = alias_environment(environ if environ is not None else os.environ)
     policy = build_relay_policy(environ=source)
     if not policy["explicitly_enabled"]:
         return _result(False, "charlie_build_relay_disabled", policy, 503)
@@ -140,7 +141,7 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
 
 
 def build_relay_action(text, environ=None):
-    source = environ if environ is not None else os.environ
+    source = alias_environment(environ if environ is not None else os.environ)
     cleaned = str(text or "").strip()[:MAX_TELEGRAM_TEXT_CHARS]
     lower = cleaned.lower()
     repo_root = _repo_root(source)
@@ -208,7 +209,7 @@ def parse_telegram_payload(payload):
 
 
 def send_charlie_telegram_message(chat_id, text, reply_markup=None, environ=None):
-    source = environ if environ is not None else os.environ
+    source = alias_environment(environ if environ is not None else os.environ)
     policy = build_relay_policy(environ=source)
     if not policy["enabled"]:
         return _send_result(False, "charlie_build_relay_not_ready", policy), 503

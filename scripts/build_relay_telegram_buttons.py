@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from modules.charlie.environment import alias_environment
 from scripts import build_relay_notify, charlie_mission_telegram, codex_next_steps
 
 
@@ -222,7 +223,7 @@ def handle_update(
     mission_review_updater: Any | None = None,
     runner_status_loader: Any | None = None,
 ) -> ButtonFlowResult:
-    env = dict(os.environ if environ is None else environ)
+    env = dict(alias_environment(os.environ if environ is None else environ))
     if not _is_enabled(env):
         return ButtonFlowResult(ok=True, action="disabled", reason="relay_disabled")
 
