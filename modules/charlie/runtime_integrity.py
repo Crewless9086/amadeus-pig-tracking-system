@@ -57,14 +57,14 @@ def github_auth_health(repo_root, runner=subprocess.run, environ=None):
     bootstrap = bootstrap_github_token(repo_root, runner, environ)
     try:
         completed = runner(
-            ["gh", "auth", "status", "-h", "github.com"], cwd=str(repo_root),
+            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd=str(repo_root),
             capture_output=True, text=True, timeout=15, check=False, env=dict(environ), **background_run_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return {"ready": False, "status": "github_auth_probe_failed", "error_type": exc.__class__.__name__}
     return {
         "ready": completed.returncode == 0,
-        "status": "github_auth_ready" if completed.returncode == 0 else "github_auth_invalid",
+        "status": "github_repo_access_ready" if completed.returncode == 0 else "github_repo_access_invalid",
         "detail": _safe_tail(completed.stderr or completed.stdout),
         "bootstrap_status": bootstrap.get("status"),
     }
