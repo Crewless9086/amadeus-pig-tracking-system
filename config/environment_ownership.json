@@ -22,6 +22,8 @@
     {"match": "prefix", "value": "LEDGER_", "owner": "ledger", "planes": ["local", "render_backend", "ci"], "secret": "mixed"},
     {"match": "prefix", "value": "OOM_SAKKIE_", "owner": "oom_sakkie", "planes": ["local", "render_backend", "ci"], "secret": "mixed"},
     {"match": "prefix", "value": "MEAT_", "owner": "sam_meat_operations", "planes": ["local", "render_backend", "ci"], "secret": "mixed"},
+    {"match": "prefix", "value": "CORE_RELAY_", "owner": "core_relay", "planes": ["local", "render_backend", "ci", "core_runtime"], "secret": "mixed", "canonical": true},
+    {"match": "exact", "value": "CORE_NOTIFICATION_MODE", "owner": "core_relay", "planes": ["local", "render_backend", "ci", "core_runtime"], "secret": false, "canonical": true},
     {"match": "prefix", "value": "CORE_", "owner": "core", "planes": ["local", "ci", "core_runtime"], "secret": "mixed", "canonical": true},
     {"match": "prefix", "value": "CHARLIE_PRIVATE_", "owner": "charlie_executive", "planes": ["local", "render_backend", "ci"], "secret": "mixed", "legacy_family": true},
     {"match": "prefix", "value": "CHARLIE_EXECUTIVE_", "owner": "charlie_executive", "planes": ["local", "render_backend", "ci"], "secret": "mixed"},

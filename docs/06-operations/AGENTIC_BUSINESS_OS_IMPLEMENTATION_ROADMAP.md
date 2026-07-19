@@ -47,7 +47,7 @@ Exit gates:
 
 Introduce canonical `CHARLIE_*` Executive and `CORE_*` workflow namespaces with legacy fallbacks, mismatch blocking, staged local/Render rollout, observation windows and independently tested rollback. Remove old names only in a later reviewed change.
 
-Progress log: compatibility implementation and secrets-safe migration tooling are documented in `PHASE_1_SAFE_NAMESPACE_MIGRATION.md`. Live rollout remains gated on merge/deploy/promotion and canary evidence.
+Progress log: Phase 1 completed on 2026-07-19. Compatibility, dynamic model aliases, backup-first local migration, per-key Render migration, exact-revision deployment/promotion, authenticated CHARLIE canary, CORE cold start, sustained supervision and rollback rehearsal are recorded in `PHASE_1_SAFE_NAMESPACE_MIGRATION.md`. Legacy retirement remains unapproved.
 
 Exit gates: old/new parity, conflict tests, local cold start, hosted canary, no secret exposure, rollback rehearsal and owner-approved retirement list.
 

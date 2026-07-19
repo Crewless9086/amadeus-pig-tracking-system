@@ -8,7 +8,7 @@ No environment values were printed, committed, changed or sent to another system
 
 ## Inventory result
 
-The secrets-safe audit classified 99 local `.env` key names and 20 Render backend key names, with zero unknown keys and zero current plane-placement mismatches. Configuration is operationally classifiable, but not semantically clean.
+The initial secrets-safe audit classified 99 local `.env` key names and the first 20 Render backend key names. Phase 1 later proved the Render API response had been read at its default 20-item page size. The pagination-complete correction contains 110 direct-service key names after canonical aliases were added, with zero unknown keys and two pre-existing operator-only N8N placement mismatches. No value was captured. Configuration is operationally classifiable, but not semantically clean.
 
 ## Confirmed ambiguity
 
