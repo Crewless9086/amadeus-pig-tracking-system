@@ -1072,7 +1072,11 @@ def _execution_lease_packet(mission_id):
 
 def _ensure_base_branch():
     configured_base = str(os.getenv(BASE_BRANCH_ENV) or "").strip()
-    default_base = "charlie-runner-clean-base" if ".charlie_runner" in REPO_ROOT.parts else ""
+    # The promoted runtime owns this branch exclusively.  Mission revisions are
+    # inspected detached and the next cycle returns here; sharing the legacy
+    # runner branch with another worktree recreates the collision this guard is
+    # intended to prevent.
+    default_base = "charlie-core-runtime-base" if ".charlie_runner" in REPO_ROOT.parts else ""
     base_branch = configured_base or default_base
 
     repository_lock = RepositoryOperationLock(repository_lock_path(REPO_ROOT))
