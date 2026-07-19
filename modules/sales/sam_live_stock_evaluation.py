@@ -115,11 +115,18 @@ def readiness_decision(scorecard: Mapping[str, Any], graduation: Mapping[str, An
 def owner_learning_scorecard(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     rows = []
     conversations = set()
+    historical_examples = 0
+    historical_conversations = set()
     for event in events:
         event = dict(event or {})
         if event.get("source_agent") != "sam_live_stock_backend":
             continue
         captured = event.get("captured_facts") if isinstance(event.get("captured_facts"), Mapping) else {}
+        if captured.get("learning_kind") == "owner_reply_historical_example":
+            historical_examples += 1
+            if event.get("chatwoot_conversation_id"):
+                historical_conversations.add(str(event.get("chatwoot_conversation_id")))
+            continue
         if captured.get("learning_kind") != "owner_reply_capture":
             continue
         classification = str(captured.get("owner_reply_classification") or "")
@@ -139,6 +146,9 @@ def owner_learning_scorecard(events: Iterable[Mapping[str, Any]]) -> dict[str, A
         "version": "sam_live_stock_owner_learning_scorecard_v1",
         "captured_owner_replies": total,
         "conversation_count": len(conversations),
+        "historical_owner_reply_examples": historical_examples,
+        "historical_conversation_count": len(historical_conversations),
+        "total_learning_examples": total + historical_examples,
         "unchanged_rate": 0.0 if not total else round(unchanged / total, 4),
         "accepted_or_minor_edit_rate": 0.0 if not total else round(minor_or_better / total, 4),
         "graduation": graduation,

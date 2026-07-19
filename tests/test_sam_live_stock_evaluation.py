@@ -68,10 +68,16 @@ class SamLiveStockEvaluationTests(unittest.TestCase):
                 "reply_class": "price_question",
                 "owner_reply_classification": "approved_verbatim",
             },
+        }, {
+            "source_agent": "sam_live_stock_backend",
+            "chatwoot_conversation_id": "2",
+            "captured_facts": {"learning_kind": "owner_reply_historical_example"},
         }]
         scorecard = owner_learning_scorecard(events)
         self.assertEqual(scorecard["captured_owner_replies"], 1)
         self.assertEqual(scorecard["unchanged_rate"], 1.0)
+        self.assertEqual(scorecard["historical_owner_reply_examples"], 1)
+        self.assertEqual(scorecard["total_learning_examples"], 2)
         self.assertFalse(scorecard["auto_send_enabled"])
 
 

@@ -330,7 +330,7 @@ def record_sales_conversation_learning_event(payload, database_url=None):
 
 def list_sales_conversation_learning_events(limit=50, lead_id="", database_url=None):
     try:
-        limit = max(1, min(int(limit), 100))
+        limit = max(1, min(int(limit), 1000))
     except (TypeError, ValueError):
         limit = 50
     lead_id = _clean(lead_id, 120)
