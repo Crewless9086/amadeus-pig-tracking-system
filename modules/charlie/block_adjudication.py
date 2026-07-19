@@ -7,6 +7,8 @@ change; it is not owner discretion by itself.
 
 from __future__ import annotations
 
+import re
+
 from modules.charlie.block_recovery import classify_block
 from modules.charlie.executive_control import stable_fingerprint
 from modules.charlie.pr_reconciliation import mission_pr_reference, reconciliation_decision
@@ -83,7 +85,7 @@ def _result(mission, action, disposition, reason, **extra):
     target = str(extra.get("target_stage") or disposition.get("responsible_stage") or "planner")
     fingerprint = stable_fingerprint({
         "mission_id": mission.get("mission_id"), "action": action,
-        "block_class": block_class, "target": target, "reason": reason,
+        "block_class": block_class, "target": target, "reason": _canonical_block_reason(reason),
         "pending": [row.get("id") for row in extra.get("pending_rows", [])],
     })
     return {
@@ -93,6 +95,18 @@ def _result(mission, action, disposition, reason, **extra):
         "idempotency_key": f"adjudicate:{mission.get('mission_id')}:{fingerprint}",
         **extra,
     }
+
+
+def _canonical_block_reason(reason):
+    """Keep retry fingerprints stable when recovery wraps the same cause."""
+    value = str(reason or "").strip().lower()
+    value = re.sub(
+        r"^repeated internal recovery stopped after \d+ identical occurrences:\s*",
+        "",
+        value,
+    )
+    value = re.sub(r"\b[a-f0-9]{8}-\d{8}t\d{6}z-\d{6,}\b", "<execution>", value)
+    return " ".join(value.split())
 
 
 def _packet(mission):

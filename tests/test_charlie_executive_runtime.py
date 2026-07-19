@@ -94,6 +94,21 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         result = _execute_recovery({"mission_id": "M-1", "fingerprint": "fp"}, "CMD", None, None)
         self.assertEqual(result["status"], "alternate_recovery_queued")
         self.assertEqual(transition.call_args.args[2]["executive_recovery"]["strategy"], "alternate_planning")
+
+    @patch("modules.charlie.executive_runtime.queue_outbox")
+    @patch("modules.charlie.executive_runtime.get_mission", return_value=({"mission": {"mission_id": "M-1", "status": "blocked", "metadata": {"review_packet": {"blocked_reason": "concurrent_source_overlap", "blocked_agent": "builder"}}}}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state")
+    @patch("modules.charlie.executive_runtime.complete_control_command")
+    @patch("modules.charlie.executive_runtime.upsert_recovery_case", return_value=({"recovery_id": "REC-X", "attempt_count": 4, "attempt_limit": 3}, 200))
+    def test_exhausted_system_incident_halts_without_reapproving(self, _case, complete, transition, _get, outbox):
+        result = _execute_recovery({
+            "mission_id": "M-1",
+            "fingerprint": "stable-fp",
+            "block_class": "system_repair_required",
+        }, "CMD", None, None)
+        self.assertEqual(result["status"], "system_incident_halted")
+        transition.assert_not_called()
+        self.assertEqual(complete.call_args.kwargs["result"]["status"], "system_incident_halted")
         outbox.assert_not_called()
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))

@@ -12,6 +12,16 @@ def mission(reason, *, packet=None, governance=None):
 
 
 class CharlieBlockAdjudicationTests(unittest.TestCase):
+    def test_recovery_wrapper_does_not_change_block_fingerprint(self):
+        original = adjudicate_block(mission(
+            "Builder concurrency admission refused before model execution: concurrent_source_overlap."
+        ))
+        repeated = adjudicate_block(mission(
+            "Repeated internal recovery stopped after 5 identical occurrences: "
+            "Builder concurrency admission refused before model execution: concurrent_source_overlap."
+        ))
+        self.assertEqual(original["fingerprint"], repeated["fingerprint"])
+
     def test_artifact_stage_mismatch_is_mechanical_recovery(self):
         result = adjudicate_block(mission("final_artifact_stage_mismatch at planner"))
         self.assertEqual(result["action"], "recover_stage")

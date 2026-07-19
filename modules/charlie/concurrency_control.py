@@ -16,6 +16,9 @@ from modules.charlie.runner_control import _shared_repository_root
 
 VERSION = "core_concurrency_control_v1"
 LEASE_SECONDS = 900
+RUNTIME_COORDINATION_PATHS = {
+    "planning/CODEX_CHAT.md",
+}
 
 
 def utc_now():
@@ -110,7 +113,10 @@ def declared_source_files(mission, artifacts=None):
                 found.add(candidate)
     walk(mission or {})
     walk(artifacts or {})
-    return sorted(found)
+    # CODEX_CHAT is runner-owned coordination state. Mission pickup writes it
+    # before Builder admission, so treating it as product source guarantees a
+    # false overlap with the owner checkout and can deadlock every mission.
+    return sorted(path for path in found if path not in RUNTIME_COORDINATION_PATHS)
 
 
 def paths_overlap(left, right):

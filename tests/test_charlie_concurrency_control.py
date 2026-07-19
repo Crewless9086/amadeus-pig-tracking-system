@@ -47,6 +47,15 @@ class CoreConcurrencyControlTests(unittest.TestCase):
         )
         self.assertEqual(files, ["modules/a.py", "modules/b.py"])
 
+    def test_declared_source_files_excludes_runner_owned_codex_chat(self):
+        files = declared_source_files({
+            "metadata": {"review_packet": {"changed_files": [
+                "planning/CODEX_CHAT.md",
+                "modules/beacon/autonomy_readiness.py",
+            ]}},
+        })
+        self.assertEqual(files, ["modules/beacon/autonomy_readiness.py"])
+
     def test_overlap_detects_exact_and_directory_scope(self):
         self.assertTrue(paths_overlap("modules/a.py", "modules/a.py"))
         self.assertTrue(paths_overlap("modules/charlie", "modules/charlie/routes.py"))
