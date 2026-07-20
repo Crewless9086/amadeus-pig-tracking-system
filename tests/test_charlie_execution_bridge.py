@@ -1838,10 +1838,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.transition_mission_review_state")
     @patch("modules.charlie.execution_bridge.get_mission")
     def test_agent_runner_v2_send_back_reruns_from_target_stage_only(
         self,
         get_mission,
+        transition_review_state,
         update_status,
         update_vault,
         update_workflow,
@@ -1876,6 +1878,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             _mission_with_persisted_review_packet(mission),
         )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
+        transition_review_state.return_value = ({"success": True, "status": "review_state_transitioned", "mission_status": "blocked"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
         called_agents = []

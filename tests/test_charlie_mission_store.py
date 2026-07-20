@@ -93,6 +93,39 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(params["status"], "approved")
         self.assertIn("internal_recovery_queued", params["review_packet"])
 
+    def test_blocked_review_transition_persists_exact_recovery_target_and_full_packet(self):
+        connection = FakeConnection([("MISSION-1",)])
+        packet = {
+            "review_status": "workflow_not_ready",
+            "blocked_agent": "idea_expander",
+            "blocked_reason": "Legacy evidence requires a targeted refresh.",
+            "return_to_stage": "idea_expander",
+            "owner_review_gate_failure": {"fingerprint": "same-condition", "occurrence": 1},
+            "pr_url": "https://github.com/example/repo/pull/320",
+            "agent_artifacts": {"reviewer": {"summary": "passed"}},
+        }
+
+        result, status_code = transition_mission_review_state(
+            "MISSION-1",
+            "blocked",
+            packet,
+            expected_status="in_progress",
+            owner_decision=packet["blocked_reason"],
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        update_sql, params = connection.cursor_instance.executed[0]
+        stored = __import__("json").loads(params["review_packet"])
+        self.assertIn("jsonb_build_object('review_packet'", update_sql)
+        self.assertEqual(params["expected_status"], "in_progress")
+        self.assertEqual(stored["blocked_agent"], "idea_expander")
+        self.assertEqual(stored["return_to_stage"], "idea_expander")
+        self.assertEqual(stored["owner_review_gate_failure"]["occurrence"], 1)
+        self.assertIn("reviewer", stored["agent_artifacts"])
+
     def test_final_artifact_consumption_advances_tester_to_qa_once(self):
         metadata = {
             "agent_workflow": [
