@@ -59,6 +59,16 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         cycle = build_executive_cycle([mission], DELEGATED_POLICIES, runner={})
         self.assertFalse(any(item["action"] == "approve_next_work" for item in cycle["commands"]))
 
+    def test_protected_review_notification_changes_with_tested_revision(self):
+        def review(revision):
+            return {
+                "mission_id": "M-PAY", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration",
+                "metadata": {"review_packet": {"tested_revision": revision, "pr_url": "https://github.com/o/r/pull/1"}},
+            }
+        first = build_executive_cycle([review("sha-1")], DELEGATED_POLICIES, runner={})
+        second = build_executive_cycle([review("sha-2")], DELEGATED_POLICIES, runner={})
+        self.assertNotEqual(first["escalations"][0]["notification_fingerprint"], second["escalations"][0]["notification_fingerprint"])
+
     def test_red_zone_cannot_be_delegated_by_normal_policy(self):
         result = authority_decision("core.internal_recovery", POLICIES, risk_flags=["payment"])
         self.assertFalse(result["allowed"])

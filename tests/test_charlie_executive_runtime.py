@@ -205,6 +205,7 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(result["cycle"]["escalations"]), 1)
         outbox.assert_called_once()
+        self.assertTrue(outbox.call_args.kwargs["idempotency_key"].endswith(":initial"))
 
     @patch("modules.charlie.executive_runtime.load_executive_context", return_value=({"policies": [], "goals": []}, 200))
     @patch("modules.charlie.executive_runtime.list_missions", return_value=({"missions": [{**BLOCKED, "metadata": {"review_packet": {"block_disposition": {"block_class": "owner_decision_required", "owner_required": True}}}}]}, 200))
