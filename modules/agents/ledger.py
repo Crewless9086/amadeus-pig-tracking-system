@@ -44,7 +44,10 @@ def run_ledger(request):
         "payment": {
             "status": payment_status,
             "evidence_supplied": bool(payment),
-            "payment_confirmation_allowed": payment_status == "verified",
+            # Ledger only reports commercial evidence. A caller-provided status,
+            # including "verified", cannot grant a payment or livestock-release
+            # authority that belongs to the owner-gated backend rail.
+            "payment_confirmation_allowed": False,
             "authority_note": "Ledger evidence never authorizes payment confirmation or livestock release.",
         },
     }

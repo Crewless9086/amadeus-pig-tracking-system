@@ -66,6 +66,17 @@ class SamLiveStockReplayTests(unittest.TestCase):
         self.assertEqual(evidence["payment"]["status"], "unknown")
         self.assertFalse(evidence["payment"]["payment_confirmation_allowed"])
 
+    def test_ledger_verified_status_never_grants_payment_confirmation_authority(self):
+        evidence = run_ledger({
+            "known_context": {
+                "pricing": {"found": True, "unit_price": 450, "currency": "ZAR"},
+                "payment": {"status": "verified"},
+            }
+        })
+        self.assertEqual(evidence["payment"]["status"], "verified")
+        self.assertFalse(evidence["payment"]["payment_confirmation_allowed"])
+        self.assertIn("never authorizes payment confirmation", evidence["payment"]["authority_note"])
+
     def test_ledger_preserves_missing_price_as_an_explicit_unknown(self):
         evidence = run_ledger({"known_context": {"pricing": {"found": False}}})
         self.assertFalse(evidence["facts"][0]["value"])
