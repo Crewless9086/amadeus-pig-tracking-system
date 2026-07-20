@@ -684,6 +684,8 @@ def run_agent_execution_bridge_v2(
         if concurrency_admission:
             artifact["concurrency_admission"] = concurrency_admission
             artifact["concurrency_lease_release"] = _release_builder_concurrency_admission(concurrency_admission)
+        if agent == "publisher":
+            artifact = _bind_publisher_revision(artifact)
         validation = _validate_agent_artifact(agent, artifact)
         if not validation["valid"]:
             retry_reason = "malformed_json" if parse_failed else "missing_keys"
@@ -2596,6 +2598,12 @@ def _agent_required_schema(agent):
             "pr_number": "pull request number when changed_files contains releaseable changes",
             "links": {"pr": "pull request URL", "local_preview": "local preview URL if available"},
         })
+        if agent == "publisher":
+            base.update({
+                "expected_revision": "full GitHub PR head SHA after any rebase/repair",
+                "tested_revision": "same full SHA that focused tests and checks covered",
+                "commit_sha": "published branch HEAD SHA",
+            })
     return base
 
 
@@ -7069,6 +7077,16 @@ def _release_candidate_revision_sha(mission, artifacts=None):
         if tested and (not expected or tested == expected):
             return tested
     return _builder_revision_sha(mission, artifacts)
+
+
+def _bind_publisher_revision(artifact, revision=""):
+    artifact = dict(artifact) if isinstance(artifact, dict) else {}
+    published_revision = str(revision or _git_head_revision()).strip()
+    if published_revision:
+        artifact["expected_revision"] = published_revision
+        artifact["tested_revision"] = published_revision
+        artifact["commit_sha"] = published_revision
+    return artifact
 
 
 def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_status):
