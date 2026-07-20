@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.charlie_runner_watchdog import watchdog_tick
+from scripts.charlie_runner_watchdog import _configure_git_safe_directory, watchdog_tick
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
@@ -83,6 +83,15 @@ class CharlieRunnerWatchdogTests(unittest.TestCase):
             config = state.with_name("task-gitconfig")
             self.assertTrue(config.exists())
             self.assertIn("safe", config.read_text(encoding="utf-8"))
+
+    def test_safe_git_config_includes_separate_execution_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "task-gitconfig"
+            _configure_git_safe_directory(config)
+            content = config.read_text(encoding="utf-8")
+            execution_root = str(Path(tmp) / "core-execution-current").replace("\\", "/")
+            self.assertIn(f'directory = "{execution_root}"', content)
+            self.assertEqual(content.count("directory ="), 2)
 
     def test_orphan_is_not_duplicated(self):
         with tempfile.TemporaryDirectory() as tmp:

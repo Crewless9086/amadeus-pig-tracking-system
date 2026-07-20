@@ -38,8 +38,15 @@ def _live_supervisor_lock(path=SUPERVISOR_LOCK_PATH):
 def _configure_git_safe_directory(config_path=GIT_CONFIG_PATH):
     config_path = Path(config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    safe_path = str(REPO_ROOT).replace("\\", "/")
-    config_path.write_text(f'[safe]\n\tdirectory = "{safe_path}"\n', encoding="utf-8")
+    safe_paths = (
+        REPO_ROOT,
+        config_path.parent / "core-execution-current",
+    )
+    entries = "".join(
+        f'\tdirectory = "{str(path).replace(chr(92), "/")}"\n'
+        for path in safe_paths
+    )
+    config_path.write_text(f"[safe]\n{entries}", encoding="utf-8")
     os.environ["GIT_CONFIG_GLOBAL"] = str(config_path)
     return config_path
 
