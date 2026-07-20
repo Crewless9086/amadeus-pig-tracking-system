@@ -271,7 +271,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
     def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, write_heartbeat):
         popen.return_value.pid = 1234
         write_heartbeat.return_value = {"status": "runner_started"}
-        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
             result, status_code = runner_control.start_runner(status_override={"active": False, "status": "runner_not_started", "orphan_processes": []})
         self.assertEqual(status_code, 200)
         self.assertEqual(result["status"], "runner_started")
@@ -284,13 +284,31 @@ class CharlieRunnerControlTests(unittest.TestCase):
         status.return_value = {"active": False, "status": "runner_not_started", "orphan_processes": []}
         popen.return_value.pid = 4321
         write_heartbeat.side_effect = lambda _result, path: Path(path).write_text('{"pid": 0}', encoding="utf-8")
-        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
             result, status_code = runner_control.start_runner()
 
         self.assertEqual(status_code, 200)
         self.assertEqual(result["pid"], 4321)
         command = popen.call_args.args[0]
         self.assertTrue(command[-1].endswith("charlie_runner_supervisor.py"))
+
+    @patch("modules.charlie.runner_control._pid_alive", return_value=True)
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_start_runner_refuses_duplicate_when_live_supervisor_owns_control_plane(self, popen, _pid_alive):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ):
+            runner_control.SUPERVISOR_PATH.write_text(
+                json.dumps({"pid": 9876, "generation": "generation-live"}), encoding="utf-8"
+            )
+            result, status_code = runner_control.start_runner(
+                status_override={"active": False, "status": "transient_stale", "orphan_processes": []}
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "runner_already_active")
+        self.assertEqual(result["supervisor_pid"], 9876)
+        popen.assert_not_called()
 
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")

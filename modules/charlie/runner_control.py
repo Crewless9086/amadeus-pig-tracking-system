@@ -269,6 +269,15 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
 
 
 def start_runner(status_override=None):
+    supervisor = _read_json(SUPERVISOR_PATH)
+    if _pid_alive(supervisor.get("pid")):
+        return {
+            "success": True,
+            "status": "runner_already_active",
+            "runner": status_override if isinstance(status_override, dict) else runner_status(),
+            "supervisor_pid": supervisor.get("pid"),
+            "supervisor_generation": supervisor.get("generation", ""),
+        }, 200
     status = status_override if isinstance(status_override, dict) else runner_status()
     if status["active"]:
         return {"success": True, "status": "runner_already_active", "runner": status}, 200
