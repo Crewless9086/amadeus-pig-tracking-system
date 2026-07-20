@@ -175,7 +175,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         sleeps = []
 
         with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
-            result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=sleeps.append, max_cycles=2)
+            result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=sleeps.append, max_cycles=2, prepare_fn=lambda: {"success": True})
 
         self.assertEqual(popen.call_count, 2)
         self.assertEqual(sleeps, [5])
@@ -196,7 +196,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         ), patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(
             supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
         ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
-            supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1)
+            supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1, prepare_fn=lambda: {"success": True})
 
         child_env = popen.call_args.kwargs["env"]
         self.assertEqual(child_env["CORE_EXECUTION_BASE_BRANCH"], "charlie-core-execution-base")
@@ -209,7 +209,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             stop = Path(tmp) / "stop"
             stop.write_text("stop", encoding="utf-8")
             with patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(supervisor, "STOP_PATH", stop):
-                result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1)
+                result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1, prepare_fn=lambda: {"success": True})
 
         popen.assert_not_called()
         self.assertEqual(result["cycles"], 0)
@@ -230,6 +230,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
                     sleep_fn=lambda _delay: None,
                     max_cycles=10,
                     notifier=notifier,
+                    prepare_fn=lambda: {"success": True},
                 )
             state = json.loads((root / "supervisor.json").read_text(encoding="utf-8"))
         self.assertEqual(result["status"], "infrastructure_hold")
@@ -249,7 +250,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             heartbeat = root / "runner.json"
             heartbeat.write_text('{"last_result_status":"executive_cycle_observed"}', encoding="utf-8")
             with patch.object(supervisor, "RUNNER_DIR", root), patch.object(supervisor, "SUPERVISOR_PATH", root / "supervisor.json"), patch.object(supervisor, "RUNNER_HEARTBEAT_PATH", heartbeat), patch.object(supervisor, "STOP_PATH", root / "stop"):
-                result = supervisor.supervise_runner(Mock(side_effect=children), lambda _delay: None, max_cycles=10, notifier=notifier)
+                result = supervisor.supervise_runner(Mock(side_effect=children), lambda _delay: None, max_cycles=10, notifier=notifier, prepare_fn=lambda: {"success": True})
         self.assertEqual(result["status"], "infrastructure_hold")
         self.assertIn("child_exit:3221225794", result["failure_status"])
         notifier.assert_called_once()
@@ -261,6 +262,70 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["lifecycle"]["updated_count"], 1)
         analyst.assert_called_once_with(trigger="conveyor_repair_completed", limit=50)
+
+    def test_execution_bootstrap_restores_generated_state_and_uses_promoted_revision(self):
+        calls = []
+        responses = [
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+            Mock(returncode=0, stdout=" M planning/CODEX_CHAT.md\n", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="", stderr=""),
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+        ]
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs.get("cwd")))
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "REPO_ROOT", Path(tmp) / "runtime"), patch.object(
+            supervisor, "EXECUTION_ROOT", Path(tmp) / "execution"
+        ):
+            supervisor.REPO_ROOT.mkdir()
+            supervisor.EXECUTION_ROOT.mkdir()
+            result = supervisor._prepare_execution_root(run_factory=fake_run)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["promoted_revision"], "abc123")
+        self.assertIn(["git", "restore", "--staged", "--worktree", "--", "planning/CODEX_CHAT.md"], [item[0] for item in calls])
+        self.assertIn(["git", "switch", "--detach"], [item[0] for item in calls])
+        self.assertIn(["git", "branch", "--force", "charlie-core-execution-base", "abc123"], [item[0] for item in calls])
+        self.assertIn(["git", "switch", "charlie-core-execution-base"], [item[0] for item in calls])
+
+    def test_execution_bootstrap_refuses_unknown_dirty_files(self):
+        responses = [
+            Mock(returncode=0, stdout="abc123\n", stderr=""),
+            Mock(returncode=0, stdout=" M modules/charlie/execution_bridge.py\n", stderr=""),
+        ]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "REPO_ROOT", Path(tmp) / "runtime"), patch.object(
+            supervisor, "EXECUTION_ROOT", Path(tmp) / "execution"
+        ):
+            supervisor.REPO_ROOT.mkdir()
+            supervisor.EXECUTION_ROOT.mkdir()
+            result = supervisor._prepare_execution_root(run_factory=Mock(side_effect=responses))
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "execution_root_has_unpreserved_changes")
+        self.assertEqual(result["dirty_paths"], ["modules/charlie/execution_bridge.py"])
+
+    def test_supervisor_refuses_to_launch_when_execution_bootstrap_fails(self):
+        popen = Mock()
+        notifier = Mock()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(supervisor, "RUNNER_DIR", Path(tmp)), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"):
+            result = supervisor.supervise_runner(
+                popen_factory=popen,
+                sleep_fn=lambda _delay: None,
+                max_cycles=1,
+                notifier=notifier,
+                prepare_fn=lambda: {"success": False, "status": "execution_bootstrap_revision_mismatch"},
+            )
+
+        self.assertEqual(result["status"], "infrastructure_hold")
+        popen.assert_not_called()
+        notifier.assert_called_once()
 
     def test_typed_damage_recreates_only_dedicated_runner_worktree(self):
         with tempfile.TemporaryDirectory() as tmp:
