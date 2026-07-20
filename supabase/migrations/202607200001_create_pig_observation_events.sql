@@ -59,9 +59,18 @@ create trigger trg_pig_observation_events_validate_supersession
     for each row execute function public.pig_observation_events_validate_supersession();
 
 drop trigger if exists trg_pig_observation_events_no_update_delete on public.pig_observation_events;
+create or replace function public.pig_observation_events_block_update_delete()
+returns trigger
+language plpgsql
+as $$
+begin
+    raise exception 'pig observation events are append-only';
+end;
+$$;
+
 create trigger trg_pig_observation_events_no_update_delete
     before update or delete on public.pig_observation_events
-    for each row execute function public.oom_sakkie_sales_campaigns_block_update_delete();
+    for each row execute function public.pig_observation_events_block_update_delete();
 
 insert into app_private.migration_log (migration_id, description)
 values (

@@ -15,6 +15,7 @@ class PigObservationEventMigrationTests(unittest.TestCase):
         self.assertIn("measurements_json jsonb not null", sql)
         self.assertIn("enable row level security", sql)
         self.assertIn("before update or delete on public.pig_observation_events", sql)
+        self.assertIn("pig_observation_events_block_update_delete", sql)
         self.assertIn("migration_log", sql)
         self.assertNotIn("drop table", sql)
         self.assertNotIn("truncate ", sql)
