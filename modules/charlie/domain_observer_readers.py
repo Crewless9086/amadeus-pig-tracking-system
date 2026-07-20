@@ -5,7 +5,11 @@ from __future__ import annotations
 from modules.beacon.workforce import beacon_workforce_scorecard
 from modules.orders.order_read import list_orders
 from modules.pig_weights.pig_weights_service import get_sales_metrics
-from modules.sales.conversation_learning import live_stock_learning_scorecard
+from modules.sales.conversation_learning import (
+    list_sales_conversation_learning_events,
+    live_stock_learning_scorecard,
+    summarize_sales_conversation_learning,
+)
 
 
 def observer_readers():
@@ -22,12 +26,24 @@ def read_sam_lead_health(_domain="sales"):
     card = result.get("scorecard") if isinstance(result, dict) and isinstance(result.get("scorecard"), dict) else {}
     if status >= 400:
         return _failed("sam_live_stock_learning", result)
-    total = int(card.get("total_events") or card.get("events") or 0)
-    edits = int(card.get("owner_edit_events") or card.get("edited_replies") or 0)
+    total = int(card.get("total_learning_examples") or card.get("captured_owner_replies") or 0)
+    edits = int(card.get("captured_owner_replies") or 0)
     recommendations = []
-    if edits:
-        recommendations.append({"summary": f"Review {edits} owner-edited SAM reply event(s) for recurring lead-health corrections."})
-    return _evidence("sam_live_stock_learning", {"captured_events": total, "owner_edits": edits}, recommendations)
+    events_payload, events_status = list_sales_conversation_learning_events(limit=500)
+    learning = summarize_sales_conversation_learning(events_payload.get("learning_events") or []) if events_status < 400 else {}
+    misses = learning.get("sam_misses") if isinstance(learning.get("sam_misses"), dict) else {}
+    repeated = sorted(misses.items(), key=lambda item: (-int(item[1] or 0), item[0]))
+    if repeated:
+        label, count = repeated[0]
+        recommendations.append({"summary": f"Improve SAM Live Stock replies from conversation evidence: {label.replace('_', ' ')} occurred {count} time(s)."})
+    accepted_rate = float(card.get("accepted_or_minor_edit_rate") or 0)
+    if edits and accepted_rate < 0.5:
+        recommendations.append({"summary": f"Review SAM drafting quality: {edits} captured owner replies but only {accepted_rate:.0%} were accepted or needed minor edits."})
+    return _evidence(
+        "sam_live_stock_learning",
+        {"learning_examples": total, "captured_owner_replies": edits, "accepted_or_minor_edit_rate": accepted_rate, "sam_misses": misses},
+        recommendations,
+    )
 
 
 def read_ledger_cash_exceptions(_domain="finance"):

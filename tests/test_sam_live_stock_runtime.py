@@ -203,6 +203,32 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["category"], "piglet")
         self.assertTrue(facts["quote_requested"])
 
+    def test_extract_live_stock_facts_recognises_port_elizabeth_context(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I'm in Eastern Cape Port Elizabeth and I can collect",
+            {"conversation_id": "1927"},
+        )
+
+        self.assertEqual(facts["location"], "Port Elizabeth")
+        self.assertEqual(facts["transport_expectation"], "collection_requested")
+
+    def test_non_live_pork_message_gets_specific_clarification(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts(
+            "I'm a qualified butcher and I am looking for pork",
+            {"conversation_id": "1927"},
+        )
+        reply = sam_live_stock_runtime._safe_reply_draft(
+            facts,
+            {"lane": "owner_handoff"},
+            [],
+            {},
+            [],
+        )
+
+        self.assertIn("live pigs to slaughter yourself", reply)
+        self.assertIn("processed pork", reply)
+        self.assertNotIn("What detail should I note", reply)
+
     def test_merge_prior_context_fills_missing_values_only(self):
         facts = sam_live_stock_runtime.extract_live_stock_facts("I need 2 weaners", {})
         merged = sam_live_stock_runtime.merge_prior_live_stock_context(

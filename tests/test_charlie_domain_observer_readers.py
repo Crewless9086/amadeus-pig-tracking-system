@@ -11,12 +11,24 @@ class DomainObserverReaderTests(unittest.TestCase):
     def test_all_observers_have_real_read_adapters(self):
         self.assertEqual(set(observer_readers()), {"sam_lead_health", "ledger_cash_exceptions", "herdmaster_readiness", "beacon_opportunities"})
 
+    @patch("modules.charlie.domain_observer_readers.list_sales_conversation_learning_events")
     @patch("modules.charlie.domain_observer_readers.live_stock_learning_scorecard")
-    def test_sam_adapter_uses_learning_truth(self, scorecard):
-        scorecard.return_value = ({"scorecard": {"total_events": 8, "owner_edit_events": 2}}, 200)
-        result = read_sam_lead_health()
-        self.assertEqual(result["facts"][0]["owner_edits"], 2)
-        self.assertEqual(result["source_refs"], ["sam_live_stock_learning"])
+    def test_sam_recommendation_uses_actual_conversation_failures(self, scorecard, events):
+        scorecard.return_value = ({"scorecard": {
+            "total_learning_examples": 30,
+            "captured_owner_replies": 10,
+            "accepted_or_minor_edit_rate": 0.1,
+        }}, 200)
+        events.return_value = ({"learning_events": [
+            {"sam_misses": ["sam_draft_replaced_by_owner"]},
+            {"sam_misses": ["sam_draft_replaced_by_owner"]},
+        ]}, 200)
+
+        evidence = read_sam_lead_health()
+
+        self.assertEqual(evidence["facts"][0]["learning_examples"], 30)
+        self.assertIn("occurred 2 time(s)", evidence["recommendations"][0]["summary"])
+        self.assertIn("only 10%", evidence["recommendations"][1]["summary"])
 
     @patch("modules.charlie.domain_observer_readers.list_orders")
     def test_ledger_adapter_reports_payment_exceptions_and_known_gap(self, orders):

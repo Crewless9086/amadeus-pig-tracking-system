@@ -214,6 +214,10 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             "deadlocked": bool(approved and not runnable and not runner.get("active_mission_id")),
         },
         "queue_rank": [{"mission_id": item.get("mission_id"), "score": portfolio_priority(item, active_goal_ids=active_goal_ids)} for item in ranked],
+        "status_counts": {
+            status: sum(1 for item in missions if str(item.get("status") or "").lower() == status)
+            for status in ("new", "approved", "in_progress", "blocked", "pr_ready", "release_approved", "paused")
+        },
     }
 
 
