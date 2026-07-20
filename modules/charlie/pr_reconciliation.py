@@ -52,6 +52,12 @@ def reconciliation_decision(mission, pr_state, dependency_states=None, release_b
     checks_complete = bool(checks) and all(_check_conclusion(item) in PASSING_CHECK_CONCLUSIONS for item in checks)
     checks_failed = any(_check_conclusion(item) not in PASSING_CHECK_CONCLUSIONS | {"", "PENDING", "IN_PROGRESS", "QUEUED"} for item in checks)
     review_packet = _review_packet(mission)
+    if str(review_packet.get("review_status") or "").strip() == "system_incident_halted":
+        return {
+            "action": "none",
+            "reason": "system_incident_halted",
+            "head_sha": str(pr_state.get("headRefOid") or "").strip(),
+        }
     ui_related = _mission_ui_related(mission)
     visual = review_packet.get("visual_review") if isinstance(review_packet.get("visual_review"), dict) else {}
     visual_ready = not ui_related or bool(visual.get("media")) or visual.get("status") in {"captured", "not_applicable"}

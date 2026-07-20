@@ -69,6 +69,19 @@ class CharlieBlockAdjudicationTests(unittest.TestCase):
         result = adjudicate_block(blocked, pr_state=state)
         self.assertEqual(result["action"], "recover_stage")
 
+    def test_system_incident_halt_is_not_automatically_recovered(self):
+        blocked = mission("Repeated evidence recovery halted.", packet={
+            "review_status": "system_incident_halted",
+            "blocked_agent": "idea_expander",
+            "owner_review_gate_failure": {"fingerprint": "same-failure"},
+        })
+
+        result = adjudicate_block(blocked)
+
+        self.assertEqual(result["action"], "system_incident_halted")
+        self.assertFalse(result["owner_required"])
+        self.assertEqual(result["target_stage"], "idea_expander")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -136,6 +136,19 @@ class CharliePrReconciliationTests(unittest.TestCase):
         self.assertEqual(result["action"], "queue_recovery")
         self.assertIn("unresolved_review_findings", result["readiness"]["reasons"])
 
+    def test_system_incident_halt_cannot_be_restarted_by_pr_reconciliation(self):
+        value = reconciled_mission()
+        value["status"] = "blocked"
+        value["metadata"]["review_packet"].update({
+            "review_status": "system_incident_halted",
+            "blocked_agent": "idea_expander",
+        })
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["action"], "none")
+        self.assertEqual(result["reason"], "system_incident_halted")
+
 
 if __name__ == "__main__":
     unittest.main()
