@@ -6005,22 +6005,13 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         })
         if isinstance(workflow_status.get("evidence_reconciliation"), dict):
             blocked_review_packet["evidence_reconciliation"] = workflow_status["evidence_reconciliation"]
-        blocked_result, blocked_status = update_mission_status(
+        blocked_result, blocked_status = transition_mission_review_state(
             mission["mission_id"],
             "blocked",
+            blocked_review_packet,
+            expected_status="in_progress",
             owner_decision=blocked_reason,
-            event_type="status_changed",
             notes="CORE refused pr_ready because at least one configured workflow stage was not complete.",
-            metadata={
-                "agent_runner_version": AGENT_RUNNER_VERSION,
-                "execution_id": execution_id,
-                "agent_ledger_path": str(ledger_path),
-                "review_status": review_status,
-                "blocked_agent": blocked_agent,
-                "blocked_reason": blocked_reason,
-                "review_packet": blocked_review_packet,
-                "recommended_next_action": blocked_review_packet["recommended_next_action"],
-            },
             database_url=database_url,
             connect_factory=connect_factory,
         )
