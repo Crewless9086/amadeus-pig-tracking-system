@@ -4868,6 +4868,8 @@ def _blocking_artifact_items(agent, artifact, values):
         values = [values] if values else []
     blocking = []
     for value in values:
+        if _is_reviewer_adjacent_follow_up(agent, artifact, value):
+            continue
         if _is_non_blocking_local_pytest_issue(agent, artifact, value):
             continue
         if _is_resolved_pr_process_issue(agent, artifact, value):
@@ -4878,6 +4880,61 @@ def _blocking_artifact_items(agent, artifact, values):
             continue
         blocking.append(value)
     return blocking
+
+
+def _is_reviewer_adjacent_follow_up(agent, artifact, value):
+    """Keep explicitly deferred owner/migration work out of current-diff backflow.
+
+    Reviewer models occasionally place advisory follow-ups in the legacy
+    ``bugs`` array while simultaneously recording their structured scope in
+    ``finding_contract``.  Suppression is intentionally narrow: the release
+    recommendation and every acceptance row must pass, the contract must say
+    the work is adjacent and not introduced by this candidate, and the item
+    itself must describe a separate future migration/capture gate.
+    """
+    if agent != "reviewer" or not isinstance(artifact, dict):
+        return False
+    if str(artifact.get("recommended_owner_decision") or "").strip().lower() != "approve_final_release":
+        return False
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if not acceptance or any(
+        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
+        for row in acceptance
+    ):
+        return False
+    contract = str(artifact.get("finding_contract") or "").lower().replace(" ", "_")
+    if not all(term in contract for term in (
+        "adjacent_follow_up",
+        "introduced_by_current_diff=false",
+        "acceptance_impact=none",
+    )):
+        return False
+    text = _artifact_text(value).lower()
+    deferred_terms = (
+        "before migration application",
+        "before applying the migration",
+        "before any migration",
+        "do not apply this migration",
+        "before capture implementation",
+        "do not build capture",
+        "capture roles",
+        "correction authorization",
+        "retention/deletion policy",
+        "non-production rehearsal",
+        "non-production postgresql",
+    )
+    current_defect_terms = (
+        "introduced by current diff",
+        "current-diff defect",
+        "acceptance failed",
+        "acceptance violation",
+        "tests failed",
+        "failing test",
+        "security vulnerability",
+        "data loss",
+        "must fix before merge",
+    )
+    return any(term in text for term in deferred_terms) and not any(term in text for term in current_defect_terms)
 
 
 def _auto_package_builder_changes(mission, artifact, runner=None):

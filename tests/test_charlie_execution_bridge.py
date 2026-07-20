@@ -537,6 +537,43 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(detail["blocked_agent"], "idea_expander")
         self.assertEqual(detail["evidence_reconciliation"]["candidate_manifest"]["source_commit"], current)
 
+    def test_reviewer_adjacent_migration_follow_ups_do_not_trigger_builder_backflow(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "acceptance_results": [
+                {"id": "scope", "status": "passed"},
+                {"id": "authority-boundary", "status": "passed"},
+            ],
+            "finding_contract": (
+                "Advisory follow-up: scope_relation=adjacent_follow_up; "
+                "introduced_by_current_diff=false; severity=medium; acceptance impact=none."
+            ),
+        }
+        values = [
+            "Before migration application, rehearse RLS and trigger behavior in non-production PostgreSQL.",
+            "Capture roles, correction authorization, and retention/deletion policy remain owner decisions. Do not build capture or apply this migration until resolved.",
+        ]
+
+        self.assertEqual(execution_bridge._blocking_artifact_items("reviewer", artifact, values), [])
+
+    def test_reviewer_current_diff_defect_still_blocks_with_advisory_contract(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "acceptance_results": [{"id": "scope", "status": "passed"}],
+            "finding_contract": (
+                "scope_relation=adjacent_follow_up; introduced_by_current_diff=false; acceptance impact=none"
+            ),
+        }
+        values = [
+            "Before migration application, use a non-production rehearsal.",
+            "Current-diff defect: cross-pig correction validation is missing and must fix before merge.",
+        ]
+
+        self.assertEqual(
+            execution_bridge._blocking_artifact_items("reviewer", artifact, values),
+            [values[1]],
+        )
+
     def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
         current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
         mission = {
