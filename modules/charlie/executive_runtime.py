@@ -57,7 +57,8 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
         results.append(_execute_command(command, recorded["command_id"], database_url, connect_factory))
     if mode == "active":
         for escalation in cycle["escalations"]:
-            queue_outbox("NEEDS_OWNER_APPROVAL", escalation, idempotency_key=f"owner:{escalation.get('mission_id')}:{escalation.get('block_class')}", database_url=database_url, connect_factory=connect_factory)
+            generation = str(escalation.get("notification_fingerprint") or "initial")
+            queue_outbox("NEEDS_OWNER_APPROVAL", escalation, idempotency_key=f"owner:{escalation.get('mission_id')}:{escalation.get('block_class')}:{generation}", database_url=database_url, connect_factory=connect_factory)
     return {"success": True, "status": "executive_cycle_complete", "mode": mode, "cycle": cycle, "results": results}, 200
 
 

@@ -138,6 +138,14 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                         "idempotency_key": f"delegate-review:{mission.get('mission_id')}:{fingerprint}",
                     })
             elif assessment.get("reason") == "protected_surface_requires_owner":
+                metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+                packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+                review_generation = stable_fingerprint({
+                    "mission_id": mission.get("mission_id"),
+                    "tested_revision": packet.get("tested_revision") or packet.get("current_revision") or "",
+                    "pr_url": packet.get("pr_url") or metadata.get("pr_url") or "",
+                    "risk_flags": assessment.get("risk_flags", []),
+                })
                 escalations.append({
                     "action": "review_owner_required", "mission_id": mission.get("mission_id"),
                     "mission_status": "pr_ready",
@@ -145,6 +153,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "reason": assessment.get("reason"), "risk_flags": assessment.get("risk_flags", []),
                     "recommended_action": "Review the protected change and explicitly approve or send it back.",
                     "authority_tier": "charl_human", "block_class": "protected_review",
+                    "notification_fingerprint": review_generation,
                 })
         elif mission.get("status") == "paused":
             children = children_by_parent.get(str(mission.get("mission_id") or ""), [])
