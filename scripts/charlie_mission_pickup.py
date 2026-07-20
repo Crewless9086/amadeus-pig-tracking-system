@@ -47,6 +47,7 @@ from modules.charlie.execution_bridge import (
 )
 from modules.charlie.build_relay import build_relay_policy
 from scripts.charlie_notify import _format_message, main as notify_main
+from scripts.charlie_mission_telegram import mission_callback
 
 
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
@@ -1582,21 +1583,17 @@ def _deliver_executive_outbox():
     for item in claimed.get("items", []):
         payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
         private_text = payload.get("private_text")
+        reply_markup = None
         if not private_text and item.get("event_type") != "private_executive_brief":
             mission_id = str(payload.get("mission_id") or "")
-            reason = str(payload.get("reason") or payload.get("block_class") or "A genuine owner decision is required.")
-            title = str(payload.get("title") or mission_id or "Protected CORE decision")
-            risks = payload.get("risk_flags") if isinstance(payload.get("risk_flags"), list) else []
-            risk_text = ", ".join(str(value) for value in risks[:5])
-            private_text = (
-                f"CHARLIE needs your decision\n{title}\nMission: {mission_id}\n"
-                f"Why: {reason}"
-                + (f"\nProtected signals: {risk_text}" if risk_text else "")
-                + f"\nRecommendation: {payload.get('recommended_action') or 'Review, then approve or send back.'}"
-                + f"\nOpen CHARLIE or send: mission {mission_id}"
-            ).strip()
+            loaded, loaded_status = get_mission(mission_id) if mission_id else ({}, 404)
+            mission = loaded.get("mission") if loaded_status < 400 and isinstance(loaded.get("mission"), dict) else {}
+            private_text = _executive_owner_decision_text(payload, mission)
+            reply_markup = _executive_owner_decision_keyboard(payload, mission)
         if policy.get("enabled") and private_text:
-            _send_result, send_status = send_private_telegram_message(policy.get("owner_chat_id"), private_text)
+            _send_result, send_status = send_private_telegram_message(
+                policy.get("owner_chat_id"), private_text, reply_markup=reply_markup,
+            )
             exit_code = 0 if send_status < 400 else 1
         else:
             exit_code = _send_notification(
@@ -1608,6 +1605,58 @@ def _deliver_executive_outbox():
         complete_outbox(item.get("outbox_id"), sent=exit_code == 0, error="" if exit_code == 0 else f"notify_exit_{exit_code}")
         delivered.append({"outbox_id": item.get("outbox_id"), "sent": exit_code == 0})
     return {"success": True, "status": "outbox_delivery_complete", "delivered": delivered}
+
+
+def _executive_owner_decision_text(payload, mission=None):
+    payload = payload if isinstance(payload, dict) else {}
+    mission = mission if isinstance(mission, dict) else {}
+    mission_id = str(payload.get("mission_id") or mission.get("mission_id") or "")
+    title = str(payload.get("title") or mission.get("title") or mission_id or "Protected mission")
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    pr_url = str(packet.get("pr_url") or metadata.get("pr_url") or "").strip()
+    risks = payload.get("risk_flags") if isinstance(payload.get("risk_flags"), list) else []
+    protected = []
+    if any("customer send" in str(value).lower() for value in risks):
+        protected.append("customer-message sending")
+    if any("payment" in str(value).lower() for value in risks):
+        protected.append("payment handling")
+    protected_text = " and ".join(protected) or "a protected operational surface"
+    evidence = packet.get("test_evidence") if isinstance(packet.get("test_evidence"), list) else []
+    evidence_line = f"Evidence: {len(evidence)} recorded test/check item(s) passed." if evidence else "Evidence: release gates will be rechecked when you press Approve Release."
+    lines = [
+        "CHARLIE needs one release decision",
+        title,
+        f"Mission: {mission_id}",
+        "",
+        f"What changed: This tested code touches {protected_text} paths, so I am not allowed to approve it silently.",
+        "What Approve Release means: CORE may merge and deploy this tested code after the final release checks pass.",
+        "What it does NOT mean: it does not send a customer message, take or confirm payment, reserve stock, or bypass any separate customer/payment approval.",
+        evidence_line,
+    ]
+    if pr_url:
+        lines.append(f"PR: {pr_url}")
+    lines.extend([
+        "",
+        "My recommendation: Approve Release if you accept this protected code-path change. Otherwise press Send Back to Tester.",
+        "Use one of the buttons below; you do not need to type the mission ID.",
+    ])
+    return "\n".join(lines).strip()
+
+
+def _executive_owner_decision_keyboard(payload, mission=None):
+    payload = payload if isinstance(payload, dict) else {}
+    mission = mission if isinstance(mission, dict) else {}
+    mission_id = str(payload.get("mission_id") or mission.get("mission_id") or "")
+    if not mission_id:
+        return None
+    status = str(mission.get("status") or payload.get("mission_status") or "").lower()
+    rows = []
+    if status == "pr_ready":
+        rows.append([{"text": "Approve Release", "callback_data": mission_callback(mission_id, "approvefinal")}])
+        rows.append([{"text": "Send Back to Tester", "callback_data": mission_callback(mission_id, "sendback", "tester")}])
+    rows.append([{"text": "Refresh Mission", "callback_data": mission_callback(mission_id, "open")}])
+    return {"inline_keyboard": rows}
 
 
 def _run_domain_observers(environ=None):
