@@ -172,6 +172,12 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         )
         self.build_github_finalization_gate = self.github_finalization_gate.start()
         self.addCleanup(self.github_finalization_gate.stop)
+        self.git_head_revision_patch = patch(
+            "modules.charlie.execution_bridge._git_head_revision",
+            return_value="abc1234",
+        )
+        self.git_head_revision = self.git_head_revision_patch.start()
+        self.addCleanup(self.git_head_revision_patch.stop)
 
     def test_builder_concurrency_admission_uses_declared_scope_and_execution_holder(self):
         mission = {
@@ -518,6 +524,29 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             execution_bridge._release_candidate_revision_sha({}, artifacts),
             "builder-sha",
         )
+
+    def test_publisher_revision_is_bound_to_checkout_after_rebase(self):
+        revision = "24c59127cb3ec8712f978acadfa814fd387dd823"
+        artifact = execution_bridge._bind_publisher_revision(
+            {"summary": "Publisher rebased and verified the PR."},
+            revision=revision,
+        )
+
+        self.assertEqual(artifact["expected_revision"], revision)
+        self.assertEqual(artifact["tested_revision"], revision)
+        self.assertEqual(artifact["commit_sha"], revision)
+        self.assertEqual(
+            execution_bridge._release_candidate_revision_sha(
+                {}, {"builder": {"source_commit": "old"}, "publisher": artifact}
+            ),
+            revision,
+        )
+
+    def test_publisher_contract_requires_candidate_revision_fields(self):
+        schema = execution_bridge._agent_required_schema("publisher")
+        self.assertIn("expected_revision", schema)
+        self.assertIn("tested_revision", schema)
+        self.assertIn("commit_sha", schema)
 
     def test_owner_review_gate_failure_counts_only_identical_candidate_failure(self):
         status = {
