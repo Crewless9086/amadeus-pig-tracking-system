@@ -2420,6 +2420,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="bulk_import_draft_input"', template)
         self.assertIn("Previous Weight Date", template)
         self.assertIn("New Weight", template)
+        self.assertIn("Pen Decision (Required With Weight)", template)
         self.assertIn('fetch("/api/pig-weights/pigs")', js)
         self.assertIn('fetch("/api/pig-weights/pens")', js)
         self.assertIn('/api/pig-weights/bulk-batches', js)
@@ -2445,6 +2446,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("setUploadLocked", js)
         self.assertIn("chunk_size: 3", js)
         self.assertIn("clearUploadedAndDuplicateDraftRows", js)
+        self.assertIn("Choose: stayed or moved", js)
+        self.assertIn("Stayed in current pen", js)
+        self.assertIn("requirePenDecisions", js)
+        self.assertIn("Upload stopped: confirm the pen for every weighed pig", js)
 
         routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
         self.assertIn("def _bulk_json_failure", routes)
