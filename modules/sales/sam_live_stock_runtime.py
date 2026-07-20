@@ -318,6 +318,7 @@ def extract_live_stock_facts(message, inbound=None):
     if category == "live_pig":
         category = _category_from_weight_range(weight_range) or category
     facts = {
+        "latest_customer_message": _clean(inbound.get("content") or message, 1000),
         "sales_lane": "",
         "category": category,
         "quantity": _extract_quantity(text),
@@ -1773,7 +1774,13 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
                 "Thanks, I can note the payment message, but POP does not make live animals yours until the farm confirms the bank receipt "
                 "and the owner approves the animals on the system."
             )
-        return "Just so I help you correctly: are you asking about live pigs, farm information, or slaughter help?"
+        latest = _normal_text(facts.get("latest_customer_message"))
+        if _has_any(latest, ("pork", "butcher", "butchery", "carcass", "meat")):
+            return (
+                "Thanks, I understand this is about pork or butchery. Are you looking to buy live pigs to slaughter yourself, "
+                "or are you asking for processed pork? I want to send you down the correct sales path rather than guess."
+            )
+        return "Thanks. Just so I help you correctly: are you asking about live pigs, farm information, or slaughter help?"
     if facts.get("breeding_interest"):
         return _localized_reply(
             facts,
@@ -2591,10 +2598,14 @@ def _extract_timing(text):
 
 
 def _extract_location(text):
-    known = ("riversdale", "albertinia", "still bay", "stilbaai", "jongensfontein", "heidelberg", "mossel bay")
+    known = (
+        "riversdale", "albertinia", "still bay", "stilbaai", "jongensfontein", "heidelberg", "mossel bay",
+        "port elizabeth", "gqeberha", "east london", "eastern cape", "western cape", "cape town", "george",
+    )
     for place in known:
         if place in text:
-            return "Still Bay" if place == "still bay" else ("Stilbaai" if place == "stilbaai" else place.title())
+            labels = {"still bay": "Still Bay", "stilbaai": "Stilbaai", "port elizabeth": "Port Elizabeth", "gqeberha": "Gqeberha"}
+            return labels.get(place, place.title())
     return ""
 
 
