@@ -23,6 +23,16 @@ def adjudicate_block(mission, *, pr_state=None, dependency_states=None):
     if mission.get("status") != "blocked":
         return {"action": "none", "reason": "mission_not_blocked", "owner_required": False}
     packet = _packet(mission)
+    if str(packet.get("review_status") or "").strip() == "system_incident_halted":
+        return {
+            "version": "charlie_block_adjudication_v1",
+            "action": "system_incident_halted",
+            "owner_required": False,
+            "block_class": "system_incident_halted",
+            "target_stage": str(packet.get("blocked_agent") or "evidence_reviewer"),
+            "reason": str(packet.get("blocked_reason") or "Repeated recovery halted."),
+            "fingerprint": str((packet.get("owner_review_gate_failure") or {}).get("fingerprint") or ""),
+        }
     reason = str(packet.get("blocked_reason") or packet.get("summary") or mission.get("owner_decision") or "").strip()
     stored = packet.get("block_disposition") if isinstance(packet.get("block_disposition"), dict) else {}
     disposition = classify_block(str(packet.get("blocked_agent") or ""), reason, packet)

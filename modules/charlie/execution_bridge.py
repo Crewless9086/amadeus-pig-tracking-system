@@ -750,7 +750,7 @@ def run_agent_execution_bridge_v2(
         candidate_manifest = build_candidate_manifest(
             mission,
             manifest_artifacts,
-            source_commit=_builder_revision_sha(mission, manifest_artifacts),
+            source_commit=_release_candidate_revision_sha(mission, manifest_artifacts),
         )
         artifact = bind_artifact_to_candidate(
             artifact,
@@ -862,7 +862,7 @@ def run_agent_execution_bridge_v2(
                             "backflow_from": agent,
                             "backflow_to": backflow_target,
                             "finding_family": _primary_finding_family(artifact),
-                            "revision_sha": _builder_revision_sha(mission, artifacts),
+                            "revision_sha": _release_candidate_revision_sha(mission, artifacts),
                         },
                     ),
                     database_url=database_url,
@@ -3076,7 +3076,7 @@ def _run_parallel_read_only_agents(
             agent,
             execution_id,
             context["attempt"],
-            build_candidate_manifest(mission, manifest_artifacts, source_commit=_builder_revision_sha(mission, manifest_artifacts)),
+            build_candidate_manifest(mission, manifest_artifacts, source_commit=_release_candidate_revision_sha(mission, manifest_artifacts)),
             previous_artifact=artifacts.get(agent),
         )
         quality = _parallel_read_only_quality_gate(agent, artifact)
@@ -5749,7 +5749,7 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     candidate_manifest = build_candidate_manifest(
         mission,
         artifacts,
-        source_commit=_builder_revision_sha(mission, artifacts),
+        source_commit=_release_candidate_revision_sha(mission, artifacts),
     )
     evidence_reconciliation = resolve_effective_agent_results(
         artifacts,
@@ -5823,6 +5823,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 },
             }),
             "review_status": "ready_for_owner_review",
+            **(
+                {"owner_review_gate_failure": existing_review_packet["owner_review_gate_failure"]}
+                if isinstance(existing_review_packet.get("owner_review_gate_failure"), dict)
+                else {}
+            ),
         },
         "agent_execution": ledger,
     }
@@ -5912,6 +5917,37 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
     if not workflow_ready:
         blocked_agent = str(workflow_status.get("blocked_agent") or "reviewer")
         blocked_reason = str(workflow_status.get("reason") or "Owner-review workflow is not fully passing.")
+        gate_failure = _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_status)
+        incident_halted = gate_failure["occurrence"] >= 2
+        review_status = "system_incident_halted" if incident_halted else "workflow_not_ready"
+        if incident_halted:
+            blocked_reason = (
+                f"Repeated owner-review evidence recovery halted after {gate_failure['occurrence']} identical "
+                f"occurrences: {blocked_reason}"
+            )
+        disposition = classify_block(blocked_agent, blocked_reason, workflow_status)
+        disposition["responsible_stage"] = blocked_agent
+        disposition["recoverable"] = not incident_halted
+        disposition["owner_required"] = False
+        if incident_halted:
+            disposition["block_class"] = "system_incident_halted"
+            disposition["recovery_cap_reached"] = True
+        blocked_review_packet = dict(review_packet["review_packet"])
+        blocked_review_packet.update({
+            "review_status": review_status,
+            "blocked_agent": blocked_agent,
+            "blocked_reason": blocked_reason,
+            "return_to_stage": blocked_agent,
+            "block_disposition": disposition,
+            "owner_review_gate_failure": gate_failure,
+            "recommended_next_action": (
+                "Automatic recovery is halted. Repair the repeated evidence reconciliation condition before resuming."
+                if incident_halted
+                else f"CORE will perform one targeted recheck at {blocked_agent}."
+            ),
+        })
+        if isinstance(workflow_status.get("evidence_reconciliation"), dict):
+            blocked_review_packet["evidence_reconciliation"] = workflow_status["evidence_reconciliation"]
         blocked_result, blocked_status = update_mission_status(
             mission["mission_id"],
             "blocked",
@@ -5922,10 +5958,11 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
                 "agent_runner_version": AGENT_RUNNER_VERSION,
                 "execution_id": execution_id,
                 "agent_ledger_path": str(ledger_path),
-                "review_status": "workflow_not_ready",
+                "review_status": review_status,
                 "blocked_agent": blocked_agent,
                 "blocked_reason": blocked_reason,
-                "recommended_next_action": f"Send back to {blocked_agent} and complete the missing evidence before owner review.",
+                "review_packet": blocked_review_packet,
+                "recommended_next_action": blocked_review_packet["recommended_next_action"],
             },
             database_url=database_url,
             connect_factory=connect_factory,
@@ -5996,7 +6033,7 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
     manifest = build_candidate_manifest(
         mission,
         artifacts,
-        source_commit=_builder_revision_sha(mission, artifacts),
+        source_commit=_release_candidate_revision_sha(mission, artifacts),
     )
     reconciliation = resolve_effective_agent_results(
         artifacts,
@@ -6918,6 +6955,57 @@ def _builder_revision_sha(mission, artifacts=None):
         or builder_event.get("commit_sha")
         or ""
     ).strip()
+
+
+def _release_candidate_revision_sha(mission, artifacts=None):
+    """Prefer the newest exact revision verified by a release-stage agent.
+
+    A publisher may rebase or repair the packaged PR after Builder. In that
+    case Builder's original commit remains useful historical evidence, but it
+    is no longer the release candidate. Selecting a later agent is safe only
+    when it explicitly records the revision it inspected (and, when present,
+    its expected revision agrees). Older evidence will then be targeted for a
+    recheck against that authoritative candidate instead of defining it.
+    """
+    artifacts = artifacts if isinstance(artifacts, dict) else {}
+    for agent in (
+        "publisher", "reviewer", "evidence_reviewer", "security_reviewer",
+        "product_reviewer", "visual_qa_reviewer", "qa_red_team", "tester",
+    ):
+        artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+        tested = str(artifact.get("tested_revision") or artifact.get("current_revision") or "").strip()
+        expected = str(artifact.get("expected_revision") or "").strip()
+        if tested and (not expected or tested == expected):
+            return tested
+    return _builder_revision_sha(mission, artifacts)
+
+
+def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_status):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    previous = packet.get("owner_review_gate_failure") if isinstance(packet.get("owner_review_gate_failure"), dict) else {}
+    reconciliation = workflow_status.get("evidence_reconciliation") if isinstance(workflow_status.get("evidence_reconciliation"), dict) else {}
+    manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
+    refresh = reconciliation.get("requires_revalidation") if isinstance(reconciliation.get("requires_revalidation"), list) else []
+    fingerprint = hashlib.sha256(json.dumps({
+        "blocked_agent": str(blocked_agent or "").strip().lower(),
+        "blocked_reason": str(blocked_reason or "").strip().lower(),
+        "candidate_revision": str(manifest.get("source_commit") or "").strip(),
+        "candidate_scope": str(manifest.get("scope_hash") or "").strip(),
+        "revalidation": [
+            {"agent": str(item.get("agent") or ""), "reason": str(item.get("reason") or "")}
+            for item in refresh if isinstance(item, dict)
+        ],
+    }, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+    prior = int(previous.get("occurrence") or 0) if previous.get("fingerprint") == fingerprint else 0
+    return {
+        "version": "charlie_owner_review_gate_failure_v1",
+        "fingerprint": fingerprint,
+        "occurrence": prior + 1,
+        "blocked_agent": blocked_agent,
+        "candidate_revision": str(manifest.get("source_commit") or "").strip(),
+    }
 
 
 def _agent_completion_note(agent, final_message):

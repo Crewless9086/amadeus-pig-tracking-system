@@ -479,6 +479,64 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "current-candidate-sha",
         )
 
+    def test_release_candidate_revision_prefers_exact_release_review_over_stale_builder(self):
+        artifacts = {
+            "builder": {"source_commit": "old-builder-sha"},
+            "tester": {"tested_revision": "old-builder-sha", "expected_revision": "old-builder-sha"},
+            "reviewer": {"tested_revision": "current-pr-head", "expected_revision": "current-pr-head"},
+        }
+
+        self.assertEqual(
+            execution_bridge._release_candidate_revision_sha({}, artifacts),
+            "current-pr-head",
+        )
+
+    def test_release_candidate_revision_rejects_mismatched_release_review(self):
+        artifacts = {
+            "builder": {"source_commit": "builder-sha"},
+            "reviewer": {"tested_revision": "other-sha", "expected_revision": "current-pr-head"},
+        }
+
+        self.assertEqual(
+            execution_bridge._release_candidate_revision_sha({}, artifacts),
+            "builder-sha",
+        )
+
+    def test_owner_review_gate_failure_counts_only_identical_candidate_failure(self):
+        status = {
+            "evidence_reconciliation": {
+                "candidate_manifest": {"source_commit": "current-pr-head", "scope_hash": "scope-1"},
+                "requires_revalidation": [{"agent": "idea_expander", "reason": "legacy evidence"}],
+            }
+        }
+        first = execution_bridge._owner_review_gate_failure({}, "idea_expander", "refresh", status)
+        mission = {"metadata": {"review_packet": {"owner_review_gate_failure": first}}}
+        second = execution_bridge._owner_review_gate_failure(mission, "idea_expander", "refresh", status)
+        changed = execution_bridge._owner_review_gate_failure(mission, "source_mapper", "refresh", status)
+
+        self.assertEqual(first["occurrence"], 1)
+        self.assertEqual(second["occurrence"], 2)
+        self.assertEqual(changed["occurrence"], 1)
+
+    def test_owner_review_gate_targets_first_stale_stage_after_pr_head_rewrite(self):
+        current = "3051aebe157cd344b0e01a11dc68af0bdf6cd8"
+        old = "101032db690f001891c80a6b109be5dbd6fa659a"
+        sequence = ["idea_expander", "source_mapper", "builder", "tester", "reviewer"]
+        mission = {"mission_id": "CHARLIE-SCOPE-1C564A1B7E1C7681", "mission_context_pack": {"agent_order": sequence}}
+        artifacts = {
+            "idea_expander": {"agent": "idea_expander", "quality_gate": {"passed": True}},
+            "source_mapper": {"agent": "source_mapper", "quality_gate": {"passed": True}},
+            "builder": {"agent": "builder", "source_commit": old, "evidence_lineage": {"source_commit": old}, "quality_gate": {"passed": True}},
+            "tester": {"agent": "tester", "tested_revision": old, "expected_revision": old, "quality_gate": {"passed": True}},
+            "reviewer": {"agent": "reviewer", "tested_revision": current, "expected_revision": current, "quality_gate": {"passed": True}},
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertFalse(ready)
+        self.assertEqual(detail["blocked_agent"], "idea_expander")
+        self.assertEqual(detail["evidence_reconciliation"]["candidate_manifest"]["source_commit"], current)
+
     def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
         current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
         mission = {
