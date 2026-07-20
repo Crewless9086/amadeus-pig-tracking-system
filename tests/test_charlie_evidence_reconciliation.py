@@ -36,6 +36,22 @@ def artifact(agent, manifest, result="pass", execution="EXEC-1", attempt=1, prev
 
 
 class CharlieEvidenceReconciliationTests(unittest.TestCase):
+    def test_legacy_planning_handoff_is_accepted_for_frozen_scope(self):
+        manifest = build_candidate_manifest(MISSION, source_commit="current-sha")
+        legacy = {
+            "summary": "Planning completed before lineage support.",
+            "status": "complete",
+            "handoff_report": {"status": "complete"},
+        }
+        result = resolve_effective_agent_results(
+            {"idea_expander": legacy}, manifest, workflow=[{"agent": "idea_expander"}],
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(
+            result["effective_results"]["idea_expander"]["applicability"],
+            "accepted_legacy_frozen_scope",
+        )
+
     def test_old_risk_failure_does_not_override_corrected_candidate(self):
         old_manifest = build_candidate_manifest(MISSION, source_commit="old-sha")
         old_risk = artifact("risk_agent", old_manifest, result="blocked")

@@ -26,6 +26,7 @@ from modules.charlie.mission_store import (
     list_missions,
     record_mission,
     consume_final_agent_artifact,
+    finalize_owner_review_transaction,
     transition_mission_review_state,
     update_mission_status,
     update_mission_vault,
@@ -77,6 +78,7 @@ from modules.charlie.evidence_reconciliation import (
     build_candidate_manifest,
     resolve_effective_agent_results,
 )
+from modules.charlie.pr_reconciliation import PASSING_CHECK_CONCLUSIONS, mission_pr_reference, query_pr_state
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.source_map import (
     implementation_source_packet,
@@ -4702,7 +4704,7 @@ def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
     if artifact.get("errors") or artifact.get("bugs"):
         return False
     acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
-    if not acceptance or any(
+    if acceptance and any(
         not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
         for row in acceptance
     ):
@@ -5882,6 +5884,15 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         *list(existing_review_packet.get("agent_artifact_history") or []),
         *[artifact for artifact in artifacts.values() if isinstance(artifact, dict)],
     ][-120:]
+    candidate_revision = str(candidate_manifest.get("source_commit") or "").strip()
+    protected_operations = []
+    if any(str(path or "").replace("\\", "/").startswith("supabase/migrations/") for path in changed_files):
+        protected_operations.append({
+            "operation": "apply_migration",
+            "status": "owner_gated",
+            "candidate_revision": candidate_revision,
+            "note": "Approving this PR does not authorize applying the migration.",
+        })
     review_packet = {
         "review_packet": {
             "summary": reviewer.get("summary") or "CHARLIE Agent Runner v2 completed all stages.",
@@ -5915,6 +5926,8 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "normalized_vault_writes": normalized_vault_writes,
             "mission_quality": mission_quality,
             "candidate_manifest": candidate_manifest,
+            "tested_revision": candidate_revision,
+            "protected_operations": protected_operations,
             "evidence_reconciliation": evidence_reconciliation,
             "active_blockers": evidence_reconciliation.get("active_blockers", []),
             "resolved_findings": evidence_reconciliation.get("resolved_findings", []),
@@ -5946,89 +5959,16 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         },
         "agent_execution": ledger,
     }
-    vault_result, vault_status = update_mission_vault(
-        mission["mission_id"],
-        review_packet,
-        notes="CHARLIE Agent Runner v2 populated owner review packet.",
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if vault_status >= 400 or not vault_result.get("success"):
-        return {
-            "success": False,
-            "status": "owner_review_packet_persist_failed",
-            "mission_id": mission["mission_id"],
-            "mission_status": mission.get("status", "in_progress"),
-            "error_status": vault_result.get("status", ""),
-            "error_type": vault_result.get("error_type", ""),
-            "agent_ledger_path": str(ledger_path),
-            "next_action": "Do not mark pr_ready. Compact or repair review packet persistence, then rerun from reviewer.",
-        }, max(int(vault_status or 500), 500)
-    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-        mission["mission_id"],
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if not persisted_ok:
-        return {
-            "success": False,
-            "status": "owner_review_packet_persist_verify_failed",
-            "mission_id": mission["mission_id"],
-            "mission_status": mission.get("status", "in_progress"),
-            "error_status": persisted_status,
-            "agent_ledger_path": str(ledger_path),
-            "next_action": "Do not mark pr_ready. Review packet write returned success but did not read back from mission storage.",
-        }, 502
-    reviewer_result, reviewer_status = update_mission_workflow_step(
-        mission["mission_id"],
-        "reviewer",
-        step_status="complete",
-        findings="CHARLIE Agent Runner v2 completed all stages and prepared owner review packet.",
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if reviewer_status >= 400:
-        return reviewer_result, reviewer_status
-    persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-        mission["mission_id"],
-        database_url=database_url,
-        connect_factory=connect_factory,
-    )
-    if not persisted_ok:
-        rewrite_result, rewrite_status = update_mission_vault(
-            mission["mission_id"],
-            review_packet,
-            notes="CHARLIE Agent Runner v2 repaired owner review packet after workflow update.",
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        if rewrite_status >= 400 or not rewrite_result.get("success"):
-            return {
-                "success": False,
-                "status": "owner_review_packet_lost_after_workflow_update",
-                "mission_id": mission["mission_id"],
-                "mission_status": mission.get("status", "in_progress"),
-                "error_status": persisted_status,
-                "repair_status": rewrite_result.get("status", ""),
-                "agent_ledger_path": str(ledger_path),
-                "next_action": "Do not mark pr_ready. Review packet disappeared after workflow update and repair failed.",
-            }, max(int(rewrite_status or 500), 500)
-        persisted_ok, persisted_status = _verify_owner_review_packet_persisted(
-            mission["mission_id"],
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        if not persisted_ok:
-            return {
-                "success": False,
-                "status": "owner_review_packet_repair_verify_failed",
-                "mission_id": mission["mission_id"],
-                "mission_status": mission.get("status", "in_progress"),
-                "error_status": persisted_status,
-                "agent_ledger_path": str(ledger_path),
-                "next_action": "Do not mark pr_ready. Review packet repair did not read back from mission storage.",
-            }, 502
+    github_gate = _build_github_finalization_gate(mission, review_packet["review_packet"], candidate_revision)
+    review_packet["review_packet"]["github_gate"] = github_gate
     workflow_ready, workflow_status = _verify_owner_review_artifacts_ready(mission, artifacts)
+    if workflow_ready and not github_gate.get("passed"):
+        workflow_ready = False
+        workflow_status = {
+            "blocked_agent": "publisher",
+            "reason": "GitHub finalisation gate failed: " + ", ".join(github_gate.get("reasons") or ["unknown GitHub state"]),
+            "github_gate": github_gate,
+        }
     if not workflow_ready:
         blocked_agent = str(workflow_status.get("blocked_agent") or "reviewer")
         blocked_reason = str(workflow_status.get("reason") or "Owner-review workflow is not fully passing.")
@@ -6084,18 +6024,12 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "blocked_reason": blocked_reason,
             "agent_ledger_path": str(ledger_path),
         }, 200
-    ready_result, ready_status = update_mission_status(
+    ready_result, ready_status = finalize_owner_review_transaction(
         mission["mission_id"],
-        "pr_ready",
-        owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
-        event_type="status_changed",
-        notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
-        metadata={
-            "agent_runner_version": AGENT_RUNNER_VERSION,
-            "execution_id": execution_id,
-            "agent_ledger_path": str(ledger_path),
-            "review_status": "ready_for_owner_review",
-        },
+        review_packet["review_packet"],
+        execution_id=execution_id,
+        candidate_revision=candidate_revision,
+        expected_status="in_progress",
         database_url=database_url,
         connect_factory=connect_factory,
     )
@@ -6110,6 +6044,51 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
     }, 200
+
+
+def _build_github_finalization_gate(mission, review_packet, candidate_revision):
+    """Return machine-verified PR evidence bound to the tested revision."""
+    candidate = str(candidate_revision or "").strip()
+    reference = mission_pr_reference({
+        **(mission if isinstance(mission, dict) else {}),
+        "metadata": {
+            **((mission or {}).get("metadata") if isinstance((mission or {}).get("metadata"), dict) else {}),
+            "review_packet": review_packet if isinstance(review_packet, dict) else {},
+        },
+    })
+    state = query_pr_state(reference)
+    checks = state.get("statusCheckRollup") if isinstance(state.get("statusCheckRollup"), list) else []
+    conclusions = [
+        str(item.get("conclusion") or item.get("state") or item.get("status") or "").strip().upper()
+        for item in checks if isinstance(item, dict)
+    ]
+    reasons = []
+    if not state.get("success"):
+        reasons.append(str(state.get("status") or "pr_query_failed"))
+    if str(state.get("state") or "").upper() != "OPEN":
+        reasons.append("pr_not_open")
+    if str(state.get("mergeable") or "").upper() != "MERGEABLE":
+        reasons.append("pr_not_mergeable")
+    if not checks:
+        reasons.append("pr_checks_missing")
+    elif any(value not in PASSING_CHECK_CONCLUSIONS for value in conclusions):
+        reasons.append("pr_checks_not_passing")
+    head_revision = str(state.get("headRefOid") or "").strip()
+    if not candidate or head_revision != candidate:
+        reasons.append("pr_head_candidate_mismatch")
+    return {
+        "version": "charlie_github_finalization_gate_v1",
+        "passed": not reasons,
+        "reasons": reasons,
+        "pr_reference": reference,
+        "pr_number": state.get("number"),
+        "pr_url": state.get("url") or reference,
+        "state": state.get("state"),
+        "mergeable": state.get("mergeable"),
+        "head_revision": head_revision,
+        "check_conclusions": conclusions,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _verify_owner_review_artifacts_ready(mission, artifacts):
@@ -6706,6 +6685,8 @@ def _compact_agent_artifacts_for_review(artifacts):
         "scope_hash",
         "evidence_lineage",
         "structured_findings",
+        "acceptance_results",
+        "protected_operations",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
@@ -6935,7 +6916,7 @@ def _agent_execution_summary(ledger):
             "stderr_tail": _truncate(stage.get("stderr_tail", ""), 800),
             "quality_gate": stage.get("quality_gate", {}),
         })
-    return {
+    summary = {
         "version": ledger.get("version", ""),
         "execution_id": ledger.get("execution_id", ""),
         "status": ledger.get("status", ""),
@@ -6947,6 +6928,10 @@ def _agent_execution_summary(ledger):
         "backflow_events": ledger.get("backflow_events", []),
         "stages": stages,
     }
+    for key in ("parallel_planning_execution", "rerun_from_stage", "preserved_upstream_artifacts"):
+        if key in ledger:
+            summary[key] = ledger[key]
+    return summary
 
 
 def _load_execution_mission(mission_id="", status="in_progress", database_url=None, connect_factory=None):
@@ -7094,15 +7079,18 @@ def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_
     reconciliation = workflow_status.get("evidence_reconciliation") if isinstance(workflow_status.get("evidence_reconciliation"), dict) else {}
     manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
     refresh = reconciliation.get("requires_revalidation") if isinstance(reconciliation.get("requires_revalidation"), list) else []
+    blockers = reconciliation.get("active_blockers") if isinstance(reconciliation.get("active_blockers"), list) else []
+    failure_class = (
+        "candidate_evidence_revalidation"
+        if refresh
+        else "candidate_active_blocker"
+        if blockers
+        else "owner_review_readiness"
+    )
     fingerprint = hashlib.sha256(json.dumps({
-        "blocked_agent": str(blocked_agent or "").strip().lower(),
-        "blocked_reason": str(blocked_reason or "").strip().lower(),
+        "mission_id": str(mission.get("mission_id") or "").strip(),
+        "failure_class": failure_class,
         "candidate_revision": str(manifest.get("source_commit") or "").strip(),
-        "candidate_scope": str(manifest.get("scope_hash") or "").strip(),
-        "revalidation": [
-            {"agent": str(item.get("agent") or ""), "reason": str(item.get("reason") or "")}
-            for item in refresh if isinstance(item, dict)
-        ],
     }, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     prior = int(previous.get("occurrence") or 0) if previous.get("fingerprint") == fingerprint else 0
     return {
@@ -7110,6 +7098,7 @@ def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_
         "fingerprint": fingerprint,
         "occurrence": prior + 1,
         "blocked_agent": blocked_agent,
+        "failure_class": failure_class,
         "candidate_revision": str(manifest.get("source_commit") or "").strip(),
     }
 
