@@ -110,6 +110,23 @@ class CharliePrReconciliationTests(unittest.TestCase):
         self.assertEqual(result["action"], "queue_recovery")
         self.assertIn("evidence_revalidation_required", result["readiness"]["reasons"])
 
+    def test_workflow_block_recovery_preserves_exact_target_stage(self):
+        value = reconciled_mission(requires_revalidation=[{
+            "agent": "source_mapper",
+            "reason": "legacy_unbound_evidence_requires_revalidation",
+        }])
+        value["status"] = "blocked"
+        value["metadata"]["review_packet"].update({
+            "review_status": "workflow_not_ready",
+            "blocked_agent": "source_mapper",
+            "blocked_reason": "Owner review needs a targeted source_mapper recheck.",
+        })
+
+        result = reconciliation_decision(value, pr())
+
+        self.assertEqual(result["reason"], "owner_review_targeted_recheck")
+        self.assertEqual(result["disposition"]["responsible_stage"], "source_mapper")
+
     def test_legacy_explicit_findings_remain_strict(self):
         value = mission()
         value["metadata"]["review_packet"]["bugs"] = ["Still unresolved"]
