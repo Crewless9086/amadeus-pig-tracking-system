@@ -80,6 +80,26 @@ def reconciliation_decision(mission, pr_state, dependency_states=None, release_b
     if checks_complete and mergeable == "MERGEABLE" and visual_ready and readiness["passed"]:
         return {"action": "mark_pr_ready", "target_status": "pr_ready", "reason": "github_pr_green_and_reviewable", "head_sha": head_sha, "readiness": readiness}
     if checks_complete and mergeable == "MERGEABLE" and visual_ready:
+        blocked_agent = str(review_packet.get("blocked_agent") or "").strip()
+        blocked_reason = str(review_packet.get("blocked_reason") or "").strip()
+        if (
+            str(mission.get("status") or "").strip().lower() == "blocked"
+            and str(review_packet.get("review_status") or "").strip() == "workflow_not_ready"
+            and blocked_agent
+        ):
+            # Preserve the exact stage identified by the execution gate. The
+            # generic readiness summary otherwise routes every retry through
+            # evidence_reviewer while the actual stale stage never refreshes.
+            disposition = classify_block(blocked_agent, blocked_reason or "Targeted workflow evidence recheck required.", review_packet)
+            disposition["responsible_stage"] = blocked_agent
+            return {
+                "action": "queue_recovery",
+                "target_status": "approved",
+                "reason": "owner_review_targeted_recheck",
+                "disposition": disposition,
+                "head_sha": head_sha,
+                "readiness": readiness,
+            }
         disposition = classify_block("evidence_reviewer", "Owner review readiness evidence is incomplete: " + ", ".join(readiness["reasons"]), review_packet)
         return {"action": "queue_recovery", "target_status": "approved", "reason": "owner_review_readiness_incomplete", "disposition": disposition, "head_sha": head_sha, "readiness": readiness}
     return {"action": "none", "reason": "github_checks_pending_or_mergeability_unknown", "head_sha": head_sha}
