@@ -29,6 +29,7 @@ STOP_PATH = RUNNER_DIR / "supervisor.stop"
 LOCK_PATH = RUNNER_DIR / "supervisor.lock"
 RUNNER_HEARTBEAT_PATH = RUNNER_DIR / "runner.json"
 INFRASTRUCTURE_FAILURE_LIMIT = 3
+EXECUTION_BASE_BRANCH = "charlie-core-execution-base"
 NON_RETRYABLE_RUNNER_STATUSES = {
     "base_branch_checkout_failed",
     "base_branch_current_failed",
@@ -41,6 +42,7 @@ NON_RETRYABLE_RUNNER_STATUSES = {
     "repository_operation_locked",
     "runner_preflight_failed",
 }
+GENERATED_EXECUTION_PATHS = {"planning/CODEX_CHAT.md"}
 
 
 class SupervisorInstanceLock:
@@ -156,7 +158,7 @@ RUNNER_COMMAND = [
 ]
 
 
-def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cycles=None, notifier=None):
+def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cycles=None, notifier=None, prepare_fn=None):
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     generation = uuid.uuid4().hex
     _recover_stale_owned_child()
@@ -166,6 +168,27 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
     repeated_failure_count = 0
     while not STOP_PATH.exists():
         cycles += 1
+        bootstrap = (prepare_fn or _prepare_execution_root)()
+        if not bootstrap.get("success"):
+            payload = _write_status(
+                "infrastructure_hold",
+                child_pid=0,
+                restart_count=restart_count,
+                failure_status=bootstrap.get("status", "execution_bootstrap_failed"),
+                failure_detail=bootstrap,
+                identical_failure_count=1,
+                generation=generation,
+                recommended_action=bootstrap.get("recommended_action") or "Repair the dedicated execution checkout, then explicitly restart CORE.",
+            )
+            if notifier:
+                notifier(payload)
+            return {
+                "status": "infrastructure_hold",
+                "restart_count": restart_count,
+                "cycles": cycles,
+                "failure_status": bootstrap.get("status", "execution_bootstrap_failed"),
+                "bootstrap": bootstrap,
+            }
         child_env = {
             **os.environ,
             "CHARLIE_SUPERVISOR_GENERATION": generation,
@@ -176,8 +199,8 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
         # environment.  Child configuration is a single supervisor-owned
         # value, so keep both names identical instead of triggering the
         # fail-closed alias conflict before mission pickup.
-        child_env["CORE_EXECUTION_BASE_BRANCH"] = "charlie-core-execution-base"
-        child_env["CHARLIE_RUNNER_BASE_BRANCH"] = "charlie-core-execution-base"
+        child_env["CORE_EXECUTION_BASE_BRANCH"] = EXECUTION_BASE_BRANCH
+        child_env["CHARLIE_RUNNER_BASE_BRANCH"] = EXECUTION_BASE_BRANCH
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = make_ownership_record(
             inspect_process(child.pid), generation, "charlie-control", generation, "charlie_runner"
@@ -234,6 +257,101 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             break
         sleep_fn(delay)
     return {"status": "supervisor_stopped", "restart_count": restart_count, "cycles": cycles}
+
+
+def _prepare_execution_root(run_factory=subprocess.run):
+    """Boot every worker from the promoted control revision, never a stale mission checkout."""
+    if not EXECUTION_ROOT.exists():
+        return {
+            "success": False,
+            "status": "execution_root_missing",
+            "recommended_action": "Recreate the dedicated CORE execution worktree from the promoted runtime.",
+        }
+    base_branch = EXECUTION_BASE_BRANCH
+
+    def git(args, cwd):
+        return run_factory(["git", *args], cwd=cwd, text=True, capture_output=True, timeout=120)
+
+    revision = git(["rev-parse", "HEAD"], REPO_ROOT)
+    promoted_revision = str(revision.stdout or "").strip() if revision.returncode == 0 else ""
+    if not promoted_revision:
+        return {
+            "success": False,
+            "status": "promoted_runtime_revision_unavailable",
+            "stderr": str(revision.stderr or "")[-500:],
+            "recommended_action": "Verify the promoted CORE runtime checkout before restarting the supervisor.",
+        }
+
+    status = git(["status", "--porcelain"], EXECUTION_ROOT)
+    if status.returncode != 0:
+        return {
+            "success": False,
+            "status": "execution_status_failed",
+            "stderr": str(status.stderr or "")[-500:],
+            "recommended_action": "Repair the dedicated CORE execution checkout before restarting.",
+        }
+    dirty_paths = []
+    for line in str(status.stdout or "").splitlines():
+        path = line[3:].strip().replace("\\", "/") if len(line) > 3 else ""
+        if path and path not in GENERATED_EXECUTION_PATHS:
+            dirty_paths.append(path)
+    if dirty_paths:
+        return {
+            "success": False,
+            "status": "execution_root_has_unpreserved_changes",
+            "dirty_paths": dirty_paths,
+            "recommended_action": "Preserve or package the listed execution changes; CORE refused to overwrite them.",
+        }
+    if str(status.stdout or "").strip():
+        restored = git(["restore", "--staged", "--worktree", "--", *sorted(GENERATED_EXECUTION_PATHS)], EXECUTION_ROOT)
+        if restored.returncode != 0:
+            return {
+                "success": False,
+                "status": "generated_execution_state_restore_failed",
+                "stderr": str(restored.stderr or "")[-500:],
+                "recommended_action": "Preserve and restore the generated execution state before restarting CORE.",
+            }
+    detached = git(["switch", "--detach"], EXECUTION_ROOT)
+    if detached.returncode != 0:
+        return {
+            "success": False,
+            "status": "execution_detach_failed",
+            "stderr": str(detached.stderr or "")[-500:],
+            "recommended_action": "Detach the dedicated execution checkout before promoting its base branch.",
+        }
+    update_base = git(["branch", "--force", base_branch, promoted_revision], EXECUTION_ROOT)
+    if update_base.returncode != 0:
+        return {
+            "success": False,
+            "status": "execution_base_promotion_failed",
+            "stderr": str(update_base.stderr or "")[-500:],
+            "recommended_action": "Repair the dedicated execution base branch before restarting CORE.",
+        }
+    switched = git(["switch", base_branch], EXECUTION_ROOT)
+    if switched.returncode != 0:
+        return {
+            "success": False,
+            "status": "execution_base_switch_failed",
+            "stderr": str(switched.stderr or "")[-500:],
+            "recommended_action": "Restore the dedicated execution checkout to its promoted base branch.",
+        }
+    current = git(["rev-parse", "HEAD"], EXECUTION_ROOT)
+    current_revision = str(current.stdout or "").strip() if current.returncode == 0 else ""
+    if current_revision != promoted_revision:
+        return {
+            "success": False,
+            "status": "execution_bootstrap_revision_mismatch",
+            "promoted_revision": promoted_revision,
+            "execution_revision": current_revision,
+            "recommended_action": "Do not start CORE until control and execution bootstrap revisions match.",
+        }
+    return {
+        "success": True,
+        "status": "execution_bootstrap_ready",
+        "base_branch": base_branch,
+        "promoted_revision": promoted_revision,
+        "execution_revision": current_revision,
+    }
 
 
 def _runner_failure_signature(path=None):
