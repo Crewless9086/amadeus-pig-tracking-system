@@ -594,7 +594,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             conversation_plan={"next_action": "generate_quote"},
         )
 
-        self.assertIn("Current SAM Live price estimate", reply)
+        self.assertIn("Current price estimate", reply)
         self.assertIn("prepare the quote for owner review", reply)
         self.assertIn("Nothing is reserved or sent", reply)
 
@@ -1440,7 +1440,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(decision["price_answer_packet"]["can_answer_price"])
         self.assertFalse(decision["price_answer_packet"]["formal_quote_created"])
         self.assertFalse(decision["price_answer_packet"]["reservation_created"])
-        self.assertIn("Current SAM Live price estimate:", reply)
+        self.assertIn("Current price estimate:", reply)
         self.assertIn("- 2 x Female Weaner, 10-14 kg: R500 each", reply)
         self.assertIn("- Estimated total: R1,000", reply)
         self.assertIn("- This is not a reservation.", reply)
