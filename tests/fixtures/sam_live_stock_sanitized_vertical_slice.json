@@ -8,8 +8,8 @@
     "payload": {"event": "message_created", "message_type": "incoming", "content": "I need 2 female weaners around 12kg next week in Riversdale. Can you prepare a quote?", "conversation": {"id": "SAN-01"}, "sender": {"name": "Sanitized Buyer"}},
     "intake_context": {"success": true, "known_fields": {}, "items": []},
     "availability_rows": [
-      {"pig_id": "SAN-W-01", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 12},
-      {"pig_id": "SAN-W-02", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "sale_category": "Weaner", "current_weight_kg": 12}
+      {"pig_id": "SAN-W-01", "sex": "Female", "status": "Active", "on_farm": "Yes", "reserved_status": "", "available_for_sale": "Yes", "purpose": "Sale", "live_stock_sale_eligible": true, "sale_category": "Weaner", "current_weight_kg": 12},
+      {"pig_id": "SAN-W-02", "sex": "Female", "status": "Active", "on_farm": "Yes", "reserved_status": "", "available_for_sale": "Yes", "purpose": "Sale", "live_stock_sale_eligible": true, "sale_category": "Weaner", "current_weight_kg": 12}
     ],
     "herdmaster_evidence": {"provenance": "sanitized_herdmaster_snapshot", "freshness": "sanitized_fixture", "summary": {"sale_ready_pigs": 51, "meat_window_pigs": 6, "breeding_animals_excluded": 15}},
     "ledger_price_rule": {"found": true, "unit_price": 450, "currency": "ZAR", "source": "sanitized_sales_pricing_snapshot"},

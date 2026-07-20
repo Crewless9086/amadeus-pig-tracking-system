@@ -2680,13 +2680,17 @@ def _representative_weight(weight_range):
 
 
 def _row_available_for_live_stock(row):
+    # Herdmaster must explicitly classify an animal as Sale before it can
+    # support matching, price evidence, or draft/quote preparation.  An
+    # omitted purpose is unknown, not an implicit sale approval.
+    if _normal_text(row.get("purpose")) != "sale":
+        return False
     if "live_stock_sale_eligible" in row and row.get("live_stock_sale_eligible") is not True:
         return False
     status = _normal_text(row.get("status"))
     on_farm = _normal_text(row.get("on_farm"))
     reserved = _normal_text(row.get("reserved_status"))
     available = _normal_text(row.get("available_for_sale"))
-    purpose = _normal_text(row.get("purpose"))
     if status in {"sold", "exited", "dead", "terminal"}:
         return False
     if on_farm and on_farm not in {"yes", "true", "1", "on farm"}:
@@ -2694,8 +2698,6 @@ def _row_available_for_live_stock(row):
     if reserved and reserved not in {"", "available", "no", "not reserved"}:
         return False
     if available and available not in {"yes", "true", "1"}:
-        return False
-    if purpose and purpose != "sale":
         return False
     return True
 
@@ -2761,6 +2763,14 @@ def _availability_public_row(row):
         "weight_band": _clean(row.get("weight_band"), 80),
         "sale_category": _clean(row.get("sale_category"), 120),
         "suggested_price_category": _clean(row.get("suggested_price_category"), 120),
+        # These fields make the match's eligibility inspectable without
+        # exposing private herd or customer notes in an owner review packet.
+        "purpose": _clean(row.get("purpose"), 40),
+        "status": _clean(row.get("status"), 40),
+        "on_farm": _clean(row.get("on_farm"), 40),
+        "reserved_status": _clean(row.get("reserved_status"), 40),
+        "available_for_sale": _clean(row.get("available_for_sale"), 40),
+        "live_stock_sale_eligible": row.get("live_stock_sale_eligible"),
     }
 
 

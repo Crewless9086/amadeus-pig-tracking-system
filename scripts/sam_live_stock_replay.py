@@ -79,6 +79,9 @@ def _trace_entry(case: Mapping[str, Any], result: Mapping[str, Any], status_code
         },
         "evidence_used": {
             "herdmaster": agent_evidence.get("herdmaster") or {},
+            "matched_candidate_evidence": list(
+                (decision.get("match_packet") or {}).get("matched_sample") or []
+            ),
             "ledger": ledger,
             "supplied_order_warning_review": list(case.get("order_warning_review") or []),
         },
