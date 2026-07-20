@@ -459,6 +459,58 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         )
         self.assertEqual(execution_bridge._builder_revision_sha(mission, {}), "memory-sha")
 
+    def test_builder_revision_sha_reads_candidate_bound_lineage_before_legacy_memory(self):
+        mission = {
+            "metadata": {
+                "mission_memory": {
+                    "latest_by_agent": {"builder": {"commit_sha": "old-candidate-sha"}},
+                }
+            }
+        }
+        artifacts = {
+            "builder": {
+                "source_commit": "current-candidate-sha",
+                "evidence_lineage": {"source_commit": "current-candidate-sha"},
+            }
+        }
+
+        self.assertEqual(
+            execution_bridge._builder_revision_sha(mission, artifacts),
+            "current-candidate-sha",
+        )
+
+    def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
+        current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
+        mission = {
+            "mission_id": "MISSION-MIXED-HISTORY",
+            "mission_context_pack": {"agent_order": ["builder", "tester"]},
+            "metadata": {
+                "mission_memory": {
+                    "latest_by_agent": {"builder": {"commit_sha": "stale-revision"}},
+                }
+            },
+        }
+        artifacts = {
+            agent: {
+                "agent": agent,
+                "source_commit": current_revision,
+                "evidence_lineage": {
+                    "agent": agent,
+                    "source_commit": current_revision,
+                },
+                "quality_gate": {"passed": True},
+            }
+            for agent in ("builder", "tester")
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertTrue(ready, detail)
+        self.assertEqual(
+            detail["evidence_reconciliation"]["candidate_manifest"]["source_commit"],
+            current_revision,
+        )
+
     def test_rerun_recovers_done_lock_when_latest_agent_event_is_backflow(self):
         sequence = ["builder", "tester", "qa_red_team", "reviewer"]
         mission = {
