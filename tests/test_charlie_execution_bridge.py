@@ -574,6 +574,46 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             [values[1]],
         )
 
+    def test_security_merge_approval_is_not_blocked_by_separate_migration_application_gate(self):
+        artifact = {
+            "summary": "Security review passed. The migration remains unapplied.",
+            "errors": [],
+            "bugs": [],
+            "recommended_owner_decision": "approve_final_release",
+            "acceptance_results": [
+                {"id": "scope", "status": "passed"},
+                {"id": "authority-boundary", "status": "passed"},
+            ],
+            "changed_files": ["supabase/migrations/202607200001_create_pig_observation_events.sql"],
+            "release_notes": ["The migration is unapplied."],
+            "next_action": (
+                "Hand off to evidence review. Owner may approve merge of PR #320, but must not approve "
+                "migration application until owner decisions and a non-production rehearsal are complete."
+            ),
+        }
+
+        result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_separate_migration_gate_never_hides_current_security_defect(self):
+        artifact = {
+            "summary": "The migration remains unapplied.",
+            "errors": [],
+            "bugs": [],
+            "recommended_owner_decision": "approve_final_release",
+            "acceptance_results": [{"id": "scope", "status": "passed"}],
+            "changed_files": ["supabase/migrations/202607200001_create_pig_observation_events.sql"],
+            "next_action": (
+                "Owner may approve merge of PR #320, but must not approve migration application. "
+                "Current-diff security defect: an unsafe grant is present and must fix before merge."
+            ),
+        }
+
+        result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+
     def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
         current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
         mission = {
