@@ -140,6 +140,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             elif assessment.get("reason") == "protected_surface_requires_owner":
                 escalations.append({
                     "action": "review_owner_required", "mission_id": mission.get("mission_id"),
+                    "mission_status": "pr_ready",
                     "title": mission.get("title") or mission.get("mission_id"),
                     "reason": assessment.get("reason"), "risk_flags": assessment.get("risk_flags", []),
                     "recommended_action": "Review the protected change and explicitly approve or send it back.",

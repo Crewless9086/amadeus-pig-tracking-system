@@ -1120,6 +1120,24 @@ class CharlieMissionPickupTests(unittest.TestCase):
                 self.assertEqual(charlie_mission_pickup._send_notification("needs_owner_approval", "Decision", "Choose", "M1"), 0)
         notify_main.assert_called_once()
 
+    def test_executive_owner_decision_message_explains_scope_and_non_authority(self):
+        payload = {
+            "mission_id": "M1", "mission_status": "pr_ready", "title": "SAM release",
+            "risk_flags": ["protected_term:customer send", "protected_term:payment"],
+        }
+        text = charlie_mission_pickup._executive_owner_decision_text(payload, {
+            "mission_id": "M1", "status": "pr_ready", "metadata": {"review_packet": {"test_evidence": ["pass"]}},
+        })
+        keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(payload)
+
+        self.assertIn("What Approve Release means", text)
+        self.assertIn("does not send a customer message", text)
+        self.assertIn("does not", text)
+        labels = [button["text"] for row in keyboard["inline_keyboard"] for button in row]
+        self.assertEqual(labels, ["Approve Release", "Send Back to Tester", "Refresh Mission"])
+        callbacks = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
+        self.assertTrue(all(value.startswith("cm:") for value in callbacks))
+
 
 if __name__ == "__main__":
     unittest.main()
