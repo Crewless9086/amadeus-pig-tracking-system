@@ -132,7 +132,9 @@ def resolve_effective_agent_results(artifact_history, candidate_manifest, workfl
         selected = None
         last_inapplicable_reason = "no_artifact_applies_to_current_candidate"
         for artifact in entries:
-            applicable, reason = artifact_applicability(artifact, candidate_fp, candidate_commit, scope_hash)
+            applicable, reason = artifact_applicability(
+                artifact, candidate_fp, candidate_commit, scope_hash, agent_name=agent,
+            )
             if applicable and selected is None:
                 selected = artifact
                 effective[agent] = {"artifact": artifact, "applicability": reason, "artifact_id": _artifact_id(artifact)}
@@ -174,13 +176,13 @@ def resolve_effective_agent_results(artifact_history, candidate_manifest, workfl
     }
 
 
-def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, scope_hash):
+def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, scope_hash, agent_name=""):
     artifact = artifact if isinstance(artifact, dict) else {}
     lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
     artifact_fp = _clean(lineage.get("candidate_fingerprint") or artifact.get("candidate_fingerprint"))
     artifact_commit = _artifact_revision(artifact)
     artifact_scope = _clean(lineage.get("scope_hash") or artifact.get("scope_hash"))
-    agent = _clean(lineage.get("agent") or artifact.get("agent")).lower()
+    agent = _clean(lineage.get("agent") or artifact.get("agent") or agent_name).lower()
     if artifact_fp and candidate_fingerprint and artifact_fp == candidate_fingerprint:
         return True, "exact_candidate"
     if artifact_scope and scope_hash and artifact_scope != scope_hash:
@@ -196,6 +198,16 @@ def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, sc
         return (artifact_commit == candidate_commit, "exact_revision" if artifact_commit == candidate_commit else "different_revision")
     if artifact_fp and candidate_fingerprint:
         return False, "different_candidate"
+    if (
+        agent in SCOPE_PLANNING_AGENTS
+        and scope_hash
+        and _basic_judgement(artifact).get("passed")
+        and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
+    ):
+        # Pre-lineage planning evidence describes the frozen mission scope, not
+        # a mutable release revision.  Accept it for the same still-frozen
+        # mission scope instead of manufacturing an endless planning rerun.
+        return True, "accepted_legacy_frozen_scope"
     return False, "legacy_unbound_evidence_requires_revalidation"
 
 

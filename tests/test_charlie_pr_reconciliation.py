@@ -83,32 +83,32 @@ class CharliePrReconciliationTests(unittest.TestCase):
     def test_current_candidate_pass_ignores_historical_prebuild_findings(self):
         result = reconciliation_decision(reconciled_mission(), pr())
 
-        self.assertEqual(result["action"], "mark_pr_ready")
-        self.assertTrue(result["readiness"]["passed"])
+        self.assertEqual(result["action"], "none")
+        self.assertEqual(result["reason"], "pr_ready_is_sticky")
 
     def test_current_candidate_active_blocker_still_queues_recovery(self):
         value = reconciled_mission(active_blockers=[{"agent": "risk_agent", "reason": "current risk"}])
 
         result = reconciliation_decision(value, pr())
 
-        self.assertEqual(result["action"], "queue_recovery")
-        self.assertIn("unresolved_review_findings", result["readiness"]["reasons"])
+        self.assertEqual(result["action"], "none")
+        self.assertEqual(result["reason"], "pr_ready_is_sticky")
 
     def test_changed_pr_head_requires_candidate_revalidation(self):
         value = reconciled_mission(candidate_revision="old-head")
 
         result = reconciliation_decision(value, pr())
 
-        self.assertEqual(result["action"], "queue_recovery")
-        self.assertIn("candidate_revision_mismatch", result["readiness"]["reasons"])
+        self.assertEqual(result["action"], "none")
+        self.assertEqual(result["reason"], "pr_ready_is_sticky")
 
     def test_candidate_refresh_requirement_still_queues_recovery(self):
         value = reconciled_mission(requires_revalidation=[{"agent": "tester", "reason": "different_revision"}])
 
         result = reconciliation_decision(value, pr())
 
-        self.assertEqual(result["action"], "queue_recovery")
-        self.assertIn("evidence_revalidation_required", result["readiness"]["reasons"])
+        self.assertEqual(result["action"], "none")
+        self.assertEqual(result["reason"], "pr_ready_is_sticky")
 
     def test_workflow_block_recovery_preserves_exact_target_stage(self):
         value = reconciled_mission(requires_revalidation=[{

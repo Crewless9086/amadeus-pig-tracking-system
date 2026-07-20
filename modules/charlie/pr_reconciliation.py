@@ -65,6 +65,12 @@ def reconciliation_decision(mission, pr_state, dependency_states=None, release_b
 
     if state == "MERGED":
         return {"action": "mark_merged", "target_status": "merged", "reason": "github_pr_merged", "head_sha": head_sha}
+    if str(mission.get("status") or "").strip().lower() == "pr_ready":
+        # Owner-review readiness is monotonic.  Reconciliation may observe a
+        # ready mission or advance it to merged, but it must never silently
+        # reopen agent execution.  A changed/broken PR is surfaced for owner or
+        # incident handling by a separate explicit transition.
+        return {"action": "none", "reason": "pr_ready_is_sticky", "head_sha": head_sha}
     if state != "OPEN":
         return {"action": "none", "reason": f"github_pr_state_{state.lower() or 'unknown'}", "head_sha": head_sha}
     readiness = validate_review_readiness(mission, pr_state, dependency_states, release_base)

@@ -155,6 +155,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         )
         self.release_file_lease = self.builder_lease_release.start()
         self.addCleanup(self.builder_lease_release.stop)
+        self.owner_review_finalizer = patch(
+            "modules.charlie.execution_bridge.finalize_owner_review_transaction",
+            return_value=({"success": True, "status": "owner_review_finalized", "mission_status": "pr_ready"}, 200),
+        )
+        self.finalize_owner_review = self.owner_review_finalizer.start()
+        self.addCleanup(self.owner_review_finalizer.stop)
+        self.github_finalization_gate = patch(
+            "modules.charlie.execution_bridge._build_github_finalization_gate",
+            return_value={
+                "version": "charlie_github_finalization_gate_v1",
+                "passed": True,
+                "reasons": [],
+                "head_revision": "test-candidate",
+            },
+        )
+        self.build_github_finalization_gate = self.github_finalization_gate.start()
+        self.addCleanup(self.github_finalization_gate.stop)
 
     def test_builder_concurrency_admission_uses_declared_scope_and_execution_holder(self):
         mission = {
@@ -516,7 +533,24 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertEqual(first["occurrence"], 1)
         self.assertEqual(second["occurrence"], 2)
-        self.assertEqual(changed["occurrence"], 1)
+        self.assertEqual(changed["occurrence"], 2)
+
+    def test_compacted_security_migration_advisory_remains_non_blocking(self):
+        artifact = {
+            "agent": "security_reviewer",
+            "summary": "Security review passed; migration remains unapplied.",
+            "errors": [],
+            "bugs": [],
+            "recommended_owner_decision": "approve_final_release",
+            "changed_files": ["supabase/migrations/202607200001_create_pig_observation_events.sql"],
+            "next_action": "Owner may approve merge of PR #320, but must not approve migration application.",
+            "acceptance_results": [{"id": "scope", "status": "passed"}],
+            "quality_gate": {"passed": True},
+        }
+        compact = execution_bridge._compact_agent_artifacts_for_review({"security_reviewer": artifact})["security_reviewer"]
+        self.assertEqual(compact["acceptance_results"], artifact["acceptance_results"])
+        result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", compact)
+        self.assertTrue(result["passed"], result)
 
     def test_owner_review_gate_targets_first_stale_stage_after_pr_head_rewrite(self):
         current = "3051aebe157cd344b0e01a11dc68af0bdf6cd8"
@@ -960,38 +994,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["mission_status"], "pr_ready")
         self.assertEqual(result["agent_runner_version"], "charlie_agent_runner_v2")
         self.assertGreaterEqual(update_workflow.call_count, 10)
-        update_vault.assert_called()
-        vault_metadata = update_vault.call_args.args[1]
-        self.assertIn("agent_execution", vault_metadata)
-        self.assertIn("agent_artifacts", vault_metadata["review_packet"])
-        self.assertIn("handoff_reports", vault_metadata["review_packet"])
-        self.assertTrue(vault_metadata["review_packet"]["brain_guard"]["passed"])
-        self.assertIn("qa_red_team", vault_metadata["review_packet"]["agent_artifacts"])
-        self.assertNotIn("stdout_tail", vault_metadata["review_packet"]["agent_artifacts"]["qa_red_team"])
-        self.assertNotIn("stderr_tail", vault_metadata["review_packet"]["agent_artifacts"]["qa_red_team"])
-        self.assertIn("QA/red-team passed", vault_metadata["review_packet"]["qa_evidence"])
-        self.assertIn("quality_gates", vault_metadata["review_packet"])
-        self.assertEqual(vault_metadata["review_packet"]["links"]["pr"], "https://github.com/org/repo/pull/61")
-        self.assertEqual(vault_metadata["review_packet"]["pr_url"], "https://github.com/org/repo/pull/61")
-        self.assertEqual(vault_metadata["review_packet"]["review_status"], "ready_for_owner_review")
-        update_status.assert_called_with(
-            "CHARLIE-MISSION-EXEC123",
-            "pr_ready",
-            owner_decision="CHARLIE Agent Runner v2 prepared owner review packet.",
-            event_type="status_changed",
-            notes="CHARLIE Agent Runner v2 completed all stages and moved mission to owner review.",
-            metadata={
-                "agent_runner_version": execution_bridge.AGENT_RUNNER_VERSION,
-                "execution_id": result["execution_id"],
-                "agent_ledger_path": result["agent_ledger_path"],
-                "review_status": "ready_for_owner_review",
-            },
-            database_url=None,
-            connect_factory=None,
-        )
+        packet = self.finalize_owner_review.call_args.args[1]
+        self.assertIn("agent_artifacts", packet)
+        self.assertIn("handoff_reports", packet)
+        self.assertTrue(packet["brain_guard"]["passed"])
+        self.assertIn("qa_red_team", packet["agent_artifacts"])
+        self.assertNotIn("stdout_tail", packet["agent_artifacts"]["qa_red_team"])
+        self.assertNotIn("stderr_tail", packet["agent_artifacts"]["qa_red_team"])
+        self.assertIn("QA/red-team passed", packet["qa_evidence"])
+        self.assertIn("quality_gates", packet)
+        self.assertEqual(packet["links"]["pr"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(packet["pr_url"], "https://github.com/org/repo/pull/61")
+        self.assertEqual(packet["review_status"], "ready_for_owner_review")
+        self.assertEqual(packet["tested_revision"], self.finalize_owner_review.call_args.kwargs["candidate_revision"])
+        self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
         self.assertTrue(any(call.args[0].get("current_agent") == "planner" for call in write_heartbeat.call_args_list))
         self.assertTrue(any(call.args[0].get("status") == "parallel_read_only_agents_running" for call in write_heartbeat.call_args_list))
-        self.assertIn("parallel_planning_execution", vault_metadata["agent_execution"])
+        self.assertIn("parallel_planning_execution", packet["agent_execution"])
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
@@ -1576,7 +1595,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
-    def test_agent_runner_v2_blocks_when_review_packet_persist_fails(
+    def test_agent_runner_v2_blocks_when_atomic_finalizer_fails(
         self,
         get_mission,
         update_status,
@@ -1591,9 +1610,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         )
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
-        update_vault.return_value = (
-            {"success": False, "status": "mission_vault_update_failed", "error_type": "payload_too_large"},
-            503,
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        self.finalize_owner_review.return_value = (
+            {"success": False, "status": "owner_review_finalization_failed", "error_type": "write_failed"}, 503,
         )
 
         def fake_runner(*_args, **kwargs):
@@ -1613,11 +1632,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 503)
-        self.assertEqual(result["status"], "owner_review_packet_persist_failed")
-        self.assertEqual(result["mission_status"], "in_progress")
+        self.assertEqual(result["status"], "owner_review_finalization_failed")
         self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
-        vault_metadata = update_vault.call_args.args[1]
-        compact_artifact = vault_metadata["review_packet"]["agent_artifacts"]["reviewer"]
+        compact_artifact = self.finalize_owner_review.call_args.args[1]["agent_artifacts"]["reviewer"]
         self.assertNotIn("stdout_tail", compact_artifact)
         self.assertNotIn("stderr_tail", compact_artifact)
         self.assertLessEqual(len(compact_artifact["stdout_tail_excerpt"]), 500)
@@ -1630,7 +1647,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_vault")
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.get_mission")
-    def test_agent_runner_v2_blocks_when_review_packet_does_not_read_back(
+    def test_agent_runner_v2_stops_when_atomic_finalizer_loses_claim(
         self,
         get_mission,
         update_status,
@@ -1643,6 +1660,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "pr_ready"}, 200)
         update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        self.finalize_owner_review.return_value = (
+            {"success": False, "status": "status_claim_lost", "current_status": "blocked"}, 409,
+        )
 
         def fake_runner(*_args, **kwargs):
             prompt = kwargs["input"]
@@ -1658,10 +1678,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 run_subprocess=fake_runner,
             )
 
-        self.assertEqual(status_code, 502)
-        self.assertEqual(result["status"], "owner_review_packet_persist_verify_failed")
-        self.assertEqual(result["mission_status"], "in_progress")
-        self.assertEqual(result["error_status"], "review_packet_missing_after_write")
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "status_claim_lost")
         self.assertFalse(any(call.args[1] == "pr_ready" for call in update_status.call_args_list))
 
     @patch("modules.charlie.execution_bridge.get_mission")
@@ -1721,7 +1739,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(commands_by_agent["idea_expander"][commands_by_agent["idea_expander"].index("--sandbox") + 1], "read-only")
         self.assertIn("--model", commands_by_agent["idea_expander"])
         self.assertIn("reasoning-model-a", commands_by_agent["idea_expander"])
-        vault_metadata = update_vault.call_args.args[1]
+        vault_metadata = {"review_packet": self.finalize_owner_review.call_args.args[1]}
         self.assertEqual(
             vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],
             "reasoning-model-a",
@@ -1869,8 +1887,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "agent_execution_completed")
         self.assertGreaterEqual(builder_calls["count"], 2)
         self.assertGreaterEqual(tester_calls["count"], 2)
-        vault_metadata = update_vault.call_args.args[1]
-        self.assertTrue(vault_metadata["review_packet"]["backflow_events"])
+        self.assertTrue(self.finalize_owner_review.call_args.args[1]["backflow_events"])
         self.assertTrue(any(call.args[0].get("status") == "agent_backflow" for call in write_heartbeat.call_args_list))
 
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
@@ -1949,9 +1966,9 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "reviewer",
             "publisher",
         ])
-        vault_metadata = update_vault.call_args.args[1]
-        self.assertEqual(vault_metadata["review_packet"]["agent_artifacts"]["planner"]["summary"], "planner preserved")
-        self.assertEqual(vault_metadata["agent_execution"]["rerun_from_stage"], "builder")
+        packet = self.finalize_owner_review.call_args.args[1]
+        self.assertEqual(packet["agent_artifacts"]["planner"]["summary"], "planner preserved")
+        self.assertEqual(packet["agent_execution"]["rerun_from_stage"], "builder")
 
     def test_runner_resume_uses_completed_mission_stage_next_agent(self):
         sequence = [

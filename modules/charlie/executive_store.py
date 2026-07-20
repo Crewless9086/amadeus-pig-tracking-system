@@ -160,7 +160,11 @@ def complete_control_command(command_id, *, success, result=None, error="", data
 
 
 def upsert_recovery_case(mission_id, decision, database_url=None, connect_factory=None):
-    fingerprint = str(decision.get("fingerprint") or "").strip()
+    failure_class = str(decision.get("failure_class") or decision.get("block_class") or "system_repair_required").strip()
+    candidate_revision = str(decision.get("candidate_revision") or "").strip()
+    fingerprint = hashlib.sha256(
+        f"{mission_id}:{candidate_revision}:{failure_class}".encode("utf-8")
+    ).hexdigest()[:24]
     recovery_id = "REC-" + hashlib.sha256(f"{mission_id}:{fingerprint}".encode("utf-8")).hexdigest()[:20].upper()
     now = datetime.now(timezone.utc)
     database_url = _database_url(database_url)
@@ -175,7 +179,11 @@ def upsert_recovery_case(mission_id, decision, database_url=None, connect_factor
                               'scheduled', 3, %(next)s, %(deadline)s, %(evidence)s::jsonb)
                     on conflict (mission_id, fingerprint) do update set
                         responsible_stage = excluded.responsible_stage,
-                        status = case when charlie_recovery_cases.status in ('resolved','cancelled') then charlie_recovery_cases.status else 'running' end,
+                        status = case
+                            when charlie_recovery_cases.status in ('resolved','cancelled','halted') then charlie_recovery_cases.status
+                            when charlie_recovery_cases.attempt_count + 1 >= charlie_recovery_cases.attempt_limit then 'halted'
+                            else 'running'
+                        end,
                         attempt_count = case when charlie_recovery_cases.status in ('resolved','cancelled') then charlie_recovery_cases.attempt_count else charlie_recovery_cases.attempt_count + 1 end,
                         next_attempt_at = case when charlie_recovery_cases.status in ('resolved','cancelled') then charlie_recovery_cases.next_attempt_at else excluded.next_attempt_at end,
                         evidence_json = excluded.evidence_json,
@@ -190,7 +198,8 @@ def upsert_recovery_case(mission_id, decision, database_url=None, connect_factor
                 row = cursor.fetchone()
     except Exception as exc:
         return {"success": False, "status": "recovery_case_write_failed", "error_type": exc.__class__.__name__}, 503
-    return {"success": True, "status": "ok", "recovery_id": row[0], "recovery_status": row[1], "attempt_count": row[2], "attempt_limit": row[3]}, 200
+    halted = row[1] == "halted" or int(row[2] or 0) >= int(row[3] or 3)
+    return {"success": not halted, "status": "recovery_limit_halted" if halted else "ok", "recovery_id": row[0], "recovery_status": row[1], "attempt_count": row[2], "attempt_limit": row[3]}, 409 if halted else 200
 
 
 def queue_outbox(event_type, payload, *, idempotency_key, channel="telegram", database_url=None, connect_factory=None):

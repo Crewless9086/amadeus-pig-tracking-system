@@ -6,6 +6,7 @@ from modules.charlie.mission_store import (
     agent_sequence_for_mission,
     build_mission_review_packet,
     consume_final_agent_artifact,
+    finalize_owner_review_transaction,
     get_mission,
     list_missions,
     list_owner_work_missions,
@@ -73,7 +74,92 @@ class ConflictCursor(FakeCursor):
         return None
 
 
+class FinalizationCursor(FakeCursor):
+    def __init__(self, metadata):
+        super().__init__([])
+        self.metadata = metadata
+
+    def fetchone(self):
+        return ("in_progress", self.metadata)
+
+    def fetchall(self):
+        return [("MISSION-1",)]
+
+
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_atomic_finalizer_is_only_path_to_pr_ready(self):
+        revision = "abc123"
+        packet = {
+            "review_status": "ready_for_owner_review",
+            "tested_revision": revision,
+            "execution_artifacts": {"execution_id": "EXEC-1"},
+            "github_gate": {"passed": True, "head_revision": revision},
+            "evidence_reconciliation": {
+                "passed": True,
+                "active_blockers": [],
+                "requires_revalidation": [],
+                "candidate_manifest": {"source_commit": revision},
+            },
+        }
+        cursor = FinalizationCursor({
+            "agent_workflow": [
+                {"agent": "builder", "status": "complete"},
+                {"agent": "reviewer", "status": "complete"},
+            ],
+        })
+        connection = FakeConnection()
+        connection.cursor_instance = cursor
+
+        result, status_code = finalize_owner_review_transaction(
+            "MISSION-1", packet,
+            execution_id="EXEC-1", candidate_revision=revision,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["mission_status"], "pr_ready")
+        update_sql = cursor.executed[1][0]
+        self.assertIn("set status = 'pr_ready'", update_sql)
+        self.assertTrue(any("atomic_finalisation" in str(params) for _, params in cursor.executed))
+
+    def test_atomic_finalizer_refuses_failing_evidence_before_db_write(self):
+        packet = {
+            "tested_revision": "abc123",
+            "execution_artifacts": {"execution_id": "EXEC-1"},
+            "evidence_reconciliation": {
+                "passed": False,
+                "active_blockers": [{"agent": "security_reviewer"}],
+                "requires_revalidation": [],
+                "candidate_manifest": {"source_commit": "abc123"},
+            },
+        }
+        result, status_code = finalize_owner_review_transaction(
+            "MISSION-1", packet, execution_id="EXEC-1", candidate_revision="abc123",
+            database_url="postgres://unit-test", connect_factory=lambda _: FakeConnection(),
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "finalization_evidence_not_ready")
+
+    def test_atomic_finalizer_refuses_unverified_github_head(self):
+        revision = "abc123"
+        packet = {
+            "tested_revision": revision,
+            "execution_artifacts": {"execution_id": "EXEC-1"},
+            "github_gate": {"passed": True, "head_revision": "different"},
+            "evidence_reconciliation": {
+                "passed": True,
+                "active_blockers": [],
+                "requires_revalidation": [],
+                "candidate_manifest": {"source_commit": revision},
+            },
+        }
+        result, status_code = finalize_owner_review_transaction(
+            "MISSION-1", packet, execution_id="EXEC-1", candidate_revision=revision,
+            database_url="postgres://unit-test", connect_factory=lambda _: FakeConnection(),
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "finalization_github_gate_not_ready")
+
     def test_review_state_transition_updates_status_and_packet_atomically(self):
         connection = FakeConnection([("MISSION-1",)])
         result, status_code = transition_mission_review_state(
@@ -287,7 +373,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
     @patch("modules.charlie.mission_store.update_mission_vault")
     @patch("modules.charlie.mission_store.get_mission")
-    def test_reviewer_complete_can_mark_pr_ready_with_verified_review_packet(self, get_mission_mock, update_vault_mock):
+    def test_reviewer_complete_never_marks_pr_ready_even_with_verified_review_packet(self, get_mission_mock, update_vault_mock):
         get_mission_mock.return_value = ({
             "success": True,
             "status": "ok",
@@ -310,7 +396,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
-        self.assertEqual(update_vault_mock.call_args.kwargs.get("status"), "pr_ready")
+        self.assertEqual(update_vault_mock.call_args.kwargs.get("status"), "")
 
     def test_send_back_target_can_append_valid_missing_agent(self):
         workflow = [

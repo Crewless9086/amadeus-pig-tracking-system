@@ -213,10 +213,8 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         result = charlie_mission_pickup.reconcile_blocked_pr_missions(run_subprocess=fake_runner)
 
-        self.assertEqual(result["changed_count"], 1)
-        self.assertEqual(transition.call_args.args[1], "pr_ready")
-        self.assertEqual(transition.call_args.args[2]["review_status"], "ready_for_owner_review")
-        self.assertNotIn("return_to_stage", transition.call_args.args[2])
+        self.assertEqual(result["changed_count"], 0)
+        transition.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.transition_mission_review_state")
     @patch("scripts.charlie_mission_pickup._owner_queue_missions")
@@ -1051,9 +1049,8 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["mission_id"], "CHARLIE-MISSION-123")
         self.assertEqual(result["runner_mode"], "code_test_pr")
         queried_statuses = [call.args[0] for call in list_owner_work_missions.call_args_list]
-        # pr_ready is reconciled for stale GitHub state, but it is not treated as
-        # an active mission and therefore cannot stop the approved pickup.
-        self.assertIn("pr_ready", queried_statuses)
+        # pr_ready is sticky and therefore excluded from automatic recovery scans.
+        self.assertNotIn("pr_ready", queried_statuses)
         self.assertIn("approved", queried_statuses)
         write_heartbeat.assert_called()
         sleep.assert_not_called()

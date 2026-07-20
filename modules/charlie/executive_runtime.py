@@ -74,7 +74,7 @@ def _command_outcome(command, database_url, connect_factory):
     current = str(mission.get("status") or "")
     targets = {
         "schedule_recovery": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
-        "reconcile_pr": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
+        "reconcile_pr": {"pr_ready", "release_approved", "merged", "deployed", "done", "blocked"},
         "decompose_acceptance": {"paused"},
         "verify_and_delegate_review": {"release_approved", "merged", "deployed", "done"},
         "approve_next_work": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
@@ -105,14 +105,32 @@ def _execute_recovery(command, command_id, database_url, connect_factory):
     mission_id = command.get("mission_id")
     case, case_status = upsert_recovery_case(mission_id, command, database_url=database_url, connect_factory=connect_factory)
     if case_status >= 400:
+        if case.get("status") == "recovery_limit_halted":
+            loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+            mission = loaded.get("mission") if loaded_status < 400 and isinstance(loaded.get("mission"), dict) else {}
+            metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+            packet = dict(metadata.get("review_packet") or {})
+            packet.update({
+                "review_status": "system_incident_halted",
+                "blocked_agent": str(command.get("target_stage") or packet.get("blocked_agent") or "planner"),
+                "blocked_reason": "Automatic recovery stopped at the durable mission recovery limit.",
+                "recovery_limit": case,
+                "recommended_next_action": "Repair the shared failure condition, then explicitly resume this mission.",
+            })
+            transition_mission_review_state(
+                mission_id, "blocked", packet, expected_status="blocked",
+                owner_decision="CORE halted repeated automatic recovery.",
+                notes="Durable recovery circuit breaker reached its attempt limit.",
+                database_url=database_url, connect_factory=connect_factory,
+            )
         complete_control_command(command_id, success=False, result=case, error="recovery_budget_exhausted_or_unavailable", database_url=database_url, connect_factory=connect_factory)
-        return {"command": command, "status": "recovery_state_unavailable", "recovery": case}
+        return {"command": command, "status": "system_incident_halted" if case.get("status") == "recovery_limit_halted" else "recovery_state_unavailable", "recovery": case}
     loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
     if loaded_status >= 400:
         complete_control_command(command_id, success=False, result=loaded, error="mission_reload_failed", database_url=database_url, connect_factory=connect_factory)
         return {"command": command, "status": "mission_reload_failed", "result": loaded, "recovery": case}
     mission = loaded.get("mission") if isinstance(loaded.get("mission"), dict) else {}
-    if int(case.get("attempt_count") or 0) > int(case.get("attempt_limit") or 3):
+    if int(case.get("attempt_count") or 0) >= int(case.get("attempt_limit") or 3):
         return _execute_alternate_recovery(command, command_id, mission, case, database_url, connect_factory)
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     current_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}

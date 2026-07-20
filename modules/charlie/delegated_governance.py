@@ -39,7 +39,9 @@ def delegated_review_assessment(mission, *, pr_state=None, dependency_states=Non
     reconciliation = reconciliation_decision(
         mission, pr_state, dependency_states=dependency_states,
     )
-    if reconciliation.get("action") != "mark_pr_ready":
+    if reconciliation.get("action") not in {"mark_pr_ready", "none"} or (
+        reconciliation.get("action") == "none" and reconciliation.get("reason") != "pr_ready_is_sticky"
+    ):
         return _decision(False, "authoritative_pr_not_green", reconciliation=reconciliation, readiness=readiness)
     return _decision(True, "delegated_review_ready", action="delegate_final_review", pr_reference=reference, reconciliation=reconciliation, readiness=readiness)
 

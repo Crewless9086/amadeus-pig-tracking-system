@@ -689,6 +689,118 @@ def transition_mission_review_state(
     return {"success": True, "status": "review_state_transitioned", "mission_id": mission_id, "mission_status": status}, 200
 
 
+def finalize_owner_review_transaction(
+    mission_id,
+    review_packet,
+    *,
+    execution_id,
+    candidate_revision,
+    expected_status="in_progress",
+    database_url=None,
+    connect_factory=None,
+):
+    """Atomically publish the only legal automated transition to ``pr_ready``.
+
+    Workflow helpers deliberately cannot promote a mission.  This transaction
+    locks the mission row, rechecks the durable workflow and candidate-bound
+    evidence, and writes the packet/status/event together.
+    """
+    mission_id = _clean_text(mission_id, 90)
+    execution_id = _clean_text(execution_id, 120)
+    candidate_revision = _clean_text(candidate_revision, 120)
+    expected_status = _clean_text(expected_status, 40) or "in_progress"
+    if not mission_id or not execution_id or not candidate_revision:
+        return {"success": False, "status": "finalization_identity_required"}, 400
+    if not isinstance(review_packet, dict):
+        return {"success": False, "status": "review_packet_required"}, 400
+    reconciliation = review_packet.get("evidence_reconciliation") if isinstance(review_packet.get("evidence_reconciliation"), dict) else {}
+    manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
+    github_gate = review_packet.get("github_gate") if isinstance(review_packet.get("github_gate"), dict) else {}
+    packet_execution = review_packet.get("execution_artifacts") if isinstance(review_packet.get("execution_artifacts"), dict) else {}
+    tested_revision = _clean_text(review_packet.get("tested_revision"), 120)
+    if (
+        reconciliation.get("passed") is not True
+        or reconciliation.get("active_blockers")
+        or reconciliation.get("requires_revalidation")
+    ):
+        return {"success": False, "status": "finalization_evidence_not_ready"}, 409
+    if _clean_text(manifest.get("source_commit"), 120) != candidate_revision or tested_revision != candidate_revision:
+        return {"success": False, "status": "finalization_candidate_mismatch"}, 409
+    if github_gate.get("passed") is not True or _clean_text(github_gate.get("head_revision"), 120) != candidate_revision:
+        return {"success": False, "status": "finalization_github_gate_not_ready"}, 409
+    if _clean_text(packet_execution.get("execution_id"), 120) != execution_id:
+        return {"success": False, "status": "finalization_execution_mismatch"}, 409
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select status, coalesce(metadata_json, '{}'::jsonb)
+                    from public.charlie_missions
+                    where mission_id = %(mission_id)s
+                    for update
+                    """,
+                    {"mission_id": mission_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return {"success": False, "status": "not_found"}, 404
+                current_status, metadata = row[0], row[1] or {}
+                if current_status != expected_status:
+                    return {
+                        "success": False,
+                        "status": "status_claim_lost",
+                        "expected_status": expected_status,
+                        "current_status": current_status,
+                    }, 409
+                workflow = metadata.get("agent_workflow") if isinstance(metadata.get("agent_workflow"), list) else []
+                incomplete = [
+                    str(item.get("agent") or "") for item in workflow
+                    if isinstance(item, dict) and str(item.get("status") or "").strip().lower() != "complete"
+                ]
+                if not workflow or incomplete:
+                    return {"success": False, "status": "finalization_workflow_not_complete", "agents": incomplete}, 409
+                cursor.execute(
+                    """
+                    update public.charlie_missions
+                    set status = 'pr_ready',
+                        owner_decision = 'CORE atomically finalised owner review.',
+                        metadata_json = coalesce(metadata_json, '{}'::jsonb)
+                            || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
+                        updated_at = now()
+                    where mission_id = %(mission_id)s and status = %(expected_status)s
+                    returning mission_id
+                    """,
+                    {
+                        "mission_id": mission_id,
+                        "expected_status": expected_status,
+                        "review_packet": json.dumps(review_packet),
+                    },
+                )
+                if not cursor.fetchall():
+                    return {"success": False, "status": "status_claim_lost"}, 409
+                _insert_event(cursor, mission_id, "status_changed", "CORE atomically finalised owner review.", {
+                    "status": "pr_ready",
+                    "review_status": "ready_for_owner_review",
+                    "atomic_finalisation": True,
+                    "execution_id": execution_id,
+                    "candidate_revision": candidate_revision,
+                })
+    except Exception as exc:
+        return {"success": False, "status": "owner_review_finalization_failed", "error_type": exc.__class__.__name__}, 503
+    return {
+        "success": True,
+        "status": "owner_review_finalized",
+        "mission_id": mission_id,
+        "mission_status": "pr_ready",
+        "execution_id": execution_id,
+        "candidate_revision": candidate_revision,
+    }, 200
+
+
 def normalize_approval_level(value):
     raw = _clean_text(value, 40).upper().replace("_", " ").replace("-", " ")
     if not raw:
@@ -1188,14 +1300,7 @@ def update_mission_workflow_step(
     context_pack = metadata.get("mission_context_pack") if isinstance(metadata.get("mission_context_pack"), dict) else _default_context_pack(mission.get("mission_type", ""))
 
     status = ""
-    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
-    if (
-        agent == "reviewer"
-        and step_status == "complete"
-        and str(review_packet.get("review_status") or "").strip() == "ready_for_owner_review"
-    ):
-        status = "pr_ready"
-    elif step_status == "blocked":
+    if step_status == "blocked":
         status = "blocked"
 
     return update_mission_vault(
@@ -2069,6 +2174,10 @@ def _update_workflow_items(workflow, agent, step_status, findings, next_agent):
             if name != agent and known[name].get("status") == "active":
                 known[name]["status"] = "pending"
     known[agent]["status"] = step_status
+    if step_status == "active":
+        known[agent].pop("completed_at", None)
+    elif step_status == "complete":
+        known[agent]["completed_at"] = datetime.now(timezone.utc).isoformat()
     if findings:
         known[agent]["findings"] = findings
     if step_status == "complete":
@@ -2095,6 +2204,7 @@ def _return_workflow_to_stage(workflow, target_stage, comments):
         if agent == target_stage:
             target_seen = True
             known[agent]["status"] = "active"
+            known[agent].pop("completed_at", None)
             if comments:
                 known[agent]["findings"] = comments
         elif target_seen:

@@ -268,7 +268,7 @@ def watch_for_mission(
 
 
 def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
-    missions, status_code = _owner_queue_missions(statuses=("blocked", "pr_ready"), limit=50)
+    missions, status_code = _owner_queue_missions(statuses=("blocked",), limit=50)
     if status_code >= 400:
         return {"success": False, "status": "blocked_pr_reconciliation_unavailable", "changed_count": 0}
     changed = []
