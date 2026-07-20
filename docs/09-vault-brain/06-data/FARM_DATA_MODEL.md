@@ -17,6 +17,18 @@ Farm record writes require approved backend paths and audit evidence.
 | Mating events | Breeding transaction records and expected outcomes. |
 | Pig current/latest views | Read models for dashboard, purpose review, sales availability, and agent summaries. |
 | Farm products/settings | Medicine/product defaults and system settings. |
+| Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
+
+## Pig Observation Event Contract
+
+`pig_observation_events` is an additive, unapplied canonical fact rail. Each row is tied to one canonical `pig_id`, has an observation and recording timestamp, observer/source provenance, controlled factual category/severity, non-empty factual note, optional object-shaped measurements, and a caller idempotency key.
+
+- Observations are evidence, not diagnoses, treatment instructions, lifecycle/purpose decisions, or external-action instructions.
+- Events are append-only. Corrections must be new factual events linked by `supersedes_observation_event_id`; normal updates and deletes are database-blocked.
+- A correction can supersede only an earlier observation for the same pig; the observation timestamp cannot be later than its recorded timestamp.
+- The table has RLS enabled and no browser policy is introduced by this migration. A future protected backend capture rail must define its own permission and audit contract.
+- Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
+- Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
 
 ## One-Pig-Truth Rules
 
@@ -48,3 +60,4 @@ Farm record writes require approved backend paths and audit evidence.
 - `docs/03-google-sheets/FIELD_DEFINITIONS.md`
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
+- `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)

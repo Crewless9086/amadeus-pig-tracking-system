@@ -2,6 +2,14 @@
 
 Status: owner-reviewed governance questions were moved to `OWNER_DECISIONS.md`. This file now tracks only unresolved or verification-needed questions.
 
+## Pig Observation Capture And Retention
+
+Question: before a protected observation-capture path is implemented, which farm roles may submit factual observations, what retention period applies, and who can authorize a correction event?
+
+Known boundary: the additive, unapplied `pig_observation_events` migration stores factual pig evidence only. It has RLS, retry-safe idempotency, same-pig correction-by-supersession, and database-blocked updates/deletes. It stores no alert acknowledgement, recommendation, owner decision, notification, automation, lifecycle, medical, sales, reservation, or slaughter state.
+
+Owner decision needed: approve the capture-role list, retention/deletion policy, and correction authorization before any protected backend capture rail is built or migration is applied.
+
 ## Supabase Vault Production Status
 
 Question: which Supabase Vault tables are applied in production and which remain pending?
