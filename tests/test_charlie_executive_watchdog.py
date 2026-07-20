@@ -3,10 +3,13 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from scripts.charlie_executive_watchdog import _idle_recommendations, _queue_idle_brief, supervision_tick
+from scripts.charlie_executive_watchdog import _idle_recommendations, _observer_recommendations, _queue_idle_brief, supervision_tick
 
 
 class CharlieExecutiveWatchdogTests(unittest.TestCase):
+    def test_reuses_due_observer_recommendations_without_requerying_domains(self):
+        observers = {"runs": [{"recommendations": [{"summary": "Fix SAM context"}]}]}
+        self.assertEqual(_observer_recommendations(observers), ["Fix SAM context"])
     def test_idle_recommendations_aggregate_all_agent_domains(self):
         readers = {
             "sam_lead_health": lambda: {"recommendations": [{"summary": "Improve SAM replies from owner corrections."}]},
