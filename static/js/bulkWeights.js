@@ -398,8 +398,14 @@ function selectedPenIds() {
   return Array.from(penFilterSelect.selectedOptions).map((option) => option.value).filter(Boolean);
 }
 
-function penOptionsHtml(selectedPenId) {
-  const options = ['<option value="">No pen change</option>'];
+const NO_PEN_CHANGE_VALUE = "__NO_PEN_CHANGE__";
+
+function penOptionsHtml(selectedPenId, penConfirmed = false) {
+  const hasSelectedPen = String(selectedPenId || "").trim() !== "";
+  const options = [
+    `<option value="" ${!hasSelectedPen && !penConfirmed ? "selected" : ""}>Choose: stayed or moved</option>`,
+    `<option value="${NO_PEN_CHANGE_VALUE}" ${!hasSelectedPen && penConfirmed ? "selected" : ""}>Stayed in current pen</option>`,
+  ];
   allPens.forEach((pen) => {
     const label = pen.pen_name ? `${pen.pen_name} (${pen.pen_id})` : (pen.pen_id || "");
     options.push(`<option value="${escapeHtml(pen.pen_id || "")}" ${selectedPenId === pen.pen_id ? "selected" : ""}>${escapeHtml(label)}</option>`);
@@ -434,9 +440,11 @@ function collectDraftFromDom() {
   document.querySelectorAll("[data-bulk-pig-row]").forEach((row) => {
     const pigId = row.dataset.pigId || "";
     if (!pigId) return;
+    const penDecision = row.querySelector("[data-bulk-pen]")?.value || "";
     draftRows[pigId] = {
       weight_kg: row.querySelector("[data-bulk-weight]")?.value || "",
-      moved_to_pen_id: row.querySelector("[data-bulk-pen]")?.value || "",
+      moved_to_pen_id: penDecision && penDecision !== NO_PEN_CHANGE_VALUE ? penDecision : "",
+      pen_confirmed: penDecision !== "",
       condition_notes: row.querySelector("[data-bulk-notes]")?.value || "",
     };
   });
@@ -477,7 +485,7 @@ function renderTable(options = {}) {
         </td>
         <td>${escapeHtml(penLabelForPig(pig))}</td>
         <td>
-          <select data-bulk-pen class="bulk-pen-select">${penOptionsHtml(draft.moved_to_pen_id || "")}</select>
+          <select data-bulk-pen class="bulk-pen-select">${penOptionsHtml(draft.moved_to_pen_id || "", Boolean(draft.pen_confirmed) || Boolean(draft.moved_to_pen_id))}</select>
         </td>
         <td>
           <input data-bulk-notes type="text" class="bulk-notes-input" value="${escapeHtml(draft.condition_notes || "")}" />
@@ -545,6 +553,28 @@ function rowsPayload() {
       condition_notes: draft.condition_notes || "",
     };
   });
+}
+
+function unconfirmedWeightedRows(pigs, rows) {
+  return pigs.filter((pig) => {
+    const draft = rows[pig.pig_id] || {};
+    return String(draft.weight_kg || "").trim() !== "" && !draft.pen_confirmed;
+  });
+}
+
+function requirePenDecisions() {
+  collectDraftFromDom();
+  const unconfirmed = unconfirmedWeightedRows(allPigs, draftRows);
+  document.querySelectorAll("[data-bulk-pig-row]").forEach((row) => {
+    const needsDecision = unconfirmed.some((pig) => pig.pig_id === row.dataset.pigId);
+    row.querySelector("[data-bulk-pen]")?.classList.toggle("input-error", needsDecision);
+  });
+  if (!unconfirmed.length) return true;
+  const tags = unconfirmed.slice(0, 8).map((pig) => formatTagNumber(pig.tag_number || pig.pig_id)).join(", ");
+  const more = unconfirmed.length > 8 ? ` and ${unconfirmed.length - 8} more` : "";
+  setMessage(`Upload stopped: confirm the pen for every weighed pig. Choose “Stayed in current pen” or the new pen. Check ${tags}${more}.`, "error");
+  document.querySelector("[data-bulk-pen].input-error")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  return false;
 }
 
 function importDraftPayload(payload) {
@@ -821,6 +851,10 @@ async function uploadBatch() {
       await processActiveBatch();
       return;
     }
+    if (!requirePenDecisions()) {
+      setUploadOverlay("", "");
+      return;
+    }
     setUploadOverlay("Uploading weights", "Preparing batch. Please keep this page open.");
     const { response, data } = await stageBulkBatch();
     if (!response.ok || !data.ok) {
@@ -969,6 +1003,7 @@ if (typeof window !== "undefined") {
     persistDraft,
     renderTable,
     uploadFailureMessage,
+    unconfirmedWeightedRows,
     stageBulkBatch,
     processActiveBatch,
     uploadBatch,

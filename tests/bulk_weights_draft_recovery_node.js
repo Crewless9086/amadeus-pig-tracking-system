@@ -97,6 +97,18 @@ async function main() {
   assert.strictEqual(draft.expected_row_count, 1);
   assert.strictEqual(draft.actionable_row_count, 2);
   assert.strictEqual(draft.rows["PIG-1"].weight_kg, "61.2");
+  assert.deepStrictEqual(
+    Array.from(helpers.unconfirmedWeightedRows(
+      [{ pig_id: "PIG-1" }, { pig_id: "PIG-2" }, { pig_id: "PIG-3" }],
+      {
+        "PIG-1": { weight_kg: "61.2", pen_confirmed: false },
+        "PIG-2": { weight_kg: "59.4", pen_confirmed: true },
+        "PIG-3": { weight_kg: "", pen_confirmed: false },
+      },
+    ).map((pig) => pig.pig_id)),
+    ["PIG-1"],
+    "only weighed pigs without an explicit pen decision should be blocked",
+  );
 
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 71, success_count: 71, failed_count: 0, blocked_count: 0 }), true);
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: false, expected_count: 71, processed_count: 71, success_count: 60, failed_count: 11 }), false);
