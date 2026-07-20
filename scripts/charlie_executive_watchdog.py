@@ -59,6 +59,16 @@ def _idle_recommendations(goals=None, readers=None):
     return recommendations[:3]
 
 
+def _observer_recommendations(observers):
+    recommendations = []
+    for run in (observers or {}).get("runs") or []:
+        for item in run.get("recommendations") or []:
+            summary = str(item.get("summary") or "").strip()
+            if summary and summary not in recommendations:
+                recommendations.append(summary)
+    return recommendations[:3]
+
+
 def _queue_idle_brief(cycle, recommendations, *, now=None):
     counts = cycle.get("status_counts") if isinstance(cycle.get("status_counts"), dict) else {}
     runnable = int((cycle.get("queue_health") or {}).get("runnable_count") or 0)
@@ -96,7 +106,11 @@ def supervision_tick(*, now=None, readers=None, runner_reader=runner_status, run
         return {"success": False, "status": "executive_cycle_failed", "executive": executive}
     cycle = executive.get("cycle") if isinstance(executive.get("cycle"), dict) else {}
     observers = _run_domain_observers()
-    recommendations = _idle_recommendations(readers=readers)
+    recommendations = _observer_recommendations(observers)
+    if not recommendations:
+        recommendations = _idle_recommendations(goals=[
+            {"title": "the active executive goal", "status": "active"}
+        ], readers={})
     idle_brief = _queue_idle_brief(cycle, recommendations, now=now)
 
     runner_start = {"status": "not_required"}
