@@ -4657,6 +4657,8 @@ def _is_blocking_judgement_text(agent, artifact, value):
         return False
     if _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
         return False
+    if _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
+        return False
     blocking_phrases = (
         "send_back",
         "send back",
@@ -4687,6 +4689,62 @@ def _is_blocking_judgement_text(agent, artifact, value):
     if re.search(r"\b(fail|failed|failing|failure)\b", failure_text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", failure_text):
         return True
     return False
+
+
+def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
+    """Distinguish PR merge approval from later migration-application authority."""
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    artifact = artifact if isinstance(artifact, dict) else {}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    if decision not in {"approve_final_release", "approve", "mark_done"}:
+        return False
+    if artifact.get("errors") or artifact.get("bugs"):
+        return False
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if not acceptance or any(
+        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
+        for row in acceptance
+    ):
+        return False
+    changed_files = [str(path or "").replace("\\", "/") for path in (artifact.get("changed_files") or [])]
+    if not any(path.startswith("supabase/migrations/") for path in changed_files):
+        return False
+    artifact_text = " ".join(str(value or "") for value in (
+        artifact.get("summary"),
+        artifact.get("next_action"),
+        *(artifact.get("release_notes") or []),
+    )).lower()
+    if "unapplied" not in artifact_text:
+        return False
+    merge_approval_terms = (
+        "may approve merge",
+        "may approve the merge",
+        "may approve final release",
+        "approve merge of pr",
+        "approve release of pr",
+    )
+    separate_gate_terms = (
+        "must not approve migration application",
+        "does not authorize migration application",
+        "does not authorize applying the migration",
+        "do not apply this migration",
+        "before migration application",
+        "before any migration application",
+    )
+    current_defect_terms = (
+        "current-diff security defect",
+        "current diff security defect",
+        "security vulnerability",
+        "acceptance failed",
+        "tests failed",
+        "must fix before merge",
+    )
+    return (
+        any(term in artifact_text for term in merge_approval_terms)
+        and any(term in text for term in separate_gate_terms)
+        and not any(term in text for term in current_defect_terms)
+    )
 
 
 def _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
