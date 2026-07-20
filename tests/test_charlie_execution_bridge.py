@@ -2392,6 +2392,31 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertFalse(result["findings"])
 
+    def test_brain_guard_counts_valid_preserved_citations_during_targeted_resume(self):
+        artifacts = {
+            "planner": {
+                "summary": "Frozen upstream plan.",
+                "vault_sources_used": [
+                    "docs/09-vault-brain/INDEX.md",
+                    "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
+                ],
+                "no_vault_update_required": "No doctrine changed.",
+            },
+            "publisher": {
+                "summary": "Publisher verified the rebased PR.",
+                "vault_sources_used": ["docs/09-vault-brain/02-agents/charlie-core/PUBLISHER.md"],
+                "no_vault_update_required": "No doctrine changed.",
+            },
+        }
+        ledger = {"preserved_upstream_artifacts": ["planner"]}
+
+        result = execution_bridge._brain_guard_review_gate(
+            MISSION, artifacts, ["README.md"], ledger=ledger
+        )
+
+        self.assertTrue(result["source_coverage"]["passed"], result)
+        self.assertIn("docs/09-vault-brain/INDEX.md", result["source_coverage"]["cited_sources"])
+
     def test_passed_quality_gate_reason_is_not_unresolved_issue(self):
         issues = execution_bridge._artifact_issue_items(
             "qa_red_team",

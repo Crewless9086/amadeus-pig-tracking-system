@@ -6380,12 +6380,17 @@ def _brain_guard_review_gate(mission, artifacts, changed_files, ledger=None):
         if "builder" in agent_sequence and "product_architect" in agent_sequence:
             if agent_sequence.index("product_architect") > agent_sequence.index("builder"):
                 findings.append("UI/product mission has Product Architect after Builder; product brief must happen before build.")
-    active_artifacts = {
+    coverage_artifacts = {
         agent: artifact
         for agent, artifact in artifacts.items()
-        if agent not in preserved
+        if agent not in preserved or _artifact_has_vault_brain_source(artifact)
     }
-    source_coverage = evaluate_vault_source_coverage(active_artifacts, retrieval)
+    # Preserved upstream work remains durable mission evidence. Count its valid
+    # Vault citations during a targeted downstream rerun, while continuing to
+    # exclude citation-free legacy artifacts from the hard coverage gate (they
+    # are surfaced as warnings below). Otherwise every publisher-only recovery
+    # loses the mission-level context and loops through Source Mapper.
+    source_coverage = evaluate_vault_source_coverage(coverage_artifacts, retrieval)
     if context.get("missing_docs"):
         findings.append(f"Vault Brain context has missing docs: {', '.join(context['missing_docs'])}.")
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
