@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-20 - SAM Live Stock replay evidence and human price wording
+
+- Added the read-only sanitized replay evidence posture: supplied Herdmaster provenance and Ledger payment-unknown evidence must remain explicit, and replay never authorizes a send or operational write.
+- Clarified that verified live-stock price proposals use a plain conversational estimate label while retaining owner-review and no-reservation boundaries.
+
 ## 2026-07-18 - Agentic operating architecture enforcement
 
 - Made the Agentic Architecture Packet a frozen CORE mission contract and Brain Guard gate.

@@ -132,6 +132,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     intake_context_loader=None,
     conversation_history_loader=None,
     availability_loader=None,
+    availability_evidence=None,
     intake_writer=None,
     draft_order_creator=None,
     draft_order_syncer=None,
@@ -174,6 +175,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         intake_context_loader=intake_context_loader,
         conversation_history_loader=conversation_history_loader,
         availability_loader=availability_loader,
+        availability_evidence=availability_evidence,
         environ=source,
     )
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
@@ -401,6 +403,7 @@ def load_live_stock_read_context(
     intake_context_loader=None,
     conversation_history_loader=None,
     availability_loader=None,
+    availability_evidence=None,
     environ=None,
 ):
     inbound = inbound if isinstance(inbound, dict) else {}
@@ -431,6 +434,15 @@ def load_live_stock_read_context(
     try:
         if availability_loader is not None:
             availability_rows = availability_loader()
+            supplied = availability_evidence if isinstance(availability_evidence, dict) else {}
+            herdmaster_evidence = {
+                "agent": {"agent_id": "herdmaster", "authority_tier": "read_only"},
+                "status": "replay_supplied_read_only_evidence",
+                "provenance": supplied.get("provenance") or "replay_fixture",
+                "freshness": supplied.get("freshness") or "sanitized_fixture",
+                "summary": supplied.get("summary") if isinstance(supplied.get("summary"), dict) else {},
+                "source_mode": "sanitized_replay_fixture",
+            }
         else:
             herdmaster_evidence, herdmaster_status = delegate_to_agent("herdmaster", {
                 "goal": "Provide governed livestock sales candidates for SAM.",
@@ -2085,7 +2097,7 @@ def _price_answer_reply(facts, packet):
     weight_band = _human_weight_band(packet.get("requested_weight_range") or (packet.get("pricing") or {}).get("weight_band"))
     unit = _money_label(packet.get("unit_price"))
     lines = [
-        "Current SAM Live price estimate:",
+        "Current price estimate:",
         f"- {quantity_label}{sex_label}{category}, {weight_band}: {unit} each",
     ]
     if quantity > 1 and packet.get("estimated_total") not in ("", None):
@@ -2679,13 +2691,17 @@ def _representative_weight(weight_range):
 
 
 def _row_available_for_live_stock(row):
+    # Herdmaster must explicitly classify an animal as Sale before it can
+    # support matching, price evidence, or draft/quote preparation.  An
+    # omitted purpose is unknown, not an implicit sale approval.
+    if _normal_text(row.get("purpose")) != "sale":
+        return False
     if "live_stock_sale_eligible" in row and row.get("live_stock_sale_eligible") is not True:
         return False
     status = _normal_text(row.get("status"))
     on_farm = _normal_text(row.get("on_farm"))
     reserved = _normal_text(row.get("reserved_status"))
     available = _normal_text(row.get("available_for_sale"))
-    purpose = _normal_text(row.get("purpose"))
     if status in {"sold", "exited", "dead", "terminal"}:
         return False
     if on_farm and on_farm not in {"yes", "true", "1", "on farm"}:
@@ -2693,8 +2709,6 @@ def _row_available_for_live_stock(row):
     if reserved and reserved not in {"", "available", "no", "not reserved"}:
         return False
     if available and available not in {"yes", "true", "1"}:
-        return False
-    if purpose and purpose != "sale":
         return False
     return True
 
@@ -2760,6 +2774,14 @@ def _availability_public_row(row):
         "weight_band": _clean(row.get("weight_band"), 80),
         "sale_category": _clean(row.get("sale_category"), 120),
         "suggested_price_category": _clean(row.get("suggested_price_category"), 120),
+        # These fields make the match's eligibility inspectable without
+        # exposing private herd or customer notes in an owner review packet.
+        "purpose": _clean(row.get("purpose"), 40),
+        "status": _clean(row.get("status"), 40),
+        "on_farm": _clean(row.get("on_farm"), 40),
+        "reserved_status": _clean(row.get("reserved_status"), 40),
+        "available_for_sale": _clean(row.get("available_for_sale"), 40),
+        "live_stock_sale_eligible": row.get("live_stock_sale_eligible"),
     }
 
 

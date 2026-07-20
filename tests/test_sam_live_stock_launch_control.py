@@ -90,7 +90,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
     def test_review_event_preserves_multiline_reply_excerpt(self):
         inbound, facts, decision = review_inputs()
         decision["suggested_reply_text"] = (
-            "Current SAM Live price estimate:\n"
+            "Current price estimate:\n"
             "- 2 x Female Weaner, 10-14 kg: R500 each\n"
             "- Estimated total: R1,000\n"
             "- This is not a reservation."
@@ -195,7 +195,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
     def test_owner_review_telegram_send_has_approve_button_and_multiline_draft(self):
         inbound, facts, decision = review_inputs()
         decision["suggested_reply_text"] = (
-            "Current SAM Live price estimate:\n"
+            "Current price estimate:\n"
             "- 2 x Female Weaner, 10-14 kg: R500 each\n"
             "- Estimated total: R1,000\n"
             "- This is not a reservation."
@@ -471,7 +471,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         event = {
             "review_event_id": "SAM-LIVE-REVIEW-ABC123",
             "chatwoot_conversation_id": "2401",
-            "sam_reply_excerpt": "Current SAM Live price estimate:\n- 2 x Weaner: R500 each",
+            "sam_reply_excerpt": "Current price estimate:\n- 2 x Weaner: R500 each",
             "decision_json": {},
         }
         send_calls = []
@@ -486,7 +486,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["action"], "review_approve_send")
         self.assertTrue(result["sends_customer_message"])
-        self.assertEqual(send_calls, [("2401", "Current SAM Live price estimate:\n- 2 x Weaner: R500 each")])
+        self.assertEqual(send_calls, [("2401", "Current price estimate:\n- 2 x Weaner: R500 each")])
 
     def test_owner_review_callback_uses_full_decision_reply_not_excerpt(self):
         full_reply = "Line 1\n" + "\n".join(f"Detail line {index}" for index in range(1, 80))

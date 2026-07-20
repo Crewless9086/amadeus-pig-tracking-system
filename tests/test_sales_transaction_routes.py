@@ -1941,7 +1941,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "sam_decision": {
                 "inbound": {"conversation_id": "1822", "message_id": "2", "content": "What is the price?"},
                 "facts": {"sales_lane": "live_stock_sales", "quote_requested": True},
-                "suggested_reply_text": "Current SAM Live price estimate:\n- 2 x Weaner: R500 each",
+                "suggested_reply_text": "Current price estimate:\n- 2 x Weaner: R500 each",
                 "conversation_review": {
                     "score": 99,
                     "safe_to_send": True,
@@ -1999,7 +1999,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "sam_decision": {
                 "inbound": {"conversation_id": "1478", "message_id": "1", "content": "How much are 7-9kg piglets?"},
                 "facts": {"sales_lane": "live_stock_sales", "quote_requested": True},
-                "suggested_reply_text": "Current SAM Live price estimate:\n- Piglet, 7-9 kg: R450 each",
+                "suggested_reply_text": "Current price estimate:\n- Piglet, 7-9 kg: R450 each",
                 "conversation_review": {
                     "score": 99,
                     "safe_to_send": True,
