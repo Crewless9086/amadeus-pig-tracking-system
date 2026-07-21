@@ -75,6 +75,14 @@ Live Supabase selections do not write CODEX_CHAT. Fallback documentation options
 
 The handler is testable through injected clients. Unit tests never send real Telegram messages.
 
+## Hosted Mission Callback Round Trip
+
+The Render webhook dispatches authenticated `cm:` mission-control callbacks to the same protected handler used by the local button flow before generic text-command handling. It claims the Telegram `update_id` in `charlie_inbound_updates` before a mission mutation and writes a sanitized terminal outcome (`processed`, `refused`, `ignored`, or `failed`) after handling. Authenticated non-owner callbacks are retained as ignored evidence; requests without the webhook secret are rejected before any durable record is created.
+
+If completion of an already-claimed inbound update is unavailable, the relay returns the explicit `charlie_mission_callback_completion_failed` 503 outcome with the update key and does not retry either the completion call or the owner action. Completion updates only a `processing` row; if an expired incomplete claim is atomically closed as `failed` with `completion_unknown_replay_refused` first, a delayed completion returns a terminal conflict and cannot overwrite that evidence. Duplicate delivery distinguishes terminal rows from `processing`: a concurrent retry waits. Neither recovery path invokes the mission action again.
+
+Final-release buttons include a compact token derived from the review packet's durable `review_generation`. The current generation and `pr_ready` status are compared in the mission update, so stale or duplicate review buttons fail closed. A successful owner callback receives the normal Telegram callback acknowledgement and refreshed mission card; the dashboard remains a read of the same authoritative mission record.
+
 ## Loop 6 Local Live Relay
 
 `scripts/charlie_telegram_relay.py` is the local smoke runner for `@CharlieCoreBot`.

@@ -1124,6 +1124,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
                 "review_packet": {
                     "summary": "Ready",
                     "test_evidence": ["Focused tests passed."],
+                    "review_generation": "EXEC-1:abc123",
                     "visual_review": {
                         "ui_related": True,
                         "cleanup": {"required": True, "status": "pending_owner_decision", "local_path": ".charlie_runner/review_media/MISSION-1"},
@@ -1153,6 +1154,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(update_params["approval_level"], "LEVEL 4")
         self.assertIn("approve_final_release", update_params["metadata_json"])
         self.assertIn("cleanup_requested", update_params["metadata_json"])
+        self.assertIn("review_generation", update_sql)
 
     def test_final_approval_allows_pr_release_while_migration_application_stays_gated(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
@@ -1164,6 +1166,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
                     "summary": "Code complete.",
                     "changed_files": ["supabase/migrations/202607160001_example.sql"],
                     "test_evidence": ["Focused tests passed."],
+                    "review_generation": "EXEC-1:abc123",
                 },
             }, now, now,
         )

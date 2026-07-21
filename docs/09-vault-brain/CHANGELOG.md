@@ -5,6 +5,14 @@
 - Required final reviewer approval evidence to include a structured executable test command and explicit pass status.
 - Required recorded selector, discovery, and error output (including `AttributeError`) to block final approval even if later evidence passes.
 
+## 2026-07-21 - Telegram mission callback completion recovery
+
+- Required an explicit, non-retrying completion-failure outcome after a claimed mission-control callback, preserving the inbound claim as recovery evidence and preventing a second owner action.
+- Distinguished terminal duplicates from concurrent and expired incomplete claims; expired claims now close atomically as durable `failed` evidence without replaying the mission action.
+- Required delayed completion to compare-and-set only a `processing` inbound claim, preserving a reconciliation-won terminal result; added the disposable-PostgreSQL regression for that race.
+- Added disposable-PostgreSQL concurrency and replay coverage to the audit-rails workflow.
+- Retained webhook-secret validation, owner allowlisting, generation-bound final approval, and the no-live-canary owner-authorization boundary.
+
 ## 2026-07-21 - Pig lifecycle audit rail
 
 - Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.
@@ -245,6 +253,11 @@
 - Added backend-generated owner-action guidance with a target stage, reason, expected outcome, and safe alternative.
 - Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
 - Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.
+
+## 2026-07-21 - Telegram mission decision round-trip guard
+
+- Documented authenticated hosted `cm:` callback dispatch, durable inbound callback outcomes, and generation-bound atomic final-review decisions.
+- Preserved owner-only, record-only Telegram authority: callbacks cannot merge, deploy, send customers, or bypass review gates.
 
 ## 2026-07-14 - Owner-gated Beacon Live-Stock Sales lane
 

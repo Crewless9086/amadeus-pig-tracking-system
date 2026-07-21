@@ -14,6 +14,8 @@
 
 Each transition into owner review carries a durable review-generation identity bound to the execution and candidate revision. CHARLIE emits one idempotent executive brief for that generation, so a re-reviewed candidate is not hidden by an older alert. High-priority unresolved reviews may receive at most two bounded reminders. The delivery audit is read-only; Telegram controls retain the existing owner-release gate and never send customers, take payment, reserve stock, merge, or deploy by themselves.
 
+Authenticated Telegram mission callbacks claim their `update_id` before mutation and complete a durable sanitized outcome record. Completion is compare-and-set from `processing` only: reconciliation's terminal result remains authoritative if it wins before a delayed handler finishes. Final-release callbacks must bind to the current review generation and atomically compare both that generation and `pr_ready`; stale, duplicate, invalid, and non-owner callbacks fail closed without changing mission authority.
+
 SAM conversation learning is grouped by conversation and classified before reaching owner attention. Learning-only corrections remain read-only improvement evidence and are excluded from pending owner-decision counts.
 
 ## Mission Contract

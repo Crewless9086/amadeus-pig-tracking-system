@@ -112,6 +112,9 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
         return _result(False, "charlie_build_relay_auth_denied", policy, 403)
 
     parsed = parse_telegram_payload(payload)
+    callback_data = str(((payload or {}).get("callback_query") or {}).get("data") or "")
+    if callback_data.startswith("cm:"):
+        return handle_mission_control_callback_webhook(payload, policy=policy, environ=source)
     if not parsed["text"]:
         return _result(False, "charlie_build_relay_text_required", policy, 400)
     if parsed["telegram_user_id"] not in _allowed_user_ids(source):
@@ -138,6 +141,114 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
         "telegram_send": send_result,
     })
     return body, send_status
+
+
+def handle_mission_control_callback_webhook(payload, *, policy=None, environ=None, callback_handler=None, update_claimer=None, update_completer=None, update_reconciler=None):
+    """Run an authenticated ``cm:`` callback once and retain its terminal outcome.
+
+    The caller has already checked the webhook secret.  Claiming happens before
+    owner validation so authenticated refused callbacks are auditable, while an
+    unauthenticated request never reaches this function or creates durable data.
+    """
+    source = alias_environment(environ if environ is not None else os.environ)
+    policy = policy or build_relay_policy(environ=source)
+    parsed = parse_telegram_payload(payload)
+    callback = (payload or {}).get("callback_query") or {}
+    update_id = str((payload or {}).get("update_id") or "")
+    callback_id = str(callback.get("id") or "")
+    if not update_id:
+        return _result(False, "charlie_mission_callback_update_id_required", policy, 400)
+
+    if update_claimer is None or update_completer is None or update_reconciler is None:
+        from modules.charlie.private_store import claim_update, complete_update, reconcile_incomplete_update
+        update_claimer = update_claimer or claim_update
+        update_completer = update_completer or complete_update
+        update_reconciler = update_reconciler or reconcile_incomplete_update
+    claim, claim_status = update_claimer(update_id, callback_id)
+    if claim_status >= 400:
+        return _result(False, "charlie_mission_callback_claim_failed", policy, claim_status)
+    if not claim.get("created"):
+        if claim.get("existing_status") == "processing":
+            reconciliation, reconciliation_status = update_reconciler(claim.get("update_key", ""))
+            reconciled = bool(reconciliation.get("reconciled"))
+            response_status = "charlie_mission_callback_incomplete_reconciled" if reconciled else "charlie_mission_callback_processing"
+            http_status = 409 if reconciled else 503
+            if reconciliation_status >= 400 and reconciliation_status != 404:
+                response_status = "charlie_mission_callback_reconciliation_failed"
+                http_status = 503
+            body, _ = _result(False, response_status, policy, http_status)
+            body["update_key"] = claim.get("update_key", "")
+            body["reconciliation"] = reconciliation
+            body["owner_action_replayed"] = False
+            return body, http_status
+        body, _ = _result(True, "charlie_mission_callback_duplicate_ignored", policy, 200)
+        body["update_key"] = claim.get("update_key", "")
+        return body, 200
+
+    update_key = claim["update_key"]
+
+    def complete_terminal_outcome(status, outcome):
+        """Complete an already-claimed update exactly once.
+
+        The mission action can have committed before its audit completion is
+        attempted.  A completion failure must therefore be surfaced as a
+        recoverable delivery failure, never retried from an exception handler
+        (which used to mask the original failure and escape the webhook).
+        """
+        try:
+            completion, completion_status = update_completer(update_key, status=status, result=outcome)
+            if not isinstance(completion, dict):
+                raise TypeError("update_completer_result_invalid")
+            if completion_status >= 400 or not completion.get("success"):
+                return False, {
+                    "status": str(completion.get("status") or "update_complete_failed")[:80],
+                    "error_type": str(completion.get("error_type") or "")[:80],
+                }
+        except Exception as exc:
+            return False, {"status": "update_complete_failed", "error_type": exc.__class__.__name__}
+        return True, {}
+
+    def completion_failure_body(outcome, completion_failure):
+        body, _ = _result(False, "charlie_mission_callback_completion_failed", policy, 503)
+        body["callback"] = outcome
+        body["completion"] = completion_failure
+        body["update_key"] = update_key
+        return body, 503
+
+    if parsed["telegram_user_id"] not in _allowed_user_ids(source):
+        outcome = {"status": "unauthorized_user"}
+        completed, completion_failure = complete_terminal_outcome("ignored", outcome)
+        if not completed:
+            return completion_failure_body(outcome, completion_failure)
+        body, _ = _result(False, "charlie_build_relay_user_not_allowed", policy, 403)
+        body["telegram_user_id"] = parsed["telegram_user_id"]
+        return body, 403
+
+    try:
+        if callback_handler is None:
+            from scripts.build_relay_telegram_buttons import handle_update
+            callback_handler = handle_update
+        result = callback_handler(payload, environ=source)
+        outcome = {
+            "status": str(getattr(result, "action", "mission_callback_handled")),
+            "reason": str(getattr(result, "reason", ""))[:240],
+            "mission_id": str(getattr(result, "selected_title", ""))[:90],
+        }
+        terminal_status = "processed" if bool(getattr(result, "ok", False)) else "refused"
+        completed, completion_failure = complete_terminal_outcome(terminal_status, outcome)
+        if not completed:
+            return completion_failure_body(outcome, completion_failure)
+        body, _ = _result(bool(getattr(result, "ok", False)), "charlie_mission_callback_handled", policy, 200)
+        body["callback"] = outcome
+        return body, 200
+    except Exception as exc:
+        outcome = {"status": "mission_callback_failed", "error_type": exc.__class__.__name__}
+        completed, completion_failure = complete_terminal_outcome("failed", outcome)
+        if not completed:
+            return completion_failure_body(outcome, completion_failure)
+        body, _ = _result(False, "charlie_mission_callback_failed", policy, 503)
+        body["callback"] = outcome
+        return body, 503
 
 
 def build_relay_action(text, environ=None):

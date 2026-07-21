@@ -25,6 +25,10 @@ def mission_token(mission_id: str) -> str:
     return hashlib.sha256(mission_id.encode("utf-8")).hexdigest()[:14]
 
 
+def review_generation_token(review_generation: str) -> str:
+    return hashlib.sha256(review_generation.encode("utf-8")).hexdigest()[:14]
+
+
 def mission_callback(mission_id: str, action: str = "open", argument: str = "") -> str:
     parts = [CALLBACK_PREFIX.rstrip(":"), action, mission_token(mission_id)]
     if argument:
@@ -104,7 +108,11 @@ def mission_keyboard(mission: Mapping[str, Any]) -> dict[str, Any]:
         readiness = evaluate_final_readiness(mission)
         actions = []
         if readiness.get("can_authorize_release"):
-            actions.append(("Approve Release", "approvefinal", ""))
+            generation = str(_review_packet(mission).get("review_generation") or "")
+            # A generation-less final-release button is deliberately omitted.  It
+            # cannot prove it belongs to the reviewed candidate.
+            if generation:
+                actions.append(("Approve Release", "approvefinal", review_generation_token(generation)))
         actions.extend([("Show Requirements", "open", ""), ("Send Back", "sendback", "builder"), ("Pause", "pause", "")])
     elif status == "paused":
         actions = [("Approve / Resume", "resume", ""), ("Reject", "reject", "")]
@@ -176,7 +184,16 @@ def handle_callback(
     elif action == "approvefinal":
         if status != "pr_ready":
             return MissionControlResult(False, action, f"action_not_allowed_from_{status}", mission_id), mission
-        payload, code = review_updater(mission_id, "approve_final_release", comments="Approved from Telegram owner review.")
+        review_generation = str(_review_packet(mission).get("review_generation") or "")
+        supplied_token = parts[3] if len(parts) > 3 else ""
+        if not review_generation or supplied_token != review_generation_token(review_generation):
+            return MissionControlResult(False, action, "stale_or_generationless_review_callback", mission_id), mission
+        payload, code = review_updater(
+            mission_id,
+            "approve_final_release",
+            comments="Approved from Telegram owner review.",
+            expected_review_generation=review_generation,
+        )
     else:
         return MissionControlResult(False, action, "unknown_action", mission_id), mission
 

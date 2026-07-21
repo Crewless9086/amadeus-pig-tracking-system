@@ -1401,6 +1401,7 @@ def record_mission_review_decision(
     target_stage="",
     database_url=None,
     connect_factory=None,
+    expected_review_generation="",
 ):
     mission_id = _clean_text(mission_id, 90)
     decision = _clean_text(decision, 40)
@@ -1419,6 +1420,11 @@ def record_mission_review_decision(
     if load_status >= 400:
         return loaded, load_status
     mission = loaded.get("mission") or {}
+    review_packet_before_decision = dict((mission.get("metadata") or {}).get("review_packet") or {})
+    current_review_generation = _clean_text(review_packet_before_decision.get("review_generation", ""), 180)
+    expected_review_generation = _clean_text(expected_review_generation, 180)
+    if decision == "approve_final_release" and (not current_review_generation or (expected_review_generation and expected_review_generation != current_review_generation)):
+        return {"success": False, "configured": True, "status": "stale_review_generation", "mission_id": mission_id}, 409
     final_readiness = evaluate_final_readiness(mission)
     if decision == "approve_final_release" and not final_readiness.get("can_authorize_release"):
         return {
@@ -1512,7 +1518,12 @@ def record_mission_review_decision(
                     "status": target_status,
                     "owner_decision": owner_decision,
                     "metadata_json": json.dumps(metadata_update),
+                    "expected_status": mission.get("status", ""),
                 }
+                where_clauses = ["mission_id = %(mission_id)s", "status = %(expected_status)s"]
+                if decision == "approve_final_release":
+                    params["expected_review_generation"] = current_review_generation
+                    where_clauses.append("metadata_json->'review_packet'->>'review_generation' = %(expected_review_generation)s")
                 if approval_level:
                     set_lines.insert(1, "approval_level = %(approval_level)s")
                     params["approval_level"] = normalize_approval_level(approval_level)
@@ -1520,14 +1531,14 @@ def record_mission_review_decision(
                     f"""
                     update public.charlie_missions
                     set {", ".join(set_lines)}
-                    where mission_id = %(mission_id)s
+                    where {" and ".join(where_clauses)}
                     returning mission_id
                     """,
                     params,
                 )
                 rows = cursor.fetchall()
                 if not rows:
-                    return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
+                    return {"success": False, "configured": True, "status": "review_decision_claim_lost", "mission_id": mission_id}, 409
                 _insert_event(cursor, mission_id, "review_note", owner_decision, {
                     "decision": decision,
                     "comments": comments,
