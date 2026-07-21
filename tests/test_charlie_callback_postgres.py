@@ -5,7 +5,7 @@ import uuid
 
 import psycopg
 
-from modules.charlie.private_store import claim_update, reconcile_incomplete_update, stable_id
+from modules.charlie.private_store import claim_update, complete_update, reconcile_incomplete_update, stable_id
 
 
 class CharlieCallbackPostgresTests(unittest.TestCase):
@@ -83,6 +83,57 @@ class CharlieCallbackPostgresTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "update_key_collision")
+
+    def test_matching_update_id_with_conflicting_stored_key_fails_closed(self):
+        update_id = self._update_id()
+        conflicting_key = stable_id("UPDATE", self._update_id())
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "insert into public.charlie_inbound_updates(update_key, telegram_update_id) values (%s, %s)",
+                    (conflicting_key, update_id),
+                )
+
+        result, status = claim_update(update_id, "callback-update-conflict", database_url=self.database_url)
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "update_key_collision")
+
+    def test_crossed_update_id_and_key_rows_fail_closed(self):
+        update_id = self._update_id()
+        other_id = self._update_id()
+        update_key = stable_id("UPDATE", update_id)
+        other_key = stable_id("UPDATE", other_id)
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "insert into public.charlie_inbound_updates(update_key, telegram_update_id) values (%s, %s), (%s, %s)",
+                    (update_key, other_id, other_key, update_id),
+                )
+
+        result, status = claim_update(update_id, "callback-crossed", database_url=self.database_url)
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "update_key_collision")
+
+    def test_completed_callback_retry_returns_same_terminal_result(self):
+        update_id = self._update_id()
+        claimed, status = claim_update(update_id, "callback-retry", database_url=self.database_url)
+        self.assertEqual(status, 201)
+        completed, completed_status = complete_update(
+            claimed["update_key"], result={"decision": "approved"}, database_url=self.database_url
+        )
+        self.assertEqual(completed_status, 200)
+        self.assertTrue(completed["success"])
+
+        duplicate, duplicate_status = claim_update(update_id, "callback-retry", database_url=self.database_url)
+
+        self.assertEqual(duplicate_status, 200)
+        self.assertFalse(duplicate["created"])
+        self.assertEqual(duplicate["existing_status"], "processed")
+        self.assertEqual(duplicate["existing_result"], {"decision": "approved"})
 
     def test_expired_processing_claim_reconciles_to_failed_without_replay(self):
         update_id = self._update_id()
