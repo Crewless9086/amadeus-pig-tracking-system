@@ -24,6 +24,10 @@ create table if not exists public.pig_lifecycle_events (
     supersedes_lifecycle_event_id text references public.pig_lifecycle_events(lifecycle_event_id) on delete restrict,
     created_at timestamptz not null default now(),
     check (supersedes_lifecycle_event_id is null or supersedes_lifecycle_event_id <> lifecycle_event_id),
+    check (
+        (lifecycle_event_type = 'lifecycle_correction' and supersedes_lifecycle_event_id is not null)
+        or (lifecycle_event_type <> 'lifecycle_correction' and supersedes_lifecycle_event_id is null)
+    ),
     check (effective_at <= recorded_at)
 );
 
@@ -40,6 +44,16 @@ returns trigger
 language plpgsql
 as $$
 begin
+    if new.lifecycle_event_type = 'lifecycle_correction'
+       and new.supersedes_lifecycle_event_id is null then
+        raise exception 'pig lifecycle correction must supersede a prior lifecycle event';
+    end if;
+
+    if new.lifecycle_event_type <> 'lifecycle_correction'
+       and new.supersedes_lifecycle_event_id is not null then
+        raise exception 'only pig lifecycle corrections may supersede prior events';
+    end if;
+
     if new.supersedes_lifecycle_event_id is not null and not exists (
         select 1
         from public.pig_lifecycle_events prior_event

@@ -15,7 +15,17 @@ class PigLifecycleEventMigrationTests(unittest.TestCase):
         self.assertIn("source_reference text not null check (btrim(source_reference) <> '')", sql)
         self.assertIn("idempotency_key text not null unique", sql)
         self.assertIn("supersedes_lifecycle_event_id text references public.pig_lifecycle_events", sql)
+        self.assertIn(
+            "(lifecycle_event_type = 'lifecycle_correction' and supersedes_lifecycle_event_id is not null)",
+            sql,
+        )
+        self.assertIn(
+            "(lifecycle_event_type <> 'lifecycle_correction' and supersedes_lifecycle_event_id is null)",
+            sql,
+        )
         self.assertIn("pig_lifecycle_events_validate_supersession", sql)
+        self.assertIn("pig lifecycle correction must supersede a prior lifecycle event", sql)
+        self.assertIn("only pig lifecycle corrections may supersede prior events", sql)
         self.assertIn("prior_event.pig_id = new.pig_id", sql)
         self.assertIn("event_payload jsonb not null", sql)
         self.assertIn("effective_at <= recorded_at", sql)

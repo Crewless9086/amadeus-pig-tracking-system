@@ -4,6 +4,7 @@
 
 - Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.
 - Required provenance, idempotency, same-pig correction-by-supersession, RLS, and database-blocked update/delete operations.
+- Bound supersession exclusively to `lifecycle_correction`: corrections require a prior event and all other event types must not supersede one.
 - Kept migration application, event-producing lifecycle writes, canonical history/detail projections, and frontend exit visibility behind separate owner-approved work.
 
 ## 2026-07-21 - Executive attention generation and SAM learning separation

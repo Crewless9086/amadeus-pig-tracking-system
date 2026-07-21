@@ -36,7 +36,7 @@ Farm record writes require approved backend paths and audit evidence.
 `pig_lifecycle_events` is an additive, unapplied audit rail for immutable lifecycle evidence linked to one canonical `pig_id`. Each row has a controlled lifecycle-event type, effective and recorded timestamps, actor and source provenance, an object-shaped payload, a caller idempotency key, and an optional correction link.
 
 - `pigs` remains the canonical mutable current-state projection for lifecycle and exit facts. This rail does not change `pigs`, execute an exit, or change a pig's current state.
-- Events are append-only. Corrections must append a new event linked by `supersedes_lifecycle_event_id`; updates and deletes are database-blocked, and a correction may supersede only an event for the same pig.
+- Events are append-only. Only `lifecycle_correction` events may carry `supersedes_lifecycle_event_id`, and every correction must carry one. Updates and deletes are database-blocked, and a correction may supersede only an event for the same pig.
 - The effective timestamp cannot be later than the recorded timestamp. RLS is enabled and no browser policy or writer integration is introduced by this migration.
 - A future protected lifecycle-write rail must emit this evidence through its approved, owner-gated backend path. Canonical detail/history reads and frontend visibility are separate dependent work.
 
