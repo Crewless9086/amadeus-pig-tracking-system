@@ -2713,6 +2713,36 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_passing_qa_does_not_backflow_for_inherited_unmatched_source_map(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["implementation_source_map"] = {
+            "matched_sections": [
+                {
+                    "key": "sam_meat_sales",
+                    "must_inspect_before_advice": True,
+                    "code_paths": ["modules/sales/sam_meat_runtime.py"],
+                    "tests": ["tests/test_sam_meat_runtime.py"],
+                }
+            ],
+            "required_inspection_paths": ["modules/sales/sam_meat_runtime.py"],
+        }
+        artifact["files_inspected"] = [
+            "modules/charlie/owner_approval_inbox.py",
+            "tests/test_charlie_owner_approval_inbox.py",
+        ]
+        artifact["red_team_status"] = "pass"
+        artifact["qa_findings"] = [{
+            "scope_relation": "current diff",
+            "introduced_by_current_diff": False,
+            "affected_path": "modules/charlie/owner_approval_inbox.py",
+            "severity": "low",
+            "finding": "Candidate passed the repaired attention classification checks.",
+        }]
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_ui_reviewer_gate_requires_visual_acceptance_decision(self):
         artifact = _successful_stage_payload("reviewer")
         artifact["ui_quality_contract"] = {"ui_related": True, "reference_media_required": False}

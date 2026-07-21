@@ -4246,11 +4246,6 @@ def _implementation_source_quality_gate(agent, artifact):
         "planner",
         "architect",
         "builder",
-        "tester",
-        "qa_red_team",
-        "business_reviewer",
-        "evidence_reviewer",
-        "reviewer",
     }:
         return {"passed": True, "reason": "implementation_source_gate_not_for_agent"}
     if agent == "source_mapper":
