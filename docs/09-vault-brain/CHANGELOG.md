@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-21 - Pig lifecycle audit rail
+
+- Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.
+- Required provenance, idempotency, same-pig correction-by-supersession, RLS, and database-blocked update/delete operations.
+- Kept migration application, event-producing lifecycle writes, canonical history/detail projections, and frontend exit visibility behind separate owner-approved work.
+
 ## 2026-07-21 - Executive attention generation and SAM learning separation
 
 - Bound protected-review notification identity to the durable review generation as well as the candidate, exposed a read-only per-mission delivery audit, and limited high-priority unresolved-review reminders.
