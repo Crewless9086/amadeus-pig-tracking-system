@@ -309,7 +309,7 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     }, 201
 
 
-def list_missions(status="", limit=10, database_url=None, connect_factory=None, compact=False):
+def list_missions(status="", limit=10, database_url=None, connect_factory=None, compact=False, outcome_candidates=False):
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured", "missions": []}, 503
@@ -327,6 +327,26 @@ def list_missions(status="", limit=10, database_url=None, connect_factory=None, 
                     """
     elif clean_status:
         where_clause = "where status = %(status)s"
+    if outcome_candidates:
+        candidate_filter = """
+                    (
+                        jsonb_typeof(metadata_json->'review_packet'->'changed_files') = 'array'
+                        and jsonb_array_length(metadata_json->'review_packet'->'changed_files') > 0
+                        or jsonb_typeof(metadata_json->'review_packet'->'protected_operations') = 'array'
+                        and jsonb_array_length(metadata_json->'review_packet'->'protected_operations') > 0
+                        or jsonb_typeof(metadata_json->'protected_operations') = 'array'
+                        and jsonb_array_length(metadata_json->'protected_operations') > 0
+                    )
+                    and (
+                        coalesce((metadata_json->'outcome_closure_tracking'->>'enabled')::boolean, false)
+                        or coalesce((metadata_json->'outcome_closure'->>'unfinished')::boolean, false)
+                    )
+                    and (
+                        metadata_json->'outcome_closure' is null
+                        or coalesce((metadata_json->'outcome_closure'->>'unfinished')::boolean, false)
+                    )
+                    """
+        where_clause += (" and " if where_clause else "where ") + candidate_filter
     order_clause = _mission_order_clause(clean_status)
     metadata_select = _mission_metadata_select(compact)
     try:
@@ -774,7 +794,13 @@ def finalize_owner_review_transaction(
                     set status = 'pr_ready',
                         owner_decision = 'CORE atomically finalised owner review.',
                         metadata_json = coalesce(metadata_json, '{}'::jsonb)
-                            || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
+                            || jsonb_build_object(
+                                'review_packet', %(review_packet)s::jsonb,
+                                'outcome_closure_tracking', jsonb_build_object(
+                                    'version', 'charlie-operational-outcome-v1',
+                                    'enabled', true
+                                )
+                            ),
                         updated_at = now()
                     where mission_id = %(mission_id)s and status = %(expected_status)s
                     returning mission_id
@@ -2108,6 +2134,12 @@ def _mission_metadata_select(compact=False):
                 'recommended_next_action', metadata_json->'review_packet'->'recommended_next_action',
                 'backflow_events', metadata_json->'review_packet'->'backflow_events',
                 'unresolved_blockers', metadata_json->'review_packet'->'unresolved_blockers'
+                ,'changed_files', metadata_json->'review_packet'->'changed_files'
+                ,'release_readiness', metadata_json->'review_packet'->'release_readiness'
+                ,'deployment_watch', metadata_json->'review_packet'->'deployment_watch'
+                ,'operational_evidence', metadata_json->'review_packet'->'operational_evidence'
+                ,'merge_commit', metadata_json->'review_packet'->'merge_commit'
+                ,'protected_operations', metadata_json->'review_packet'->'protected_operations'
             )),
             'mission_vault', jsonb_strip_nulls(jsonb_build_object(
                 'mission_stage', metadata_json->'mission_vault'->'mission_stage',
@@ -2127,6 +2159,18 @@ def _mission_metadata_select(compact=False):
             'queue', metadata_json->'queue',
             'mission_governance', metadata_json->'mission_governance',
             'mission_family', metadata_json->'mission_family',
+            'outcome_closure', metadata_json->'outcome_closure',
+            'unfinished_business', metadata_json->'unfinished_business',
+            'outcome_closure_tracking', metadata_json->'outcome_closure_tracking',
+            'protected_operations', metadata_json->'protected_operations',
+            'migration_owner_approved', metadata_json->'migration_owner_approved',
+            'migration_approved', metadata_json->'migration_approved',
+            'migration_applied', metadata_json->'migration_applied',
+            'migrations_applied', metadata_json->'migrations_applied',
+            'deployment_verified', metadata_json->'deployment_verified',
+            'deployed', metadata_json->'deployed',
+            'live_smoke_passed', metadata_json->'live_smoke_passed',
+            'production_smoke_passed', metadata_json->'production_smoke_passed',
             'media_references', jsonb_path_query_array(
                 coalesce(metadata_json->'media_references', '[]'::jsonb),
                 '$[*] ? (@.media_type != "image")'

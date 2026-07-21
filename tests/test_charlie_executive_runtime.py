@@ -28,6 +28,12 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused", "merged", "deployed", "done"})
         self.assertEqual(list_missions.call_count, 10)
+        terminal_calls = [call for call in list_missions.call_args_list if call.kwargs.get("status") in {"merged", "deployed", "done"}]
+        self.assertTrue(all(call.kwargs.get("compact") is True for call in terminal_calls))
+        self.assertTrue(all(call.kwargs.get("outcome_candidates") is True for call in terminal_calls))
+        active_calls = [call for call in list_missions.call_args_list if call.kwargs.get("status") not in {"merged", "deployed", "done"}]
+        self.assertTrue(all(call.kwargs.get("compact") is False for call in active_calls))
+        self.assertTrue(all(call.kwargs.get("outcome_candidates") is False for call in active_calls))
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))

@@ -370,8 +370,16 @@ def _load_executive_missions(*, database_url=None, connect_factory=None):
     statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused", "merged", "deployed", "done")
     missions = []
     seen = set()
+    terminal_statuses = {"merged", "deployed", "done"}
     for status in statuses:
-        result, status_code = list_missions(status=status, limit=100, database_url=database_url, connect_factory=connect_factory)
+        result, status_code = list_missions(
+            status=status,
+            limit=100,
+            compact=status in terminal_statuses,
+            outcome_candidates=status in terminal_statuses,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
         if status_code >= 400:
             return {"success": False, "status": "executive_mission_bucket_unavailable", "failed_bucket": status, "missions": []}, status_code
         for mission in result.get("missions", []):
