@@ -2,6 +2,14 @@
 
 Status: owner-reviewed governance questions were moved to `OWNER_DECISIONS.md`. This file now tracks only unresolved or verification-needed questions.
 
+## Pig Lifecycle Audit Application And Capture
+
+Question: before the additive lifecycle audit migration is applied or any protected event producer is built, which approved backend rail may emit each event type, which roles are valid actors, and what correction authorization/retention policy applies?
+
+Known boundary: the additive, unapplied `pig_lifecycle_events` migration preserves immutable lifecycle evidence linked to canonical `pigs`. It has RLS, retry-safe idempotency, same-pig correction-by-supersession, and database-blocked updates/deletes. It does not change `pigs`, perform lifecycle actions, or expose detail/history reads.
+
+Owner decision needed: explicitly approve migration application and the protected write/correction authority; approve the separate lifecycle-read/frontend work before exit/history visibility is changed.
+
 ## Pig Observation Capture And Retention
 
 Question: before a protected observation-capture path is implemented, which farm roles may submit factual observations, what retention period applies, and who can authorize a correction event?
