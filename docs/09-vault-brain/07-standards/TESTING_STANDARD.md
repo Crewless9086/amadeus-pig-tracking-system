@@ -36,6 +36,14 @@ Record:
 - what it does not prove;
 - any skipped test and reason.
 
+## Final Reviewer Evidence
+
+When a reviewer recommends final release approval, at least one test-evidence
+entry must be structured with the executable command and an explicit passing
+status. Prose-only claims are insufficient. Any recorded selector, discovery,
+or error output (including `AttributeError`) blocks approval even when another
+test entry passes.
+
 ## Regression Pressure
 
 For live operational paths, include at least one failure/edge case where practical:

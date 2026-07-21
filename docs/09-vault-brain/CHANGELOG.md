@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-21 - Reviewer executable test-evidence gate
+
+- Required final reviewer approval evidence to include a structured executable test command and explicit pass status.
+- Required recorded selector, discovery, and error output (including `AttributeError`) to block final approval even if later evidence passes.
+
 ## 2026-07-21 - Pig lifecycle audit rail
 
 - Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.

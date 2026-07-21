@@ -4020,6 +4020,9 @@ def _agent_quality_gate(agent, artifact):
         decision = str(artifact.get("recommended_owner_decision") or "").strip()
         if decision != "approve_final_release":
             return {"passed": False, "reason": f"Reviewer recommended {decision or 'no approval'}."}
+        test_evidence_quality = _reviewer_test_evidence_quality_gate(artifact)
+        if not test_evidence_quality["passed"]:
+            return test_evidence_quality
         if errors or bugs:
             return {"passed": False, "reason": "Reviewer found errors or bugs."}
         changed_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
@@ -4133,6 +4136,63 @@ def _artifact_test_evidence_passes(item):
     if any(word in text for word in ("failed", "failure", "error", "traceback")):
         return False
     return status == "pass" or " ok" in text or "tests ok" in text or "passed" in text or "no whitespace errors" in text
+
+
+def _reviewer_test_evidence_quality_gate(artifact):
+    """Require executable, clean test evidence before a reviewer can approve.
+
+    A prose claim such as "tests passed" cannot prove that the named unittest
+    selectors actually existed.  This gate intentionally applies only to the
+    final reviewer approval, leaving earlier advisory/recovery artifacts intact.
+    """
+    artifact = artifact if isinstance(artifact, dict) else {}
+    evidence = artifact.get("test_evidence")
+    if not isinstance(evidence, list) or not evidence:
+        return {"passed": False, "reason": "Reviewer did not record structured test evidence."}
+
+    failure_markers = (
+        "attributeerror",
+        "traceback",
+        "unittest.loader._failedtest",
+        "failedtest",
+        "test discovery failed",
+        "discovery error",
+        "selector failed",
+        "invalid test selector",
+        "ran 0 tests",
+        "no tests found",
+        "no test named",
+    )
+    structured_pass = False
+    for item in evidence:
+        text = (
+            " ".join(str(value or "") for value in item.values()).lower()
+            if isinstance(item, dict)
+            else str(item or "").lower()
+        )
+        if any(marker in text for marker in failure_markers):
+            return {
+                "passed": False,
+                "reason": "Reviewer test evidence contains selector, discovery, or error output.",
+            }
+        if not isinstance(item, dict):
+            continue
+        command = str(item.get("command") or "").strip()
+        status = str(item.get("status") or item.get("result") or "").strip().lower()
+        if status in {"fail", "failed", "error", "errored"}:
+            return {
+                "passed": False,
+                "reason": "Reviewer test evidence contains selector, discovery, or error output.",
+            }
+        if command and status in {"pass", "passed", "ok", "success"}:
+            structured_pass = True
+
+    if not structured_pass:
+        return {
+            "passed": False,
+            "reason": "Reviewer approval requires a structured executable test command with explicit pass status.",
+        }
+    return {"passed": True, "reason": "reviewer_structured_test_evidence_passed"}
 
 
 def _artifact_has_passing_test_collection(artifact):
