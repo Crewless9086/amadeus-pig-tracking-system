@@ -39,6 +39,7 @@ from modules.charlie.runner_control import (
     write_runner_heartbeat,
 )
 from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
+from modules.charlie.secret_redaction import redact_file_in_place, restricted_agent_environment
 from modules.charlie.environment import env_value
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.concurrency_control import ReleaseCoordinator, build_admission, declared_source_files, release_file_lease
@@ -8578,6 +8579,7 @@ def _run_codex_process(
         encoding="utf-8",
         errors="replace",
         cwd=cwd,
+        env=restricted_agent_environment(),
         **background_process_kwargs(),
     )
     execution_id = str(execution_id or f"process-{process.pid}")
@@ -8651,6 +8653,9 @@ def _run_codex_process(
         stdout_handle.close()
         stderr_handle.close()
         _wait_for_file_handles_released([stdout_path, stderr_path])
+        redact_file_in_place(stdout_path)
+        redact_file_in_place(stderr_path)
+        redact_file_in_place(final_path)
     stdout = _read_text(stdout_path)
     stderr = _read_text(stderr_path)
     returncode = process.returncode
