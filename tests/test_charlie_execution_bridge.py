@@ -4236,6 +4236,39 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result.get("timeout_advisory"), result)
         self.assertTrue(result.get("focused_tests_passed"), result)
 
+    def test_judgement_gate_ignores_legacy_tests_run_advisory_timeout_after_passing_quality_gate(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "pass"
+        artifact["quality_gate"] = {
+            "passed": True,
+            "timeout_advisory": True,
+            "focused_tests_passed": True,
+        }
+        artifact["tests_run"] = [
+            {"command": "python -m unittest tests.test_owner_inbox", "result": "90 tests passed"},
+            {
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "result": "advisory timeout — 124 seconds, no failure output",
+            },
+        ]
+
+        result = execution_bridge._judgement_evidence_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_judgement_gate_keeps_non_timeout_failure_blocking_with_timeout_advisory(self):
+        artifact = _successful_stage_payload("tester")
+        artifact["test_status"] = "pass"
+        artifact["quality_gate"] = {"passed": True, "timeout_advisory": True}
+        artifact["tests_run"] = [
+            {"command": "python -m unittest broad", "result": "advisory timeout after 124 seconds"},
+            {"command": "focused safety check", "error": "focused tests failed with traceback"},
+        ]
+
+        result = execution_bridge._judgement_evidence_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_tester_quality_gate_still_blocks_real_safety_failure_with_timeout_noise(self):
         artifact = _successful_stage_payload("tester")
         artifact["test_status"] = "fail"
