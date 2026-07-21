@@ -6796,6 +6796,9 @@ def _compact_agent_artifacts_for_review(artifacts):
         "structured_findings",
         "acceptance_results",
         "protected_operations",
+        "implementation_source_map",
+        "files_checked_against_source_map",
+        "implementation_sources_used",
     ]
     for agent, artifact in artifacts.items():
         if not isinstance(artifact, dict):
