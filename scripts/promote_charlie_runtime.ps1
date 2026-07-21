@@ -60,14 +60,20 @@ $focused = @(
     "tests.test_charlie_mission_pickup",
     "tests.test_charlie_runtime_integrity"
 )
-foreach ($module in $focused) {
-    # A fresh interpreter per module prevents patched environment values,
-    # background resources, and module globals from leaking into the next
-    # promotion gate on the long-lived owner workstation.
-    & $python -m unittest $module
-    if ($LASTEXITCODE -ne 0) {
-        throw "CORE runtime verification failed in $module; scheduled task was not changed."
+Push-Location $RuntimeRoot
+try {
+    foreach ($module in $focused) {
+        # A fresh interpreter per module prevents patched environment values,
+        # background resources, and module globals from leaking into the next
+        # promotion gate on the long-lived owner workstation. Run from the
+        # promoted runtime so owner-checkout drift cannot select stale tests.
+        & $python -m unittest $module
+        if ($LASTEXITCODE -ne 0) {
+            throw "CORE runtime verification failed in $module; scheduled task was not changed."
+        }
     }
+} finally {
+    Pop-Location
 }
 
 & $python (Join-Path $RuntimeRoot "scripts\charlie_runtime_audit.py") promote --runtime-dir $runtimeState
