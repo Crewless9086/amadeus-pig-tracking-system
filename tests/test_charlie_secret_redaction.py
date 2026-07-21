@@ -8,6 +8,7 @@ from modules.charlie.secret_redaction import (
     redact_file_in_place,
     redact_payload,
     redact_secrets,
+    redact_tree_in_place,
     restricted_agent_environment,
 )
 
@@ -48,6 +49,23 @@ class CharlieSecretRedactionTests(unittest.TestCase):
             path.write_text(f"diagnostic {self.environ['DATABASE_URL']}", encoding="utf-8")
             self.assertTrue(redact_file_in_place(path, self.environ))
             self.assertNotIn(self.secret, path.read_text(encoding="utf-8"))
+
+    def test_restart_scrub_redacts_interrupted_execution_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "nested").mkdir()
+            affected = root / "nested" / "builder.stderr.txt"
+            safe = root / "safe.log"
+            ignored = root / "binary.bin"
+            affected.write_text(self.environ["DATABASE_URL"], encoding="utf-8")
+            safe.write_text("safe", encoding="utf-8")
+            ignored.write_bytes(self.environ["DATABASE_URL"].encode("utf-8"))
+            result = redact_tree_in_place(root, self.environ)
+            self.assertEqual(result["files_checked"], 2)
+            self.assertEqual(result["files_redacted"], 1)
+            self.assertEqual(result["errors"], [])
+            self.assertNotIn(self.secret, affected.read_text(encoding="utf-8"))
+            self.assertIn(self.secret, ignored.read_bytes().decode("utf-8"))
 
 
 if __name__ == "__main__":

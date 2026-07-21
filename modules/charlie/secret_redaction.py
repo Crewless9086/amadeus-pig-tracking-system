@@ -68,6 +68,26 @@ def redact_file_in_place(path, environ=None) -> bool:
     return True
 
 
+def redact_tree_in_place(root, environ=None, suffixes=(".json", ".jsonl", ".log", ".md", ".txt")) -> dict:
+    """Scrub persisted runtime evidence left by an interrupted agent process."""
+
+    base = Path(root)
+    result = {"root": str(base), "files_checked": 0, "files_redacted": 0, "errors": []}
+    if not base.exists():
+        return result
+    targets = [base] if base.is_file() else base.rglob("*")
+    for target in targets:
+        if not target.is_file() or target.suffix.lower() not in set(suffixes):
+            continue
+        result["files_checked"] += 1
+        try:
+            if redact_file_in_place(target, environ):
+                result["files_redacted"] += 1
+        except OSError as exc:
+            result["errors"].append({"path": str(target), "error_type": exc.__class__.__name__})
+    return result
+
+
 def assert_serialized_payload_safe(payload, environ=None) -> bool:
     serialized = json.dumps(payload, default=str)
     source = os.environ if environ is None else environ
