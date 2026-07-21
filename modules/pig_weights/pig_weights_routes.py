@@ -277,6 +277,9 @@ def litter_newborn_health_route(litter_id):
 
 @pig_weights_bp.route("/litter/<litter_id>/piglet-deaths", methods=["POST"])
 def litter_piglet_deaths_route(litter_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_litter_profile_piglets_dead(litter_id, payload)
     return jsonify(result), status_code
