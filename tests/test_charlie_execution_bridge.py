@@ -129,7 +129,11 @@ def _successful_stage_payload(agent):
         "recommended_owner_decision": "approve_final_release" if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
         "release_notes": ["owner review ready"] if agent in {"reviewer", "publisher"} else None,
         "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
-        "test_evidence": ["unit tests passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
+        "test_evidence": [{
+            "command": "python -m unittest tests.test_charlie_execution_bridge",
+            "status": "pass",
+            "output": "Ran focused bridge tests; OK",
+        }] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
         "qa_evidence": ["QA/red-team passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
     }
     return {key: value for key, value in payload.items() if value is not None}
@@ -303,6 +307,54 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(ready)
         self.assertEqual(detail["reason"], "all_workflow_artifacts_passing")
+
+    def test_reviewer_quality_gate_requires_structured_executable_test_evidence(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": ["focused tests passed"],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("structured executable", result["reason"])
+
+    def test_reviewer_quality_gate_rejects_selector_error_even_with_a_passing_command(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": [
+                {
+                    "command": "python -m unittest tests.test_live_stock.StaleTests.test_missing",
+                    "status": "fail",
+                    "output": "AttributeError: type object 'StaleTests' has no attribute 'test_missing'",
+                },
+                {
+                    "command": "python -m unittest tests.test_charlie_execution_bridge",
+                    "status": "pass",
+                    "output": "Ran focused bridge tests; OK",
+                },
+                "AttributeError: stale selector failed before the focused test run",
+            ],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("selector, discovery, or error", result["reason"])
+
+    def test_reviewer_quality_gate_accepts_clean_structured_passing_command(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": [{
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "status": "pass",
+                "output": "Ran focused bridge tests; OK",
+            }],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertTrue(result["passed"])
 
     def test_ledger_stage_persists_duration_attempt_and_changed_file_count(self):
         with tempfile.TemporaryDirectory() as tmp:
