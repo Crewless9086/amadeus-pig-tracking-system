@@ -3028,6 +3028,44 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertTrue(result["visual_evidence_deferred"])
 
+    def test_tester_adjacent_follow_up_does_not_send_current_mission_back(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [{"command": "python -m unittest focused", "result": "pass - 67 tests"}],
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent_follow_up",
+                "introduced_by_current_diff": False,
+                "severity": "blocking_for_followup_build",
+                "acceptance_relation": "Does not violate current lifecycle verification acceptance; blocks a separate follow-up.",
+                "finding": "A later integration mission still needs a runtime reader.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_tester_current_diff_bug_remains_blocking(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+                "severity": "high",
+                "acceptance_relation": "Violates current acceptance.",
+                "finding": "The changed route permits an unauthorized write.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["reason"], "Tester reported errors or bugs.")
+
     def test_non_ui_risk_agent_visual_pause_is_not_a_judgement_block(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

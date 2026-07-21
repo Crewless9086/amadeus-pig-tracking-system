@@ -5001,6 +5001,8 @@ def _blocking_artifact_items(agent, artifact, values):
         values = [values] if values else []
     blocking = []
     for value in values:
+        if _is_structured_adjacent_follow_up(agent, artifact, value):
+            continue
         if _is_reviewer_adjacent_follow_up(agent, artifact, value):
             continue
         if _is_non_blocking_local_pytest_issue(agent, artifact, value):
@@ -5013,6 +5015,35 @@ def _blocking_artifact_items(agent, artifact, values):
             continue
         blocking.append(value)
     return blocking
+
+
+def _is_structured_adjacent_follow_up(agent, artifact, value):
+    """Keep explicit out-of-scope follow-ups from causing current-diff backflow."""
+    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+        return False
+    if not isinstance(artifact, dict) or not isinstance(value, dict):
+        return False
+    if value.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if scope not in {"adjacent_follow_up", "out_of_scope_follow_up"}:
+        return False
+    acceptance = str(value.get("acceptance_relation") or "").strip().lower()
+    if not any(term in acceptance for term in (
+        "does not violate current",
+        "outside current acceptance",
+        "not part of current acceptance",
+        "no impact on current acceptance",
+    )):
+        return False
+    if agent == "tester":
+        return str(artifact.get("test_status") or "").strip().lower() == "pass"
+    if agent == "qa_red_team":
+        status = str(artifact.get("red_team_status") or "").strip().lower()
+        risk = str(artifact.get("risk_rating") or "").strip().lower()
+        return status == "pass" and risk not in {"high", "critical"}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    return decision in {"approve", "approve_final", "approve_final_release"}
 
 
 def _is_reviewer_adjacent_follow_up(agent, artifact, value):
