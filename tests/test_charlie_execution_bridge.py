@@ -3104,6 +3104,29 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_tester_structured_adjacent_advisory_timeout_does_not_backflow(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [
+                {"command": "python -m unittest focused", "status": "pass", "result": "90 tests passed"},
+                {"command": "python -m unittest broad", "status": "timeout_advisory", "result": "Timed out without failure output"},
+            ],
+            "errors": [{
+                "scope_relation": "adjacent_advisory",
+                "introduced_by_current_diff": False,
+                "affected_file/path": "tests.test_charlie_execution_bridge tests.test_charlie_core_workflow",
+                "severity": "advisory",
+                "acceptance_row": "none",
+                "detail": "Broader regression command timed out without failure output; focused changed-surface suite passed.",
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_tester_current_diff_bug_remains_blocking(self):
         artifact = _successful_stage_payload("tester")
         artifact.update({

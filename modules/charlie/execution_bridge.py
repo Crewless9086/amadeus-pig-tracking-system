@@ -5026,6 +5026,21 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
     if value.get("introduced_by_current_diff") is not False:
         return False
     scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if scope.startswith("adjacent_advisory"):
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        if severity not in {"advisory", "informational", "info"}:
+            return False
+        if acceptance not in {"none", "n/a", "not_applicable", "not applicable"}:
+            return False
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
     if not scope.startswith(("adjacent_follow_up", "out_of_scope_follow_up")):
         return False
     acceptance = str(value.get("acceptance_relation") or "").strip().lower()
