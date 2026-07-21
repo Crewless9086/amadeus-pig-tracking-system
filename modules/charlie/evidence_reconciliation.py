@@ -47,12 +47,30 @@ def build_candidate_manifest(mission, artifacts=None, source_commit=""):
         "required_artifacts": _list(required),
     }
     scope_hash = _digest(scope_payload)
+    scope_source = "frozen_governance" if frozen_criteria else "mission_metadata"
+    # A mission already in flight may have candidate-bound evidence produced
+    # by the pre-governance scope algorithm. Preserve that exact candidate's
+    # established scope instead of invalidating every passing release artifact
+    # merely because CORE itself was upgraded during review.
+    established_scopes = {}
+    if source_commit:
+        for artifact in artifacts.values():
+            if not isinstance(artifact, dict) or _artifact_revision(artifact) != source_commit:
+                continue
+            lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+            established = _clean(lineage.get("scope_hash") or artifact.get("scope_hash"))
+            if established:
+                established_scopes[established] = established_scopes.get(established, 0) + 1
+    if established_scopes:
+        scope_hash = sorted(established_scopes, key=lambda value: (-established_scopes[value], value))[0]
+        scope_source = "established_exact_candidate"
     candidate_payload = {"source_commit": source_commit, "scope_hash": scope_hash, "changed_files": changed_files}
     return {
         "version": EVIDENCE_RECONCILIATION_VERSION,
         "mission_id": _clean(mission.get("mission_id")),
         "source_commit": source_commit,
         "scope_hash": scope_hash,
+        "scope_source": scope_source,
         "candidate_fingerprint": _digest(candidate_payload),
         "changed_files": changed_files,
         "acceptance_criteria": _list(criteria),

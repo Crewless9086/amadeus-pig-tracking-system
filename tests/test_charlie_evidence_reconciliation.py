@@ -145,6 +145,31 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
         self.assertEqual(first["scope_hash"], second["scope_hash"])
         self.assertEqual(second["acceptance_criteria"], ["Immutable acceptance contract"])
 
+    def test_existing_exact_candidate_scope_survives_runtime_hash_upgrade(self):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "mission_governance": {
+                    "matrix_frozen": True,
+                    "acceptance_matrix": [{"requirement": "Immutable acceptance contract"}],
+                },
+            },
+        }
+        legacy_candidate = {
+            "agent": "builder",
+            "source_commit": "candidate-sha",
+            "scope_hash": "legacy-scope-hash",
+            "changed_files": ["modules/example.py"],
+            "status": "pass",
+        }
+
+        manifest = build_candidate_manifest(
+            mission, {"builder": legacy_candidate}, source_commit="candidate-sha",
+        )
+
+        self.assertEqual(manifest["scope_hash"], "legacy-scope-hash")
+        self.assertEqual(manifest["scope_source"], "established_exact_candidate")
+
     def test_targeted_return_preserves_applicable_completed_downstream(self):
         manifest = build_candidate_manifest(MISSION, source_commit="same-sha")
         artifacts = {
