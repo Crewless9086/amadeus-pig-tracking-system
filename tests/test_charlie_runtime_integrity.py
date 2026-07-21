@@ -89,6 +89,8 @@ class CharlieRuntimeIntegrityTests(unittest.TestCase):
         self.assertIn("$sourceRoot", source)
         self.assertIn("charlie_runtime_audit.py", source)
         self.assertIn("pythonw.exe", source)
+        self.assertIn("Push-Location $RuntimeRoot", source)
+        self.assertIn("Pop-Location", source)
         self.assertNotIn("git reset --hard", source)
 
 
