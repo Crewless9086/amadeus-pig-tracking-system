@@ -56,6 +56,27 @@ class CoreConcurrencyControlTests(unittest.TestCase):
         })
         self.assertEqual(files, ["modules/beacon/autonomy_readiness.py"])
 
+    def test_declared_source_files_survives_from_mission_source_map(self):
+        files = declared_source_files({
+            "mission_context_pack": {
+                "implementation_sources": {
+                    "required_inspection_paths": ["modules/pig_weights/pig_weights_service.py"],
+                    "matched_sections": [{
+                        "code_paths": ["modules/pig_weights/farm_supabase_read_service.py"],
+                        "tests": ["tests/test_pig_allocation_readiness_service.py"],
+                        "migrations": ["supabase/migrations/202607200001_create_pig_observation_events.sql"],
+                    }],
+                },
+            },
+        })
+
+        self.assertEqual(files, [
+            "modules/pig_weights/farm_supabase_read_service.py",
+            "modules/pig_weights/pig_weights_service.py",
+            "supabase/migrations/202607200001_create_pig_observation_events.sql",
+            "tests/test_pig_allocation_readiness_service.py",
+        ])
+
     def test_overlap_detects_exact_and_directory_scope(self):
         self.assertTrue(paths_overlap("modules/a.py", "modules/a.py"))
         self.assertTrue(paths_overlap("modules/charlie", "modules/charlie/routes.py"))

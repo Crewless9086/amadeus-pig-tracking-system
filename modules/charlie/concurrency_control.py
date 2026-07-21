@@ -107,7 +107,11 @@ def declared_source_files(mission, artifacts=None):
         elif isinstance(value, list):
             for child in value:
                 walk(child, key)
-        elif key in {"changed_files", "files_changed", "files_to_inspect", "affected_files", "implementation_sources_used"}:
+        elif key in {
+            "changed_files", "files_changed", "files_to_inspect", "affected_files",
+            "implementation_sources_used", "required_inspection_paths", "code_paths",
+            "tests", "migrations",
+        }:
             candidate = normalize_repo_path(value)
             if candidate and not candidate.startswith(("http://", "https://")):
                 found.add(candidate)

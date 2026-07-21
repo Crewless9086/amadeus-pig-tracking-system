@@ -581,6 +581,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", compact)
         self.assertTrue(result["passed"], result)
 
+    def test_compaction_preserves_builder_source_scope_for_recovery(self):
+        source_map = {
+            "version": "charlie_implementation_source_map_v1",
+            "required_inspection_paths": ["modules/pig_weights/pig_weights_service.py"],
+        }
+        artifact = {
+            "agent": "architect",
+            "summary": "Architecture complete.",
+            "implementation_source_map": source_map,
+            "files_checked_against_source_map": ["modules/pig_weights/pig_weights_service.py"],
+            "implementation_sources_used": ["modules/pig_weights/pig_weights_service.py"],
+        }
+
+        compact = execution_bridge._compact_agent_artifacts_for_review({"architect": artifact})["architect"]
+
+        self.assertEqual(compact["implementation_source_map"], source_map)
+        self.assertEqual(compact["files_checked_against_source_map"], artifact["files_checked_against_source_map"])
+        self.assertEqual(compact["implementation_sources_used"], artifact["implementation_sources_used"])
+
     def test_owner_review_gate_targets_first_stale_stage_after_pr_head_rewrite(self):
         current = "3051aebe157cd344b0e01a11dc68af0bdf6cd8"
         old = "101032db690f001891c80a6b109be5dbd6fa659a"
