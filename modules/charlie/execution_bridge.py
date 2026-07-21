@@ -4523,19 +4523,29 @@ def _negative_judgement_evidence(agent, artifact):
 
 
 def _timeout_test_item_is_advisory(agent, artifact, value):
-    if agent not in {"tester", "qa_red_team"} or not isinstance(artifact, dict):
+    review_agents = {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}
+    if agent not in {"tester", "qa_red_team", *review_agents} or not isinstance(artifact, dict):
         return False
     text = _artifact_text(value).lower()
     if not any(term in text for term in ("advisory timeout", "timeout_advisory", "timed out", "command timeout")):
         return False
     quality = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
-    if quality.get("passed") is not True or quality.get("timeout_advisory") is not True:
+    if quality.get("passed") is not True:
         return False
     if agent == "tester":
-        return str(artifact.get("test_status") or "").strip().lower() == "pass"
-    status = str(artifact.get("red_team_status") or "").strip().lower()
-    risk = str(artifact.get("risk_rating") or "").strip().lower()
-    return status == "pass" and risk not in {"high", "critical"}
+        return quality.get("timeout_advisory") is True and str(artifact.get("test_status") or "").strip().lower() == "pass"
+    if agent == "qa_red_team":
+        status = str(artifact.get("red_team_status") or "").strip().lower()
+        risk = str(artifact.get("risk_rating") or "").strip().lower()
+        return quality.get("timeout_advisory") is True and status == "pass" and risk not in {"high", "critical"}
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    item_result = str(value.get("result") or value.get("status") or "").strip().lower() if isinstance(value, dict) else ""
+    return (
+        decision in {"approve", "approve_final_release", "mark_done"}
+        and item_result in {"advisory_timeout", "timeout_advisory", "advisory timeout"}
+        and "no failure output" in text
+        and _artifact_has_passing_test_collection(artifact)
+    )
 
 
 def _qa_findings_are_advisory(agent, artifact):
