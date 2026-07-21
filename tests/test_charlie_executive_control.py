@@ -69,6 +69,30 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         second = build_executive_cycle([review("sha-2")], DELEGATED_POLICIES, runner={})
         self.assertNotEqual(first["escalations"][0]["notification_fingerprint"], second["escalations"][0]["notification_fingerprint"])
 
+    def test_cal_re_review_same_candidate_creates_fresh_generation_brief(self):
+        def review(generation):
+            return {
+                "mission_id": "CAL", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration", "urgency": "P1",
+                "metadata": {"review_packet": {
+                    "tested_revision": "8456b697", "pr_url": "https://github.com/o/r/pull/316",
+                    "review_generation": generation,
+                }},
+            }
+        first = build_executive_cycle([review("EXEC-OLD:8456b697")], DELEGATED_POLICIES, runner={})
+        second = build_executive_cycle([review("EXEC-NEW:8456b697")], DELEGATED_POLICIES, runner={})
+        self.assertNotEqual(first["escalations"][0]["notification_fingerprint"], second["escalations"][0]["notification_fingerprint"])
+
+    def test_high_priority_review_has_only_bounded_reminder_generations(self):
+        mission = {
+            "mission_id": "M-REMIND", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration", "urgency": "P1",
+            "updated_at": "2026-07-17T09:00:00+00:00",
+            "metadata": {"review_packet": {"tested_revision": "abc", "review_generation": "EXEC:abc"}},
+        }
+        cycle = build_executive_cycle([mission], DELEGATED_POLICIES, runner={}, now=datetime(2026, 7, 21, 9, tzinfo=timezone.utc))
+        escalation = cycle["escalations"][0]
+        self.assertEqual(escalation["brief_type"], "bounded_unresolved_review_reminder")
+        self.assertEqual(escalation["realert_sequence"], 2)
+
     def test_red_zone_cannot_be_delegated_by_normal_policy(self):
         result = authority_decision("core.internal_recovery", POLICIES, risk_flags=["payment"])
         self.assertFalse(result["allowed"])

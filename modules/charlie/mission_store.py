@@ -763,6 +763,11 @@ def finalize_owner_review_transaction(
                 ]
                 if not workflow or incomplete:
                     return {"success": False, "status": "finalization_workflow_not_complete", "agents": incomplete}, 409
+                # This is a durable review-generation identity, not a timestamp.  A
+                # mission can legitimately return to owner review at the same PR head;
+                # its new execution still needs one fresh owner brief.
+                review_packet = dict(review_packet)
+                review_packet["review_generation"] = f"{execution_id}:{candidate_revision}"
                 cursor.execute(
                     """
                     update public.charlie_missions

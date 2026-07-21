@@ -263,6 +263,36 @@ def complete_outbox(outbox_id, *, sent, error="", database_url=None, connect_fac
     return {"success": bool(row), "status": row[0] if row else "not_found"}, 200 if row else 404
 
 
+def mission_outbox_delivery(mission_id, limit=20, database_url=None, connect_factory=None):
+    """Read-only per-mission notification audit; outbox state remains canonical."""
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return {"success": False, "status": "mission_id_required", "items": []}, 400
+    database_url = _database_url(database_url)
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select outbox_id, idempotency_key, event_type, status, attempt_count,
+                           next_attempt_at, last_error, created_at, sent_at, payload_json
+                    from public.charlie_notification_outbox
+                    where payload_json->>'mission_id' = %(mission_id)s
+                    order by created_at desc
+                    limit %(limit)s
+                """, {"mission_id": mission_id, "limit": max(1, min(int(limit or 20), 100))})
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {"success": False, "status": "mission_outbox_delivery_failed", "error_type": exc.__class__.__name__, "items": []}, 503
+    items = [{
+        "outbox_id": row[0], "idempotency_key": row[1], "event_type": row[2], "status": row[3],
+        "attempt_count": row[4], "next_attempt_at": row[5].isoformat() if hasattr(row[5], "isoformat") else row[5],
+        "last_error": row[6], "created_at": row[7].isoformat() if hasattr(row[7], "isoformat") else row[7],
+        "sent_at": row[8].isoformat() if hasattr(row[8], "isoformat") else row[8],
+        "notification_fingerprint": (row[9] or {}).get("notification_fingerprint", "") if isinstance(row[9], dict) else "",
+    } for row in rows]
+    return {"success": True, "status": "mission_outbox_delivery_ready", "mission_id": mission_id, "items": items}, 200
+
+
 def executive_scorecard(database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
     try:

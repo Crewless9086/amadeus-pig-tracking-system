@@ -143,10 +143,11 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                 review_generation = stable_fingerprint({
                     "mission_id": mission.get("mission_id"),
                     "tested_revision": packet.get("tested_revision") or packet.get("current_revision") or "",
+                    "review_generation": _review_generation_identity(mission, packet),
                     "pr_url": packet.get("pr_url") or metadata.get("pr_url") or "",
                     "risk_flags": assessment.get("risk_flags", []),
                 })
-                escalations.append({
+                escalation = {
                     "action": "review_owner_required", "mission_id": mission.get("mission_id"),
                     "mission_status": "pr_ready",
                     "title": mission.get("title") or mission.get("mission_id"),
@@ -154,7 +155,9 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "recommended_action": "Review the protected change and explicitly approve or send it back.",
                     "authority_tier": "charl_human", "block_class": "protected_review",
                     "notification_fingerprint": review_generation,
-                })
+                }
+                escalation.update(_bounded_review_reminder(mission, review_generation, now))
+                escalations.append(escalation)
         elif mission.get("status") == "paused":
             children = children_by_parent.get(str(mission.get("mission_id") or ""), [])
             if children and all(str(child.get("status") or "").lower() in TERMINAL_STATUSES for child in children):
@@ -256,6 +259,49 @@ def capability_tier(metrics):
 def stable_fingerprint(value):
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _review_generation_identity(mission, packet):
+    """Return stable proof that this is a distinct owner-review generation."""
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    execution = packet.get("execution_artifacts") if isinstance(packet.get("execution_artifacts"), dict) else {}
+    manifest = packet.get("candidate_manifest") if isinstance(packet.get("candidate_manifest"), dict) else {}
+    reconciliation = packet.get("evidence_reconciliation") if isinstance(packet.get("evidence_reconciliation"), dict) else {}
+    nested_manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
+    return str(
+        packet.get("review_generation")
+        or execution.get("execution_id")
+        or manifest.get("candidate_fingerprint")
+        or nested_manifest.get("candidate_fingerprint")
+        or metadata.get("execution_id")
+        or "legacy-review-generation"
+    )
+
+
+def _bounded_review_reminder(mission, review_generation, now):
+    """Produce at most two high-priority reminders per unresolved review generation."""
+    urgency = str(mission.get("urgency") or "").upper()
+    if urgency not in {"P0", "P1"}:
+        return {"brief_type": "new_actionable_review", "realert_sequence": 0}
+    started = _parse_datetime(mission.get("updated_at") or mission.get("created_at"))
+    if not started:
+        return {"brief_type": "new_actionable_review", "realert_sequence": 0}
+    age_days = max(0, (now - started).days)
+    sequence = 2 if age_days >= 3 else 1 if age_days >= 1 else 0
+    if not sequence:
+        return {"brief_type": "new_actionable_review", "realert_sequence": 0}
+    return {
+        "brief_type": "bounded_unresolved_review_reminder",
+        "realert_sequence": sequence,
+        "notification_fingerprint": stable_fingerprint({"generation": review_generation, "reminder": sequence}),
+    }
+
+
+def _parse_datetime(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 def _review_packet(mission):

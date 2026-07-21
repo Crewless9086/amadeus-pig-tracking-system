@@ -67,7 +67,7 @@ from modules.charlie.owner_approval_inbox import (
 )
 from modules.charlie.agent_workforce import build_agent_workforce_packet
 from modules.charlie.executive_runtime import executive_mode, run_executive_cycle
-from modules.charlie.executive_store import executive_scorecard, list_capability_trust
+from modules.charlie.executive_store import executive_scorecard, list_capability_trust, mission_outbox_delivery
 from modules.charlie.concurrency_control import revision_truth
 from modules.charlie.private_policy import private_policy
 from modules.charlie.private_runtime import handle_private_telegram_webhook
@@ -709,6 +709,16 @@ def charlie_core_executive_route():
     result, status_code = executive_scorecard()
     result["mode"] = executive_mode()
     result["authority_boundary"] = "Only current Supabase delegation policies may authorize non-red internal commands."
+    return jsonify(result), status_code
+
+
+@charlie_bp.route("/charlie/core/executive/missions/<mission_id>/delivery", methods=["GET"])
+def charlie_core_mission_delivery_route(mission_id):
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = mission_outbox_delivery(mission_id, limit=request.args.get("limit", 20))
+    result["authority_boundary"] = "Read-only delivery audit; it cannot resend, approve, or execute protected actions."
     return jsonify(result), status_code
 
 

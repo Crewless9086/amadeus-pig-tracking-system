@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-21 - Executive attention generation and SAM learning separation
+
+- Bound protected-review notification identity to the durable review generation as well as the candidate, exposed a read-only per-mission delivery audit, and limited high-priority unresolved-review reminders.
+- Required SAM attention to collapse by conversation and keep learning-only corrections out of pending owner decisions; existing customer/payment/release gates remain unchanged.
+
 ## 2026-07-20 - SAM Live Stock replay evidence and human price wording
 
 - Added the read-only sanitized replay evidence posture: supplied Herdmaster provenance and Ledger payment-unknown evidence must remain explicit, and replay never authorizes a send or operational write.

@@ -10,6 +10,12 @@
 8. Mission stops at owner review.
 9. Owner approves final release, sends back, pauses, rejects, or marks done.
 
+## Executive Attention
+
+Each transition into owner review carries a durable review-generation identity bound to the execution and candidate revision. CHARLIE emits one idempotent executive brief for that generation, so a re-reviewed candidate is not hidden by an older alert. High-priority unresolved reviews may receive at most two bounded reminders. The delivery audit is read-only; Telegram controls retain the existing owner-release gate and never send customers, take payment, reserve stock, merge, or deploy by themselves.
+
+SAM conversation learning is grouped by conversation and classified before reaching owner attention. Learning-only corrections remain read-only improvement evidence and are excluded from pending owner-decision counts.
+
 ## Mission Contract
 
 Every mission must resolve to:

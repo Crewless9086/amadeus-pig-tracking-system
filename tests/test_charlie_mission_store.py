@@ -120,6 +120,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["mission_status"], "pr_ready")
         update_sql = cursor.executed[1][0]
         self.assertIn("set status = 'pr_ready'", update_sql)
+        self.assertEqual(cursor.executed[1][1]["review_packet"].find('"review_generation": "EXEC-1:abc123"') >= 0, True)
         self.assertTrue(any("atomic_finalisation" in str(params) for _, params in cursor.executed))
 
     def test_atomic_finalizer_refuses_failing_evidence_before_db_write(self):

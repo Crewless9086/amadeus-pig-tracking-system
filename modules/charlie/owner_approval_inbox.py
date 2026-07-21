@@ -8,7 +8,7 @@ from modules.charlie.mission_store import (
 )
 
 
-INBOX_VERSION = "owner_approval_inbox_v1"
+INBOX_VERSION = "owner_approval_inbox_v2"
 INBOX_MISSION_STATUSES = (
     "in_progress",
     "pr_ready",
@@ -31,6 +31,11 @@ ALLOWED_SOURCES = {
         "agent": "SAM Meat",
         "lane": "customer_reply",
         "gate": "meat_customer_send_or_money_path_gate",
+    },
+    "sam_meat_learning_signal": {
+        "agent": "SAM Meat",
+        "lane": "learning_only",
+        "gate": "no_owner_decision_or_customer_send_from_learning_signal",
     },
     "butcher_recommendation": {
         "agent": "Butcher",
@@ -109,6 +114,7 @@ def list_owner_approval_inbox(limit_per_status=12, database_url=None, connect_fa
         configured = False
     if meat_status < 400:
         items.extend(meat_result.get("items", []))
+    items = _collapse_conversation_items(items)
     items = sorted(items, key=_item_sort_key)
     pending_count = sum(1 for item in items if item.get("status") in {"pending", "send_back"})
     return {
@@ -175,7 +181,7 @@ def list_sam_meat_learning_owner_review_items(limit=12, database_url=None, conne
                     order by created_at desc
                     limit %(limit)s
                     """,
-                    {"limit": parsed_limit},
+                    {"limit": min(parsed_limit * 4, 200)},
                 )
                 rows = cursor.fetchall()
                 columns = [column.name for column in cursor.description]
@@ -195,7 +201,7 @@ def list_sam_meat_learning_owner_review_items(limit=12, database_url=None, conne
         "success": True,
         "configured": True,
         "status": "ok",
-        "items": [item for item in items if item.get("approval_id")],
+        "items": _collapse_conversation_items([item for item in items if item.get("approval_id")])[:parsed_limit],
     }, 200
 
 
@@ -208,12 +214,15 @@ def owner_approval_item_from_sam_meat_learning_event(event):
     lead_id = _clean(event.get("lead_id"), 80)
     if lead_id:
         title_parts.append(lead_id)
+    attention_class = _sam_meat_attention_class(event)
+    decision_required = attention_class in {"customer_reply_decision", "owner_handoff"}
+    learning_only = not decision_required
     item = normalize_owner_approval_item({
         "approval_id": event.get("learning_event_id"),
-        "source_type": "sam_meat_controlled_reply",
+        "source_type": "sam_meat_learning_signal" if learning_only else "sam_meat_controlled_reply",
         "source_agent": event.get("source_agent") or "SAM Meat",
         "title": " - ".join(title_parts),
-        "status": "pending",
+        "status": "learning_only" if learning_only else "pending",
         "action_label": suggestion or "Review SAM Meat learning evidence",
         "exact_action": (
             "Review the saved SAM Meat conversation learning evidence. This inbox card is "
@@ -242,6 +251,8 @@ def owner_approval_item_from_sam_meat_learning_event(event):
         "mission_title": "SAM Meat conversation learning",
         "mission_status": "runtime_review",
         "decision_supported": False,
+        "attention_class": attention_class,
+        "learning_only": learning_only,
         "runtime_source": "meat_sales_conversation_learning_events",
         "learning_event_id": _clean(event.get("learning_event_id"), 120),
         "lead_id": lead_id,
@@ -581,7 +592,7 @@ def _default_title(source_type):
 
 
 def _inbox_counts(items):
-    counts = {status: 0 for status in ["pending", "approved", "edited", "rejected", "paused", "send_back"]}
+    counts = {status: 0 for status in ["pending", "approved", "edited", "rejected", "paused", "send_back", "learning_only"]}
     by_source = {}
     for item in items:
         status = item.get("status") or "pending"
@@ -591,6 +602,54 @@ def _inbox_counts(items):
     counts["total"] = len(items)
     counts["by_source"] = by_source
     return counts
+
+
+def _sam_meat_attention_class(event):
+    """Classify evidence without treating a learning row as executable approval work."""
+    event = event if isinstance(event, dict) else {}
+    facts = _json_dict(event.get("captured_facts_json"))
+    text = " ".join(str(event.get(key) or "") for key in ("event_type", "improvement_suggestion", "conversion_signal")).lower()
+    if facts.get("owner_handoff_required") is True or "owner handoff" in text:
+        return "owner_handoff"
+    if facts.get("customer_reply_decision_required") is True:
+        return "customer_reply_decision"
+    if "no_reply" in text or "close" in text or "lost" in text:
+        return "no_reply_close"
+    if _json_list(event.get("missing_facts_json")):
+        return "missing_fact_follow_up"
+    return "learning_only"
+
+
+def _collapse_conversation_items(items):
+    """Keep the newest item for a conversation/class and retain the collapsed audit ids."""
+    grouped = {}
+    for item in items:
+        item = dict(item) if isinstance(item, dict) else {}
+        conversation_id = _clean(item.get("conversation_id") or item.get("source_ref"), 180)
+        attention_class = _clean(item.get("attention_class"), 80) or item.get("source_type") or "owner_attention"
+        if not conversation_id:
+            grouped[f"item:{item.get('approval_id')}"] = item
+            continue
+        key = f"{item.get('runtime_source') or item.get('source_type')}:{conversation_id}:{attention_class}"
+        current = grouped.get(key)
+        if current is None or _is_newer(item, current):
+            if current:
+                item["collapsed_event_ids"] = list(current.get("collapsed_event_ids") or []) + [current.get("approval_id")]
+            grouped[key] = item
+        else:
+            current["collapsed_event_ids"] = list(current.get("collapsed_event_ids") or []) + [item.get("approval_id")]
+    collapsed = []
+    for item in grouped.values():
+        event_ids = [value for value in item.get("collapsed_event_ids", []) if value]
+        item["collapsed_event_count"] = len(event_ids) + 1
+        if event_ids:
+            item["collapsed_event_ids"] = event_ids
+        collapsed.append(item)
+    return collapsed
+
+
+def _is_newer(candidate, current):
+    return str(candidate.get("updated_at") or candidate.get("created_at") or "") > str(current.get("updated_at") or current.get("created_at") or "")
 
 
 def _sam_live_stock_review_risk_flags(event, facts, message):
@@ -665,6 +724,7 @@ def _item_sort_key(item):
         "edited": 3,
         "approved": 4,
         "rejected": 5,
+        "learning_only": 6,
     }
     return (
         status_rank.get(item.get("status"), 9),
