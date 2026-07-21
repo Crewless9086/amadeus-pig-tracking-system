@@ -5,7 +5,7 @@ import uuid
 
 import psycopg
 
-from modules.charlie.private_store import claim_update, reconcile_incomplete_update
+from modules.charlie.private_store import claim_update, reconcile_incomplete_update, stable_id
 
 
 class CharlieCallbackPostgresTests(unittest.TestCase):
@@ -46,25 +46,43 @@ class CharlieCallbackPostgresTests(unittest.TestCase):
         return value
 
     def test_concurrent_claim_has_one_owner_and_exposes_processing_state(self):
+        for _ in range(10):
+            update_id = self._update_id()
+            barrier = threading.Barrier(2)
+            results = []
+
+            def claim():
+                barrier.wait()
+                results.append(claim_update(update_id, "callback-concurrent", database_url=self.database_url))
+
+            threads = [threading.Thread(target=claim) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(payload.get("success") for payload, _ in results), results)
+            self.assertEqual(sum(1 for payload, _ in results if payload.get("created")), 1, results)
+            duplicate = next(payload for payload, _ in results if not payload["created"])
+            self.assertEqual(duplicate["existing_status"], "processing")
+
+    def test_deterministic_update_key_collision_fails_closed(self):
         update_id = self._update_id()
-        barrier = threading.Barrier(2)
-        results = []
+        colliding_id = self._update_id()
+        update_key = stable_id("UPDATE", update_id)
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "insert into public.charlie_inbound_updates(update_key, telegram_update_id) values (%s, %s)",
+                    (update_key, colliding_id),
+                )
 
-        def claim():
-            barrier.wait()
-            results.append(claim_update(update_id, "callback-concurrent", database_url=self.database_url))
+        result, status = claim_update(update_id, "callback-collision", database_url=self.database_url)
 
-        threads = [threading.Thread(target=claim) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        self.assertEqual(len(results), 2)
-        self.assertTrue(all(payload.get("success") for payload, _ in results), results)
-        self.assertEqual(sum(1 for payload, _ in results if payload.get("created")), 1, results)
-        duplicate = next(payload for payload, _ in results if not payload["created"])
-        self.assertEqual(duplicate["existing_status"], "processing")
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "update_key_collision")
 
     def test_expired_processing_claim_reconciles_to_failed_without_replay(self):
         update_id = self._update_id()
