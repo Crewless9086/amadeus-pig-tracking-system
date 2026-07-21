@@ -268,6 +268,35 @@ class CharlieOwnerApprovalInboxTests(unittest.TestCase):
         self.assertTrue(item["learning_only"])
         self.assertEqual(item["status"], "learning_only")
 
+    def test_lists_booking_and_deposit_review_signals_as_protected_owner_handoffs(self):
+        rows = []
+        for event_id, conversation_id, conversion_signal in (
+            ("MSCL-BOOKING", "2402", "booking_review_requested"),
+            ("MSCL-DEPOSIT", "2403", "deposit_proof_received_unverified"),
+        ):
+            rows.append((
+                event_id, "LEAD-1", conversation_id, "chatwoot", "sam_meat_backend",
+                "chatwoot_inbound", "sam_inbound_observation", "Please proceed.",
+                "", {}, {}, [], [], [], [], conversion_signal,
+                "Protected review is required.", "", "", "2026-07-08T06:00:00+00:00",
+            ))
+
+        result, status_code = list_sam_meat_learning_owner_review_items(
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: _MeatLearningConnection(rows),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(len(result["items"]), 2)
+        for item in result["items"]:
+            self.assertEqual(item["attention_class"], "owner_handoff")
+            self.assertEqual(item["source_type"], "sam_meat_controlled_reply")
+            self.assertEqual(item["status"], "pending")
+            self.assertFalse(item["learning_only"])
+            self.assertFalse(item["decision_supported"])
+            self.assertFalse(item["authority"]["confirms_payment"])
+            self.assertFalse(item["authority"]["reserves_stock"])
+
     def test_collapses_repeated_sam_learning_events_per_conversation(self):
         rows = []
         for event_id, created_at in (("MSCL-OLD", "2026-07-08T06:00:00+00:00"), ("MSCL-NEW", "2026-07-08T07:00:00+00:00")):

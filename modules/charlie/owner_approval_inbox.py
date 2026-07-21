@@ -608,8 +608,11 @@ def _sam_meat_attention_class(event):
     """Classify evidence without treating a learning row as executable approval work."""
     event = event if isinstance(event, dict) else {}
     facts = _json_dict(event.get("captured_facts_json"))
+    conversion_signal = _clean(event.get("conversion_signal"), 80).lower()
     text = " ".join(str(event.get(key) or "") for key in ("event_type", "improvement_suggestion", "conversion_signal")).lower()
     if facts.get("owner_handoff_required") is True or "owner handoff" in text:
+        return "owner_handoff"
+    if conversion_signal in {"booking_review_requested", "deposit_proof_received_unverified"}:
         return "owner_handoff"
     if facts.get("customer_reply_decision_required") is True:
         return "customer_reply_decision"
