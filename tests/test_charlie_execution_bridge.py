@@ -4359,6 +4359,30 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"], result)
 
+    def test_qa_pass_does_not_treat_positive_failure_evidence_as_a_blocker(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "pass"
+        artifact["risk_rating"] = "medium"
+        artifact["summary"] = (
+            "QA verified durable idempotency and failure evidence. "
+            "The authority-boundary row passes; the post-deployment live canary remains pending."
+        )
+        artifact["qa_findings"] = []
+
+        result = execution_bridge._judgement_evidence_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_qa_pass_still_blocks_an_explicit_failure(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "pass"
+        artifact["risk_rating"] = "medium"
+        artifact["summary"] = "Failure evidence was retained, but the focused authorization check failed."
+
+        result = execution_bridge._judgement_evidence_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_approved_evidence_reviewer_ignores_structured_advisory_timeout_with_other_passes(self):
         artifact = _successful_stage_payload("evidence_reviewer")
         artifact["recommended_owner_decision"] = "approve_final_release"
