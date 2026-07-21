@@ -48,11 +48,19 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         later_key = next(item["idempotency_key"] for item in later["commands"] if item["action"] == "verify_and_delegate_review")
         self.assertNotEqual(first_key, later_key)
 
-    def test_cycle_maintains_three_mission_runway(self):
+    def test_cycle_selects_only_one_mission_when_runway_is_empty(self):
         missions = [{"mission_id": f"M-{i}", "status": "new", "title": f"Safe {i}", "raw_text": "Improve docs", "urgency": "P1", "approval_level": "LEVEL 3", "metadata": {}} for i in range(5)]
         cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
         selected = [item for item in cycle["commands"] if item["action"] == "approve_next_work"]
-        self.assertEqual(len(selected), 3)
+        self.assertEqual(len(selected), 1)
+
+    def test_cycle_does_not_select_more_work_when_one_mission_is_runnable(self):
+        missions = [
+            {"mission_id": "M-ACTIVE-NEXT", "status": "approved", "metadata": {}},
+            {"mission_id": "M-NEW", "status": "new", "title": "Safe", "raw_text": "Improve docs", "approval_level": "LEVEL 3", "metadata": {}},
+        ]
+        cycle = build_executive_cycle(missions, DELEGATED_POLICIES, runner={})
+        self.assertFalse(any(item["action"] == "approve_next_work" for item in cycle["commands"]))
 
     def test_protected_new_mission_is_not_selected(self):
         mission = {"mission_id": "M-X", "status": "new", "title": "Payment migration", "raw_text": "Change payment schema migration", "approval_level": "LEVEL 3", "metadata": {}}
@@ -185,6 +193,24 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         escalation = next(item for item in cycle["escalations"] if item["action"] == "operational_outcome_owner_required")
         self.assertEqual(command["outcome_closure"]["business_capability_status"], "not_operational")
         self.assertEqual(escalation["follow_up_mission_id"], command["outcome_closure"]["follow_up_mission_id"])
+
+    def test_recorded_outcome_and_notification_do_not_repeat_each_cycle(self):
+        mission = {
+            "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
+            "metadata": {
+                "review_packet": {"changed_files": ["supabase/migrations/202607210001.sql"], "test_evidence": ["pass"]},
+                "unfinished_business": {
+                    "status": "follow_up_proposed",
+                    "follow_up_mission_id": "CHARLIE-OUTCOME-476366FC4C9EBC16",
+                    "notification_status": "queued",
+                },
+            },
+        }
+        expected = __import__("modules.charlie.outcome_closure", fromlist=["operational_outcome_closure"]).operational_outcome_closure(mission)["follow_up_mission_id"]
+        mission["metadata"]["unfinished_business"]["follow_up_mission_id"] = expected
+        cycle = build_executive_cycle([mission], POLICIES, runner={"active_mission_id": "ACTIVE"})
+        self.assertFalse(any(item["action"] == "record_outcome_follow_up" for item in cycle["commands"]))
+        self.assertFalse(any(item.get("block_class") == "unfinished_operational_outcome" for item in cycle["escalations"]))
 
     def test_queue_progress_fails_closed_without_policy(self):
         cycle = build_executive_cycle([{"mission_id": "MISSION-2", "status": "approved"}], [], runner={})

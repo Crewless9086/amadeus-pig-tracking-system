@@ -189,27 +189,35 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
         if str(mission.get("status") or "").lower() in TERMINAL_STATUSES:
             closure = operational_outcome_closure(mission)
             if closure.get("unfinished"):
+                metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+                unfinished = metadata.get("unfinished_business") if isinstance(metadata.get("unfinished_business"), dict) else {}
+                follow_up_recorded = (
+                    unfinished.get("status") == "follow_up_proposed"
+                    and unfinished.get("follow_up_mission_id") == closure.get("follow_up_mission_id")
+                )
+                notification_recorded = unfinished.get("notification_status") in {"queued", "sent"}
                 authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
-                if authority.get("allowed"):
+                if authority.get("allowed") and not follow_up_recorded:
                     commands.append({
                         "action": "record_outcome_follow_up", "capability": "core.internal_recovery",
                         "mission_id": mission.get("mission_id"), "outcome_closure": closure,
                         "authority_tier": authority.get("authority_tier"), "policy_id": authority.get("policy_id", ""),
                         "idempotency_key": f"outcome-follow-up:{mission.get('mission_id')}:{closure.get('fingerprint')}",
                     })
-                escalations.append({
-                    "action": "operational_outcome_owner_required" if closure.get("owner_required") else "operational_outcome_follow_up",
-                    "mission_id": mission.get("mission_id"), "mission_status": mission.get("status"),
-                    "title": mission.get("title") or mission.get("mission_id"),
-                    "reason": "delivered_code_has_unfinished_business",
-                    "block_class": "unfinished_operational_outcome",
-                    "recommended_action": closure.get("next_action"),
-                    "business_impact": closure.get("business_impact"),
-                    "pending_gate_keys": closure.get("pending_gate_keys"),
-                    "follow_up_mission_id": closure.get("follow_up_mission_id"),
-                    "follow_up_prepared": authority.get("allowed") is True,
-                    "notification_fingerprint": closure.get("fingerprint"),
-                })
+                if not notification_recorded:
+                    escalations.append({
+                        "action": "operational_outcome_owner_required" if closure.get("owner_required") else "operational_outcome_follow_up",
+                        "mission_id": mission.get("mission_id"), "mission_status": mission.get("status"),
+                        "title": mission.get("title") or mission.get("mission_id"),
+                        "reason": "delivered_code_has_unfinished_business",
+                        "block_class": "unfinished_operational_outcome",
+                        "recommended_action": closure.get("next_action"),
+                        "business_impact": closure.get("business_impact"),
+                        "pending_gate_keys": closure.get("pending_gate_keys"),
+                        "follow_up_mission_id": closure.get("follow_up_mission_id"),
+                        "follow_up_prepared": authority.get("allowed") is True,
+                        "notification_fingerprint": closure.get("fingerprint"),
+                    })
     status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
     approved = [item for item in missions if item.get("status") == "approved"]
     runnable = [item for item in approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
@@ -229,7 +237,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
         else:
             escalations.append({"mission_id": ranked[0].get("mission_id"), "action": "queue_progress_not_authorized", **queue_authority})
     runway = len(runnable) + (1 if runner.get("active_mission_id") else 0)
-    if runway < 3:
+    if runway == 0:
         selection_authority = authority_decision("core.queue_select", policies, trust=trust, now=now)
         candidates = [
             item for item in missions
@@ -239,7 +247,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
         ]
         candidates = sorted(candidates, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
         if selection_authority.get("allowed"):
-            for item in candidates[:3 - runway]:
+            for item in candidates[:1]:
                 fingerprint = stable_fingerprint({"mission_id": item.get("mission_id"), "goal_ids": active_goal_ids, "date": now.date().isoformat()})
                 commands.append({
                     "action": "approve_next_work", "capability": "core.queue_select",
