@@ -602,6 +602,25 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(compact["files_checked_against_source_map"], artifact["files_checked_against_source_map"])
         self.assertEqual(compact["implementation_sources_used"], artifact["implementation_sources_used"])
 
+    def test_compaction_preserves_builder_packaging_for_cross_execution_resume(self):
+        artifact = {
+            "agent": "builder",
+            "summary": "Protected lifecycle routes and opened a PR.",
+            "changed_files": ["modules/pig_weights/pig_weights_routes.py"],
+            "branch_name": "charlie/lifecycle-owner-route-guards",
+            "commit_sha": "2512739531e886ce4c8c37ccf348952651c91a06",
+            "pr_number": "350",
+            "pr_url": "https://github.com/example/repo/pull/350",
+            "git_packaging": {
+                "branch_name": "charlie/lifecycle-owner-route-guards",
+                "candidate_revision": "2512739531e886ce4c8c37ccf348952651c91a06",
+            },
+        }
+        compact = execution_bridge._compact_agent_artifacts_for_review({"builder": artifact})["builder"]
+        self.assertEqual(compact["branch_name"], artifact["branch_name"])
+        self.assertEqual(compact["commit_sha"], artifact["commit_sha"])
+        self.assertEqual(compact["git_packaging"], artifact["git_packaging"])
+
     def test_owner_review_gate_targets_first_stale_stage_after_pr_head_rewrite(self):
         current = "3051aebe157cd344b0e01a11dc68af0bdf6cd8"
         old = "101032db690f001891c80a6b109be5dbd6fa659a"

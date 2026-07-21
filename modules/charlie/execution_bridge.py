@@ -657,6 +657,7 @@ def run_agent_execution_bridge_v2(
                 completed,
                 stage_started,
                 blocked_reason=getattr(completed, "contract_failure_reason", "Agent did not produce a valid final artifact."),
+                artifacts=artifacts,
                 database_url=database_url,
                 connect_factory=connect_factory,
             )
@@ -6864,6 +6865,9 @@ def _compact_agent_artifacts_for_review(artifacts):
         "structured_findings",
         "acceptance_results",
         "protected_operations",
+        "branch_name",
+        "commit_sha",
+        "git_packaging",
         "implementation_source_map",
         "files_checked_against_source_map",
         "implementation_sources_used",
