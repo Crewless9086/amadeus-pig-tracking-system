@@ -143,7 +143,7 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
     return body, send_status
 
 
-def handle_mission_control_callback_webhook(payload, *, policy=None, environ=None, callback_handler=None, update_claimer=None, update_completer=None):
+def handle_mission_control_callback_webhook(payload, *, policy=None, environ=None, callback_handler=None, update_claimer=None, update_completer=None, update_reconciler=None):
     """Run an authenticated ``cm:`` callback once and retain its terminal outcome.
 
     The caller has already checked the webhook secret.  Claiming happens before
@@ -159,14 +159,28 @@ def handle_mission_control_callback_webhook(payload, *, policy=None, environ=Non
     if not update_id:
         return _result(False, "charlie_mission_callback_update_id_required", policy, 400)
 
-    if update_claimer is None or update_completer is None:
-        from modules.charlie.private_store import claim_update, complete_update
+    if update_claimer is None or update_completer is None or update_reconciler is None:
+        from modules.charlie.private_store import claim_update, complete_update, reconcile_incomplete_update
         update_claimer = update_claimer or claim_update
         update_completer = update_completer or complete_update
+        update_reconciler = update_reconciler or reconcile_incomplete_update
     claim, claim_status = update_claimer(update_id, callback_id)
     if claim_status >= 400:
         return _result(False, "charlie_mission_callback_claim_failed", policy, claim_status)
     if not claim.get("created"):
+        if claim.get("existing_status") == "processing":
+            reconciliation, reconciliation_status = update_reconciler(claim.get("update_key", ""))
+            reconciled = bool(reconciliation.get("reconciled"))
+            response_status = "charlie_mission_callback_incomplete_reconciled" if reconciled else "charlie_mission_callback_processing"
+            http_status = 409 if reconciled else 503
+            if reconciliation_status >= 400 and reconciliation_status != 404:
+                response_status = "charlie_mission_callback_reconciliation_failed"
+                http_status = 503
+            body, _ = _result(False, response_status, policy, http_status)
+            body["update_key"] = claim.get("update_key", "")
+            body["reconciliation"] = reconciliation
+            body["owner_action_replayed"] = False
+            return body, http_status
         body, _ = _result(True, "charlie_mission_callback_duplicate_ignored", policy, 200)
         body["update_key"] = claim.get("update_key", "")
         return body, 200

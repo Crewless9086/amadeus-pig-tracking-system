@@ -113,12 +113,45 @@ class CharlieBuildRelayTests(unittest.TestCase):
             policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
             environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
             callback_handler=lambda *_args, **_kwargs: called.append(True),
-            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-2"}, 200),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-2", "existing_status": "processed"}, 200),
             update_completer=lambda *_args, **_kwargs: self.fail("duplicate updates must not be completed again"),
+            update_reconciler=lambda *_args, **_kwargs: self.fail("terminal duplicates must not be reconciled"),
         )
         self.assertEqual(status, 200)
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "charlie_mission_callback_duplicate_ignored")
+        self.assertEqual(called, [])
+
+    def test_mission_callback_processing_duplicate_is_reconciled_without_replaying_action(self):
+        called = []
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 49, "callback_query": {"id": "callback-49", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: called.append(True),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-5", "existing_status": "processing"}, 200),
+            update_completer=lambda *_args, **_kwargs: self.fail("incomplete duplicates must not run completion directly"),
+            update_reconciler=lambda *_args, **_kwargs: ({"success": True, "status": "incomplete_update_reconciled", "reconciled": True, "terminal_status": "failed"}, 200),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "charlie_mission_callback_incomplete_reconciled")
+        self.assertFalse(result["owner_action_replayed"])
+        self.assertEqual(called, [])
+
+    def test_mission_callback_concurrent_processing_duplicate_waits_without_replaying_action(self):
+        called = []
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 50, "callback_query": {"id": "callback-50", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: called.append(True),
+            update_claimer=lambda *_args: ({"success": True, "created": False, "update_key": "UPDATE-6", "existing_status": "processing"}, 200),
+            update_completer=lambda *_args, **_kwargs: self.fail("processing duplicates must not complete"),
+            update_reconciler=lambda *_args, **_kwargs: ({"success": True, "status": "update_still_processing", "reconciled": False, "terminal_status": "processing"}, 202),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_processing")
+        self.assertFalse(result["owner_action_replayed"])
         self.assertEqual(called, [])
 
     def test_mission_callback_completion_exception_after_mutation_is_not_retried(self):

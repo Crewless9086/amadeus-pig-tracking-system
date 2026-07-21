@@ -28,9 +28,69 @@ def claim_update(update_id, callback_id="", database_url=None, connect_factory=N
                     on conflict (telegram_update_id) do nothing returning update_key
                 """, {"key": update_key, "update": update_id, "callback": callback_id})
                 created = bool(cursor.fetchall())
+                cursor.execute("""
+                    select status, result_json, received_at, completed_at
+                    from public.charlie_inbound_updates where telegram_update_id=%(update)s
+                """, {"update": update_id})
+                row = cursor.fetchone()
     except Exception as exc:
         return {"success": False, "status": "update_claim_failed", "error_type": exc.__class__.__name__}, 503
-    return {"success": True, "status": "claimed" if created else "duplicate", "created": created, "update_key": update_key}, 201 if created else 200
+    return {
+        "success": True,
+        "status": "claimed" if created else "duplicate",
+        "created": created,
+        "update_key": update_key,
+        "existing_status": str(row[0] or "") if row else "",
+        "existing_result": dict(row[1] or {}) if row else {},
+        "received_at": row[2].isoformat() if row and row[2] else "",
+        "completed_at": row[3].isoformat() if row and row[3] else "",
+    }, 201 if created else 200
+
+
+def reconcile_incomplete_update(update_key, *, minimum_age_seconds=30, database_url=None, connect_factory=None):
+    """Close an abandoned callback claim without replaying its owner action."""
+    minimum_age_seconds = max(1, min(int(minimum_age_seconds or 30), 3600))
+    result = {
+        "status": "completion_unknown_replay_refused",
+        "reason": "The callback audit completion failed; the owner action was not replayed.",
+    }
+    try:
+        with _connect(_database_url(database_url), connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    update public.charlie_inbound_updates
+                    set status='failed', result_json=%(result)s::jsonb, completed_at=now()
+                    where update_key=%(key)s and status='processing'
+                      and received_at <= now() - make_interval(secs => %(age)s)
+                    returning status, result_json, completed_at
+                """, {"key": update_key, "age": minimum_age_seconds, "result": json.dumps(result)})
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "success": True,
+                        "status": "incomplete_update_reconciled",
+                        "reconciled": True,
+                        "terminal_status": str(row[0]),
+                        "result": dict(row[1] or {}),
+                        "completed_at": row[2].isoformat() if row[2] else "",
+                    }, 200
+                cursor.execute("""
+                    select status, result_json, completed_at
+                    from public.charlie_inbound_updates where update_key=%(key)s
+                """, {"key": update_key})
+                existing = cursor.fetchone()
+    except Exception as exc:
+        return {"success": False, "status": "update_reconciliation_failed", "error_type": exc.__class__.__name__}, 503
+    if not existing:
+        return {"success": False, "status": "update_not_found", "reconciled": False}, 404
+    return {
+        "success": True,
+        "status": "update_still_processing" if existing[0] == "processing" else "update_already_terminal",
+        "reconciled": False,
+        "terminal_status": str(existing[0] or ""),
+        "result": dict(existing[1] or {}),
+        "completed_at": existing[2].isoformat() if existing[2] else "",
+    }, 202 if existing[0] == "processing" else 200
 
 
 def complete_update(update_key, *, status="processed", result=None, database_url=None, connect_factory=None):
