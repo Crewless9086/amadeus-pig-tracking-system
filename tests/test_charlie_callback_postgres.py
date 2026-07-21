@@ -61,7 +61,8 @@ class CharlieCallbackPostgresTests(unittest.TestCase):
             thread.join(timeout=10)
 
         self.assertEqual(len(results), 2)
-        self.assertEqual(sum(1 for payload, _ in results if payload["created"]), 1)
+        self.assertTrue(all(payload.get("success") for payload, _ in results), results)
+        self.assertEqual(sum(1 for payload, _ in results if payload.get("created")), 1, results)
         duplicate = next(payload for payload, _ in results if not payload["created"])
         self.assertEqual(duplicate["existing_status"], "processing")
 
