@@ -235,6 +235,29 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
             run_executive_cycle(runner={"active_mission_id": "ACTIVE"})
         outbox.assert_not_called()
 
+    @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.queue_outbox", return_value=({"success": True, "outbox_id": "OUT-1"}, 201))
+    @patch("modules.charlie.executive_runtime.load_executive_context", return_value=({"policies": [POLICY], "goals": [], "trust": []}, 200))
+    @patch("modules.charlie.executive_runtime.list_missions")
+    def test_outcome_notification_queue_is_recorded_durably(self, list_missions, _context, outbox, update):
+        mission = {
+            "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
+            "metadata": {
+                "review_packet": {"changed_files": ["supabase/migrations/202607210001.sql"], "test_evidence": ["pass"]},
+                "unfinished_business": {"status": "follow_up_proposed"},
+            },
+        }
+        from modules.charlie.outcome_closure import operational_outcome_closure
+        mission["metadata"]["unfinished_business"]["follow_up_mission_id"] = operational_outcome_closure(mission)["follow_up_mission_id"]
+        list_missions.side_effect = lambda status="", **_kwargs: ({"missions": [mission] if status == "deployed" else []}, 200)
+        with patch.dict(os.environ, {"CHARLIE_EXECUTIVE_MODE": "active"}):
+            result, status = run_executive_cycle(runner={"active_mission_id": "ACTIVE"})
+        self.assertEqual(status, 200)
+        outbox.assert_called_once()
+        unfinished = update.call_args.args[1]["unfinished_business"]
+        self.assertEqual(unfinished["notification_status"], "queued")
+        self.assertEqual(unfinished["notification_outbox_id"], "OUT-1")
+
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.get_mission")

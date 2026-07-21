@@ -59,7 +59,23 @@ def run_executive_cycle(*, runner=None, database_url=None, connect_factory=None)
     if mode == "active":
         for escalation in cycle["escalations"]:
             generation = str(escalation.get("notification_fingerprint") or "initial")
-            queue_outbox("NEEDS_OWNER_APPROVAL", escalation, idempotency_key=f"owner:{escalation.get('mission_id')}:{escalation.get('block_class')}:{generation}", database_url=database_url, connect_factory=connect_factory)
+            queued, queued_status = queue_outbox("NEEDS_OWNER_APPROVAL", escalation, idempotency_key=f"owner:{escalation.get('mission_id')}:{escalation.get('block_class')}:{generation}", database_url=database_url, connect_factory=connect_factory)
+            if queued_status < 400 and str(escalation.get("action") or "").startswith("operational_outcome_"):
+                mission = next((item for item in loaded.get("missions", []) if item.get("mission_id") == escalation.get("mission_id")), {})
+                metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+                unfinished = dict(metadata.get("unfinished_business") or {})
+                unfinished.update({
+                    "notification_status": "queued",
+                    "notification_outbox_id": queued.get("outbox_id"),
+                    "notification_fingerprint": generation,
+                })
+                update_mission_vault(
+                    escalation.get("mission_id"),
+                    {"unfinished_business": unfinished},
+                    notes="CHARLIE durably queued the unfinished-business executive notification.",
+                    database_url=database_url,
+                    connect_factory=connect_factory,
+                )
     return {"success": True, "status": "executive_cycle_complete", "mode": mode, "cycle": cycle, "results": results}, 200
 
 
