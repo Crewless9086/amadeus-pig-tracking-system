@@ -9,6 +9,7 @@
 
 - Required an explicit, non-retrying completion-failure outcome after a claimed mission-control callback, preserving the inbound claim as recovery evidence and preventing a second owner action.
 - Distinguished terminal duplicates from concurrent and expired incomplete claims; expired claims now close atomically as durable `failed` evidence without replaying the mission action.
+- Required delayed completion to compare-and-set only a `processing` inbound claim, preserving a reconciliation-won terminal result; added the disposable-PostgreSQL regression for that race.
 - Added disposable-PostgreSQL concurrency and replay coverage to the audit-rails workflow.
 - Retained webhook-secret validation, owner allowlisting, generation-bound final approval, and the no-live-canary owner-authorization boundary.
 
