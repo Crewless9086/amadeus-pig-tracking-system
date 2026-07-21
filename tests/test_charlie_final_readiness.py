@@ -19,12 +19,14 @@ class CharlieFinalReadinessTests(unittest.TestCase):
         self.assertTrue(result["can_authorize_release"])
         self.assertFalse(result["final_operational_ready"])
 
-    def test_migration_requires_explicit_owner_approval(self):
+    def test_migration_pr_can_be_authorized_while_application_stays_owner_gated(self):
         result = evaluate_final_readiness(self.mission(["supabase/migrations/202607160001_example.sql"]))
-        self.assertEqual(result["verdict"], "owner_action_required")
-        self.assertFalse(result["can_authorize_release"])
-        self.assertEqual(result["review_phase"], "needs_owner_action")
+        self.assertEqual(result["verdict"], "ready_to_approve")
+        self.assertTrue(result["can_authorize_release"])
+        self.assertEqual(result["review_phase"], "release_authorization_ready")
+        self.assertFalse(result["final_operational_ready"])
         self.assertIn("migration_approval", result["pending_gate_keys"])
+        self.assertIn("migration_applied", result["pending_gate_keys"])
 
     def test_already_merged_migration_requires_apply_and_live_verification(self):
         result = evaluate_final_readiness(self.mission(
@@ -36,6 +38,15 @@ class CharlieFinalReadinessTests(unittest.TestCase):
         self.assertFalse(result["can_authorize_release"])
         self.assertIn("migration_applied", result["pending_gate_keys"])
         self.assertIn("deployment", result["pending_gate_keys"])
+
+    def test_already_merged_unapproved_migration_requests_owner_action(self):
+        mission = self.mission(["supabase/migrations/202607160001_example.sql"])
+        mission["status"] = "merged"
+        mission["metadata"]["review_packet"]["merge_commit"] = "abc123"
+        result = evaluate_final_readiness(mission)
+        self.assertEqual(result["verdict"], "owner_action_required")
+        self.assertFalse(result["can_authorize_release"])
+        self.assertIn("migration_approval", result["pending_gate_keys"])
 
     def test_operational_evidence_completes_all_gates(self):
         result = evaluate_final_readiness(self.mission(

@@ -72,11 +72,11 @@ def evaluate_final_readiness(mission: Mapping[str, Any]) -> dict[str, Any]:
     release_gates = [
         _gate("implementation", "Implementation complete", True, implementation_complete, "Return to the build workflow."),
         _gate("tests", "Focused tests passed", True, tests_passed, "Run and persist focused verification evidence."),
-        _gate("migration_approval", "Migration owner approval", migration_required, migration_approved or migration_applied, "Review and explicitly approve the additive migration."),
-        _gate("migration_applied", "Migration applied", migration_required, migration_applied, "Apply the approved migration and record verification."),
         _gate("visual_review", "Browser/UI evidence", ui_required, visual_verified, "Capture and review browser evidence."),
     ]
     operational_gates = [
+        _gate("migration_approval", "Migration owner approval", migration_required, migration_approved or migration_applied, "Review and explicitly approve the additive migration."),
+        _gate("migration_applied", "Migration applied", migration_required, migration_applied, "Apply the approved migration and record verification."),
         _gate("deployment", "Production deployment verified", production_required, deployed, "Deploy the merged change and record deployment evidence."),
         _gate("live_smoke", "Live smoke test passed", production_required, live_smoke, "Run and record the live production smoke test."),
     ]
@@ -84,14 +84,20 @@ def evaluate_final_readiness(mission: Mapping[str, Any]) -> dict[str, Any]:
     release_pending = [gate for gate in release_gates if gate["required"] and not gate["passed"]]
     operational_pending = [gate for gate in operational_gates if gate["required"] and not gate["passed"]]
     if release_pending:
-        verdict = OWNER_ACTION if release_pending[0]["key"] == "migration_approval" else VERIFY
+        verdict = VERIFY
         next_action = release_pending[0]["action"]
     elif operational_pending:
-        # Release can be authorized only when the remaining work is performed by
-        # the release bridge. Already-merged work must finish those gates first.
+        # PR release approval and protected operational authority are separate.
+        # A migration may be merged while its application stays owner-gated.
+        # Once released, show the exact remaining protected/verification action.
         already_released = status in {"merged", "deployed", "done"} or bool(packet.get("merge_commit"))
-        verdict = VERIFY if already_released else READY
-        next_action = operational_pending[0]["action"] if already_released else "Approve release; CORE must then deploy and verify the remaining operational gates."
+        if already_released and operational_pending[0]["key"] == "migration_approval":
+            verdict = OWNER_ACTION
+        else:
+            verdict = VERIFY if already_released else READY
+        next_action = operational_pending[0]["action"] if already_released else (
+            "Approve the tested PR release; protected operations remain separately owner-gated."
+        )
     else:
         verdict = READY
         next_action = "Approve the completed mission."

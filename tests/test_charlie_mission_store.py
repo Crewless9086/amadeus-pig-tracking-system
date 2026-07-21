@@ -1140,7 +1140,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("approve_final_release", update_params["metadata_json"])
         self.assertIn("cleanup_requested", update_params["metadata_json"])
 
-    def test_final_approval_is_refused_when_migration_is_not_approved(self):
+    def test_final_approval_allows_pr_release_while_migration_application_stays_gated(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
         row = (
             "MISSION-1", "pr_ready", "telegram", "12345", "67890",
@@ -1153,16 +1153,21 @@ class CharlieMissionStoreTests(unittest.TestCase):
                 },
             }, now, now,
         )
+        read_connection = FakeConnection([row])
+        update_connection = FakeConnection([("MISSION-1",)])
+        connections = [read_connection, update_connection]
         result, status_code = record_mission_review_decision(
             "MISSION-1",
             "approve_final_release",
             database_url="postgres://unit-test",
-            connect_factory=lambda _: FakeConnection([row]),
+            connect_factory=lambda _: connections.pop(0),
         )
-        self.assertEqual(status_code, 409)
-        self.assertEqual(result["status"], "final_approval_not_ready")
-        self.assertEqual(result["final_readiness"]["verdict"], "owner_action_required")
-        self.assertIn("migration_approval", result["final_readiness"]["pending_gate_keys"])
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mission_status"], "release_approved")
+        update_sql, update_params = update_connection.cursor_instance.executed[0]
+        self.assertEqual(update_params["status"], "release_approved")
+        self.assertNotIn("migration_owner_approved", update_params["metadata_json"])
 
     def test_record_mission_review_decision_send_back_keeps_comments_for_next_runner_pickup(self):
         now = datetime(2026, 6, 30, tzinfo=timezone.utc)
