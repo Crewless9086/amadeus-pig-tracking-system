@@ -6197,6 +6197,9 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
             "blocked_reason": blocked_reason,
             "agent_ledger_path": str(ledger_path),
         }, 200
+    review_packet["review_packet"] = _apply_authoritative_reconciliation(
+        review_packet["review_packet"], workflow_status
+    )
     ready_result, ready_status = finalize_owner_review_transaction(
         mission["mission_id"],
         review_packet["review_packet"],
@@ -6207,7 +6210,28 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         connect_factory=connect_factory,
     )
     if ready_status >= 400:
-        return ready_result, ready_status
+        deterministic_refusals = {
+            "finalization_evidence_not_ready",
+            "finalization_candidate_mismatch",
+            "finalization_github_gate_not_ready",
+            "finalization_execution_mismatch",
+            "finalization_workflow_not_complete",
+            "finalization_identity_required",
+        }
+        if str(ready_result.get("status") or "") not in deterministic_refusals:
+            # A database/infrastructure failure cannot be made durable by a
+            # second database write, and a lost status claim belongs to the
+            # winning writer.  Preserve those results exactly.
+            return ready_result, ready_status
+        return _transition_finalization_transaction_failure(
+            mission,
+            review_packet["review_packet"],
+            ready_result,
+            execution_id=execution_id,
+            ledger_path=ledger_path,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     return {
         "success": True,
         "status": "agent_execution_completed",
@@ -6216,6 +6240,123 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         "execution_id": execution_id,
         "agent_runner_version": AGENT_RUNNER_VERSION,
         "agent_ledger_path": str(ledger_path),
+    }, 200
+
+
+def _apply_authoritative_reconciliation(review_packet, workflow_status):
+    review_packet = dict(review_packet) if isinstance(review_packet, dict) else {}
+    workflow_status = workflow_status if isinstance(workflow_status, dict) else {}
+    authoritative = workflow_status.get("evidence_reconciliation")
+    if not isinstance(authoritative, dict):
+        return review_packet
+    # Targeted recovery validates only artifacts that participate in the
+    # resumed candidate.  The broad packet assembled earlier can still carry
+    # false missing-planning rows, so finalisation must consume this exact
+    # reconciliation that passed the workflow gate.
+    review_packet.update({
+        "evidence_reconciliation": authoritative,
+        "active_blockers": authoritative.get("active_blockers", []),
+        "resolved_findings": authoritative.get("resolved_findings", []),
+        "follow_up_findings": authoritative.get("follow_ups", []),
+        "evidence_requiring_refresh": authoritative.get("requires_revalidation", []),
+        "recommended_action": authoritative.get("recommended_action", {}),
+    })
+    return review_packet
+
+
+def _transition_finalization_transaction_failure(
+    mission,
+    review_packet,
+    failure,
+    *,
+    execution_id,
+    ledger_path,
+    database_url=None,
+    connect_factory=None,
+):
+    """Turn a refused atomic finalisation into bounded, visible recovery.
+
+    A finaliser refusal must never leave an all-complete mission silently in
+    ``in_progress``.  The transaction remains the authority on whether
+    ``pr_ready`` is legal; this path records its refusal and targets one
+    responsible stage, escalating to the durable incident breaker on repeat.
+    """
+    failure = failure if isinstance(failure, dict) else {}
+    status = str(failure.get("status") or "owner_review_finalization_failed").strip()
+    responsible = {
+        "finalization_evidence_not_ready": "evidence_reviewer",
+        "finalization_candidate_mismatch": "publisher",
+        "finalization_github_gate_not_ready": "publisher",
+        "finalization_execution_mismatch": "reviewer",
+        "finalization_workflow_not_complete": "reviewer",
+        "finalization_identity_required": "reviewer",
+    }.get(status, "reviewer")
+    reason = f"Atomic owner-review finalisation refused: {status}."
+    gate_failure = _owner_review_gate_failure(
+        mission,
+        responsible,
+        reason,
+        {
+            "failure_class": status,
+            "candidate_revision": str(
+                review_packet.get("tested_revision")
+                or review_packet.get("candidate_revision")
+                or ""
+            ),
+            "finalization_failure": failure,
+        },
+    )
+    incident_halted = gate_failure["occurrence"] >= 2
+    if incident_halted:
+        reason = (
+            f"Repeated atomic finalisation refusal halted after {gate_failure['occurrence']} "
+            f"occurrences: {status}."
+        )
+    blocked_packet = dict(review_packet) if isinstance(review_packet, dict) else {}
+    disposition = classify_block(responsible, reason, {"failure_class": status})
+    disposition.update({
+        "responsible_stage": responsible,
+        "recoverable": not incident_halted,
+        "owner_required": False,
+    })
+    if incident_halted:
+        disposition.update({"block_class": "system_incident_halted", "recovery_cap_reached": True})
+    blocked_packet.update({
+        "review_status": "system_incident_halted" if incident_halted else "finalization_recovery_queued",
+        "blocked_agent": responsible,
+        "blocked_reason": reason,
+        "return_to_stage": responsible,
+        "block_disposition": disposition,
+        "owner_review_gate_failure": gate_failure,
+        "finalization_failure": failure,
+        "recommended_next_action": (
+            "Automatic recovery is halted. Repair the repeated atomic finalisation refusal before resuming."
+            if incident_halted
+            else f"CORE will perform one targeted recheck at {responsible}."
+        ),
+    })
+    result, status_code = transition_mission_review_state(
+        mission.get("mission_id", ""),
+        "blocked",
+        blocked_packet,
+        expected_status="in_progress",
+        owner_decision=reason,
+        notes="CORE recorded an atomic finalisation refusal and queued bounded recovery.",
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status_code >= 400:
+        return result, status_code
+    return {
+        "success": False,
+        "status": "owner_review_finalization_refused",
+        "mission_id": mission.get("mission_id", ""),
+        "mission_status": "blocked",
+        "blocked_agent": responsible,
+        "blocked_reason": reason,
+        "execution_id": execution_id,
+        "agent_ledger_path": str(ledger_path),
+        "finalization_failure": failure,
     }, 200
 
 
@@ -7281,17 +7422,21 @@ def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_
     manifest = reconciliation.get("candidate_manifest") if isinstance(reconciliation.get("candidate_manifest"), dict) else {}
     refresh = reconciliation.get("requires_revalidation") if isinstance(reconciliation.get("requires_revalidation"), list) else []
     blockers = reconciliation.get("active_blockers") if isinstance(reconciliation.get("active_blockers"), list) else []
-    failure_class = (
+    explicit_failure_class = str(workflow_status.get("failure_class") or "").strip()
+    failure_class = explicit_failure_class or (
         "candidate_evidence_revalidation"
         if refresh
         else "candidate_active_blocker"
         if blockers
         else "owner_review_readiness"
     )
+    candidate_revision = str(
+        workflow_status.get("candidate_revision") or manifest.get("source_commit") or ""
+    ).strip()
     fingerprint = hashlib.sha256(json.dumps({
         "mission_id": str(mission.get("mission_id") or "").strip(),
         "failure_class": failure_class,
-        "candidate_revision": str(manifest.get("source_commit") or "").strip(),
+        "candidate_revision": candidate_revision,
     }, sort_keys=True).encode("utf-8")).hexdigest()[:24]
     prior = int(previous.get("occurrence") or 0) if previous.get("fingerprint") == fingerprint else 0
     return {
@@ -7300,7 +7445,7 @@ def _owner_review_gate_failure(mission, blocked_agent, blocked_reason, workflow_
         "occurrence": prior + 1,
         "blocked_agent": blocked_agent,
         "failure_class": failure_class,
-        "candidate_revision": str(manifest.get("source_commit") or "").strip(),
+        "candidate_revision": candidate_revision,
     }
 
 
