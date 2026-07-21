@@ -1135,6 +1135,22 @@ class CharlieMissionPickupTests(unittest.TestCase):
         callbacks = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
         self.assertTrue(all(value.startswith("cm:") for value in callbacks))
 
+    def test_operational_outcome_message_explains_delivery_is_not_activation(self):
+        payload = {
+            "action": "operational_outcome_owner_required",
+            "mission_id": "M-MIG", "mission_status": "deployed", "title": "Lifecycle rail",
+            "business_impact": "The capability is not active in production.",
+            "pending_gate_keys": ["migration_approval", "migration_applied"],
+            "follow_up_mission_id": "CHARLIE-OUTCOME-1234",
+            "recommended_action": "Review the migration application evidence.",
+        }
+        text = charlie_mission_pickup._executive_owner_decision_text(payload, {"mission_id": "M-MIG", "status": "deployed"})
+        keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(payload, {"mission_id": "M-MIG", "status": "deployed"})
+        self.assertIn("delivery is not the finished business outcome", text)
+        self.assertIn("What is NOT complete", text)
+        self.assertIn("Your decision is required", text)
+        self.assertEqual(keyboard["inline_keyboard"][0][0]["text"], "Review Follow-up")
+
 
 if __name__ == "__main__":
     unittest.main()

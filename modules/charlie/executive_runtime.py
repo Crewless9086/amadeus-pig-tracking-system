@@ -15,7 +15,8 @@ from modules.charlie.executive_store import (
     record_control_command,
     upsert_recovery_case,
 )
-from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state, update_mission_status
+from modules.charlie.mission_store import get_mission, list_missions, record_mission, transition_mission_review_state, update_mission_status, update_mission_vault
+from modules.charlie.outcome_closure import operational_outcome_closure, outcome_follow_up_mission
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
 from modules.charlie.core_workflow import build_workflow_from_template, workflow_template
@@ -80,6 +81,25 @@ def _command_outcome(command, database_url, connect_factory):
         "approve_next_work": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
         "reconcile_family": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
     }.get(action, set())
+    if action == "repair_family_links":
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+        actual = sorted(str(value) for value in (coordinator.get("child_mission_ids") or []) if str(value))
+        expected = sorted(str(value) for value in (command.get("child_mission_ids") or []) if str(value))
+        return {
+            "satisfied": bool(expected and actual == expected),
+            "reason": "family_links_recorded" if expected and actual == expected else "family_links_missing",
+            "mission_status": current,
+        }
+    if action == "record_outcome_follow_up":
+        metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+        closure = metadata.get("outcome_closure") if isinstance(metadata.get("outcome_closure"), dict) else {}
+        expected = str((command.get("outcome_closure") or {}).get("follow_up_mission_id") or "")
+        return {
+            "satisfied": bool(expected and closure.get("follow_up_mission_id") == expected),
+            "reason": "outcome_follow_up_recorded" if expected and closure.get("follow_up_mission_id") == expected else "outcome_follow_up_missing",
+            "mission_status": current,
+        }
     return {"satisfied": current in targets, "reason": "desired_state_present" if current in targets else "desired_state_missing", "mission_status": current}
 
 
@@ -97,6 +117,10 @@ def _execute_command(command, command_id, database_url, connect_factory):
         return _execute_queue_selection(command, command_id, database_url, connect_factory)
     if action == "reconcile_family":
         return _execute_family_reconciliation(command, command_id, database_url, connect_factory)
+    if action == "repair_family_links":
+        return _execute_family_link_repair(command, command_id, database_url, connect_factory)
+    if action == "record_outcome_follow_up":
+        return _execute_outcome_follow_up(command, command_id, database_url, connect_factory)
     complete_control_command(command_id, success=True, result={"status": "runner_will_pick_approved_queue"}, database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": "queue_progress_observed"}
 
@@ -343,7 +367,7 @@ def _finish_failure(command, command_id, result, error, database_url, connect_fa
 
 def _load_executive_missions(*, database_url=None, connect_factory=None):
     """Load every actionable queue independently so old terminal rows cannot hide work."""
-    statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused")
+    statuses = ("in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused", "merged", "deployed", "done")
     missions = []
     seen = set()
     for status in statuses:
@@ -356,6 +380,55 @@ def _load_executive_missions(*, database_url=None, connect_factory=None):
                 seen.add(mission_id)
                 missions.append(mission)
     return {"success": True, "status": "ok", "missions": missions}, 200
+
+
+def _execute_family_link_repair(command, command_id, database_url, connect_factory):
+    mission_id = str(command.get("mission_id") or "")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    coordinator = dict(metadata.get("mission_coordinator") or {})
+    child_ids = sorted({str(value) for value in (command.get("child_mission_ids") or []) if str(value)})
+    coordinator.update({"status": "waiting_children", "child_mission_ids": child_ids})
+    result, status = update_mission_vault(
+        mission_id, {"mission_coordinator": coordinator},
+        notes="CHARLIE reconciled the parent coordinator from authoritative child mission links.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "family_link_repair_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "family_links_repaired" if success else "family_link_repair_failed", "result": result}
+
+
+def _execute_outcome_follow_up(command, command_id, database_url, connect_factory):
+    mission_id = str(command.get("mission_id") or "")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    closure = operational_outcome_closure(mission)
+    if not closure.get("unfinished"):
+        complete_control_command(command_id, success=True, result={"status": "operational_outcome_complete"}, database_url=database_url, connect_factory=connect_factory)
+        return {"command": command, "status": "operational_outcome_complete"}
+    child = outcome_follow_up_mission(mission, closure)
+    stored, stored_status = record_mission(
+        child, {"source": "charlie_operational_outcome", "message_id": child.get("mission_id")},
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if stored_status >= 400:
+        return _finish_failure(command, command_id, stored, "outcome_follow_up_creation_failed", database_url, connect_factory)
+    result, status = update_mission_vault(
+        mission_id,
+        {"outcome_closure": closure, "unfinished_business": {**closure, "status": "follow_up_proposed"}},
+        notes="CHARLIE recorded unfinished business and proposed the linked operational outcome mission.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    payload = {"parent": result, "follow_up": stored, "follow_up_mission_id": child.get("mission_id"), "outcome_closure": closure}
+    complete_control_command(command_id, success=success, result=payload, error="" if success else result.get("status", "outcome_closure_write_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "outcome_follow_up_proposed" if success else "outcome_closure_write_failed", "result": payload}
 
 
 def _execute_family_reconciliation(command, command_id, database_url, connect_factory):

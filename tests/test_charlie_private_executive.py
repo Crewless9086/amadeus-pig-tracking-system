@@ -60,6 +60,21 @@ class CharliePrivateExecutiveTests(unittest.TestCase):
         context = context_after_plan(plan, [{"success": True, "tool": "core_status", "status": 200, "result": {"summary": "CORE is active"}}])
         self.assertEqual(context["commitments"], [existing])
 
+    def test_deployed_migration_remains_an_unfinished_executive_commitment(self):
+        plan = build_executive_plan("Check mission", {"type": "read_mission", "args": {"mission_id": "M-MIG"}, "risk_flags": []}, {})
+        mission = {
+            "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
+            "metadata": {"review_packet": {
+                "changed_files": ["supabase/migrations/202607210001.sql"],
+                "test_evidence": ["pass"],
+            }},
+        }
+        context = context_after_plan(plan, [{"success": True, "tool": "read_mission", "status": 200, "result": {"mission": mission}}])
+        commitment = context["commitments"][0]
+        self.assertEqual(commitment["status"], "delivered_unfinished")
+        self.assertEqual(commitment["business_capability_status"], "not_operational")
+        self.assertTrue(commitment["follow_up_mission_id"].startswith("CHARLIE-OUTCOME-"))
+
     @patch("modules.charlie.private_executive.execute_private_tool")
     def test_plan_uses_all_read_evidence_and_composes_direct_answer(self, execute):
         execute.side_effect = lambda intent_type, _args: {

@@ -1971,7 +1971,14 @@ def _ensure_execution_governance(mission, database_url=None, connect_factory=Non
         connect_factory=connect_factory,
     )
     if pre_builder_scope.get("split_required"):
-        _record_scope_children(mission, pre_builder_scope, database_url=database_url, connect_factory=connect_factory)
+        recorded = _record_scope_children(
+            mission, pre_builder_scope, database_url=database_url, connect_factory=connect_factory,
+        )
+        # Keep the in-memory mission synchronized with the durable write.  The
+        # coordinator is built from this object immediately afterwards; leaving
+        # it stale produced paused parents with an empty child_mission_ids list.
+        pre_builder_scope = {**pre_builder_scope, "linked_children": recorded}
+        mission["metadata"]["pre_builder_scope"] = pre_builder_scope
     return mission
 
 
@@ -1988,28 +1995,37 @@ def _pause_decomposed_parent(mission, database_url=None, connect_factory=None):
         for item in scope.get("linked_children", [])
         if isinstance(item, dict) and str(item.get("mission_id") or "").strip()
     ]
+    if not children:
+        return {
+            "success": False,
+            "status": "mission_decomposition_children_missing",
+            "mission_id": mission.get("mission_id", ""),
+            "owner_action_required": False,
+        }
     coordinator = {
         "status": "waiting_children",
         "child_mission_ids": children,
         "completed_child_ids": [],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    update_mission_vault(
+    paused, paused_status = update_mission_vault(
         mission.get("mission_id", ""),
-        {"mission_coordinator": coordinator},
+        {"mission_coordinator": coordinator, "pre_builder_scope": scope},
+        status="paused",
+        owner_decision="CORE decomposed this oversized mission; ordered child missions now carry delivery.",
         notes="Oversized parent paused as a coordinator for ordered child missions.",
         database_url=database_url,
         connect_factory=connect_factory,
-    )
-    update_mission_status(
-        mission.get("mission_id", ""),
-        "paused",
-        owner_decision="CORE decomposed this oversized mission; ordered child missions now carry delivery.",
-        notes="Split parent paused at waiting_children and will not execute a duplicate pipeline.",
         expected_status="in_progress",
-        database_url=database_url,
-        connect_factory=connect_factory,
     )
+    if paused_status >= 400 or not paused.get("success"):
+        return {
+            "success": False,
+            "status": "mission_decomposition_parent_update_failed",
+            "mission_id": mission.get("mission_id", ""),
+            "child_mission_ids": children,
+            "owner_action_required": False,
+        }
     return {
         "success": True,
         "status": "mission_decomposed_waiting_children",

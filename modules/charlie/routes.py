@@ -1155,6 +1155,8 @@ def _mission_dashboard_summary(mission):
             "runner_recovery_history",
             "repo_test_command_memory",
             "final_readiness",
+            "outcome_closure",
+            "unfinished_business",
             "candidate_manifest",
             "evidence_reconciliation",
             "active_blockers",

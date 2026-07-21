@@ -1612,6 +1612,27 @@ def _executive_owner_decision_text(payload, mission=None):
     mission = mission if isinstance(mission, dict) else {}
     mission_id = str(payload.get("mission_id") or mission.get("mission_id") or "")
     title = str(payload.get("title") or mission.get("title") or mission_id or "Protected mission")
+    if str(payload.get("action") or "").startswith("operational_outcome_"):
+        pending = payload.get("pending_gate_keys") if isinstance(payload.get("pending_gate_keys"), list) else []
+        follow_up = str(payload.get("follow_up_mission_id") or "")
+        owner_line = (
+            "Your decision is required before the protected operation can happen."
+            if payload.get("action") == "operational_outcome_owner_required"
+            else "No protected action has been taken; CHARLIE prepared the next bounded mission."
+        )
+        return "\n".join([
+            "CHARLIE: delivery is not the finished business outcome",
+            title,
+            f"Delivered mission: {mission_id}",
+            "",
+            f"What is complete: code delivery reached {payload.get('mission_status') or 'a terminal delivery state'}.",
+            f"What is NOT complete: {payload.get('business_impact') or 'The capability is not verified as operational.'}",
+            f"Still pending: {', '.join(pending) or 'operational verification'}.",
+            f"Next mission {'prepared' if payload.get('follow_up_prepared', True) else 'identified'}: {follow_up or 'preparation pending'}.",
+            owner_line,
+            "",
+            f"My recommendation: {payload.get('recommended_action') or 'Review the prepared follow-up.'}",
+        ]).strip()
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     pr_url = str(packet.get("pr_url") or metadata.get("pr_url") or "").strip()
@@ -1652,6 +1673,9 @@ def _executive_owner_decision_keyboard(payload, mission=None):
         return None
     status = str(mission.get("status") or payload.get("mission_status") or "").lower()
     rows = []
+    follow_up_id = str(payload.get("follow_up_mission_id") or "")
+    if str(payload.get("action") or "").startswith("operational_outcome_") and follow_up_id:
+        rows.append([{"text": "Review Follow-up", "callback_data": mission_callback(follow_up_id, "open")}])
     if status == "pr_ready":
         rows.append([{"text": "Approve Release", "callback_data": mission_callback(mission_id, "approvefinal")}])
         rows.append([{"text": "Send Back to Tester", "callback_data": mission_callback(mission_id, "sendback", "tester")}])

@@ -843,6 +843,19 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertTrue(normalized[0]["success"])
         self.assertTrue(any("charlie_agent_runs" in sql for sql, _params in connection.cursor_instance.executed))
 
+    def test_update_mission_vault_expected_status_is_compare_and_set(self):
+        connection = FakeConnection([])
+        result, status_code = update_mission_vault(
+            "MISSION-1", {"mission_coordinator": {"child_mission_ids": ["CHILD-1"]}},
+            status="paused", expected_status="in_progress",
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "status_claim_lost")
+        sql, params = connection.cursor_instance.executed[0]
+        self.assertIn("status = %(expected_status)s", sql)
+        self.assertEqual(params["expected_status"], "in_progress")
+
     def test_update_mission_vault_reports_normalized_write_error_detail(self):
         class FailingConnection(FakeConnection):
             def __init__(self):

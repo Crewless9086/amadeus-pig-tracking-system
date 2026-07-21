@@ -4681,6 +4681,49 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIn("release_notes", result["missing_keys"])
 
+    @patch("modules.charlie.agentic_architecture.build_agentic_architecture_packet")
+    @patch("modules.charlie.execution_bridge._record_scope_children")
+    @patch("modules.charlie.execution_bridge.analyze_pre_builder_scope")
+    @patch("modules.charlie.execution_bridge.ensure_acceptance_matrix", return_value={"frozen": True})
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_governance_keeps_recorded_child_ids_in_memory_for_immediate_pause(
+        self, _update, _governance, scope, record_children, architecture,
+    ):
+        scope.return_value = {"split_required": True, "linked_children": []}
+        record_children.return_value = [
+            {"mission_id": "CHILD-1", "status": "stored", "created": True},
+            {"mission_id": "CHILD-2", "status": "stored", "created": True},
+        ]
+        architecture.return_value = {"compliant": True}
+        mission = {"mission_id": "PARENT", "metadata": {}}
+        prepared = execution_bridge._ensure_execution_governance(mission)
+        self.assertEqual(
+            [row["mission_id"] for row in prepared["metadata"]["pre_builder_scope"]["linked_children"]],
+            ["CHILD-1", "CHILD-2"],
+        )
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault", return_value=({"success": True}, 200))
+    def test_decomposed_parent_pause_persists_status_and_child_ids_together(self, update):
+        mission = {
+            "mission_id": "PARENT", "status": "in_progress",
+            "metadata": {"pre_builder_scope": {
+                "split_required": True,
+                "linked_children": [{"mission_id": "CHILD-1"}, {"mission_id": "CHILD-2"}],
+            }},
+        }
+        result = execution_bridge._pause_decomposed_parent(mission)
+        self.assertEqual(result["status"], "mission_decomposed_waiting_children")
+        self.assertEqual(result["child_mission_ids"], ["CHILD-1", "CHILD-2"])
+        self.assertEqual(update.call_args.kwargs["status"], "paused")
+        self.assertEqual(update.call_args.args[1]["mission_coordinator"]["child_mission_ids"], ["CHILD-1", "CHILD-2"])
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_decomposed_parent_never_pauses_without_children(self, update):
+        mission = {"mission_id": "PARENT", "metadata": {"pre_builder_scope": {"split_required": True, "linked_children": []}}}
+        result = execution_bridge._pause_decomposed_parent(mission)
+        self.assertEqual(result["status"], "mission_decomposition_children_missing")
+        update.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
