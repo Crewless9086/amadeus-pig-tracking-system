@@ -2873,6 +2873,36 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_product_reviewer_migration_application_pause_is_not_builder_backflow(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "No current-diff product bug. Applying this migration remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["supabase/migrations/202607200001_create_pig_observation_events.sql"],
+            "acceptance_results": [
+                {"id": "scope", "status": "passed", "evidence": ["five-file scope"]},
+                {"id": "authority", "status": "passed", "evidence": ["no protected write"]},
+            ],
+            "finding_contract": (
+                "No current_diff bugs or errors found. Advisory owner gate: "
+                "scope_relation=adjacent; introduced_by_current_diff=false."
+            ),
+            "next_action": "Obtain owner decisions before migration application.",
+            "release_notes": ["Do not apply the migration yet."],
+            "product_review_status": "blocked",
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(artifact["original_recommended_owner_decision"], "pause")
+        self.assertEqual(artifact["product_review_status"], "passed_with_protected_operation")
+        self.assertEqual(artifact["protected_operations"][0]["op"], "apply_migration")
+        self.assertEqual(artifact["protected_operations"][0]["status"], "owner_gated")
+
     def test_parallel_read_only_risk_agent_defers_read_only_environment_test_failure(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({

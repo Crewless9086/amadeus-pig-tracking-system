@@ -3878,6 +3878,7 @@ def _validate_agent_artifact(agent, artifact):
 
 
 def _agent_quality_gate(agent, artifact):
+    _normalize_separate_protected_operation_decision(agent, artifact)
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
     errors = _blocking_artifact_items(agent, artifact, errors)
@@ -4405,6 +4406,70 @@ def _judgement_evidence_quality_gate(agent, artifact):
             "blocking_evidence": [_artifact_text(item) for item in negative[:5]],
         }
     return {"passed": True, "reason": "judgement_gate_passed"}
+
+
+def _normalize_separate_protected_operation_decision(agent, artifact):
+    """Keep a protected migration application from masquerading as a PR defect.
+
+    Review agents occasionally use ``pause`` for the later act of applying a
+    migration even though the candidate, acceptance rows, and tests all pass.
+    That operation remains owner-gated, but it must not send an otherwise clean
+    PR back to Builder.  Normalize only the fully structured, no-defect shape;
+    ambiguous pauses and every real finding continue to fail closed.
+    """
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if not isinstance(artifact, dict):
+        return False
+    decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+    if decision != "pause" or artifact.get("errors") or artifact.get("bugs"):
+        return False
+    acceptance = artifact.get("acceptance_results")
+    if not isinstance(acceptance, list) or not acceptance or any(
+        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
+        for row in acceptance
+    ):
+        return False
+    paths = []
+    for key in ("changed_files", "files_inspected"):
+        value = artifact.get(key)
+        if isinstance(value, list):
+            paths.extend(str(path or "").replace("\\", "/") for path in value)
+    if not any(path.startswith("supabase/migrations/") for path in paths):
+        return False
+    finding = str(artifact.get("finding_contract") or "").lower()
+    if not (
+        ("no current_diff" in finding or "no current-diff" in finding or "no current diff" in finding)
+        and "introduced_by_current_diff=false" in finding
+        and "scope_relation=adjacent" in finding
+    ):
+        return False
+    narrative = " ".join(str(value or "") for value in (
+        artifact.get("summary"),
+        artifact.get("next_action"),
+        *(artifact.get("release_notes") or []),
+    )).lower()
+    migration_terms = ("apply the migration", "applying this migration", "migration application", "migration execution")
+    owner_gate_terms = ("owner-gated", "owner gated", "owner decision", "owner decisions", "owner authorization")
+    if not any(term in narrative for term in migration_terms) or not any(term in narrative for term in owner_gate_terms):
+        return False
+    artifact["original_recommended_owner_decision"] = artifact.get("recommended_owner_decision")
+    artifact["recommended_owner_decision"] = "approve_final_release"
+    protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
+    if not any(isinstance(item, dict) and item.get("op") == "apply_migration" for item in protected):
+        protected.append({
+            "op": "apply_migration",
+            "status": "owner_gated",
+            "source_agent": agent,
+            "reason": "Migration application remains separate from PR merge approval.",
+        })
+    artifact["protected_operations"] = protected
+    if str(artifact.get("product_review_status") or "").strip().lower() == "blocked":
+        artifact["product_review_status"] = "passed_with_protected_operation"
+    artifact.setdefault("warnings", []).append(
+        "Normalized reviewer pause to PR approval because only the separate owner-gated migration application remains."
+    )
+    return True
 
 
 def _artifact_is_ui_related(artifact):
