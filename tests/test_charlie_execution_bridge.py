@@ -4300,6 +4300,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"], result)
 
+    def test_approved_evidence_reviewer_ignores_compacted_stringified_advisory_timeout(self):
+        artifact = _successful_stage_payload("evidence_reviewer")
+        artifact["recommended_owner_decision"] = "approve_final_release"
+        artifact["quality_gate"] = {"passed": True}
+        artifact["test_evidence"] = [
+            "{'command': 'python -m unittest focused', 'result': 'pass', 'detail': '90 tests passed'}",
+            "{'command': 'python -m unittest broad', 'result': 'advisory_timeout', 'detail': 'No failure output before bounded 60-second termination.'}",
+        ]
+
+        result = execution_bridge._judgement_evidence_quality_gate("evidence_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_tester_quality_gate_still_blocks_real_safety_failure_with_timeout_noise(self):
         artifact = _successful_stage_payload("tester")
         artifact["test_status"] = "fail"

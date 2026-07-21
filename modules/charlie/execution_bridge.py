@@ -4527,7 +4527,7 @@ def _timeout_test_item_is_advisory(agent, artifact, value):
     if agent not in {"tester", "qa_red_team", *review_agents} or not isinstance(artifact, dict):
         return False
     text = _artifact_text(value).lower()
-    if not any(term in text for term in ("advisory timeout", "timeout_advisory", "timed out", "command timeout")):
+    if not any(term in text for term in ("advisory timeout", "advisory_timeout", "timeout_advisory", "timed out", "command timeout")):
         return False
     quality = artifact.get("quality_gate") if isinstance(artifact.get("quality_gate"), dict) else {}
     if quality.get("passed") is not True:
@@ -4540,6 +4540,12 @@ def _timeout_test_item_is_advisory(agent, artifact, value):
         return quality.get("timeout_advisory") is True and status == "pass" and risk not in {"high", "critical"}
     decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
     item_result = str(value.get("result") or value.get("status") or "").strip().lower() if isinstance(value, dict) else ""
+    if not item_result and any(token in text for token in (
+        "'result': 'advisory_timeout'",
+        '"result": "advisory_timeout"',
+        "result=advisory_timeout",
+    )):
+        item_result = "advisory_timeout"
     return (
         decision in {"approve", "approve_final_release", "mark_done"}
         and item_result in {"advisory_timeout", "timeout_advisory", "advisory timeout"}
