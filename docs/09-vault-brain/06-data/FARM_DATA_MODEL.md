@@ -18,6 +18,7 @@ Farm record writes require approved backend paths and audit evidence.
 | Pig current/latest views | Read models for dashboard, purpose review, sales availability, and agent summaries. |
 | Farm products/settings | Medicine/product defaults and system settings. |
 | Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
+| Pig lifecycle events | Append-only audit evidence for canonical pig lifecycle facts; never a lifecycle write rail or substitute for the current-state projection on `pigs`. |
 
 ## Pig Observation Event Contract
 
@@ -29,6 +30,15 @@ Farm record writes require approved backend paths and audit evidence.
 - The table has RLS enabled and no browser policy is introduced by this migration. A future protected backend capture rail must define its own permission and audit contract.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
+
+## Pig Lifecycle Event Contract
+
+`pig_lifecycle_events` is an additive, unapplied audit rail for immutable lifecycle evidence linked to one canonical `pig_id`. Each row has a controlled lifecycle-event type, effective and recorded timestamps, actor and source provenance, an object-shaped payload, a caller idempotency key, and an optional correction link.
+
+- `pigs` remains the canonical mutable current-state projection for lifecycle and exit facts. This rail does not change `pigs`, execute an exit, or change a pig's current state.
+- Events are append-only. Only `lifecycle_correction` events may carry `supersedes_lifecycle_event_id`, and every correction must carry one. Updates and deletes are database-blocked, and a correction may supersede only an event for the same pig.
+- The effective timestamp cannot be later than the recorded timestamp. RLS is enabled and no browser policy or writer integration is introduced by this migration.
+- A future protected lifecycle-write rail must emit this evidence through its approved, owner-gated backend path. Canonical detail/history reads and frontend visibility are separate dependent work.
 
 ## One-Pig-Truth Rules
 
@@ -61,3 +71,4 @@ Farm record writes require approved backend paths and audit evidence.
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 - `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
+- `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)
