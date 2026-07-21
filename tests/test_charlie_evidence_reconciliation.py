@@ -111,6 +111,40 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["effective_results"]["planner"]["applicability"], "same_frozen_scope")
 
+    def test_explicitly_audited_frozen_planning_scope_survives_legacy_hash_change(self):
+        planning_manifest = build_candidate_manifest(MISSION)
+        planner = artifact("planner", planning_manifest, accepted_frozen_scope=True)
+        changed_scope_mission = {
+            **MISSION,
+            "title": "Candidate reconciliation with normalized title",
+        }
+        current_manifest = build_candidate_manifest(changed_scope_mission, source_commit="new-sha")
+
+        result = resolve_effective_agent_results(
+            {"planner": planner}, current_manifest, workflow=[{"agent": "planner"}],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["effective_results"]["planner"]["applicability"], "accepted_frozen_scope")
+
+    def test_frozen_governance_matrix_is_the_stable_scope_source(self):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "acceptance_criteria": ["Mutable display copy"],
+                "mission_governance": {
+                    "matrix_frozen": True,
+                    "acceptance_matrix": [{"requirement": "Immutable acceptance contract"}],
+                },
+            },
+        }
+        first = build_candidate_manifest(mission)
+        mission["metadata"]["acceptance_criteria"] = ["Later mutable display copy"]
+        second = build_candidate_manifest(mission, source_commit="candidate-sha")
+
+        self.assertEqual(first["scope_hash"], second["scope_hash"])
+        self.assertEqual(second["acceptance_criteria"], ["Immutable acceptance contract"])
+
     def test_targeted_return_preserves_applicable_completed_downstream(self):
         manifest = build_candidate_manifest(MISSION, source_commit="same-sha")
         artifacts = {

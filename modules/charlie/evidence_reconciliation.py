@@ -31,7 +31,13 @@ def build_candidate_manifest(mission, artifacts=None, source_commit=""):
     })
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     vault = mission.get("vault") if isinstance(mission.get("vault"), dict) else {}
-    criteria = vault.get("acceptance_criteria") or metadata.get("acceptance_criteria") or []
+    governance = metadata.get("mission_governance") if isinstance(metadata.get("mission_governance"), dict) else {}
+    matrix = governance.get("acceptance_matrix") if isinstance(governance.get("acceptance_matrix"), list) else []
+    frozen_criteria = [
+        _clean(row.get("requirement"))
+        for row in matrix if isinstance(row, dict) and _clean(row.get("requirement"))
+    ] if governance.get("matrix_frozen") else []
+    criteria = frozen_criteria or vault.get("acceptance_criteria") or metadata.get("acceptance_criteria") or []
     required = vault.get("required_artifacts") or metadata.get("required_artifacts") or []
     authority = metadata.get("authority_flags") if isinstance(metadata.get("authority_flags"), dict) else {}
     scope_payload = {
@@ -185,6 +191,13 @@ def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, sc
     agent = _clean(lineage.get("agent") or artifact.get("agent") or agent_name).lower()
     if artifact_fp and candidate_fingerprint and artifact_fp == candidate_fingerprint:
         return True, "exact_candidate"
+    if (
+        agent in SCOPE_PLANNING_AGENTS
+        and artifact.get("accepted_frozen_scope") is True
+        and _basic_judgement(artifact).get("passed")
+        and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
+    ):
+        return True, "accepted_frozen_scope"
     if artifact_scope and scope_hash and artifact_scope != scope_hash:
         return False, "different_scope"
     if artifact_scope and scope_hash and artifact_scope == scope_hash and agent in SCOPE_PLANNING_AGENTS:
