@@ -869,6 +869,7 @@ def update_mission_vault(
     notes="Mission vault updated.",
     database_url=None,
     connect_factory=None,
+    expected_status="",
 ):
     mission_id = _clean_text(mission_id, 90)
     if not mission_id:
@@ -876,8 +877,11 @@ def update_mission_vault(
     if not isinstance(vault_metadata, dict):
         return {"success": False, "status": "mission_vault_metadata_required"}, 400
     status = _clean_text(status, 40)
+    expected_status = _clean_text(expected_status, 40)
     if status and status not in MISSION_STATUSES:
         return {"success": False, "status": "invalid_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
+    if expected_status and expected_status not in MISSION_STATUSES:
+        return {"success": False, "status": "invalid_expected_mission_status", "allowed_statuses": sorted(MISSION_STATUSES)}, 400
 
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
@@ -891,6 +895,10 @@ def update_mission_vault(
         "mission_id": mission_id,
         "metadata_json": json.dumps(vault_metadata),
     }
+    where = "mission_id = %(mission_id)s"
+    if expected_status:
+        where += " and status = %(expected_status)s"
+        params["expected_status"] = expected_status
     if status:
         set_lines.insert(0, "status = %(status)s")
         params["status"] = status
@@ -905,16 +913,23 @@ def update_mission_vault(
                     f"""
                     update public.charlie_missions
                     set {", ".join(set_lines)}
-                    where mission_id = %(mission_id)s
+                    where {where}
                     returning mission_id
                     """,
                     params,
                 )
                 rows = cursor.fetchall()
                 if not rows:
+                    if expected_status:
+                        return {
+                            "success": False, "configured": True, "status": "status_claim_lost",
+                            "mission_id": mission_id, "expected_status": expected_status,
+                        }, 409
                     return {"success": False, "configured": True, "status": "not_found", "mission_id": mission_id}, 404
-                _insert_event(cursor, mission_id, "vault_updated", notes, {
+                event_type = "status_changed" if status and expected_status else "vault_updated"
+                _insert_event(cursor, mission_id, event_type, notes, {
                     "status": status,
+                    "expected_status": expected_status,
                     "owner_decision": _clean_text(owner_decision, 1000),
                     "vault_keys": sorted(vault_metadata.keys()),
                 })

@@ -103,6 +103,7 @@ def portfolio_priority(mission, *, active_goal_ids=None):
 
 def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=None, now=None):
     from modules.charlie.delegated_governance import delegated_review_assessment, queue_candidate_assessment
+    from modules.charlie.outcome_closure import operational_outcome_closure
     from modules.charlie.review_readiness import mission_execution_dependency_ids
 
     now = now or datetime.now(timezone.utc)
@@ -160,7 +161,21 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                 escalations.append(escalation)
         elif mission.get("status") == "paused":
             children = children_by_parent.get(str(mission.get("mission_id") or ""), [])
-            if children and all(str(child.get("status") or "").lower() in TERMINAL_STATUSES for child in children):
+            metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+            coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+            actual_child_ids = sorted(str(child.get("mission_id") or "") for child in children if child.get("mission_id"))
+            recorded_child_ids = sorted(str(value) for value in (coordinator.get("child_mission_ids") or []) if str(value))
+            if actual_child_ids and actual_child_ids != recorded_child_ids:
+                authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
+                if authority.get("allowed"):
+                    fingerprint = stable_fingerprint({"parent": mission.get("mission_id"), "children": actual_child_ids})
+                    commands.append({
+                        "action": "repair_family_links", "capability": "core.internal_recovery",
+                        "mission_id": mission.get("mission_id"), "child_mission_ids": actual_child_ids,
+                        "authority_tier": authority.get("authority_tier"), "policy_id": authority.get("policy_id", ""),
+                        "idempotency_key": f"family-link-repair:{mission.get('mission_id')}:{fingerprint}",
+                    })
+            elif children and all(str(child.get("status") or "").lower() in TERMINAL_STATUSES for child in children):
                 authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
                 if authority.get("allowed"):
                     child_state = {str(child.get("mission_id")): str(child.get("status")) for child in children}
@@ -171,6 +186,30 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                         "authority_tier": authority["authority_tier"], "policy_id": authority.get("policy_id", ""),
                         "idempotency_key": f"family-reconcile:{mission.get('mission_id')}:{fingerprint}",
                     })
+        if str(mission.get("status") or "").lower() in TERMINAL_STATUSES:
+            closure = operational_outcome_closure(mission)
+            if closure.get("unfinished"):
+                authority = authority_decision("core.internal_recovery", policies, trust=trust, now=now)
+                if authority.get("allowed"):
+                    commands.append({
+                        "action": "record_outcome_follow_up", "capability": "core.internal_recovery",
+                        "mission_id": mission.get("mission_id"), "outcome_closure": closure,
+                        "authority_tier": authority.get("authority_tier"), "policy_id": authority.get("policy_id", ""),
+                        "idempotency_key": f"outcome-follow-up:{mission.get('mission_id')}:{closure.get('fingerprint')}",
+                    })
+                escalations.append({
+                    "action": "operational_outcome_owner_required" if closure.get("owner_required") else "operational_outcome_follow_up",
+                    "mission_id": mission.get("mission_id"), "mission_status": mission.get("status"),
+                    "title": mission.get("title") or mission.get("mission_id"),
+                    "reason": "delivered_code_has_unfinished_business",
+                    "block_class": "unfinished_operational_outcome",
+                    "recommended_action": closure.get("next_action"),
+                    "business_impact": closure.get("business_impact"),
+                    "pending_gate_keys": closure.get("pending_gate_keys"),
+                    "follow_up_mission_id": closure.get("follow_up_mission_id"),
+                    "follow_up_prepared": authority.get("allowed") is True,
+                    "notification_fingerprint": closure.get("fingerprint"),
+                })
     status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
     approved = [item for item in missions if item.get("status") == "approved"]
     runnable = [item for item in approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]

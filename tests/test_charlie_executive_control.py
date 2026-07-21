@@ -153,7 +153,7 @@ class CharlieExecutiveControlTests(unittest.TestCase):
 
     def test_completed_recovery_children_resume_paused_parent(self):
         missions = [
-            {"mission_id": "PARENT", "status": "paused", "metadata": {}},
+            {"mission_id": "PARENT", "status": "paused", "metadata": {"mission_coordinator": {"child_mission_ids": ["CHILD-1", "CHILD-2"]}}},
             {"mission_id": "CHILD-1", "status": "done", "metadata": {"mission_family": {"parent_mission_id": "PARENT", "relationship": "acceptance_recovery"}}},
             {"mission_id": "CHILD-2", "status": "merged", "metadata": {"mission_family": {"parent_mission_id": "PARENT", "relationship": "acceptance_recovery"}}},
         ]
@@ -161,6 +161,30 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         command = next(item for item in cycle["commands"] if item["action"] == "reconcile_family")
         self.assertEqual(command["mission_id"], "PARENT")
         self.assertEqual(command["child_states"]["CHILD-1"], "done")
+
+    def test_missing_parent_child_ids_are_repaired_before_family_resume(self):
+        missions = [
+            {"mission_id": "PARENT", "status": "paused", "metadata": {"mission_coordinator": {"child_mission_ids": []}}},
+            {"mission_id": "CHILD-1", "status": "done", "metadata": {"mission_family": {"parent_mission_id": "PARENT"}}},
+        ]
+        cycle = build_executive_cycle(missions, POLICIES, runner={"active_mission_id": "ACTIVE"})
+        repair = next(item for item in cycle["commands"] if item["action"] == "repair_family_links")
+        self.assertEqual(repair["child_mission_ids"], ["CHILD-1"])
+        self.assertFalse(any(item["action"] == "reconcile_family" for item in cycle["commands"]))
+
+    def test_deployed_but_unapplied_migration_creates_executive_follow_up(self):
+        mission = {
+            "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
+            "metadata": {"review_packet": {
+                "changed_files": ["supabase/migrations/202607210001.sql"],
+                "test_evidence": ["pass"],
+            }},
+        }
+        cycle = build_executive_cycle([mission], POLICIES, runner={})
+        command = next(item for item in cycle["commands"] if item["action"] == "record_outcome_follow_up")
+        escalation = next(item for item in cycle["escalations"] if item["action"] == "operational_outcome_owner_required")
+        self.assertEqual(command["outcome_closure"]["business_capability_status"], "not_operational")
+        self.assertEqual(escalation["follow_up_mission_id"], command["outcome_closure"]["follow_up_mission_id"])
 
     def test_queue_progress_fails_closed_without_policy(self):
         cycle = build_executive_cycle([{"mission_id": "MISSION-2", "status": "approved"}], [], runner={})

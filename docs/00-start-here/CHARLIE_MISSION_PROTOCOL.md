@@ -100,6 +100,7 @@ The intended mission loop is:
 7. Owner either approves final release, sends the mission back with comments, pauses, or rejects it.
 8. Final owner approval records `release_approved`; only a local Codex release bridge may then proceed through release/merge/deploy checks under the normal deployment SOP.
 9. After verified release or explicit closeout, CHARLIE marks the mission `done`, `merged`, or `deployed` as appropriate.
+10. CHARLIE separately evaluates the business outcome. A terminal delivery with pending migration, live-smoke, deployment, or other operational gates is recorded as `delivered_unfinished`; CHARLIE proposes a linked outcome-closure mission and keeps the original commitment open until operational evidence passes.
 
 The Review section must show:
 
@@ -146,6 +147,8 @@ Allowed mission statuses:
 - `rejected`
 
 Status changes are mission records only. A status change does not execute shell commands, merge code, apply migrations, deploy, or write operational data.
+
+Likewise, `deployed` means the release bridge verified the configured deployed service. It does not mean a separately owner-gated migration, customer send, payment, reservation, stock allocation, or lifecycle write occurred. Those operations require their own evidence and exact authority.
 
 ## Telegram Command Console
 

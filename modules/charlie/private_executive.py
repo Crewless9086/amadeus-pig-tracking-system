@@ -206,6 +206,8 @@ def _bounded_agent_result(result):
 
 
 def context_after_plan(plan, evidence):
+    from modules.charlie.outcome_closure import operational_outcome_closure
+
     successful = [item for item in evidence if item.get("success")]
     subject = dict(plan.get("subject") or {})
     primary = (successful[0].get("result") or {}) if successful else {}
@@ -239,7 +241,15 @@ def context_after_plan(plan, evidence):
             })
         mission = result.get("mission") if isinstance(result.get("mission"), dict) else {}
         if mission.get("mission_id") and mission.get("status") in {"done", "merged", "deployed", "rejected"}:
-            _upsert_commitment(commitments, {"type": "core_mission", "mission_id": mission.get("mission_id"), "goal": plan.get("goal"), "status": "completed", "completed_state": mission.get("status")})
+            closure = operational_outcome_closure(mission)
+            _upsert_commitment(commitments, {
+                "type": "core_mission", "mission_id": mission.get("mission_id"), "goal": plan.get("goal"),
+                "status": "delivered_unfinished" if closure.get("unfinished") else "completed",
+                "completed_state": mission.get("status"),
+                "business_capability_status": closure.get("business_capability_status"),
+                "next_check": closure.get("next_action") if closure.get("unfinished") else "Business outcome verified.",
+                "follow_up_mission_id": closure.get("follow_up_mission_id"),
+            })
     return {
         "version": "charlie_private_context_v2",
         "goal": plan.get("goal"),

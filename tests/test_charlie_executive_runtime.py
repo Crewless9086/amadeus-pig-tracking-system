@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from modules.charlie.executive_runtime import (
     _execute_decomposition, _execute_delegated_review, _execute_queue_selection, _load_executive_missions,
-    _execute_recovery, run_executive_cycle,
+    _execute_recovery, _execute_outcome_follow_up, run_executive_cycle,
 )
 
 
@@ -26,8 +26,22 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         list_missions.side_effect = bucket
         result, status = _load_executive_missions()
         self.assertEqual(status, 200)
-        self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused"})
-        self.assertEqual(list_missions.call_count, 7)
+        self.assertEqual({item["status"] for item in result["missions"]}, {"in_progress", "blocked", "pr_ready", "release_approved", "approved", "new", "paused", "merged", "deployed", "done"})
+        self.assertEqual(list_missions.call_count, 10)
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.record_mission", return_value=({"status": "stored"}, 201))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_outcome_follow_up_is_created_new_and_parent_register_is_written(self, get_mission, record, update, _complete):
+        get_mission.return_value = ({"mission": {
+            "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
+            "metadata": {"review_packet": {"changed_files": ["supabase/migrations/202607210001.sql"], "test_evidence": ["pass"]}},
+        }}, 200)
+        result = _execute_outcome_follow_up({"mission_id": "M-MIG"}, "CMD", None, None)
+        self.assertEqual(result["status"], "outcome_follow_up_proposed")
+        self.assertEqual(record.call_args.args[0]["status"], "new")
+        self.assertIn("unfinished_business", update.call_args.args[1])
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))

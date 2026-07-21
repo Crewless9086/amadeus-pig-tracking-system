@@ -52,7 +52,9 @@ This is the short live-state dashboard for the project. Keep it current after ac
 - Runner ownership recovery now requires an expired durable lease plus a dead/stale process; the former idle-observer heuristic is retired.
 - Execution leases include expiry and refresh while Codex stages run.
 - Oversized parents pause as `waiting_children` coordinators; only their deterministic child missions execute.
+- Parent pause now compare-and-sets a complete, non-empty child ID list; CHARLIE repairs legacy missing lists from child-to-parent records before family reconciliation.
 - Child dependencies are enforced before pickup and child scope cannot recursively re-split from inherited parent wording.
+- Terminal delivery is distinct from operational completion. CHARLIE records unfinished business, proposes an owner-visible follow-up mission, and preserves protected-operation gates until the real business outcome is verified.
 - Final artifacts can reconcile idempotently after a workflow already advanced.
 - Builder packaging includes actual untracked Git changes and preserves failed packaging in a mission-labelled recovery stash.
 - Watchdog recovery appends history and returns work to an internal stage instead of overwriting evidence with a false owner block.

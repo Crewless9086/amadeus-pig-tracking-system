@@ -46,6 +46,8 @@ Tester failure sends the workflow back to Builder. Reviewer rejection or finding
 
 **Bounded discovery and mission families.** Exact-text fingerprints are not the only limit. CORE also groups findings into semantic families and applies a mission-wide correction budget. In-scope acceptance failures return to Builder while budget remains. New non-red hardening or adjacent work after the budget becomes a deduplicated child mission awaiting owner approval. Pre-existing failures that reproduce on `main` and broad-suite advisory timeouts do not fail the parent. Red-zone findings always stop for owner review.
 
+Parent decomposition is finalized with a compare-and-set update: the parent may enter `paused/waiting_children` only when the complete non-empty child ID set is stored in the same parent update. Child IDs are deterministic, child records point back to the parent, and the executive reconciler repairs a legacy or interrupted parent list from those authoritative child records before attempting family completion.
+
 The acceptance matrix is frozen before Builder and updated by Tester/QA evidence. This gives the parent a finite completion boundary while preserving every actionable discovery.
 
 ## Dashboard Visibility
@@ -66,6 +68,8 @@ The CHARLIE dashboard surfaces these fields in the Local Runner panel.
 Mission Control also separates acceptance completion from workflow position. It shows matrix rows, fixes completed, review runs, backflow budget, cycling warnings, and linked child missions so productive hardening is not mistaken for a frozen percentage.
 
 The dashboard also exposes a CHARLIE CORE Command Center with queue counts, review/blocked state, release state, deployed/merged state, live verification configuration, Vault version, and current runner boundary.
+
+`merged` and `deployed` are delivery states, not proof that the requested business capability is operational. CHARLIE evaluates terminal missions against their remaining operational gates. When a protected operation or live verification remains, it records durable unfinished business, creates a deterministic linked follow-up in `new` state, and sends a plain-language executive brief. The follow-up is never silently approved, and protected operations remain owner-gated.
 
 ## Mission Vault v1
 
