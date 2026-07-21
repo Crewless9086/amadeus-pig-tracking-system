@@ -868,8 +868,18 @@ def _restore_mission_branch_for_resume(mission, run_subprocess=None):
     branch_name = str(builder.get("branch_name") or packaging.get("branch_name") or "").strip()
     recovery_stash = str(packaging.get("recovery_stash") or "").strip()
     run = run_subprocess or _run_git_command
+    explicit_no_change = "changed_files" in builder and not [value for value in (builder.get("changed_files") or []) if str(value).strip()]
+    packaged_revision = str(packaging.get("candidate_revision") or packaging.get("source_commit") or "").strip()
+    builder_pr = str(builder.get("pr_number") or review_packet.get("pr_number") or "").strip()
+    if explicit_no_change and not builder_pr and not recovery_stash and not packaged_revision:
+        return {
+            "success": True,
+            "status": "mission_branch_not_required_no_change",
+            "branch_name": branch_name,
+            "revision_source": "clean_promoted_base",
+        }
     if not branch_name:
-        pr_number = str(builder.get("pr_number") or review_packet.get("pr_number") or "").strip()
+        pr_number = builder_pr
         if not pr_number and isinstance(builder.get("links"), dict):
             match = re.search(r"/pull/(\d+)(?:$|[/?#])", str(builder["links"].get("pr") or builder.get("pr_url") or ""))
             pr_number = match.group(1) if match else ""
