@@ -10,6 +10,17 @@ from modules.charlie import runner_control
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_heartbeat_and_status_never_persist_environment_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            heartbeat = Path(tmp) / "runner.json"
+            secret = "postgresql://owner:do-not-persist@db.example.test/main"
+            with patch.dict("modules.charlie.secret_redaction.os.environ", {"DATABASE_URL": secret}, clear=True):
+                runner_control.write_runner_heartbeat({"status": "codex_running", "stderr_tail": secret}, heartbeat)
+                stored = heartbeat.read_text(encoding="utf-8")
+                result = runner_control.runner_status(heartbeat, include_orphans=False, include_git=False, include_ledger=False)
+            self.assertNotIn("do-not-persist", stored)
+            self.assertNotIn("do-not-persist", result["stderr_tail"])
+
     def test_worktree_resolves_primary_checkout_for_runtime_truth(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"

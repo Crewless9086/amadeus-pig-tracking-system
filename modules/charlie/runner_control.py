@@ -16,6 +16,7 @@ from modules.charlie import (
 )
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.process_ownership import inspect_process, process_termination_enabled, validate_termination
+from modules.charlie.secret_redaction import redact_payload
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -135,7 +136,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
     else:
         status = "runner_not_started"
         next_action = "Start the local CHARLIE runner before expecting approved missions to auto-pick up."
-    return {
+    return redact_payload({
         "success": True,
         "status": status,
         "active": active,
@@ -184,7 +185,7 @@ def runner_status(heartbeat_path=None, now=None, include_orphans=None, include_g
         "next_action": next_action,
         "can_start_from_web": False,
         "can_stop_from_web": False,
-    }
+    })
 
 
 def _runner_operating_state(payload, ledger, active):
@@ -204,7 +205,7 @@ def _runner_operating_state(payload, ledger, active):
 def write_runner_heartbeat(result=None, heartbeat_path=None):
     heartbeat_path = Path(heartbeat_path or HEARTBEAT_PATH)
     heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
-    result = result if isinstance(result, dict) else {}
+    result = redact_payload(result if isinstance(result, dict) else {})
     previous = _read_json(heartbeat_path)
     payload = {
         "pid": os.getpid(),
@@ -243,6 +244,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
             payload[key] = result.get(key)
         elif key in {"queue_health", "executive", "last_progress_at"} and key in previous:
             payload[key] = previous.get(key)
+    payload = redact_payload(payload)
     heartbeat_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 
