@@ -3056,10 +3056,10 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "tests_run": [{"command": "python -m unittest focused", "result": "pass - 67 tests"}],
             "errors": [],
             "bugs": [{
-                "scope_relation": "adjacent_follow_up",
+                "scope_relation": "adjacent follow-up work; not implementable in this slice without separate owner approval",
                 "introduced_by_current_diff": False,
                 "severity": "blocking_for_followup_build",
-                "acceptance_relation": "Does not violate current lifecycle verification acceptance; blocks a separate follow-up.",
+                "acceptance_relation": "Does not fail acceptance-7a1cef7d99 verification; it is a bounded linked follow-up.",
                 "finding": "A later integration mission still needs a runtime reader.",
             }],
         })

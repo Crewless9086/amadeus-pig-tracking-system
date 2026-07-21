@@ -5026,11 +5026,12 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
     if value.get("introduced_by_current_diff") is not False:
         return False
     scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
-    if scope not in {"adjacent_follow_up", "out_of_scope_follow_up"}:
+    if not scope.startswith(("adjacent_follow_up", "out_of_scope_follow_up")):
         return False
     acceptance = str(value.get("acceptance_relation") or "").strip().lower()
     if not any(term in acceptance for term in (
         "does not violate current",
+        "does not fail acceptance",
         "outside current acceptance",
         "not part of current acceptance",
         "no impact on current acceptance",
