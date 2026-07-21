@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-21 - Telegram mission callback completion recovery
+
+- Required an explicit, non-retrying completion-failure outcome after a claimed mission-control callback, preserving the inbound claim as recovery evidence and preventing a second owner action.
+- Retained webhook-secret validation, owner allowlisting, generation-bound final approval, and the no-live-canary owner-authorization boundary.
+
 ## 2026-07-21 - Pig lifecycle audit rail
 
 - Defined the additive, unapplied `pig_lifecycle_events` contract for append-only lifecycle evidence tied to canonical pigs while retaining `pigs` as the mutable current-state projection.
