@@ -25,25 +25,37 @@ def claim_update(update_id, callback_id="", database_url=None, connect_factory=N
                 cursor.execute("""
                     insert into public.charlie_inbound_updates(update_key, telegram_update_id, callback_query_id)
                     values (%(key)s, %(update)s, nullif(%(callback)s, ''))
-                    on conflict (telegram_update_id) do nothing returning update_key
+                    on conflict do nothing returning update_key
                 """, {"key": update_key, "update": update_id, "callback": callback_id})
                 created = bool(cursor.fetchall())
                 cursor.execute("""
-                    select status, result_json, received_at, completed_at
-                    from public.charlie_inbound_updates where telegram_update_id=%(update)s
-                """, {"update": update_id})
+                    select update_key, telegram_update_id, status, result_json, received_at, completed_at
+                    from public.charlie_inbound_updates
+                    where telegram_update_id=%(update)s or update_key=%(key)s
+                    order by case when telegram_update_id=%(update)s then 0 else 1 end
+                    limit 1
+                """, {"update": update_id, "key": update_key})
                 row = cursor.fetchone()
     except Exception as exc:
         return {"success": False, "status": "update_claim_failed", "error_type": exc.__class__.__name__}, 503
+    if not row:
+        return {"success": False, "status": "update_claim_readback_missing"}, 503
+    if str(row[1]) != update_id:
+        return {
+            "success": False,
+            "status": "update_key_collision",
+            "created": False,
+            "update_key": update_key,
+        }, 409
     return {
         "success": True,
         "status": "claimed" if created else "duplicate",
         "created": created,
-        "update_key": update_key,
-        "existing_status": str(row[0] or "") if row else "",
-        "existing_result": dict(row[1] or {}) if row else {},
-        "received_at": row[2].isoformat() if row and row[2] else "",
-        "completed_at": row[3].isoformat() if row and row[3] else "",
+        "update_key": str(row[0]),
+        "existing_status": str(row[2] or ""),
+        "existing_result": dict(row[3] or {}),
+        "received_at": row[4].isoformat() if row[4] else "",
+        "completed_at": row[5].isoformat() if row[5] else "",
     }, 201 if created else 200
 
 
