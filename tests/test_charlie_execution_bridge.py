@@ -2287,6 +2287,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout="abc1234\n", stderr="")
             if command[:2] == ["git", "push"]:
                 return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout="[]", stderr="")
             if command[:3] == ["gh", "pr", "create"]:
                 return SimpleNamespace(returncode=0, stdout="https://github.com/org/repo/pull/77\n", stderr="")
             return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
@@ -2310,6 +2312,72 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packaged["git_packaging"]["status"], "pr_created")
         self.assertEqual(packaged["errors"], [])
         self.assertTrue(any(call[:3] == ["git", "switch", "-c"] for call in calls))
+
+    def test_builder_prompt_binds_existing_canonical_pr(self):
+        mission = {
+            "metadata": {"review_packet": {
+                "pr_url": "https://github.com/org/repo/pull/355",
+                "pr_number": 355,
+                "branch_name": "charlie/canonical",
+            }}
+        }
+
+        instruction = execution_bridge._agent_stage_instruction("builder", mission)
+
+        self.assertIn("canonical PR #355", instruction)
+        self.assertIn("never open a second PR", instruction)
+
+    def test_builder_pr_reconciliation_prefers_mission_bound_pr_and_closes_duplicate(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([
+                    {"number": 355, "url": "https://github.com/org/repo/pull/355", "headRefName": "canonical", "headRefOid": "abc1234", "baseRefName": "main"},
+                    {"number": 358, "url": "https://github.com/org/repo/pull/358", "headRefName": "duplicate", "headRefOid": "abc1234", "baseRefName": "main"},
+                ]), stderr="")
+            if command[:3] == ["gh", "pr", "close"]:
+                return SimpleNamespace(returncode=0, stdout="closed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "commit_sha": "abc1234",
+            "pr_url": "https://github.com/org/repo/pull/358",
+            "pr_number": 358,
+            "links": {"pr": "https://github.com/org/repo/pull/358"},
+        })
+        mission = {"metadata": {"review_packet": {
+            "pr_url": "https://github.com/org/repo/pull/355", "pr_number": 355,
+        }}}
+
+        reconciled = execution_bridge._auto_package_builder_changes(mission, artifact, runner=fake_runner)
+
+        self.assertEqual(reconciled["pr_number"], 355)
+        self.assertEqual(reconciled["branch_name"], "canonical")
+        self.assertEqual(reconciled["duplicate_pr_reconciliation"]["closed_pr_numbers"], [358])
+        self.assertTrue(any(call[:3] == ["gh", "pr", "close"] for call in calls))
+
+    def test_builder_pr_reconciliation_does_not_reuse_different_head(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([
+                    {"number": 88, "url": "https://github.com/org/repo/pull/88", "headRefName": "other", "headRefOid": "different", "baseRefName": "main"},
+                ]), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({"changed_files": [], "commit_sha": "abc1234", "pr_url": "", "links": {"pr": ""}})
+
+        reconciled = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertFalse(execution_bridge._artifact_pr_reference(reconciled))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "close"] for call in calls))
 
     def test_auto_package_builder_changes_records_failure_without_pr(self):
         def fake_runner(command, **_kwargs):

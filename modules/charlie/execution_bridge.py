@@ -1938,7 +1938,7 @@ You must work like an interactive coding agent:
 - behave as this specific agent, not as a generic prompt; challenge upstream artifacts when they are weak, contradictory, or not aligned with your doctrine
 
 Stage responsibility:
-{_agent_stage_instruction(agent)}
+{_agent_stage_instruction(agent, mission)}
 
 Required final response format:
 Return concise markdown, and include a JSON object fenced as ```json with these keys:
@@ -2372,7 +2372,7 @@ def _unique_existing_order(items):
     return result
 
 
-def _agent_stage_instruction(agent):
+def _agent_stage_instruction(agent, mission=None):
     if agent == "idea_expander":
         return "Clarify the rough idea, expected owner value, target user/workflow, constraints, non-goals, and what must not be assumed."
     if agent == "visual_reference_interpreter":
@@ -2414,11 +2414,20 @@ def _agent_stage_instruction(agent):
     if agent == "architect":
         return "Inspect implementation boundaries, source files, route/data contracts, risks, and the safest build approach."
     if agent == "builder":
+        canonical_pr = _mission_canonical_pr_reference(mission)
+        canonical_instruction = (
+            f" This mission is already bound to canonical PR #{canonical_pr['number']} "
+            f"({canonical_pr['url']}) on branch {canonical_pr['branch'] or 'recorded in that PR'}. "
+            "Reuse and update that exact PR; never open a second PR for the same mission or commit."
+            if canonical_pr.get("url") else
+            " Before opening a PR, query open PRs for the candidate commit and reuse an existing exact-head PR; never create a duplicate PR."
+        )
         return (
             "Implement only the scoped change, keep diffs tight, and record changed files. "
             "When changed_files contains releaseable changes under LEVEL 3 or higher, create or update a branch, commit the scoped diff, push it, open a PR, "
             "and record branch_name, commit_sha, pr_url/pr_number, and PR link evidence. For UI missions, provide a real local_preview URL for the changed page, "
             "visual_reference_analysis, media_references_used, viewport_plan, and browser_check_plan. Do not merge."
+            + canonical_instruction
         )
     if agent == "frontend_design_implementer":
         return (
@@ -4932,6 +4941,43 @@ def _artifact_pr_reference(artifact):
     return ""
 
 
+def _pr_number_from_value(value):
+    text = str(value or "").strip()
+    match = re.search(r"/pull/(\d+)(?:\D|$)", text)
+    if match:
+        return int(match.group(1))
+    return int(text) if text.isdigit() else 0
+
+
+def _mission_canonical_pr_reference(mission):
+    """Return the durable mission-bound PR without treating a Builder artifact as authority."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    candidates = [
+        metadata.get("review_packet"),
+        mission.get("review_packet"),
+        metadata.get("mission_context_pack", {}).get("canonical_pr")
+        if isinstance(metadata.get("mission_context_pack"), dict) else None,
+        mission.get("mission_context_pack", {}).get("canonical_pr")
+        if isinstance(mission.get("mission_context_pack"), dict) else None,
+        mission,
+    ]
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        links = candidate.get("links") if isinstance(candidate.get("links"), dict) else {}
+        url = str(candidate.get("pr_url") or links.get("pr") or "").strip()
+        number = _pr_number_from_value(candidate.get("pr_number") or url)
+        if url or number:
+            return {
+                "url": url,
+                "number": number,
+                "branch": str(candidate.get("branch_name") or candidate.get("head_ref") or "").strip(),
+                "revision": str(candidate.get("candidate_revision") or candidate.get("expected_revision") or "").strip(),
+            }
+    return {"url": "", "number": 0, "branch": "", "revision": ""}
+
+
 def _artifact_local_commit_reference(artifact):
     branch_name = str((artifact or {}).get("branch_name") or "").strip()
     commit_sha = str((artifact or {}).get("commit_sha") or "").strip()
@@ -5178,14 +5224,18 @@ def _is_reviewer_adjacent_follow_up(agent, artifact, value):
 
 def _auto_package_builder_changes(mission, artifact, runner=None):
     artifact = artifact if isinstance(artifact, dict) else {}
+    runner = runner or subprocess.run
+    reconciled = _reconcile_builder_pr_reference(mission, artifact, runner)
+    if _artifact_pr_reference(reconciled):
+        return reconciled
+    artifact = reconciled
     artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
     changed_files = list(dict.fromkeys([
         *artifact_files,
         *[path for path in _changed_files() if not _runner_generated_path(path)],
     ]))
-    if not _has_release_relevant_changes(changed_files) or _artifact_pr_reference(artifact):
+    if not _has_release_relevant_changes(changed_files):
         return artifact
-    runner = runner or subprocess.run
     branch_name = _builder_branch_name(mission)
     result = {
         "version": "charlie_builder_git_packaging_v1",
@@ -5258,6 +5308,19 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     pushed = run(["git", "push", "-u", "origin", branch_name])
     if pushed["returncode"] != 0:
         return _builder_packaging_failed(artifact, result, "git_push_failed")
+    existing = _reconcile_builder_pr_reference(
+        mission,
+        {**artifact, "branch_name": branch_name, "commit_sha": commit_sha},
+        runner,
+        command_recorder=result["commands"],
+    )
+    if _artifact_pr_reference(existing):
+        existing["git_packaging"] = {
+            **result,
+            "status": "existing_pr_reused",
+            "pr_url": existing.get("pr_url", ""),
+        }
+        return existing
     pr = run([
         "gh",
         "pr",
@@ -5289,6 +5352,95 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         "git_packaging": {**result, "status": "pr_created", "pr_url": pr_url},
     })
     return packaged
+
+
+def _reconcile_builder_pr_reference(mission, artifact, runner, command_recorder=None):
+    """Canonicalize exact-head PRs and close only provable same-head duplicates."""
+    artifact = dict(artifact) if isinstance(artifact, dict) else {}
+    canonical = _mission_canonical_pr_reference(mission)
+    commit_sha = str(
+        artifact.get("commit_sha")
+        or (artifact.get("git_packaging") or {}).get("commit_sha")
+        or canonical.get("revision")
+        or ""
+    ).strip()
+    artifact_number = _pr_number_from_value(_artifact_pr_reference(artifact))
+    if not commit_sha and not (canonical.get("number") and artifact_number):
+        return artifact
+    try:
+        completed = runner(
+            ["gh", "pr", "list", "--state", "open", "--base", "main", "--limit", "100", "--json", "number,url,headRefName,headRefOid,baseRefName"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=180,
+            check=False,
+        )
+    except Exception:
+        return artifact
+    if command_recorder is not None:
+        command_recorder.append({
+            "command": "gh pr list --state open --base main --limit 100 --json number,url,headRefName,headRefOid,baseRefName",
+            "returncode": completed.returncode,
+            "stdout": _truncate(completed.stdout or "", 1200),
+            "stderr": _truncate(completed.stderr or "", 1200),
+        })
+    if completed.returncode != 0:
+        return artifact
+    try:
+        open_prs = json.loads(completed.stdout or "[]")
+    except (TypeError, ValueError):
+        return artifact
+    matching = [
+        pr for pr in open_prs if isinstance(pr, dict)
+        and str(pr.get("baseRefName") or "main") == "main"
+        and commit_sha
+        and str(pr.get("headRefOid") or "").strip()
+        and (
+            str(pr.get("headRefOid") or "").lower().startswith(commit_sha.lower())
+            or commit_sha.lower().startswith(str(pr.get("headRefOid") or "").lower())
+        )
+    ]
+    if not matching:
+        return artifact
+    canonical_number = int(canonical.get("number") or 0)
+    chosen = next((pr for pr in matching if int(pr.get("number") or 0) == canonical_number), None)
+    chosen = chosen or min(matching, key=lambda pr: int(pr.get("number") or 0))
+    chosen_number = int(chosen.get("number") or 0)
+    duplicate_numbers = []
+    for duplicate in matching:
+        duplicate_number = int(duplicate.get("number") or 0)
+        if not duplicate_number or duplicate_number == chosen_number:
+            continue
+        closed = runner(
+            ["gh", "pr", "close", str(duplicate_number), "--comment", f"Closed automatically as an exact-head duplicate of canonical PR #{chosen_number}."],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(REPO_ROOT),
+            timeout=180,
+            check=False,
+        )
+        if closed.returncode == 0:
+            duplicate_numbers.append(duplicate_number)
+    links = artifact.get("links") if isinstance(artifact.get("links"), dict) else {}
+    artifact.update({
+        "pr_url": str(chosen.get("url") or ""),
+        "pr_number": chosen_number,
+        "branch_name": str(chosen.get("headRefName") or artifact.get("branch_name") or ""),
+        "commit_sha": str(chosen.get("headRefOid") or commit_sha),
+        "links": {**links, "pr": str(chosen.get("url") or "")},
+    })
+    if duplicate_numbers:
+        artifact["duplicate_pr_reconciliation"] = {
+            "status": "exact_head_duplicates_closed",
+            "canonical_pr_number": chosen_number,
+            "closed_pr_numbers": duplicate_numbers,
+        }
+    return artifact
 
 
 def _builder_concurrency_admission(mission, artifacts, execution_id):
