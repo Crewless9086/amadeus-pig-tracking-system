@@ -88,6 +88,12 @@ Herdmaster alerts must not:
 - suppress stale/missing/conflicting source warnings to make a recommendation look cleaner;
 - make future sow replacement alerts into automatic replacement, culling, retirement, or mating decisions.
 
+## Weight-Stage Reconciliation
+
+Pig Allocation exposes recorded `animal_type` and a separately calculated `weight_stage`; it must never let the recorded value mask the weight-derived fact. The production-stage classifier is `Piglet <15 kg`, `Weaner 15-<35 kg`, `Grower 35-<60 kg`, and `Finisher 60 kg+`.
+
+Every disagreement is explained with the recorded type, latest weight/date, weight age, and rule. A fresh mismatch between two production stages can be prepared only as an advisory owner-review candidate. It requires a future explicit owner-approved correction batch with immutable audit evidence; this read-only surface has no apply action. Missing or stale weights reduce confidence and cannot prepare a correction candidate. Breeding/lifecycle categories such as Sow, Boar, and Gilt are flagged for owner review but are never recommended for replacement from weight alone.
+
 ## Owner Gates
 
 Owner approval is mandatory before:
