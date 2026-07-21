@@ -121,6 +121,58 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(result["status"], "charlie_mission_callback_duplicate_ignored")
         self.assertEqual(called, [])
 
+    def test_mission_callback_completion_exception_after_mutation_is_not_retried(self):
+        completion_calls = []
+
+        class Handled:
+            ok = True
+            action = "approvefinal"
+            reason = ""
+            selected_title = "MISSION-1"
+
+        def completer(*_args, **_kwargs):
+            completion_calls.append(True)
+            raise RuntimeError("database temporarily unavailable")
+
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 47, "callback_query": {"id": "callback-47", "data": "cm:approvefinal:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=lambda *_args, **_kwargs: Handled(),
+            update_claimer=lambda *_args: ({"success": True, "created": True, "update_key": "UPDATE-3"}, 201),
+            update_completer=completer,
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_completion_failed")
+        self.assertEqual(result["callback"]["status"], "approvefinal")
+        self.assertEqual(result["completion"]["error_type"], "RuntimeError")
+        self.assertEqual(completion_calls, [True])
+
+    def test_mission_callback_completion_exception_after_handler_failure_is_not_retried(self):
+        completion_calls = []
+
+        def completer(*_args, **_kwargs):
+            completion_calls.append(True)
+            raise RuntimeError("database temporarily unavailable")
+
+        def failing_handler(*_args, **_kwargs):
+            raise ValueError("callback failed before mission mutation")
+
+        result, status = handle_mission_control_callback_webhook(
+            {"update_id": 48, "callback_query": {"id": "callback-48", "data": "cm:open:token", "from": {"id": 12345}, "message": {"chat": {"id": 12345}}}},
+            policy=build_relay_policy(environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"}),
+            environ={"CHARLIE_BUILD_RELAY_ENABLED": "1", "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN, "CHARLIE_BUILD_RELAY_WEBHOOK_SECRET": SECRET, "CHARLIE_BUILD_RELAY_ALLOWED_USER_IDS": "12345"},
+            callback_handler=failing_handler,
+            update_claimer=lambda *_args: ({"success": True, "created": True, "update_key": "UPDATE-4"}, 201),
+            update_completer=completer,
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "charlie_mission_callback_completion_failed")
+        self.assertEqual(result["callback"]["error_type"], "ValueError")
+        self.assertEqual(completion_calls, [True])
+
     @patch.dict(os.environ, {
         "CHARLIE_BUILD_RELAY_ENABLED": "1",
         "CHARLIE_BUILD_RELAY_BOT_TOKEN": BOT_TOKEN,
