@@ -354,6 +354,9 @@ def sales_transaction_payment_update(sale_id):
 
 @sales_bp.route("/sales-transactions/<sale_id>/confirm-pig-exits", methods=["POST"])
 def sales_transaction_confirm_pig_exits(sale_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = confirm_slaughter_pig_exits(sale_id, payload)
     return jsonify(result), status_code
@@ -361,6 +364,9 @@ def sales_transaction_confirm_pig_exits(sale_id):
 
 @sales_bp.route("/sales-transactions/<sale_id>/reconcile-pig-exits", methods=["POST"])
 def sales_transaction_reconcile_pig_exits(sale_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = reconcile_closed_slaughter_pig_exits(sale_id, payload)
     return jsonify(result), status_code
