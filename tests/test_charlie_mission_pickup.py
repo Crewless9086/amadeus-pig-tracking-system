@@ -96,6 +96,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
             ["git", "switch", "--detach", "FETCH_HEAD"],
         ])
 
+    def test_no_change_builder_resume_stays_on_clean_promoted_base(self):
+        mission = {
+            "metadata": {"review_packet": {"agent_artifacts": {"builder": {
+                "branch_name": "charlie-core-execution-base",
+                "changed_files": [],
+                "pr_number": "",
+            }}}},
+        }
+        run = Mock()
+        result = charlie_mission_pickup._restore_mission_branch_for_resume(mission, run_subprocess=run)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "mission_branch_not_required_no_change")
+        self.assertEqual(result["revision_source"], "clean_promoted_base")
+        run.assert_not_called()
+
     def test_restore_mission_branch_uses_detached_remote_when_branch_is_owned_elsewhere(self):
         mission = {"metadata": {"review_packet": {"agent_artifacts": {"builder": {"branch_name": "feature/beacon-work"}}}}}
         commands = []
