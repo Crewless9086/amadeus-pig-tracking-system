@@ -32,21 +32,22 @@ def claim_update(update_id, callback_id="", database_url=None, connect_factory=N
                     select update_key, telegram_update_id, status, result_json, received_at, completed_at
                     from public.charlie_inbound_updates
                     where telegram_update_id=%(update)s or update_key=%(key)s
-                    order by case when telegram_update_id=%(update)s then 0 else 1 end
-                    limit 1
+                    order by update_key
                 """, {"update": update_id, "key": update_key})
-                row = cursor.fetchone()
+                rows = cursor.fetchall()
     except Exception as exc:
         return {"success": False, "status": "update_claim_failed", "error_type": exc.__class__.__name__}, 503
-    if not row:
+    if not rows:
         return {"success": False, "status": "update_claim_readback_missing"}, 503
-    if str(row[1]) != update_id:
+    exact_rows = [row for row in rows if str(row[0]) == update_key and str(row[1]) == update_id]
+    if len(rows) != 1 or len(exact_rows) != 1:
         return {
             "success": False,
             "status": "update_key_collision",
             "created": False,
             "update_key": update_key,
         }, 409
+    row = exact_rows[0]
     return {
         "success": True,
         "status": "claimed" if created else "duplicate",
