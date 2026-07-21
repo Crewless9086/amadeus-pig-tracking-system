@@ -83,14 +83,14 @@ class CharlieImprovementAnalystTests(unittest.TestCase):
         self.assertIn("review_media_missing", codes)
         self.assertTrue(all(proposal["applies_automatically"] is False for proposal in result["proposals"]))
 
-    def test_replay_analysis_learns_from_premature_owner_review_readiness(self):
+    def test_replay_analysis_learns_from_pr_ready_without_release_evidence(self):
         result, status = analyze_mission_replay({
             "mission_id": "MISSION-MIGRATION",
             "status": "pr_ready",
             "metadata": {"review_packet": {
                 "review_status": "ready_for_owner_review",
-                "changed_files": ["supabase/migrations/202607160001_example.sql"],
-                "test_evidence": ["Focused tests passed."],
+                "changed_files": ["modules/example.py"],
+                "test_evidence": [],
             }},
         })
         self.assertEqual(status, 200)

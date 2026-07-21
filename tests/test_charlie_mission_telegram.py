@@ -86,7 +86,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         self.assertIn("runner_active", text)
         self.assertIn("50%", text)
 
-    def test_pr_ready_migration_hides_final_approval_and_explains_requirement(self):
+    def test_pr_ready_migration_allows_release_and_explains_separate_protected_operation(self):
         self.mission["status"] = "pr_ready"
         self.mission["metadata"] = {"review_packet": {
             "changed_files": ["supabase/migrations/202607160001_example.sql"],
@@ -95,9 +95,9 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         card = charlie_mission_telegram.mission_card_text(self.mission)
         keyboard = charlie_mission_telegram.mission_keyboard(self.mission)
         labels = [row[0]["text"] for row in keyboard["inline_keyboard"]]
-        self.assertIn("OWNER ACTION REQUIRED", card)
-        self.assertIn("Review and explicitly approve", card)
-        self.assertNotIn("Approve Release", labels)
+        self.assertIn("READY TO APPROVE", card)
+        self.assertIn("protected operations remain separately owner-gated", card)
+        self.assertIn("Approve Release", labels)
         self.assertIn("Show Requirements", labels)
 
 
