@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request
 
-from modules.auth.owner_access import require_owner_read_access
+from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
@@ -184,6 +184,9 @@ def pig_profile(pig_id):
 
 @pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["POST"])
 def pig_lifecycle_death(pig_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_pig_lifecycle_death(pig_id, payload)
     return jsonify(result), status_code

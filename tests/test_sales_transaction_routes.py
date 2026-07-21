@@ -233,7 +233,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             },
         }
 
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
             sales_transaction_routes,
             "confirm_slaughter_pig_exits",
             return_value=(service_result, 200),
@@ -245,6 +245,17 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         confirm_exits.assert_called_once()
+
+    def test_sales_transaction_confirm_pig_exits_denial_prevents_lifecycle_service(self):
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), patch.object(
+            sales_transaction_routes, "confirm_slaughter_pig_exits"
+        ) as confirm_exits:
+            response = self.client.post("/api/sales-transactions/SALE-1/confirm-pig-exits", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), denied[0])
+        confirm_exits.assert_not_called()
 
     def test_sales_transaction_reconcile_pig_exits_route_calls_lifecycle_service(self):
         service_result = {
@@ -258,7 +269,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             },
         }
 
-        with patch.object(
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), patch.object(
             sales_transaction_routes,
             "reconcile_closed_slaughter_pig_exits",
             return_value=(service_result, 200),
@@ -270,6 +281,17 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         reconcile_exits.assert_called_once()
+
+    def test_sales_transaction_reconcile_pig_exits_denial_prevents_lifecycle_service(self):
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), patch.object(
+            sales_transaction_routes, "reconcile_closed_slaughter_pig_exits"
+        ) as reconcile_exits:
+            response = self.client.post("/api/sales-transactions/SALE-1/reconcile-pig-exits", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), denied[0])
+        reconcile_exits.assert_not_called()
 
     def test_meat_sales_leads_list_route_uses_sales_lead_store(self):
         service_result = {
