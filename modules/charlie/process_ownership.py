@@ -109,16 +109,26 @@ def inspect_process(pid):
         "if(!$p.ParentProcessId){break};$p=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$p.ParentProcessId)};"
         "$rows|ConvertTo-Json -Compress"
     )
-    result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True, timeout=8, check=False)
-    if result.returncode or not result.stdout.strip():
+    try:
+        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True, timeout=8, check=False)
+        if result.returncode or not result.stdout.strip():
+            return None
+        rows = json.loads(result.stdout)
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+            return None
+        target = dict(rows[0])
+        target["ancestry"] = rows[1:]
+        target["current_process_ancestry"] = _current_ancestry_windows()
+        target["inspection_complete"] = True
+        return target
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
+        # Process inspection is a safety aid, never a reason to terminate the
+        # supervisor.  Returning no identity keeps termination fail-closed:
+        # make_ownership_record produces an unusable record and every later
+        # kill authorization is refused until a complete inspection succeeds.
         return None
-    rows = json.loads(result.stdout)
-    if isinstance(rows, dict):
-        rows = [rows]
-    target = dict(rows[0])
-    target["ancestry"] = rows[1:]
-    target["current_process_ancestry"] = _current_ancestry_windows()
-    return target
 
 
 def _inspect_proc(pid):

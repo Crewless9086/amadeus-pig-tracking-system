@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
@@ -75,6 +76,24 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         result = process_ownership._inspect_proc(222)
         self.assertFalse(result["inspection_complete"])
         self.assertEqual(result["ancestry"][0]["pid"], 111)
+
+    @patch.object(process_ownership.os, "name", "nt")
+    @patch.object(process_ownership.subprocess, "run", side_effect=subprocess.TimeoutExpired(["powershell"], 8))
+    def test_windows_target_inspection_timeout_returns_no_identity(self, _run):
+        self.assertIsNone(process_ownership.inspect_process(222))
+
+    @patch.object(process_ownership.os, "name", "nt")
+    @patch.object(process_ownership, "_current_ancestry_windows", side_effect=subprocess.TimeoutExpired(["powershell"], 8))
+    @patch.object(process_ownership.subprocess, "run")
+    def test_windows_current_ancestry_timeout_returns_no_identity(self, run, _ancestry):
+        run.return_value = Mock(returncode=0, stdout='{"pid":222,"parent_pid":111}', stderr="")
+        self.assertIsNone(process_ownership.inspect_process(222))
+
+    @patch.object(process_ownership.os, "name", "nt")
+    @patch.object(process_ownership.subprocess, "run")
+    def test_windows_invalid_inspection_json_returns_no_identity(self, run):
+        run.return_value = Mock(returncode=0, stdout="not-json", stderr="")
+        self.assertIsNone(process_ownership.inspect_process(222))
 
     def test_missing_pid_fails_closed(self):
         self.assertEqual(self.validate(live=False)["reason"], "pid_not_found")
