@@ -204,6 +204,77 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["released"])
         self.release_file_lease.assert_called_once_with("C:/tmp/control", "lease-123")
 
+    def test_atomic_finalizer_receives_authoritative_targeted_reconciliation(self):
+        preliminary = {
+            "passed": False,
+            "requires_revalidation": [{"agent": "idea_expander"}],
+            "active_blockers": [],
+        }
+        authoritative = {
+            "passed": True,
+            "requires_revalidation": [],
+            "active_blockers": [],
+            "candidate_manifest": {"source_commit": "candidate-1"},
+            "resolved_findings": [{"agent": "idea_expander"}],
+        }
+        packet = execution_bridge._apply_authoritative_reconciliation(
+            {"evidence_reconciliation": preliminary},
+            {"evidence_reconciliation": authoritative},
+        )
+
+        self.assertIs(packet["evidence_reconciliation"], authoritative)
+        self.assertTrue(packet["evidence_reconciliation"]["passed"])
+        self.assertEqual(packet["evidence_requiring_refresh"], [])
+
+    @patch("modules.charlie.execution_bridge.transition_mission_review_state")
+    def test_atomic_finalizer_refusal_becomes_bounded_blocked_recovery(self, transition):
+        transition.return_value = ({"success": True, "status": "review_state_transitioned"}, 200)
+        mission = {"mission_id": "MISSION-FINALIZE-REFUSED", "metadata": {"review_packet": {}}}
+
+        result, status_code = execution_bridge._transition_finalization_transaction_failure(
+            mission,
+            {"candidate_revision": "candidate-1"},
+            {"success": False, "status": "finalization_evidence_not_ready"},
+            execution_id="EXEC-1",
+            ledger_path=Path("ledger.json"),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "owner_review_finalization_refused")
+        self.assertEqual(result["mission_status"], "blocked")
+        self.assertEqual(result["blocked_agent"], "evidence_reviewer")
+        args, kwargs = transition.call_args
+        self.assertEqual(args[1], "blocked")
+        self.assertEqual(args[2]["review_status"], "finalization_recovery_queued")
+        self.assertEqual(kwargs["expected_status"], "in_progress")
+
+    @patch("modules.charlie.execution_bridge.transition_mission_review_state")
+    def test_second_atomic_finalizer_refusal_halts_recovery(self, transition):
+        transition.return_value = ({"success": True, "status": "review_state_transitioned"}, 200)
+        first = execution_bridge._owner_review_gate_failure(
+            {"mission_id": "MISSION-FINALIZE-HALT", "metadata": {"review_packet": {}}},
+            "evidence_reviewer",
+            "Atomic owner-review finalisation refused: finalization_evidence_not_ready.",
+            {"failure_class": "finalization_evidence_not_ready", "candidate_revision": "candidate-1"},
+        )
+        mission = {
+            "mission_id": "MISSION-FINALIZE-HALT",
+            "metadata": {"review_packet": {"owner_review_gate_failure": first}},
+        }
+
+        _result, status_code = execution_bridge._transition_finalization_transaction_failure(
+            mission,
+            {"tested_revision": "candidate-1"},
+            {"success": False, "status": "finalization_evidence_not_ready"},
+            execution_id="EXEC-2",
+            ledger_path=Path("ledger.json"),
+        )
+
+        self.assertEqual(status_code, 200)
+        packet = transition.call_args.args[2]
+        self.assertEqual(packet["review_status"], "system_incident_halted")
+        self.assertTrue(packet["block_disposition"]["recovery_cap_reached"])
+
     def test_owner_review_artifact_gate_rejects_send_back_stage(self):
         mission = {"mission_context_pack": {"agent_order": ["builder", "business_reviewer", "evidence_reviewer"]}}
         artifacts = {
