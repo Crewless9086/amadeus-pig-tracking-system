@@ -112,6 +112,9 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
         return _result(False, "charlie_build_relay_auth_denied", policy, 403)
 
     parsed = parse_telegram_payload(payload)
+    callback_data = str(((payload or {}).get("callback_query") or {}).get("data") or "")
+    if callback_data.startswith("cm:"):
+        return handle_mission_control_callback_webhook(payload, policy=policy, environ=source)
     if not parsed["text"]:
         return _result(False, "charlie_build_relay_text_required", policy, 400)
     if parsed["telegram_user_id"] not in _allowed_user_ids(source):
@@ -138,6 +141,65 @@ def handle_charlie_telegram_webhook(payload, headers=None, environ=None):
         "telegram_send": send_result,
     })
     return body, send_status
+
+
+def handle_mission_control_callback_webhook(payload, *, policy=None, environ=None, callback_handler=None, update_claimer=None, update_completer=None):
+    """Run an authenticated ``cm:`` callback once and retain its terminal outcome.
+
+    The caller has already checked the webhook secret.  Claiming happens before
+    owner validation so authenticated refused callbacks are auditable, while an
+    unauthenticated request never reaches this function or creates durable data.
+    """
+    source = alias_environment(environ if environ is not None else os.environ)
+    policy = policy or build_relay_policy(environ=source)
+    parsed = parse_telegram_payload(payload)
+    callback = (payload or {}).get("callback_query") or {}
+    update_id = str((payload or {}).get("update_id") or "")
+    callback_id = str(callback.get("id") or "")
+    if not update_id:
+        return _result(False, "charlie_mission_callback_update_id_required", policy, 400)
+
+    if update_claimer is None or update_completer is None:
+        from modules.charlie.private_store import claim_update, complete_update
+        update_claimer = update_claimer or claim_update
+        update_completer = update_completer or complete_update
+    claim, claim_status = update_claimer(update_id, callback_id)
+    if claim_status >= 400:
+        return _result(False, "charlie_mission_callback_claim_failed", policy, claim_status)
+    if not claim.get("created"):
+        body, _ = _result(True, "charlie_mission_callback_duplicate_ignored", policy, 200)
+        body["update_key"] = claim.get("update_key", "")
+        return body, 200
+
+    update_key = claim["update_key"]
+    if parsed["telegram_user_id"] not in _allowed_user_ids(source):
+        outcome = {"status": "unauthorized_user"}
+        update_completer(update_key, status="ignored", result=outcome)
+        body, _ = _result(False, "charlie_build_relay_user_not_allowed", policy, 403)
+        body["telegram_user_id"] = parsed["telegram_user_id"]
+        return body, 403
+
+    try:
+        if callback_handler is None:
+            from scripts.build_relay_telegram_buttons import handle_update
+            callback_handler = handle_update
+        result = callback_handler(payload, environ=source)
+        outcome = {
+            "status": str(getattr(result, "action", "mission_callback_handled")),
+            "reason": str(getattr(result, "reason", ""))[:240],
+            "mission_id": str(getattr(result, "selected_title", ""))[:90],
+        }
+        terminal_status = "processed" if bool(getattr(result, "ok", False)) else "refused"
+        update_completer(update_key, status=terminal_status, result=outcome)
+        body, _ = _result(bool(getattr(result, "ok", False)), "charlie_mission_callback_handled", policy, 200)
+        body["callback"] = outcome
+        return body, 200
+    except Exception as exc:
+        outcome = {"status": "mission_callback_failed", "error_type": exc.__class__.__name__}
+        update_completer(update_key, status="failed", result=outcome)
+        body, _ = _result(False, "charlie_mission_callback_failed", policy, 503)
+        body["callback"] = outcome
+        return body, 503
 
 
 def build_relay_action(text, environ=None):

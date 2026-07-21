@@ -241,6 +241,11 @@
 - Updated Mission Control so blocked missions show one prominent recommended action; secondary actions are collapsed and targeted send-back preselects the recommended agent.
 - Kept mission execution and approval authority unchanged; the dashboard still cannot run shell commands or bypass owner gates.
 
+## 2026-07-21 - Telegram mission decision round-trip guard
+
+- Documented authenticated hosted `cm:` callback dispatch, durable inbound callback outcomes, and generation-bound atomic final-review decisions.
+- Preserved owner-only, record-only Telegram authority: callbacks cannot merge, deploy, send customers, or bypass review gates.
+
 ## 2026-07-14 - Owner-gated Beacon Live-Stock Sales lane
 
 - Added a separate `live_stock_sales` campaign workflow backed by fresh Supabase eligibility/capacity and effective sheet-lineaged `public.sales_pricing` evidence.

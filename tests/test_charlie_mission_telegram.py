@@ -91,6 +91,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         self.mission["metadata"] = {"review_packet": {
             "changed_files": ["supabase/migrations/202607160001_example.sql"],
             "test_evidence": ["Focused tests passed."],
+            "review_generation": "EXEC-1:abc123",
         }}
         card = charlie_mission_telegram.mission_card_text(self.mission)
         keyboard = charlie_mission_telegram.mission_keyboard(self.mission)
@@ -99,6 +100,27 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         self.assertIn("protected operations remain separately owner-gated", card)
         self.assertIn("Approve Release", labels)
         self.assertIn("Show Requirements", labels)
+
+    def test_final_approval_callback_requires_current_review_generation(self):
+        self.mission["status"] = "pr_ready"
+        self.mission["metadata"] = {"review_packet": {
+            "test_evidence": ["Focused tests passed."],
+            "review_generation": "EXEC-1:abc123",
+        }}
+        stale, _ = charlie_mission_telegram.handle_callback(
+            charlie_mission_telegram.mission_callback(self.mission["mission_id"], "approvefinal", "stale-token"),
+            list_loader=self.list_loader, get_loader=self.get_loader,
+            status_updater=self.status_updater, review_updater=self.review_updater,
+        )
+        self.assertFalse(stale.ok)
+        self.assertEqual(stale.reason, "stale_or_generationless_review_callback")
+        callback = charlie_mission_telegram.mission_keyboard(self.mission)["inline_keyboard"][0][0]["callback_data"]
+        accepted, _ = charlie_mission_telegram.handle_callback(
+            callback, list_loader=self.list_loader, get_loader=self.get_loader,
+            status_updater=self.status_updater, review_updater=self.review_updater,
+        )
+        self.assertTrue(accepted.ok)
+        self.assertEqual(self.review_calls[-1][2]["expected_review_generation"], "EXEC-1:abc123")
 
 
 if __name__ == "__main__":
