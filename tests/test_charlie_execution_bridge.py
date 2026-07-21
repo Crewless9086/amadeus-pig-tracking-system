@@ -590,6 +590,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "agent": "architect",
             "summary": "Architecture complete.",
             "implementation_source_map": source_map,
+            "files_to_inspect": ["modules/pig_weights/pig_weights_service.py"],
             "files_checked_against_source_map": ["modules/pig_weights/pig_weights_service.py"],
             "implementation_sources_used": ["modules/pig_weights/pig_weights_service.py"],
         }
@@ -597,6 +598,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         compact = execution_bridge._compact_agent_artifacts_for_review({"architect": artifact})["architect"]
 
         self.assertEqual(compact["implementation_source_map"], source_map)
+        self.assertEqual(compact["files_to_inspect"], artifact["files_to_inspect"])
         self.assertEqual(compact["files_checked_against_source_map"], artifact["files_checked_against_source_map"])
         self.assertEqual(compact["implementation_sources_used"], artifact["implementation_sources_used"])
 
