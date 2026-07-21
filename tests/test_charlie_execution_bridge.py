@@ -129,7 +129,11 @@ def _successful_stage_payload(agent):
         "recommended_owner_decision": "approve_final_release" if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
         "release_notes": ["owner review ready"] if agent in {"reviewer", "publisher"} else None,
         "changed_files": ["modules/charlie/execution_bridge.py"] if agent in {"builder", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
-        "test_evidence": ["unit tests passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
+        "test_evidence": [{
+            "command": "python -m unittest tests.test_charlie_execution_bridge",
+            "status": "pass",
+            "output": "Ran focused bridge tests; OK",
+        }] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
         "qa_evidence": ["QA/red-team passed"] if agent in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer", "publisher"} else None,
     }
     return {key: value for key, value in payload.items() if value is not None}
@@ -303,6 +307,54 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(ready)
         self.assertEqual(detail["reason"], "all_workflow_artifacts_passing")
+
+    def test_reviewer_quality_gate_requires_structured_executable_test_evidence(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": ["focused tests passed"],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("structured executable", result["reason"])
+
+    def test_reviewer_quality_gate_rejects_selector_error_even_with_a_passing_command(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": [
+                {
+                    "command": "python -m unittest tests.test_live_stock.StaleTests.test_missing",
+                    "status": "fail",
+                    "output": "AttributeError: type object 'StaleTests' has no attribute 'test_missing'",
+                },
+                {
+                    "command": "python -m unittest tests.test_charlie_execution_bridge",
+                    "status": "pass",
+                    "output": "Ran focused bridge tests; OK",
+                },
+                "AttributeError: stale selector failed before the focused test run",
+            ],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertIn("selector, discovery, or error", result["reason"])
+
+    def test_reviewer_quality_gate_accepts_clean_structured_passing_command(self):
+        artifact = {
+            "recommended_owner_decision": "approve_final_release",
+            "test_evidence": [{
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "status": "pass",
+                "output": "Ran focused bridge tests; OK",
+            }],
+        }
+
+        result = execution_bridge._reviewer_test_evidence_quality_gate(artifact)
+
+        self.assertTrue(result["passed"])
 
     def test_ledger_stage_persists_duration_attempt_and_changed_file_count(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2177,7 +2229,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "recommended_owner_decision": "approve_final_release",
             "release_notes": ["ready"],
             "changed_files": ["modules/charlie/execution_bridge.py"],
-            "test_evidence": ["unit tests passed"],
+            "test_evidence": [{
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "status": "pass",
+                "output": "Ran focused bridge tests; OK",
+            }],
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
             "no_vault_update_required": "Runner behavior was unchanged.",
             "confidence": "98%",
@@ -2229,7 +2285,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "recommended_owner_decision": "approve_final_release",
             "release_notes": ["ready"],
             "changed_files": ["modules/charlie/execution_bridge.py"],
-            "test_evidence": ["unit tests passed"],
+            "test_evidence": [{
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "status": "pass",
+                "output": "Ran focused bridge tests; OK",
+            }],
             "branch_name": "charlie/example",
             "commit_sha": "abc1234",
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
@@ -2287,6 +2347,8 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout="abc1234\n", stderr="")
             if command[:2] == ["git", "push"]:
                 return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout="[]", stderr="")
             if command[:3] == ["gh", "pr", "create"]:
                 return SimpleNamespace(returncode=0, stdout="https://github.com/org/repo/pull/77\n", stderr="")
             return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
@@ -2310,6 +2372,72 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(packaged["git_packaging"]["status"], "pr_created")
         self.assertEqual(packaged["errors"], [])
         self.assertTrue(any(call[:3] == ["git", "switch", "-c"] for call in calls))
+
+    def test_builder_prompt_binds_existing_canonical_pr(self):
+        mission = {
+            "metadata": {"review_packet": {
+                "pr_url": "https://github.com/org/repo/pull/355",
+                "pr_number": 355,
+                "branch_name": "charlie/canonical",
+            }}
+        }
+
+        instruction = execution_bridge._agent_stage_instruction("builder", mission)
+
+        self.assertIn("canonical PR #355", instruction)
+        self.assertIn("never open a second PR", instruction)
+
+    def test_builder_pr_reconciliation_prefers_mission_bound_pr_and_closes_duplicate(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([
+                    {"number": 355, "url": "https://github.com/org/repo/pull/355", "headRefName": "canonical", "headRefOid": "abc1234", "baseRefName": "main"},
+                    {"number": 358, "url": "https://github.com/org/repo/pull/358", "headRefName": "duplicate", "headRefOid": "abc1234", "baseRefName": "main"},
+                ]), stderr="")
+            if command[:3] == ["gh", "pr", "close"]:
+                return SimpleNamespace(returncode=0, stdout="closed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/charlie/execution_bridge.py"],
+            "commit_sha": "abc1234",
+            "pr_url": "https://github.com/org/repo/pull/358",
+            "pr_number": 358,
+            "links": {"pr": "https://github.com/org/repo/pull/358"},
+        })
+        mission = {"metadata": {"review_packet": {
+            "pr_url": "https://github.com/org/repo/pull/355", "pr_number": 355,
+        }}}
+
+        reconciled = execution_bridge._auto_package_builder_changes(mission, artifact, runner=fake_runner)
+
+        self.assertEqual(reconciled["pr_number"], 355)
+        self.assertEqual(reconciled["branch_name"], "canonical")
+        self.assertEqual(reconciled["duplicate_pr_reconciliation"]["closed_pr_numbers"], [358])
+        self.assertTrue(any(call[:3] == ["gh", "pr", "close"] for call in calls))
+
+    def test_builder_pr_reconciliation_does_not_reuse_different_head(self):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([
+                    {"number": 88, "url": "https://github.com/org/repo/pull/88", "headRefName": "other", "headRefOid": "different", "baseRefName": "main"},
+                ]), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({"changed_files": [], "commit_sha": "abc1234", "pr_url": "", "links": {"pr": ""}})
+
+        reconciled = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertFalse(execution_bridge._artifact_pr_reference(reconciled))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "close"] for call in calls))
 
     def test_auto_package_builder_changes_records_failure_without_pr(self):
         def fake_runner(command, **_kwargs):
@@ -2393,7 +2521,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "recommended_owner_decision": "approve_final_release",
             "release_notes": ["ready"],
             "changed_files": ["modules/charlie/execution_bridge.py"],
-            "test_evidence": ["unit tests passed"],
+            "test_evidence": [{
+                "command": "python -m unittest tests.test_charlie_execution_bridge",
+                "status": "pass",
+                "output": "Ran focused bridge tests; OK",
+            }],
             "links": {"pr": "https://github.com/org/repo/pull/61"},
             "vault_sources_used": ["docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md"],
             "no_vault_update_required": "Runner behavior was unchanged.",
@@ -4356,6 +4488,30 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         ]
 
         result = execution_bridge._judgement_evidence_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
+    def test_qa_pass_does_not_treat_positive_failure_evidence_as_a_blocker(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "pass"
+        artifact["risk_rating"] = "medium"
+        artifact["summary"] = (
+            "QA verified durable idempotency and failure evidence. "
+            "The authority-boundary row passes; the post-deployment live canary remains pending."
+        )
+        artifact["qa_findings"] = []
+
+        result = execution_bridge._judgement_evidence_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_qa_pass_still_blocks_an_explicit_failure(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact["red_team_status"] = "pass"
+        artifact["risk_rating"] = "medium"
+        artifact["summary"] = "Failure evidence was retained, but the focused authorization check failed."
+
+        result = execution_bridge._judgement_evidence_quality_gate("qa_red_team", artifact)
 
         self.assertFalse(result["passed"], result)
 

@@ -23,6 +23,7 @@ from modules.charlie.repository_guard import RepositoryOperationLock, repository
 from modules.charlie.runner_control import RUNNER_DIR
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
 from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
+from modules.charlie.secret_redaction import redact_tree_in_place
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
@@ -189,6 +190,26 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
                 "failure_status": bootstrap.get("status", "execution_bootstrap_failed"),
                 "bootstrap": bootstrap,
             }
+        scrub_results = [
+            redact_tree_in_place(RUNNER_HEARTBEAT_PATH),
+            redact_tree_in_place(RUNNER_DIR / "runner.log"),
+            redact_tree_in_place(EXECUTION_ROOT / ".charlie_runner" / "executions"),
+        ]
+        scrub_errors = [error for result in scrub_results for error in result.get("errors", [])]
+        if scrub_errors:
+            payload = _write_status(
+                "infrastructure_hold",
+                child_pid=0,
+                restart_count=restart_count,
+                failure_status="secret_scrub_failed",
+                failure_detail={"errors": scrub_errors},
+                identical_failure_count=1,
+                generation=generation,
+                recommended_action="Repair runtime evidence permissions and rerun secret scrubbing before CORE starts.",
+            )
+            if notifier:
+                notifier(payload)
+            return {"status": "infrastructure_hold", "failure_status": "secret_scrub_failed", "scrub_results": scrub_results}
         child_env = {
             **os.environ,
             "CHARLIE_SUPERVISOR_GENERATION": generation,
