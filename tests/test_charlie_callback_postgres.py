@@ -159,6 +159,38 @@ class CharlieCallbackPostgresTests(unittest.TestCase):
         self.assertFalse(duplicate["created"])
         self.assertEqual(duplicate["existing_status"], "failed")
 
+    def test_reconciliation_wins_over_delayed_completion(self):
+        """A delayed completion cannot replace reconciliation's terminal audit."""
+        update_id = self._update_id()
+        claimed, status = claim_update(update_id, "callback-race", database_url=self.database_url)
+        self.assertEqual(status, 201)
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "update public.charlie_inbound_updates set received_at=now() - interval '2 minutes' where update_key=%s",
+                    (claimed["update_key"],),
+                )
+
+        reconciled, reconcile_status = reconcile_incomplete_update(
+            claimed["update_key"], minimum_age_seconds=30, database_url=self.database_url
+        )
+        delayed, delayed_status = complete_update(
+            claimed["update_key"], result={"decision": "approved"}, database_url=self.database_url
+        )
+
+        self.assertEqual(reconcile_status, 200)
+        self.assertTrue(reconciled["reconciled"])
+        self.assertEqual(delayed_status, 409)
+        self.assertFalse(delayed["success"])
+        self.assertEqual(delayed["status"], "update_already_terminal")
+        self.assertEqual(delayed["terminal_status"], "failed")
+        self.assertEqual(delayed["result"]["status"], "completion_unknown_replay_refused")
+
+        duplicate, duplicate_status = claim_update(update_id, "callback-race", database_url=self.database_url)
+        self.assertEqual(duplicate_status, 200)
+        self.assertEqual(duplicate["existing_status"], "failed")
+        self.assertEqual(duplicate["existing_result"]["status"], "completion_unknown_replay_refused")
+
 
 if __name__ == "__main__":
     unittest.main()

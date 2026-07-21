@@ -107,17 +107,40 @@ def reconcile_incomplete_update(update_key, *, minimum_age_seconds=30, database_
 
 
 def complete_update(update_key, *, status="processed", result=None, database_url=None, connect_factory=None):
+    """Complete only an active inbound update claim.
+
+    Reconciliation may have already closed a stale ``processing`` row while a
+    delayed handler is returning.  That terminal result is authoritative and
+    must never be overwritten by the delayed completion.
+    """
     try:
         with _connect(_database_url(database_url), connect_factory) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""
                     update public.charlie_inbound_updates set status=%(status)s, result_json=%(result)s::jsonb, completed_at=now()
-                    where update_key=%(key)s returning update_key
+                    where update_key=%(key)s and status='processing'
+                    returning update_key
                 """, {"status": status, "result": json.dumps(result or {}), "key": update_key})
                 found = bool(cursor.fetchall())
+                if not found:
+                    cursor.execute("""
+                        select status, result_json, completed_at
+                        from public.charlie_inbound_updates where update_key=%(key)s
+                    """, {"key": update_key})
+                    existing = cursor.fetchone()
     except Exception as exc:
         return {"success": False, "status": "update_complete_failed", "error_type": exc.__class__.__name__}, 503
-    return {"success": found, "status": "ok" if found else "not_found"}, 200 if found else 404
+    if found:
+        return {"success": True, "status": "ok"}, 200
+    if not existing:
+        return {"success": False, "status": "not_found"}, 404
+    return {
+        "success": False,
+        "status": "update_already_terminal",
+        "terminal_status": str(existing[0] or ""),
+        "result": dict(existing[1] or {}),
+        "completed_at": existing[2].isoformat() if existing[2] else "",
+    }, 409
 
 
 def bind_owner(user_id, chat_id, *, metadata=None, database_url=None, connect_factory=None):
