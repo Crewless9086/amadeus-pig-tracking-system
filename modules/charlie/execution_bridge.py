@@ -4949,6 +4949,8 @@ def _is_recovered_command_process_issue(agent, artifact, value):
         return False
     if not _artifact_has_passing_test_collection(artifact):
         return False
+    if isinstance(value, dict) and value.get("introduced_by_current_diff") is not False:
+        return False
     text = _artifact_text(value).lower()
     recovered_terms = (
         "reran",
@@ -4957,9 +4959,12 @@ def _is_recovered_command_process_issue(agent, artifact, value):
         "recovered",
         "recaptured",
         "passed",
+        "successfully",
     )
     setup_terms = (
         "powershell invocation",
+        "powershell command invocation",
+        "unsupported powershell",
         "quoted executable",
         "call operator",
         "parser error",

@@ -3053,8 +3053,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         artifact = _successful_stage_payload("tester")
         artifact.update({
             "test_status": "pass",
-            "tests_run": [{"command": "python -m unittest focused", "result": "pass - 67 tests"}],
-            "errors": [],
+            "tests_run": [{"command": "python -m unittest focused", "result": "pass", "details": "67 tests passed"}],
+            "errors": [{
+                "scope_relation": "test-execution tooling only",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "acceptance_relation": "none",
+                "finding": "One read-only negative-path command used unsupported PowerShell syntax; it did not execute and was immediately rerun successfully.",
+            }],
             "bugs": [{
                 "scope_relation": "adjacent follow-up work; not implementable in this slice without separate owner approval",
                 "introduced_by_current_diff": False,
