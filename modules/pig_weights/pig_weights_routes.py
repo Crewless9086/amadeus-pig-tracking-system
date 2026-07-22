@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from modules.auth.owner_access import (
     correction_batch_owner_admin_principal,
+    owner_actor_reference,
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
     require_owner_read_access,
@@ -193,7 +194,10 @@ def record_observation_route():
     denied = require_owner_admin_access()
     if denied:
         return denied
-    result, status_code = record_observation(request.get_json(silent=True) or {})
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_observation(request.get_json(silent=True) or {}, author_reference)
     return jsonify(result), status_code
 
 
@@ -202,7 +206,10 @@ def record_management_intent_route():
     denied = require_owner_admin_access()
     if denied:
         return denied
-    result, status_code = record_management_intent(request.get_json(silent=True) or {})
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_management_intent(request.get_json(silent=True) or {}, author_reference)
     return jsonify(result), status_code
 
 
