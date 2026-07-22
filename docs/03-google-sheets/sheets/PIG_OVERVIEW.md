@@ -53,8 +53,8 @@ $S2="","",
 $S2<=1,"Newborn",
 $S2<=6,"Young Piglet",
 $S2<=19,"Weaner",
-$S2<=49,"Grower",
-$S2<=79,"Finisher",
+$S2<60,"Grower",
+$S2<80,"Finisher",
 $S2>=80,"Ready for Slaughter",
 TRUE,$F2
 ))
@@ -131,4 +131,4 @@ General_Notes	=IF($A2="","",XLOOKUP($A2,PIG_MASTER!$A:$A,PIG_MASTER!$AH:$AH,""))
 Last_Updated_From_System =IF($A2="","",TODAY())
 
 ## Notes
-"Age_Days" and	"Age_Weeks" needs to be updated that it stops calculating the days after the animals has died or was sold or exited or is not on farm any more. becuse this become useless for us we just need to know the age when they left the farm and use this for all other things. Otherwise it just keeps aging. 
+"Age_Days" and	"Age_Weeks" needs to be updated that it stops calculating the days after the animals has died or was sold or exited or is not on farm any more. becuse this become useless for us we just need to know the age when they left the farm and use this for all other things. Otherwise it just keeps aging.

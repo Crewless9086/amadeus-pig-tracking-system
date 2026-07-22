@@ -464,7 +464,8 @@ function renderRows(rows) {
       <tr>
         <td>
           <a class="detail-link allocation-pig-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
-          <span class="table-subtext">${escapeHtml(row.animal_type || "-")} / ${escapeHtml(row.sex || "-")}</span>
+          <span class="table-subtext">Recorded type: ${escapeHtml(row.animal_type || "-")} / ${escapeHtml(row.sex || "-")}</span>
+          <span class="table-subtext">Weight stage: ${escapeHtml(row.weight_stage || "No weight stage")}</span>
         </td>
         <td>
           <span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span>
@@ -498,6 +499,8 @@ function renderRows(rows) {
             <summary>Details</summary>
             <dl>
               <div><dt>Pig ID</dt><dd>${escapeHtml(row.pig_id || "-")}</dd></div>
+              <div><dt>Recorded animal type</dt><dd>${escapeHtml(row.animal_type || "-")}</dd></div>
+              <div><dt>Derived weight stage</dt><dd>${escapeHtml(row.weight_stage || "No weight stage")}</dd></div>
               <div><dt>Reason</dt><dd>${escapeHtml(row.readiness_reason || "-")}</dd></div>
               <div><dt>Suggested reason</dt><dd>${escapeHtml(row.suggested_purpose_reason || "-")}</dd></div>
               <div><dt>Weaning</dt><dd>${escapeHtml(formatKg(row.wean_weight_kg))} / ${row.wean_date ? `${escapeHtml(row.wean_date)} (${escapeHtml(row.days_since_wean ?? "-")} days)` : "No wean date"}</dd></div>

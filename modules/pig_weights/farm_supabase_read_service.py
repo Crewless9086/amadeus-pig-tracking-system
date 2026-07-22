@@ -188,11 +188,9 @@ def _tag_sort_key(tag_number, pig_id):
     return raw.lower()
 
 
-def _calculated_stage(row):
-    animal_type = _text(row.get("animal_type"))
-    if animal_type:
-        return animal_type
-    weight = _float_or_none(row.get("current_weight_kg"))
+def derive_weight_stage(weight_kg):
+    """Return the weight-derived stage without consulting recorded animal type."""
+    weight = _float_or_none(weight_kg)
     if weight is None:
         return ""
     if weight < 15:
@@ -202,6 +200,11 @@ def _calculated_stage(row):
     if weight < 60:
         return "Grower"
     return "Finisher"
+
+
+def _calculated_stage(row):
+    """Legacy compatibility alias for read consumers not yet on ``weight_stage``."""
+    return derive_weight_stage(row.get("current_weight_kg"))
 
 
 def _pig_summary(row):
@@ -221,6 +224,7 @@ def _pig_summary(row):
         "last_weight_date": _date_text(row.get("last_weight_date")),
         "current_pen_id": _text(row.get("current_pen_id")),
         "current_pen_name": _text(row.get("current_pen_name")),
+        "weight_stage": derive_weight_stage(row.get("current_weight_kg")),
         "calculated_stage": _calculated_stage(row),
         "weight_band": _weight_band(row.get("current_weight_kg")),
         "is_sale_ready": "",

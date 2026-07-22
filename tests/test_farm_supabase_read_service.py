@@ -33,6 +33,8 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(summary["current_weight_kg"], 61.5)
         self.assertEqual(summary["last_weight_date"], "2026-06-22")
         self.assertEqual(summary["current_pen_name"], "Grower Pen")
+        self.assertEqual(summary["animal_type"], "Grower")
+        self.assertEqual(summary["weight_stage"], "Finisher")
         self.assertEqual(summary["weight_band"], "60-<80 kg")
 
     def test_weight_history_calculates_differences_from_supabase_rows(self):

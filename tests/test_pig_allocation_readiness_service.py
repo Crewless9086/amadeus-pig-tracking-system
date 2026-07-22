@@ -7,6 +7,21 @@ from modules.pig_weights import pig_weights_service
 
 
 class PigAllocationReadinessServiceTests(unittest.TestCase):
+
+    def test_weight_stage_boundaries_are_independent_of_recorded_animal_type(self):
+        cases = [
+            (34.999, "Weaner"),
+            (35, "Grower"),
+            (59.999, "Grower"),
+            (60, "Finisher"),
+        ]
+
+        for weight_kg, expected_stage in cases:
+            with self.subTest(weight_kg=weight_kg):
+                self.assertEqual(
+                    farm_supabase_read_service.derive_weight_stage(weight_kg),
+                    expected_stage,
+                )
     def setUp(self):
         self._supabase_available_patch = patch.object(
             farm_supabase_read_service,
@@ -224,6 +239,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(result["pigs"][0]["pig_id"], "PIG-1")
         self.assertEqual(result["pigs"][0]["current_pen_name"], "Grower Pen")
         self.assertEqual(result["pigs"][0]["litter_quality"], "Good")
+        self.assertEqual(result["pigs"][0]["animal_type"], "Grower")
+        self.assertEqual(result["pigs"][0]["weight_stage"], "Finisher")
         self.assertFalse(result["writes_to_sheets"])
         self.assertFalse(result["writes_to_supabase"])
 

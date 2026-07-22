@@ -4550,6 +4550,7 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
             "current_pen_id": current_pen_id,
             "current_pen_name": _pen_name_for_id(pen_lookup, current_pen_id),
             "latest_weight_kg": growth["latest_weight_kg"],
+            "weight_stage": farm_supabase_read_service.derive_weight_stage(growth["latest_weight_kg"]),
             "latest_weight_date": growth["latest_weight_date"].isoformat() if growth["latest_weight_date"] else "",
             "days_since_weight": growth["days_since_weight"],
             "birth_date": growth["birth_date"].isoformat() if growth["birth_date"] else "",

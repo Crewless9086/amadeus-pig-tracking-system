@@ -43,6 +43,7 @@ Farm record writes require approved backend paths and audit evidence.
 ## One-Pig-Truth Rules
 
 - `PIG_MASTER`/canonical pig table owns identity and lifecycle state.
+- `animal_type` is the recorded identity/lifecycle fact. `weight_stage` is a separate, read-only fact derived from the latest weight: below 15 kg `Piglet`, 15 to under 35 kg `Weaner`, 35 to under 60 kg `Grower`, and 60 kg or more `Finisher`. A derived stage must never substitute for or be inferred from the recorded animal type.
 - Formula/read-model views may explain state, but must not become write targets.
 - Weight, location, medical, mating, and litter records should remain event/audit-friendly.
 - Pig purpose/allocation must be dynamic and owner-reviewed where it changes operational state.
