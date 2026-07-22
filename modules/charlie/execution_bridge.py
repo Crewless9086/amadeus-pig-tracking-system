@@ -8437,6 +8437,13 @@ def _infer_changed_ui_preview_url(preview_url, changed_files=None, final_message
     route = ""
     if "salesavailability.js" in text or "sales availability" in text or "sales dashboard" in text:
         route = "/sales-dashboard"
+    elif (
+        "templates/purpose-review.html" in text
+        or "static/js/purposereview.js" in text
+        or "purpose review queue" in text
+        or "purpose-review" in text
+    ):
+        route = "/purpose-review"
     elif "templates/charlie" in text or "charliemissioncontrol" in text or "mission control" in text:
         route = "/charlie"
     if not route or route == (parsed.path.rstrip("/") or "/"):
