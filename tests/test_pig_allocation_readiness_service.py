@@ -973,6 +973,60 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertNotIn("update public.pigs set purpose", sql)
         self.assertNotIn("insert into public.operational_events", sql)
 
+    def test_owner_approved_missing_weight_batch_fails_before_purpose_or_audit_write(self):
+        decisions = [{"pig_id": "PIG-MISSING-WEIGHT", "purpose": "Meat", "reason": "Incomplete signal", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status, decisions_json" in self.last_sql:
+                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-1")
+                return None
+
+            def fetchall(self):
+                if "from public.pigs pig" in self.last_sql:
+                    return [("PIG-MISSING-WEIGHT", "Active", True, "Grow_Out", None, None)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-MISSING-WEIGHT", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_weight_not_fresh")
+        self.assertEqual(result["blocked_pig_ids"], ["PIG-MISSING-WEIGHT"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
     def test_tampered_approved_batch_cannot_write_under_prior_approval(self):
         approved_decisions = [{"pig_id": "PIG-1", "purpose": "Meat", "reason": "Fresh", "note": ""}]
         tampered_decisions = [{"pig_id": "PIG-1", "purpose": "Sale", "reason": "Changed", "note": ""}]
