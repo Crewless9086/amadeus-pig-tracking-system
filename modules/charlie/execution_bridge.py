@@ -766,6 +766,9 @@ def run_agent_execution_bridge_v2(
             candidate_manifest,
             previous_artifact=artifacts.get(agent),
         )
+        authoritative_pr_files = _authoritative_pr_changed_files(artifact)
+        if authoritative_pr_files:
+            artifact["authoritative_pr_changed_files"] = authoritative_pr_files
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
             governance_decision = evaluate_quality_failure(mission, agent, artifact, quality)
@@ -4003,9 +4006,10 @@ def _validate_agent_artifact(agent, artifact):
 
 
 def _agent_quality_gate(agent, artifact):
-    if agent == "tester" and str(artifact.get("test_status") or "").strip().lower() == "blocked":
+    _normalize_authoritative_diff_followups(agent, artifact)
+    if agent == "tester":
         _normalize_verifier_protected_operation_pending(agent, artifact)
-    if agent == "qa_red_team" and str(artifact.get("red_team_status") or "").strip().lower() == "blocked":
+    if agent == "qa_red_team":
         _normalize_verifier_protected_operation_pending(agent, artifact)
     _normalize_separate_protected_operation_decision(agent, artifact)
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
@@ -4582,7 +4586,11 @@ def _judgement_evidence_quality_gate(agent, artifact):
                 "reason": f"{agent} recorded non-passing {field}={decision}.",
             }
 
-    negative = _negative_judgement_evidence(agent, artifact)
+    negative = [] if (
+        artifact.get("protected_operation_evidence_normalized") is True
+        and not _blocking_artifact_items(agent, artifact, artifact.get("errors") or [])
+        and not _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
+    ) else _negative_judgement_evidence(agent, artifact)
     if negative:
         return {
             "passed": False,
@@ -4674,10 +4682,107 @@ def _normalize_verifier_protected_operation_pending(agent, artifact):
                 "reason": "Passing code verification is separate from this protected operational evidence gate.",
             })
     artifact["protected_operations"] = protected
+    artifact["protected_operation_evidence_normalized"] = True
     artifact.setdefault("warnings", []).append(
         f"Normalized {agent} blocked status to code-pass because only explicit owner-gated operational evidence remains."
     )
     return True
+
+
+def _authoritative_pr_changed_files(artifact, run_factory=subprocess.run):
+    """Return GitHub's current PR file list, failing closed when unavailable."""
+    if not isinstance(artifact, dict):
+        return []
+    recorded = artifact.get("authoritative_pr_changed_files")
+    if isinstance(recorded, list) and recorded:
+        return sorted({str(path or "").strip().replace("\\", "/") for path in recorded if str(path or "").strip()})
+    pr_number = str(artifact.get("pr_number") or "").strip()
+    if not pr_number:
+        pr_url = str(artifact.get("pr_url") or (artifact.get("links") or {}).get("pr") or "").strip()
+        match = re.search(r"/pull/(\d+)(?:\D|$)", pr_url)
+        pr_number = match.group(1) if match else ""
+    if not pr_number.isdigit():
+        return []
+    try:
+        completed = run_factory(
+            ["gh", "pr", "diff", pr_number, "--name-only"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    return sorted({
+        line.strip().replace("\\", "/")
+        for line in str(completed.stdout or "").splitlines()
+        if line.strip()
+    })
+
+
+def _normalize_authoritative_diff_followups(agent, artifact):
+    """Correct a model's false current-diff attribution using GitHub PR truth.
+
+    Suppression is deliberately narrow: the finding must call itself unrelated
+    or a linked/outside-scope follow-up, must not violate acceptance, and every
+    affected path must be absent from GitHub's authoritative PR file list.
+    """
+    if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if not isinstance(artifact, dict):
+        return False
+    authoritative = {
+        str(path or "").strip().replace("\\", "/")
+        for path in (artifact.get("authoritative_pr_changed_files") or [])
+        if str(path or "").strip()
+    }
+    if not authoritative:
+        return False
+    normalized = False
+    for key in ("errors", "bugs"):
+        values = artifact.get(key)
+        if not isinstance(values, list):
+            continue
+        repaired = []
+        for value in values:
+            if not isinstance(value, dict) or value.get("introduced_by_current_diff") is not True:
+                repaired.append(value)
+                continue
+            scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+            text = _artifact_text(value).lower()
+            explicitly_follow_up = scope in {"unrelated", "adjacent_follow_up", "out_of_scope_follow_up"} or any(
+                term in text for term in ("outside the bounded", "outside this bounded", "linked follow-up", "linked follow up")
+            )
+            violates_acceptance = value.get("violates_acceptance_row")
+            if violates_acceptance is None:
+                violates_acceptance = value.get("acceptance_row_violation")
+            affected_text = str(value.get("affected_path") or "")
+            affected_values = value.get("affected_paths") if isinstance(value.get("affected_paths"), list) else []
+            affected = {
+                path.strip().replace("\\", "/")
+                for raw in [affected_text, *affected_values]
+                for path in re.split(r"[;,]", str(raw or ""))
+                if path.strip()
+            }
+            if explicitly_follow_up and violates_acceptance is False and affected and affected.isdisjoint(authoritative):
+                value = {
+                    **value,
+                    "introduced_by_current_diff": False,
+                    "scope_relation": "adjacent_follow_up",
+                    "severity": "advisory",
+                    "violates_acceptance_row": False,
+                    "attribution_basis": "authoritative_github_pr_diff_disjoint",
+                }
+                normalized = True
+            repaired.append(value)
+        artifact[key] = repaired
+    if normalized:
+        artifact.setdefault("warnings", []).append(
+            "Reclassified a false current-diff finding after its affected paths were absent from GitHub's authoritative PR diff."
+        )
+    return normalized
 
 
 def _normalize_separate_protected_operation_decision(agent, artifact):
@@ -4717,8 +4822,10 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     unrelated_advisory_errors = bool(blocking_errors) and all(
         isinstance(item, dict)
         and item.get("introduced_by_current_diff") is False
-        and str(item.get("scope_relation") or "").strip().lower() in {"unrelated", "pre_existing", "pre-existing"}
+        and str(item.get("scope_relation") or "").strip().lower() in {"advisory", "unrelated", "pre_existing", "pre-existing"}
         and str(item.get("severity") or "").strip().lower() == "advisory"
+        and item.get("violates_acceptance_row") in {False, None}
+        and item.get("acceptance_row_violation") in {False, None}
         and not (item.get("acceptance_relation") or item.get("acceptance_rows"))
         for item in blocking_errors
     )
@@ -4727,10 +4834,15 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     blocking_bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
     if blocking_bugs and not all(
         isinstance(item, dict)
-        and item.get("introduced_by_current_diff") is False
-        and str(item.get("scope_relation") or "").strip().lower() in {"unrelated", "pre_existing", "pre-existing"}
-        and str(item.get("severity") or "").strip().lower() == "advisory"
-        and not item.get("acceptance_relation")
+        and (
+            (
+                item.get("introduced_by_current_diff") is False
+                and str(item.get("scope_relation") or "").strip().lower() in {"unrelated", "pre_existing", "pre-existing"}
+                and str(item.get("severity") or "").strip().lower() == "advisory"
+                and not item.get("acceptance_relation")
+            )
+            or item.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+        )
         for item in blocking_bugs
     ):
         return False
@@ -5358,7 +5470,7 @@ def _is_resolved_pr_process_issue(agent, artifact, value):
 
 
 def _is_recovered_command_process_issue(agent, artifact, value):
-    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "reviewer", "evidence_reviewer", "security_reviewer"}:
         return False
     if not _artifact_has_passing_test_collection(artifact):
         return False
@@ -5449,7 +5561,10 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
         if severity not in {"advisory", "informational", "info", "low"}:
             return False
-        explicitly_non_acceptance = value.get("violates_acceptance_row") is False
+        explicitly_non_acceptance = (
+            value.get("violates_acceptance_row") is False
+            or value.get("acceptance_row_violation") is False
+        )
         if not explicitly_non_acceptance and not any(term in acceptance for term in (
             "does not violate", "does not fail acceptance", "outside current acceptance",
             "not part of current acceptance", "no impact on current acceptance", "adjacent follow-up",
