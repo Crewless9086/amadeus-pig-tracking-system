@@ -47,7 +47,7 @@ from modules.charlie.execution_bridge import (
 )
 from modules.charlie.build_relay import build_relay_policy
 from scripts.charlie_notify import _format_message, main as notify_main
-from scripts.charlie_mission_telegram import mission_callback
+from scripts.charlie_mission_telegram import mission_callback, review_candidate_token
 
 
 CODEX_CHAT_PATH = REPO_ROOT / "planning" / "CODEX_CHAT.md"
@@ -1687,7 +1687,9 @@ def _executive_owner_decision_keyboard(payload, mission=None):
     if str(payload.get("action") or "").startswith("operational_outcome_") and follow_up_id:
         rows.append([{"text": "Review Follow-up", "callback_data": mission_callback(follow_up_id, "open")}])
     if status == "pr_ready":
-        rows.append([{"text": "Approve Release", "callback_data": mission_callback(mission_id, "approvefinal")}])
+        packet = ((mission.get("metadata") or {}).get("review_packet") or {}) if isinstance(mission.get("metadata"), dict) else {}
+        if packet.get("review_generation") and packet.get("tested_revision"):
+            rows.append([{"text": "Approve Release", "callback_data": mission_callback(mission_id, "approvefinal", review_candidate_token(mission))}])
         rows.append([{"text": "Send Back to Tester", "callback_data": mission_callback(mission_id, "sendback", "tester")}])
     rows.append([{"text": "Refresh Mission", "callback_data": mission_callback(mission_id, "open")}])
     return {"inline_keyboard": rows}

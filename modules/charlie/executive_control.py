@@ -73,7 +73,12 @@ def recovery_decision(mission, policies, *, trust=None, now=None):
         return {"action": "escalate_owner", "block_class": block_class, **authority}
     target = adjudication.get("target_stage") or "planner"
     fingerprint = adjudication.get("fingerprint")
-    action = {"recover_stage": "schedule_recovery", "decompose_acceptance": "decompose_acceptance", "reconcile_pr": "reconcile_pr"}.get(adjudication.get("action"), adjudication.get("action"))
+    action = {
+        "recover_stage": "schedule_recovery",
+        "decompose_acceptance": "decompose_acceptance",
+        "reconcile_pr": "reconcile_pr",
+        "system_incident_halted": "create_incident_repair",
+    }.get(adjudication.get("action"), adjudication.get("action"))
     return {
         **adjudication, "action": action, "capability": "core.internal_recovery",
         "authority_tier": authority["authority_tier"], "policy_id": authority.get("policy_id", ""),
@@ -121,7 +126,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     for mission in missions:
         if mission.get("status") == "blocked":
             decision = recovery_decision(mission, policies, trust=trust, now=now)
-            target = commands if decision.get("action") in {"schedule_recovery", "decompose_acceptance", "reconcile_pr"} else escalations
+            target = commands if decision.get("action") in {"schedule_recovery", "decompose_acceptance", "reconcile_pr", "create_incident_repair"} else escalations
             target.append({"mission_id": mission.get("mission_id"), **decision})
         elif mission.get("status") == "pr_ready":
             assessment = delegated_review_assessment(mission)

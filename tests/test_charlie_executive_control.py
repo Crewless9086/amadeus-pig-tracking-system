@@ -119,6 +119,21 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         self.assertEqual(result["target_stage"], "builder")
         self.assertTrue(result["idempotency_key"].startswith("schedule_recovery:MISSION-1:"))
 
+    def test_system_incident_creates_internal_repair_instead_of_owner_escalation(self):
+        mission = blocked()
+        mission["metadata"]["review_packet"].update({
+            "review_status": "system_incident_halted",
+            "blocked_agent": "security_reviewer",
+            "blocked_reason": "Repeated evidence recovery halted.",
+            "owner_review_gate_failure": {"fingerprint": "stable-incident"},
+        })
+        result = recovery_decision(mission, POLICIES)
+        self.assertEqual(result["action"], "create_incident_repair")
+        self.assertFalse(result["owner_required"])
+        cycle = build_executive_cycle([mission], POLICIES, runner={"active_mission_id": "ACTIVE"})
+        self.assertIn("create_incident_repair", [item["action"] for item in cycle["commands"]])
+        self.assertFalse(any(item.get("mission_id") == "MISSION-1" for item in cycle["escalations"]))
+
     def test_owner_block_never_auto_recovers(self):
         owner_mission = blocked(owner_required=True)
         owner_mission["metadata"]["review_packet"]["blocked_reason"] = "Owner must decide the pricing business choice."

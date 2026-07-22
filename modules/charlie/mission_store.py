@@ -593,6 +593,8 @@ def update_mission_status(
         "status = %(status)s",
         "owner_decision = %(owner_decision)s",
     ]
+    if status not in {"in_progress", "release_in_progress"}:
+        set_lines.append("metadata_json = coalesce(metadata_json, '{}'::jsonb) - 'execution_lease'")
     if approval_level:
         set_lines.append("approval_level = %(approval_level)s")
     set_lines.append("updated_at = now()")
@@ -682,7 +684,7 @@ def transition_mission_review_state(
                     update public.charlie_missions
                     set status = %(status)s,
                         owner_decision = %(owner_decision)s,
-                        metadata_json = coalesce(metadata_json, '{{}}'::jsonb) || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
+                        metadata_json = (coalesce(metadata_json, '{{}}'::jsonb) - 'execution_lease') || jsonb_build_object('review_packet', %(review_packet)s::jsonb),
                         updated_at = now()
                     where mission_id = %(mission_id)s
                     {expected_clause}
@@ -793,7 +795,7 @@ def finalize_owner_review_transaction(
                     update public.charlie_missions
                     set status = 'pr_ready',
                         owner_decision = 'CORE atomically finalised owner review.',
-                        metadata_json = coalesce(metadata_json, '{}'::jsonb)
+                        metadata_json = (coalesce(metadata_json, '{}'::jsonb) - 'execution_lease')
                             || jsonb_build_object(
                                 'review_packet', %(review_packet)s::jsonb,
                                 'outcome_closure_tracking', jsonb_build_object(

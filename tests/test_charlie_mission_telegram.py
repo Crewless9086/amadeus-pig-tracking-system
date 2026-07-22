@@ -92,6 +92,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
             "changed_files": ["supabase/migrations/202607160001_example.sql"],
             "test_evidence": ["Focused tests passed."],
             "review_generation": "EXEC-1:abc123",
+            "tested_revision": "abc123",
         }}
         card = charlie_mission_telegram.mission_card_text(self.mission)
         keyboard = charlie_mission_telegram.mission_keyboard(self.mission)
@@ -106,6 +107,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         self.mission["metadata"] = {"review_packet": {
             "test_evidence": ["Focused tests passed."],
             "review_generation": "EXEC-1:abc123",
+            "tested_revision": "abc123",
         }}
         stale, _ = charlie_mission_telegram.handle_callback(
             charlie_mission_telegram.mission_callback(self.mission["mission_id"], "approvefinal", "stale-token"),
