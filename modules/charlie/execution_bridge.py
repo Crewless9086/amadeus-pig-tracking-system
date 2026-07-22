@@ -1,3 +1,4 @@
+import ast
 import base64
 import hashlib
 import json
@@ -4231,6 +4232,7 @@ def _objective_evidence_quality_override(agent, artifact, confidence):
 
 
 def _artifact_test_evidence_passes(item):
+    item = _structured_artifact_item(item)
     if isinstance(item, dict):
         status = str(item.get("status") or item.get("result") or "").strip().lower()
         text = " ".join(str(value or "") for value in item.values()).lower()
@@ -4271,6 +4273,7 @@ def _reviewer_test_evidence_quality_gate(artifact):
     )
     structured_pass = False
     for item in evidence:
+        item = _structured_artifact_item(item)
         text = (
             " ".join(str(value or "") for value in item.values()).lower()
             if isinstance(item, dict)
@@ -4752,6 +4755,7 @@ def _normalize_authoritative_diff_followups(agent, artifact):
             continue
         repaired = []
         for value in values:
+            value = _structured_artifact_item(value)
             if not isinstance(value, dict) or value.get("introduced_by_current_diff") is not True:
                 repaired.append(value)
                 continue
@@ -4763,7 +4767,21 @@ def _normalize_authoritative_diff_followups(agent, artifact):
             violates_acceptance = value.get("violates_acceptance_row")
             if violates_acceptance is None:
                 violates_acceptance = value.get("acceptance_row_violation")
-            affected_text = str(value.get("affected_path") or "")
+            acceptance_text = str(
+                value.get("acceptance_relation")
+                or value.get("acceptance_row")
+                or violates_acceptance
+                or ""
+            ).strip().lower()
+            explicitly_non_acceptance = violates_acceptance is False or acceptance_text in {"none", "n/a", "not_applicable", "not applicable"} or any(
+                term in acceptance_text for term in ("no frozen acceptance row violated", "does not violate", "outside current acceptance")
+            )
+            affected_text = str(
+                value.get("affected_path")
+                or value.get("affected_file_path")
+                or value.get("affected_file/path")
+                or ""
+            )
             affected_values = value.get("affected_paths") if isinstance(value.get("affected_paths"), list) else []
             affected = {
                 path.strip().replace("\\", "/")
@@ -4771,7 +4789,7 @@ def _normalize_authoritative_diff_followups(agent, artifact):
                 for path in re.split(r"[;,]", str(raw or ""))
                 if path.strip()
             }
-            if explicitly_follow_up and violates_acceptance is False and affected and affected.isdisjoint(authoritative):
+            if explicitly_follow_up and explicitly_non_acceptance and affected and affected.isdisjoint(authoritative):
                 value = {
                     **value,
                     "introduced_by_current_diff": False,
@@ -5352,6 +5370,11 @@ def _protected_operation_pause_only(agent, artifact):
     for key in ("errors", "bugs"):
         values = artifact.get(key) if isinstance(artifact.get(key), list) else []
         for value in values:
+            value = _structured_artifact_item(value)
+            if _serialized_owner_gated_operational_finding(value):
+                continue
+            if _is_nonblocking_during_protected_pause(value):
+                continue
             if _is_structured_adjacent_follow_up(agent, artifact, value):
                 continue
             if isinstance(value, dict):
@@ -5363,6 +5386,37 @@ def _protected_operation_pause_only(agent, artifact):
                     continue
             return []
     return operations
+
+
+def _serialized_owner_gated_operational_finding(value):
+    if isinstance(value, dict):
+        return False
+    text = str(value or "").lower()
+    if not all(term in text for term in ("owner-gated", "migration", "live", "canary")):
+        return False
+    if not any(term in text for term in ("not a code defect", "operational evidence gap", "operational closure", "acceptance closure")):
+        return False
+    return not any(term in text for term in (
+        "security vulnerability", "unauthorized write occurred", "data loss", "must fix before merge",
+    ))
+
+
+def _is_nonblocking_during_protected_pause(value):
+    if not isinstance(value, dict) or value.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    severity = str(value.get("severity") or "").strip().lower()
+    if scope not in {"advisory", "unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
+        return False
+    if severity not in {"advisory", "informational", "info", "low"}:
+        return False
+    violates = value.get("violates_acceptance_row")
+    if violates is None:
+        violates = value.get("acceptance_row_violation")
+    acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").lower()
+    return violates is False or any(term in acceptance for term in (
+        "no frozen acceptance row violated", "does not violate", "outside current acceptance",
+    )) or value.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
 
 
 def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
@@ -5532,9 +5586,24 @@ def _artifact_code_review_reference(artifact):
 
 
 def _artifact_text(value):
+    value = _structured_artifact_item(value)
     if isinstance(value, dict):
         return str(value.get("finding") or value.get("bug") or value.get("error") or value.get("summary") or value.get("message") or "").strip()
     return str(value or "").strip()
+
+
+def _structured_artifact_item(value):
+    """Recover structured findings after compact storage stringifies them."""
+    if isinstance(value, dict):
+        return value
+    text = str(value or "").strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return value
+    try:
+        parsed = ast.literal_eval(text)
+    except (SyntaxError, ValueError):
+        return value
+    return parsed if isinstance(parsed, dict) else value
 
 
 def _has_passing_fallback_test_evidence(artifact):
@@ -5643,6 +5712,7 @@ def _blocking_artifact_items(agent, artifact, values):
     blocking = []
     protected_pause = bool(_protected_operation_pause_only(agent, artifact))
     for value in values:
+        value = _structured_artifact_item(value)
         if protected_pause and isinstance(value, dict):
             severity = str(value.get("severity") or "").strip().lower().replace("_", "-")
             text = _artifact_text(value).lower()
@@ -5668,6 +5738,7 @@ def _blocking_artifact_items(agent, artifact, values):
 
 def _is_structured_adjacent_follow_up(agent, artifact, value):
     """Keep explicit out-of-scope follow-ups from causing current-diff backflow."""
+    value = _structured_artifact_item(value)
     if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
         return False
     if not isinstance(artifact, dict) or not isinstance(value, dict):
@@ -6770,6 +6841,17 @@ def _complete_agent_execution_v2(mission, execution_id, ledger, artifacts, outpu
         },
         ledger,
     )
+    # Targeted resumes rehydrate compact stored artifacts. Rebind every
+    # participating review artifact to the current authoritative PR file list
+    # before final reconciliation so serialized, disjoint follow-ups cannot be
+    # mistaken for defects in the candidate being released.
+    authoritative_pr_files = _authoritative_pr_changed_files(reviewer)
+    if authoritative_pr_files:
+        for artifact_agent, artifact_value in artifacts.items():
+            if not isinstance(artifact_value, dict):
+                continue
+            artifact_value["authoritative_pr_changed_files"] = list(authoritative_pr_files)
+            _normalize_authoritative_diff_followups(artifact_agent, artifact_value)
     candidate_manifest = build_candidate_manifest(
         mission,
         artifacts,
@@ -7740,6 +7822,7 @@ def _compact_agent_artifacts_for_review(artifacts):
         "structured_findings",
         "acceptance_results",
         "protected_operations",
+        "authoritative_pr_changed_files",
         "branch_name",
         "commit_sha",
         "git_packaging",
@@ -7765,7 +7848,15 @@ def _compact_agent_artifacts_for_review(artifacts):
             if key in {"summary", "confidence_reason", "next_action"}:
                 value = _truncate(value, 1200)
             elif key in {"errors", "bugs", "qa_findings", "risk_notes", "tests_run", "test_evidence", "commands_run", "files_inspected", "changed_files", "release_notes"}:
-                value = [_truncate(entry, 500) for entry in _artifact_value_list(value)[:30]]
+                value = [
+                    {
+                        field: _truncate(field_value, 500) if isinstance(field_value, str) else field_value
+                        for field, field_value in entry.items()
+                    }
+                    if isinstance(entry, dict)
+                    else _truncate(entry, 500)
+                    for entry in _artifact_value_list(value)[:30]
+                ]
             item[key] = value
         stdout_tail = _truncate(artifact.get("stdout_tail", ""), 500)
         stderr_tail = _truncate(artifact.get("stderr_tail", ""), 500)
