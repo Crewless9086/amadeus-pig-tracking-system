@@ -12,6 +12,7 @@ from modules.pig_weights.bulk_weight_batch_service import (
     retry_failed_bulk_weight_batch,
     stage_bulk_weight_batch,
 )
+from modules.pig_weights.pig_observation_capture_service import record_management_intent, record_observation
 
 from modules.pig_weights.pig_weights_controller import (
     get_status,
@@ -184,6 +185,24 @@ def purpose_review_correction_batch_execute(batch_id):
 def purpose_review_recheck():
     payload = request.get_json(silent=True) or {}
     result, status_code = get_purpose_review_recheck_packet(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/observations", methods=["POST"])
+def record_observation_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_observation(request.get_json(silent=True) or {})
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/management-intents", methods=["POST"])
+def record_management_intent_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_management_intent(request.get_json(silent=True) or {})
     return jsonify(result), status_code
 
 
