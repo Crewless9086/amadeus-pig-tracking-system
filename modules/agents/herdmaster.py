@@ -234,23 +234,30 @@ def _breeding_planner(request, readers, *, canonical_available):
     try:
         pigs, matings = list(readers["pig_rows"]() or []), list(readers["mating_overview"]() or [])
         analytics = readers["breeding_analytics"]() or {}
-    except (RuntimeError, ValueError, OSError) as error:
+        metrics = {str(row.get("pig_id") or ""): row for group in (analytics.get("sows", []), analytics.get("boars", [])) for row in group}
+    except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError) as error:
         return _breeding_needs_data(f"Canonical Supabase read failed: {error}")
-    metrics = {str(row.get("pig_id") or ""): row for group in (analytics.get("sows", []), analytics.get("boars", [])) for row in group}
-    females, boars = [row for row in pigs if _is_breeding_female(row)], [row for row in pigs if _is_breeding_boor_candidate(row)]
+    females = [row for row in pigs if _is_breeding_female(row)]
+    potential_boars = [row for row in pigs if str(row.get("Sex") or "") in {"Male", "Castrated_Male"}]
     packets = []
     for female in females:
         female_id = str(female.get("Pig_ID") or "")
-        female_tree = readers["family_tree"](female_id)
-        state, reminders = _female_lifecycle(female_id, matings)
-        missing = _missing_breeding_facts(female, female_tree, metrics.get(female_id))
-        matches = []
-        if not missing and state == "No Active Mating":
-            for boar in boars:
-                boar_id = str(boar.get("Pig_ID") or "")
-                if not _boar_exclusion(female, boar, female_tree, readers["family_tree"](boar_id), metrics.get(boar_id)):
-                    matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "performance_present"]})
-        packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
+        try:
+            female_tree = readers["family_tree"](female_id)
+            state, reminders = _female_lifecycle(female_id, matings)
+            missing = _missing_breeding_facts(female, female_tree, metrics.get(female_id))
+            matches, excluded = [], []
+            if not missing and state == "No Active Mating":
+                for boar in potential_boars:
+                    boar_id = str(boar.get("Pig_ID") or "")
+                    reason = _boar_exclusion(female, boar, female_tree, readers["family_tree"](boar_id), metrics.get(boar_id))
+                    if reason:
+                        excluded.append({"pig_id": boar_id, "reason": reason})
+                    else:
+                        matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "condition_present", "performance_present"]})
+            packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "excluded_matches": excluded, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError) as error:
+            return _breeding_needs_data(f"Canonical Supabase read failed: {error}")
     fingerprint = hashlib.sha256(json.dumps({"pigs": pigs, "matings": matings, "analytics": analytics}, sort_keys=True, default=str).encode()).hexdigest()[:20]
     missing_any = any(item["missing_facts"] for item in packets)
     return {"success": True, "status": "breeding_planner_advisory_ready", "capability": "breeding_planner", "direct_answer": "Herdmaster prepared a read-only breeding advisory packet; it does not create matches or reminders.", "read_only": True, "advisory_only": True, "response_fingerprint": fingerprint, "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"}, "confidence": 0.96 if packets and not missing_any else 0.0, "females": packets, "missing_facts": sorted({fact for item in packets for fact in item["missing_facts"]}), "owner_action": "Owner review is required before any mating or lifecycle action.", "forbidden_actions": _BREEDING_FORBIDDEN_ACTIONS, "sources": [{"name": "pigs", "authority": "canonical"}, {"name": "mating_events", "authority": "canonical"}, {"name": "breeding_analytics", "authority": "canonical"}, {"name": "family_tree", "authority": "canonical"}]}
@@ -292,6 +299,18 @@ def _missing_breeding_facts(row, tree, metric):
 
 
 def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
+    if str(boar.get("Sex") or "") == "Castrated_Male":
+        return "castrated_male"
+    if str(boar.get("Sex") or "") != "Male":
+        return "not_male"
+    if str(boar.get("Status") or "") != "Active":
+        return "not_active"
+    if str(boar.get("On_Farm") or "") != "Yes":
+        return "off_farm"
+    if str(boar.get("Purpose") or "") != "Breeding":
+        return "non_breeding_purpose"
+    if not str(boar.get("General_Notes") or "").strip():
+        return "condition_missing"
     if not boar_tree or not boar_tree.get("mother") or not boar_tree.get("father") or not metric or not int(metric.get("mating_count") or 0):
         return "unknown_or_incomplete"
     female_id, boar_id = str(female.get("Pig_ID") or ""), str(boar.get("Pig_ID") or "")
