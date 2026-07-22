@@ -11,6 +11,10 @@ SEVERITIES = {"low", "medium", "high", "critical"}
 INTENT_TYPES = {"sell_after_weaning", "sell_when_ready", "retain_for_breeding", "hold_for_review", "other"}
 
 
+class IdempotencyCollisionError(RuntimeError):
+    """A reused key must identify the same immutable capture request."""
+
+
 def _text(value):
     return value.strip() if isinstance(value, str) else ""
 
@@ -48,15 +52,20 @@ def _connect(connect_factory=None):
     return psycopg.connect(database_url, connect_timeout=10)
 
 
-def _insert_or_existing(cursor, insert_sql, insert_params, table, id_column, idempotency_key):
+def _insert_or_existing(cursor, insert_sql, insert_params, table, id_column, idempotency_key, stored_columns, expected_values):
     cursor.execute(insert_sql, insert_params)
     row = cursor.fetchone()
     if row:
         return row[0], False
-    cursor.execute(f"select {id_column} from public.{table} where idempotency_key = %s", (idempotency_key,))
+    cursor.execute(
+        f"select {id_column}, {', '.join(stored_columns)} from public.{table} where idempotency_key = %s",
+        (idempotency_key,),
+    )
     existing = cursor.fetchone()
     if not existing:
         raise RuntimeError("append_only_capture_not_persisted")
+    if tuple(existing[1:]) != tuple(expected_values):
+        raise IdempotencyCollisionError("idempotency_key_content_mismatch")
     return existing[0], True
 
 
@@ -77,13 +86,18 @@ def record_observation(payload, author_reference, connect_factory=None):
     try:
         with _connect(connect_factory) as connection:
             with connection.cursor() as cursor:
+                evidence_reference = _text(payload.get("evidence_reference")) or None
+                expected_values = (pig_id, observed_at, author_reference, category, severity, note, confidence, evidence_reference, "owner", author_reference, key)
                 stored_id, replayed = _insert_or_existing(cursor, """
                     insert into public.pig_observation_events
                     (observation_event_id, pig_id, observed_at, author_reference, category, severity, note, confidence, evidence_reference, source_system, source_reference, idempotency_key)
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'owner', %s, %s)
                     on conflict (idempotency_key) do nothing returning observation_event_id
-                """, (event_id, pig_id, observed_at, author_reference, category, severity, note, confidence, _text(payload.get("evidence_reference")) or None, author_reference, key), "pig_observation_events", "observation_event_id", key)
+                """, (event_id, pig_id, observed_at, author_reference, category, severity, note, confidence, evidence_reference, author_reference, key), "pig_observation_events", "observation_event_id", key,
+                    ("pig_id", "observed_at", "author_reference", "category", "severity", "note", "confidence", "evidence_reference", "source_system", "source_reference", "idempotency_key"), expected_values)
         return {"success": True, "status": "observation_recorded", "observation_event_id": stored_id, "replayed": replayed, "writes_to_pigs": False, "executes_action": False}, 201
+    except IdempotencyCollisionError as exc:
+        return {"success": False, "status": str(exc), "writes_to_pigs": False, "executes_action": False}, 409
     except RuntimeError as exc:
         return {"success": False, "status": str(exc), "writes_to_pigs": False, "executes_action": False}, 503
     except Exception:
@@ -107,13 +121,19 @@ def record_management_intent(payload, author_reference, connect_factory=None):
     try:
         with _connect(connect_factory) as connection:
             with connection.cursor() as cursor:
+                observation_event_id = _text(payload.get("observation_event_id")) or None
+                evidence_reference = _text(payload.get("evidence_reference")) or None
+                expected_values = (pig_id, intended_at, author_reference, intent_type, rationale, confidence, observation_event_id, evidence_reference, "owner", author_reference, key)
                 stored_id, replayed = _insert_or_existing(cursor, """
                     insert into public.pig_management_intent_events
                     (management_intent_event_id, pig_id, intended_at, author_reference, intent_type, rationale, confidence, observation_event_id, evidence_reference, source_system, source_reference, idempotency_key)
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'owner', %s, %s)
                     on conflict (idempotency_key) do nothing returning management_intent_event_id
-                """, (event_id, pig_id, intended_at, author_reference, intent_type, rationale, confidence, _text(payload.get("observation_event_id")) or None, _text(payload.get("evidence_reference")) or None, author_reference, key), "pig_management_intent_events", "management_intent_event_id", key)
+                """, (event_id, pig_id, intended_at, author_reference, intent_type, rationale, confidence, observation_event_id, evidence_reference, author_reference, key), "pig_management_intent_events", "management_intent_event_id", key,
+                    ("pig_id", "intended_at", "author_reference", "intent_type", "rationale", "confidence", "observation_event_id", "evidence_reference", "source_system", "source_reference", "idempotency_key"), expected_values)
         return {"success": True, "status": "management_intent_recorded", "management_intent_event_id": stored_id, "replayed": replayed, "advisory_only": True, "writes_to_pigs": False, "executes_action": False}, 201
+    except IdempotencyCollisionError as exc:
+        return {"success": False, "status": str(exc), "advisory_only": True, "writes_to_pigs": False, "executes_action": False}, 409
     except RuntimeError as exc:
         return {"success": False, "status": str(exc), "advisory_only": True, "writes_to_pigs": False, "executes_action": False}, 503
     except Exception:
