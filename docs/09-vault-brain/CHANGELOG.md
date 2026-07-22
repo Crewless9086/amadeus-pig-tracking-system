@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-22 - Herdmaster read-only breeding planner repair
+
+- Added Herdmaster's canonical-only, fail-closed breeding-planner advisory capability.
+- Kept calendar/reminder outputs calculated and stateless: no persistence, scheduler, delivery, acknowledgement, migration, lifecycle, mating, or farm write authority.
+
 ## 2026-07-21 - Reviewer executable test-evidence gate
 
 - Required final reviewer approval evidence to include a structured executable test command and explicit pass status.
