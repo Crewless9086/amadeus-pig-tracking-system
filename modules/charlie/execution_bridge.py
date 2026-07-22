@@ -908,7 +908,8 @@ def run_agent_execution_bridge_v2(
         if artifact_consumer is None:
             ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
         else:
-            ingestion, ingestion_status = artifact_consumer(
+            ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                artifact_consumer,
                 mission["mission_id"], agent, execution_id, stage_attempts[agent], artifact, artifact_hash,
                 database_url=database_url, connect_factory=connect_factory,
             )
@@ -1049,6 +1050,27 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
             "execution_artifact": str(path), "final_artifact_present": True,
         })
     return result, status_code
+
+
+def _consume_final_artifact_with_retry(
+    consumer, mission_id, agent, execution_id, attempt, artifact, artifact_hash,
+    *, database_url=None, connect_factory=None, max_attempts=3, sleep_fn=time.sleep,
+):
+    """Retry only transient ingestion failures; never rerun completed agent work for them."""
+    last_result, last_status = {"success": False, "status": "not_configured"}, 503
+    for ingestion_attempt in range(1, max(1, int(max_attempts or 1)) + 1):
+        last_result, last_status = consumer(
+            mission_id, agent, execution_id, attempt, artifact, artifact_hash,
+            database_url=database_url, connect_factory=connect_factory,
+        )
+        if not (
+            last_status >= 500
+            and str(last_result.get("status") or "") == "final_artifact_ingestion_failed"
+        ):
+            return {**last_result, "ingestion_attempts": ingestion_attempt}, last_status
+        if ingestion_attempt < max_attempts:
+            sleep_fn(ingestion_attempt)
+    return {**last_result, "ingestion_attempts": max_attempts, "retry_exhausted": True}, last_status
 
 
 def _quarantine_pending_final_artifact(mission, agent, reason, *, database_url=None, connect_factory=None):
