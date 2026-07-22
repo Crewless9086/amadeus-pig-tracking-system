@@ -5288,7 +5288,25 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
         return False
     if value.get("introduced_by_current_diff") is not False:
         return False
-    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
+    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated"}:
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        if severity not in {"advisory", "informational", "info", "low"}:
+            return False
+        if not any(term in acceptance for term in (
+            "does not violate", "does not fail acceptance", "outside current acceptance",
+            "not part of current acceptance", "no impact on current acceptance", "adjacent follow-up",
+        )):
+            return False
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
     if scope.startswith("adjacent_advisory"):
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
