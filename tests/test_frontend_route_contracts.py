@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
+import os
 import unittest
+from unittest.mock import patch
 
 from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
@@ -685,13 +687,19 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"effective_approval_status"', media_library)
         self.assertIn('"effective_public_use_approved"', media_library)
 
-        client = app.test_client()
-        with client.session_transaction() as owner_session:
-            owner_session["owner_access"] = {
-                "role": "admin",
-                "created_at": "2026-07-14T00:00:00+00:00",
-            }
-        response = client.get("/sales/beacon-media")
+        with patch.dict(os.environ, {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_SESSION_SECRET": "test-owner-session-secret",
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+        }, clear=False):
+            client = app.test_client()
+            with client.session_transaction() as owner_session:
+                owner_session["owner_access"] = {
+                    "role": "admin",
+                    "actor_reference": "test-owner-admin",
+                    "created_at": "2026-07-14T00:00:00+00:00",
+                }
+            response = client.get("/sales/beacon-media")
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("Beacon Media", html)
@@ -717,8 +725,13 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('href="/sales/meat-reference"', Path("templates/sales-dashboard.html").read_text(encoding="utf-8"))
         self.assertIn('href="/sales/meat-reference"', Path("templates/meat-sales-leads.html").read_text(encoding="utf-8"))
 
-        client = app.test_client()
-        response = client.get("/sales/meat-reference")
+        with patch.dict(os.environ, {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_SESSION_SECRET": "test-owner-session-secret",
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+        }, clear=False):
+            client = app.test_client()
+            response = client.get("/sales/meat-reference")
         self.assertIn(response.status_code, {200, 302})
         if response.status_code == 200:
             html = response.get_data(as_text=True)
