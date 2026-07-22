@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from modules.charlie.executive_runtime import (
     _execute_decomposition, _execute_delegated_review, _execute_queue_selection, _load_executive_missions,
-    _execute_recovery, _execute_outcome_follow_up, run_executive_cycle,
+    _execute_recovery, _execute_outcome_follow_up, _execute_incident_repair, run_executive_cycle,
 )
 
 
@@ -173,6 +173,30 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(result["status"], "decomposed")
         self.assertEqual(record.call_count, 4)
         self.assertTrue(all(len(call.args[0]["metadata"]["mission_governance"]["acceptance_matrix"]) <= 2 for call in record.call_args_list))
+        self.assertEqual(transition.call_args.args[1], "paused")
+        self.assertEqual(transition.call_args.kwargs["expected_status"], "blocked")
+
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.record_mission", return_value=({"stored": True}, 201))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_incident_halt_creates_one_canonical_unprotected_repair(self, get_mission, record, update, transition, _complete):
+        get_mission.return_value = ({"mission": {
+            "mission_id": "M-BREED", "status": "blocked", "title": "Breeding planner", "urgency": "P1",
+            "metadata": {"review_packet": {
+                "review_status": "system_incident_halted", "blocked_agent": "security_reviewer",
+                "blocked_reason": "Repeated evidence recovery halted.",
+                "active_blockers": [{"agent": "security_reviewer", "reason": "No implementation candidate."}],
+            }},
+        }}, 200)
+        result = _execute_incident_repair({"mission_id": "M-BREED", "fingerprint": "stable"}, "CMD", None, None)
+        self.assertEqual(result["status"], "incident_repair_created")
+        child = record.call_args.args[0]
+        self.assertEqual(child["status"], "approved")
+        self.assertEqual(child["metadata"]["protected_operations"], [])
+        self.assertEqual(child["metadata"]["mission_family"]["parent_mission_id"], "M-BREED")
+        self.assertIn(child["mission_id"], update.call_args.args[1]["mission_coordinator"]["child_mission_ids"])
         self.assertEqual(transition.call_args.args[1], "paused")
         self.assertEqual(transition.call_args.kwargs["expected_status"], "blocked")
 

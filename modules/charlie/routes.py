@@ -108,7 +108,11 @@ def charlie_build_relay_policy_route():
 def charlie_build_relay_telegram_webhook_route():
     payload = request.get_json(silent=True) or {}
     callback_data = str(((payload.get("callback_query") or {}).get("data") or ""))
-    if private_policy().get("explicitly_enabled") and (not callback_data or callback_data.startswith("cp:")):
+    if private_policy().get("explicitly_enabled") and callback_data.startswith("cm:"):
+        result, status_code = handle_private_telegram_webhook(payload, headers=request.headers)
+        if status_code == 403:
+            result, status_code = handle_charlie_telegram_webhook(payload, headers=request.headers)
+    elif private_policy().get("explicitly_enabled") and (not callback_data or callback_data.startswith("cp:")):
         result, status_code = handle_private_telegram_webhook(payload, headers=request.headers)
     else:
         result, status_code = handle_charlie_telegram_webhook(payload, headers=request.headers)

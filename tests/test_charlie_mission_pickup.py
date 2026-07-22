@@ -1140,7 +1140,13 @@ class CharlieMissionPickupTests(unittest.TestCase):
         text = charlie_mission_pickup._executive_owner_decision_text(payload, {
             "mission_id": "M1", "status": "pr_ready", "metadata": {"review_packet": {"test_evidence": ["pass"]}},
         })
-        keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(payload)
+        mission = {
+            "mission_id": "M1", "status": "pr_ready",
+            "metadata": {"review_packet": {
+                "review_generation": "EXEC-1:abc123", "tested_revision": "abc123",
+            }},
+        }
+        keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(payload, mission)
 
         self.assertIn("What Approve Release means", text)
         self.assertIn("does not send a customer message", text)
@@ -1149,6 +1155,15 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(labels, ["Approve Release", "Send Back to Tester", "Refresh Mission"])
         callbacks = [button["callback_data"] for row in keyboard["inline_keyboard"] for button in row]
         self.assertTrue(all(value.startswith("cm:") for value in callbacks))
+        self.assertIn(charlie_mission_pickup.review_candidate_token(mission), callbacks[0])
+
+    def test_executive_release_button_is_omitted_without_candidate_bound_evidence(self):
+        keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(
+            {"mission_id": "M1", "mission_status": "pr_ready"},
+            {"mission_id": "M1", "status": "pr_ready", "metadata": {"review_packet": {"review_generation": "EXEC-1"}}},
+        )
+        labels = [button["text"] for row in keyboard["inline_keyboard"] for button in row]
+        self.assertNotIn("Approve Release", labels)
 
     def test_operational_outcome_message_explains_delivery_is_not_activation(self):
         payload = {

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from modules.charlie.private_runtime import handle_private_telegram_webhook
+from scripts.charlie_mission_telegram import MissionControlResult
 
 
 ENV = {
@@ -22,13 +23,16 @@ class FakeStore:
         self.tools = []
         self.bundles = {}
         self.context = {}
+        self.completions = []
 
     def claim_update(self, update, callback=""):
         created = update not in self.claimed
         self.claimed.add(update)
         return {"success": True, "created": created, "update_key": "UPDATE-" + update}, 201 if created else 200
 
-    def complete_update(self, *args, **kwargs): return {"success": True}, 200
+    def complete_update(self, *args, **kwargs):
+        self.completions.append((args, kwargs))
+        return {"success": True}, 200
     def bind_owner(self, user, chat, metadata=None): return {"success": True, "binding_id": "OWNER", "thread_id": "THREAD", "telegram_chat_id": chat}, 200
     def record_message(self, thread, role, content, **kwargs):
         row = {"message_id": f"MSG-{len(self.messages)}", "role": role, "content": content}
@@ -102,6 +106,55 @@ class CharliePrivateRuntimeTests(unittest.TestCase):
         self.assertEqual(ack, ["CB-1"])
         self.assertEqual(len(self.sent), 1)
         self.assertIn("approved and recorded", self.sent[0][1])
+
+    @patch("scripts.charlie_mission_telegram.handle_callback")
+    def test_core_decision_callback_runs_through_private_charlie_and_persists_outcome(self, handle):
+        handle.return_value = (
+            MissionControlResult(True, "approvefinal", mission_id="MISSION-12345678"),
+            {"mission_id": "MISSION-12345678", "status": "release_approved"},
+        )
+        ack = []
+        callback = {
+            "update_id": "CM-1",
+            "callback_query": {
+                "id": "CB-CM-1", "from": {"id": 10},
+                "message": {"chat": {"id": 10, "type": "private"}},
+                "data": "cm:approvefinal:token:revision",
+            },
+        }
+        result, code = handle_private_telegram_webhook(
+            callback, HEADERS, environ=ENV, sender=self.sender,
+            callback_answerer=lambda callback_id, **_kwargs: ack.append(callback_id), store=self.store,
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(ack, ["CB-CM-1"])
+        self.assertEqual(result["callback"]["mission_status"], "release_approved")
+        self.assertEqual(self.store.completions[-1][1]["result"]["callback"]["mission_id"], "MISSION-12345678")
+        self.assertIn("CHARLIE recorded", self.sent[-1][1])
+
+    @patch("scripts.charlie_mission_telegram.handle_callback")
+    def test_core_decision_completion_failure_is_fail_closed_without_replay(self, handle):
+        handle.return_value = (
+            MissionControlResult(True, "approvefinal", mission_id="MISSION-12345678"),
+            {"mission_id": "MISSION-12345678", "status": "release_approved"},
+        )
+        self.store.complete_update = lambda *_args, **_kwargs: ({"success": False, "status": "db_failed"}, 503)
+        callback = {
+            "update_id": "CM-FAIL",
+            "callback_query": {
+                "id": "CB-CM-FAIL", "from": {"id": 10},
+                "message": {"chat": {"id": 10, "type": "private"}},
+                "data": "cm:approvefinal:token:revision",
+            },
+        }
+        result, code = handle_private_telegram_webhook(
+            callback, HEADERS, environ=ENV, sender=self.sender,
+            callback_answerer=lambda *_args, **_kwargs: None, store=self.store,
+        )
+        self.assertEqual(code, 503)
+        self.assertEqual(result["status"], "private_update_completion_failed")
+        self.assertFalse(result["owner_action_replayed"])
+        handle.assert_called_once()
 
     @patch("modules.charlie.private_executive.execute_private_tool")
     def test_core_question_runs_evidence_plan_and_persists_goal(self, execute):

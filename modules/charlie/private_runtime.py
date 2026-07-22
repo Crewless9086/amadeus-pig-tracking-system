@@ -52,7 +52,23 @@ def handle_private_telegram_webhook(payload, headers=None, *, environ=None, send
             result, status = _handle_message(payload, binding, store, sender, environ, event_sink=event_sink)
     except Exception as exc:
         result, status = {"success": False, "status": "private_charlie_runtime_failed", "error_type": exc.__class__.__name__}, 500
-    store.complete_update(update_key, status="processed" if status < 400 else "failed", result={"status": result.get("status")})
+    durable_result = {"status": result.get("status")}
+    if isinstance(result.get("callback"), dict):
+        durable_result["callback"] = dict(result["callback"])
+    try:
+        completion, completion_status = store.complete_update(
+            update_key, status="processed" if status < 400 else "failed", result=durable_result,
+        )
+    except Exception as exc:
+        completion, completion_status = {"status": "update_complete_failed", "error_type": exc.__class__.__name__}, 503
+    if completion_status >= 400 or not isinstance(completion, dict) or completion.get("success") is False:
+        return {
+            "success": False,
+            "status": "private_update_completion_failed",
+            "action_result": durable_result,
+            "completion": completion if isinstance(completion, dict) else {"status": "invalid_completion_result"},
+            "owner_action_replayed": False,
+        }, 503
     return result, status
 
 
@@ -152,6 +168,8 @@ def _handle_message(payload, binding, store, sender, environ, *, event_sink=None
 
 def _handle_callback(callback, binding, store, callback_answerer, sender, environ):
     data = str(callback.get("data") or "")
+    if data.startswith("cm:"):
+        return _handle_mission_callback(callback, binding, store, callback_answerer, sender, environ)
     if not data.startswith(CALLBACK_PREFIX):
         return {"success": False, "status": "private_callback_invalid"}, 400
     parts = data.split(":")
@@ -170,6 +188,43 @@ def _handle_callback(callback, binding, store, callback_answerer, sender, enviro
     # Bundles deliberately record the decision. Red-zone execution remains outside this runtime.
     text = {"approve": "Decision approved and recorded. The protected action has not been executed automatically.", "reject": "Decision rejected and recorded.", "defer": "Decision deferred. I will leave it pending for your next review."}[parts[2]]
     return _reply(binding, text, store, sender, f"callback-{callback.get('id')}", [], environ)
+
+
+def _handle_mission_callback(callback, binding, store, callback_answerer, sender, environ):
+    """Execute a generation-bound CORE decision through CHARLIE's owner channel."""
+    from modules.charlie.mission_store import (
+        get_mission, list_missions, record_mission_review_decision, update_mission_status,
+    )
+    from scripts.charlie_mission_telegram import handle_callback
+
+    answer = callback_answerer or answer_private_callback
+    answer(str(callback.get("id") or ""), environ=environ)
+    result, mission = handle_callback(
+        str(callback.get("data") or ""),
+        list_loader=list_missions,
+        get_loader=get_mission,
+        status_updater=update_mission_status,
+        review_updater=record_mission_review_decision,
+    )
+    mission_status = str((mission or {}).get("status") or "unknown")
+    if result.ok:
+        text = f"CHARLIE recorded {result.action.replace('_', ' ')} for {result.mission_id}. CORE now shows {mission_status}."
+        action_status = 200
+    else:
+        text = f"I did not apply that decision: {result.reason.replace('_', ' ')}. No protected action was taken."
+        action_status = 409
+    reply, send_status = _reply(
+        binding, text, store, sender, f"callback-{callback.get('id')}", [], environ,
+        status_code=action_status,
+    )
+    reply["callback"] = {
+        "ok": result.ok,
+        "action": result.action,
+        "reason": result.reason,
+        "mission_id": result.mission_id,
+        "mission_status": mission_status,
+    }
+    return reply, send_status
 
 
 def _approval_for_intent(thread_id, intent, store):

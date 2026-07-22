@@ -174,7 +174,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
         update_sql, params = connection.cursor_instance.executed[0]
-        self.assertIn("metadata_json = coalesce(metadata_json", update_sql)
+        self.assertIn("metadata_json = (coalesce(metadata_json", update_sql)
+        self.assertIn("- 'execution_lease'", update_sql)
         self.assertNotIn("metadata = coalesce(metadata,", update_sql)
         self.assertIn("jsonb_build_object('review_packet'", update_sql)
         self.assertEqual(params["status"], "approved")

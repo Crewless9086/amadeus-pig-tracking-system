@@ -36,6 +36,17 @@ def mission_callback(mission_id: str, action: str = "open", argument: str = "") 
     return ":".join(parts)
 
 
+def review_candidate_token(mission: Mapping[str, Any]) -> str:
+    """Bind final-release authority to review generation and tested candidate."""
+    packet = _review_packet(mission)
+    identity = "|".join([
+        str(packet.get("review_generation") or ""),
+        str(packet.get("tested_revision") or ""),
+        str(packet.get("candidate_revision") or ""),
+    ])
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:14]
+
+
 def _metadata(mission: Mapping[str, Any]) -> dict[str, Any]:
     return dict(mission.get("metadata") or {})
 
@@ -108,11 +119,13 @@ def mission_keyboard(mission: Mapping[str, Any]) -> dict[str, Any]:
         readiness = evaluate_final_readiness(mission)
         actions = []
         if readiness.get("can_authorize_release"):
-            generation = str(_review_packet(mission).get("review_generation") or "")
+            packet = _review_packet(mission)
+            generation = str(packet.get("review_generation") or "")
+            tested_revision = str(packet.get("tested_revision") or "")
             # A generation-less final-release button is deliberately omitted.  It
             # cannot prove it belongs to the reviewed candidate.
-            if generation:
-                actions.append(("Approve Release", "approvefinal", review_generation_token(generation)))
+            if generation and tested_revision:
+                actions.append(("Approve Release", "approvefinal", review_candidate_token(mission)))
         actions.extend([("Show Requirements", "open", ""), ("Send Back", "sendback", "builder"), ("Pause", "pause", "")])
     elif status == "paused":
         actions = [("Approve / Resume", "resume", ""), ("Reject", "reject", "")]
@@ -185,8 +198,9 @@ def handle_callback(
         if status != "pr_ready":
             return MissionControlResult(False, action, f"action_not_allowed_from_{status}", mission_id), mission
         review_generation = str(_review_packet(mission).get("review_generation") or "")
+        tested_revision = str(_review_packet(mission).get("tested_revision") or "")
         supplied_token = parts[3] if len(parts) > 3 else ""
-        if not review_generation or supplied_token != review_generation_token(review_generation):
+        if not review_generation or not tested_revision or supplied_token != review_candidate_token(mission):
             return MissionControlResult(False, action, "stale_or_generationless_review_callback", mission_id), mission
         payload, code = review_updater(
             mission_id,

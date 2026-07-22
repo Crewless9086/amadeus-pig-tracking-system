@@ -62,6 +62,30 @@ class CharlieLiveRouteTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/charlie/private/message/stream", json={"text": "status"}).status_code, 403)
         self.assertEqual(self.client.post("/api/charlie/private/voice/speech", json={"text": "status"}).status_code, 403)
 
+    @patch("modules.charlie.routes.handle_charlie_telegram_webhook")
+    @patch("modules.charlie.routes.handle_private_telegram_webhook", return_value=({"status": "private_charlie_replied"}, 200))
+    @patch("modules.charlie.routes.private_policy", return_value={"explicitly_enabled": True})
+    def test_mission_callback_prefers_private_charlie_channel(self, _policy, private, build):
+        response = self.client.post(
+            "/api/charlie/build-relay/telegram/webhook",
+            json={"callback_query": {"data": "cm:approvefinal:token:generation"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        private.assert_called_once()
+        build.assert_not_called()
+
+    @patch("modules.charlie.routes.handle_charlie_telegram_webhook", return_value=({"status": "build_relay_handled"}, 200))
+    @patch("modules.charlie.routes.handle_private_telegram_webhook", return_value=({"status": "private_auth_denied"}, 403))
+    @patch("modules.charlie.routes.private_policy", return_value={"explicitly_enabled": True})
+    def test_core_bot_callback_falls_back_only_after_private_auth_denial(self, _policy, private, build):
+        response = self.client.post(
+            "/api/charlie/build-relay/telegram/webhook",
+            json={"callback_query": {"data": "cm:open:token"}},
+        )
+        self.assertEqual(response.status_code, 200)
+        private.assert_called_once()
+        build.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

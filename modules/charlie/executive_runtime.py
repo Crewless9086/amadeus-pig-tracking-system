@@ -93,6 +93,7 @@ def _command_outcome(command, database_url, connect_factory):
         "schedule_recovery": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
         "reconcile_pr": {"pr_ready", "release_approved", "merged", "deployed", "done", "blocked"},
         "decompose_acceptance": {"paused"},
+        "create_incident_repair": {"paused"},
         "verify_and_delegate_review": {"release_approved", "merged", "deployed", "done"},
         "approve_next_work": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
         "reconcile_family": {"approved", "in_progress", "pr_ready", "release_approved", "merged", "deployed", "done"},
@@ -127,6 +128,8 @@ def _execute_command(command, command_id, database_url, connect_factory):
         return _execute_pr_reconciliation(command, command_id, database_url, connect_factory)
     if action == "decompose_acceptance":
         return _execute_decomposition(command, command_id, database_url, connect_factory)
+    if action == "create_incident_repair":
+        return _execute_incident_repair(command, command_id, database_url, connect_factory)
     if action == "verify_and_delegate_review":
         return _execute_delegated_review(command, command_id, database_url, connect_factory)
     if action == "approve_next_work":
@@ -369,6 +372,104 @@ def _execute_decomposition(command, command_id, database_url, connect_factory):
     success = status < 400 and result.get("success")
     complete_control_command(command_id, success=success, result={"parent": result, "children": child_results}, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
     return {"command": command, "status": "decomposed" if success else "transition_failed", "result": result, "child_mission_ids": child_ids}
+
+
+def _execute_incident_repair(command, command_id, database_url, connect_factory):
+    """Turn a circuit-breaker halt into one canonical bounded repair, never owner noise."""
+    mission_id = str(command.get("mission_id") or "")
+    loaded, loaded_status = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
+    if loaded_status >= 400:
+        return _finish_failure(command, command_id, loaded, "mission_reload_failed", database_url, connect_factory)
+    mission = loaded.get("mission") or {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = dict(metadata.get("review_packet") or {})
+    if str(packet.get("review_status") or "") != "system_incident_halted":
+        return _finish_failure(command, command_id, packet, "incident_no_longer_halted", database_url, connect_factory)
+    fingerprint = str(command.get("fingerprint") or stable_incident_fingerprint(mission))
+    child_id = f"{mission_id}-RI{hashlib.sha256((mission_id + ':' + fingerprint).encode('utf-8')).hexdigest()[:8].upper()}"
+    blockers = packet.get("active_blockers") if isinstance(packet.get("active_blockers"), list) else []
+    blocker_lines = [str(item.get("reason") or "").strip() for item in blockers if isinstance(item, dict) and str(item.get("reason") or "").strip()]
+    criteria = [
+        "Inspect and consolidate the halted mission's current Security, Evidence Reviewer and Reviewer artifacts into one root-cause statement.",
+        "Resolve every pre-builder evidence and policy gate before enabling Builder; never send a no-change candidate through release review.",
+        "Produce one candidate-bound implementation and deterministic positive, negative, authority and no-mutation tests.",
+        "Keep customer communication, public publishing, money, stock promises, livestock records, credentials, destructive operations and migrations outside this repair.",
+        "Run a non-mutating live smoke check and return exact operational evidence to the parent mission.",
+    ]
+    template = workflow_template("software_build")
+    child = {
+        "mission_id": child_id,
+        "status": "approved",
+        "title": f"Incident repair: {mission.get('title') or mission_id}",
+        "raw_text": "Repair the shared failure that caused the parent circuit breaker to halt.\n\nObserved blockers:\n- " + ("\n- ".join(blocker_lines) or str(packet.get("blocked_reason") or "review evidence was not releasable")) + "\n\nAcceptance criteria:\n- " + "\n- ".join(criteria),
+        "urgency": mission.get("urgency") or "P1",
+        "mission_type": "system improvement",
+        "approval_level": "LEVEL 3",
+        "owner_decision": "CHARLIE authorised a bounded internal incident repair; no protected business action is authorised.",
+        "metadata": {
+            "mission_family": {
+                "root_mission_id": ((metadata.get("mission_family") or {}).get("root_mission_id") if isinstance(metadata.get("mission_family"), dict) else "") or mission_id,
+                "parent_mission_id": mission_id,
+                "relationship": "system_incident_repair",
+            },
+            "acceptance_criteria": criteria,
+            "agent_workflow": build_workflow_from_template(template),
+            "charlie_core": {"workflow_template": template, "project_truth": {"workflow_template": "software_build"}},
+            "protected_operations": [],
+            "explicit_exclusions": ["production writes", "livestock mutations", "customer sends", "money movement", "public publishing", "migrations"],
+            "incident_repair": {"parent_fingerprint": fingerprint, "source_blockers": blockers, "canonical": True},
+        },
+    }
+    stored, stored_status = record_mission(
+        child, {"source": "charlie_system_incident_repair", "message_id": child_id},
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if stored_status >= 400:
+        return _finish_failure(command, command_id, stored, "incident_child_creation_failed", database_url, connect_factory)
+    preserved_incident = {
+        "blocked_reason": packet.get("blocked_reason"),
+        "active_blockers": blockers,
+        "fingerprint": fingerprint,
+    }
+    packet.update({
+        "review_status": "incident_repair_waiting",
+        "blocked_agent": "",
+        "blocked_reason": "",
+        "active_blockers": [],
+        "recommended_owner_decision": "",
+        "recommended_next_action": f"CHARLIE created canonical repair {child_id}; no owner action is required.",
+        "system_incident_evidence": preserved_incident,
+    })
+    coordinator = dict(metadata.get("mission_coordinator") or {})
+    coordinator.update({"status": "waiting_children", "child_mission_ids": [child_id], "canonical_repair_id": child_id})
+    vault_result, vault_status = update_mission_vault(
+        mission_id, {"mission_coordinator": coordinator},
+        notes="CHARLIE recorded the canonical system-incident repair child.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    if vault_status >= 400:
+        return _finish_failure(command, command_id, vault_result, "incident_parent_link_failed", database_url, connect_factory)
+    result, status = transition_mission_review_state(
+        mission_id, "paused", packet, expected_status="blocked",
+        owner_decision="CHARLIE contained the incident and started one bounded internal repair.",
+        notes="CHARLIE converted a circuit-breaker halt into one canonical repair mission.",
+        database_url=database_url, connect_factory=connect_factory,
+    )
+    success = status < 400 and result.get("success")
+    payload = {"parent": result, "child": stored, "child_mission_id": child_id}
+    complete_control_command(command_id, success=success, result=payload, error="" if success else result.get("status", "incident_transition_failed"), database_url=database_url, connect_factory=connect_factory)
+    return {"command": command, "status": "incident_repair_created" if success else "incident_transition_failed", "result": payload}
+
+
+def stable_incident_fingerprint(mission):
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    raw = "|".join([
+        str(mission.get("mission_id") or ""),
+        str(packet.get("blocked_agent") or ""),
+        str(packet.get("blocked_reason") or ""),
+    ])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
 def _child_id(parent_id, rows):
