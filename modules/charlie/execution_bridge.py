@@ -4700,8 +4700,16 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     protected_evidence_errors = bool(blocking_errors) and all(
         isinstance(item, dict)
         and item.get("introduced_by_current_diff") is False
-        and "owner-gated operational evidence" in str(item.get("classification") or "").lower()
-        and "not a code defect" in str(item.get("classification") or "").lower()
+        and (
+            (
+                "owner-gated operational evidence" in str(item.get("classification") or "").lower()
+                and "not a code defect" in str(item.get("classification") or "").lower()
+            )
+            or (
+                "evidence" in str(item.get("scope_relation") or "").lower()
+                and str(item.get("severity") or "").strip().lower() == "blocking_evidence_gate"
+            )
+        )
         and any(term in _artifact_text(item).lower() for term in ("migration", "live canary", "operational canary"))
         and not any(term in _artifact_text(item).lower() for term in ("unsafe", "vulnerability", "implementation defect", "must fix"))
         for item in blocking_errors
@@ -4754,7 +4762,10 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
         artifact.get("next_action"),
         *(artifact.get("release_notes") or []),
     )).lower()
-    migration_terms = ("apply the migration", "applying this migration", "migration application", "migration execution")
+    migration_terms = (
+        "apply the migration", "apply the additive migration", "applying this migration",
+        "migration application", "migration execution",
+    )
     owner_gate_terms = ("owner-gated", "owner gated", "owner decision", "owner decisions", "owner authorization", "owner-authorized")
     if not any(term in narrative for term in migration_terms) or not any(term in narrative for term in owner_gate_terms):
         return False
