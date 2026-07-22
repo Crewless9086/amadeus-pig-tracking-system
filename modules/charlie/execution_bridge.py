@@ -5444,12 +5444,13 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
     if value.get("introduced_by_current_diff") is not False:
         return False
     scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
-    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated"}:
+    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
         if severity not in {"advisory", "informational", "info", "low"}:
             return False
-        if not any(term in acceptance for term in (
+        explicitly_non_acceptance = value.get("violates_acceptance_row") is False
+        if not explicitly_non_acceptance and not any(term in acceptance for term in (
             "does not violate", "does not fail acceptance", "outside current acceptance",
             "not part of current acceptance", "no impact on current acceptance", "adjacent follow-up",
             "no frozen acceptance row violated",
