@@ -184,6 +184,24 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
         self.assertEqual(by_agent["tester"]["status"], "complete")
         self.assertEqual(by_agent["security_reviewer"]["status"], "complete")
 
+    def test_targeted_return_resets_unpreserved_downstream_and_clears_completion_times(self):
+        workflow = [
+            {"agent": "planner", "status": "complete", "completed_at": "2026-07-22T01:00:00Z"},
+            {"agent": "architect", "status": "complete", "completed_at": "2026-07-22T01:01:00Z"},
+            {"agent": "builder", "status": "complete", "completed_at": "2026-07-22T01:02:00Z"},
+            {"agent": "qa_red_team", "status": "blocked", "completed_at": "2026-07-22T01:03:00Z"},
+        ]
+        result = targeted_workflow_return(workflow, "architect", "Resolve gates.", ["planner"])
+        by_agent = {item["agent"]: item for item in result}
+        self.assertEqual(by_agent["planner"]["status"], "complete")
+        self.assertEqual(by_agent["planner"]["completed_at"], "2026-07-22T01:00:00Z")
+        self.assertEqual(by_agent["architect"]["status"], "active")
+        self.assertIsNone(by_agent["architect"]["completed_at"])
+        self.assertEqual(by_agent["builder"]["status"], "pending")
+        self.assertIsNone(by_agent["builder"]["completed_at"])
+        self.assertEqual(by_agent["qa_red_team"]["status"], "pending")
+        self.assertIsNone(by_agent["qa_red_team"]["completed_at"])
+
     def test_runner_queue_executes_target_only_when_downstream_evidence_is_preserved(self):
         sequence = ["risk_agent", "builder", "tester", "security_reviewer", "reviewer"]
         mission = {

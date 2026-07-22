@@ -250,11 +250,13 @@ def targeted_workflow_return(workflow, target_agent, comments="", preserve_agent
         agent = _clean(item.get("agent")).lower()
         if agent == target_agent:
             item["status"] = "active"
+            item["completed_at"] = None
             item["findings"] = _clean(comments)
         elif agent in preserve_agents and item.get("status") == "complete":
             item["status"] = "complete"
-        elif item.get("status") == "active":
+        else:
             item["status"] = "pending"
+            item["completed_at"] = None
     return workflow
 
 
