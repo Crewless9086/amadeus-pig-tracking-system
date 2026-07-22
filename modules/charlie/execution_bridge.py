@@ -4556,6 +4556,11 @@ def _judgement_evidence_quality_gate(agent, artifact):
     }
     if agent not in judgement_agents:
         return {"passed": True, "reason": "judgement_gate_not_required"}
+    protected_pause = _protected_operation_pause_only(agent, artifact)
+    if protected_pause:
+        artifact["recommended_owner_decision"] = "approve_final_release"
+        artifact["business_capability_status"] = "pending_protected_operations"
+        artifact["protected_operations"] = protected_pause
     decision_fields = {
         "recommended_owner_decision": {"approve_final_release", "approve", "mark_done"},
         "visual_acceptance_decision": {"approve"},
@@ -5229,6 +5234,8 @@ def _is_blocking_judgement_text(agent, artifact, value):
     text = _artifact_text(value).lower()
     if not text:
         return False
+    if _is_positive_safety_enforcement_statement(agent, artifact, text):
+        return False
     if _is_non_blocking_local_pytest_issue(agent, artifact, value):
         return False
     if _is_non_blocking_owner_review_gate_instruction(agent, artifact, text):
@@ -5270,6 +5277,92 @@ def _is_blocking_judgement_text(agent, artifact, value):
     if re.search(r"\b(fail|failed|failing|failure)\b", failure_text) and not re.search(r"\b(no failures|0 failures|all passed|pass|passed)\b", failure_text):
         return True
     return False
+
+
+def _is_positive_safety_enforcement_statement(agent, artifact, text):
+    """Do not mistake passing fail-closed assertions for failing evidence."""
+    if agent not in {
+        "tester", "qa_red_team", "product_reviewer", "security_reviewer",
+        "evidence_reviewer", "reviewer",
+    }:
+        return False
+    if not _artifact_has_passing_test_collection(artifact):
+        return False
+    explicit_failure = (
+        "failed to fail closed", "does not fail closed", "did not fail closed",
+        "failed to block", "does not block", "did not block",
+        "write occurred before", "service was called", "service_called=true",
+    )
+    if any(term in text for term in explicit_failure):
+        return False
+    safety_terms = (
+        "fail closed", "fails closed", "failed closed",
+        "fail before", "fails before", "failed before",
+        "reject before", "rejects before", "rejected before",
+        "deny before", "denies before", "denied before",
+        "zero service calls", "service was not called", "services were not called",
+    )
+    protected_targets = (
+        "write", "audit", "service", "mutation", "purpose", "payment",
+        "customer", "reservation", "stock", "migration", "owner-admin",
+    )
+    return any(term in text for term in safety_terms) and any(term in text for term in protected_targets)
+
+
+def _protected_operation_pause_only(agent, artifact):
+    """Return pending protected operations when code evidence itself is green.
+
+    A reviewer may truthfully pause the *operational capability* because a
+    migration or live write canary still needs owner authority.  That must not
+    be converted into implementation backflow or a failed code-release packet.
+    """
+    review_agents = {
+        "product_reviewer", "business_reviewer", "security_reviewer",
+        "evidence_reviewer", "reviewer",
+    }
+    if agent not in review_agents or not isinstance(artifact, dict):
+        return []
+    if str(artifact.get("recommended_owner_decision") or "").strip().lower() != "pause":
+        return []
+    if not _artifact_has_passing_test_collection(artifact):
+        return []
+    acceptance = artifact.get("acceptance_results") if isinstance(artifact.get("acceptance_results"), list) else []
+    if not acceptance or any(
+        isinstance(row, dict) and str(row.get("status") or "").strip().lower() in {"fail", "failed", "blocked"}
+        for row in acceptance
+    ):
+        return []
+    pending = [
+        row for row in acceptance
+        if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "pending"
+    ]
+    if not pending:
+        return []
+    pending_text = " ".join(
+        " ".join(str(item or "") for item in (row.get("evidence") or []))
+        for row in pending
+    ).lower()
+    operations = []
+    if "migration" in pending_text and any(term in pending_text for term in ("unapplied", "application", "owner")):
+        operations.append("apply_migration")
+    if "live" in pending_text and "canary" in pending_text and any(term in pending_text for term in ("owner", "authoriz")):
+        operations.append("live_canary")
+    if not operations:
+        return []
+    for key in ("errors", "bugs"):
+        values = artifact.get(key) if isinstance(artifact.get(key), list) else []
+        for value in values:
+            if _is_structured_adjacent_follow_up(agent, artifact, value):
+                continue
+            if isinstance(value, dict):
+                severity = str(value.get("severity") or "").strip().lower().replace("_", "-")
+                text = _artifact_text(value).lower()
+                if severity in {"owner-gated", "protected", "advisory"} and any(
+                    term in text for term in ("migration", "live operational canary", "live canary")
+                ):
+                    continue
+            return []
+    return operations
 
 
 def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
@@ -5548,7 +5641,15 @@ def _blocking_artifact_items(agent, artifact, values):
     if not isinstance(values, list):
         values = [values] if values else []
     blocking = []
+    protected_pause = bool(_protected_operation_pause_only(agent, artifact))
     for value in values:
+        if protected_pause and isinstance(value, dict):
+            severity = str(value.get("severity") or "").strip().lower().replace("_", "-")
+            text = _artifact_text(value).lower()
+            if severity in {"owner-gated", "protected", "advisory"} and any(
+                term in text for term in ("migration", "live operational canary", "live canary")
+            ):
+                continue
         if _is_structured_adjacent_follow_up(agent, artifact, value):
             continue
         if _is_reviewer_adjacent_follow_up(agent, artifact, value):
