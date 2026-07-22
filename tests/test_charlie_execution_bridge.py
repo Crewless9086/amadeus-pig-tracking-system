@@ -2706,6 +2706,17 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("vault_sources_used", prompt)
         self.assertIn("vault_updates", prompt)
 
+    def test_architect_prompt_explains_internal_builder_authority_without_protected_authority(self):
+        mission = {**MISSION, "metadata": {"pre_builder_scope": {
+            "planning_gates": ["positive_and_negative_lifecycle_paths"],
+            "builder_allowed": False,
+        }}}
+        prompt = execution_bridge.build_agent_stage_prompt(mission, "architect", artifacts={}, ledger={})
+        self.assertIn("not an immutable prohibition", prompt)
+        self.assertIn("builder_authorization=approve", prompt)
+        self.assertIn("internal code work only", prompt)
+        self.assertIn("never authorizes applying migrations", prompt)
+
     def test_reviewer_inherits_builder_pr_reference(self):
         reviewer = {
             "summary": "review complete",
