@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.pig_weights import pig_weights_routes
@@ -80,11 +81,23 @@ class PigObservationCaptureTests(unittest.TestCase):
         self.assertEqual(result["status"], "observation_capture_not_configured")
 
     def test_duplicate_idempotency_key_returns_existing_event_without_update(self):
-        cursor = _Cursor([None, ("OBS-1",)])
+        cursor = _Cursor([None, ("OBS-1", "P-1", datetime(2026, 7, 22, 8, 0, tzinfo=timezone.utc), "owner-admin-test", "welfare", "medium", "Limp observed.", 0.9, "photo:local-1", "owner", "owner-admin-test", "obs-1")])
         result, status = record_observation(self.observation, "owner-admin-test", connect_factory=lambda _: _Connection(cursor))
         self.assertEqual(status, 201)
         self.assertTrue(result["replayed"])
         self.assertIn("select observation_event_id", cursor.calls[1][0].lower())
+
+    def test_observation_reused_key_with_different_content_is_rejected(self):
+        cursor = _Cursor([None, ("OBS-1", "P-1", datetime(2026, 7, 22, 8, 0, tzinfo=timezone.utc), "owner-admin-test", "welfare", "medium", "Different fact.", 0.9, "photo:local-1", "owner", "owner-admin-test", "obs-1")])
+        result, status = record_observation(self.observation, "owner-admin-test", connect_factory=lambda _: _Connection(cursor))
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "idempotency_key_content_mismatch")
+
+    def test_management_intent_reused_key_with_different_content_is_rejected(self):
+        cursor = _Cursor([None, ("INTENT-1", "P-1", datetime(2026, 7, 22, 8, 1, tzinfo=timezone.utc), "owner-admin-test", "sell_after_weaning", "Different plan.", 0.8, "OBS-1", None, "owner", "owner-admin-test", "intent-1")])
+        result, status = record_management_intent(self.intent, "owner-admin-test", connect_factory=lambda _: _Connection(cursor))
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "idempotency_key_content_mismatch")
 
     def test_routes_require_owner_admin_before_capture_service(self):
         app = __import__("app").app
