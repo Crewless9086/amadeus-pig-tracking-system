@@ -5,6 +5,20 @@
 -- pig purpose/lifecycle/current state, orders, sales, reservations, slaughter,
 -- customer messages, notifications, or any other operational projection.
 
+-- The first observation migration deliberately used verbose factual names.
+-- Align that unapplied append-only rail with the protected capture contract;
+-- this changes no row values and no current-state projection.
+alter table public.pig_observation_events
+    rename column observer_reference to author_reference;
+alter table public.pig_observation_events
+    rename column observation_category to category;
+alter table public.pig_observation_events
+    rename column factual_note to note;
+alter table public.pig_observation_events
+    drop constraint if exists pig_observation_events_severity_check;
+alter table public.pig_observation_events
+    add constraint pig_observation_events_severity_check
+        check (severity in ('low', 'medium', 'high', 'critical'));
 alter table public.pig_observation_events
     add column if not exists confidence numeric(4, 3) not null default 1.000
         check (confidence >= 0 and confidence <= 1),

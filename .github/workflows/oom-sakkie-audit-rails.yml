@@ -75,7 +75,11 @@ jobs:
 
       - name: Apply Oom Sakkie audit migrations
         run: |
+          psql "$DATABASE_URL" -c "CREATE ROLE service_role NOLOGIN;"
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607200001_create_pig_observation_events.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql
@@ -118,6 +122,9 @@ jobs:
 
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
+
+      - name: Run Herdmaster observation and intent database integration tests
+        run: python -m unittest tests.test_pig_observation_capture_postgres
 
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
         run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign
