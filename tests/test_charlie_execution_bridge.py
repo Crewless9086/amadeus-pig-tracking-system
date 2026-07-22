@@ -725,6 +725,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "bugs": [],
             "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
             "commands_run": ["python -m unittest focused"],
+            "stdout_tail": "Ran 61 tests — OK",
             "files_inspected": ["modules/example.py"],
             "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
             "no_vault_update_required": "No doctrine changed.",
@@ -755,6 +756,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "bugs": [],
             "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "10 tests passed"}],
             "commands_run": ["python -m unittest focused"],
+            "stdout_tail": "Ran 10 tests — OK",
             "files_inspected": ["modules/example.py"],
             "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
             "no_vault_update_required": "No doctrine changed.",
@@ -773,6 +775,71 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertEqual(artifact["test_status"], "blocked")
+
+    def test_qa_pending_only_owner_gated_operations_does_not_backflow(self):
+        artifact = {
+            "summary": "Candidate passes focused red-team checks; operational evidence remains pending.",
+            "errors": [{
+                "scope_relation": "in_scope_operational_evidence",
+                "introduced_by_current_diff": False,
+                "finding": "Migration and live canary have not been authorized.",
+            }],
+            "bugs": [],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+            "commands_run": ["python -m unittest focused"],
+            "files_inspected": ["modules/example.py"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
+            "no_vault_update_required": "No doctrine changed.",
+            "confidence": "98%",
+            "confidence_reason": "61 focused tests passed and directly covered authorization, tamper rejection, and no-write paths.",
+            "red_team_status": "blocked",
+            "risk_rating": "medium",
+            "send_back_stage": "",
+            "next_action": "Owner must authorize migration application and a non-mutating live canary.",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Migration application remains owner-authorized."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized non-mutating live canary remains absent."]},
+            ],
+            "qa_findings": [{
+                "scope_relation": "in_scope_release_evidence",
+                "introduced_by_current_diff": False,
+                "finding": "Runtime evidence is pending.",
+            }],
+        }
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["red_team_status"], "pass")
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_qa_current_diff_finding_still_backflows(self):
+        artifact = {
+            "summary": "A current-diff authorization defect remains.",
+            "errors": [],
+            "bugs": [],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "10 tests passed"}],
+            "commands_run": ["python -m unittest focused"],
+            "files_inspected": ["modules/example.py"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
+            "no_vault_update_required": "No doctrine changed.",
+            "confidence": "75%",
+            "confidence_reason": "Focused tests passed but QA identified a current-diff authorization defect.",
+            "red_team_status": "blocked",
+            "risk_rating": "high",
+            "send_back_stage": "builder",
+            "acceptance_results": [{"id": "auth", "status": "pending", "evidence": ["Implementation missing: must fix authorization defect."]}],
+            "qa_findings": [{
+                "scope_relation": "in_scope_current_diff",
+                "introduced_by_current_diff": True,
+                "finding": "Authorization defect.",
+            }],
+        }
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["red_team_status"], "blocked")
 
     def test_compaction_preserves_builder_source_scope_for_recovery(self):
         source_map = {
