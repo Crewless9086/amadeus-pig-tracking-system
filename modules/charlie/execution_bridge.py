@@ -1863,7 +1863,7 @@ Mission type: {mission.get("mission_type", "")}
 Pre-Builder scope contract:
 {json.dumps(pre_builder_scope, indent=2)}
 
-The planner and architects must resolve every planning_gates item before Builder. If split_required is true, keep the frozen parent acceptance matrix bounded and record adjacent discoveries as linked child missions rather than expanding this mission indefinitely.
+The planner and architects must resolve every planning_gates item before Builder. A pre-Builder snapshot with builder_allowed=false means Architect approval is still pending; it is not an immutable prohibition. Architect must set builder_authorization=approve when every listed gate is resolved with concrete evidence, or block when any gate remains unresolved. This authorizes bounded internal code work only and never authorizes applying migrations, changing farm records, contacting customers, publishing, moving money, or another protected operation. If split_required is true, keep the frozen parent acceptance matrix bounded and record adjacent discoveries as linked child missions rather than expanding this mission indefinitely.
 Agent doctrine file: {doctrine_path or "MISSING - Brain Guard must block this workflow until doctrine exists."}
 Model assignment:
 {json.dumps(model_assignment, indent=2)}
