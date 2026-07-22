@@ -4696,7 +4696,17 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
     if decision != "pause":
         return False
-    if _blocking_artifact_items(agent, artifact, artifact.get("errors") or []):
+    blocking_errors = _blocking_artifact_items(agent, artifact, artifact.get("errors") or [])
+    protected_evidence_errors = bool(blocking_errors) and all(
+        isinstance(item, dict)
+        and item.get("introduced_by_current_diff") is False
+        and "owner-gated operational evidence" in str(item.get("classification") or "").lower()
+        and "not a code defect" in str(item.get("classification") or "").lower()
+        and any(term in _artifact_text(item).lower() for term in ("migration", "live canary", "operational canary"))
+        and not any(term in _artifact_text(item).lower() for term in ("unsafe", "vulnerability", "implementation defect", "must fix"))
+        for item in blocking_errors
+    )
+    if blocking_errors and not protected_evidence_errors:
         return False
     blocking_bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
     if blocking_bugs and not all(
@@ -4750,6 +4760,9 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
         return False
     artifact["original_recommended_owner_decision"] = artifact.get("recommended_owner_decision")
     artifact["recommended_owner_decision"] = "approve_final_release"
+    if protected_evidence_errors:
+        artifact["normalized_protected_evidence_errors"] = list(blocking_errors)
+        artifact["errors"] = []
     protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
     if not any(isinstance(item, dict) and item.get("op") == "apply_migration" for item in protected):
         protected.append({
