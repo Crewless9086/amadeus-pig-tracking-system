@@ -3578,6 +3578,70 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_tester_passing_fail_before_write_summary_is_not_a_blocker(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "summary": (
+                "Verified candidate: stale or missing weights fail before purpose/audit writes; "
+                "remote requests fail closed with zero service calls."
+            ),
+            "tests_run": [{"command": "python -m unittest focused", "status": "passed", "result": "38 tests passed"}],
+            "errors": [],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_owner_gated_migration_and_live_canary_pause_keeps_code_releasable(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is not recorded."]},
+                {"id": "audit", "status": "pending", "evidence": ["The additive migration remains unapplied and requires owner application authority."]},
+            ],
+            "errors": [{
+                "finding": "The additive migration is unapplied and no owner-authorized live operational canary is recorded; this blocks operational closure, not code review.",
+                "severity": "owner-gated",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(artifact["business_capability_status"], "pending_protected_operations")
+        self.assertEqual(set(artifact["protected_operations"]), {"apply_migration", "live_canary"})
+
+    def test_real_current_diff_defect_cannot_hide_behind_protected_pause(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "12 tests passed"}],
+            "acceptance_results": [
+                {"id": "canary", "status": "pending", "evidence": ["Owner-authorized live canary is not recorded."]},
+            ],
+            "errors": [{
+                "finding": "Remote unauthenticated request can execute a farm-record mutation.",
+                "severity": "high",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("security_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
     def test_risk_agent_blocks_send_back_and_failed_browser_evidence(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
