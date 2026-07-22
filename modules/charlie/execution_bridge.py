@@ -5297,6 +5297,7 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
         if not any(term in acceptance for term in (
             "does not violate", "does not fail acceptance", "outside current acceptance",
             "not part of current acceptance", "no impact on current acceptance", "adjacent follow-up",
+            "no frozen acceptance row violated",
         )):
             return False
         if agent == "tester":
