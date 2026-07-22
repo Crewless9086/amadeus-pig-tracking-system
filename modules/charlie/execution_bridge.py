@@ -5703,7 +5703,7 @@ def _builder_packaging_is_terminal(packaging):
     status = str(packaging.get("status") or "").strip().lower()
     if not packaging.get("attempted"):
         return False
-    return status not in {"pr_created", "local_commit_ready"}
+    return status not in {"pr_created", "existing_pr_reused", "local_commit_ready"}
 
 
 def _builder_branch_name(mission):
