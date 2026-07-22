@@ -4694,14 +4694,36 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     if not isinstance(artifact, dict):
         return False
     decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
-    if decision != "pause" or artifact.get("errors") or artifact.get("bugs"):
+    if decision != "pause":
         return False
-    acceptance = artifact.get("acceptance_results")
-    if not isinstance(acceptance, list) or not acceptance or any(
-        not isinstance(row, dict) or str(row.get("status") or "").strip().lower() != "passed"
-        for row in acceptance
+    if _blocking_artifact_items(agent, artifact, artifact.get("errors") or []):
+        return False
+    blocking_bugs = _blocking_artifact_items(agent, artifact, artifact.get("bugs") or [])
+    if blocking_bugs and not all(
+        isinstance(item, dict)
+        and item.get("introduced_by_current_diff") is False
+        and str(item.get("scope_relation") or "").strip().lower() in {"unrelated", "pre_existing", "pre-existing"}
+        and str(item.get("severity") or "").strip().lower() == "advisory"
+        and not item.get("acceptance_relation")
+        for item in blocking_bugs
     ):
         return False
+    acceptance = artifact.get("acceptance_results")
+    if not isinstance(acceptance, list) or not acceptance or any(not isinstance(row, dict) for row in acceptance):
+        return False
+    statuses = [str(row.get("status") or "").strip().lower() for row in acceptance]
+    if any(status not in {"passed", "pending"} for status in statuses):
+        return False
+    pending = [row for row, status in zip(acceptance, statuses) if status == "pending"]
+    if pending:
+        if not _artifact_has_passing_test_collection(artifact):
+            return False
+        for row in pending:
+            evidence = " ".join(str(item or "") for item in (row.get("evidence") or [])).lower()
+            if not any(term in evidence for term in ("migration", "live canary", "live operational canary", "owner-authorized", "owner authorization")):
+                return False
+            if any(term in evidence for term in ("test failed", "defect", "bug", "must fix", "implementation missing")):
+                return False
     paths = []
     for key in ("changed_files", "files_inspected"):
         value = artifact.get(key)
@@ -4709,20 +4731,21 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
             paths.extend(str(path or "").replace("\\", "/") for path in value)
     if not any(path.startswith("supabase/migrations/") for path in paths):
         return False
-    finding = str(artifact.get("finding_contract") or "").lower()
-    if not (
-        ("no current_diff" in finding or "no current-diff" in finding or "no current diff" in finding)
-        and "introduced_by_current_diff=false" in finding
-        and "scope_relation=adjacent" in finding
-    ):
-        return False
+    if not pending:
+        finding = str(artifact.get("finding_contract") or "").lower()
+        if not (
+            ("no current_diff" in finding or "no current-diff" in finding or "no current diff" in finding)
+            and "introduced_by_current_diff=false" in finding
+            and "scope_relation=adjacent" in finding
+        ):
+            return False
     narrative = " ".join(str(value or "") for value in (
         artifact.get("summary"),
         artifact.get("next_action"),
         *(artifact.get("release_notes") or []),
     )).lower()
     migration_terms = ("apply the migration", "applying this migration", "migration application", "migration execution")
-    owner_gate_terms = ("owner-gated", "owner gated", "owner decision", "owner decisions", "owner authorization")
+    owner_gate_terms = ("owner-gated", "owner gated", "owner decision", "owner decisions", "owner authorization", "owner-authorized")
     if not any(term in narrative for term in migration_terms) or not any(term in narrative for term in owner_gate_terms):
         return False
     artifact["original_recommended_owner_decision"] = artifact.get("recommended_owner_decision")
@@ -4735,6 +4758,14 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
             "source_agent": agent,
             "reason": "Migration application remains separate from PR merge approval.",
         })
+    if pending and any("live canary" in " ".join(str(item or "") for item in (row.get("evidence") or [])).lower() for row in pending):
+        if not any(isinstance(item, dict) and item.get("op") == "live_canary" for item in protected):
+            protected.append({
+                "op": "live_canary",
+                "status": "owner_gated",
+                "source_agent": agent,
+                "reason": "Owner-authorized live verification remains separate from PR merge approval.",
+            })
     artifact["protected_operations"] = protected
     if str(artifact.get("product_review_status") or "").strip().lower() == "blocked":
         artifact["product_review_status"] = "passed_with_protected_operation"

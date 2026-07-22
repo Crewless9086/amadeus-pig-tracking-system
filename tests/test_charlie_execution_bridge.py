@@ -977,6 +977,56 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"])
 
+    def test_product_review_pending_only_protected_operations_normalizes_to_release_approval(self):
+        artifact = {
+            "summary": "Product release is paused pending the owner-authorized live canary after migration application.",
+            "errors": [],
+            "bugs": [{
+                "finding": "Unrelated route returned 503.",
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": False,
+                "severity": "advisory",
+                "acceptance_relation": [],
+            }],
+            "recommended_owner_decision": "pause",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "next_action": "Obtain owner authorization for migration application and the live canary.",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+        }
+
+        normalized = execution_bridge._normalize_separate_protected_operation_decision("product_reviewer", artifact)
+
+        self.assertTrue(normalized)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_product_review_pending_current_diff_defect_does_not_normalize(self):
+        artifact = {
+            "summary": "Migration application is owner-gated, but a current defect remains.",
+            "errors": [{
+                "finding": "Authorization is missing and must fix before merge.",
+                "scope_relation": "in_scope_current_diff",
+                "introduced_by_current_diff": True,
+                "severity": "high",
+                "acceptance_relation": ["auth"],
+            }],
+            "bugs": [],
+            "recommended_owner_decision": "pause",
+            "acceptance_results": [{"id": "auth", "status": "pending", "evidence": ["Implementation missing: must fix authorization."]}],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "next_action": "Owner authorization is required for migration application.",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "10 tests passed"}],
+        }
+
+        normalized = execution_bridge._normalize_separate_protected_operation_decision("product_reviewer", artifact)
+
+        self.assertFalse(normalized)
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
     def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
         current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
         mission = {
