@@ -1043,9 +1043,13 @@ def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage="
             status = previous_status if previous_status in {"complete", "active", "pending"} else str(item.get("status") or "pending")
         merged_item = {**item, "status": status}
         if previous_status == "complete":
-            for key in ("findings", "handoff_to", "completed_at"):
+            for key in ("findings", "handoff_to"):
                 if previous.get(key):
                     merged_item[key] = previous[key]
+        if status == "complete" and previous_status == "complete" and previous.get("completed_at"):
+            merged_item["completed_at"] = previous["completed_at"]
+        elif status in {"active", "pending"}:
+            merged_item["completed_at"] = None
         merged.append(merged_item)
     active_indexes = [index for index, item in enumerate(merged) if item.get("status") == "active"]
     if len(active_indexes) > 1:

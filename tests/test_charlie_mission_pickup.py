@@ -615,6 +615,35 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual([item["agent"] for item in merged if item["status"] == "active"], ["product_architect"])
 
+    def test_refreshed_workflow_clears_completion_timestamp_when_stage_is_reopened(self):
+        current = [
+            {"agent": "builder", "status": "complete", "completed_at": "2026-07-22T10:00:00Z"},
+            {"agent": "tester", "status": "complete", "completed_at": "2026-07-22T10:10:00Z"},
+            {"agent": "qa_red_team", "status": "complete", "completed_at": "2026-07-22T10:20:00Z"},
+        ]
+        planned = [
+            {"agent": "builder", "status": "pending"},
+            {"agent": "visual_qa_reviewer", "status": "pending"},
+            {"agent": "tester", "status": "pending"},
+            {"agent": "qa_red_team", "status": "pending"},
+        ]
+
+        merged = charlie_mission_pickup._merge_resumable_workflow(
+            current,
+            planned,
+            resume_stage="visual_qa_reviewer",
+        )
+        by_agent = {item["agent"]: item for item in merged}
+
+        self.assertEqual(by_agent["builder"]["status"], "complete")
+        self.assertEqual(by_agent["builder"]["completed_at"], "2026-07-22T10:00:00Z")
+        self.assertEqual(by_agent["visual_qa_reviewer"]["status"], "active")
+        self.assertIsNone(by_agent["visual_qa_reviewer"]["completed_at"])
+        self.assertEqual(by_agent["tester"]["status"], "pending")
+        self.assertIsNone(by_agent["tester"]["completed_at"])
+        self.assertEqual(by_agent["qa_red_team"]["status"], "pending")
+        self.assertIsNone(by_agent["qa_red_team"]["completed_at"])
+
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.build_core_plan")
     def test_refresh_core_plan_preserves_owner_builder_send_back(self, build_plan, update_vault):
