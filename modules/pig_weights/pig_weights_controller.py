@@ -104,17 +104,17 @@ def apply_purpose_review_queue_decisions(payload: dict):
     return apply_purpose_review_decisions(payload.get("decisions", []), dry_run=True)
 
 
-def create_purpose_correction_batch(payload: dict):
+def create_purpose_correction_batch(payload: dict, *, actor_id: str):
     payload = payload or {}
-    return create_correction_batch(payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""))
+    return create_correction_batch(payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""), actor_id=actor_id)
 
 
-def approve_purpose_correction_batch(batch_id: str):
-    return approve_correction_batch(batch_id)
+def approve_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    return approve_correction_batch(batch_id, actor_id=actor_id)
 
 
-def execute_purpose_correction_batch(batch_id: str):
-    return execute_correction_batch(batch_id)
+def execute_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    return execute_correction_batch(batch_id, actor_id=actor_id)
 
 
 def get_purpose_review_recheck_packet(payload: dict):

@@ -41,13 +41,19 @@ def _decisions(value):
     return (clean, errors) if not errors else (None, errors)
 
 
-def create_correction_batch(decisions, *, idempotency_key, actor_id="owner_admin_session", connect_factory=None):
+def _decision_hash(decisions):
+    return hashlib.sha256(
+        json.dumps(decisions, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def create_correction_batch(decisions, *, idempotency_key, actor_id, connect_factory=None):
     clean, errors = _decisions(decisions)
-    key = to_clean_string(idempotency_key)
-    if errors or not key:
-        return {"success": False, "status": "correction_batch_invalid", "errors": errors or ["Idempotency key is required."]}, 400
+    key, actor_id = to_clean_string(idempotency_key), to_clean_string(actor_id)
+    if errors or not key or not actor_id:
+        return {"success": False, "status": "correction_batch_invalid", "errors": errors or ["Idempotency key and owner principal are required."]}, 400
     batch_id = f"PURPOSE-CORRECTION-{uuid.uuid4().hex[:20].upper()}"
-    digest = hashlib.sha256(json.dumps(clean, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    digest = _decision_hash(clean)
     try:
         with _connect(connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -64,7 +70,10 @@ def create_correction_batch(decisions, *, idempotency_key, actor_id="owner_admin
         return {"success": False, "status": "correction_batch_store_unavailable", "writes_to_sheets": False}, 503
 
 
-def approve_correction_batch(batch_id, *, actor_id="owner_admin_session", connect_factory=None):
+def approve_correction_batch(batch_id, *, actor_id, connect_factory=None):
+    actor_id = to_clean_string(actor_id)
+    if not actor_id:
+        return {"success": False, "status": "correction_batch_owner_principal_required", "writes_to_sheets": False}, 403
     try:
         with _connect(connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -78,7 +87,10 @@ def approve_correction_batch(batch_id, *, actor_id="owner_admin_session", connec
         return {"success": False, "status": "correction_batch_store_unavailable", "writes_to_sheets": False}, 503
 
 
-def execute_correction_batch(batch_id, *, actor_id="owner_admin_session", connect_factory=None, today=None):
+def execute_correction_batch(batch_id, *, actor_id, connect_factory=None, today=None):
+    actor_id = to_clean_string(actor_id)
+    if not actor_id:
+        return {"success": False, "status": "correction_batch_owner_principal_required", "writes_to_sheets": False}, 403
     today = today or date.today()
     try:
         with _connect(connect_factory) as connection:
@@ -93,6 +105,14 @@ def execute_correction_batch(batch_id, *, actor_id="owner_admin_session", connec
                 if status != "owner_approved" or not approved_at or not approved_by:
                     return {"success": False, "status": "correction_batch_not_owner_approved"}, 409
                 decisions = decisions if isinstance(decisions, list) else json.loads(decisions)
+                clean_decisions, decision_errors = _decisions(decisions)
+                if decision_errors or clean_decisions != decisions or _decision_hash(clean_decisions) != str(digest or ""):
+                    return {
+                        "success": False,
+                        "status": "correction_batch_decision_tampered",
+                        "writes_to_sheets": False,
+                    }, 409
+                decisions = clean_decisions
                 pig_ids = [item["pig_id"] for item in decisions]
                 cursor.execute("""select pig.pig_id,pig.status,pig.on_farm,pig.purpose,latest.weight_date,latest.weight_kg
                     from public.pigs pig

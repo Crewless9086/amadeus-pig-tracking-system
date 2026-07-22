@@ -1,6 +1,7 @@
 import hmac
 import ipaddress
 import os
+import uuid
 from datetime import datetime, timezone
 
 from flask import jsonify, redirect, render_template, request, session, url_for
@@ -94,6 +95,9 @@ def set_owner_session(role):
     session.clear()
     session[SESSION_KEY] = {
         "role": role,
+        # This opaque, server-signed session principal is audit provenance.  It
+        # is deliberately not supplied by a browser request body.
+        "principal_id": f"owner-{role}:{uuid.uuid4().hex}",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     session.permanent = False
@@ -101,6 +105,22 @@ def set_owner_session(role):
 
 def clear_owner_session():
     session.pop(SESSION_KEY, None)
+
+
+def owner_admin_principal():
+    """Return the server-bound principal for an already-authorized admin request.
+
+    Local development remains explicitly labelled rather than pretending an
+    anonymous request was an authenticated production owner session.
+    """
+    data = session.get(SESSION_KEY)
+    if isinstance(data, dict) and str(data.get("role") or "").strip() == "admin":
+        principal = str(data.get("principal_id") or "").strip()
+        if principal.startswith("owner-admin:"):
+            return principal
+    if _access_disabled_or_local_allowed():
+        return "owner-admin:local-development"
+    return ""
 
 
 def owner_login_get():
