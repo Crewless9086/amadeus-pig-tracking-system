@@ -3370,6 +3370,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_tester_preexisting_unrelated_advisory_does_not_backflow(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "58 tests passed"}],
+            "errors": [{
+                "scope_relation": "pre-existing/unrelated",
+                "introduced_by_current_diff": False,
+                "severity": "advisory",
+                "acceptance_relation": "Adjacent follow-up work; does not violate either frozen acceptance row.",
+                "finding": "An unrelated route returned 503 while every changed-surface test passed.",
+            }],
+            "bugs": [],
+        })
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+        self.assertTrue(result["passed"], result)
+
     def test_tester_current_diff_bug_remains_blocking(self):
         artifact = _successful_stage_payload("tester")
         artifact.update({
