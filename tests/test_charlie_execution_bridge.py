@@ -5022,6 +5022,35 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["missing_gates"], ["positive_and_negative_lifecycle_paths"])
         self.assertFalse(mission["metadata"]["pre_builder_scope"]["builder_allowed"])
 
+    def test_final_artifact_ingestion_retries_transient_failure_without_rerunning_agent(self):
+        calls = []
+        sleeps = []
+        def consumer(*args, **kwargs):
+            calls.append((args, kwargs))
+            if len(calls) < 3:
+                return {"success": False, "status": "final_artifact_ingestion_failed"}, 503
+            return {"success": True, "status": "final_artifact_consumed"}, 200
+        result, status = execution_bridge._consume_final_artifact_with_retry(
+            consumer, "M-1", "builder", "E-1", 2, {"summary": "done"}, "abc",
+            sleep_fn=sleeps.append,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["ingestion_attempts"], 3)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [1, 2])
+
+    def test_final_artifact_ingestion_does_not_retry_non_transient_failure(self):
+        calls = []
+        def consumer(*args, **kwargs):
+            calls.append(1)
+            return {"success": False, "status": "final_artifact_stage_mismatch"}, 409
+        result, status = execution_bridge._consume_final_artifact_with_retry(
+            consumer, "M-1", "builder", "E-1", 1, {}, "abc", sleep_fn=lambda _seconds: None,
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["ingestion_attempts"], 1)
+        self.assertEqual(len(calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
