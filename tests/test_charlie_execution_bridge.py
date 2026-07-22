@@ -1123,6 +1123,56 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(normalized)
         self.assertTrue(artifact["errors"])
 
+    def test_reviewer_unrelated_advisory_error_does_not_reject_code_release(self):
+        artifact = {
+            "summary": "Code is ready; owner-authorized migration and live canary remain pending.",
+            "errors": [{
+                "finding": "Unrelated route returned 503.",
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": False,
+                "severity": "advisory",
+                "acceptance_rows": [],
+            }],
+            "bugs": [],
+            "recommended_owner_decision": "pause",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "files_inspected": ["supabase/migrations/202607220001_additive.sql"],
+            "next_action": "Obtain owner authorization to apply the additive migration, then run the live canary.",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+        }
+
+        normalized = execution_bridge._normalize_separate_protected_operation_decision("reviewer", artifact)
+
+        self.assertTrue(normalized)
+        self.assertEqual(artifact["errors"], [])
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_reviewer_advisory_error_with_acceptance_impact_still_blocks(self):
+        artifact = {
+            "summary": "Migration is owner-gated, but an acceptance-impacting error remains.",
+            "errors": [{
+                "finding": "Route failure violates the authorization acceptance row.",
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": False,
+                "severity": "advisory",
+                "acceptance_rows": ["authorization"],
+            }],
+            "bugs": [],
+            "recommended_owner_decision": "pause",
+            "acceptance_results": [{"id": "authorization", "status": "pending", "evidence": ["Implementation defect must fix."]}],
+            "files_inspected": ["supabase/migrations/202607220001_additive.sql"],
+            "next_action": "Obtain owner authorization to apply the additive migration.",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "10 tests passed"}],
+        }
+
+        normalized = execution_bridge._normalize_separate_protected_operation_decision("reviewer", artifact)
+
+        self.assertFalse(normalized)
+        self.assertTrue(artifact["errors"])
+
     def test_owner_review_gate_does_not_send_current_lineage_back_to_builder(self):
         current_revision = "8456b69730a6a3f1d2e4ed0b73a23ae180d73ba5"
         mission = {
