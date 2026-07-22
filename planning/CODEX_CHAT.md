@@ -17,7 +17,7 @@ Codex must follow:
 ### Concept / Problem / Idea
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Repair the exact Security Reviewer defect found on canonical PR #373. The correction-batch create, approve, and execute routes must fail closed for non-loopback requests unless a genuine authenticated owner-admin session exists, including when OWNER_ACCESS_ENABLED=0 or local-development settings are active. Restrict any local-development bypass explicitly to loopback. Update canonical PR #373 only; do not open another PR. Preserve the passing transactional, freshness, idempotency, audit, UI, planning, Builder, Tester, and QA evidence from the parent mission. Do not apply the migration and do not change any pig or farm record.
 ```
 
 ### Desired Outcome
@@ -35,7 +35,7 @@ P0
 ### Mission Type
 
 ```text
-content engine
+security correction
 ```
 
 ### Approval Level
@@ -49,11 +49,11 @@ LEVEL 3
 ## CHARLIE MISSION RECORD
 
 ```text
-Mission ID: CHARLIE-MISSION-D2F2EE1B0230469D
-Mission title: Beacon Live Stock Awareness Packet Split
+Mission ID: CHARLIE-HERDMASTER-STAGE-AUTH-GUARD-20260722
+Mission title: Herdmaster correction batches: fail-closed owner-session guard
 Mission status at pickup: in_progress
 Runner mode: code_test_pr
-Vault stage: intake
+Vault stage: blocked_at_architect
 ```
 
 ---
@@ -63,43 +63,41 @@ Vault stage: intake
 ### Problem Statement
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Repair the exact Security Reviewer defect found on canonical PR #373. The correction-batch create, approve, and execute routes must fail closed for non-loopback requests unless a genuine authenticated owner-admin session exists, including when OWNER_ACCESS_ENABLED=0 or local-development settings are active. Restrict any local-development bypass explicitly to loopback. Update canonical PR #373 only; do not open another PR. Preserve the passing transactional, freshness, idempotency, audit, UI, planning, Builder, Tester, and QA evidence from the parent mission. Do not apply the migration and do not change any pig or farm record.
 ```
 
 ### Desired Outcome
 
 ```text
-Beacon can prepare correct live-stock awareness post packets from approved farm media without drifting into meat sales.
+Codex scopes this CHARLIE mission, updates active docs, builds only within the approved level and hard stops, tests thoroughly, and reports a debrief.
 ```
 
 ### Acceptance Criteria
 
 ```text
-- Beacon has an explicit live_stock_awareness campaign/packet mode.
-- Piglet/litter/weaner approved media routes to live-stock awareness drafts, not meat launch drafts.
-- Live-stock awareness packet validates no direct sales terms such as for sale, price, reserve, book, available, or DM to buy.
-- Owner packet includes selected media, exact caption, platform, SAM Live Stock handoff path, and pause/rollback instruction.
-- Existing meat launch tests still pass.
+- Non-loopback correction-batch create, approve, and execute requests cannot reach their services without an authenticated owner-admin session in every supported OWNER_ACCESS_ENABLED configuration.
+- Any local-development bypass is explicit, loopback-only, and cannot be activated by request-controlled forwarding headers.
+- Deterministic negative tests cover OWNER_ACCESS_ENABLED=0 and local-development settings across create, approve, and execute, asserting denial and zero service calls.
+- Existing authenticated owner-admin, freshness, idempotency, atomic audit, draft, stale, missing-weight, tamper, and duplicate-execution tests remain green.
+- Canonical PR #373 is updated in place and tested at its new exact revision; no duplicate PR is created.
+- Migration application, live canary, and every pig-record mutation remain separately owner-gated and are not performed by this mission.
 ```
 
 ### Test Plan
 
 ```text
-- Run focused unit tests for touched modules.
-- Run route/frontend contract tests when routes or UI are touched.
-- Prove unsafe actions remain blocked by policy/authority flags.
-- Prepare owner review packet with changed files, tests, risks, rollback, and next gate.
-- Add Beacon tests proving live-stock media does not produce meat packet output.
+- Run focused owner-access and correction-batch route tests, including non-loopback negative cases with services mocked.
+- Run the complete pig allocation readiness and owner access suites.
+- Run current GitHub checks on canonical PR #373 and bind evidence to its exact new head.
 ```
 
 ### Forbidden Actions
 
 ```text
-- Do not send customer messages without an approved customer-send gate.
-- Do not post publicly without exact owner approval and channel gate.
-- Do not create orders, quotes, invoices, reservations, stock changes, slaughter bookings, butcher bookings, payment confirmations, or farm lifecycle writes unless the mission explicitly builds and tests the gate and still stops at owner review.
-- Do not change Render production envs without owner instruction.
-- Do not merge or deploy without final owner release approval.
+- No production data writes unless explicitly approved.
+- No migrations unless explicitly approved.
+- No customer sends, public posts, payments, reservations, or lifecycle writes unless explicitly approved.
+- No .env, secrets, screenshots, external_sources, static/assets, or planning/Prompts.md unless explicitly approved.
 ```
 
 ### Media / References
@@ -111,16 +109,26 @@ Beacon can prepare correct live-stock awareness post packets from approved farm 
 ### Agent Workflow
 
 ```text
-- idea_expander: active - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
-- source_mapper: pending - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
-- concept_strategist: pending - Turn the idea into a clear concept, strategic thesis, options, and decision memo.
-- product_architect: pending - Shape product flow, owner value, user behavior, and acceptance boundaries.
-- risk_agent: pending - Create risk register across technical, legal, financial, operational, brand, and data risks.
-- council_synthesis: pending - Reconcile upstream agent thinking into one council-approved brief before planning or building.
-- business_reviewer: pending - Check commercial logic, income-stream readiness, and owner decision clarity.
-- evidence_reviewer: pending - Check claims, tests, citations, artifacts, and proof against the Vault.
-- reviewer: pending - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
-- publisher: pending - Prepare deployment/publishing packet after owner approval and verification.
+- idea_expander: complete - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
+- source_mapper: complete - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
+- visual_reference_interpreter: complete - Convert owner screenshots, sketches, and reference media into concrete layout, hierarchy, interaction, and visual-match requirements.
+- creative_ui_designer: complete - Design a distinctive, owner-aligned UI concept with information architecture, visual hierarchy, layout rhythm, and interaction intent before implementation.
+- ux_interaction_designer: complete - Turn the UI concept into ergonomic workflows, visible actions, responsive behavior, empty/error states, and owner decision paths.
+- product_architect: complete - Shape product flow, owner value, user behavior, and acceptance boundaries.
+- technical_architect: complete - Design implementation structure, file/API/data impacts, integration risk, and test strategy.
+- council_synthesis: complete - Reconcile upstream agent thinking into one council-approved brief before planning or building.
+- planner: complete - Turn owner concept into scoped mission plan.
+- architect: complete - Identify files, data sources, risks, and implementation approach.
+- frontend_design_implementer: complete - Translate approved UI concept and interaction spec into frontend code while preserving the visual reference contract.
+- builder: complete - Implement scoped changes under approval level.
+- tester: complete - Run tests and pressure checks.
+- qa_red_team: complete - Challenge the work for regressions, unsafe actions, weak evidence, and owner-risk before review.
+- visual_qa_reviewer: complete - Compare the finished UI against owner reference media, design requirements, desktop/mobile screenshots, and visible owner actions.
+- product_reviewer: complete - Check that the result matches owner intent, user value, and acceptance criteria.
+- security_reviewer: complete - Review permissions, secrets, data exposure, injection, and dangerous actions.
+- evidence_reviewer: complete - Check claims, tests, citations, artifacts, and proof against the Vault.
+- reviewer: complete - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
+- publisher: complete - Prepare deployment/publishing packet after owner approval and verification.
 ```
 
 ### Shared Mission Context Pack
@@ -129,38 +137,13 @@ Beacon can prepare correct live-stock awareness post packets from approved farm 
 Version: charlie_context_pack_v1
 
 Active truth docs:
-- docs/09-vault-brain/INDEX.md
-- docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md
-- docs/09-vault-brain/00-governance/UPDATE_RULES.md
-- docs/09-vault-brain/00-governance/BRAIN_GUARD.md
-- docs/09-vault-brain/01-identity/SYSTEM_HIERARCHY.md
-- docs/09-vault-brain/01-identity/CHARLIE.md
-- docs/09-vault-brain/01-identity/CHARLIE_CORE.md
-- docs/09-vault-brain/02-agents/AGENT_REGISTRY.md
-- docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md
-- docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md
-- docs/09-vault-brain/07-standards/TESTING_STANDARD.md
-- docs/00-start-here/CHARLIE_MISSION_PROTOCOL.md
-- docs/00-start-here/CURRENT_STATE.md
-- docs/00-start-here/NEXT_STEPS.md
-- docs/00-start-here/WORKFLOW.md
-- docs/00-start-here/DEPLOYMENT_SOP.md
-- docs/00-start-here/OWNER_INBOX_GUIDE.md
+- Not captured yet; Codex must scope this before build.
 
 Shared data rules:
-- Vault Brain docs under docs/09-vault-brain are the canonical doctrine for agents, workflows, business rules, data rules, standards, and playbooks.
-- Every CHARLIE CORE mission must cite the Vault Brain docs used before owner review.
-- Brain Guard must block review-ready status when Vault-sensitive work lacks Vault update evidence or an explicit no-update reason.
-- Supabase is the canonical durable source where migrations have cut over the app.
-- Google Sheets is legacy/reference/export unless a route is explicitly still in fallback mode.
-- Mission findings must be recorded in the Mission Vault before handoff to the next role.
-- Builder agents must use the Mission Vault, active docs, acceptance criteria, tests, and forbidden actions before editing.
+- Not captured yet; Codex must scope this before build.
 
 Approval rules:
-- LEVEL 1 is read-only investigation.
-- LEVEL 2 is docs/planning only.
-- LEVEL 3 may build, test, commit, push, and open PR; it may not merge.
-- LEVEL 4 may merge after verified diff/tests; red-zone actions still require explicit approval.
+- Not captured yet; Codex must scope this before build.
 
 Parallel work:
 disabled_until_phase_6_parallel_controls
