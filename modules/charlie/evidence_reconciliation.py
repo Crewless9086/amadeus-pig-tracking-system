@@ -151,6 +151,7 @@ def resolve_effective_agent_results(artifact_history, candidate_manifest, workfl
     candidate_fp = _clean(candidate_manifest.get("candidate_fingerprint"))
     candidate_commit = _clean(candidate_manifest.get("source_commit"))
     scope_hash = _clean(candidate_manifest.get("scope_hash"))
+    planning_scope_bridge = _planning_scope_bridge_agents(history, workflow_agents, scope_hash)
     for agent in agents:
         entries = sorted(history.get(agent, []), key=_artifact_sort_key, reverse=True)
         selected = None
@@ -158,6 +159,7 @@ def resolve_effective_agent_results(artifact_history, candidate_manifest, workfl
         for artifact in entries:
             applicable, reason = artifact_applicability(
                 artifact, candidate_fp, candidate_commit, scope_hash, agent_name=agent,
+                accept_upstream_planning_scope=agent in planning_scope_bridge,
             )
             if applicable and selected is None:
                 selected = artifact
@@ -200,7 +202,14 @@ def resolve_effective_agent_results(artifact_history, candidate_manifest, workfl
     }
 
 
-def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, scope_hash, agent_name=""):
+def artifact_applicability(
+    artifact,
+    candidate_fingerprint,
+    candidate_commit,
+    scope_hash,
+    agent_name="",
+    accept_upstream_planning_scope=False,
+):
     artifact = artifact if isinstance(artifact, dict) else {}
     lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
     artifact_fp = _clean(lineage.get("candidate_fingerprint") or artifact.get("candidate_fingerprint"))
@@ -216,6 +225,21 @@ def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, sc
         and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
     ):
         return True, "accepted_frozen_scope"
+    if (
+        accept_upstream_planning_scope
+        and agent in SCOPE_PLANNING_AGENTS
+        and artifact_scope
+        and scope_hash
+        and artifact_scope != scope_hash
+        and not artifact_commit
+        and _basic_judgement(artifact).get("passed")
+        and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
+    ):
+        # A later pre-build planning stage can freeze the final scope after
+        # earlier discovery stages were recorded.  Once that downstream
+        # planning artifact is bound to the current frozen scope, preserve
+        # its passing upstream ancestry instead of restarting discovery.
+        return True, "accepted_upstream_planning_ancestry"
     if artifact_scope and scope_hash and artifact_scope != scope_hash:
         return False, "different_scope"
     if artifact_scope and scope_hash and artifact_scope == scope_hash and agent in SCOPE_PLANNING_AGENTS:
@@ -240,6 +264,29 @@ def artifact_applicability(artifact, candidate_fingerprint, candidate_commit, sc
         # mission scope instead of manufacturing an endless planning rerun.
         return True, "accepted_legacy_frozen_scope"
     return False, "legacy_unbound_evidence_requires_revalidation"
+
+
+def _planning_scope_bridge_agents(history, workflow_agents, scope_hash):
+    """Return upstream planning agents covered by a later frozen-scope handoff."""
+    if not scope_hash:
+        return set()
+    planning_order = [agent for agent in workflow_agents if agent in SCOPE_PLANNING_AGENTS]
+    latest_anchor = -1
+    for index, agent in enumerate(planning_order):
+        for artifact in history.get(agent, []):
+            if not isinstance(artifact, dict) or _artifact_revision(artifact):
+                continue
+            lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+            artifact_scope = _clean(lineage.get("scope_hash") or artifact.get("scope_hash"))
+            if (
+                artifact_scope == scope_hash
+                and _basic_judgement(artifact).get("passed")
+                and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
+            ):
+                latest_anchor = max(latest_anchor, index)
+    if latest_anchor < 0:
+        return set()
+    return set(planning_order[:latest_anchor])
 
 
 def targeted_workflow_return(workflow, target_agent, comments="", preserve_agents=None):

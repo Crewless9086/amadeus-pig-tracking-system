@@ -224,6 +224,46 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
         result = resolve_effective_agent_results({"risk_agent": risk}, current, workflow=[{"agent": "risk_agent"}])
         self.assertEqual(result["requires_revalidation"][0]["reason"], "different_scope")
 
+    def test_downstream_frozen_planning_scope_preserves_upstream_ancestry(self):
+        old = build_candidate_manifest(MISSION, source_commit="")
+        changed = {**MISSION, "title": "Clarified title"}
+        current = build_candidate_manifest(changed, source_commit="")
+        idea = artifact("idea_expander", old)
+        planner = artifact("planner", old)
+        architect = artifact("architect", current)
+        for item in (idea, planner, architect):
+            item["source_commit"] = ""
+            item["evidence_lineage"]["source_commit"] = ""
+        result = resolve_effective_agent_results(
+            {"idea_expander": idea, "planner": planner, "architect": architect},
+            current,
+            workflow=[
+                {"agent": "idea_expander"},
+                {"agent": "planner"},
+                {"agent": "architect"},
+            ],
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(
+            result["effective_results"]["idea_expander"]["applicability"],
+            "accepted_upstream_planning_ancestry",
+        )
+
+    def test_scope_change_without_downstream_frozen_anchor_still_revalidates(self):
+        old = build_candidate_manifest(MISSION, source_commit="")
+        changed = {**MISSION, "title": "Changed scope without handoff"}
+        current = build_candidate_manifest(changed, source_commit="")
+        idea = artifact("idea_expander", old)
+        idea["source_commit"] = ""
+        idea["evidence_lineage"]["source_commit"] = ""
+        result = resolve_effective_agent_results(
+            {"idea_expander": idea},
+            current,
+            workflow=[{"agent": "idea_expander"}, {"agent": "architect"}],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["requires_revalidation"][0]["reason"], "different_scope")
+
     def test_manifest_fingerprint_is_deterministic_for_same_candidate(self):
         first = build_candidate_manifest(MISSION, source_commit="same-sha")
         second = build_candidate_manifest(MISSION, source_commit="same-sha")
