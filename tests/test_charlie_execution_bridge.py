@@ -103,6 +103,16 @@ def _successful_stage_payload(agent):
         "files_to_inspect": ["modules/charlie/execution_bridge.py"] if agent in {"technical_architect", "architect"} else None,
         "risk_notes": ["risk checked"] if agent in {"product_architect", "technical_architect", "architect"} else None,
         "implementation_plan": ["patch runner"] if agent in {"technical_architect", "architect"} else None,
+        "planning_gate_results": [
+            {"gate": gate, "status": "resolved", "evidence": [f"Resolved {gate} in the implementation plan."]}
+            for gate in (
+                "canonical_record_discriminator",
+                "ownership_and_source_of_truth",
+                "positive_and_negative_lifecycle_paths",
+                "migration_and_rollback_authority",
+            )
+        ] if agent == "architect" else None,
+        "builder_authorization": "approve" if agent == "architect" else None,
         "implementation_sources_used": [
             "modules/charlie/execution_bridge.py",
             "docs/09-vault-brain/04-workflows/CHARLIE_MISSION_WORKFLOW.md",
@@ -4969,6 +4979,37 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._pause_decomposed_parent(mission)
         self.assertEqual(result["status"], "mission_decomposition_children_missing")
         update.assert_not_called()
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault", return_value=({"success": True}, 200))
+    def test_architect_resolution_durably_enables_builder_only_when_every_gate_is_resolved(self, update):
+        mission = {"mission_id": "M-GATES", "metadata": {"pre_builder_scope": {
+            "planning_gates": ["canonical_record_discriminator", "migration_and_rollback_authority"],
+            "builder_allowed": False,
+        }}}
+        artifact = {
+            "artifact_path": "architect.final.md",
+            "builder_authorization": "approve",
+            "planning_gate_results": [
+                {"gate": "canonical_record_discriminator", "status": "resolved", "evidence": ["Design A"]},
+                {"gate": "migration_and_rollback_authority", "status": "resolved", "evidence": ["Design B"]},
+            ],
+        }
+        result = execution_bridge._record_pre_builder_plan_resolution(mission, artifact)
+        self.assertTrue(result["approved"])
+        self.assertTrue(mission["metadata"]["pre_builder_scope"]["builder_allowed"])
+        self.assertTrue(update.call_args.args[1]["pre_builder_plan"]["approved"])
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault", return_value=({"success": True}, 200))
+    def test_architect_resolution_fails_closed_when_gate_evidence_is_missing(self, update):
+        mission = {"mission_id": "M-GATES", "metadata": {"pre_builder_scope": {
+            "planning_gates": ["positive_and_negative_lifecycle_paths"],
+            "builder_allowed": False,
+        }}}
+        artifact = {"builder_authorization": "approve", "planning_gate_results": []}
+        result = execution_bridge._record_pre_builder_plan_resolution(mission, artifact)
+        self.assertFalse(result["approved"])
+        self.assertEqual(result["missing_gates"], ["positive_and_negative_lifecycle_paths"])
+        self.assertFalse(mission["metadata"]["pre_builder_scope"]["builder_allowed"])
 
 
 if __name__ == "__main__":

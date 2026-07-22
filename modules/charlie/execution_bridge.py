@@ -128,7 +128,7 @@ AGENT_ARTIFACT_REQUIRED_KEYS = {
     "source_mapper": ["summary", "implementation_inventory", "current_sources", "legacy_sources", "tests_to_run", "implementation_sources_used", "commands_run", "files_inspected", "vault_sources_used"],
     "council_synthesis": ["summary", "build_brief", "agreements", "conflicts_resolved", "commands_run", "files_inspected", "vault_sources_used"],
     "planner": ["summary", "acceptance_criteria", "test_plan", "commands_run", "files_inspected", "vault_sources_used"],
-    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "commands_run", "files_inspected", "vault_sources_used"],
+    "architect": ["summary", "files_to_inspect", "risk_notes", "implementation_plan", "planning_gate_results", "builder_authorization", "commands_run", "files_inspected", "vault_sources_used"],
     "builder": ["summary", "changed_files", "build_notes", "commands_run", "files_inspected", "vault_sources_used"],
     "frontend_design_implementer": ["summary", "changed_files", "implementation_notes", "local_preview", "media_references_used", "visual_reference_analysis", "viewport_plan", "browser_check_plan", "commands_run", "files_inspected", "vault_sources_used"],
     "tester": ["summary", "tests_run", "test_status", "commands_run", "files_inspected", "vault_sources_used"],
@@ -933,6 +933,21 @@ def run_agent_execution_bridge_v2(
         )
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
+        if agent == "architect":
+            planning_resolution = _record_pre_builder_plan_resolution(
+                mission,
+                artifact,
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            artifact["pre_builder_plan_resolution"] = planning_resolution
+            if not planning_resolution.get("approved"):
+                return _block_agent_stage(
+                    mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                    blocked_reason=planning_resolution.get("reason", "Architect did not resolve every frozen planning gate."),
+                    artifact=artifact, artifacts=artifacts,
+                    database_url=database_url, connect_factory=connect_factory,
+                )
         if not ingestion_owned_stage:
             _record_mission_memory_event(
                 mission,
@@ -1984,6 +1999,59 @@ def _ensure_execution_governance(mission, database_url=None, connect_factory=Non
     return mission
 
 
+def _record_pre_builder_plan_resolution(mission, architect_artifact, database_url=None, connect_factory=None):
+    """Durably close frozen planning gates before Builder is permitted to run."""
+    mission = mission if isinstance(mission, dict) else {}
+    artifact = architect_artifact if isinstance(architect_artifact, dict) else {}
+    metadata = mission.setdefault("metadata", {})
+    scope = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else analyze_pre_builder_scope(mission)
+    required = [str(value or "").strip() for value in scope.get("planning_gates", []) if str(value or "").strip()]
+    results = artifact.get("planning_gate_results") if isinstance(artifact.get("planning_gate_results"), list) else []
+    resolved = {}
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        gate = str(item.get("gate") or "").strip()
+        status = str(item.get("status") or "").strip().lower()
+        evidence = item.get("evidence") if isinstance(item.get("evidence"), list) else []
+        if gate and status == "resolved" and any(str(value or "").strip() for value in evidence):
+            resolved[gate] = {"status": "resolved", "evidence": evidence}
+    missing = [gate for gate in required if gate not in resolved]
+    authorization = str(artifact.get("builder_authorization") or "").strip().lower()
+    approved = not missing and authorization in {"approve", "approved"}
+    plan = {
+        "version": "charlie_pre_builder_plan_v1",
+        "approved": approved,
+        "required_gates": required,
+        "resolved_gates": resolved,
+        "missing_gates": missing,
+        "architect_authorization": authorization,
+        "architect_artifact_path": str(artifact.get("artifact_path") or ""),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    metadata["pre_builder_plan"] = plan
+    metadata["pre_builder_scope"] = {**scope, "builder_allowed": approved}
+    update_mission_vault(
+        mission.get("mission_id", ""),
+        {"pre_builder_plan": plan, "pre_builder_scope": metadata["pre_builder_scope"]},
+        notes=(
+            "Architect resolved every frozen planning gate and enabled Builder."
+            if approved else
+            "Architect left one or more frozen planning gates unresolved; Builder remains disabled."
+        ),
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    return {
+        **plan,
+        "reason": (
+            "Every frozen planning gate was resolved with evidence."
+            if approved else
+            f"Builder remains disabled; unresolved planning gates: {', '.join(missing) or 'architect authorization missing'}."
+        ),
+    }
+
+
 def _pause_decomposed_parent(mission, database_url=None, connect_factory=None):
     """Turn an oversized parent into a coordinator; only its ordered children execute."""
     mission = mission if isinstance(mission, dict) else {}
@@ -2555,7 +2623,15 @@ def _agent_required_schema(agent):
             "acceptance_priorities": [],
         })
     elif agent == "architect":
-        base.update({"files_to_inspect": [], "risk_notes": [], "implementation_plan": []})
+        base.update({
+            "files_to_inspect": [],
+            "risk_notes": [],
+            "implementation_plan": [],
+            "planning_gate_results": [
+                {"gate": "exact planning_gates item", "status": "resolved or blocked", "evidence": ["concrete design evidence"]}
+            ],
+            "builder_authorization": "approve only when every frozen planning gate is resolved; otherwise block",
+        })
     elif agent == "builder":
         base.update({
             "changed_files": [],
