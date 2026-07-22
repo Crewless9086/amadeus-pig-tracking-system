@@ -3386,7 +3386,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 "scope_relation": "pre-existing/unrelated",
                 "introduced_by_current_diff": False,
                 "severity": "advisory",
-                "acceptance_relation": "Adjacent follow-up work; does not violate either frozen acceptance row.",
+                "acceptance_relation": "No frozen acceptance row violated.",
                 "finding": "An unrelated route returned 503 while every changed-surface test passed.",
             }],
             "bugs": [],
