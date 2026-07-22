@@ -1027,6 +1027,91 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(normalized)
         self.assertEqual(artifact["recommended_owner_decision"], "pause")
 
+    def test_tester_pass_with_pending_protected_evidence_is_not_blocked_by_negative_safety_examples(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "summary": (
+                "Focused tests confirm fresh owner-approved batches write purpose plus audit events, "
+                "while draft, stale, and missing-weight batches fail before either write. No migration was performed."
+            ),
+            "test_status": "pass",
+            "errors": [],
+            "bugs": [],
+            "finding_contract": "No current-diff defects found; pending evidence is owner-gated only.",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "34 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application and the live canary.",
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_product_false_current_diff_finding_is_reclassified_from_authoritative_pr_files(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Product checks pass; the additive migration and live canary remain owner-authorized.",
+            "recommended_owner_decision": "pause",
+            "errors": [{
+                "scope_relation": "advisory",
+                "introduced_by_current_diff": False,
+                "affected_path": "focused combined unittest command",
+                "severity": "advisory",
+                "acceptance_row_violation": False,
+                "detail": "Combined command timed out; narrower required checks passed.",
+            }],
+            "bugs": [{
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": True,
+                "affected_path": "modules/charlie/execution_bridge.py; tests/test_charlie_execution_bridge.py",
+                "severity": "medium",
+                "acceptance_row_violation": False,
+                "detail": "Outside the bounded farm slice and should be a linked follow-up.",
+            }],
+            "authoritative_pr_changed_files": [
+                "modules/pig_weights/purpose_correction_batch_service.py",
+                "supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql",
+            ],
+            "files_inspected": ["supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql"],
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "60 tests passed"}],
+            "next_action": "Owner must separately authorize applying the additive migration and the live canary.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertFalse(artifact["bugs"][0]["introduced_by_current_diff"])
+        self.assertEqual(artifact["bugs"][0]["attribution_basis"], "authoritative_github_pr_diff_disjoint")
+
+    def test_authoritative_diff_does_not_hide_finding_on_actual_pr_path(self):
+        artifact = {
+            "bugs": [{
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": True,
+                "affected_path": "modules/charlie/execution_bridge.py",
+                "severity": "high",
+                "acceptance_row_violation": False,
+                "detail": "Outside the bounded slice and should be a linked follow-up.",
+            }],
+            "errors": [],
+            "authoritative_pr_changed_files": ["modules/charlie/execution_bridge.py"],
+        }
+
+        normalized = execution_bridge._normalize_authoritative_diff_followups("product_reviewer", artifact)
+
+        self.assertFalse(normalized)
+        self.assertTrue(artifact["bugs"][0]["introduced_by_current_diff"])
+
     def test_security_owner_gated_evidence_error_is_not_a_code_rejection(self):
         artifact = {
             "summary": "Security controls pass; migration application and live canary remain owner-authorized.",
