@@ -4003,6 +4003,8 @@ def _validate_agent_artifact(agent, artifact):
 
 
 def _agent_quality_gate(agent, artifact):
+    if agent == "tester" and str(artifact.get("test_status") or "").strip().lower() == "blocked":
+        _normalize_tester_protected_operation_pending(artifact)
     _normalize_separate_protected_operation_decision(agent, artifact)
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
@@ -4586,6 +4588,73 @@ def _judgement_evidence_quality_gate(agent, artifact):
             "blocking_evidence": [_artifact_text(item) for item in negative[:5]],
         }
     return {"passed": True, "reason": "judgement_gate_passed"}
+
+
+def _normalize_tester_protected_operation_pending(artifact):
+    """Separate passing code verification from later owner-gated operations.
+
+    A Tester may correctly leave acceptance rows pending when their only missing
+    evidence is an unapplied migration or an explicitly owner-authorized live
+    canary.  Those are operational gates, not Builder defects.  Normalize only
+    the fully structured no-defect shape; ambiguous pending rows still fail
+    closed.
+    """
+    if not isinstance(artifact, dict) or artifact.get("bugs"):
+        return False
+    if not _artifact_has_passing_test_collection({**artifact, "test_status": "pass"}):
+        return False
+    advisory_errors = list(artifact.get("errors") or [])
+    for error in advisory_errors:
+        if not isinstance(error, dict):
+            return False
+        if error.get("introduced_by_current_diff") is not False:
+            return False
+        if error.get("violates_acceptance_row") not in {False, None}:
+            return False
+    finding = str(artifact.get("finding_contract") or "").lower()
+    if not any(term in finding for term in ("no introduced product defects", "no current-diff defects", "no current diff defects")):
+        return False
+    acceptance = artifact.get("acceptance_results")
+    if not isinstance(acceptance, list) or not acceptance:
+        return False
+    pending = [row for row in acceptance if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "pending"]
+    if len(pending) != len(acceptance):
+        return False
+    allowed_terms = ("migration", "live canary", "live operational canary", "owner-authorized", "owner authorization")
+    for row in pending:
+        evidence = " ".join(str(item or "") for item in (row.get("evidence") or [])).lower()
+        if not evidence or not any(term in evidence for term in allowed_terms):
+            return False
+        if any(term in evidence for term in ("test failed", "defect", "bug", "must fix", "implementation missing")):
+            return False
+    artifact["original_test_status"] = artifact.get("test_status")
+    artifact["test_status"] = "pass"
+    if advisory_errors:
+        artifact["normalized_advisory_errors"] = advisory_errors
+        artifact["errors"] = []
+    protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
+    narrative = " ".join(
+        [str(artifact.get("summary") or ""), str(artifact.get("next_action") or "")]
+        + [" ".join(str(item or "") for item in (row.get("evidence") or [])) for row in pending]
+    ).lower()
+    for operation, terms in (
+        ("apply_migration", ("migration",)),
+        ("live_canary", ("live canary", "live operational canary")),
+    ):
+        if any(term in narrative for term in terms) and not any(
+            isinstance(item, dict) and item.get("op") == operation for item in protected
+        ):
+            protected.append({
+                "op": operation,
+                "status": "owner_gated",
+                "source_agent": "tester",
+                "reason": "Passing code verification is separate from this protected operational evidence gate.",
+            })
+    artifact["protected_operations"] = protected
+    artifact.setdefault("warnings", []).append(
+        "Normalized Tester blocked status to code-pass because only explicit owner-gated operational evidence remains."
+    )
+    return True
 
 
 def _normalize_separate_protected_operation_decision(agent, artifact):

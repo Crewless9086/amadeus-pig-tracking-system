@@ -714,6 +714,66 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", compact)
         self.assertTrue(result["passed"], result)
 
+    def test_tester_pending_only_owner_gated_operations_does_not_backflow(self):
+        artifact = {
+            "summary": "Focused verification passed; operational gates remain pending.",
+            "errors": [{
+                "introduced_by_current_diff": False,
+                "violates_acceptance_row": False,
+                "detail": "Resolved test selector typo.",
+            }],
+            "bugs": [],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
+            "commands_run": ["python -m unittest focused"],
+            "files_inspected": ["modules/example.py"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
+            "no_vault_update_required": "No doctrine changed.",
+            "confidence": "97%",
+            "confidence_reason": "59 focused deterministic tests passed and directly covered the changed authorization and no-write paths.",
+            "test_status": "blocked",
+            "finding_contract": "No introduced product defects found.",
+            "next_action": "Owner must authorize migration application and a non-mutating live canary.",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Migration application remains owner-authorized."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized non-mutating live canary remains absent."]},
+            ],
+        }
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["test_status"], "pass")
+        self.assertEqual(
+            {item["op"] for item in artifact["protected_operations"]},
+            {"apply_migration", "live_canary"},
+        )
+
+    def test_tester_pending_product_defect_still_backflows(self):
+        artifact = {
+            "summary": "Focused verification found an implementation gap.",
+            "errors": [],
+            "bugs": [],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "10 tests passed"}],
+            "commands_run": ["python -m unittest focused"],
+            "files_inspected": ["modules/example.py"],
+            "vault_sources_used": ["docs/09-vault-brain/07-standards/TESTING_STANDARD.md"],
+            "no_vault_update_required": "No doctrine changed.",
+            "confidence": "80%",
+            "confidence_reason": "10 focused tests passed, but the acceptance evidence identifies a remaining authorization implementation gap.",
+            "test_status": "blocked",
+            "finding_contract": "No introduced product defects found.",
+            "acceptance_results": [{
+                "id": "write-path",
+                "status": "pending",
+                "evidence": ["Implementation missing: authorization check must fix before release."],
+            }],
+        }
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["test_status"], "blocked")
+
     def test_compaction_preserves_builder_source_scope_for_recovery(self):
         source_map = {
             "version": "charlie_implementation_source_map_v1",
