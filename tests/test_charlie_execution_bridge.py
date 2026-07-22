@@ -2480,6 +2480,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "status": "local_commit_ready",
         }))
 
+    def test_builder_packaging_accepts_canonical_existing_pr_reuse(self):
+        self.assertFalse(execution_bridge._builder_packaging_is_terminal({
+            "attempted": True,
+            "status": "existing_pr_reused",
+            "pr_url": "https://github.com/org/repo/pull/368",
+        }))
+
     def test_auto_package_builder_changes_accepts_local_commit_when_pr_create_fails(self):
         calls = []
 
