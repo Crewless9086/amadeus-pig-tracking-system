@@ -46,13 +46,26 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
     def test_parent_child_sibling_castrated_and_unavailable_boars_are_excluded(self):
         excluded = [
             {"Pig_ID": "B_PARENT", "Tag_Number": "BP", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok"},
+            {"Pig_ID": "B_SIBLING", "Tag_Number": "BS", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok"},
             {"Pig_ID": "B_CAST", "Tag_Number": "BC", "Sex": "Castrated_Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok"},
             {"Pig_ID": "B_OFF", "Tag_Number": "BO", "Sex": "Male", "Status": "Active", "On_Farm": "No", "Purpose": "Breeding", "General_Notes": "ok"},
+            {"Pig_ID": "B_EXIT", "Tag_Number": "BE", "Sex": "Male", "Status": "Exited", "On_Farm": "No", "Purpose": "Breeding", "General_Notes": "ok"},
+            {"Pig_ID": "B_NONBREED", "Tag_Number": "BN", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Sale", "General_Notes": "ok"},
+            {"Pig_ID": "B_NOCONDITION", "Tag_Number": "NC", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": ""},
         ]
         readers = fixture_readers(extra_boars=excluded)
-        readers["family_tree"] = lambda pig_id: tree(pig_id, "M1", "D1") if pig_id == "B_PARENT" else ({"pig_id": "F1", "mother": {"pig_id": "B_PARENT"}, "father": {"pig_id": "D1"}} if pig_id == "F1" else tree(pig_id, "M2", "D2"))
+        readers["family_tree"] = lambda pig_id: ({"pig_id": "F1", "mother": {"pig_id": "B_PARENT"}, "father": {"pig_id": "D1"}} if pig_id == "F1" else tree(pig_id, "M1", "D1") if pig_id == "B_SIBLING" else tree(pig_id, "M2", "D2"))
         result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
-        self.assertEqual([row["pig_id"] for row in result["females"][0]["safe_matches"]], ["B1"])
+        female = result["females"][0]
+        self.assertEqual([row["pig_id"] for row in female["safe_matches"]], ["B1"])
+        excluded_reasons = {row["pig_id"]: row["reason"] for row in female["excluded_matches"]}
+        self.assertEqual(excluded_reasons["B_PARENT"], "parent_child")
+        self.assertEqual(excluded_reasons["B_SIBLING"], "known_sibling")
+        self.assertEqual(excluded_reasons["B_CAST"], "castrated_male")
+        self.assertEqual(excluded_reasons["B_OFF"], "off_farm")
+        self.assertEqual(excluded_reasons["B_EXIT"], "not_active")
+        self.assertEqual(excluded_reasons["B_NONBREED"], "non_breeding_purpose")
+        self.assertEqual(excluded_reasons["B_NOCONDITION"], "condition_missing")
 
     def test_mating_facts_classify_active_and_overdue_without_inference(self):
         for expected, row in [("Active Mating", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes"}), ("Overdue Check", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes", "is_overdue_check": "Yes"}), ("Overdue Farrowing", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes", "is_overdue_farrowing": "Yes"})]:
@@ -84,6 +97,13 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
             result = run_herdmaster({"capability": "breeding_planner"})
         self.assertEqual(result["status"], "breeding_planner_needs_data")
         self.assertIn("no legacy fallback", result["direct_answer"])
+
+    def test_canonical_family_reader_failure_fails_closed(self):
+        readers = fixture_readers()
+        readers["family_tree"] = Mock(side_effect=RuntimeError("reader unavailable"))
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
+        self.assertEqual(result["status"], "breeding_planner_needs_data")
+        self.assertEqual(result["females"], [])
 
 
 if __name__ == "__main__":
