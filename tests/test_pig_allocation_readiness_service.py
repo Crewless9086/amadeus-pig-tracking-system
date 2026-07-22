@@ -1153,6 +1153,42 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         get_readiness.assert_not_called()
         get_availability.assert_not_called()
 
+    def test_purpose_review_apply_fails_closed_at_owner_admin_guard(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=denied) as guard, \
+             patch.object(pig_weights_routes, "apply_purpose_review_queue_decisions") as apply_decisions:
+            response = app.test_client().post(
+                "/api/pig-weights/purpose-review/apply",
+                json={"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}]},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), denied[0])
+        guard.assert_called_once()
+        apply_decisions.assert_not_called()
+
+    def test_purpose_review_apply_forwards_authorized_owner_decision(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}], "dry_run": True}
+        service_result = {"success": True, "dry_run": True}
+        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None) as guard, \
+             patch.object(
+                 pig_weights_routes,
+                 "apply_purpose_review_queue_decisions",
+                 return_value=(service_result, 200),
+             ) as apply_decisions:
+            response = app.test_client().post("/api/pig-weights/purpose-review/apply", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        guard.assert_called_once()
+        apply_decisions.assert_called_once_with(payload)
+
     def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
         from pathlib import Path
 

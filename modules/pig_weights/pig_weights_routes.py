@@ -126,6 +126,9 @@ def purpose_review_queue():
 
 @pig_weights_bp.route("/purpose-review/apply", methods=["POST"])
 def purpose_review_apply():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = apply_purpose_review_queue_decisions(payload)
     return jsonify(result), status_code
