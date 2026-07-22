@@ -3620,6 +3620,87 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(artifact["business_capability_status"], "pending_protected_operations")
         self.assertEqual(set(artifact["protected_operations"]), {"apply_migration", "live_canary"})
 
+    def test_compacted_owner_gated_finding_still_keeps_code_releasable(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": ["{'command': 'python -m unittest focused', 'status': 'pass', 'result': '63 tests passed'}"],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [str({
+                "finding": "Migration is unapplied and the owner-authorized live canary is absent; operational closure only.",
+                "severity": "owner-gated",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            })],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_serialized_adjacent_finding_uses_authoritative_diff_alias(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "authoritative_pr_changed_files": ["modules/pig_weights/pig_weights_routes.py"],
+            "errors": [str({
+                "finding": "Execution bridge issue is outside this bounded mission and has a linked follow-up.",
+                "severity": "medium",
+                "scope_relation": "adjacent_follow_up",
+                "introduced_by_current_diff": True,
+                "violates_acceptance_row": False,
+                "affected_file/path": "modules/charlie/execution_bridge.py; tests/test_charlie_execution_bridge.py",
+            })],
+            "bugs": [],
+        })
+
+        normalized = execution_bridge._normalize_authoritative_diff_followups("product_reviewer", artifact)
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(normalized)
+        self.assertTrue(result["passed"], result)
+
+    def test_truncated_serialized_owner_gate_is_not_code_backflow(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [
+                "{'severity': 'owner-gated', 'finding': 'This is an operational evidence gap, not a code defect. Migration application and a safe live canary require se",
+            ],
+            "bugs": [],
+        })
+
+        result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_compaction_preserves_structured_finding_fields(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact["errors"] = [{
+            "finding": "x" * 700,
+            "severity": "owner-gated",
+            "introduced_by_current_diff": True,
+        }]
+
+        compact = execution_bridge._compact_agent_artifacts_for_review({"security_reviewer": artifact})
+        finding = compact["security_reviewer"]["errors"][0]
+
+        self.assertIsInstance(finding, dict)
+        self.assertEqual(finding["severity"], "owner-gated")
+        self.assertTrue(finding["introduced_by_current_diff"])
+        self.assertLessEqual(len(finding["finding"]), 500)
+
     def test_real_current_diff_defect_cannot_hide_behind_protected_pause(self):
         artifact = _successful_stage_payload("security_reviewer")
         artifact.update({
