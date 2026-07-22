@@ -204,8 +204,9 @@ def owner_actor_reference():
 
 
 def _access_disabled_or_local_allowed():
-    if not owner_access_enabled():
-        return True
+    # Protected write rails must never become remotely public merely because a
+    # deployment omitted the owner-access switch.  The only sessionless escape
+    # hatch is an explicitly enabled request from the loopback interface.
     return owner_local_dev_allowed() and is_loopback_request(request)
 
 

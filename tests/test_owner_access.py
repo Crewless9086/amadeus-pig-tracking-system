@@ -46,11 +46,18 @@ class OwnerAccessTests(unittest.TestCase):
             environ_base={"REMOTE_ADDR": remote_addr},
         )
 
-    def test_owner_access_disabled_does_not_break_existing_local_flow(self):
-        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0"}, clear=False):
+    def test_owner_access_disabled_does_not_allow_remote_protected_flow(self):
+        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "0"}, clear=False):
             self._configure()
             self.assertFalse(owner_access_enabled())
             response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["status"], "owner_access_not_configured")
+
+    def test_owner_access_disabled_allows_only_explicit_loopback_development(self):
+        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1"}, clear=False):
+            self._configure()
+            response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "127.0.0.1"})
         self.assertEqual(response.status_code, 200)
 
     def test_remote_protected_page_redirects_without_session_when_enabled(self):
