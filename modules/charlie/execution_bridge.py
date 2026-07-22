@@ -4004,7 +4004,9 @@ def _validate_agent_artifact(agent, artifact):
 
 def _agent_quality_gate(agent, artifact):
     if agent == "tester" and str(artifact.get("test_status") or "").strip().lower() == "blocked":
-        _normalize_tester_protected_operation_pending(artifact)
+        _normalize_verifier_protected_operation_pending(agent, artifact)
+    if agent == "qa_red_team" and str(artifact.get("red_team_status") or "").strip().lower() == "blocked":
+        _normalize_verifier_protected_operation_pending(agent, artifact)
     _normalize_separate_protected_operation_decision(agent, artifact)
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
@@ -4590,7 +4592,7 @@ def _judgement_evidence_quality_gate(agent, artifact):
     return {"passed": True, "reason": "judgement_gate_passed"}
 
 
-def _normalize_tester_protected_operation_pending(artifact):
+def _normalize_verifier_protected_operation_pending(agent, artifact):
     """Separate passing code verification from later owner-gated operations.
 
     A Tester may correctly leave acceptance rows pending when their only missing
@@ -4599,9 +4601,17 @@ def _normalize_tester_protected_operation_pending(artifact):
     the fully structured no-defect shape; ambiguous pending rows still fail
     closed.
     """
-    if not isinstance(artifact, dict) or artifact.get("bugs"):
+    if agent not in {"tester", "qa_red_team"} or not isinstance(artifact, dict) or artifact.get("bugs"):
         return False
-    if not _artifact_has_passing_test_collection({**artifact, "test_status": "pass"}):
+    passing_evidence = _artifact_has_passing_test_collection({**artifact, "test_status": "pass"})
+    if agent == "qa_red_team" and not passing_evidence:
+        commands = " ".join(str(item or "") for item in (artifact.get("commands_run") or [])).lower()
+        output = str(artifact.get("stdout_tail") or "").lower()
+        passing_evidence = (
+            ("unittest" in commands or "node --check" in commands)
+            and (" ok" in output or "tests passed" in output or "passed" in output)
+        )
+    if not passing_evidence:
         return False
     advisory_errors = list(artifact.get("errors") or [])
     for error in advisory_errors:
@@ -4611,8 +4621,17 @@ def _normalize_tester_protected_operation_pending(artifact):
             return False
         if error.get("violates_acceptance_row") not in {False, None}:
             return False
-    finding = str(artifact.get("finding_contract") or "").lower()
-    if not any(term in finding for term in ("no introduced product defects", "no current-diff defects", "no current diff defects")):
+    findings = list(artifact.get("qa_findings") or []) if agent == "qa_red_team" else []
+    for finding in findings:
+        if not isinstance(finding, dict) or finding.get("introduced_by_current_diff") is not False:
+            return False
+        if "evidence" not in str(finding.get("scope_relation") or "").lower():
+            return False
+    if agent == "tester":
+        finding_contract = str(artifact.get("finding_contract") or "").lower()
+        if not any(term in finding_contract for term in ("no introduced product defects", "no current-diff defects", "no current diff defects")):
+            return False
+    elif str(artifact.get("send_back_stage") or "").strip():
         return False
     acceptance = artifact.get("acceptance_results")
     if not isinstance(acceptance, list) or not acceptance:
@@ -4627,11 +4646,15 @@ def _normalize_tester_protected_operation_pending(artifact):
             return False
         if any(term in evidence for term in ("test failed", "defect", "bug", "must fix", "implementation missing")):
             return False
-    artifact["original_test_status"] = artifact.get("test_status")
-    artifact["test_status"] = "pass"
+    status_field = "test_status" if agent == "tester" else "red_team_status"
+    artifact[f"original_{status_field}"] = artifact.get(status_field)
+    artifact[status_field] = "pass"
     if advisory_errors:
         artifact["normalized_advisory_errors"] = advisory_errors
         artifact["errors"] = []
+    if findings:
+        artifact["normalized_advisory_findings"] = findings
+        artifact["qa_findings"] = []
     protected = artifact.get("protected_operations") if isinstance(artifact.get("protected_operations"), list) else []
     narrative = " ".join(
         [str(artifact.get("summary") or ""), str(artifact.get("next_action") or "")]
@@ -4647,12 +4670,12 @@ def _normalize_tester_protected_operation_pending(artifact):
             protected.append({
                 "op": operation,
                 "status": "owner_gated",
-                "source_agent": "tester",
+                "source_agent": agent,
                 "reason": "Passing code verification is separate from this protected operational evidence gate.",
             })
     artifact["protected_operations"] = protected
     artifact.setdefault("warnings", []).append(
-        "Normalized Tester blocked status to code-pass because only explicit owner-gated operational evidence remains."
+        f"Normalized {agent} blocked status to code-pass because only explicit owner-gated operational evidence remains."
     )
     return True
 
