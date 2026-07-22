@@ -28,7 +28,7 @@ Farm record writes require approved backend paths and audit evidence.
 - Observations are evidence, not diagnoses, treatment instructions, lifecycle/purpose decisions, or external-action instructions.
 - Events are append-only. Corrections must be new factual events linked by `supersedes_observation_event_id`; normal updates and deletes are database-blocked.
 - A correction can supersede only an earlier observation for the same pig; the observation timestamp cannot be later than its recorded timestamp.
-- The table has RLS enabled with an insert policy limited to the backend `service_role`; no anonymous or authenticated-browser write policy exists. The protected owner-admin backend capture rail derives and persists a stable, non-secret actor reference from the signed authenticated session instead of trusting client-supplied authorship.
+- The table has RLS enabled with an insert policy limited to the backend `service_role`; no anonymous or authenticated-browser write policy exists. The protected owner-admin backend capture rail derives and persists a stable, non-secret actor reference from the signed authenticated session instead of trusting client-supplied authorship. Reusing an idempotency key is accepted only when the stored immutable capture content matches exactly; a mismatched reuse is rejected without an update.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
 
@@ -38,7 +38,7 @@ Farm record writes require approved backend paths and audit evidence.
 
 - An intent is distinct from factual observation evidence and is permanently `advisory`; it cannot approve or execute a purpose, lifecycle, sale, reservation, slaughter, customer, notification, or other operational action.
 - Events are append-only. Corrections must be new intent events linked by `supersedes_management_intent_event_id`; normal updates and deletes are database-blocked.
-- Referenced observation evidence and superseded intents must belong to the same pig. The intended timestamp cannot be later than its recorded timestamp. RLS permits inserts only to the backend `service_role`; no browser write policy exists. The protected owner-admin backend capture rail persists the same server-derived actor reference and records advisory intents without calling an action rail.
+- Referenced observation evidence and superseded intents must belong to the same pig. The intended timestamp cannot be later than its recorded timestamp. RLS permits inserts only to the backend `service_role`; no browser write policy exists. The protected owner-admin backend capture rail persists the same server-derived actor reference and records advisory intents without calling an action rail. Reusing an idempotency key is accepted only for the identical immutable intent content; a mismatch is rejected without an update.
 - A separate protected, owner-approved action rail may later cite a management intent, but neither creating nor reading an intent may mutate `pigs` or any operational projection.
 
 ## Pig Lifecycle Event Contract
