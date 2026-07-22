@@ -60,12 +60,13 @@ def _insert_or_existing(cursor, insert_sql, insert_params, table, id_column, ide
     return existing[0], True
 
 
-def record_observation(payload, author_reference="authenticated_owner_admin", connect_factory=None):
+def record_observation(payload, author_reference, connect_factory=None):
     payload = payload if isinstance(payload, dict) else {}
+    author_reference = _text(author_reference)
     pig_id, note, key = (_text(payload.get(name)) for name in ("pig_id", "note", "idempotency_key"))
     category, severity = _text(payload.get("category")).lower(), _text(payload.get("severity")).lower()
-    if not pig_id or not note or not key:
-        return {"success": False, "status": "invalid_observation", "error": "pig_id, note and idempotency_key are required"}, 400
+    if not pig_id or not note or not key or not author_reference:
+        return {"success": False, "status": "invalid_observation", "error": "pig_id, note, idempotency_key and server author are required"}, 400
     if category not in OBSERVATION_CATEGORIES or severity not in SEVERITIES:
         return {"success": False, "status": "invalid_observation", "error": "category or severity is not allowed"}, 400
     try:
@@ -89,12 +90,13 @@ def record_observation(payload, author_reference="authenticated_owner_admin", co
         return {"success": False, "status": "observation_capture_failed", "writes_to_pigs": False, "executes_action": False}, 500
 
 
-def record_management_intent(payload, author_reference="authenticated_owner_admin", connect_factory=None):
+def record_management_intent(payload, author_reference, connect_factory=None):
     payload = payload if isinstance(payload, dict) else {}
+    author_reference = _text(author_reference)
     pig_id, rationale, key = (_text(payload.get(name)) for name in ("pig_id", "rationale", "idempotency_key"))
     intent_type = _text(payload.get("intent_type")).lower()
-    if not pig_id or not rationale or not key:
-        return {"success": False, "status": "invalid_management_intent", "error": "pig_id, rationale and idempotency_key are required"}, 400
+    if not pig_id or not rationale or not key or not author_reference:
+        return {"success": False, "status": "invalid_management_intent", "error": "pig_id, rationale, idempotency_key and server author are required"}, 400
     if intent_type not in INTENT_TYPES:
         return {"success": False, "status": "invalid_management_intent", "error": "intent_type is not allowed"}, 400
     try:

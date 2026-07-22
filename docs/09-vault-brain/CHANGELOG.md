@@ -275,4 +275,5 @@
 # 2026-07-22 - Herdmaster observation and management-intent capture
 
 - Defined the protected backend capture contract for append-only pig observations and advisory management intents: authenticated owner-admin routes derive actor provenance, RLS accepts inserts only from `service_role`, and anonymous/authenticated browser roles have no direct write policy.
+- Required capture to persist a stable, non-secret actor reference derived from the signed authenticated session; client-supplied author fields are ignored and missing server attribution fails closed.
 - Kept physical observations, management intents, and approved purpose/lifecycle actions structurally separate; intent capture is advisory-only and cannot update pig state or invoke an action rail.

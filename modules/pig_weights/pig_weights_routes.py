@@ -1,6 +1,6 @@
 from flask import Blueprint, current_app, jsonify, request
 
-from modules.auth.owner_access import require_owner_admin_access, require_owner_read_access
+from modules.auth.owner_access import owner_actor_reference, require_owner_admin_access, require_owner_read_access
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
@@ -147,7 +147,10 @@ def record_observation_route():
     denied = require_owner_admin_access()
     if denied:
         return denied
-    result, status_code = record_observation(request.get_json(silent=True) or {})
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_observation(request.get_json(silent=True) or {}, author_reference)
     return jsonify(result), status_code
 
 
@@ -156,7 +159,10 @@ def record_management_intent_route():
     denied = require_owner_admin_access()
     if denied:
         return denied
-    result, status_code = record_management_intent(request.get_json(silent=True) or {})
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_management_intent(request.get_json(silent=True) or {}, author_reference)
     return jsonify(result), status_code
 
 

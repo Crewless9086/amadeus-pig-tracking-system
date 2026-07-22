@@ -9,6 +9,7 @@ from modules.auth.owner_access import (
     owner_access_enabled,
     owner_local_dev_allowed,
 )
+from modules.pig_weights import pig_weights_routes
 from modules.sales import sales_transaction_routes
 
 
@@ -92,6 +93,28 @@ class OwnerAccessTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertIn(b"Logged in:</strong> yes", status.data)
         self.assertIn(b"Session level:</strong> admin", status.data)
+
+    def test_authenticated_capture_derives_stable_non_secret_author(self):
+        payload = {
+            "pig_id": "P-1", "observed_at": "2026-07-22T10:00:00+02:00",
+            "category": "welfare", "severity": "medium", "confidence": 0.9,
+            "note": "Limp observed.", "idempotency_key": "obs-owner-author-1",
+            "author_reference": "client-controlled-author",
+        }
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(ADMIN_TOKEN)
+            with patch.object(pig_weights_routes, "record_observation", return_value=({"success": True}, 201)) as capture:
+                response = self.client.post(
+                    "/api/pig-weights/observations",
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+        self.assertEqual(response.status_code, 201)
+        persisted_author = capture.call_args.args[1]
+        self.assertTrue(persisted_author.startswith("owner-admin-"))
+        self.assertNotEqual(persisted_author, payload["author_reference"])
+        self.assertNotIn(ADMIN_TOKEN, persisted_author)
 
     def test_invalid_token_denied(self):
         with patch.dict(os.environ, owner_env(), clear=False):
