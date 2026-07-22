@@ -4842,6 +4842,7 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
                 and not item.get("acceptance_relation")
             )
             or item.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+            or _is_explicit_non_current_advisory_finding(item)
         )
         for item in blocking_bugs
     ):
@@ -4917,6 +4918,23 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
         "Normalized reviewer pause to PR approval because only the separate owner-gated migration application remains."
     )
     return True
+
+
+def _is_explicit_non_current_advisory_finding(item):
+    if not isinstance(item, dict) or item.get("introduced_by_current_diff") is not False:
+        return False
+    scope = str(item.get("scope_relation") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    severity = str(item.get("severity") or "").strip().lower()
+    explicitly_non_acceptance = (
+        item.get("violates_acceptance_row") is False
+        or item.get("acceptance_row_violation") is False
+    )
+    return (
+        severity in {"advisory", "informational", "info", "low"}
+        and explicitly_non_acceptance
+        and any(term in scope for term in ("pre_existing", "unrelated"))
+        and any(term in scope for term in ("adjacent", "follow_up", "test_environment"))
+    )
 
 
 def _artifact_is_ui_related(artifact):
@@ -5504,7 +5522,7 @@ def _is_recovered_command_process_issue(agent, artifact, value):
 
 
 def _is_resolved_informational_process_issue(agent, artifact, value):
-    if agent not in {"tester", "qa_red_team", "reviewer", "evidence_reviewer", "security_reviewer"}:
+    if agent not in {"tester", "qa_red_team", "product_reviewer", "reviewer", "evidence_reviewer", "security_reviewer"}:
         return False
     if not isinstance(value, dict) or not _artifact_has_passing_test_collection(artifact):
         return False
@@ -5556,6 +5574,15 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
     if value.get("introduced_by_current_diff") is not False:
         return False
     scope = str(value.get("scope_relation") or "").strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
+    if _is_explicit_non_current_advisory_finding(value):
+        if agent == "tester":
+            return str(artifact.get("test_status") or "").strip().lower() == "pass"
+        if agent == "qa_red_team":
+            status = str(artifact.get("red_team_status") or "").strip().lower()
+            risk = str(artifact.get("risk_rating") or "").strip().lower()
+            return status == "pass" and risk not in {"high", "critical"}
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return decision in {"approve", "approve_final", "approve_final_release"}
     if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()

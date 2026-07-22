@@ -1112,6 +1112,56 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(normalized)
         self.assertTrue(artifact["bugs"][0]["introduced_by_current_diff"])
 
+    def test_product_protected_pause_accepts_explicit_preexisting_scope_aliases(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Code checks pass; migration application and live canary remain owner-authorized.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [
+                {
+                    "scope_relation": "pre_existing_adjacent_follow_up",
+                    "introduced_by_current_diff": False,
+                    "affected_file": "static/js/pigAllocation.js",
+                    "severity": "low",
+                    "violates_acceptance_row": False,
+                    "finding": "Legacy UI should guide the owner to the new batch workflow.",
+                },
+                {
+                    "scope_relation": "unrelated_pre_existing_test_environment",
+                    "introduced_by_current_diff": False,
+                    "affected_file": "tests/test_frontend_route_contracts.py",
+                    "severity": "low",
+                    "violates_acceptance_row": False,
+                    "finding": "Two unrelated legacy route assertions return 503.",
+                },
+            ],
+            "files_inspected": ["supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql"],
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
+            "next_action": "Obtain owner authorization to apply the additive migration and run the live canary.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_preexisting_scope_alias_with_acceptance_violation_still_blocks(self):
+        item = {
+            "scope_relation": "pre_existing_adjacent_follow_up",
+            "introduced_by_current_diff": False,
+            "severity": "low",
+            "violates_acceptance_row": True,
+        }
+
+        self.assertFalse(execution_bridge._is_explicit_non_current_advisory_finding(item))
+
     def test_security_owner_gated_evidence_error_is_not_a_code_rejection(self):
         artifact = {
             "summary": "Security controls pass; migration application and live canary remain owner-authorized.",
