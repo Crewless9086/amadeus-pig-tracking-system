@@ -3717,6 +3717,43 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("tester", artifact)
         self.assertTrue(result["passed"], result)
 
+    def test_tester_low_adjacent_follow_up_with_explicit_no_acceptance_violation_does_not_backflow(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent follow-up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "violates_acceptance_row": False,
+                "affected_file/path": "tests/test_frontend_route_contracts.py",
+                "finding": "Two existing route 503s are unchanged by this candidate.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_tester_adjacent_follow_up_still_blocks_without_explicit_acceptance_disposition(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent follow-up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "finding": "Acceptance impact was not classified.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_tester_current_diff_bug_remains_blocking(self):
         artifact = _successful_stage_payload("tester")
         artifact.update({
