@@ -1,3 +1,4 @@
+import os
 from datetime import date, datetime, timezone
 import unittest
 from unittest.mock import patch
@@ -1452,14 +1453,139 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         from modules.pig_weights import pig_weights_routes
 
         payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Meat"}], "idempotency_key": "request-1"}
-        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), \
-             patch.object(pig_weights_routes, "owner_admin_principal", return_value="owner-admin:opaque-session") as principal, \
+        with patch.object(pig_weights_routes, "require_correction_batch_owner_admin_access", return_value=None), \
+             patch.object(pig_weights_routes, "correction_batch_owner_admin_principal", return_value="owner-admin:opaque-session") as principal, \
              patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch:
             response = app.test_client().post("/api/pig-weights/purpose-review/correction-batches", json=payload)
 
         self.assertEqual(response.status_code, 201)
         principal.assert_called_once()
         create_batch.assert_called_once_with(payload, actor_id="owner-admin:opaque-session")
+
+    def test_correction_batch_routes_deny_remote_requests_when_access_is_disabled(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {
+            "OWNER_ACCESS_ENABLED": "0",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch") as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch") as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch") as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", headers={"X-Forwarded-For": "127.0.0.1"}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.get_json()["status"], "owner_admin_access_denied")
+        create_batch.assert_not_called()
+        approve_batch.assert_not_called()
+        execute_batch.assert_not_called()
+
+    def test_correction_batch_routes_deny_remote_requests_when_local_dev_is_enabled(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": "a" * 32,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch") as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch") as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch") as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        for response in responses:
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.get_json()["status"], "owner_admin_access_denied")
+        create_batch.assert_not_called()
+        approve_batch.assert_not_called()
+        execute_batch.assert_not_called()
+
+    def test_correction_batch_routes_allow_loopback_local_development_only(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        env = {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1"}
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch", return_value=({"success": True}, 200)) as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch", return_value=({"success": True}, 200)) as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "127.0.0.1"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "::1"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "127.0.0.1"}),
+            ]
+
+        self.assertEqual([response.status_code for response in responses], [201, 200, 200])
+        create_batch.assert_called_once_with({}, actor_id="owner-admin:local-development")
+        approve_batch.assert_called_once_with("BATCH-1", actor_id="owner-admin:local-development")
+        execute_batch.assert_called_once_with("BATCH-1", actor_id="owner-admin:local-development")
+
+    def test_correction_batch_routes_allow_remote_authenticated_admin_session(self):
+        from app import app
+        from modules.auth.owner_access import configure_owner_access
+        from modules.pig_weights import pig_weights_routes
+
+        admin_token = "a" * 32
+        env = {
+            "OWNER_ACCESS_ENABLED": "1",
+            "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+            "OWNER_READ_TOKEN": "r" * 32,
+            "OWNER_ADMIN_TOKEN": admin_token,
+            "OWNER_SESSION_SECRET": "session-secret-for-tests",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch, \
+             patch.object(pig_weights_routes, "approve_purpose_correction_batch", return_value=({"success": True}, 200)) as approve_batch, \
+             patch.object(pig_weights_routes, "execute_purpose_correction_batch", return_value=({"success": True}, 200)) as execute_batch:
+            configure_owner_access(app)
+            client = app.test_client()
+            login = client.post(
+                "/owner/login",
+                data={"owner_token": admin_token, "next": "/"},
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+            responses = [
+                client.post("/api/pig-weights/purpose-review/correction-batches", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/approve", environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+                client.post("/api/pig-weights/purpose-review/correction-batches/BATCH-1/execute", json={}, environ_base={"REMOTE_ADDR": "203.0.113.10"}),
+            ]
+
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual([response.status_code for response in responses], [201, 200, 200])
+        principals = [
+            create_batch.call_args.kwargs["actor_id"],
+            approve_batch.call_args.kwargs["actor_id"],
+            execute_batch.call_args.kwargs["actor_id"],
+        ]
+        self.assertTrue(all(principal.startswith("owner-admin:") for principal in principals))
+        self.assertNotIn("owner-admin:local-development", principals)
 
     def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
         from pathlib import Path

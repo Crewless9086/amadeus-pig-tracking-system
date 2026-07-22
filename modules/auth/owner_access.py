@@ -77,6 +77,24 @@ def require_owner_admin_access():
     return jsonify(body), status_code
 
 
+def require_correction_batch_owner_admin_access():
+    """Require an admin session for correction batches, with loopback-only dev access.
+
+    Correction batches can change canonical pig purpose records, so they must not
+    inherit the global disabled-access compatibility behavior.  In particular,
+    OWNER_ACCESS_ENABLED=0 never permits a remote request through this guard.
+    """
+    if _correction_batch_local_dev_allowed():
+        return None
+    if not _configured():
+        body, status_code = _denied("owner_access_not_configured", 503)
+        return jsonify(body), status_code
+    if _owner_admin_session_principal():
+        return None
+    body, status_code = _denied("owner_admin_access_denied", 403)
+    return jsonify(body), status_code
+
+
 def owner_session_is_valid(required_role="read"):
     data = session.get(SESSION_KEY)
     if not isinstance(data, dict):
@@ -113,12 +131,20 @@ def owner_admin_principal():
     Local development remains explicitly labelled rather than pretending an
     anonymous request was an authenticated production owner session.
     """
-    data = session.get(SESSION_KEY)
-    if isinstance(data, dict) and str(data.get("role") or "").strip() == "admin":
-        principal = str(data.get("principal_id") or "").strip()
-        if principal.startswith("owner-admin:"):
-            return principal
+    principal = _owner_admin_session_principal()
+    if principal:
+        return principal
     if _access_disabled_or_local_allowed():
+        return "owner-admin:local-development"
+    return ""
+
+
+def correction_batch_owner_admin_principal():
+    """Return the actor accepted by the correction-batch-specific strict guard."""
+    principal = _owner_admin_session_principal()
+    if principal:
+        return principal
+    if _correction_batch_local_dev_allowed():
         return "owner-admin:local-development"
     return ""
 
@@ -208,6 +234,19 @@ def _access_disabled_or_local_allowed():
     if not owner_access_enabled():
         return True
     return owner_local_dev_allowed() and is_loopback_request(request)
+
+
+def _correction_batch_local_dev_allowed():
+    return owner_local_dev_allowed() and is_loopback_request(request)
+
+
+def _owner_admin_session_principal():
+    data = session.get(SESSION_KEY)
+    if isinstance(data, dict) and str(data.get("role") or "").strip() == "admin":
+        principal = str(data.get("principal_id") or "").strip()
+        if principal.startswith("owner-admin:"):
+            return principal
+    return ""
 
 
 def _configured():
