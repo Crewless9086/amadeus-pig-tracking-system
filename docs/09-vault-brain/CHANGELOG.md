@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-22 - Herdmaster owner-approved purpose correction batches
+
+- Defined the additive, unapplied correction-batch contract: persisted owner approval, idempotency, execution-time canonical fresh-weight checks, and atomic per-pig operational audit events.
+- Kept the former purpose-review apply path preview-only and prohibited Sheets fallback for protected corrections.
+
 ## 2026-07-21 - Reviewer executable test-evidence gate
 
 - Required final reviewer approval evidence to include a structured executable test command and explicit pass status.

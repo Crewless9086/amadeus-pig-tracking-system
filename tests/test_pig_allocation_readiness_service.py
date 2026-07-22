@@ -740,7 +740,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-UNKNOWN"]["proposed_purpose"], "Grow_Out")
         self.assertEqual(by_id["PIG-CLASSIFIED"]["review_status"], "classified")
 
-    def test_apply_purpose_review_decisions_updates_only_purpose_notes_and_timestamp(self):
+    def test_apply_purpose_review_decisions_rejects_direct_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -761,18 +761,12 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertFalse(result["dry_run"])
-        self.assertEqual(result["rows_updated"], 1)
-        updates = mock_update.call_args.args[1]["PIG-UNKNOWN"]
-        self.assertEqual(updates["Purpose"], "Grow_Out")
-        self.assertIn("Updated_At", updates)
-        self.assertIn("purpose review", updates["General_Notes"])
-        self.assertIn("Unknown to Grow_Out", updates["General_Notes"])
-        self.assertEqual(set(updates), {"Purpose", "Updated_At", "General_Notes"})
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        mock_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_prefers_supabase_validation_and_write(self):
+    def test_apply_purpose_review_decisions_rejects_direct_supabase_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -798,15 +792,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertTrue(result["source"]["writes_to_supabase"])
-        self.assertFalse(result["source"]["writes_to_sheets"])
-        read_pigs.assert_called_once_with(["PIG-UNKNOWN"])
-        update_pigs.assert_called_once()
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        read_pigs.assert_not_called()
+        update_pigs.assert_not_called()
         sheet_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_blocks_reclassify_by_default(self):
+    def test_apply_purpose_review_decisions_blocks_direct_reclassification_without_batch(self):
         pig_rows = [{
             "Pig_ID": "PIG-DONE",
             "Status": "Active",
@@ -823,7 +816,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         self.assertEqual(status_code, 409)
         self.assertFalse(result["success"])
-        self.assertIn("already has purpose", result["errors"][0])
+        self.assertEqual(result["status"], "correction_batch_required")
         mock_update.assert_not_called()
 
     def test_purpose_review_recheck_returns_no_write_packet(self):

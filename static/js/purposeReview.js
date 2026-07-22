@@ -256,24 +256,39 @@ async function submitPurposeDecisions(dryRun) {
     showMessage("Select at least one row with an approval purpose.");
     return;
   }
-  if (!dryRun && !window.confirm(`Apply purpose review for ${decisions.length} pig(s)?`)) {
+  if (!dryRun && !window.confirm(`Create, explicitly approve, and execute this correction batch for ${decisions.length} pig(s)?`)) {
     return;
   }
   try {
-    const response = await fetch("/api/pig-weights/purpose-review/apply", {
+    if (dryRun) {
+      const response = await fetch("/api/pig-weights/purpose-review/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions, dry_run: dryRun }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error((data.errors || [data.message || "Purpose review preview failed."]).join(" "));
+      showMessage(data.message || "Purpose review previewed. No records were changed.", "success");
+      return;
+    }
+    const key = `purpose-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const response = await fetch("/api/pig-weights/purpose-review/correction-batches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decisions, changed_by: "web_app", dry_run: dryRun }),
+      body: JSON.stringify({ decisions, idempotency_key: key }),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.message || "Purpose review failed."]).join(" "));
+      throw new Error((data.errors || [data.message || "Correction batch creation failed."]).join(" "));
     }
-    showMessage(data.message || "Purpose review saved.", "success");
-    if (!dryRun) {
-      selectedPigIds.clear();
-      await loadPurposeReview();
-    }
+    const approval = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(data.batch_id)}/approve`, { method: "POST" });
+    const approvalData = await approval.json();
+    if (!approval.ok || !approvalData.success) throw new Error(approvalData.message || "Owner approval was not recorded.");
+    const execution = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(data.batch_id)}/execute`, { method: "POST" });
+    const executionData = await execution.json();
+    if (!execution.ok || !executionData.success) throw new Error(executionData.message || executionData.status || "Correction batch was not executed.");
+    showMessage(`Owner-approved correction batch ${data.batch_id} executed with audit events.`, "success");
+    selectedPigIds.clear();
+    await loadPurposeReview();
   } catch (error) {
     console.error("Purpose review submit error:", error);
     showMessage(error.message || "Could not submit purpose review.");

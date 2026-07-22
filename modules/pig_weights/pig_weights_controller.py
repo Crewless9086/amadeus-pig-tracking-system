@@ -56,6 +56,11 @@ from modules.pig_weights.pig_weights_validation import (
     validate_new_pen_payload,
     validate_new_litter_payload,
 )
+from modules.pig_weights.purpose_correction_batch_service import (
+    approve_correction_batch,
+    create_correction_batch,
+    execute_correction_batch,
+)
 
 
 def get_status():
@@ -94,13 +99,22 @@ def get_purpose_review_queue_data(litter_id: str = ""):
 
 
 def apply_purpose_review_queue_decisions(payload: dict):
+    # The historic direct-apply endpoint is intentionally preview-only.
     payload = payload or {}
-    return apply_purpose_review_decisions(
-        decisions=payload.get("decisions", []),
-        changed_by=payload.get("changed_by", "web_app"),
-        dry_run=payload.get("dry_run", True) is True,
-        allow_reclassify=payload.get("allow_reclassify", False) is True,
-    )
+    return apply_purpose_review_decisions(payload.get("decisions", []), dry_run=True)
+
+
+def create_purpose_correction_batch(payload: dict):
+    payload = payload or {}
+    return create_correction_batch(payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""))
+
+
+def approve_purpose_correction_batch(batch_id: str):
+    return approve_correction_batch(batch_id)
+
+
+def execute_purpose_correction_batch(batch_id: str):
+    return execute_correction_batch(batch_id)
 
 
 def get_purpose_review_recheck_packet(payload: dict):
