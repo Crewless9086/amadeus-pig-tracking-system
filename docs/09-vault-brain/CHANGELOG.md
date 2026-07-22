@@ -298,3 +298,7 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-07-22 - Herdmaster observation and management-intent capture
+
+- Defined the protected backend capture contract for append-only pig observations and advisory management intents: authenticated owner-admin routes derive actor provenance, RLS accepts inserts only from `service_role`, and anonymous/authenticated browser roles have no direct write policy.
+- Kept physical observations, management intents, and approved purpose/lifecycle actions structurally separate; intent capture is advisory-only and cannot update pig state or invoke an action rail.

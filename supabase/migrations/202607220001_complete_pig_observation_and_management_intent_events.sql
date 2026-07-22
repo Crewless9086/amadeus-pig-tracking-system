@@ -45,6 +45,24 @@ create index if not exists pig_management_intent_events_supersedes_idx
 
 alter table public.pig_management_intent_events enable row level security;
 
+-- Capture is performed only by the authenticated application backend.  There is
+-- deliberately no authenticated/anon browser write policy: a browser must use
+-- the protected backend route, which derives the actor instead of trusting a
+-- client-supplied author.
+drop policy if exists pig_observation_events_service_role_insert on public.pig_observation_events;
+create policy pig_observation_events_service_role_insert
+    on public.pig_observation_events
+    for insert
+    to service_role
+    with check (true);
+
+drop policy if exists pig_management_intent_events_service_role_insert on public.pig_management_intent_events;
+create policy pig_management_intent_events_service_role_insert
+    on public.pig_management_intent_events
+    for insert
+    to service_role
+    with check (true);
+
 create or replace function public.pig_management_intent_events_validate_references()
 returns trigger
 language plpgsql

@@ -22,6 +22,19 @@ class PigObservationEventMigrationTests(unittest.TestCase):
         self.assertNotIn("update public.pigs", sql)
         self.assertNotIn("insert into public.pigs", sql)
 
+    def test_completion_migration_adds_capture_authority_without_browser_writes(self):
+        sql = Path("supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql").read_text(encoding="utf-8").lower()
+
+        self.assertIn("add column if not exists confidence", sql)
+        self.assertIn("add column if not exists evidence_reference", sql)
+        self.assertIn("create table if not exists public.pig_management_intent_events", sql)
+        self.assertIn("intent_status text not null default 'advisory'", sql)
+        self.assertIn("pig_observation_events_service_role_insert", sql)
+        self.assertIn("pig_management_intent_events_service_role_insert", sql)
+        self.assertIn("to service_role", sql)
+        self.assertNotIn("to authenticated", sql)
+        self.assertNotIn("update public.pigs", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
