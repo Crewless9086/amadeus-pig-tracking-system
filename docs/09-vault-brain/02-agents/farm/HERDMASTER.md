@@ -6,7 +6,9 @@ Runtime status: Operational V1 for governed read-only delegation through CHARLIE
 
 ## Operational V1 Contract
 
-Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, litter attention and individual pig profiles.
+Herdmaster reads canonical Supabase pig current state, lifecycle identity, pens and litter attention. It owns farm-language interpretation and returns direct answers, aggregated facts, breakdowns, anomalies, source provenance, freshness and confidence. Current skills cover herd inventory, herd overview, pen occupancy, weight attention, breeding inventory, a read-only breeding planner, litter attention and individual pig profiles.
+
+The breeding planner reads canonical mating, family-tree and breeding-performance facts only. It calculates advisory calendar items and safe-match candidates only when parentage, condition and performance facts are complete; unavailable or incomplete evidence returns `Needs Data`. It excludes Castrated_Male, off-farm, exited, non-breeding and unknown/related candidates, does not infer pregnancy or heat, and cannot persist, schedule, deliver, or acknowledge reminders.
 
 Herdmaster does not expose raw records to the owner when an aggregate answer is sufficient. It flags contradictions such as `on_farm` versus Active status rather than silently choosing one. It has no write authority.
 

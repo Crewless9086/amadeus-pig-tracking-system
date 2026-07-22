@@ -5,13 +5,16 @@ from __future__ import annotations
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
+import hashlib
+import json
 import re
 import threading
 import time
 
 from modules.charlie.agent_runtime import AgentDefinition
 from modules.pig_weights.farm_supabase_read_service import (
-    get_litter_attention_summary, get_open_reservation_counts, get_pens, get_pig_detail, get_pig_master_rows,
+    farm_supabase_reads_available, get_breeding_analytics, get_family_tree, get_litter_attention_summary,
+    get_mating_overview, get_open_reservation_counts, get_pens, get_pig_detail, get_pig_master_rows,
 )
 from modules.pig_weights.pig_weights_service import get_sales_availability
 
@@ -21,7 +24,7 @@ HERDMASTER_DEFINITION = AgentDefinition(
     name="Herdmaster",
     domain="farm",
     authority_tier="read_only",
-    capabilities=("herd_inventory", "herd_overview", "sales_availability", "pen_occupancy", "weight_attention", "breeding_inventory", "pig_profile", "litter_attention"),
+    capabilities=("herd_inventory", "herd_overview", "sales_availability", "pen_occupancy", "weight_attention", "breeding_inventory", "breeding_planner", "pig_profile", "litter_attention"),
     source_contract=("Supabase pig_current_state", "Supabase pigs", "Supabase pens", "Supabase litters"),
     handler=lambda request: run_herdmaster(request),
     repair_handler=lambda request, _result, _gaps: run_herdmaster({**request, "capability": "herd_overview"}, force_broad=True),
@@ -34,6 +37,7 @@ _SNAPSHOT_LOCK = threading.Lock()
 
 def run_herdmaster(request, *, readers=None, force_broad=False):
     request = request if isinstance(request, dict) else {}
+    supplied_readers = readers is not None
     use_cache = readers is None
     readers = readers or {
         "pig_rows": get_pig_master_rows,
@@ -42,9 +46,14 @@ def run_herdmaster(request, *, readers=None, force_broad=False):
         "litter_attention": get_litter_attention_summary,
         "pig_detail": get_pig_detail,
         "sales_availability": get_sales_availability,
+        "mating_overview": get_mating_overview,
+        "breeding_analytics": get_breeding_analytics,
+        "family_tree": get_family_tree,
     }
     question = str(request.get("question") or request.get("goal") or "")
     capability = _select_capability(question, request.get("capability"), request.get("subject"))
+    if capability == "breeding_planner":
+        return _breeding_planner(request, readers, canonical_available=farm_supabase_reads_available() if not supplied_readers else True)
     if capability == "pig_profile":
         return _pig_profile(request, readers)
     if capability == "sales_availability":
@@ -72,6 +81,8 @@ def _select_capability(question, requested, subject):
         return "pen_occupancy"
     if any(word in lower for word in ("weight", "weigh", "growth", "stale")):
         return "weight_attention"
+    if requested == "breeding_planner" or any(word in lower for word in ("breeding calendar", "breeding planner", "mating reminder", "match a boar")):
+        return "breeding_planner"
     if any(word in lower for word in ("sow", "boar", "gilt", "breed", "breeding")):
         return "breeding_inventory"
     if any(word in lower for word in ("litter", "wean", "piglet")):
@@ -204,6 +215,91 @@ def _sales_availability(question, readers, use_cache=False):
         "confidence": 0.99, "summary": f"Herdmaster supplied {len(effective)} governed live-stock candidate(s).",
         "availability_rows": effective, "question": question,
     }
+
+
+_BREEDING_FORBIDDEN_ACTIONS = [
+    "create or change a mating, pregnancy, litter, lifecycle, purpose, or farm record",
+    "send a reminder, customer communication, public post, payment, reservation, or stock promise",
+    "write to Supabase, Google Sheets, a scheduler, or a notification service",
+]
+
+
+def _breeding_planner(request, readers, *, canonical_available):
+    """Return canonical, calculated advisory facts only; never use mating_service fallback."""
+    if not canonical_available:
+        return _breeding_needs_data("Canonical Supabase farm reads are unavailable; no legacy fallback was used.")
+    required = ("pig_rows", "mating_overview", "breeding_analytics", "family_tree")
+    if any(name not in readers for name in required):
+        return _breeding_needs_data("Canonical breeding reader contract is incomplete.")
+    try:
+        pigs, matings = list(readers["pig_rows"]() or []), list(readers["mating_overview"]() or [])
+        analytics = readers["breeding_analytics"]() or {}
+    except (RuntimeError, ValueError, OSError) as error:
+        return _breeding_needs_data(f"Canonical Supabase read failed: {error}")
+    metrics = {str(row.get("pig_id") or ""): row for group in (analytics.get("sows", []), analytics.get("boars", [])) for row in group}
+    females, boars = [row for row in pigs if _is_breeding_female(row)], [row for row in pigs if _is_breeding_boor_candidate(row)]
+    packets = []
+    for female in females:
+        female_id = str(female.get("Pig_ID") or "")
+        female_tree = readers["family_tree"](female_id)
+        state, reminders = _female_lifecycle(female_id, matings)
+        missing = _missing_breeding_facts(female, female_tree, metrics.get(female_id))
+        matches = []
+        if not missing and state == "No Active Mating":
+            for boar in boars:
+                boar_id = str(boar.get("Pig_ID") or "")
+                if not _boar_exclusion(female, boar, female_tree, readers["family_tree"](boar_id), metrics.get(boar_id)):
+                    matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "performance_present"]})
+        packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
+    fingerprint = hashlib.sha256(json.dumps({"pigs": pigs, "matings": matings, "analytics": analytics}, sort_keys=True, default=str).encode()).hexdigest()[:20]
+    missing_any = any(item["missing_facts"] for item in packets)
+    return {"success": True, "status": "breeding_planner_advisory_ready", "capability": "breeding_planner", "direct_answer": "Herdmaster prepared a read-only breeding advisory packet; it does not create matches or reminders.", "read_only": True, "advisory_only": True, "response_fingerprint": fingerprint, "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"}, "confidence": 0.96 if packets and not missing_any else 0.0, "females": packets, "missing_facts": sorted({fact for item in packets for fact in item["missing_facts"]}), "owner_action": "Owner review is required before any mating or lifecycle action.", "forbidden_actions": _BREEDING_FORBIDDEN_ACTIONS, "sources": [{"name": "pigs", "authority": "canonical"}, {"name": "mating_events", "authority": "canonical"}, {"name": "breeding_analytics", "authority": "canonical"}, {"name": "family_tree", "authority": "canonical"}]}
+
+
+def _breeding_needs_data(reason):
+    return {"success": False, "status": "breeding_planner_needs_data", "capability": "breeding_planner", "direct_answer": reason, "read_only": True, "advisory_only": True, "confidence": 0.0, "females": [], "missing_facts": [reason], "owner_action": "Restore canonical read availability or capture the missing canonical facts; do not use legacy data.", "forbidden_actions": _BREEDING_FORBIDDEN_ACTIONS, "sources": [], "freshness": {"mode": "unavailable", "source": "supabase_canonical"}}
+
+
+def _is_breeding_female(row):
+    return str(row.get("Sex") or "") == "Female" and str(row.get("Status") or "") == "Active" and str(row.get("On_Farm") or "") == "Yes" and str(row.get("Purpose") or "") == "Breeding"
+
+
+def _is_breeding_boor_candidate(row):
+    return str(row.get("Sex") or "") == "Male" and str(row.get("Status") or "") == "Active" and str(row.get("On_Farm") or "") == "Yes" and str(row.get("Purpose") or "") == "Breeding"
+
+
+def _female_lifecycle(female_id, matings):
+    active = [row for row in matings if str(row.get("sow_pig_id") or "") == female_id and str(row.get("is_open") or "") == "Yes"]
+    if not active:
+        return "No Active Mating", []
+    row = active[0]
+    if str(row.get("is_overdue_farrowing") or "") == "Yes":
+        return "Overdue Farrowing", [{"kind": "overdue_farrowing", "mating_id": row.get("mating_id"), "due_date": row.get("expected_farrowing_date")}]
+    if str(row.get("is_overdue_check") or "") == "Yes":
+        return "Overdue Check", [{"kind": "overdue_check", "mating_id": row.get("mating_id"), "due_date": row.get("expected_pregnancy_check_date")}]
+    return "Active Mating", [{"kind": "active_mating", "mating_id": row.get("mating_id"), "due_date": row.get("expected_pregnancy_check_date") or row.get("expected_farrowing_date")}]
+
+
+def _missing_breeding_facts(row, tree, metric):
+    missing = []
+    if not tree or not tree.get("mother") or not tree.get("father"):
+        missing.append("parentage")
+    if not str(row.get("General_Notes") or "").strip():
+        missing.append("condition")
+    if not metric or not int(metric.get("mating_count") or 0):
+        missing.append("performance")
+    return missing
+
+
+def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
+    if not boar_tree or not boar_tree.get("mother") or not boar_tree.get("father") or not metric or not int(metric.get("mating_count") or 0):
+        return "unknown_or_incomplete"
+    female_id, boar_id = str(female.get("Pig_ID") or ""), str(boar.get("Pig_ID") or "")
+    female_parents = {str((female_tree.get(key) or {}).get("pig_id") or "") for key in ("mother", "father")} - {""}
+    boar_parents = {str((boar_tree.get(key) or {}).get("pig_id") or "") for key in ("mother", "father")} - {""}
+    if boar_id in female_parents or female_id in boar_parents:
+        return "parent_child"
+    return "known_sibling" if female_parents & boar_parents else ""
 
 
 def _label(value, fallback):
