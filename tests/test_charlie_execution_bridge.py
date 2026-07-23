@@ -2942,6 +2942,79 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(reconciled["duplicate_pr_reconciliation"]["closed_pr_numbers"], [358])
         self.assertTrue(any(call[:3] == ["gh", "pr", "close"] for call in calls))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=["modules/sales/riversdale_auction.py"])
+    def test_builder_retry_packages_dirty_worktree_before_reusing_existing_pr(self, _staged_changed_files, _changed_files):
+        calls = []
+        pr_lists = iter([
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "old1234", "baseRefName": "main"}],
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "new5678", "baseRefName": "main"}],
+        ])
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps(next(pr_lists)), stderr="")
+            if command[:3] == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="charlie/riversdale-auction-outlet\n", stderr="")
+            if command[:2] == ["git", "add"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["git", "diff", "--cached", "--quiet"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            if command[:2] == ["git", "commit"]:
+                return SimpleNamespace(returncode=0, stdout="committed", stderr="")
+            if command[:3] == ["git", "rev-parse", "--short"]:
+                return SimpleNamespace(returncode=0, stdout="new5678\n", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/sales/riversdale_auction.py"],
+            "branch_name": "charlie/riversdale-auction-outlet",
+            "commit_sha": "old1234",
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "links": {"pr": "https://github.com/org/repo/pull/397"},
+            "errors": [{"finding": "Unable to create parent worktree index.lock: permission denied"}],
+        })
+
+        packaged = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 397)
+        self.assertEqual(packaged["commit_sha"], "new5678")
+        self.assertEqual(packaged["git_packaging"]["status"], "existing_pr_reused")
+        self.assertEqual(packaged["errors"], [])
+        self.assertTrue(any(call[:2] == ["git", "commit"] for call in calls))
+        self.assertTrue(any(call[:2] == ["git", "push"] for call in calls))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
+    def test_existing_pr_reuse_ignores_unstaged_test_harness_changes(self, _staged_changed_files, _changed_files):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{
+                    "number": 61,
+                    "url": "https://github.com/org/repo/pull/61",
+                    "headRefName": "charlie/test-pr-evidence",
+                    "headRefOid": "abc1234",
+                    "baseRefName": "main",
+                }]), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+
+        packaged = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 61)
+        self.assertEqual(packaged["commit_sha"], "abc1234")
+        self.assertFalse(any(call[:3] == ["git", "branch", "--show-current"] for call in calls))
+
     def test_builder_pr_reconciliation_does_not_reuse_different_head(self):
         calls = []
 

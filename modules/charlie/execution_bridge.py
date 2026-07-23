@@ -5916,18 +5916,26 @@ def _is_reviewer_adjacent_follow_up(agent, artifact, value):
 def _auto_package_builder_changes(mission, artifact, runner=None):
     artifact = artifact if isinstance(artifact, dict) else {}
     runner = runner or subprocess.run
+    local_changed_files = [path for path in _changed_files() if not _runner_generated_path(path)]
+    staged_changed_files = [path for path in _staged_changed_files() if not _runner_generated_path(path)]
     reconciled = _reconcile_builder_pr_reference(mission, artifact, runner)
-    if _artifact_pr_reference(reconciled):
+    # A Builder retry may inherit the canonical PR reference from its previous
+    # attempt while holding new uncommitted corrections.  Reusing that PR
+    # before packaging the dirty worktree would bind downstream evidence to
+    # the old PR head.  Only short-circuit when there is no release-relevant
+    # local work left to package.
+    if _artifact_pr_reference(reconciled) and not _has_release_relevant_changes(staged_changed_files):
         return reconciled
     artifact = reconciled
     artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
     changed_files = list(dict.fromkeys([
         *artifact_files,
-        *[path for path in _changed_files() if not _runner_generated_path(path)],
+        *local_changed_files,
+        *staged_changed_files,
     ]))
     if not _has_release_relevant_changes(changed_files):
         return artifact
-    branch_name = _builder_branch_name(mission)
+    branch_name = str(artifact.get("branch_name") or "").strip() or _builder_branch_name(mission)
     result = {
         "version": "charlie_builder_git_packaging_v1",
         "attempted": True,
@@ -6006,6 +6014,7 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         command_recorder=result["commands"],
     )
     if _artifact_pr_reference(existing):
+        existing["errors"] = _remove_resolved_builder_packaging_errors(existing.get("errors"))
         existing["git_packaging"] = {
             **result,
             "status": "existing_pr_reused",
@@ -6183,6 +6192,7 @@ def _remove_resolved_builder_packaging_errors(errors):
             "could not create branch/commit/pr" in text
             or "git branch creation failed" in text
             or "permission denied creating .git/refs/heads" in text
+            or ("index.lock" in text and ("permission denied" in text or "unable to create" in text))
             or "runner git packaging failed" in text
         ):
             continue
@@ -8334,6 +8344,22 @@ def _changed_files():
     try:
         completed = subprocess.run(
             ["git", "diff", "--name-only"],
+            capture_output=True,
+            check=False,
+            text=True,
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _staged_changed_files():
+    try:
+        completed = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
             capture_output=True,
             check=False,
             text=True,
