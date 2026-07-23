@@ -15,7 +15,7 @@ The package is not a complete video and is not publication-ready.
 | Factual claims | Pass with controls | Ledger covers material claims; exact-number myths removed. |
 | Uncertainty | Pass | Reconstruction and chronology limitations are explicit. |
 | Source quality | Pass | Official heritage plus peer-reviewed archaeology/hydrology. |
-| Visual purpose | Pass as plan | Every scene explains mechanism or consequence. |
+| Visual purpose | Pass as prototype | Every scene explains mechanism or consequence; three original SVG/PNG prototypes passed private visual QA with recorded revisions. |
 | Asset rights | Fail/open | Required external photos/map references/music/narration are unresolved. |
 | AI provenance | Pass to date | Research/script/plan assistance logged; no generated media. |
 | Disclosure | Open | Depends on final assets. |
@@ -29,7 +29,7 @@ The package is not a complete video and is not publication-ready.
 1. Human specialist/editorial review of source interpretation and script.
 2. Verify pronunciations.
 3. Resolve rights for map references, photographs, narration and music.
-4. Produce one storyboard frame for each reconstruction style and check that it cannot be mistaken for evidence.
+4. Refine the existing private prototypes so the system animation distinguishes all five operations and the thumbnail becomes recognisably Petra without misleading geography.
 5. Start reliable time logging before any media creation.
 
 ## Required fixes before publication request

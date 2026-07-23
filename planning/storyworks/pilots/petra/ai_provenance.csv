@@ -5,3 +5,4 @@ CV001-AI003,Visual planning,Codex GPT-5,"Proposed schematic scenes and asset pla
 CV001-AI004,Images or video,None,"No assets generated",None,None,Not started,"Undetermined"
 CV001-AI005,Narration,None,"No synthetic voice generated",None,None,Not started,"Undetermined"
 CV001-AI006,Music,None,"No synthetic music generated",None,None,Not started,"Synthetic music would require disclosure under current YouTube guidance"
+CV001-AI007,SVG prototypes,Codex GPT-5,"Generated code-native schematic SVG layouts","visual_plan.csv packaging.md fact ledger","Programme supervisor constrained designs to labelled non-realistic original diagrams with no copied figures or external media",Private prototypes,"Clearly schematic diagrams do not require altered-content disclosure"

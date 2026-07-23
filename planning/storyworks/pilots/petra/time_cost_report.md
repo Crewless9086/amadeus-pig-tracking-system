@@ -7,7 +7,7 @@
 | Cash spend | R0 |
 | Contractors | R0 / none engaged |
 | Paid software/assets | R0 / none acquired |
-| Large media created | None |
+| Small private media created | Three original SVG prototypes and three local PNG QA renders |
 | Final video | Not created |
 
 ## Time-control finding
