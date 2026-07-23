@@ -1043,8 +1043,10 @@ def consume_final_agent_artifact(
                     (item for item in workflow if isinstance(item, dict) and str(item.get("agent") or "").lower() == agent),
                     {},
                 )
-                stage_already_complete = str(artifact_stage.get("status") or "").lower() == "complete"
-                if first_incomplete != agent and not stage_already_complete:
+                artifact_stage_status = str(artifact_stage.get("status") or "").lower()
+                stage_already_complete = artifact_stage_status == "complete"
+                stage_is_active = artifact_stage_status == "active"
+                if first_incomplete != agent and not stage_already_complete and not stage_is_active:
                     return {
                         "success": False,
                         "status": "final_artifact_stage_mismatch",
