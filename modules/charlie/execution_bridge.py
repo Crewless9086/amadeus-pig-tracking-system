@@ -2753,10 +2753,46 @@ def _agent_execution_ledger(mission, execution_id, started_at):
 
 def _mission_agent_sequence(mission):
     mission = mission if isinstance(mission, dict) else {}
+    targeted_sequence = _explicit_targeted_agent_sequence(mission)
+    if targeted_sequence:
+        return targeted_sequence
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     agent_order = context_pack.get("agent_order") if isinstance(context_pack.get("agent_order"), list) else []
     cleaned = [str(agent or "").strip().lower() for agent in agent_order if str(agent or "").strip().lower() in all_agent_names()]
     return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
+
+
+def _explicit_targeted_agent_sequence(mission):
+    """Use a validated control-plane repair workflow as execution truth."""
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    if targeted.get("version") != "charlie_targeted_invalidation_v1":
+        return []
+    workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    sequence = [
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+        if isinstance(item, dict) and str(item.get("agent") or "").strip().lower() in all_agent_names()
+    ]
+    if not sequence or len(sequence) != len(workflow) or len(sequence) != len(set(sequence)):
+        return []
+    target = str(targeted.get("target_agent") or "").strip().lower()
+    if target not in sequence:
+        return []
+    statuses = {
+        str(item.get("agent") or "").strip().lower(): str(item.get("status") or "").strip().lower()
+        for item in workflow if isinstance(item, dict)
+    }
+    completed_at = {
+        str(item.get("agent") or "").strip().lower(): item.get("completed_at")
+        for item in workflow if isinstance(item, dict)
+    }
+    preserved = [str(agent or "").strip().lower() for agent in targeted.get("preserved_agents") or [] if str(agent or "").strip()]
+    if not preserved or any(statuses.get(agent) != "complete" or not completed_at.get(agent) for agent in preserved):
+        return []
+    if statuses.get(target) not in {"active", "complete"}:
+        return []
+    return sequence
 
 
 def _execution_start_agent(mission, agent_sequence=None):

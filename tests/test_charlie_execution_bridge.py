@@ -150,6 +150,60 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_targeted_repair_workflow_is_authoritative_execution_sequence(self):
+        mission = {
+            "mission_type": "farm operations improvement",
+            "metadata": {
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander", "council_synthesis"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": "2026-07-23T01:00:00Z"},
+                {"agent": "council_synthesis", "status": "complete", "completed_at": "2026-07-23T01:10:00Z"},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "architect", "status": "pending", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+                {"agent": "tester", "status": "pending", "completed_at": None},
+                {"agent": "qa_red_team", "status": "pending", "completed_at": None},
+                {"agent": "reviewer", "status": "pending", "completed_at": None},
+                {"agent": "publisher", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        sequence = execution_bridge._mission_agent_sequence(mission)
+        queue, preserved = execution_bridge._targeted_agent_queue(mission, "planner", sequence)
+
+        self.assertEqual(sequence, [
+            "idea_expander", "council_synthesis", "planner", "architect", "builder",
+            "tester", "qa_red_team", "reviewer", "publisher",
+        ])
+        self.assertEqual(queue, ["planner", "architect", "builder", "tester", "qa_red_team", "reviewer", "publisher"])
+        self.assertEqual(preserved, {"idea_expander", "council_synthesis"})
+
+    def test_invalid_targeted_workflow_falls_back_to_normal_sequence(self):
+        mission = {
+            "mission_type": "farm operations improvement",
+            "metadata": {
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": None},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        sequence = execution_bridge._mission_agent_sequence(mission)
+
+        self.assertNotEqual(sequence, ["idea_expander", "planner", "builder"])
+
     def setUp(self):
         self.builder_admission = patch(
             "modules.charlie.execution_bridge.build_admission",
