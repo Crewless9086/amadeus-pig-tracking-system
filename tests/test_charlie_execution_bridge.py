@@ -2990,6 +2990,31 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(any(call[:2] == ["git", "push"] for call in calls))
         self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
+    def test_existing_pr_reuse_ignores_unstaged_test_harness_changes(self, _staged_changed_files, _changed_files):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{
+                    "number": 61,
+                    "url": "https://github.com/org/repo/pull/61",
+                    "headRefName": "charlie/test-pr-evidence",
+                    "headRefOid": "abc1234",
+                    "baseRefName": "main",
+                }]), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+
+        packaged = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 61)
+        self.assertEqual(packaged["commit_sha"], "abc1234")
+        self.assertFalse(any(call[:3] == ["git", "branch", "--show-current"] for call in calls))
+
     def test_builder_pr_reconciliation_does_not_reuse_different_head(self):
         calls = []
 
