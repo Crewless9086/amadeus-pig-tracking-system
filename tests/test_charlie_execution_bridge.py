@@ -3038,6 +3038,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["git", "commit"] for call in calls))
         self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
 
+    def test_committed_retry_published_is_reviewable_packaging(self):
+        self.assertFalse(execution_bridge._builder_packaging_is_terminal({
+            "attempted": True,
+            "status": "committed_retry_published",
+            "commit_sha": "new5678",
+            "pr_url": "https://github.com/org/repo/pull/397",
+        }))
+
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
     def test_existing_pr_reuse_ignores_unstaged_test_harness_changes(self, _staged_changed_files, _changed_files):
