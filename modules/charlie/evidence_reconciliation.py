@@ -15,6 +15,7 @@ SCOPE_PLANNING_AGENTS = {
     "idea_expander", "source_mapper", "product_architect", "technical_architect",
     "business_model_agent", "council_synthesis", "planner", "architect",
 }
+AUDITABLE_FROZEN_SCOPE_AGENTS = SCOPE_PLANNING_AGENTS | {"concept_strategist", "risk_agent"}
 
 
 def build_candidate_manifest(mission, artifacts=None, source_commit=""):
@@ -219,7 +220,7 @@ def artifact_applicability(
     if artifact_fp and candidate_fingerprint and artifact_fp == candidate_fingerprint:
         return True, "exact_candidate"
     if (
-        agent in SCOPE_PLANNING_AGENTS
+        agent in AUDITABLE_FROZEN_SCOPE_AGENTS
         and artifact.get("accepted_frozen_scope") is True
         and _basic_judgement(artifact).get("passed")
         and bool(_clean(artifact.get("summary")) or artifact.get("handoff_report"))
