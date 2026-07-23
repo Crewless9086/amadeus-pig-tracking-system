@@ -8043,6 +8043,8 @@ def _compact_agent_artifacts_for_review(artifacts):
         "source_commit",
         "candidate_fingerprint",
         "scope_hash",
+        "accepted_frozen_scope",
+        "frozen_scope_audit",
         "evidence_lineage",
         "structured_findings",
         "acceptance_results",
