@@ -93,11 +93,11 @@ def get_purpose_review_queue_data(litter_id: str = ""):
     return get_purpose_review_queue(litter_id=litter_id)
 
 
-def apply_purpose_review_queue_decisions(payload: dict):
+def apply_purpose_review_queue_decisions(payload: dict, changed_by: str = ""):
     payload = payload or {}
     return apply_purpose_review_decisions(
         decisions=payload.get("decisions", []),
-        changed_by=payload.get("changed_by", "web_app"),
+        changed_by=changed_by,
         dry_run=payload.get("dry_run", True) is True,
         allow_reclassify=payload.get("allow_reclassify", False) is True,
     )
