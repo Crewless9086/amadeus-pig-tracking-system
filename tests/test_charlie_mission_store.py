@@ -269,6 +269,50 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["status"], "final_artifact_reconciled_after_advance")
         self.assertTrue(result["claim"]["reconciled_after_advance"])
 
+    def test_final_artifact_consumes_active_targeted_backflow_stage_with_earlier_pending_stage(self):
+        metadata = {
+            "agent_workflow": [
+                {"agent": "risk_agent", "status": "pending"},
+                {"agent": "builder", "status": "active"},
+                {"agent": "tester", "status": "complete"},
+            ],
+            "review_packet": {},
+        }
+        connection = FakeConnection([(metadata,)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-BACKFLOW", 1,
+            {"summary": "Bounded correction completed."}, "d" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "final_artifact_consumed")
+        update_params = next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)
+        persisted = __import__("json").loads(update_params["metadata_json"])
+        self.assertEqual(
+            [item["status"] for item in persisted["agent_workflow"]],
+            ["pending", "complete", "complete"],
+        )
+
+    def test_final_artifact_rejects_non_active_later_pending_stage(self):
+        metadata = {
+            "agent_workflow": [
+                {"agent": "risk_agent", "status": "pending"},
+                {"agent": "builder", "status": "pending"},
+            ],
+            "review_packet": {},
+        }
+        connection = FakeConnection([(metadata,)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-OUT-OF-ORDER", 1,
+            {"summary": "Should not be accepted."}, "e" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "final_artifact_stage_mismatch")
+        self.assertEqual(result["expected_agent"], "risk_agent")
+
     def test_update_workflow_items_tolerates_unknown_agent_names(self):
         workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]
 
