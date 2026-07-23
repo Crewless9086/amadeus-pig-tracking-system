@@ -9,10 +9,10 @@ from modules.pig_weights.pig_weights_service import get_riversdale_auction_recom
 class RiversdaleAuctionTests(unittest.TestCase):
     def _allocation(self):
         return {"pigs": [
-            {"pig_id": "SLOW", "tag_number": "1", "growth_class": "Extremely Slow", "growth_reason": "0.09 kg/day", "readiness_bucket": "Livestock Candidate", "litter_quality": "Fair", "withdrawal_clear": "Yes"},
+            {"pig_id": "SLOW", "tag_number": "1", "growth_class": "Extremely Slow", "growth_reason": "0.09 kg/day", "readiness_bucket": "Livestock Candidate", "litter_quality": "Fair", "withdrawal_clear": "Yes", "observed_quality": "Auction suitable after inspection"},
             {"pig_id": "ORDER", "tag_number": "2", "growth_class": "Extremely Slow", "readiness_bucket": "Allocated", "reserved_for_order_id": "ORD-1"},
             {"pig_id": "BREED", "tag_number": "3", "growth_class": "Extremely Slow", "readiness_bucket": "Retain / Breeding Candidate"},
-            {"pig_id": "APPROVED", "tag_number": "4", "growth_class": "Steady", "owner_approved_auction_candidate": "Yes", "readiness_bucket": "Growing", "withdrawal_clear": "Yes"},
+            {"pig_id": "APPROVED", "tag_number": "4", "growth_class": "Steady", "owner_approved_auction_candidate": "Yes", "readiness_bucket": "Growing", "withdrawal_clear": "Yes", "observed_quality": "Owner-reviewed auction exception"},
         ]}
 
     def test_first_wednesday_and_two_prompt_windows_are_deterministic(self):
@@ -32,11 +32,28 @@ class RiversdaleAuctionTests(unittest.TestCase):
         self.assertTrue(packet["one_pig_one_active_outlet"])
         self.assertFalse(packet["creates_reservations"])
 
-        packet = build_riversdale_auction_packet(self._allocation(), today=date(2026, 8, 1), confirmation={"operating": True, "confirmed_date": "2026-08-05"}, ledger_evidence={"SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 150}, "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130}}, sam_demand={"summary": "No suitable direct-sale demand"}, oom_sakkie_preparation={"summary": "Transport checklist prepared"})
+        packet = build_riversdale_auction_packet(self._allocation(), today=date(2026, 8, 1), confirmation={"operating": True, "confirmed_date": "2026-08-05"}, ledger_evidence={"SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 150, "auction_costs": 20}, "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130, "auction_costs": 15}}, sam_demand={"summary": "No suitable direct-sale demand"}, oom_sakkie_preparation={"summary": "Transport checklist prepared"})
         self.assertEqual(packet["status"], "cohort_ready_for_owner_review")
         self.assertEqual([item["pig_id"] for item in packet["cohort"]], ["SLOW", "APPROVED"])
         self.assertEqual(packet["profitability_recommendation"], "ready_for_owner_review")
         self.assertEqual({item["pig_id"] for item in packet["excluded"]}, {"ORDER", "BREED"})
+
+    def test_loss_or_missing_observed_quality_blocks_profitability_wording(self):
+        allocation = self._allocation()
+        allocation["pigs"][3]["observed_quality"] = ""
+        packet = build_riversdale_auction_packet(
+            allocation, today=date(2026, 8, 1),
+            confirmation={"operating": True, "confirmed_date": "2026-08-05"},
+            ledger_evidence={
+                "SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 90, "auction_costs": 5},
+                "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130},
+            }, sam_demand={"summary": "No suitable direct-sale demand"},
+            oom_sakkie_preparation={"summary": "Transport checklist prepared"},
+        )
+        self.assertEqual(packet["status"], "cohort_needs_coordinated_evidence")
+        self.assertEqual(packet["profitability_recommendation"], "blocked_negative_or_unknown_auction_margin")
+        self.assertFalse(packet["coordination_evidence"]["observed_quality_complete"])
+        self.assertEqual(packet["candidate_preview"][0]["profitability_evidence"]["disposition"], "break_even_or_loss")
 
     def test_direct_sale_and_brand_risk_have_priority_over_auction(self):
         allocation = {"pigs": [
@@ -94,7 +111,7 @@ class RiversdaleAuctionTests(unittest.TestCase):
     def test_recommendation_uses_persisted_cycle_when_no_override_is_supplied(self, load_cycle, allocation):
         allocation.return_value = self._allocation()
         load_cycle.return_value = {"operating": True, "confirmed_date": "2026-08-05"}
-        packet = get_riversdale_auction_recommendation(today=date(2026, 8, 1), ledger_evidence={"SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 150}, "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130}}, sam_demand={"summary": "No suitable direct-sale demand"}, oom_sakkie_preparation={"summary": "Transport checklist prepared"})
+        packet = get_riversdale_auction_recommendation(today=date(2026, 8, 1), ledger_evidence={"SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 150, "auction_costs": 20}, "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130, "auction_costs": 15}}, sam_demand={"summary": "No suitable direct-sale demand"}, oom_sakkie_preparation={"summary": "Transport checklist prepared"})
         self.assertEqual(packet["status"], "cohort_ready_for_owner_review")
         load_cycle.assert_called_once()
 

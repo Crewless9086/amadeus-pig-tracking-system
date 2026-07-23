@@ -153,6 +153,34 @@ def _canonical_pig_id(pig):
     return str(pig.get("pig_id") or "").strip()
 
 
+def _money(value):
+    """Return a finite non-negative money value, or None when not evidenced."""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return amount if amount >= 0 else None
+
+
+def _profitability_evidence(ledger):
+    """Make an auction margin disposition explicit instead of inferring one.
+
+    `auction_costs` is optional only when it is supplied as zero.  This keeps a
+    missing fee/transport estimate from being silently treated as a profit.
+    """
+    ledger = ledger if isinstance(ledger, dict) else {}
+    feed_cost = _money(ledger.get("feed_cost_to_date"))
+    likely_price = _money(ledger.get("likely_auction_price"))
+    auction_costs = _money(ledger.get("auction_costs"))
+    if feed_cost is None or likely_price is None or auction_costs is None:
+        return {"disposition": "unknown", "net_auction_margin": None}
+    margin = likely_price - feed_cost - auction_costs
+    return {
+        "disposition": "positive" if margin > 0 else "break_even_or_loss",
+        "net_auction_margin": margin,
+    }
+
+
 def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None):
     """Compose an owner-gated, non-overlapping recommendation cohort.
 
@@ -193,8 +221,13 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
                 "pig_id": pig_id, "tag_number": pig.get("tag_number", ""),
                 "outlet": AUCTION_OUTLET, "active_outlet": "auction_advisory" if confirmation_valid else "none",
                 "growth_class": pig.get("growth_class", ""), "growth_reason": pig.get("growth_reason", ""),
-                "herdmaster_evidence": {"litter_quality": pig.get("litter_quality", ""), "health_status": pig.get("health_status", ""), "withdrawal_clear": pig.get("withdrawal_clear", "")},
-                "ledger_evidence": ledger_evidence.get(pig.get("pig_id"), ledger_evidence.get("default", {})),
+                "herdmaster_evidence": {
+                    "litter_quality": pig.get("litter_quality", ""),
+                    "health_status": pig.get("health_status", ""),
+                    "withdrawal_clear": pig.get("withdrawal_clear", ""),
+                    "observed_quality": pig.get("observed_quality", pig.get("quality_status", "")),
+                },
+                "ledger_evidence": ledger_evidence.get(pig_id, ledger_evidence.get("default", {})),
                 "sam_demand_evidence": sam_demand.get("summary", "not_supplied"),
                 "oom_sakkie_preparation": oom_sakkie_preparation.get("summary", "not_supplied"),
                 "owner_approval_required": True,
@@ -202,14 +235,18 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         else:
             excluded.append({"pig_id": pig_id, "reason": _exclusion_reason(pig)})
 
+    for item in candidates:
+        item["profitability_evidence"] = _profitability_evidence(item["ledger_evidence"])
     commercial_evidence_complete = all(
-        item["ledger_evidence"].get("feed_cost_to_date") is not None
-        and item["ledger_evidence"].get("likely_auction_price") is not None
+        item["profitability_evidence"]["disposition"] == "positive" for item in candidates
+    )
+    observed_quality_complete = all(
+        str(item["herdmaster_evidence"].get("observed_quality") or "").strip()
         for item in candidates
     )
     sam_evidence_complete = bool(sam_demand.get("summary"))
     preparation_complete = bool(oom_sakkie_preparation.get("summary"))
-    coordination_complete = commercial_evidence_complete and sam_evidence_complete and preparation_complete
+    coordination_complete = commercial_evidence_complete and observed_quality_complete and sam_evidence_complete and preparation_complete
     recommendation_status = (
         "cohort_ready_for_owner_review" if confirmation_valid and coordination_complete
         else "cohort_needs_coordinated_evidence" if confirmation_valid
@@ -230,11 +267,16 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "one_pig_one_active_outlet": not invalid_identities and len({item["pig_id"] for item in candidates}) == len(candidates),
         "coordination_evidence": {
             "herdmaster": "canonical_allocation_rows",
+            "observed_quality_complete": observed_quality_complete,
             "ledger_complete": commercial_evidence_complete,
             "sam_demand_complete": sam_evidence_complete,
             "oom_sakkie_preparation_complete": preparation_complete,
         },
-        "profitability_recommendation": "ready_for_owner_review" if candidates and coordination_complete else "blocked_missing_required_coordination_evidence",
+        "profitability_recommendation": (
+            "ready_for_owner_review" if candidates and coordination_complete
+            else "blocked_negative_or_unknown_auction_margin" if candidates and not commercial_evidence_complete
+            else "blocked_missing_required_coordination_evidence"
+        ),
         "forbidden_actions": FORBIDDEN_ACTIONS,
         "writes_to_supabase": False, "writes_to_sheets": False, "writes_orders": False,
         "creates_reservations": False, "creates_sales": False, "changes_farm_lifecycle": False,

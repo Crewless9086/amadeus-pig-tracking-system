@@ -16,7 +16,7 @@ Unknown purpose is a data/classification problem, not a silent sale/meat/slaught
 - Meat candidates should be young and weight-dependent.
 - Meat-window pigs that are not pre-sold in time should fall back to slaughter/abattoir.
 - Lifecycle, purpose, death, movement, medical, litter, mating, breeding, weight, and slaughter records require approved backend paths and owner approval where needed.
-- Auction review must evidence Herdmaster biology/brand quality, Ledger feed cost and likely price, SAM demand, and Oom Sakkie preparation. Missing commercial evidence blocks profitability wording.
+- Auction review must evidence Herdmaster biology/observed quality, Ledger feed cost, likely price, and auction costs, SAM demand, and Oom Sakkie preparation. Missing, break-even, or loss-making commercial evidence blocks profitability wording.
 
 ## Readiness Buckets
 
