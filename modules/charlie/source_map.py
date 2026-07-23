@@ -491,6 +491,53 @@ IMPLEMENTATION_SOURCE_MAP = {
         ],
         "must_inspect_before_advice": True,
     },
+    "pig_observation_management_intent": {
+        "label": "Herdmaster Pig Observations And Management Intents",
+        "status": "candidate_built_owner_gated_migration",
+        "summary": (
+            "Append-only factual pig observations, structurally separate advisory management "
+            "intents, owner-only capture routes, idempotency and no-current-state-mutation rails."
+        ),
+        "keywords": [
+            "pig observation",
+            "pig observations",
+            "observation event",
+            "observation events",
+            "management intent",
+            "management intents",
+            "management-intent",
+            "human observation",
+            "append-only observation",
+            "observation capture",
+        ],
+        "vault_docs": [
+            "docs/09-vault-brain/02-agents/farm/HERDMASTER.md",
+            "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
+            "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
+        ],
+        "app_routes": [
+            "/api/pig-weights/pigs/<pig_id>/observations",
+            "/api/pig-weights/pigs/<pig_id>/management-intents",
+        ],
+        "code_paths": [
+            "modules/pig_weights/pig_observation_capture_service.py",
+            "modules/pig_weights/pig_weights_controller.py",
+            "modules/pig_weights/pig_weights_routes.py",
+        ],
+        "tests": [
+            "tests/test_pig_observation_capture.py",
+            "tests/test_pig_observation_capture_postgres.py",
+            "tests/test_pig_observation_event_migration.py",
+            "tests/test_pig_management_intent_event_migration.py",
+            "tests/test_owner_access.py",
+        ],
+        "migrations": [
+            "supabase/migrations/202607200001_create_pig_observation_events.sql",
+            "supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql",
+        ],
+        "legacy_sources": [],
+        "must_inspect_before_advice": True,
+    },
     "pig_allocation_herdmaster": {
         "label": "Pig Allocation And Herdmaster Purpose Intelligence",
         "status": "built_readiness_surface_to_expand",
@@ -679,6 +726,8 @@ def _filter_matched_sections(matched, query=""):
         filtered = [section for section in filtered if section.get("key") != "sam_meat_sales"]
     if "sam_meat_sales" in keys and not _live_stock_context(lower):
         filtered = [section for section in filtered if section.get("key") != "sam_live_stock_sales"]
+    if "pig_observation_management_intent" in keys and not _pig_allocation_context(lower):
+        filtered = [section for section in filtered if section.get("key") != "pig_allocation_herdmaster"]
     return filtered
 
 
@@ -802,6 +851,22 @@ def _meat_context(lower):
         "meat sales",
     )
     return any(term in normalized for term in meat_terms)
+
+
+def _pig_allocation_context(lower):
+    normalized = lower.replace("_", " ").replace("-", " ")
+    allocation_terms = (
+        "pig allocation",
+        "allocation alert",
+        "purpose review",
+        "suggested purpose",
+        "meat window",
+        "slaughter candidate",
+        "slow grower",
+        "stale weight",
+        "sow replacement",
+    )
+    return any(term in normalized for term in allocation_terms)
 
 
 def _keyword_is_negated(lower, keyword):
