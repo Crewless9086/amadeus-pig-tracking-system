@@ -15,8 +15,8 @@ def tree(pig_id, mother, father):
 
 def fixture_readers(matings=None, extra_boars=None):
     pigs = [
-        {"Pig_ID": "F1", "Tag_Number": "F1", "Sex": "Female", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "good condition"},
-        {"Pig_ID": "B1", "Tag_Number": "B1", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "good condition"},
+        {"Pig_ID": "F1", "Tag_Number": "F1", "Sex": "Female", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "good condition", "Genetics": "recorded"},
+        {"Pig_ID": "B1", "Tag_Number": "B1", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "good condition", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},
     ] + (extra_boars or [])
     trees = {"F1": tree("F1", "M1", "D1"), "B1": tree("B1", "M2", "D2")}
     for row in extra_boars or []:
@@ -47,6 +47,15 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
         self.assertIn("parentage", result["females"][0]["missing_facts"])
         self.assertIn("performance", result["females"][0]["missing_facts"])
 
+    def test_missing_genetics_fails_closed_without_a_safe_match_claim(self):
+        readers = fixture_readers()
+        pigs = readers["pig_rows"]()
+        pigs[0]["Genetics"] = ""
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
+        self.assertEqual(result["confidence"], 0.0)
+        self.assertEqual(result["females"][0]["safe_matches"], [])
+        self.assertIn("genetics", result["females"][0]["missing_facts"])
+
     def test_parent_child_sibling_castrated_and_unavailable_boars_are_excluded(self):
         excluded = [
             {"Pig_ID": "B_PARENT", "Tag_Number": "BP", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok"},
@@ -57,6 +66,8 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
             {"Pig_ID": "B_NONBREED", "Tag_Number": "BN", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Sale", "General_Notes": "ok"},
             {"Pig_ID": "B_NOCONDITION", "Tag_Number": "NC", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": ""},
         ]
+        for boar in excluded:
+            boar.update({"Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"})
         readers = fixture_readers(extra_boars=excluded)
         readers["family_tree"] = lambda pig_id: ({"pig_id": "F1", "mother": {"pig_id": "B_PARENT"}, "father": {"pig_id": "D1"}} if pig_id == "F1" else tree(pig_id, "M1", "D1") if pig_id == "B_SIBLING" else tree(pig_id, "M2", "D2"))
         result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
@@ -70,6 +81,30 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
         self.assertEqual(excluded_reasons["B_EXIT"], "not_active")
         self.assertEqual(excluded_reasons["B_NONBREED"], "non_breeding_purpose")
         self.assertEqual(excluded_reasons["B_NOCONDITION"], "condition_missing")
+
+    def test_reserved_unavailable_conflicted_or_genetics_missing_boars_are_excluded(self):
+        extra_boars = [
+            {"Pig_ID": "B_RESERVED", "Tag_Number": "BR", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Reserved", "Source_Conflict": "No"},
+            {"Pig_ID": "B_UNAVAILABLE", "Tag_Number": "BU", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "No", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},
+            {"Pig_ID": "B_CONFLICT", "Tag_Number": "BX", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "Yes"},
+            {"Pig_ID": "B_NO_GENETICS", "Tag_Number": "BG", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},
+        ]
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=fixture_readers(extra_boars=extra_boars))
+        excluded_reasons = {row["pig_id"]: row["reason"] for row in result["females"][0]["excluded_matches"]}
+        self.assertEqual(excluded_reasons["B_RESERVED"], "reserved")
+        self.assertEqual(excluded_reasons["B_UNAVAILABLE"], "unavailable_or_availability_missing")
+        self.assertEqual(excluded_reasons["B_CONFLICT"], "source_conflict")
+        self.assertEqual(excluded_reasons["B_NO_GENETICS"], "genetics_missing")
+
+    def test_safe_match_ranks_are_unique_and_ignore_source_iteration_order(self):
+        extra_boars = [
+            {"Pig_ID": "B3", "Tag_Number": "B3", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},
+            {"Pig_ID": "B2", "Tag_Number": "B2", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},
+        ]
+        readers = fixture_readers(extra_boars=extra_boars)
+        readers["breeding_analytics"] = lambda: {"sows": [{"pig_id": "F1", "mating_count": 1}], "boars": [{"pig_id": "B1", "mating_count": 2}, {"pig_id": "B2", "mating_count": 4}, {"pig_id": "B3", "mating_count": 4}]}
+        matches = run_herdmaster({"capability": "breeding_planner"}, readers=readers)["females"][0]["safe_matches"]
+        self.assertEqual([(item["pig_id"], item["rank"]) for item in matches], [("B2", 1), ("B3", 2), ("B1", 3)])
 
     def test_mating_facts_classify_active_and_overdue_without_inference(self):
         for expected, row in [("Active Mating", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes"}), ("Overdue Check", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes", "is_overdue_check": "Yes"}), ("Overdue Farrowing", {"mating_id": "M1", "sow_pig_id": "F1", "is_open": "Yes", "is_overdue_farrowing": "Yes"})]:

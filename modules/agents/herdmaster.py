@@ -258,7 +258,11 @@ def _breeding_planner(request, readers, *, canonical_available):
                     if reason:
                         excluded.append({"pig_id": boar_id, "reason": reason})
                     else:
-                        matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "condition_present", "performance_present"]})
+                        matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "_mating_count": int((metrics.get(boar_id) or {}).get("mating_count") or 0), "basis": ["active", "on_farm", "breeding_purpose", "available", "unreserved", "no_source_conflict", "known_non_kinship", "condition_present", "genetics_present", "performance_present"]})
+                matches.sort(key=lambda item: (-item["_mating_count"], item["pig_id"]))
+                for rank, match in enumerate(matches, start=1):
+                    match["rank"] = rank
+                    del match["_mating_count"]
             packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "excluded_matches": excluded, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
         except Exception:
             return _breeding_needs_data("Canonical Supabase breeding read failed; no legacy fallback was used.")
@@ -297,6 +301,8 @@ def _missing_breeding_facts(row, tree, metric):
         missing.append("parentage")
     if not str(row.get("General_Notes") or "").strip():
         missing.append("condition")
+    if not str(row.get("Genetics") or "").strip():
+        missing.append("genetics")
     if not metric or not int(metric.get("mating_count") or 0):
         missing.append("performance")
     return missing
@@ -313,8 +319,16 @@ def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
         return "off_farm"
     if str(boar.get("Purpose") or "") != "Breeding":
         return "non_breeding_purpose"
+    if _is_reserved(boar):
+        return "reserved"
+    if _has_source_conflict(boar):
+        return "source_conflict"
+    if not _is_available_for_breeding(boar):
+        return "unavailable_or_availability_missing"
     if not str(boar.get("General_Notes") or "").strip():
         return "condition_missing"
+    if not str(boar.get("Genetics") or "").strip():
+        return "genetics_missing"
     if not boar_tree or not boar_tree.get("mother") or not boar_tree.get("father") or not metric or not int(metric.get("mating_count") or 0):
         return "unknown_or_incomplete"
     female_id, boar_id = str(female.get("Pig_ID") or ""), str(boar.get("Pig_ID") or "")
@@ -323,6 +337,18 @@ def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
     if boar_id in female_parents or female_id in boar_parents:
         return "parent_child"
     return "known_sibling" if female_parents & boar_parents else ""
+
+
+def _is_reserved(row):
+    return str(row.get("Reserved_Status") or row.get("reserved_status") or "").strip().lower() == "reserved"
+
+
+def _has_source_conflict(row):
+    return str(row.get("Source_Conflict") or row.get("source_conflict") or "").strip().lower() in {"yes", "true", "1", "conflict", "conflicted"}
+
+
+def _is_available_for_breeding(row):
+    return str(row.get("Available_For_Breeding") or row.get("available_for_breeding") or "").strip().lower() in {"yes", "true", "1", "available", "ready"}
 
 
 def _label(value, fallback):
