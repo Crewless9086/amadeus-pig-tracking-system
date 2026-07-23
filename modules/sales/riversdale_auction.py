@@ -51,7 +51,10 @@ def build_owner_prompts(today=None):
     prompts = []
     for days_before in (14, 7):
         due_date = auction_date - timedelta(days=days_before)
-        if today >= due_date and today <= auction_date:
+        # The watchdog runs daily.  Queue each reminder on its own due day;
+        # the outbox key makes retries safe without turning a missed run into
+        # a pair of misleading late reminders on auction day.
+        if today == due_date:
             prompts.append({
                 "outlet": AUCTION_OUTLET,
                 "auction_date": auction_date.isoformat(),
@@ -114,22 +117,35 @@ def load_owner_confirmed_cycle(*, today=None, database_url=None, connect_factory
 
 
 def _has_health_or_quality_hold(pig):
-    health = " ".join(str(pig.get(key) or "") for key in ("health_status", "medical_status", "withdrawal_clear")).lower()
-    return any(marker in health for marker in ("hold", "brand risk", "quality hold")) or "no" == str(pig.get("withdrawal_clear") or "").lower()
+    health = " ".join(str(pig.get(key) or "") for key in (
+        "health_status", "medical_status", "withdrawal_clear", "brand_quality_status",
+        "quality_status", "observed_quality",
+    )).lower()
+    return any(marker in health for marker in (
+        "hold", "brand risk", "quality hold", "not suitable", "unfit",
+    )) or "no" == str(pig.get("withdrawal_clear") or "").lower()
 
 
 def _truthy(value):
     return value is True or str(value or "").strip().lower() in {"1", "true", "yes"}
 
 
-def _candidate(pig):
+def _exclusion_reason(pig):
     if pig.get("readiness_bucket") in {"Allocated", "Exited", "Retain / Breeding Candidate", "Needs Data", "Needs Classification"}:
-        return False
+        return "allocation state is already allocated, exited, retained, or insufficient for safe auction review"
     if pig.get("reserved_for_order_id") or str(pig.get("reserved_status") or "").lower() == "reserved":
-        return False
+        return "existing customer order or reservation has priority"
     if _has_health_or_quality_hold(pig):
-        return False
-    return pig.get("growth_class") == "Extremely Slow" or _truthy(pig.get("owner_approved_auction_candidate"))
+        return "health, withdrawal, welfare, or brand-quality hold blocks auction review"
+    if str(pig.get("available_for_sale") or "").lower() == "yes":
+        return "current customer-sale suitability has priority over auction"
+    if pig.get("growth_class") != "Extremely Slow" and not _truthy(pig.get("owner_approved_auction_candidate")):
+        return "not an extremely slow grower or separately owner-approved auction candidate"
+    return ""
+
+
+def _candidate(pig):
+    return not _exclusion_reason(pig)
 
 
 def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None):
@@ -163,12 +179,24 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
                 "owner_approval_required": True,
             })
         else:
-            excluded.append({"pig_id": pig.get("pig_id", ""), "reason": "existing outlet, retention, data, reservation, health, or eligibility rule blocks auction advisory"})
+            excluded.append({"pig_id": pig.get("pig_id", ""), "reason": _exclusion_reason(pig)})
 
-    commercial_evidence_complete = all(bool(item["ledger_evidence"].get("feed_cost_to_date") is not None and item["ledger_evidence"].get("likely_auction_price") is not None) for item in candidates)
+    commercial_evidence_complete = all(
+        item["ledger_evidence"].get("feed_cost_to_date") is not None
+        and item["ledger_evidence"].get("likely_auction_price") is not None
+        for item in candidates
+    )
+    sam_evidence_complete = bool(sam_demand.get("summary"))
+    preparation_complete = bool(oom_sakkie_preparation.get("summary"))
+    coordination_complete = commercial_evidence_complete and sam_evidence_complete and preparation_complete
+    recommendation_status = (
+        "cohort_ready_for_owner_review" if confirmation_valid and coordination_complete
+        else "cohort_needs_coordinated_evidence" if confirmation_valid
+        else "awaiting_owner_auction_confirmation"
+    )
     return {
         "success": True,
-        "status": "cohort_ready_for_owner_review" if confirmation_valid else "awaiting_owner_auction_confirmation",
+        "status": recommendation_status,
         "owner_agent": "sam-live-stock",
         "outlet": AUCTION_OUTLET,
         "generated_date": today.isoformat(),
@@ -179,7 +207,13 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "candidate_preview": candidates,
         "excluded": excluded,
         "one_pig_one_active_outlet": True,
-        "profitability_recommendation": "ready_for_owner_review" if candidates and commercial_evidence_complete else "blocked_missing_feed_cost_or_likely_price_evidence",
+        "coordination_evidence": {
+            "herdmaster": "canonical_allocation_rows",
+            "ledger_complete": commercial_evidence_complete,
+            "sam_demand_complete": sam_evidence_complete,
+            "oom_sakkie_preparation_complete": preparation_complete,
+        },
+        "profitability_recommendation": "ready_for_owner_review" if candidates and coordination_complete else "blocked_missing_required_coordination_evidence",
         "forbidden_actions": FORBIDDEN_ACTIONS,
         "writes_to_supabase": False, "writes_to_sheets": False, "writes_orders": False,
         "creates_reservations": False, "creates_sales": False, "changes_farm_lifecycle": False,
