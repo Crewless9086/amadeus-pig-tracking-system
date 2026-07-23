@@ -176,8 +176,14 @@ def classify_artifact_findings(agent, artifact, quality=None):
         lowered = text.lower()
         family = semantic_finding_family(text)
         explicit_scope = item.get("scope_relation")
+        acceptance_violation = _finding_acceptance_violation(original)
         if _contains_any(lowered, RED_ZONE_TERMS):
             disposition = "red_zone"
+        elif acceptance_violation:
+            # A missing implementation may be pre-existing relative to an
+            # empty candidate, but it still fails this mission's frozen
+            # acceptance contract.  Never downgrade that to an advisory.
+            disposition = "matrix_violation"
         elif family == "baseline_regression" or explicit_scope in {"pre_existing", "unrelated"}:
             disposition = "baseline_advisory"
         elif family == "environment_timeout" or explicit_scope == "advisory":
@@ -464,15 +470,36 @@ def _matrix_status(value):
 
 def _failed_acceptance_ids(artifact):
     results = artifact.get("acceptance_results") if isinstance(artifact, dict) else None
-    if not isinstance(results, list):
-        return []
-    return [
+    results = results if isinstance(results, list) else []
+    failed = [
         str(item.get("id") or "").strip()
         for item in results
         if isinstance(item, dict)
         and str(item.get("id") or "").strip()
         and _matrix_status(item.get("status")) == "failed"
     ]
+    for key in ("bugs", "errors", "qa_findings", "unresolved_blockers"):
+        values = artifact.get(key) if isinstance(artifact, dict) else None
+        values = values if isinstance(values, list) else ([values] if values else [])
+        for value in values:
+            if not isinstance(value, dict):
+                continue
+            ids = value.get("violates_acceptance_rows") or value.get("failed_acceptance_ids") or []
+            ids = ids if isinstance(ids, list) else ([ids] if ids else [])
+            failed.extend(str(item or "").strip() for item in ids if str(item or "").strip())
+            if value.get("violates_acceptance_row") is True:
+                relation = value.get("acceptance_relation") or value.get("acceptance_row") or "explicit_acceptance_violation"
+                failed.append(str(relation).strip())
+    return list(dict.fromkeys(failed))
+
+
+def _finding_acceptance_violation(value):
+    if not isinstance(value, dict):
+        return False
+    if value.get("violates_acceptance_row") is True or value.get("acceptance_row_violation") is True:
+        return True
+    rows = value.get("violates_acceptance_rows") or value.get("failed_acceptance_ids")
+    return bool(rows if isinstance(rows, list) else str(rows or "").strip())
 
 
 def _affected_paths(original, text):

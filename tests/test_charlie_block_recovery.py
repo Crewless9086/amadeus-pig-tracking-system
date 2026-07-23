@@ -96,6 +96,25 @@ class CharlieBlockRecoveryTests(unittest.TestCase):
         self.assertEqual(result["responsible_stage"], "builder")
         self.assertTrue(result["recoverable"])
 
+    def test_preexisting_empty_candidate_acceptance_gap_returns_to_builder(self):
+        artifact = {
+            "scope_relation": "pre_existing",
+            "introduced_by_current_diff": False,
+            "violates_acceptance_rows": ["acceptance-auction"],
+        }
+        result = classify_block(
+            "reviewer",
+            "No releaseable candidate exists; the empty candidate diff does not implement the frozen outcome.",
+            artifact,
+        )
+        findings = normalize_findings(
+            [{**artifact, "finding": "No releaseable candidate exists; the empty candidate diff does not implement the frozen outcome."}],
+            agent="reviewer",
+        )
+        self.assertEqual(result["block_class"], "implementation_fix_required")
+        self.assertEqual(result["responsible_stage"], "builder")
+        self.assertTrue(findings[0]["blocking"])
+
     def test_unapplied_additive_migration_creation_is_internal_engineering(self):
         result = classify_block(
             "builder",

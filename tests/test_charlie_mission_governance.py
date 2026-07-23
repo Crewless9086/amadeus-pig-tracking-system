@@ -131,6 +131,27 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertFalse(decision["blocking_findings"])
         self.assertEqual(decision["followup_findings"][0]["family"], "baseline_regression")
 
+    def test_preexisting_missing_candidate_cannot_downgrade_frozen_acceptance_failure(self):
+        decision = evaluate_quality_failure(
+            mission_with_events(),
+            "reviewer",
+            {
+                "bugs": [{
+                    "finding": "No releaseable candidate exists and the empty diff does not implement the auction outcome.",
+                    "severity": "high",
+                    "scope_relation": "pre_existing",
+                    "introduced_by_current_diff": False,
+                    "violates_acceptance_rows": ["acceptance-auction", "acceptance-profit"],
+                }],
+                "recommended_owner_decision": "send_back",
+            },
+            {"passed": False, "reason": "reviewer recorded non-passing recommended_owner_decision=send_back."},
+        )
+
+        self.assertEqual(decision["route"], "backflow")
+        self.assertEqual(decision["failed_acceptance_ids"], ["acceptance-auction", "acceptance-profit"])
+        self.assertTrue(decision["blocking_findings"])
+
     def test_timeout_is_followup_not_builder_backflow(self):
         decision = evaluate_quality_failure(
             mission_with_events(),
