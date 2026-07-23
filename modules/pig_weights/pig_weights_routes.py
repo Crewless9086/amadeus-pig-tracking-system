@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from modules.auth.owner_access import (
     correction_batch_owner_admin_principal,
+    owner_actor_reference,
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
     require_owner_read_access,
@@ -12,6 +13,7 @@ from modules.pig_weights.bulk_weight_batch_service import (
     retry_failed_bulk_weight_batch,
     stage_bulk_weight_batch,
 )
+from modules.pig_weights.pig_observation_capture_service import record_management_intent, record_observation
 
 from modules.pig_weights.pig_weights_controller import (
     get_status,
@@ -137,8 +139,11 @@ def purpose_review_apply():
     denied = require_owner_admin_access()
     if denied:
         return denied
+    changed_by = owner_actor_reference()
+    if not changed_by:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
     payload = request.get_json(silent=True) or {}
-    result, status_code = apply_purpose_review_queue_decisions(payload)
+    result, status_code = apply_purpose_review_queue_decisions(payload, changed_by=changed_by)
     return jsonify(result), status_code
 
 
@@ -175,6 +180,30 @@ def purpose_review_correction_batch_execute(batch_id):
 def purpose_review_recheck():
     payload = request.get_json(silent=True) or {}
     result, status_code = get_purpose_review_recheck_packet(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/observations", methods=["POST"])
+def record_observation_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_observation(request.get_json(silent=True) or {}, author_reference)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/management-intents", methods=["POST"])
+def record_management_intent_route():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    author_reference = owner_actor_reference()
+    if not author_reference:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
+    result, status_code = record_management_intent(request.get_json(silent=True) or {}, author_reference)
     return jsonify(result), status_code
 
 

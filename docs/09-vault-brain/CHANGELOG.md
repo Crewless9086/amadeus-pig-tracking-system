@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-07-22 - Herdmaster observation confidence and management intent rail
+
+- Completed the additive, unapplied observation contract with bounded numeric confidence and optional evidence references.
+- Defined a separate append-only advisory `pig_management_intent_events` rail for dated, authored management plans such as `sell_after_weaning`.
+- Kept observations, intents, and owner-approved actions structurally separate: neither evidence nor intent may mutate current pig state or execute a farm/commercial action.
+- Kept migration application, capture UI/API integration, and all operational writes behind separate owner approval.
+
 ## 2026-07-22 - Herdmaster owner-approved purpose correction batches
 
 - Defined the additive, unapplied correction-batch contract: persisted owner approval, idempotency, execution-time canonical fresh-weight checks, and atomic per-pig operational audit events.
@@ -270,3 +277,11 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-07-22 - Herdmaster observation and management-intent capture
+
+- Defined the protected backend capture contract for append-only pig observations and advisory management intents: authenticated owner-admin routes derive actor provenance, RLS accepts inserts only from `service_role`, and anonymous/authenticated browser roles have no direct write policy.
+- Required capture to persist a stable, non-secret actor reference derived from the signed authenticated session; client-supplied author fields are ignored and missing server attribution fails closed.
+- Kept physical observations, management intents, and approved purpose/lifecycle actions structurally separate; intent capture is advisory-only and cannot update pig state or invoke an action rail.
+- Hardened replay safety: observation and management-intent idempotency keys now require canonical stored content to match the replay request, rejecting mismatched key reuse without changing the append-only records.
+- Canonicalized capture confidence to the persisted `NUMERIC(4,3)` decimal representation so valid idempotency replays compare consistently with PostgreSQL values.
+- Hardened the separate purpose-review action rail so its audit actor is server-derived from the authenticated owner-admin session rather than browser-supplied.

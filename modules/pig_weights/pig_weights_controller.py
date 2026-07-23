@@ -98,10 +98,17 @@ def get_purpose_review_queue_data(litter_id: str = ""):
     return get_purpose_review_queue(litter_id=litter_id)
 
 
-def apply_purpose_review_queue_decisions(payload: dict):
-    # The historic direct-apply endpoint is intentionally preview-only.
+def apply_purpose_review_queue_decisions(payload: dict, changed_by: str = ""):
+    # The historic direct-apply endpoint is intentionally preview-only.  Keep
+    # server-derived attribution on its audit preview without permitting the
+    # browser payload to reactivate the former mutation path.
     payload = payload or {}
-    return apply_purpose_review_decisions(payload.get("decisions", []), dry_run=True)
+    return apply_purpose_review_decisions(
+        decisions=payload.get("decisions", []),
+        changed_by=changed_by,
+        dry_run=True,
+        allow_reclassify=False,
+    )
 
 
 def create_purpose_correction_batch(payload: dict, *, actor_id: str):

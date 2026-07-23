@@ -9,6 +9,7 @@ from modules.auth.owner_access import (
     owner_access_enabled,
     owner_local_dev_allowed,
 )
+from modules.pig_weights import pig_weights_routes
 from modules.sales import sales_transaction_routes
 
 
@@ -45,11 +46,18 @@ class OwnerAccessTests(unittest.TestCase):
             environ_base={"REMOTE_ADDR": remote_addr},
         )
 
-    def test_owner_access_disabled_does_not_break_existing_local_flow(self):
-        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0"}, clear=False):
+    def test_owner_access_disabled_does_not_allow_remote_protected_flow(self):
+        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "0"}, clear=False):
             self._configure()
             self.assertFalse(owner_access_enabled())
             response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["status"], "owner_access_not_configured")
+
+    def test_owner_access_disabled_allows_only_explicit_loopback_development(self):
+        with patch.dict(os.environ, {"OWNER_ACCESS_ENABLED": "0", "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1"}, clear=False):
+            self._configure()
+            response = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "127.0.0.1"})
         self.assertEqual(response.status_code, 200)
 
     def test_remote_protected_page_redirects_without_session_when_enabled(self):
@@ -92,6 +100,28 @@ class OwnerAccessTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertIn(b"Logged in:</strong> yes", status.data)
         self.assertIn(b"Session level:</strong> admin", status.data)
+
+    def test_authenticated_capture_derives_stable_non_secret_author(self):
+        payload = {
+            "pig_id": "P-1", "observed_at": "2026-07-22T10:00:00+02:00",
+            "category": "welfare", "severity": "medium", "confidence": 0.9,
+            "note": "Limp observed.", "idempotency_key": "obs-owner-author-1",
+            "author_reference": "client-controlled-author",
+        }
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(ADMIN_TOKEN)
+            with patch.object(pig_weights_routes, "record_observation", return_value=({"success": True}, 201)) as capture:
+                response = self.client.post(
+                    "/api/pig-weights/observations",
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+        self.assertEqual(response.status_code, 201)
+        persisted_author = capture.call_args.args[1]
+        self.assertTrue(persisted_author.startswith("owner-admin-"))
+        self.assertNotEqual(persisted_author, payload["author_reference"])
+        self.assertNotIn(ADMIN_TOKEN, persisted_author)
 
     def test_authenticated_admin_session_has_opaque_audit_principal(self):
         with patch.dict(os.environ, owner_env(), clear=False):
