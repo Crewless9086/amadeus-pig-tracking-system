@@ -1,6 +1,7 @@
 """Protected, append-only capture for Herdmaster evidence and advisory intent."""
 
 import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid5
 
@@ -34,12 +35,17 @@ def _timestamp(value, field):
 
 def _confidence(value):
     try:
-        confidence = float(value)
-    except (TypeError, ValueError) as exc:
+        # PostgreSQL NUMERIC is returned by psycopg as Decimal.  Keep the
+        # request value in the same canonical representation so an otherwise
+        # identical idempotency replay cannot compare Decimal to float.
+        if isinstance(value, bool):
+            raise InvalidOperation
+        confidence = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise ValueError("confidence must be a number from 0 to 1") from exc
-    if not 0 <= confidence <= 1:
+    if not confidence.is_finite() or not Decimal("0") <= confidence <= Decimal("1"):
         raise ValueError("confidence must be a number from 0 to 1")
-    return confidence
+    return confidence.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
 
 def _connect(connect_factory=None):
