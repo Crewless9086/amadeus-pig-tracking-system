@@ -770,6 +770,9 @@ def run_agent_execution_bridge_v2(
         authoritative_pr_files = _authoritative_pr_changed_files(artifact)
         if authoritative_pr_files:
             artifact["authoritative_pr_changed_files"] = authoritative_pr_files
+        targeted_recovery = _targeted_recovery_prompt_context(mission, agent)
+        if targeted_recovery.get("active_for_this_stage"):
+            artifact["targeted_recovery_context"] = targeted_recovery
         quality = _agent_quality_gate(agent, artifact)
         if not quality["passed"]:
             governance_decision = evaluate_quality_failure(mission, agent, artifact, quality)
@@ -4498,6 +4501,9 @@ def _ui_agent_quality_gate(agent, artifact):
 
 
 def _implementation_source_quality_gate(agent, artifact):
+    targeted = artifact.get("targeted_recovery_context") if isinstance(artifact.get("targeted_recovery_context"), dict) else {}
+    if targeted.get("active_for_this_stage") and targeted.get("correction_requirements"):
+        return {"passed": True, "reason": "targeted_recovery_contract_is_authoritative"}
     source_map = artifact.get("implementation_source_map") if isinstance(artifact.get("implementation_source_map"), dict) else {}
     if not source_map.get("matched_sections"):
         return {"passed": True, "reason": "implementation_source_map_not_required"}

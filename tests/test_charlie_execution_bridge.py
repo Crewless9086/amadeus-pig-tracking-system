@@ -3386,6 +3386,32 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("Run the Riversdale PostgreSQL test in the existing isolated GitHub workflow.", prompt)
         self.assertIn("override stale next_action", prompt)
 
+    def test_targeted_recovery_contract_does_not_require_unrelated_source_map_citation(self):
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "implementation_source_map": {
+                "matched_sections": [{
+                    "key": "sales",
+                    "must_inspect_before_advice": True,
+                    "code_paths": ["modules/sales/customer_writer.py"],
+                }],
+                "required_inspection_paths": ["modules/sales/customer_writer.py"],
+            },
+            "files_inspected": [".github/workflows/oom-sakkie-audit-rails.yml"],
+            "changed_files": [".github/workflows/oom-sakkie-audit-rails.yml"],
+            "targeted_recovery_context": {
+                "version": "charlie_targeted_recovery_prompt_v1",
+                "active_for_this_stage": True,
+                "target_agent": "builder",
+                "correction_requirements": ["Run the exact PostgreSQL test in isolated CI."],
+            },
+        })
+
+        result = execution_bridge._implementation_source_quality_gate("builder", artifact)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["reason"], "targeted_recovery_contract_is_authoritative")
+
     def test_architect_prompt_explains_internal_builder_authority_without_protected_authority(self):
         mission = {**MISSION, "metadata": {"pre_builder_scope": {
             "planning_gates": ["positive_and_negative_lifecycle_paths"],
