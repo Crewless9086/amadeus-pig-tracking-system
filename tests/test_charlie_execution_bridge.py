@@ -2990,6 +2990,54 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(any(call[:2] == ["git", "push"] for call in calls))
         self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
+    def test_builder_retry_publishes_committed_local_head_before_reusing_existing_pr(self, _staged_changed_files, _changed_files):
+        calls = []
+        pr_lists = iter([
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "old1234", "baseRefName": "main"}],
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "new5678", "baseRefName": "main"}],
+        ])
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps(next(pr_lists)), stderr="")
+            if command[:3] == ["git", "cat-file", "-e"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        mission = {"metadata": {"review_packet": {
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "branch_name": "charlie/riversdale-auction-outlet",
+        }}}
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/sales/riversdale_auction.py"],
+            "branch_name": "charlie/riversdale-auction-outlet",
+            "commit_sha": "new5678",
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "links": {"pr": "https://github.com/org/repo/pull/397"},
+            "errors": [{"finding": "Builder could not push because github.com was unreachable."}],
+        })
+
+        packaged = execution_bridge._auto_package_builder_changes(mission, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 397)
+        self.assertEqual(packaged["commit_sha"], "new5678")
+        self.assertEqual(packaged["git_packaging"]["status"], "committed_retry_published")
+        self.assertEqual(packaged["errors"], [])
+        self.assertIn(
+            ["git", "push", "-u", "origin", "new5678:refs/heads/charlie/riversdale-auction-outlet"],
+            calls,
+        )
+        self.assertFalse(any(call[:2] == ["git", "commit"] for call in calls))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
+
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
     @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
     def test_existing_pr_reuse_ignores_unstaged_test_harness_changes(self, _staged_changed_files, _changed_files):

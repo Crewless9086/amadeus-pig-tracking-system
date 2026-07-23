@@ -5919,12 +5919,17 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     local_changed_files = [path for path in _changed_files() if not _runner_generated_path(path)]
     staged_changed_files = [path for path in _staged_changed_files() if not _runner_generated_path(path)]
     reconciled = _reconcile_builder_pr_reference(mission, artifact, runner)
+    committed_retry = reconciled.get("canonical_pr_head_mismatch") if isinstance(reconciled.get("canonical_pr_head_mismatch"), dict) else {}
     # A Builder retry may inherit the canonical PR reference from its previous
     # attempt while holding new uncommitted corrections.  Reusing that PR
     # before packaging the dirty worktree would bind downstream evidence to
     # the old PR head.  Only short-circuit when there is no release-relevant
     # local work left to package.
-    if _artifact_pr_reference(reconciled) and not _has_release_relevant_changes(staged_changed_files):
+    if (
+        _artifact_pr_reference(reconciled)
+        and not committed_retry
+        and not _has_release_relevant_changes(staged_changed_files)
+    ):
         return reconciled
     artifact = reconciled
     artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
@@ -5973,6 +5978,34 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
         }
         result["commands"].append(record)
         return record
+
+    if committed_retry and not _has_release_relevant_changes(staged_changed_files):
+        local_commit = str(committed_retry.get("local_commit") or artifact.get("commit_sha") or "").strip()
+        canonical_branch = str(committed_retry.get("branch_name") or artifact.get("branch_name") or "").strip()
+        if not local_commit or not canonical_branch:
+            return _builder_packaging_failed(artifact, result, "committed_retry_identity_missing")
+        commit_exists = run(["git", "cat-file", "-e", f"{local_commit}^{{commit}}"])
+        if commit_exists["returncode"] != 0:
+            return _builder_packaging_failed(artifact, result, "committed_retry_not_local")
+        pushed = run(["git", "push", "-u", "origin", f"{local_commit}:refs/heads/{canonical_branch}"])
+        if pushed["returncode"] != 0:
+            return _builder_packaging_failed(artifact, result, "committed_retry_push_failed")
+        published = _reconcile_builder_pr_reference(
+            mission,
+            {**artifact, "branch_name": canonical_branch, "commit_sha": local_commit},
+            runner,
+            command_recorder=result["commands"],
+        )
+        if published.get("canonical_pr_head_mismatch") or not _artifact_pr_reference(published):
+            return _builder_packaging_failed(published, result, "committed_retry_pr_head_unverified")
+        published["errors"] = _remove_resolved_builder_packaging_errors(published.get("errors"))
+        published["git_packaging"] = {
+            **result,
+            "status": "committed_retry_published",
+            "commit_sha": str(published.get("commit_sha") or local_commit),
+            "pr_url": published.get("pr_url", ""),
+        }
+        return published
 
     current = run(["git", "branch", "--show-current"])
     if current["returncode"] != 0:
@@ -6093,6 +6126,11 @@ def _reconcile_builder_pr_reference(mission, artifact, runner, command_recorder=
         open_prs = json.loads(completed.stdout or "[]")
     except (TypeError, ValueError):
         return artifact
+    canonical_number = int(canonical.get("number") or 0)
+    canonical_open = next(
+        (pr for pr in open_prs if isinstance(pr, dict) and int(pr.get("number") or 0) == canonical_number),
+        None,
+    )
     matching = [
         pr for pr in open_prs if isinstance(pr, dict)
         and str(pr.get("baseRefName") or "main") == "main"
@@ -6104,8 +6142,15 @@ def _reconcile_builder_pr_reference(mission, artifact, runner, command_recorder=
         )
     ]
     if not matching:
+        artifact_number = _pr_number_from_value(_artifact_pr_reference(artifact))
+        if canonical_open and artifact_number == canonical_number and commit_sha:
+            artifact["canonical_pr_head_mismatch"] = {
+                "canonical_pr_number": canonical_number,
+                "branch_name": str(canonical_open.get("headRefName") or artifact.get("branch_name") or ""),
+                "pr_head": str(canonical_open.get("headRefOid") or ""),
+                "local_commit": commit_sha,
+            }
         return artifact
-    canonical_number = int(canonical.get("number") or 0)
     chosen = next((pr for pr in matching if int(pr.get("number") or 0) == canonical_number), None)
     chosen = chosen or min(matching, key=lambda pr: int(pr.get("number") or 0))
     chosen_number = int(chosen.get("number") or 0)
@@ -6134,6 +6179,7 @@ def _reconcile_builder_pr_reference(mission, artifact, runner, command_recorder=
         "commit_sha": str(chosen.get("headRefOid") or commit_sha),
         "links": {**links, "pr": str(chosen.get("url") or "")},
     })
+    artifact.pop("canonical_pr_head_mismatch", None)
     if duplicate_numbers:
         artifact["duplicate_pr_reconciliation"] = {
             "status": "exact_head_duplicates_closed",
@@ -6194,6 +6240,8 @@ def _remove_resolved_builder_packaging_errors(errors):
             or "permission denied creating .git/refs/heads" in text
             or ("index.lock" in text and ("permission denied" in text or "unable to create" in text))
             or "runner git packaging failed" in text
+            or ("could not push" in text and ("github.com" in text or "bound pr" in text))
+            or ("git push" in text and ("unreachable" in text or "could not connect" in text))
         ):
             continue
         cleaned.append(item)
