@@ -490,6 +490,7 @@ def _failed_acceptance_ids(artifact):
             if value.get("violates_acceptance_row") is True:
                 relation = value.get("acceptance_relation") or value.get("acceptance_row") or "explicit_acceptance_violation"
                 failed.append(str(relation).strip())
+            failed.extend(_blocking_acceptance_evidence_ids(value))
     return list(dict.fromkeys(failed))
 
 
@@ -499,7 +500,31 @@ def _finding_acceptance_violation(value):
     if value.get("violates_acceptance_row") is True or value.get("acceptance_row_violation") is True:
         return True
     rows = value.get("violates_acceptance_rows") or value.get("failed_acceptance_ids")
-    return bool(rows if isinstance(rows, list) else str(rows or "").strip())
+    return bool(rows if isinstance(rows, list) else str(rows or "").strip()) or bool(
+        _blocking_acceptance_evidence_ids(value)
+    )
+
+
+def _blocking_acceptance_evidence_ids(value):
+    """Keep missing proof for frozen acceptance rows inside the mission.
+
+    A verifier can correctly report ``introduced_by_current_diff=false`` when
+    the implementation is sound but exact-revision evidence is unavailable.
+    That does not make the frozen acceptance requirement adjacent work.  The
+    explicit blocker severity, acceptance scope and named row are required so
+    ordinary baseline advisories remain non-blocking.
+    """
+    if not isinstance(value, dict):
+        return []
+    severity = str(value.get("severity") or "").strip().lower()
+    scope = str(value.get("scope_relation") or "").strip().lower()
+    row = str(value.get("acceptance_row") or value.get("acceptance_relation") or "").strip()
+    if severity not in {"blocker", "blocking", "high", "critical"}:
+        return []
+    if "acceptance" not in scope or not row:
+        return []
+    ids = re.findall(r"acceptance-[A-Za-z0-9_-]+", row, flags=re.IGNORECASE)
+    return list(dict.fromkeys(ids or [row]))
 
 
 def _affected_paths(original, text):
