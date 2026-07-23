@@ -51,6 +51,10 @@ Farm record writes require approved backend paths and audit evidence.
 - The effective timestamp cannot be later than the recorded timestamp. RLS is enabled and no browser policy or writer integration is introduced by this migration.
 - A future protected lifecycle-write rail must emit this evidence through its approved, owner-gated backend path. Canonical detail/history reads and frontend visibility are separate dependent work.
 
+## Pig Purpose Correction Batch Contract
+
+`pig_purpose_correction_batches` is an additive, unapplied protected batch rail for owner-approved purpose corrections. A batch stores its decision snapshot, decision hash, caller idempotency key, creator, owner-approval identity/time, and execution identity/time. Only a persisted `owner_approved` batch may execute. Execution rechecks the canonical active/on-farm state and latest weight at runtime; missing or stale weight blocks every correction in the batch. Each permitted mutable `pigs.purpose` update and its `operational_events` audit event occur in one transaction, and there is no Google Sheets fallback. Applying the migration remains owner-gated.
+
 ## One-Pig-Truth Rules
 
 - `PIG_MASTER`/canonical pig table owns identity and lifecycle state.

@@ -1,6 +1,12 @@
 from flask import Blueprint, current_app, jsonify, request
 
-from modules.auth.owner_access import owner_actor_reference, require_owner_admin_access, require_owner_read_access
+from modules.auth.owner_access import (
+    correction_batch_owner_admin_principal,
+    owner_actor_reference,
+    require_correction_batch_owner_admin_access,
+    require_owner_admin_access,
+    require_owner_read_access,
+)
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
     process_bulk_weight_batch,
@@ -17,6 +23,9 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_allocation_alerts_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
+    create_purpose_correction_batch,
+    approve_purpose_correction_batch,
+    execute_purpose_correction_batch,
     get_purpose_review_recheck_packet,
     get_meat_planning_data,
     list_parent_options,
@@ -135,6 +144,35 @@ def purpose_review_apply():
         return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
     payload = request.get_json(silent=True) or {}
     result, status_code = apply_purpose_review_queue_decisions(payload, changed_by=changed_by)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches", methods=["POST"])
+def purpose_review_correction_batch_create():
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = create_purpose_correction_batch(
+        request.get_json(silent=True) or {}, actor_id=correction_batch_owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches/<batch_id>/approve", methods=["POST"])
+def purpose_review_correction_batch_approve(batch_id):
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = approve_purpose_correction_batch(batch_id, actor_id=correction_batch_owner_admin_principal())
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/correction-batches/<batch_id>/execute", methods=["POST"])
+def purpose_review_correction_batch_execute(batch_id):
+    denied = require_correction_batch_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = execute_purpose_correction_batch(batch_id, actor_id=correction_batch_owner_admin_principal())
     return jsonify(result), status_code
 
 

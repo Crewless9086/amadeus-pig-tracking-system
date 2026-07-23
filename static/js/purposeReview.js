@@ -13,12 +13,14 @@ const selectVisibleButton = document.getElementById("purpose_review_select_visib
 const clearSelectedButton = document.getElementById("purpose_review_clear_selected");
 const previewSelectedButton = document.getElementById("purpose_review_preview_selected");
 const applySelectedButton = document.getElementById("purpose_review_apply_selected");
+const approveBatchButton = document.getElementById("purpose_review_approve_batch");
 const recheckPanel = document.getElementById("purpose_review_recheck_panel");
 
 let reviewRows = [];
 let allowedPurposes = [];
 let selectedPigIds = new Set();
 let purposeOverrides = {};
+let pendingCorrectionBatchId = "";
 
 document.addEventListener("DOMContentLoaded", loadPurposeReview);
 
@@ -256,27 +258,63 @@ async function submitPurposeDecisions(dryRun) {
     showMessage("Select at least one row with an approval purpose.");
     return;
   }
-  if (!dryRun && !window.confirm(`Apply purpose review for ${decisions.length} pig(s)?`)) {
+  if (!dryRun && !window.confirm(`Create a correction batch for ${decisions.length} pig(s)? It will not change farm records until you explicitly approve and execute the saved batch.`)) {
     return;
   }
   try {
-    const response = await fetch("/api/pig-weights/purpose-review/apply", {
+    if (dryRun) {
+      const response = await fetch("/api/pig-weights/purpose-review/apply", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisions, dry_run: dryRun }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error((data.errors || [data.message || "Purpose review preview failed."]).join(" "));
+      showMessage(data.message || "Purpose review previewed. No records were changed.", "success");
+      return;
+    }
+    const key = `purpose-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const response = await fetch("/api/pig-weights/purpose-review/correction-batches", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decisions, changed_by: "web_app", dry_run: dryRun }),
+      body: JSON.stringify({ decisions, idempotency_key: key }),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
-      throw new Error((data.errors || [data.message || "Purpose review failed."]).join(" "));
+      throw new Error((data.errors || [data.message || "Correction batch creation failed."]).join(" "));
     }
-    showMessage(data.message || "Purpose review saved.", "success");
-    if (!dryRun) {
-      selectedPigIds.clear();
-      await loadPurposeReview();
-    }
+    pendingCorrectionBatchId = data.batch_id;
+    approveBatchButton.disabled = false;
+    showMessage(`Correction batch ${data.batch_id} was created. Review it, then use “Approve & Execute Saved Batch” to record the owner approval and apply it.`, "success");
   } catch (error) {
     console.error("Purpose review submit error:", error);
-    showMessage(error.message || "Could not submit purpose review.");
+    showMessage(error.message || "Could not create purpose correction batch.");
+  }
+}
+
+async function approveAndExecuteSavedBatch() {
+  clearMessage();
+  if (!pendingCorrectionBatchId) {
+    showMessage("Create a correction batch before approving it.");
+    return;
+  }
+  if (!window.confirm(`Explicitly owner-approve and execute correction batch ${pendingCorrectionBatchId}? This changes purpose records and creates immutable audit events.`)) {
+    return;
+  }
+  try {
+    const approval = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(pendingCorrectionBatchId)}/approve`, { method: "POST" });
+    const approvalData = await approval.json();
+    if (!approval.ok || !approvalData.success) throw new Error(approvalData.message || "Owner approval was not recorded.");
+    const execution = await fetch(`/api/pig-weights/purpose-review/correction-batches/${encodeURIComponent(pendingCorrectionBatchId)}/execute`, { method: "POST" });
+    const executionData = await execution.json();
+    if (!execution.ok || !executionData.success) throw new Error(executionData.message || executionData.status || "Correction batch was not executed.");
+    showMessage(`Owner-approved correction batch ${pendingCorrectionBatchId} executed with audit events.`, "success");
+    pendingCorrectionBatchId = "";
+    approveBatchButton.disabled = true;
+    selectedPigIds.clear();
+    await loadPurposeReview();
+  } catch (error) {
+    console.error("Purpose correction batch execution error:", error);
+    showMessage(error.message || "Could not approve and execute the correction batch.");
   }
 }
 
@@ -378,6 +416,7 @@ clearSelectedButton.addEventListener("click", () => {
 
 previewSelectedButton.addEventListener("click", () => submitPurposeDecisions(true));
 applySelectedButton.addEventListener("click", () => submitPurposeDecisions(false));
+approveBatchButton.addEventListener("click", approveAndExecuteSavedBatch);
 
 bodyEl.addEventListener("change", (event) => {
   const checkboxPigId = event.target.getAttribute("data-purpose-check");

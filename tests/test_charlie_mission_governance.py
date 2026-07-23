@@ -131,6 +131,27 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertFalse(decision["blocking_findings"])
         self.assertEqual(decision["followup_findings"][0]["family"], "baseline_regression")
 
+    def test_preexisting_missing_candidate_cannot_downgrade_frozen_acceptance_failure(self):
+        decision = evaluate_quality_failure(
+            mission_with_events(),
+            "reviewer",
+            {
+                "bugs": [{
+                    "finding": "No releaseable candidate exists and the empty diff does not implement the auction outcome.",
+                    "severity": "high",
+                    "scope_relation": "pre_existing",
+                    "introduced_by_current_diff": False,
+                    "violates_acceptance_rows": ["acceptance-auction", "acceptance-profit"],
+                }],
+                "recommended_owner_decision": "send_back",
+            },
+            {"passed": False, "reason": "reviewer recorded non-passing recommended_owner_decision=send_back."},
+        )
+
+        self.assertEqual(decision["route"], "backflow")
+        self.assertEqual(decision["failed_acceptance_ids"], ["acceptance-auction", "acceptance-profit"])
+        self.assertTrue(decision["blocking_findings"])
+
     def test_timeout_is_followup_not_builder_backflow(self):
         decision = evaluate_quality_failure(
             mission_with_events(),
@@ -152,6 +173,60 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
 
         self.assertEqual(decision["route"], "backflow")
         self.assertEqual(decision["blocking_findings"][0]["family"], "input_validation")
+
+    def test_exact_revision_evidence_gap_for_named_frozen_rows_backflows(self):
+        decision = evaluate_quality_failure(
+            mission_with_events(),
+            "qa_red_team",
+            {
+                "errors": [{
+                    "scope_relation": "acceptance evidence gap",
+                    "introduced_by_current_diff": False,
+                    "severity": "blocker",
+                    "acceptance_row": "acceptance-postgres and acceptance-append-only",
+                    "finding": "No disposable PostgreSQL run is bound to the exact candidate SHA.",
+                }],
+                "acceptance_results": [
+                    {"id": "acceptance-postgres", "status": "pending"},
+                    {"id": "acceptance-append-only", "status": "pending"},
+                ],
+                "red_team_status": "blocked",
+                "risk_rating": "high",
+            },
+            {"passed": False, "reason": "QA/red-team reported red_team_status=blocked."},
+        )
+
+        self.assertEqual(decision["route"], "backflow")
+        self.assertEqual(
+            decision["failed_acceptance_ids"],
+            ["acceptance-postgres", "acceptance-append-only"],
+        )
+        self.assertEqual(decision["blocking_findings"][0]["disposition"], "matrix_violation")
+
+    def test_exact_revision_evidence_gap_cannot_become_followup_when_budget_exhausted(self):
+        events = [
+            {"type": "agent_backflow", "metadata": {"finding_family": family}}
+            for family in ("input_validation", "supply_compatibility", "revision_evidence", "test_evidence")
+        ]
+        decision = evaluate_quality_failure(
+            mission_with_events(events),
+            "qa_red_team",
+            {
+                "qa_findings": [{
+                    "scope_relation": "frozen acceptance evidence",
+                    "introduced_by_current_diff": False,
+                    "severity": "blocker",
+                    "acceptance_row": "acceptance-postgres",
+                    "finding": "Required exact-revision database proof has not run.",
+                }],
+                "red_team_status": "blocked",
+            },
+            {"passed": False, "reason": "required evidence missing"},
+        )
+
+        self.assertEqual(decision["route"], "owner_block")
+        self.assertEqual(decision["failed_acceptance_ids"], ["acceptance-postgres"])
+        self.assertFalse(decision["followup_findings"])
 
     def test_mission_wide_budget_converts_new_defect_to_child_followup(self):
         events = [

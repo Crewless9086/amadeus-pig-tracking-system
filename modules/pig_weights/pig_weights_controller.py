@@ -56,6 +56,11 @@ from modules.pig_weights.pig_weights_validation import (
     validate_new_pen_payload,
     validate_new_litter_payload,
 )
+from modules.pig_weights.purpose_correction_batch_service import (
+    approve_correction_batch,
+    create_correction_batch,
+    execute_correction_batch,
+)
 
 
 def get_status():
@@ -94,13 +99,29 @@ def get_purpose_review_queue_data(litter_id: str = ""):
 
 
 def apply_purpose_review_queue_decisions(payload: dict, changed_by: str = ""):
+    # The historic direct-apply endpoint is intentionally preview-only.  Keep
+    # server-derived attribution on its audit preview without permitting the
+    # browser payload to reactivate the former mutation path.
     payload = payload or {}
     return apply_purpose_review_decisions(
         decisions=payload.get("decisions", []),
         changed_by=changed_by,
-        dry_run=payload.get("dry_run", True) is True,
-        allow_reclassify=payload.get("allow_reclassify", False) is True,
+        dry_run=True,
+        allow_reclassify=False,
     )
+
+
+def create_purpose_correction_batch(payload: dict, *, actor_id: str):
+    payload = payload or {}
+    return create_correction_batch(payload.get("decisions", []), idempotency_key=payload.get("idempotency_key", ""), actor_id=actor_id)
+
+
+def approve_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    return approve_correction_batch(batch_id, actor_id=actor_id)
+
+
+def execute_purpose_correction_batch(batch_id: str, *, actor_id: str):
+    return execute_correction_batch(batch_id, actor_id=actor_id)
 
 
 def get_purpose_review_recheck_packet(payload: dict):

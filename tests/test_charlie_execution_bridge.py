@@ -150,6 +150,60 @@ def _successful_stage_payload(agent):
 
 
 class CharlieExecutionBridgeTests(unittest.TestCase):
+    def test_targeted_repair_workflow_is_authoritative_execution_sequence(self):
+        mission = {
+            "mission_type": "farm operations improvement",
+            "metadata": {
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander", "council_synthesis"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": "2026-07-23T01:00:00Z"},
+                {"agent": "council_synthesis", "status": "complete", "completed_at": "2026-07-23T01:10:00Z"},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "architect", "status": "pending", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+                {"agent": "tester", "status": "pending", "completed_at": None},
+                {"agent": "qa_red_team", "status": "pending", "completed_at": None},
+                {"agent": "reviewer", "status": "pending", "completed_at": None},
+                {"agent": "publisher", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        sequence = execution_bridge._mission_agent_sequence(mission)
+        queue, preserved = execution_bridge._targeted_agent_queue(mission, "planner", sequence)
+
+        self.assertEqual(sequence, [
+            "idea_expander", "council_synthesis", "planner", "architect", "builder",
+            "tester", "qa_red_team", "reviewer", "publisher",
+        ])
+        self.assertEqual(queue, ["planner", "architect", "builder", "tester", "qa_red_team", "reviewer", "publisher"])
+        self.assertEqual(preserved, {"idea_expander", "council_synthesis"})
+
+    def test_invalid_targeted_workflow_falls_back_to_normal_sequence(self):
+        mission = {
+            "mission_type": "farm operations improvement",
+            "metadata": {
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": None},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        sequence = execution_bridge._mission_agent_sequence(mission)
+
+        self.assertNotEqual(sequence, ["idea_expander", "planner", "builder"])
+
     def setUp(self):
         self.builder_admission = patch(
             "modules.charlie.execution_bridge.build_admission",
@@ -1026,6 +1080,141 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(normalized)
         self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
+    def test_tester_pass_with_pending_protected_evidence_is_not_blocked_by_negative_safety_examples(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "summary": (
+                "Focused tests confirm fresh owner-approved batches write purpose plus audit events, "
+                "while draft, stale, and missing-weight batches fail before either write. No migration was performed."
+            ),
+            "test_status": "pass",
+            "errors": [],
+            "bugs": [],
+            "finding_contract": "No current-diff defects found; pending evidence is owner-gated only.",
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "34 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application and the live canary.",
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_product_false_current_diff_finding_is_reclassified_from_authoritative_pr_files(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Product checks pass; the additive migration and live canary remain owner-authorized.",
+            "recommended_owner_decision": "pause",
+            "errors": [{
+                "scope_relation": "advisory",
+                "introduced_by_current_diff": False,
+                "affected_path": "focused combined unittest command",
+                "severity": "advisory",
+                "acceptance_row_violation": False,
+                "detail": "Combined command timed out; narrower required checks passed.",
+            }],
+            "bugs": [{
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": True,
+                "affected_path": "modules/charlie/execution_bridge.py; tests/test_charlie_execution_bridge.py",
+                "severity": "medium",
+                "acceptance_row_violation": False,
+                "detail": "Outside the bounded farm slice and should be a linked follow-up.",
+            }],
+            "authoritative_pr_changed_files": [
+                "modules/pig_weights/purpose_correction_batch_service.py",
+                "supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql",
+            ],
+            "files_inspected": ["supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql"],
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "60 tests passed"}],
+            "next_action": "Owner must separately authorize applying the additive migration and the live canary.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertFalse(artifact["bugs"][0]["introduced_by_current_diff"])
+        self.assertEqual(artifact["bugs"][0]["attribution_basis"], "authoritative_github_pr_diff_disjoint")
+
+    def test_authoritative_diff_does_not_hide_finding_on_actual_pr_path(self):
+        artifact = {
+            "bugs": [{
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": True,
+                "affected_path": "modules/charlie/execution_bridge.py",
+                "severity": "high",
+                "acceptance_row_violation": False,
+                "detail": "Outside the bounded slice and should be a linked follow-up.",
+            }],
+            "errors": [],
+            "authoritative_pr_changed_files": ["modules/charlie/execution_bridge.py"],
+        }
+
+        normalized = execution_bridge._normalize_authoritative_diff_followups("product_reviewer", artifact)
+
+        self.assertFalse(normalized)
+        self.assertTrue(artifact["bugs"][0]["introduced_by_current_diff"])
+
+    def test_product_protected_pause_accepts_explicit_preexisting_scope_aliases(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Code checks pass; migration application and live canary remain owner-authorized.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [
+                {
+                    "scope_relation": "pre_existing_adjacent_follow_up",
+                    "introduced_by_current_diff": False,
+                    "affected_file": "static/js/pigAllocation.js",
+                    "severity": "low",
+                    "violates_acceptance_row": False,
+                    "finding": "Legacy UI should guide the owner to the new batch workflow.",
+                },
+                {
+                    "scope_relation": "unrelated_pre_existing_test_environment",
+                    "introduced_by_current_diff": False,
+                    "affected_file": "tests/test_frontend_route_contracts.py",
+                    "severity": "low",
+                    "violates_acceptance_row": False,
+                    "finding": "Two unrelated legacy route assertions return 503.",
+                },
+            ],
+            "files_inspected": ["supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql"],
+            "acceptance_results": [
+                {"id": "schema", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]},
+                {"id": "smoke", "status": "pending", "evidence": ["Owner-authorized live canary remains absent."]},
+            ],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
+            "next_action": "Obtain owner authorization to apply the additive migration and run the live canary.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_preexisting_scope_alias_with_acceptance_violation_still_blocks(self):
+        item = {
+            "scope_relation": "pre_existing_adjacent_follow_up",
+            "introduced_by_current_diff": False,
+            "severity": "low",
+            "violates_acceptance_row": True,
+        }
+
+        self.assertFalse(execution_bridge._is_explicit_non_current_advisory_finding(item))
 
     def test_security_owner_gated_evidence_error_is_not_a_code_rejection(self):
         artifact = {
@@ -2753,6 +2942,135 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(reconciled["duplicate_pr_reconciliation"]["closed_pr_numbers"], [358])
         self.assertTrue(any(call[:3] == ["gh", "pr", "close"] for call in calls))
 
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=["modules/sales/riversdale_auction.py"])
+    def test_builder_retry_packages_dirty_worktree_before_reusing_existing_pr(self, _staged_changed_files, _changed_files):
+        calls = []
+        pr_lists = iter([
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "old1234", "baseRefName": "main"}],
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "new5678", "baseRefName": "main"}],
+        ])
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps(next(pr_lists)), stderr="")
+            if command[:3] == ["git", "branch", "--show-current"]:
+                return SimpleNamespace(returncode=0, stdout="charlie/riversdale-auction-outlet\n", stderr="")
+            if command[:2] == ["git", "add"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:4] == ["git", "diff", "--cached", "--quiet"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            if command[:2] == ["git", "commit"]:
+                return SimpleNamespace(returncode=0, stdout="committed", stderr="")
+            if command[:3] == ["git", "rev-parse", "--short"]:
+                return SimpleNamespace(returncode=0, stdout="new5678\n", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/sales/riversdale_auction.py"],
+            "branch_name": "charlie/riversdale-auction-outlet",
+            "commit_sha": "old1234",
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "links": {"pr": "https://github.com/org/repo/pull/397"},
+            "errors": [{"finding": "Unable to create parent worktree index.lock: permission denied"}],
+        })
+
+        packaged = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 397)
+        self.assertEqual(packaged["commit_sha"], "new5678")
+        self.assertEqual(packaged["git_packaging"]["status"], "existing_pr_reused")
+        self.assertEqual(packaged["errors"], [])
+        self.assertTrue(any(call[:2] == ["git", "commit"] for call in calls))
+        self.assertTrue(any(call[:2] == ["git", "push"] for call in calls))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
+    def test_builder_retry_publishes_committed_local_head_before_reusing_existing_pr(self, _staged_changed_files, _changed_files):
+        calls = []
+        pr_lists = iter([
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "old1234", "baseRefName": "main"}],
+            [{"number": 397, "url": "https://github.com/org/repo/pull/397", "headRefName": "charlie/riversdale-auction-outlet", "headRefOid": "new5678", "baseRefName": "main"}],
+        ])
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps(next(pr_lists)), stderr="")
+            if command[:3] == ["git", "cat-file", "-e"]:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if command[:2] == ["git", "push"]:
+                return SimpleNamespace(returncode=0, stdout="pushed", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        mission = {"metadata": {"review_packet": {
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "branch_name": "charlie/riversdale-auction-outlet",
+        }}}
+        artifact = _successful_stage_payload("builder")
+        artifact.update({
+            "changed_files": ["modules/sales/riversdale_auction.py"],
+            "branch_name": "charlie/riversdale-auction-outlet",
+            "commit_sha": "new5678",
+            "pr_url": "https://github.com/org/repo/pull/397",
+            "pr_number": 397,
+            "links": {"pr": "https://github.com/org/repo/pull/397"},
+            "errors": [{"finding": "Builder could not push because github.com was unreachable."}],
+        })
+
+        packaged = execution_bridge._auto_package_builder_changes(mission, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 397)
+        self.assertEqual(packaged["commit_sha"], "new5678")
+        self.assertEqual(packaged["git_packaging"]["status"], "committed_retry_published")
+        self.assertEqual(packaged["errors"], [])
+        self.assertIn(
+            ["git", "push", "-u", "origin", "new5678:refs/heads/charlie/riversdale-auction-outlet"],
+            calls,
+        )
+        self.assertFalse(any(call[:2] == ["git", "commit"] for call in calls))
+        self.assertFalse(any(call[:3] == ["gh", "pr", "create"] for call in calls))
+
+    def test_committed_retry_published_is_reviewable_packaging(self):
+        self.assertFalse(execution_bridge._builder_packaging_is_terminal({
+            "attempted": True,
+            "status": "committed_retry_published",
+            "commit_sha": "new5678",
+            "pr_url": "https://github.com/org/repo/pull/397",
+        }))
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/charlie/execution_bridge.py"])
+    @patch("modules.charlie.execution_bridge._staged_changed_files", return_value=[])
+    def test_existing_pr_reuse_ignores_unstaged_test_harness_changes(self, _staged_changed_files, _changed_files):
+        calls = []
+
+        def fake_runner(command, **_kwargs):
+            calls.append(command)
+            if command[:3] == ["gh", "pr", "list"]:
+                return SimpleNamespace(returncode=0, stdout=json.dumps([{
+                    "number": 61,
+                    "url": "https://github.com/org/repo/pull/61",
+                    "headRefName": "charlie/test-pr-evidence",
+                    "headRefOid": "abc1234",
+                    "baseRefName": "main",
+                }]), stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+
+        artifact = _successful_stage_payload("builder")
+
+        packaged = execution_bridge._auto_package_builder_changes({}, artifact, runner=fake_runner)
+
+        self.assertEqual(packaged["pr_number"], 61)
+        self.assertEqual(packaged["commit_sha"], "abc1234")
+        self.assertFalse(any(call[:3] == ["git", "branch", "--show-current"] for call in calls))
+
     def test_builder_pr_reconciliation_does_not_reuse_different_head(self):
         calls = []
 
@@ -3443,6 +3761,186 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("recommended_owner_decision=send_back", result["reason"])
 
+    def test_tester_passing_fail_before_write_summary_is_not_a_blocker(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "summary": (
+                "Verified candidate: stale or missing weights fail before purpose/audit writes; "
+                "remote requests fail closed with zero service calls."
+            ),
+            "tests_run": [{"command": "python -m unittest focused", "status": "passed", "result": "38 tests passed"}],
+            "errors": [],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_owner_gated_migration_and_live_canary_pause_keeps_code_releasable(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is not recorded."]},
+                {"id": "audit", "status": "pending", "evidence": ["The additive migration remains unapplied and requires owner application authority."]},
+            ],
+            "errors": [{
+                "finding": "The additive migration is unapplied and no owner-authorized live operational canary is recorded; this blocks operational closure, not code review.",
+                "severity": "owner-gated",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(artifact["business_capability_status"], "pending_protected_operations")
+        self.assertEqual(set(artifact["protected_operations"]), {"apply_migration", "live_canary"})
+
+    def test_compacted_owner_gated_finding_still_keeps_code_releasable(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": ["{'command': 'python -m unittest focused', 'status': 'pass', 'result': '63 tests passed'}"],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [str({
+                "finding": "Migration is unapplied and the owner-authorized live canary is absent; operational closure only.",
+                "severity": "owner-gated",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            })],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_protected_pause_allows_explicit_non_current_medium_advisory(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [
+                {
+                    "finding": "The additive migration is unapplied and no owner-authorized live operational canary is recorded.",
+                    "severity": "owner-gated",
+                    "scope_relation": "current_diff",
+                    "introduced_by_current_diff": True,
+                    "violates_acceptance_row": True,
+                },
+                {
+                    "finding": "Execution bridge retry behavior is outside this frozen correction scope.",
+                    "severity": "medium",
+                    "scope_relation": "advisory",
+                    "introduced_by_current_diff": False,
+                    "violates_acceptance_row": False,
+                    "acceptance_relation": "Adjacent follow-up; no frozen acceptance row violated.",
+                },
+            ],
+            "bugs": [],
+        })
+
+        result = execution_bridge._judgement_evidence_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(set(artifact["protected_operations"]), {"apply_migration", "live_canary"})
+
+    def test_serialized_adjacent_finding_uses_authoritative_diff_alias(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "approve_final_release",
+            "authoritative_pr_changed_files": ["modules/pig_weights/pig_weights_routes.py"],
+            "errors": [str({
+                "finding": "Execution bridge issue is outside this bounded mission and has a linked follow-up.",
+                "severity": "medium",
+                "scope_relation": "adjacent_follow_up",
+                "introduced_by_current_diff": True,
+                "violates_acceptance_row": False,
+                "affected_file/path": "modules/charlie/execution_bridge.py; tests/test_charlie_execution_bridge.py",
+            })],
+            "bugs": [],
+        })
+
+        normalized = execution_bridge._normalize_authoritative_diff_followups("product_reviewer", artifact)
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertTrue(normalized)
+        self.assertTrue(result["passed"], result)
+
+    def test_truncated_serialized_owner_gate_is_not_code_backflow(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [
+                "{'severity': 'owner-gated', 'finding': 'This is an operational evidence gap, not a code defect. Migration application and a safe live canary require se",
+            ],
+            "bugs": [],
+        })
+
+        result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_compaction_preserves_structured_finding_fields(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact["errors"] = [{
+            "finding": "x" * 700,
+            "severity": "owner-gated",
+            "introduced_by_current_diff": True,
+        }]
+
+        compact = execution_bridge._compact_agent_artifacts_for_review({"security_reviewer": artifact})
+        finding = compact["security_reviewer"]["errors"][0]
+
+        self.assertIsInstance(finding, dict)
+        self.assertEqual(finding["severity"], "owner-gated")
+        self.assertTrue(finding["introduced_by_current_diff"])
+        self.assertLessEqual(len(finding["finding"]), 500)
+
+    def test_real_current_diff_defect_cannot_hide_behind_protected_pause(self):
+        artifact = _successful_stage_payload("security_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "12 tests passed"}],
+            "acceptance_results": [
+                {"id": "canary", "status": "pending", "evidence": ["Owner-authorized live canary is not recorded."]},
+            ],
+            "errors": [{
+                "finding": "Remote unauthenticated request can execute a farm-record mutation.",
+                "severity": "high",
+                "scope_relation": "current_diff",
+                "introduced_by_current_diff": True,
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("security_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
     def test_risk_agent_blocks_send_back_and_failed_browser_evidence(self):
         artifact = _successful_stage_payload("risk_agent")
         artifact.update({
@@ -3716,6 +4214,43 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         })
         result = execution_bridge._agent_quality_gate("tester", artifact)
         self.assertTrue(result["passed"], result)
+
+    def test_tester_low_adjacent_follow_up_with_explicit_no_acceptance_violation_does_not_backflow(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent follow-up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "violates_acceptance_row": False,
+                "affected_file/path": "tests/test_frontend_route_contracts.py",
+                "finding": "Two existing route 503s are unchanged by this candidate.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_tester_adjacent_follow_up_still_blocks_without_explicit_acceptance_disposition(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent follow-up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "finding": "Acceptance impact was not classified.",
+            }],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertFalse(result["passed"], result)
 
     def test_tester_current_diff_bug_remains_blocking(self):
         artifact = _successful_stage_payload("tester")
@@ -4155,6 +4690,65 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(any(
             call.args[0].get("status") == "codex_final_artifact_seen"
             and call.args[0].get("final_artifact_present") is True
+            for call in write_heartbeat.call_args_list
+        ))
+
+    @patch("modules.charlie.execution_bridge.redact_file_in_place")
+    @patch("modules.charlie.execution_bridge._wait_for_file_handles_released")
+    @patch("modules.charlie.execution_bridge._terminate_process_tree")
+    @patch("modules.charlie.execution_bridge.inspect_process", return_value={})
+    @patch("modules.charlie.execution_bridge.make_ownership_record", return_value={})
+    @patch("modules.charlie.execution_bridge.restricted_agent_environment", return_value={})
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge.subprocess.Popen")
+    def test_run_codex_process_consumes_final_artifact_when_teardown_wait_times_out(
+        self,
+        popen,
+        _changed_files,
+        write_heartbeat,
+        _restricted_env,
+        _ownership_record,
+        _inspect_process,
+        terminate_tree,
+        _wait_handles,
+        _redact,
+    ):
+        class FakeStdin:
+            def write(self, _value):
+                return None
+
+            def close(self):
+                return None
+
+        process = SimpleNamespace(pid=4321, stdin=FakeStdin(), returncode=None)
+        process.poll = lambda: None
+        process.wait = lambda timeout=None: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(["codex"], timeout)
+        )
+        popen.return_value = process
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            final_path = tmp_path / "final.md"
+            final_path.write_text('{"summary":"complete"}', encoding="utf-8")
+            with patch("modules.charlie.execution_bridge.FINAL_ARTIFACT_GRACE_SECONDS", 0), patch(
+                "modules.charlie.execution_bridge.POLL_SECONDS", 0
+            ):
+                completed = execution_bridge._run_codex_process(
+                    ["codex"],
+                    cwd=tmp,
+                    timeout_seconds=20,
+                    stdout_path=tmp_path / "stdout.txt",
+                    stderr_path=tmp_path / "stderr.txt",
+                    final_path=final_path,
+                    mission_id="CHARLIE-MISSION-EXEC123",
+                )
+
+        self.assertEqual(completed.returncode, 0)
+        terminate_tree.assert_called()
+        self.assertTrue(any(
+            call.args[0].get("status") == "codex_final_artifact_seen"
             for call in write_heartbeat.call_args_list
         ))
 

@@ -615,6 +615,35 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
         self.assertEqual([item["agent"] for item in merged if item["status"] == "active"], ["product_architect"])
 
+    def test_refreshed_workflow_clears_completion_timestamp_when_stage_is_reopened(self):
+        current = [
+            {"agent": "builder", "status": "complete", "completed_at": "2026-07-22T10:00:00Z"},
+            {"agent": "tester", "status": "complete", "completed_at": "2026-07-22T10:10:00Z"},
+            {"agent": "qa_red_team", "status": "complete", "completed_at": "2026-07-22T10:20:00Z"},
+        ]
+        planned = [
+            {"agent": "builder", "status": "pending"},
+            {"agent": "visual_qa_reviewer", "status": "pending"},
+            {"agent": "tester", "status": "pending"},
+            {"agent": "qa_red_team", "status": "pending"},
+        ]
+
+        merged = charlie_mission_pickup._merge_resumable_workflow(
+            current,
+            planned,
+            resume_stage="visual_qa_reviewer",
+        )
+        by_agent = {item["agent"]: item for item in merged}
+
+        self.assertEqual(by_agent["builder"]["status"], "complete")
+        self.assertEqual(by_agent["builder"]["completed_at"], "2026-07-22T10:00:00Z")
+        self.assertEqual(by_agent["visual_qa_reviewer"]["status"], "active")
+        self.assertIsNone(by_agent["visual_qa_reviewer"]["completed_at"])
+        self.assertEqual(by_agent["tester"]["status"], "pending")
+        self.assertIsNone(by_agent["tester"]["completed_at"])
+        self.assertEqual(by_agent["qa_red_team"]["status"], "pending")
+        self.assertIsNone(by_agent["qa_red_team"]["completed_at"])
+
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.build_core_plan")
     def test_refresh_core_plan_preserves_owner_builder_send_back(self, build_plan, update_vault):
@@ -640,6 +669,37 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(payload["mission_context_pack"]["agent_order"], ["builder", "business_reviewer", "reviewer"])
         self.assertEqual(payload["agent_workflow"][0]["agent"], "builder")
         self.assertEqual(payload["agent_workflow"][0]["status"], "active")
+
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.build_core_plan")
+    def test_refresh_preserves_explicit_targeted_repair_workflow(self, build_plan, update_vault):
+        mission = {
+            "mission_id": "MISSION-REPAIRED",
+            "metadata": {
+                "review_packet": {"return_to_stage": "planner", "blocked_agent": "planner"},
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander", "technical_architect", "council_synthesis"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": "2026-07-23T01:00:00Z"},
+                {"agent": "technical_architect", "status": "complete", "completed_at": "2026-07-23T01:10:00Z"},
+                {"agent": "council_synthesis", "status": "complete", "completed_at": "2026-07-23T01:20:00Z"},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "architect", "status": "pending", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+                {"agent": "tester", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        result = charlie_mission_pickup._refresh_core_plan_for_pickup(mission)
+
+        self.assertFalse(result["refreshed"])
+        self.assertEqual(result["reason"], "explicit_targeted_workflow_preserved")
+        build_plan.assert_not_called()
+        update_vault.assert_not_called()
 
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")

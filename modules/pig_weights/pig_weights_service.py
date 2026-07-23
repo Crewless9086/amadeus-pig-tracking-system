@@ -1533,6 +1533,13 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
     changed_by = to_clean_string(changed_by) or "web_app"
     dry_run = dry_run is True
     allow_reclassify = allow_reclassify is True
+    if not dry_run:
+        return {
+            "success": False,
+            "status": "correction_batch_required",
+            "errors": ["Direct purpose corrections are disabled. Create and explicitly approve a correction batch."],
+            "source": {"writes_to_sheets": False, "writes_to_supabase": False},
+        }, 409
     if not isinstance(decisions, list) or not decisions:
         return {"success": False, "errors": ["At least one purpose review decision is required."]}, 400
 

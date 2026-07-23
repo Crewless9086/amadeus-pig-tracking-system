@@ -7,6 +7,11 @@
 - Kept observations, intents, and owner-approved actions structurally separate: neither evidence nor intent may mutate current pig state or execute a farm/commercial action.
 - Kept migration application, capture UI/API integration, and all operational writes behind separate owner approval.
 
+## 2026-07-22 - Herdmaster owner-approved purpose correction batches
+
+- Defined the additive, unapplied correction-batch contract: persisted owner approval, idempotency, execution-time canonical fresh-weight checks, and atomic per-pig operational audit events.
+- Kept the former purpose-review apply path preview-only and prohibited Sheets fallback for protected corrections.
+
 ## 2026-07-21 - Reviewer executable test-evidence gate
 
 - Required final reviewer approval evidence to include a structured executable test command and explicit pass status.

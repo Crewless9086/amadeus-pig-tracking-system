@@ -89,15 +89,16 @@ def classify_block(agent="", reason="", artifact=None):
     )):
         block_class = "stale_state_reconciliation_required"
         route = "evidence_reviewer"
-    elif scope in {"unrelated", "pre_existing"}:
-        block_class = "system_repair_required"
-        route = "evidence_reviewer"
     elif agent in VERIFICATION_AGENTS and _contains(text, (
         "scoped diff is empty", "no implementation", "not implemented", "unimplemented",
-        "no changed files", "implementation is absent",
+        "no changed files", "implementation is absent", "no candidate diff", "empty candidate diff",
+        "no releaseable", "does not implement",
     )):
         block_class = "implementation_fix_required"
         route = "builder"
+    elif scope in {"unrelated", "pre_existing"}:
+        block_class = "system_repair_required"
+        route = "evidence_reviewer"
     elif _contains(text, (
         "source-map", "source map", "vault brain", "did not cite", "missing required agent",
         "missing doctrine", "missing evidence", "artifact missing", "contract retry",
@@ -139,16 +140,26 @@ def normalize_findings(values, *, agent="", artifact=None):
         if isinstance(value, dict):
             local_artifact.update(value)
         disposition = classify_block(agent, text, local_artifact)
+        acceptance_violation = _explicit_acceptance_violation(local_artifact)
         result.append({
             "summary": text,
             "scope_relation": disposition["scope_relation"],
             "introduced_by_current_diff": disposition["introduced_by_current_diff"],
-            "blocking": disposition["scope_relation"] not in {"unrelated", "pre_existing", "advisory"},
+            "blocking": acceptance_violation or disposition["scope_relation"] not in {"unrelated", "pre_existing", "advisory"},
             "severity": disposition["severity"],
             "evidence": disposition["evidence"],
             "responsible_stage": disposition["responsible_stage"],
         })
     return result
+
+
+def _explicit_acceptance_violation(artifact):
+    if not isinstance(artifact, dict):
+        return False
+    if artifact.get("violates_acceptance_row") is True or artifact.get("acceptance_row_violation") is True:
+        return True
+    rows = artifact.get("violates_acceptance_rows") or artifact.get("failed_acceptance_ids")
+    return bool(rows if isinstance(rows, list) else str(rows or "").strip())
 
 
 def _block_text(reason, artifact):
