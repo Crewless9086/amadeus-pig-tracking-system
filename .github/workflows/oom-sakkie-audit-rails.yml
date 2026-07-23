@@ -43,6 +43,36 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt
 
+      - name: Prepare Riversdale source-writer tables
+        run: |
+          python - <<'PY'
+          import os
+          import psycopg
+
+          with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+              with connection.cursor() as cursor:
+                  cursor.execute("""
+                      create table if not exists public.order_lines (
+                          order_line_id text primary key, order_id text, pig_id text,
+                          line_status text not null default 'Draft', reserved_status text not null default 'Not_Reserved'
+                      );
+                      create table if not exists public.sales_transactions (
+                          sale_id text primary key, sale_stream text not null,
+                          sale_status text not null default 'Draft'
+                      );
+                      create table if not exists public.sales_transaction_items (
+                          sale_item_id text primary key, sale_id text not null,
+                          pig_id text, order_line_id text
+                      );
+                      create table if not exists public.meat_processing_batches (
+                          batch_id text primary key, status text not null
+                      );
+                      create table if not exists public.meat_processing_batch_pigs (
+                          batch_pig_id text primary key, batch_id text not null, pig_id text not null
+                      );
+                  """)
+          PY
+
       - name: Apply Oom Sakkie audit migrations
         run: |
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
