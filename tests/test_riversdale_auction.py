@@ -1,7 +1,9 @@
 import unittest
-from datetime import date
+from datetime import date, datetime
+from unittest.mock import patch
 
-from modules.sales.riversdale_auction import build_owner_prompts, build_riversdale_auction_packet, first_wednesday, queue_due_owner_prompts
+from modules.sales.riversdale_auction import build_owner_prompts, build_riversdale_auction_packet, first_wednesday, load_owner_confirmed_cycle, queue_due_owner_prompts
+from modules.pig_weights.pig_weights_service import get_riversdale_auction_recommendation
 
 
 class RiversdaleAuctionTests(unittest.TestCase):
@@ -41,6 +43,29 @@ class RiversdaleAuctionTests(unittest.TestCase):
         self.assertEqual(len(queue_due_owner_prompts(queue, today=date(2026, 8, 5))), 2)
         self.assertEqual(len({call[2]["idempotency_key"] for call in calls}), 2)
         self.assertTrue(all(call[0] == "NEEDS_OWNER_AUCTION_CONFIRMATION" for call in calls))
+
+    def test_owner_confirmed_cycle_is_loaded_from_the_canonical_store(self):
+        class Cursor:
+            def execute(self, *_args): pass
+            def fetchone(self): return (date(2026, 8, 5), True, datetime(2026, 7, 22, 9, 0))
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+        class Connection:
+            def cursor(self): return Cursor()
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+        confirmation = load_owner_confirmed_cycle(today=date(2026, 8, 1), database_url="postgresql://test", connect_factory=lambda _url: Connection())
+        self.assertEqual(confirmation["status"], "owner_confirmed_cycle_loaded")
+        self.assertEqual(confirmation["confirmed_date"], "2026-08-05")
+
+    @patch("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness")
+    @patch("modules.pig_weights.pig_weights_service.load_owner_confirmed_cycle")
+    def test_recommendation_uses_persisted_cycle_when_no_override_is_supplied(self, load_cycle, allocation):
+        allocation.return_value = self._allocation()
+        load_cycle.return_value = {"operating": True, "confirmed_date": "2026-08-05"}
+        packet = get_riversdale_auction_recommendation(today=date(2026, 8, 1), ledger_evidence={"SLOW": {"feed_cost_to_date": 100, "likely_auction_price": 150}, "APPROVED": {"feed_cost_to_date": 90, "likely_auction_price": 130}})
+        self.assertEqual(packet["status"], "cohort_ready_for_owner_review")
+        load_cycle.assert_called_once()
 
 
 if __name__ == "__main__":

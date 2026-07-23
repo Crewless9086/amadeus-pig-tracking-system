@@ -28,7 +28,7 @@ from modules.pig_weights.mating_service import get_breeding_analytics, link_litt
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
-from modules.sales.riversdale_auction import build_riversdale_auction_packet
+from modules.sales.riversdale_auction import build_riversdale_auction_packet, load_owner_confirmed_cycle
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4648,10 +4648,13 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
     }
 
 
-def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None):
+def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None, database_url=None, connect_factory=None):
     """Read-only SAM Live Stock auction packet grounded in the canonical allocation."""
     today = today or datetime.now().date()
     allocation = get_pig_allocation_readiness(today=today)
+    confirmation = confirmation if isinstance(confirmation, dict) else load_owner_confirmed_cycle(
+        today=today, database_url=database_url, connect_factory=connect_factory,
+    )
     return build_riversdale_auction_packet(
         allocation, today=today, confirmation=confirmation, ledger_evidence=ledger_evidence,
         sam_demand=sam_demand, oom_sakkie_preparation=oom_sakkie_preparation,

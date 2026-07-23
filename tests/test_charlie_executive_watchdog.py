@@ -30,11 +30,12 @@ class CharlieExecutiveWatchdogTests(unittest.TestCase):
         self.assertEqual(outbox.call_args.kwargs["idempotency_key"], "executive-idle:2026-07-20")
 
     @patch("scripts.charlie_executive_watchdog._deliver_executive_outbox", return_value={"success": True})
+    @patch("scripts.charlie_executive_watchdog.queue_due_owner_prompts", return_value=[{"status": "created"}])
     @patch("scripts.charlie_executive_watchdog._queue_idle_brief", return_value={"success": True})
     @patch("scripts.charlie_executive_watchdog._idle_recommendations", return_value=[])
     @patch("scripts.charlie_executive_watchdog._run_domain_observers", return_value={"success": True})
     @patch("scripts.charlie_executive_watchdog.run_executive_cycle")
-    def test_starts_core_only_when_executive_selects_runnable_work(self, cycle, _observers, _recommendations, _brief, _delivery):
+    def test_starts_core_only_when_executive_selects_runnable_work(self, cycle, _observers, _recommendations, _brief, prompts, _delivery):
         cycle.return_value = ({"cycle": {"commands": [{"action": "ensure_queue_progress"}]}}, 200)
         started = []
         result = supervision_tick(
@@ -43,6 +44,8 @@ class CharlieExecutiveWatchdogTests(unittest.TestCase):
         )
         self.assertTrue(result["success"])
         self.assertEqual(len(started), 1)
+        self.assertEqual(result["auction_prompts"], [{"status": "created"}])
+        self.assertEqual(prompts.call_args.kwargs["today"].isoformat(), datetime.now(ZoneInfo("Africa/Johannesburg")).date().isoformat())
 
 
 if __name__ == "__main__":
