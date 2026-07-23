@@ -3643,6 +3643,41 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
 
+    def test_protected_pause_allows_explicit_non_current_medium_advisory(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "63 tests passed"}],
+            "acceptance_results": [
+                {"id": "freshness", "status": "pending", "evidence": ["Owner-authorized live operational canary is absent."]},
+                {"id": "audit", "status": "pending", "evidence": ["Migration remains unapplied and requires owner authority."]},
+            ],
+            "errors": [
+                {
+                    "finding": "The additive migration is unapplied and no owner-authorized live operational canary is recorded.",
+                    "severity": "owner-gated",
+                    "scope_relation": "current_diff",
+                    "introduced_by_current_diff": True,
+                    "violates_acceptance_row": True,
+                },
+                {
+                    "finding": "Execution bridge retry behavior is outside this frozen correction scope.",
+                    "severity": "medium",
+                    "scope_relation": "advisory",
+                    "introduced_by_current_diff": False,
+                    "violates_acceptance_row": False,
+                    "acceptance_relation": "Adjacent follow-up; no frozen acceptance row violated.",
+                },
+            ],
+            "bugs": [],
+        })
+
+        result = execution_bridge._judgement_evidence_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(set(artifact["protected_operations"]), {"apply_migration", "live_canary"})
+
     def test_serialized_adjacent_finding_uses_authoritative_diff_alias(self):
         artifact = _successful_stage_payload("product_reviewer")
         artifact.update({

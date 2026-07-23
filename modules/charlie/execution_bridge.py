@@ -5408,15 +5408,23 @@ def _is_nonblocking_during_protected_pause(value):
     severity = str(value.get("severity") or "").strip().lower()
     if scope not in {"advisory", "unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
         return False
-    if severity not in {"advisory", "informational", "info", "low"}:
+    # A reviewer may retain a conservative medium label for an explicitly
+    # non-current, non-acceptance adjacent follow-up.  Its severity does not
+    # turn a disjoint follow-up into a defect in the candidate being released.
+    # High/critical findings and anything attributed to the current diff still
+    # fail closed above and below.
+    if severity not in {"advisory", "informational", "info", "low", "medium"}:
         return False
     violates = value.get("violates_acceptance_row")
     if violates is None:
         violates = value.get("acceptance_row_violation")
     acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").lower()
-    return violates is False or any(term in acceptance for term in (
+    explicitly_non_acceptance = violates is False or any(term in acceptance for term in (
         "no frozen acceptance row violated", "does not violate", "outside current acceptance",
     )) or value.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+    if severity == "medium":
+        return explicitly_non_acceptance and scope in {"advisory", "adjacent_follow_up"}
+    return explicitly_non_acceptance
 
 
 def _is_non_blocking_separate_migration_application_gate(agent, artifact, text):
