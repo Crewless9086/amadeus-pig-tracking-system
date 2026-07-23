@@ -5476,8 +5476,6 @@ def _protected_operation_pause_only(agent, artifact):
         row for row in acceptance
         if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "pending"
     ]
-    if not pending:
-        return []
     pending_text = " ".join(
         " ".join(str(item or "") for item in (row.get("evidence") or []))
         for row in pending
@@ -5487,6 +5485,30 @@ def _protected_operation_pause_only(agent, artifact):
         operations.append("apply_migration")
     if "live" in pending_text and "canary" in pending_text and any(term in pending_text for term in ("owner", "authoriz")):
         operations.append("live_canary")
+    if not pending and all(
+        isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "passed"
+        for row in acceptance
+    ):
+        operational_text = " ".join(
+            _artifact_text(artifact.get(key))
+            for key in ("summary", "next_action", "release_notes", "confidence_reason")
+        ).lower()
+        explicitly_separate = any(term in operational_text for term in (
+            "separate", "separately", "own explicit", "explicit owner", "requires its own",
+        ))
+        if (
+            "migration" in operational_text
+            and any(term in operational_text for term in ("production migration", "migration application", "unapplied"))
+            and "owner" in operational_text
+            and explicitly_separate
+        ):
+            operations.append("apply_migration")
+        if (
+            "live" in operational_text and "canary" in operational_text
+            and any(term in operational_text for term in ("owner", "authoriz"))
+            and explicitly_separate
+        ):
+            operations.append("live_canary")
     if not operations:
         return []
     for key in ("errors", "bugs"):
@@ -5543,7 +5565,7 @@ def _is_nonblocking_during_protected_pause(value):
     acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").lower()
     explicitly_non_acceptance = violates is False or any(term in acceptance for term in (
         "no frozen acceptance row violated", "does not violate", "outside current acceptance",
-    )) or value.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
+    )) or acceptance.strip() in {"none", "not_applicable", "n/a"} or value.get("attribution_basis") == "authoritative_github_pr_diff_disjoint"
     if severity == "medium":
         return explicitly_non_acceptance and scope in {"advisory", "adjacent_follow_up"}
     return explicitly_non_acceptance
