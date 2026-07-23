@@ -127,6 +127,30 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["effective_results"]["planner"]["applicability"], "accepted_frozen_scope")
 
+    def test_every_planning_role_honors_only_explicit_frozen_scope_audit(self):
+        planning_manifest = build_candidate_manifest(MISSION)
+        changed_scope_mission = {**MISSION, "title": "Normalized governed scope"}
+        current_manifest = build_candidate_manifest(changed_scope_mission, source_commit="new-sha")
+        planning_agents = (
+            "idea_expander", "source_mapper", "concept_strategist", "business_model_agent",
+            "risk_agent", "product_architect", "technical_architect",
+        )
+        artifacts = {
+            agent: artifact(agent, planning_manifest, accepted_frozen_scope=True)
+            for agent in planning_agents
+        }
+
+        result = resolve_effective_agent_results(
+            artifacts, current_manifest, workflow=[{"agent": agent} for agent in planning_agents],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["requires_revalidation"], [])
+        self.assertTrue(all(
+            item["applicability"] == "accepted_frozen_scope"
+            for item in result["effective_results"].values()
+        ))
+
     def test_frozen_governance_matrix_is_the_stable_scope_source(self):
         mission = {
             **MISSION,
