@@ -211,7 +211,7 @@ def backflow_budget(mission, findings=None):
     family_limit = _positive_int(limits.get("per_family"), DEFAULT_FAMILY_BACKFLOW_LIMIT)
     memory = metadata.get("mission_memory") if isinstance(metadata.get("mission_memory"), dict) else {}
     all_events = [event for event in memory.get("events", []) if isinstance(event, dict) and event.get("type") == "agent_backflow"]
-    revision_scope = _active_builder_revision(memory)
+    revision_scope = _active_builder_revision(memory, metadata)
     events = all_events
     if revision_scope:
         events = [
@@ -239,10 +239,31 @@ def backflow_budget(mission, findings=None):
     }
 
 
-def _active_builder_revision(memory):
+def _active_builder_revision(memory, metadata=None):
     latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
     builder = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
-    return str(builder.get("commit_sha") or "").strip()
+    revision = _builder_artifact_revision(builder)
+    if revision:
+        return revision
+    metadata = metadata if isinstance(metadata, dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    artifacts = packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {}
+    return _builder_artifact_revision(artifacts.get("builder"))
+
+
+def _builder_artifact_revision(builder):
+    builder = builder if isinstance(builder, dict) else {}
+    lineage = builder.get("evidence_lineage") if isinstance(builder.get("evidence_lineage"), dict) else {}
+    packaging = builder.get("git_packaging") if isinstance(builder.get("git_packaging"), dict) else {}
+    return str(
+        lineage.get("source_commit")
+        or builder.get("source_commit")
+        or builder.get("tested_revision")
+        or builder.get("expected_revision")
+        or builder.get("commit_sha")
+        or packaging.get("commit_sha")
+        or ""
+    ).strip()
 
 
 def build_followup_missions(parent, findings):
