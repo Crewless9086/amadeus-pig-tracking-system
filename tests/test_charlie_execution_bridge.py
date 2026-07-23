@@ -4367,6 +4367,26 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._agent_quality_gate("tester", artifact)
         self.assertTrue(result["passed"], result)
 
+    def test_tester_preexisting_environment_error_with_no_acceptance_row_does_not_backflow(self):
+        artifact = _successful_stage_payload("tester")
+        artifact.update({
+            "test_status": "pass",
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "105 tests passed"}],
+            "errors": [{
+                "scope_relation": "pre_existing_environment",
+                "introduced_by_current_diff": False,
+                "affected_file_path": "tests/test_frontend_route_contracts.py",
+                "severity": "low",
+                "acceptance_row": "none",
+                "finding": "Unrelated owner-only routes returned owner_access_not_configured.",
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("tester", artifact)
+
+        self.assertTrue(result["passed"], result)
+
     def test_tester_low_adjacent_follow_up_with_explicit_no_acceptance_violation_does_not_backflow(self):
         artifact = _successful_stage_payload("tester")
         artifact.update({
