@@ -3928,6 +3928,35 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
 
+    def test_business_pause_with_all_code_rows_passed_separates_production_migration(self):
+        artifact = _successful_stage_payload("business_reviewer")
+        artifact.update({
+            "recommended_owner_decision": "pause",
+            "acceptance_results": [
+                {"id": "allocation", "status": "passed", "evidence": ["Exact-head tests passed."]},
+                {"id": "database", "status": "passed", "evidence": ["Disposable PostgreSQL passed."]},
+            ],
+            "next_action": (
+                "Owner review should decide whether to separately authorize production migration application "
+                "and the final release path."
+            ),
+            "release_notes": ["The production migration remains unapplied and requires its own explicit owner approval."],
+            "errors": [{
+                "finding": "Two unrelated route tests fail outside this PR.",
+                "scope_relation": "unrelated",
+                "introduced_by_current_diff": False,
+                "severity": "advisory",
+                "acceptance_row": "none",
+            }],
+            "bugs": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("business_reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+        self.assertEqual(artifact["protected_operations"], ["apply_migration"])
+
     def test_protected_pause_allows_explicit_non_current_medium_advisory(self):
         artifact = _successful_stage_payload("reviewer")
         artifact.update({
