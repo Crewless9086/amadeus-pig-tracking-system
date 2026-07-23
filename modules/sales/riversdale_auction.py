@@ -3,7 +3,10 @@
 This module deliberately does not create an outlet commitment.  The caller must
 provide a persisted owner-confirmed cycle before a cohort can be prepared.
 """
+import os
 from datetime import date, datetime, timedelta
+
+from services.database_service import DATABASE_URL_ENV
 
 
 AUCTION_OUTLET = "riversdale_monthly_auction"
@@ -72,6 +75,42 @@ def queue_due_owner_prompts(queue_outbox, *, today=None):
         )
         results.append(result)
     return results
+
+
+def load_owner_confirmed_cycle(*, today=None, database_url=None, connect_factory=None):
+    """Read the current owner-confirmed advisory auction cycle.
+
+    The migration-backed table is the only operational source for auction
+    activation. If it is unavailable, the caller must keep the cohort advisory.
+    """
+    today = _as_date(today) or date.today()
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url and connect_factory is None:
+        return {"operating": False, "confirmed_date": "", "valid": False,
+                "status": "auction_cycle_store_not_configured", "source": "public.riversdale_auction_cycles"}
+    try:
+        if connect_factory is None:
+            import psycopg
+            connection_factory = lambda: psycopg.connect(database_url, connect_timeout=10)
+        else:
+            connection_factory = lambda: connect_factory(database_url)
+        with connection_factory() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select auction_date, operating_confirmed, owner_confirmed_at
+                    from public.riversdale_auction_cycles
+                    where operating_confirmed = true and auction_date >= %s
+                    order by auction_date asc limit 1
+                """, (today,))
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {"operating": False, "confirmed_date": "", "valid": False,
+                "status": "auction_cycle_read_unavailable", "error_type": exc.__class__.__name__,
+                "source": "public.riversdale_auction_cycles"}
+    confirmed_date = _as_date(row[0]) if row else None
+    return {"operating": bool(row and row[1]), "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
+            "valid": bool(row and confirmed_date), "status": "owner_confirmed_cycle_loaded" if row else "no_owner_confirmed_cycle",
+            "confirmed_at": row[2].isoformat() if row and row[2] else "", "source": "public.riversdale_auction_cycles"}
 
 
 def _has_health_or_quality_hold(pig):

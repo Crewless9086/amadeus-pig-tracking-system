@@ -6,6 +6,8 @@ Fast growers from strong litters are reviewed first for breeding, then meat, the
 
 Slow growers and underperformers should be considered for livestock sale to reduce feed cost. Extremely slow growers and separately owner-approved candidates may be reviewed for the monthly Riversdale auction only after the owner confirms that it is operating and gives its date; this is advisory and never a reservation.
 
+The CHARLIE executive watchdog queues the first-Wednesday 14-day and 7-day owner-confirmation prompts through the durable idempotent notification outbox. The recommendation reads activation only from the persisted Riversdale auction-cycle rail; if that rail is unavailable or has no valid future confirmation, no cohort is prepared.
+
 Unknown purpose is a data/classification problem, not a silent sale/meat/slaughter decision.
 
 ## Operating Rules

@@ -25,6 +25,7 @@ from modules.charlie.domain_observer_readers import observer_readers
 from modules.charlie.executive_runtime import run_executive_cycle
 from modules.charlie.executive_store import queue_outbox
 from modules.charlie.runner_control import runner_status, start_runner
+from modules.sales.riversdale_auction import queue_due_owner_prompts
 from scripts.charlie_mission_pickup import _deliver_executive_outbox, _run_domain_observers
 
 
@@ -98,6 +99,7 @@ def _queue_idle_brief(cycle, recommendations, *, now=None):
 
 
 def supervision_tick(*, now=None, readers=None, runner_reader=runner_status, runner_starter=start_runner):
+    now = now or datetime.now(ZoneInfo("Africa/Johannesburg"))
     state = runner_reader()
     executive, executive_status = run_executive_cycle(
         runner={"active_mission_id": state.get("active_mission_id") or ""},
@@ -112,6 +114,7 @@ def supervision_tick(*, now=None, readers=None, runner_reader=runner_status, run
             {"title": "the active executive goal", "status": "active"}
         ], readers={})
     idle_brief = _queue_idle_brief(cycle, recommendations, now=now)
+    auction_prompts = queue_due_owner_prompts(queue_outbox, today=now.date())
 
     runner_start = {"status": "not_required"}
     queue_progress = any(
@@ -127,6 +130,7 @@ def supervision_tick(*, now=None, readers=None, runner_reader=runner_status, run
         "executive": executive,
         "observers": observers,
         "idle_brief": idle_brief,
+        "auction_prompts": auction_prompts,
         "runner_start": runner_start,
         "delivery": delivery,
     }
