@@ -941,6 +941,15 @@ def _refresh_core_plan_for_pickup(mission):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     resume_stage = str(review_packet.get("return_to_stage") or review_packet.get("blocked_agent") or "").strip().lower()
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    current_workflow = mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else []
+    if _explicit_targeted_workflow_ready(current_workflow, targeted, resume_stage):
+        return {
+            "refreshed": False,
+            "reason": "explicit_targeted_workflow_preserved",
+            "resume_stage": resume_stage,
+            "agent_count": len(current_workflow),
+        }
     current_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
     current_truth = current_core.get("project_truth") if isinstance(current_core.get("project_truth"), dict) else {}
     plan = build_core_plan(mission)
@@ -1006,6 +1015,40 @@ def _refresh_core_plan_for_pickup(mission):
         "agent_count": len(planned_agents),
         "resume_stage": resume_stage,
     }
+
+
+def _explicit_targeted_workflow_ready(workflow, targeted, resume_stage=""):
+    """Keep an explicit repair workflow from being replaced by a template.
+
+    Control-plane repairs may add missing implementation stages to a malformed
+    mission.  Once every declared upstream stage is durably complete and the
+    exact target is the sole active stage, pickup must execute that workflow,
+    not regenerate the original defective template.
+    """
+    if not isinstance(targeted, dict) or targeted.get("version") != "charlie_targeted_invalidation_v1":
+        return False
+    target = str(targeted.get("target_agent") or "").strip().lower()
+    if not target or target != str(resume_stage or "").strip().lower():
+        return False
+    items = {
+        str(item.get("agent") or "").strip().lower(): item
+        for item in (workflow or [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip()
+    }
+    target_item = items.get(target) or {}
+    if str(target_item.get("status") or "").strip().lower() != "active":
+        return False
+    active = [agent for agent, item in items.items() if str(item.get("status") or "").strip().lower() == "active"]
+    if active != [target]:
+        return False
+    preserved = [str(agent or "").strip().lower() for agent in (targeted.get("preserved_agents") or []) if str(agent or "").strip()]
+    if not preserved:
+        return False
+    return all(
+        str((items.get(agent) or {}).get("status") or "").strip().lower() == "complete"
+        and bool((items.get(agent) or {}).get("completed_at"))
+        for agent in preserved
+    )
 
 
 def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage=""):

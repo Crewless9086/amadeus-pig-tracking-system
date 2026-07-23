@@ -670,6 +670,37 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(payload["agent_workflow"][0]["agent"], "builder")
         self.assertEqual(payload["agent_workflow"][0]["status"], "active")
 
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.build_core_plan")
+    def test_refresh_preserves_explicit_targeted_repair_workflow(self, build_plan, update_vault):
+        mission = {
+            "mission_id": "MISSION-REPAIRED",
+            "metadata": {
+                "review_packet": {"return_to_stage": "planner", "blocked_agent": "planner"},
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "planner",
+                    "preserved_agents": ["idea_expander", "technical_architect", "council_synthesis"],
+                },
+            },
+            "agent_workflow": [
+                {"agent": "idea_expander", "status": "complete", "completed_at": "2026-07-23T01:00:00Z"},
+                {"agent": "technical_architect", "status": "complete", "completed_at": "2026-07-23T01:10:00Z"},
+                {"agent": "council_synthesis", "status": "complete", "completed_at": "2026-07-23T01:20:00Z"},
+                {"agent": "planner", "status": "active", "completed_at": None},
+                {"agent": "architect", "status": "pending", "completed_at": None},
+                {"agent": "builder", "status": "pending", "completed_at": None},
+                {"agent": "tester", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        result = charlie_mission_pickup._refresh_core_plan_for_pickup(mission)
+
+        self.assertFalse(result["refreshed"])
+        self.assertEqual(result["reason"], "explicit_targeted_workflow_preserved")
+        build_plan.assert_not_called()
+        update_vault.assert_not_called()
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):
