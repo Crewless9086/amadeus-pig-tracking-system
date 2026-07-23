@@ -1488,6 +1488,27 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(gate["passed"], gate)
 
+    def test_reviewer_base_checkout_limitation_is_advisory_with_exact_head_evidence(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "errors": [{
+                "finding": "Candidate-only test is absent from the reviewer base checkout.",
+                "scope_relation": "unrelated_workspace_revision_mismatch",
+                "introduced_by_current_diff": False,
+                "affected_file_path": "tests/test_candidate_only.py",
+                "severity": "advisory",
+                "acceptance_row": "none",
+            }],
+            "stderr_tail": (
+                "Local candidate-only test invocation was unavailable from the reviewer base checkout; "
+                "this is not a PR failure."
+            ),
+        })
+
+        gate = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(gate["passed"], gate)
+
     def test_review_agent_structured_pass_allows_out_of_scope_release_note(self):
         artifact = _successful_stage_payload("business_reviewer")
         artifact.update({

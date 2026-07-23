@@ -5078,6 +5078,7 @@ def _negative_judgement_evidence(agent, artifact):
         if field in {"stdout_tail", "stderr_tail"} and (
             _raw_judgement_tails_are_advisory(agent, artifact)
             or _visual_review_tails_are_advisory(agent, artifact)
+            or _review_workspace_revision_mismatch_tail_is_advisory(agent, artifact, artifact.get(field))
         ):
             continue
         if field in {"release_notes", "stdout_tail", "stderr_tail"} and _structured_review_judgement_passed(agent, artifact):
@@ -5140,6 +5141,48 @@ def _raw_judgement_tails_are_advisory(agent, artifact):
     status = str((artifact or {}).get("red_team_status") or "").strip().lower()
     risk = str((artifact or {}).get("risk_rating") or "").strip().lower()
     return (status == "pass" and risk not in {"high", "critical"}) or _qa_timeout_only_failure_is_advisory(agent, artifact)
+
+
+def _review_workspace_revision_mismatch_tail_is_advisory(agent, artifact, value):
+    """Ignore an explicitly closed reviewer-checkout limitation.
+
+    Review stages can run from the promoted control-plane base while inspecting a
+    candidate PR by exact SHA.  A candidate-only local test can therefore be
+    unavailable even though exact-revision CI and the preserved verifier packet
+    pass.  Treat only that narrowly described, non-current-diff condition as
+    advisory; real test or PR failures remain blocking.
+    """
+    if agent not in {"product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
+        return False
+    if str((artifact or {}).get("recommended_owner_decision") or "").strip().lower() not in {
+        "approve", "approve_final_release", "mark_done",
+    }:
+        return False
+    if not _artifact_pr_reference(artifact) or not _artifact_has_passing_test_collection(artifact):
+        return False
+    findings = list((artifact or {}).get("errors") or []) + list((artifact or {}).get("bugs") or [])
+    for item in findings:
+        if _is_structured_adjacent_follow_up(agent, artifact, item):
+            continue
+        if not isinstance(item, dict) or item.get("introduced_by_current_diff") is not False:
+            return False
+        scope = str(item.get("scope_relation") or "").strip().lower()
+        severity = str(item.get("severity") or "").strip().lower()
+        acceptance = str(item.get("acceptance_row") or item.get("acceptance_relation") or "").strip().lower()
+        if not (
+            severity in {"advisory", "informational", "info", "low"}
+            and any(term in scope for term in ("workspace_revision_mismatch", "unrelated", "pre_existing"))
+            and acceptance in {"", "none", "not_applicable", "n/a"}
+        ):
+            return False
+    text = _artifact_text(value).lower()
+    checkout_context = any(term in text for term in (
+        "reviewer base checkout", "base checkout", "candidate-only test", "workspace revision mismatch",
+    ))
+    explicitly_closed = any(term in text for term in (
+        "not a pr failure", "exact-head ci", "exact revision ci", "exact-sha ci",
+    ))
+    return checkout_context and explicitly_closed
 
 
 def _qa_timeout_only_failure_is_advisory(agent, artifact):
@@ -5842,6 +5885,16 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
             return status == "pass" and risk not in {"high", "critical"}
         decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
         return decision in {"approve", "approve_final", "approve_final_release"}
+    if "workspace_revision_mismatch" in scope:
+        severity = str(value.get("severity") or "").strip().lower()
+        acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
+        return (
+            severity in {"advisory", "informational", "info", "low"}
+            and acceptance in {"", "none", "not_applicable", "n/a"}
+            and decision in {"approve", "approve_final", "approve_final_release"}
+            and _artifact_has_passing_test_collection(artifact)
+        )
     if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
