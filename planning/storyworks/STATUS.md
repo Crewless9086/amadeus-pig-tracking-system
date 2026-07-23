@@ -17,7 +17,7 @@
 ## Programme state
 
 - **Last completed outcome:** Phase 0 executive decision pack assembled from current policy research, a 20-channel market comparison and accessible recent-video observations, three positioning alternatives, twelve scored concepts, proposed pilots, unit economics and validation gates.
-- **Current work:** Internal verification of claims, calculations, links and repository scope.
+- **Current work:** Phase 0 pack is internally reviewed and awaiting owner decision.
 - **Blockers:** Phase 1 must not begin until the owner decides positioning, pilot set and validation ceiling.
 - **Owner decisions required:** Approve/revise/reject the recommended promise; approve the proposed Petra/Rome grain/Inca roads pilots; approve/reduce/reject the R7,500 cash, R35,000 economic-cost and 12-week ceiling; authorise private Phase 1 only if accepted.
 - **Budget status:** No spend authorised; no spend incurred. Proposed maximum: R7,500 cash and R35,000 economic cost across three private pilots.
@@ -31,7 +31,7 @@
 ## Repository record
 
 - **Files changed:** StoryWorks-only documents under `planning/storyworks/`.
-- **Commits:** None.
+- **Commits:** `1156d71` — `docs: add StoryWorks phase 0 decision pack`
 - **External actions performed:** Read-only public web research. No contact, publishing, account creation, purchase, deployment, migration, production-system or CORE action.
 
 ## Current risks
