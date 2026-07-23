@@ -96,6 +96,22 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
         self.assertEqual(excluded_reasons["B_CONFLICT"], "source_conflict")
         self.assertEqual(excluded_reasons["B_NO_GENETICS"], "genetics_missing")
 
+    def test_production_shaped_canonical_rows_fail_closed_when_match_safety_fields_are_unavailable(self):
+        readers = fixture_readers()
+        for row in readers["pig_rows"]():
+            row.update({
+                "Genetics": "",
+                "Available_For_Breeding": "Unknown",
+                "Reserved_Status": "Unknown",
+                "Source_Conflict": "Unknown",
+            })
+
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
+
+        self.assertEqual(result["confidence"], 0.0)
+        self.assertEqual(result["females"][0]["safe_matches"], [])
+        self.assertIn("genetics", result["females"][0]["missing_facts"])
+
     def test_safe_match_ranks_are_unique_and_ignore_source_iteration_order(self):
         extra_boars = [
             {"Pig_ID": "B3", "Tag_Number": "B3", "Sex": "Male", "Status": "Active", "On_Farm": "Yes", "Purpose": "Breeding", "General_Notes": "ok", "Genetics": "recorded", "Available_For_Breeding": "Yes", "Reserved_Status": "Not_Reserved", "Source_Conflict": "No"},

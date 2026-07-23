@@ -52,6 +52,10 @@ Farm record writes require approved backend paths and audit evidence.
 - Weight, location, medical, mating, and litter records should remain event/audit-friendly.
 - Pig purpose/allocation must be dynamic and owner-reviewed where it changes operational state.
 - Unknown purpose is a classification gap, not a sale/meat/slaughter decision.
+
+## Read-Only Breeding Match Safety Facts
+
+The current canonical `pig_current_state`/`pigs` read projection does not supply genetics, breeding availability, per-pig reservation clearance, or source-conflict clearance for Herdmaster's breeding matcher. The projection must expose each absent fact as `Unknown`; Herdmaster must fail closed and return no safe-match claim until a separately owner-approved canonical data contract supplies the evidence. This is not a migration authorization and must not be solved with Google Sheets fallback, inferred values, or a farm-record write.
 - Sale/slaughter/meat exits must link back to explicit order or sales transaction evidence where possible.
 - Riversdale auction recommendations remain advisory until a persisted owner confirmation supplies operating status and a confirmed date. Existing customer orders/reservations, retention, health/withdrawal holds, and lifecycle conflicts exclude a pig from the cohort.
 

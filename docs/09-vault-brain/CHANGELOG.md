@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-24 - Herdmaster breeding match safety-field repair
+
+- Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.
+- Required those missing values to be explicit `Unknown` signals and to fail closed with no safe-match claim; no migration, fallback, inference, or farm-record write is authorized.
+
 ## 2026-07-23 - Riversdale advisory auction outlet
 
 - Defined Riversdale as an owner-confirmed, advisory-only monthly outlet for extremely slow growers and separately owner-approved candidates.

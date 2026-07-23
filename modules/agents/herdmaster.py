@@ -319,10 +319,12 @@ def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
         return "off_farm"
     if str(boar.get("Purpose") or "") != "Breeding":
         return "non_breeding_purpose"
-    if _is_reserved(boar):
-        return "reserved"
-    if _has_source_conflict(boar):
-        return "source_conflict"
+    reservation_state = _reservation_exclusion(boar)
+    if reservation_state:
+        return reservation_state
+    conflict_state = _source_conflict_exclusion(boar)
+    if conflict_state:
+        return conflict_state
     if not _is_available_for_breeding(boar):
         return "unavailable_or_availability_missing"
     if not str(boar.get("General_Notes") or "").strip():
@@ -339,12 +341,18 @@ def _boar_exclusion(female, boar, female_tree, boar_tree, metric):
     return "known_sibling" if female_parents & boar_parents else ""
 
 
-def _is_reserved(row):
-    return str(row.get("Reserved_Status") or row.get("reserved_status") or "").strip().lower() == "reserved"
+def _reservation_exclusion(row):
+    value = str(row.get("Reserved_Status") or row.get("reserved_status") or "").strip().lower()
+    if value == "reserved":
+        return "reserved"
+    return "reservation_unknown" if value not in {"not_reserved", "not reserved", "no", "false", "0", "clear"} else ""
 
 
-def _has_source_conflict(row):
-    return str(row.get("Source_Conflict") or row.get("source_conflict") or "").strip().lower() in {"yes", "true", "1", "conflict", "conflicted"}
+def _source_conflict_exclusion(row):
+    value = str(row.get("Source_Conflict") or row.get("source_conflict") or "").strip().lower()
+    if value in {"yes", "true", "1", "conflict", "conflicted"}:
+        return "source_conflict"
+    return "source_conflict_unknown" if value not in {"no", "false", "0", "clear", "none"} else ""
 
 
 def _is_available_for_breeding(row):
