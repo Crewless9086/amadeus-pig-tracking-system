@@ -45,6 +45,7 @@ jobs:
 
       - name: Apply Oom Sakkie audit migrations
         run: |
+          python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql
@@ -81,8 +82,12 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202606180005_create_beacon_facebook_post_execution_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606180007_add_sales_lead_conversation_lookup_index.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607230001_create_riversdale_auction_cycles.sql
       - name: Run CHARLIE callback durability integration tests
         run: python -m unittest tests.test_charlie_callback_postgres
+
+      - name: Run Riversdale auction disposable-Postgres integration tests
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
 
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
         run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign
