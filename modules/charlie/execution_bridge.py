@@ -5924,12 +5924,21 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
     if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"} or pre_existing_environment:
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
+        disposition = str(value.get("disposition") or "").strip().lower()
+        disposition_is_non_acceptance = any(term in disposition for term in (
+            "does not fail this candidate",
+            "does not fail the candidate",
+            "does not fail current acceptance",
+            "current fail-closed behavior is correct",
+            "current fail closed behavior is correct",
+        ))
         if severity not in {"advisory", "informational", "info", "low"}:
             return False
         explicitly_non_acceptance = (
             value.get("violates_acceptance_row") is False
             or value.get("acceptance_row_violation") is False
             or (pre_existing_environment and acceptance in {"none", "not_applicable", "n/a"})
+            or disposition_is_non_acceptance
         )
         if not explicitly_non_acceptance and not any(term in acceptance for term in (
             "does not violate", "does not fail acceptance", "outside current acceptance",

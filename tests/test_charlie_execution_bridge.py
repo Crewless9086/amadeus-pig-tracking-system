@@ -4387,6 +4387,56 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(result["passed"], result)
 
+    def test_qa_explicit_non_acceptance_dispositions_do_not_backflow(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact.update({
+            "red_team_status": "pass",
+            "risk_rating": "low",
+            "tests_run": [{"command": "python -m unittest focused", "status": "pass", "result": "105 tests passed"}],
+            "errors": [{
+                "scope_relation": "pre_existing_environment",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "violates_acceptance_row": None,
+                "disposition": "Adjacent follow-up evidence; does not fail this candidate.",
+                "finding": "Unrelated owner-only routes require owner-access configuration.",
+            }],
+            "bugs": [{
+                "scope_relation": "adjacent_follow_up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "violates_acceptance_row": None,
+                "disposition": "Current fail-closed behavior is correct.",
+                "finding": "A future data-contract mission may wire additional canonical facts.",
+            }],
+            "qa_findings": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertTrue(result["passed"], result)
+
+    def test_qa_ambiguous_adjacent_disposition_remains_blocking(self):
+        artifact = _successful_stage_payload("qa_red_team")
+        artifact.update({
+            "red_team_status": "pass",
+            "risk_rating": "low",
+            "errors": [],
+            "bugs": [{
+                "scope_relation": "adjacent_follow_up",
+                "introduced_by_current_diff": False,
+                "severity": "low",
+                "violates_acceptance_row": None,
+                "disposition": "Review later.",
+                "finding": "Acceptance impact is not classified.",
+            }],
+            "qa_findings": [],
+        })
+
+        result = execution_bridge._agent_quality_gate("qa_red_team", artifact)
+
+        self.assertFalse(result["passed"], result)
+
     def test_tester_low_adjacent_follow_up_with_explicit_no_acceptance_violation_does_not_backflow(self):
         artifact = _successful_stage_payload("tester")
         artifact.update({
