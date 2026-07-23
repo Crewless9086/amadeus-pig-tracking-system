@@ -105,6 +105,20 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
         self.assertEqual(result["status"], "breeding_planner_needs_data")
         self.assertEqual(result["females"], [])
 
+    def test_canonical_reader_exception_is_never_exposed_in_response(self):
+        secret_like_error = "postgresql://[REDACTED]@db.internal/farm?private_query=true"
+        readers = fixture_readers()
+        readers["family_tree"] = Mock(side_effect=RuntimeError(secret_like_error))
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
+        response_text = repr(result)
+        self.assertEqual(result["status"], "breeding_planner_needs_data")
+        self.assertEqual(
+            result["direct_answer"],
+            "Canonical Supabase breeding read failed; no legacy fallback was used.",
+        )
+        self.assertNotIn(secret_like_error, response_text)
+        self.assertNotIn("db.internal", response_text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -235,8 +235,8 @@ def _breeding_planner(request, readers, *, canonical_available):
         pigs, matings = list(readers["pig_rows"]() or []), list(readers["mating_overview"]() or [])
         analytics = readers["breeding_analytics"]() or {}
         metrics = {str(row.get("pig_id") or ""): row for group in (analytics.get("sows", []), analytics.get("boars", [])) for row in group}
-    except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError) as error:
-        return _breeding_needs_data(f"Canonical Supabase read failed: {error}")
+    except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError):
+        return _breeding_needs_data("Canonical Supabase breeding read failed; no legacy fallback was used.")
     females = [row for row in pigs if _is_breeding_female(row)]
     potential_boars = [row for row in pigs if str(row.get("Sex") or "") in {"Male", "Castrated_Male"}]
     packets = []
@@ -256,8 +256,8 @@ def _breeding_planner(request, readers, *, canonical_available):
                     else:
                         matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "condition_present", "performance_present"]})
             packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "excluded_matches": excluded, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
-        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError) as error:
-            return _breeding_needs_data(f"Canonical Supabase read failed: {error}")
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError):
+            return _breeding_needs_data("Canonical Supabase breeding read failed; no legacy fallback was used.")
     fingerprint = hashlib.sha256(json.dumps({"pigs": pigs, "matings": matings, "analytics": analytics}, sort_keys=True, default=str).encode()).hexdigest()[:20]
     missing_any = any(item["missing_facts"] for item in packets)
     return {"success": True, "status": "breeding_planner_advisory_ready", "capability": "breeding_planner", "direct_answer": "Herdmaster prepared a read-only breeding advisory packet; it does not create matches or reminders.", "read_only": True, "advisory_only": True, "response_fingerprint": fingerprint, "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"}, "confidence": 0.96 if packets and not missing_any else 0.0, "females": packets, "missing_facts": sorted({fact for item in packets for fact in item["missing_facts"]}), "owner_action": "Owner review is required before any mating or lifecycle action.", "forbidden_actions": _BREEDING_FORBIDDEN_ACTIONS, "sources": [{"name": "pigs", "authority": "canonical"}, {"name": "mating_events", "authority": "canonical"}, {"name": "breeding_analytics", "authority": "canonical"}, {"name": "family_tree", "authority": "canonical"}]}
