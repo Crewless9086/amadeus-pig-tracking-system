@@ -40,7 +40,9 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                         batch_pig_id text primary key, batch_id text not null, pig_id text not null
                     );
                 """)
-                cursor.execute((root / "202607230001_create_riversdale_auction_cycles.sql").read_text(encoding="utf-8"))
+                cursor.execute("select to_regclass('public.riversdale_auction_cycles')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute((root / "202607230001_create_riversdale_auction_cycles.sql").read_text(encoding="utf-8"))
                 cursor.execute("delete from public.meat_processing_batch_pigs")
                 cursor.execute("delete from public.meat_processing_batches")
                 cursor.execute("delete from public.sales_transaction_items")
