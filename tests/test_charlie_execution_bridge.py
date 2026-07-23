@@ -4693,6 +4693,65 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             for call in write_heartbeat.call_args_list
         ))
 
+    @patch("modules.charlie.execution_bridge.redact_file_in_place")
+    @patch("modules.charlie.execution_bridge._wait_for_file_handles_released")
+    @patch("modules.charlie.execution_bridge._terminate_process_tree")
+    @patch("modules.charlie.execution_bridge.inspect_process", return_value={})
+    @patch("modules.charlie.execution_bridge.make_ownership_record", return_value={})
+    @patch("modules.charlie.execution_bridge.restricted_agent_environment", return_value={})
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge.subprocess.Popen")
+    def test_run_codex_process_consumes_final_artifact_when_teardown_wait_times_out(
+        self,
+        popen,
+        _changed_files,
+        write_heartbeat,
+        _restricted_env,
+        _ownership_record,
+        _inspect_process,
+        terminate_tree,
+        _wait_handles,
+        _redact,
+    ):
+        class FakeStdin:
+            def write(self, _value):
+                return None
+
+            def close(self):
+                return None
+
+        process = SimpleNamespace(pid=4321, stdin=FakeStdin(), returncode=None)
+        process.poll = lambda: None
+        process.wait = lambda timeout=None: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(["codex"], timeout)
+        )
+        popen.return_value = process
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            final_path = tmp_path / "final.md"
+            final_path.write_text('{"summary":"complete"}', encoding="utf-8")
+            with patch("modules.charlie.execution_bridge.FINAL_ARTIFACT_GRACE_SECONDS", 0), patch(
+                "modules.charlie.execution_bridge.POLL_SECONDS", 0
+            ):
+                completed = execution_bridge._run_codex_process(
+                    ["codex"],
+                    cwd=tmp,
+                    timeout_seconds=20,
+                    stdout_path=tmp_path / "stdout.txt",
+                    stderr_path=tmp_path / "stderr.txt",
+                    final_path=final_path,
+                    mission_id="CHARLIE-MISSION-EXEC123",
+                )
+
+        self.assertEqual(completed.returncode, 0)
+        terminate_tree.assert_called()
+        self.assertTrue(any(
+            call.args[0].get("status") == "codex_final_artifact_seen"
+            for call in write_heartbeat.call_args_list
+        ))
+
     @patch("modules.charlie.execution_bridge._changed_files", return_value=["modules/beacon/creative_studio.py"])
     @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
     def test_run_codex_process_does_not_kill_agent_while_output_is_advancing(self, write_heartbeat, _changed_files):
