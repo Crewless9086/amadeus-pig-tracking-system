@@ -5917,19 +5917,21 @@ def _auto_package_builder_changes(mission, artifact, runner=None):
     artifact = artifact if isinstance(artifact, dict) else {}
     runner = runner or subprocess.run
     local_changed_files = [path for path in _changed_files() if not _runner_generated_path(path)]
+    staged_changed_files = [path for path in _staged_changed_files() if not _runner_generated_path(path)]
     reconciled = _reconcile_builder_pr_reference(mission, artifact, runner)
     # A Builder retry may inherit the canonical PR reference from its previous
     # attempt while holding new uncommitted corrections.  Reusing that PR
     # before packaging the dirty worktree would bind downstream evidence to
     # the old PR head.  Only short-circuit when there is no release-relevant
     # local work left to package.
-    if _artifact_pr_reference(reconciled) and not _has_release_relevant_changes(local_changed_files):
+    if _artifact_pr_reference(reconciled) and not _has_release_relevant_changes(staged_changed_files):
         return reconciled
     artifact = reconciled
     artifact_files = artifact.get("changed_files") if isinstance(artifact.get("changed_files"), list) else []
     changed_files = list(dict.fromkeys([
         *artifact_files,
         *local_changed_files,
+        *staged_changed_files,
     ]))
     if not _has_release_relevant_changes(changed_files):
         return artifact
@@ -8342,6 +8344,22 @@ def _changed_files():
     try:
         completed = subprocess.run(
             ["git", "diff", "--name-only"],
+            capture_output=True,
+            check=False,
+            text=True,
+            cwd=str(REPO_ROOT),
+            timeout=10,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _staged_changed_files():
+    try:
+        completed = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
             capture_output=True,
             check=False,
             text=True,
