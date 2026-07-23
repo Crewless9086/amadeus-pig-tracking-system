@@ -1870,6 +1870,7 @@ def build_agent_stage_prompt(mission, agent, artifacts=None, ledger=None):
     mission_memory = memory_prompt_context(metadata)
     mission_governance = ensure_acceptance_matrix(mission)
     metadata_core = metadata.get("charlie_core") if isinstance(metadata.get("charlie_core"), dict) else {}
+    targeted_recovery = _targeted_recovery_prompt_context(mission, agent)
     agentic_architecture = metadata.get("agentic_architecture") or metadata_core.get("agentic_architecture") or (metadata_core.get("project_truth") or {}).get("agentic_architecture") or {}
     pre_builder_scope = analyze_pre_builder_scope(mission)
     test_command_memory = repo_test_command_memory(_mission_changed_files_from_artifacts(artifacts))
@@ -1931,6 +1932,11 @@ Desired outcome:
 
 Owner send-back comments:
 {owner_comments or "None"}
+
+Authoritative targeted recovery requirements:
+{json.dumps(targeted_recovery, indent=2)}
+
+When active_for_this_stage is true, these requirements are the current bounded correction contract. They override stale next_action or blocker prose in preserved historical artifacts. Implement and verify each requirement before advancing; do not substitute an older recovery request.
 
 Mission memory from previous attempts and handoffs:
 {json.dumps(mission_memory, indent=2)[:5000]}
@@ -1995,6 +2001,31 @@ Every final JSON object is normalized into a CHARLIE handoff report with:
 Do not merge, deploy, apply migrations, send customers, post publicly, take payments, reserve stock, or change farm lifecycle records.
 Stop at the required artifact for this stage.
 """
+
+
+def _targeted_recovery_prompt_context(mission, agent):
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+    target_agent = str(targeted.get("target_agent") or "").strip().lower()
+    requirements = coordinator.get("correction_requirements")
+    if not isinstance(requirements, list):
+        requirements = []
+    requirements = [str(item or "").strip() for item in requirements if str(item or "").strip()]
+    return {
+        "version": "charlie_targeted_recovery_prompt_v1",
+        "active_for_this_stage": bool(requirements and target_agent == str(agent or "").strip().lower()),
+        "target_agent": target_agent,
+        "reason": str(targeted.get("reason") or "").strip(),
+        "candidate_revision": str(
+            targeted.get("candidate_revision")
+            or coordinator.get("canonical_candidate_revision")
+            or ""
+        ).strip(),
+        "canonical_pr_number": coordinator.get("canonical_pr_number"),
+        "correction_requirements": requirements,
+    }
 
 
 def _ensure_execution_governance(mission, database_url=None, connect_factory=None):
