@@ -768,6 +768,27 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         result = execution_bridge._judgement_evidence_quality_gate("security_reviewer", compact)
         self.assertTrue(result["passed"], result)
 
+    def test_compaction_preserves_explicit_frozen_scope_audit(self):
+        artifact = {
+            "agent": "concept_strategist",
+            "summary": "Audited planning handoff.",
+            "status": "complete",
+            "scope_hash": "legacy-scope",
+            "accepted_frozen_scope": True,
+            "frozen_scope_audit": {
+                "version": "charlie_frozen_scope_equivalence_audit_v1",
+                "governed_scope_hash": "governed-scope",
+                "tested_revision": "candidate-sha",
+            },
+        }
+
+        compact = execution_bridge._compact_agent_artifacts_for_review(
+            {"concept_strategist": artifact},
+        )["concept_strategist"]
+
+        self.assertIs(compact["accepted_frozen_scope"], True)
+        self.assertEqual(compact["frozen_scope_audit"], artifact["frozen_scope_audit"])
+
     def test_tester_pending_only_owner_gated_operations_does_not_backflow(self):
         artifact = {
             "summary": "Focused verification passed; operational gates remain pending.",
