@@ -77,6 +77,7 @@ jobs:
         run: |
           psql "$DATABASE_URL" -c "CREATE ROLE service_role NOLOGIN;"
           python scripts/apply_supabase_migration.py supabase/migrations/202605210001_foundation_migration_log.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606280001_create_bulk_weight_batch_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606290001_create_farm_canonical_tables.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607200001_create_pig_observation_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql

@@ -148,8 +148,11 @@ def purpose_review_apply():
     denied = require_owner_admin_access()
     if denied:
         return denied
+    changed_by = owner_actor_reference()
+    if not changed_by:
+        return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
     payload = request.get_json(silent=True) or {}
-    result, status_code = apply_purpose_review_queue_decisions(payload)
+    result, status_code = apply_purpose_review_queue_decisions(payload, changed_by=changed_by)
     return jsonify(result), status_code
 
 

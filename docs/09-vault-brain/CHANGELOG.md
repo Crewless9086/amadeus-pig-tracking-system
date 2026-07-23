@@ -305,3 +305,4 @@
 - Kept physical observations, management intents, and approved purpose/lifecycle actions structurally separate; intent capture is advisory-only and cannot update pig state or invoke an action rail.
 - Hardened replay safety: observation and management-intent idempotency keys now require canonical stored content to match the replay request, rejecting mismatched key reuse without changing the append-only records.
 - Canonicalized capture confidence to the persisted `NUMERIC(4,3)` decimal representation so valid idempotency replays compare consistently with PostgreSQL values.
+- Hardened the separate purpose-review action rail so its audit actor is server-derived from the authenticated owner-admin session rather than browser-supplied.

@@ -41,6 +41,7 @@ Farm record writes require approved backend paths and audit evidence.
 - Events are append-only. Corrections must be new intent events linked by `supersedes_management_intent_event_id`; normal updates and deletes are database-blocked.
 - Referenced observation evidence and superseded intents must belong to the same pig. The intended timestamp cannot be later than its recorded timestamp. RLS permits inserts only to the backend `service_role`; no browser write policy exists. The protected owner-admin backend capture rail persists the same server-derived actor reference and records advisory intents without calling an action rail. Reusing an idempotency key is accepted only for the canonical persisted immutable intent content (including `NUMERIC(4,3)` confidence); a mismatch is rejected without an update.
 - A separate protected, owner-approved action rail may later cite a management intent, but neither creating nor reading an intent may mutate `pigs` or any operational projection.
+- Purpose-review actions are a separate existing action rail. Its route must derive the audit actor from the authenticated owner-admin session and must not trust a client-supplied `changed_by` value.
 
 ## Pig Lifecycle Event Contract
 
