@@ -39,6 +39,155 @@ create unique index if not exists pig_active_outlets_one_active_pig_unique
     on public.pig_active_outlets (pig_id) where active;
 alter table public.pig_active_outlets enable row level security;
 
+-- Keep the canonical claim rail aligned with the existing protected Supabase
+-- writers.  These triggers are deliberately database-side so a writer cannot
+-- create its domain record and then fail open before making the outlet claim.
+-- A legacy Sheets fallback is not a canonical protected writer and must not be
+-- represented as an active claim without a separately approved cutover.
+create or replace function app_private.claim_pig_active_outlet(
+    p_assignment_id text,
+    p_pig_id text,
+    p_outlet_type text,
+    p_source_record_id text,
+    p_evidence jsonb default '{}'::jsonb
+)
+returns void language plpgsql as $$
+begin
+    if coalesce(trim(p_pig_id), '') = '' then
+        return;
+    end if;
+    insert into public.pig_active_outlets (
+        outlet_assignment_id, pig_id, outlet_type, source_record_id, active,
+        evidence_json, released_at
+    ) values (
+        p_assignment_id, p_pig_id, p_outlet_type, p_source_record_id, true,
+        coalesce(p_evidence, '{}'::jsonb), null
+    )
+    on conflict (outlet_assignment_id) do update set
+        pig_id = excluded.pig_id,
+        outlet_type = excluded.outlet_type,
+        source_record_id = excluded.source_record_id,
+        active = true,
+        evidence_json = excluded.evidence_json,
+        released_at = null;
+end;
+$$;
+
+create or replace function app_private.release_pig_active_outlet(p_assignment_id text)
+returns void language plpgsql as $$
+begin
+    update public.pig_active_outlets
+    set active = false, released_at = now()
+    where outlet_assignment_id = p_assignment_id and active;
+end;
+$$;
+
+create or replace function app_private.sync_order_line_active_outlet()
+returns trigger language plpgsql as $$
+begin
+    if tg_op = 'DELETE' then
+        perform app_private.release_pig_active_outlet('reservation:' || old.order_line_id);
+        return old;
+    end if;
+    if new.reserved_status = 'Reserved' or new.line_status = 'Reserved' then
+        perform app_private.claim_pig_active_outlet(
+            'reservation:' || new.order_line_id, new.pig_id, 'reservation',
+            new.order_line_id,
+            jsonb_build_object('writer', 'public.order_lines', 'order_id', new.order_id)
+        );
+    else
+        perform app_private.release_pig_active_outlet('reservation:' || new.order_line_id);
+    end if;
+    return new;
+end;
+$$;
+
+create or replace function app_private.sync_sales_transaction_item_active_outlet()
+returns trigger language plpgsql as $$
+declare
+    v_stream text;
+    v_status text;
+    v_outlet text;
+begin
+    if tg_op = 'DELETE' then
+        perform app_private.release_pig_active_outlet('sale:' || old.sale_item_id);
+        return old;
+    end if;
+    select sale_stream, sale_status into v_stream, v_status
+    from public.sales_transactions where sale_id = new.sale_id;
+    if new.pig_id is null or coalesce(trim(new.pig_id), '') = '' or v_status = 'Cancelled' then
+        perform app_private.release_pig_active_outlet('sale:' || new.sale_item_id);
+        return new;
+    end if;
+    v_outlet := case v_stream
+        when 'Slaughter' then 'abattoir'
+        when 'Meat' then 'meat'
+        else 'customer_sale'
+    end;
+    -- A completed sale supersedes its own order-line reservation in this same
+    -- transaction; a different outlet claim still fails at the unique index.
+    if new.order_line_id is not null then
+        perform app_private.release_pig_active_outlet('reservation:' || new.order_line_id);
+    end if;
+    perform app_private.claim_pig_active_outlet(
+        'sale:' || new.sale_item_id, new.pig_id, v_outlet, new.sale_id,
+        jsonb_build_object('writer', 'public.sales_transaction_items', 'sale_id', new.sale_id)
+    );
+    return new;
+end;
+$$;
+
+create or replace function app_private.release_cancelled_sales_transaction_outlets()
+returns trigger language plpgsql as $$
+begin
+    if new.sale_status = 'Cancelled' and old.sale_status is distinct from 'Cancelled' then
+        update public.pig_active_outlets
+        set active = false, released_at = now()
+        where active and evidence_json ->> 'sale_id' = new.sale_id;
+    end if;
+    return new;
+end;
+$$;
+
+create or replace function app_private.sync_meat_batch_pig_active_outlet()
+returns trigger language plpgsql as $$
+declare
+    v_status text;
+begin
+    if tg_op = 'DELETE' then
+        perform app_private.release_pig_active_outlet('meat:' || old.batch_pig_id);
+        return old;
+    end if;
+    select status into v_status from public.meat_processing_batches where batch_id = new.batch_id;
+    if v_status = 'Cancelled' then
+        perform app_private.release_pig_active_outlet('meat:' || new.batch_pig_id);
+        return new;
+    end if;
+    perform app_private.claim_pig_active_outlet(
+        'meat:' || new.batch_pig_id, new.pig_id, 'meat', new.batch_id,
+        jsonb_build_object('writer', 'public.meat_processing_batch_pigs', 'batch_id', new.batch_id)
+    );
+    return new;
+end;
+$$;
+
+do $$
+begin
+    if to_regclass('public.order_lines') is not null then
+        execute 'create trigger pig_active_outlet_from_order_line after insert or update or delete on public.order_lines for each row execute function app_private.sync_order_line_active_outlet()';
+    end if;
+    if to_regclass('public.sales_transaction_items') is not null then
+        execute 'create trigger pig_active_outlet_from_sales_item after insert or update or delete on public.sales_transaction_items for each row execute function app_private.sync_sales_transaction_item_active_outlet()';
+    end if;
+    if to_regclass('public.sales_transactions') is not null then
+        execute 'create trigger pig_active_outlet_from_sales_header after update of sale_status on public.sales_transactions for each row execute function app_private.release_cancelled_sales_transaction_outlets()';
+    end if;
+    if to_regclass('public.meat_processing_batch_pigs') is not null then
+        execute 'create trigger pig_active_outlet_from_meat_batch after insert or update or delete on public.meat_processing_batch_pigs for each row execute function app_private.sync_meat_batch_pig_active_outlet()';
+    end if;
+end;
+$$;
+
 -- Advisory membership is distinct from a reservation or sale. Each member is
 -- bound to the canonical active-outlet claim when an owner-approved execution
 -- rail is introduced; this advisory build itself does not insert either row.

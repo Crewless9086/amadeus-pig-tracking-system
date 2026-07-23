@@ -135,6 +135,9 @@ class RiversdaleAuctionTests(unittest.TestCase):
         self.assertIn("pig_active_outlets_one_active_pig_unique", sql)
         self.assertIn("on public.pig_active_outlets (pig_id) where active", sql)
         self.assertIn("foreign key (outlet_assignment_id, pig_id)", sql)
+        self.assertIn("sync_order_line_active_outlet", sql)
+        self.assertIn("sync_sales_transaction_item_active_outlet", sql)
+        self.assertIn("sync_meat_batch_pig_active_outlet", sql)
         for outlet in ("customer_sale", "reservation", "riversdale_auction", "meat", "breeding", "health_hold", "keep_growing"):
             self.assertIn(f"'{outlet}'", sql)
 

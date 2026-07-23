@@ -8,6 +8,7 @@
 - Added an unapplied, owner-gated auction-cycle persistence contract. It cannot reserve stock, sell, change pig records, or send customers.
 - Tightened the advisory evidence contract: observed quality and a positive net auction margin after evidenced auction costs are required before owner-review profitability wording; the unapplied cohort-member rail prevents duplicate active auction membership.
 - Added the canonical one-active-outlet claim contract for future protected outlet writers, so an auction member cannot coexist with a customer-sale, reservation, meat, breeding, health-hold, keep-growing, or abattoir claim.
+- Integrated the current protected Supabase order-reservation, sales-transaction, and meat-batch writer tables with that claim rail, so cross-outlet conflicts fail within the source transaction. Legacy Sheets fallback remains outside this unapplied canonical contract.
 - Wired the existing executive watchdog to queue those prompts and made the advisory read path load activation only from that persisted cycle rail.
 
 ## 2026-07-22 - Herdmaster owner-approved purpose correction batches
