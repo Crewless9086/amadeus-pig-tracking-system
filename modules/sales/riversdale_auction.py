@@ -130,6 +130,14 @@ def _truthy(value):
     return value is True or str(value or "").strip().lower() in {"1", "true", "yes"}
 
 
+def _withdrawal_is_clear(value):
+    return str(value or "").strip().lower() in {"yes", "clear", "cleared", "true", "1"}
+
+
+def _has_text(value):
+    return bool(str(value or "").strip())
+
+
 def _exclusion_reason(pig):
     if pig.get("readiness_bucket") in {"Allocated", "Exited", "Retain / Breeding Candidate", "Needs Data", "Needs Classification"}:
         return "allocation state is already allocated, exited, retained, or insufficient for safe auction review"
@@ -226,6 +234,7 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
                     "health_status": pig.get("health_status", ""),
                     "withdrawal_clear": pig.get("withdrawal_clear", ""),
                     "observed_quality": pig.get("observed_quality", pig.get("quality_status", "")),
+                    "customer_suitability": pig.get("customer_suitability", ""),
                 },
                 "ledger_evidence": ledger_evidence.get(pig_id, ledger_evidence.get("default", {})),
                 "sam_demand_evidence": sam_demand.get("summary", "not_supplied"),
@@ -241,12 +250,32 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         item["profitability_evidence"]["disposition"] == "positive" for item in candidates
     )
     observed_quality_complete = all(
-        str(item["herdmaster_evidence"].get("observed_quality") or "").strip()
+        _has_text(item["herdmaster_evidence"].get("observed_quality"))
+        for item in candidates
+    )
+    health_evidence_complete = all(
+        _has_text(item["herdmaster_evidence"].get("health_status"))
+        for item in candidates
+    )
+    withdrawal_evidence_complete = all(
+        _withdrawal_is_clear(item["herdmaster_evidence"].get("withdrawal_clear"))
+        for item in candidates
+    )
+    customer_suitability_complete = all(
+        _has_text(item["herdmaster_evidence"].get("customer_suitability"))
         for item in candidates
     )
     sam_evidence_complete = bool(sam_demand.get("summary"))
     preparation_complete = bool(oom_sakkie_preparation.get("summary"))
-    coordination_complete = commercial_evidence_complete and observed_quality_complete and sam_evidence_complete and preparation_complete
+    coordination_complete = bool(candidates) and all((
+        commercial_evidence_complete,
+        health_evidence_complete,
+        withdrawal_evidence_complete,
+        observed_quality_complete,
+        customer_suitability_complete,
+        sam_evidence_complete,
+        preparation_complete,
+    ))
     recommendation_status = (
         "cohort_ready_for_owner_review" if confirmation_valid and coordination_complete
         else "cohort_needs_coordinated_evidence" if confirmation_valid
@@ -267,7 +296,10 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "one_pig_one_active_outlet": not invalid_identities and len({item["pig_id"] for item in candidates}) == len(candidates),
         "coordination_evidence": {
             "herdmaster": "canonical_allocation_rows",
+            "health_evidence_complete": health_evidence_complete,
+            "withdrawal_evidence_complete": withdrawal_evidence_complete,
             "observed_quality_complete": observed_quality_complete,
+            "customer_suitability_complete": customer_suitability_complete,
             "ledger_complete": commercial_evidence_complete,
             "sam_demand_complete": sam_evidence_complete,
             "oom_sakkie_preparation_complete": preparation_complete,
