@@ -521,10 +521,11 @@ def _blocking_acceptance_evidence_ids(value):
     row = str(value.get("acceptance_row") or value.get("acceptance_relation") or "").strip()
     if severity not in {"blocker", "blocking", "high", "critical"}:
         return []
-    if "acceptance" not in scope or not row:
+    normalized_scope = scope.replace("-", "_").replace(" ", "_")
+    if "acceptance" not in normalized_scope and normalized_scope not in {"mission_blocker", "current_mission_blocker"}:
         return []
     ids = re.findall(r"acceptance-[A-Za-z0-9_-]+", row, flags=re.IGNORECASE)
-    return list(dict.fromkeys(ids or [row]))
+    return list(dict.fromkeys(ids))
 
 
 def _affected_paths(original, text):

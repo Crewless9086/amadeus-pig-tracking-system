@@ -203,6 +203,48 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         )
         self.assertEqual(decision["blocking_findings"][0]["disposition"], "matrix_violation")
 
+    def test_named_high_severity_mission_blocker_backflows_even_when_agent_marks_not_introduced(self):
+        decision = evaluate_quality_failure(
+            mission_with_events(),
+            "qa_red_team",
+            {
+                "qa_findings": [{
+                    "scope_relation": "mission_blocker",
+                    "introduced_by_current_diff": False,
+                    "severity": "high",
+                    "acceptance_row": "acceptance-profitability",
+                    "finding": "A loss-making candidate can be reported ready.",
+                }],
+                "red_team_status": "blocked",
+                "risk_rating": "high",
+                "send_back_stage": "builder",
+            },
+            {"passed": False, "reason": "QA/red-team reported red_team_status=blocked."},
+        )
+
+        self.assertEqual(decision["route"], "backflow")
+        self.assertEqual(decision["failed_acceptance_ids"], ["acceptance-profitability"])
+        self.assertEqual(decision["blocking_findings"][0]["disposition"], "matrix_violation")
+
+    def test_mission_blocker_without_named_acceptance_row_is_not_inferred(self):
+        decision = evaluate_quality_failure(
+            mission_with_events(),
+            "qa_red_team",
+            {
+                "qa_findings": [{
+                    "scope_relation": "mission_blocker",
+                    "introduced_by_current_diff": False,
+                    "severity": "high",
+                    "acceptance_row": "none",
+                    "finding": "An adjacent concern has no named acceptance impact.",
+                }],
+                "red_team_status": "blocked",
+            },
+            {"passed": False, "reason": "review blocked"},
+        )
+
+        self.assertFalse(decision["failed_acceptance_ids"])
+
     def test_exact_revision_evidence_gap_cannot_become_followup_when_budget_exhausted(self):
         events = [
             {"type": "agent_backflow", "metadata": {"finding_family": family}}
