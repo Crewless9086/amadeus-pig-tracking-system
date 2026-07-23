@@ -15,15 +15,43 @@ create table if not exists public.riversdale_auction_cycles (
 );
 alter table public.riversdale_auction_cycles enable row level security;
 
--- Advisory membership is distinct from a reservation or sale.  While it is
--- active, one canonical pig cannot occur in two active auction cycles.
-create table if not exists public.riversdale_auction_cohort_members (
-    auction_cycle_id text not null references public.riversdale_auction_cycles(auction_cycle_id),
+-- This is the canonical one-pig/one-active-outlet rail. Every future protected
+-- outlet writer (customer sale, reservation, auction, meat, breeding, health
+-- hold, or keep-growing) must claim this row in the same transaction as its
+-- own domain record. The partial unique index is the durable fail-closed
+-- boundary: an animal cannot have two active outlet claims.
+create table if not exists public.pig_active_outlets (
+    outlet_assignment_id text primary key,
     pig_id text not null,
+    outlet_type text not null check (outlet_type in (
+        'customer_sale', 'reservation', 'riversdale_auction', 'meat',
+        'breeding', 'health_hold', 'keep_growing', 'abattoir'
+    )),
+    source_record_id text not null,
     active boolean not null default true,
     evidence_json jsonb not null default '{}'::jsonb,
     created_at timestamptz not null default now(),
-    primary key (auction_cycle_id, pig_id)
+    released_at timestamptz,
+    check ((active = true and released_at is null) or (active = false and released_at is not null)),
+    unique (outlet_assignment_id, pig_id)
+);
+create unique index if not exists pig_active_outlets_one_active_pig_unique
+    on public.pig_active_outlets (pig_id) where active;
+alter table public.pig_active_outlets enable row level security;
+
+-- Advisory membership is distinct from a reservation or sale. Each member is
+-- bound to the canonical active-outlet claim when an owner-approved execution
+-- rail is introduced; this advisory build itself does not insert either row.
+create table if not exists public.riversdale_auction_cohort_members (
+    auction_cycle_id text not null references public.riversdale_auction_cycles(auction_cycle_id),
+    pig_id text not null,
+    outlet_assignment_id text not null unique,
+    active boolean not null default true,
+    evidence_json jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    primary key (auction_cycle_id, pig_id),
+    foreign key (outlet_assignment_id, pig_id)
+        references public.pig_active_outlets(outlet_assignment_id, pig_id)
 );
 create unique index if not exists riversdale_auction_active_cohort_pig_unique
     on public.riversdale_auction_cohort_members (pig_id) where active;

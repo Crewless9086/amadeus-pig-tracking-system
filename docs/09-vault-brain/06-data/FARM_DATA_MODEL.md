@@ -19,7 +19,7 @@ Farm record writes require approved backend paths and audit evidence.
 | Farm products/settings | Medicine/product defaults and system settings. |
 | Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
 | Pig lifecycle events | Append-only audit evidence for canonical pig lifecycle facts; never a lifecycle write rail or substitute for the current-state projection on `pigs`. |
-| Riversdale auction cycles | Unapplied owner-confirmation and advisory cohort-snapshot rail. Its advisory member table permits one active auction cohort per canonical pig; neither rail is a reservation, sale, lifecycle, or customer-send rail. |
+| Riversdale auction cycles | Unapplied owner-confirmation and advisory cohort-snapshot rail. A canonical active-outlet claim rail permits at most one active customer sale, reservation, auction, meat, breeding, health-hold, keep-growing, abattoir, or future outlet state per pig; future protected cohort execution must create the matching claim and member transactionally. Neither auction rail is a reservation, sale, lifecycle, or customer-send rail. |
 
 ## Pig Observation Event Contract
 

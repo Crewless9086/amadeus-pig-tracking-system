@@ -1,5 +1,6 @@
 import unittest
 from datetime import date, datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from modules.sales.riversdale_auction import build_owner_prompts, build_riversdale_auction_packet, first_wednesday, load_owner_confirmed_cycle, queue_due_owner_prompts
@@ -105,6 +106,15 @@ class RiversdaleAuctionTests(unittest.TestCase):
         confirmation = load_owner_confirmed_cycle(today=date(2026, 8, 1), database_url="postgresql://test", connect_factory=lambda _url: Connection())
         self.assertEqual(confirmation["status"], "owner_confirmed_cycle_loaded")
         self.assertEqual(confirmation["confirmed_date"], "2026-08-05")
+
+    def test_unapplied_migration_defines_one_active_outlet_constraint(self):
+        sql = Path("supabase/migrations/202607230001_create_riversdale_auction_cycles.sql").read_text(encoding="utf-8")
+        self.assertIn("create table if not exists public.pig_active_outlets", sql)
+        self.assertIn("pig_active_outlets_one_active_pig_unique", sql)
+        self.assertIn("on public.pig_active_outlets (pig_id) where active", sql)
+        self.assertIn("foreign key (outlet_assignment_id, pig_id)", sql)
+        for outlet in ("customer_sale", "reservation", "riversdale_auction", "meat", "breeding", "health_hold", "keep_growing"):
+            self.assertIn(f"'{outlet}'", sql)
 
     @patch("modules.pig_weights.pig_weights_service.get_pig_allocation_readiness")
     @patch("modules.pig_weights.pig_weights_service.load_owner_confirmed_cycle")
