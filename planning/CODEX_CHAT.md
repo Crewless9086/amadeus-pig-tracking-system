@@ -17,7 +17,7 @@ Codex must follow:
 ### Concept / Problem / Idea
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Extend the existing pig-allocation engine with a Riversdale auction outlet for extremely slow growers and other owner-approved candidates. Coordinate Herdmaster biology and brand quality, Ledger margin and feed-cost evidence, SAM customer demand and Oom Sakkie preparation. Remind the owner 14 and 7 days before the first Wednesday monthly auction, ask whether it is operating and its confirmed date, then prepare a non-overlapping candidate cohort.
 ```
 
 ### Desired Outcome
@@ -29,13 +29,13 @@ Codex scopes this CHARLIE mission, updates active docs, builds only within the a
 ### Urgency
 
 ```text
-P0
+P1
 ```
 
 ### Mission Type
 
 ```text
-content engine
+farm operations improvement
 ```
 
 ### Approval Level
@@ -49,11 +49,11 @@ LEVEL 3
 ## CHARLIE MISSION RECORD
 
 ```text
-Mission ID: CHARLIE-MISSION-D2F2EE1B0230469D
-Mission title: Beacon Live Stock Awareness Packet Split
+Mission ID: CHARLIE-FARM-AUCTION-OUTLET-OPTIMIZATION-20260721
+Mission title: Riversdale auction outlet and one-pig/one-outlet profitability coordination
 Mission status at pickup: in_progress
 Runner mode: code_test_pr
-Vault stage: intake
+Vault stage: blocked_at_evidence_reviewer
 ```
 
 ---
@@ -63,43 +63,42 @@ Vault stage: intake
 ### Problem Statement
 
 ```text
-Build a separate Beacon Live Stock Awareness packet lane so piglet, litter, weaner, and farm-life media never default into the meat launch campaign. Beacon must ask/select campaign lane first, support owner-approved live-stock awareness captions, block direct sales words, and keep meat launch packet behavior separate. This fixes the failure where a piglet upload produced a meat sales publishing packet.
+Extend the existing pig-allocation engine with a Riversdale auction outlet for extremely slow growers and other owner-approved candidates. Coordinate Herdmaster biology and brand quality, Ledger margin and feed-cost evidence, SAM customer demand and Oom Sakkie preparation. Remind the owner 14 and 7 days before the first Wednesday monthly auction, ask whether it is operating and its confirmed date, then prepare a non-overlapping candidate cohort.
 ```
 
 ### Desired Outcome
 
 ```text
-Beacon can prepare correct live-stock awareness post packets from approved farm media without drifting into meat sales.
+Codex scopes this CHARLIE mission, updates active docs, builds only within the approved level and hard stops, tests thoroughly, and reports a debrief.
 ```
 
 ### Acceptance Criteria
 
 ```text
-- Beacon has an explicit live_stock_awareness campaign/packet mode.
-- Piglet/litter/weaner approved media routes to live-stock awareness drafts, not meat launch drafts.
-- Live-stock awareness packet validates no direct sales terms such as for sale, price, reserve, book, available, or DM to buy.
-- Owner packet includes selected media, exact caption, platform, SAM Live Stock handoff path, and pause/rollback instruction.
-- Existing meat launch tests still pass.
+- The existing allocation engine gains an auction outlet; no competing duplicate allocator is introduced.
+- Each pig has at most one active outlet state across customer sale, reservation, auction, meat, breeding, health hold and keep-growing paths.
+- Extremely slow growth, health/welfare, observed quality, customer suitability, feed cost, likely price and current sales demand are all evidenced in the recommendation.
+- Customer-quality candidates retain priority when economically and ethically sound; brand-risk animals are not presented as normal direct-sale stock.
+- First-Wednesday scheduling produces deduplicated 14-day and 7-day owner prompts and asks for explicit auction/date confirmation.
+- No auction commitment, stock reservation, customer promise or livestock-record change occurs without the required owner decision.
 ```
 
 ### Test Plan
 
 ```text
-- Run focused unit tests for touched modules.
-- Run route/frontend contract tests when routes or UI are touched.
-- Prove unsafe actions remain blocked by policy/authority flags.
-- Prepare owner review packet with changed files, tests, risks, rollback, and next gate.
-- Add Beacon tests proving live-stock media does not produce meat packet output.
+- Inspect current production truth read-only before implementation.
+- Run deterministic unit and disposable-database integration coverage.
+- Deploy only the tested revision after review and required protected approvals.
+- Record a safe live operational canary distinct from code delivery.
 ```
 
 ### Forbidden Actions
 
 ```text
-- Do not send customer messages without an approved customer-send gate.
-- Do not post publicly without exact owner approval and channel gate.
-- Do not create orders, quotes, invoices, reservations, stock changes, slaughter bookings, butcher bookings, payment confirmations, or farm lifecycle writes unless the mission explicitly builds and tests the gate and still stops at owner review.
-- Do not change Render production envs without owner instruction.
-- Do not merge or deploy without final owner release approval.
+- No production data writes unless explicitly approved.
+- No migrations unless explicitly approved.
+- No customer sends, public posts, payments, reservations, or lifecycle writes unless explicitly approved.
+- No .env, secrets, screenshots, external_sources, static/assets, or planning/Prompts.md unless explicitly approved.
 ```
 
 ### Media / References
@@ -111,16 +110,18 @@ Beacon can prepare correct live-stock awareness post packets from approved farm 
 ### Agent Workflow
 
 ```text
-- idea_expander: active - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
-- source_mapper: pending - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
-- concept_strategist: pending - Turn the idea into a clear concept, strategic thesis, options, and decision memo.
-- product_architect: pending - Shape product flow, owner value, user behavior, and acceptance boundaries.
-- risk_agent: pending - Create risk register across technical, legal, financial, operational, brand, and data risks.
-- council_synthesis: pending - Reconcile upstream agent thinking into one council-approved brief before planning or building.
-- business_reviewer: pending - Check commercial logic, income-stream readiness, and owner decision clarity.
-- evidence_reviewer: pending - Check claims, tests, citations, artifacts, and proof against the Vault.
-- reviewer: pending - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
-- publisher: pending - Prepare deployment/publishing packet after owner approval and verification.
+- idea_expander: complete - Expand rough owner idea into a clearer opportunity, user outcome, and non-goals.
+- source_mapper: complete - Map the real existing implementation before planning or building: routes, modules, templates, scripts, tests, migrations, active docs, and legacy sources.
+- concept_strategist: complete - Turn the idea into a clear concept, strategic thesis, options, and decision memo.
+- business_model_agent: complete - Evaluate revenue logic, pricing assumptions, cost drivers, and commercial next actions.
+- risk_agent: complete - Create risk register across technical, legal, financial, operational, brand, and data risks.
+- product_architect: complete - Shape product flow, owner value, user behavior, and acceptance boundaries.
+- technical_architect: complete - Design implementation structure, file/API/data impacts, integration risk, and test strategy.
+- business_reviewer: complete - Check commercial logic, income-stream readiness, and owner decision clarity.
+- security_reviewer: complete - Review permissions, secrets, data exposure, injection, and dangerous actions.
+- evidence_reviewer: blocked - Check claims, tests, citations, artifacts, and proof against the Vault.
+- council_synthesis: complete - Reconcile upstream agent thinking into one council-approved brief before planning or building.
+- reviewer: complete - Review diff, unsafe actions, docs, test evidence, QA findings, and release notes.
 ```
 
 ### Shared Mission Context Pack
