@@ -240,15 +240,15 @@ def backflow_budget(mission, findings=None):
 
 
 def _active_builder_revision(memory, metadata=None):
-    latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
-    builder = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
-    revision = _builder_artifact_revision(builder)
-    if revision:
-        return revision
     metadata = metadata if isinstance(metadata, dict) else {}
     packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
     artifacts = packet.get("agent_artifacts") if isinstance(packet.get("agent_artifacts"), dict) else {}
-    return _builder_artifact_revision(artifacts.get("builder"))
+    revision = _builder_artifact_revision(artifacts.get("builder"))
+    if revision:
+        return revision
+    latest = memory.get("latest_by_agent") if isinstance(memory.get("latest_by_agent"), dict) else {}
+    builder = latest.get("builder") if isinstance(latest.get("builder"), dict) else {}
+    return _builder_artifact_revision(builder)
 
 
 def _builder_artifact_revision(builder):

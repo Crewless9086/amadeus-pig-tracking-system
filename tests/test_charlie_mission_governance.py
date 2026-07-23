@@ -369,6 +369,37 @@ class CharlieMissionGovernanceTests(unittest.TestCase):
         self.assertEqual(budget["historical_mission_total"], 2)
         self.assertEqual(budget["revision_scope"], "new-consumed-revision")
 
+    def test_consumed_builder_artifact_overrides_stale_memory_revision(self):
+        events = [
+            {
+                "type": "agent_backflow",
+                "metadata": {"finding_family": "input_validation", "revision_sha": "stale-memory-revision"},
+            },
+            {
+                "type": "agent_backflow",
+                "metadata": {"finding_family": "input_validation", "revision_sha": "stale-memory-revision"},
+            },
+        ]
+        mission = mission_with_events(events)
+        mission["metadata"]["mission_memory"]["latest_by_agent"] = {
+            "builder": {"type": "agent_complete", "commit_sha": "stale-memory-revision"}
+        }
+        mission["metadata"]["review_packet"] = {
+            "agent_artifacts": {
+                "builder": {
+                    "commit_sha": "new-consumed-revision",
+                    "evidence_lineage": {"source_commit": "new-consumed-revision"},
+                }
+            }
+        }
+
+        budget = backflow_budget(mission, [{"family": "input_validation"}])
+
+        self.assertFalse(budget["exhausted"])
+        self.assertEqual(budget["mission_total"], 0)
+        self.assertEqual(budget["historical_mission_total"], 2)
+        self.assertEqual(budget["revision_scope"], "new-consumed-revision")
+
     def test_current_revision_backflows_still_exhaust_the_bounded_budget(self):
         events = [
             {
