@@ -49,6 +49,22 @@ class RiversdaleAuctionTests(unittest.TestCase):
         self.assertIn("customer-sale suitability", reasons["DIRECT"])
         self.assertIn("brand-quality", reasons["RISK"])
 
+    def test_duplicate_or_missing_pig_identity_fails_closed_for_every_cohort_view(self):
+        allocation = {"pigs": [
+            {"pig_id": "DUP-1", "growth_class": "Extremely Slow", "readiness_bucket": "Livestock Candidate"},
+            {"pig_id": "DUP-1", "growth_class": "Extremely Slow", "readiness_bucket": "Livestock Candidate", "tag_number": "conflicting-row"},
+            {"pig_id": "", "growth_class": "Extremely Slow", "readiness_bucket": "Livestock Candidate"},
+        ]}
+        packet = build_riversdale_auction_packet(
+            allocation, today=date(2026, 8, 1),
+            confirmation={"operating": True, "confirmed_date": "2026-08-05"},
+        )
+        self.assertEqual(packet["cohort"], [])
+        self.assertEqual(packet["candidate_preview"], [])
+        self.assertFalse(packet["one_pig_one_active_outlet"])
+        self.assertEqual([row["pig_id"] for row in packet["excluded"]], ["DUP-1", "DUP-1", ""])
+        self.assertTrue(all("blocks non-overlapping" in row["reason"] for row in packet["excluded"]))
+
     def test_prompt_queue_uses_stable_outbox_idempotency_keys(self):
         calls = []
         def queue(event, payload, **kwargs):

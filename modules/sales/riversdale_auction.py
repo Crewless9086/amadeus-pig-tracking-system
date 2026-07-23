@@ -148,6 +148,11 @@ def _candidate(pig):
     return not _exclusion_reason(pig)
 
 
+def _canonical_pig_id(pig):
+    """Return a stable identity or an empty value that must fail cohort assembly."""
+    return str(pig.get("pig_id") or "").strip()
+
+
 def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None):
     """Compose an owner-gated, non-overlapping recommendation cohort.
 
@@ -164,12 +169,28 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
     oom_sakkie_preparation = oom_sakkie_preparation if isinstance(oom_sakkie_preparation, dict) else {}
     pigs = allocation.get("pigs", []) if isinstance(allocation, dict) else []
 
+    # An auction cohort is only safe to describe as non-overlapping when every
+    # source row has one non-empty canonical identity.  Duplicate source rows
+    # are an allocation-data conflict, not evidence that one animal may appear
+    # twice in an owner packet.  Exclude every affected row rather than picking
+    # a winner or silently collapsing potentially conflicting facts.
+    identity_counts = {}
+    for pig in pigs:
+        pig_id = _canonical_pig_id(pig) if isinstance(pig, dict) else ""
+        identity_counts[pig_id] = identity_counts.get(pig_id, 0) + 1
+    invalid_identities = {pig_id for pig_id, count in identity_counts.items() if not pig_id or count > 1}
+
     candidates = []
     excluded = []
     for pig in pigs:
-        if _candidate(pig):
+        pig_id = _canonical_pig_id(pig) if isinstance(pig, dict) else ""
+        if not pig_id:
+            excluded.append({"pig_id": "", "reason": "missing canonical pig identity blocks non-overlapping auction review"})
+        elif pig_id in invalid_identities:
+            excluded.append({"pig_id": pig_id, "reason": "duplicate canonical pig identity blocks non-overlapping auction review"})
+        elif _candidate(pig):
             candidates.append({
-                "pig_id": pig.get("pig_id", ""), "tag_number": pig.get("tag_number", ""),
+                "pig_id": pig_id, "tag_number": pig.get("tag_number", ""),
                 "outlet": AUCTION_OUTLET, "active_outlet": "auction_advisory" if confirmation_valid else "none",
                 "growth_class": pig.get("growth_class", ""), "growth_reason": pig.get("growth_reason", ""),
                 "herdmaster_evidence": {"litter_quality": pig.get("litter_quality", ""), "health_status": pig.get("health_status", ""), "withdrawal_clear": pig.get("withdrawal_clear", "")},
@@ -179,7 +200,7 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
                 "owner_approval_required": True,
             })
         else:
-            excluded.append({"pig_id": pig.get("pig_id", ""), "reason": _exclusion_reason(pig)})
+            excluded.append({"pig_id": pig_id, "reason": _exclusion_reason(pig)})
 
     commercial_evidence_complete = all(
         item["ledger_evidence"].get("feed_cost_to_date") is not None
@@ -206,7 +227,7 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "cohort": candidates if confirmation_valid else [],
         "candidate_preview": candidates,
         "excluded": excluded,
-        "one_pig_one_active_outlet": True,
+        "one_pig_one_active_outlet": not invalid_identities and len({item["pig_id"] for item in candidates}) == len(candidates),
         "coordination_evidence": {
             "herdmaster": "canonical_allocation_rows",
             "ledger_complete": commercial_evidence_complete,
