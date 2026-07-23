@@ -9597,7 +9597,13 @@ def _run_codex_process(
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             pass
-        raise
+        # A model can finish writing its authoritative final artifact while
+        # the wrapper process is still slow to exit on Windows.  Do not throw
+        # away completed agent work merely because process teardown exceeded
+        # the grace window.  The normal artifact parser and schema validator
+        # below remain responsible for accepting or rejecting the content.
+        if not (final_path.exists() and final_path.stat().st_size > 0):
+            raise
     finally:
         stdout_handle.close()
         stderr_handle.close()
