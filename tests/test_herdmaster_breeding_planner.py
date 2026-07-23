@@ -5,6 +5,10 @@ from unittest.mock import Mock, patch
 from modules.agents.herdmaster import run_herdmaster
 
 
+class SensitiveReaderError(Exception):
+    """Representative canonical-reader exception whose message must not leak."""
+
+
 def tree(pig_id, mother, father):
     return {"pig_id": pig_id, "mother": {"pig_id": mother}, "father": {"pig_id": father}, "source": "supabase_canonical"}
 
@@ -118,6 +122,19 @@ class HerdmasterBreedingPlannerTests(unittest.TestCase):
         )
         self.assertNotIn(secret_like_error, response_text)
         self.assertNotIn("db.internal", response_text)
+
+    def test_sensitive_reader_error_fails_closed_without_exposing_exception_text(self):
+        secret_like_error = "postgresql://secret@db.internal/x"
+        readers = fixture_readers()
+        readers["family_tree"] = Mock(side_effect=SensitiveReaderError(secret_like_error))
+        result = run_herdmaster({"capability": "breeding_planner"}, readers=readers)
+
+        self.assertEqual(result["status"], "breeding_planner_needs_data")
+        self.assertEqual(
+            result["direct_answer"],
+            "Canonical Supabase breeding read failed; no legacy fallback was used.",
+        )
+        self.assertNotIn(secret_like_error, repr(result))
 
 
 if __name__ == "__main__":

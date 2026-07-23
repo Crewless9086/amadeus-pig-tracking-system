@@ -235,7 +235,11 @@ def _breeding_planner(request, readers, *, canonical_available):
         pigs, matings = list(readers["pig_rows"]() or []), list(readers["mating_overview"]() or [])
         analytics = readers["breeding_analytics"]() or {}
         metrics = {str(row.get("pig_id") or ""): row for group in (analytics.get("sows", []), analytics.get("boars", [])) for row in group}
-    except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError):
+    # Reader implementations are external canonical-data boundaries.  Fail
+    # closed for every ordinary reader failure without serialising its text.
+    # Do not catch BaseException: shutdown/interrupt control flow must remain
+    # visible to the process.
+    except Exception:
         return _breeding_needs_data("Canonical Supabase breeding read failed; no legacy fallback was used.")
     females = [row for row in pigs if _is_breeding_female(row)]
     potential_boars = [row for row in pigs if str(row.get("Sex") or "") in {"Male", "Castrated_Male"}]
@@ -256,7 +260,7 @@ def _breeding_planner(request, readers, *, canonical_available):
                     else:
                         matches.append({"pig_id": boar_id, "tag_number": str(boar.get("Tag_Number") or boar_id), "rank": 1, "basis": ["active", "on_farm", "breeding_purpose", "known_non_kinship", "condition_present", "performance_present"]})
             packets.append({"pig_id": female_id, "tag_number": str(female.get("Tag_Number") or female_id), "state": state, "missing_facts": missing, "safe_matches": matches, "excluded_matches": excluded, "advisory_calendar": reminders, "advisory_only": True, "owner_action": "Review the cited canonical facts and decide whether to use an approved mating workflow."})
-        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OSError):
+        except Exception:
             return _breeding_needs_data("Canonical Supabase breeding read failed; no legacy fallback was used.")
     fingerprint = hashlib.sha256(json.dumps({"pigs": pigs, "matings": matings, "analytics": analytics}, sort_keys=True, default=str).encode()).hexdigest()[:20]
     missing_any = any(item["missing_facts"] for item in packets)
