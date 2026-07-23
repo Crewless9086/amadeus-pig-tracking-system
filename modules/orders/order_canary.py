@@ -90,12 +90,17 @@ def run_order_persistence_canary(
     evidence = disposable_persistence_runner(validation["cleaned_data"])
     if not isinstance(evidence, dict) or not all(
         evidence.get(key) is True
-        for key in ("isolated_database", "order_persisted", "status_log_persisted")
+        for key in (
+            "isolated_database",
+            "order_persisted",
+            "status_log_persisted",
+            "cleanup_completed",
+        )
     ):
         return {
             "success": False,
             "mode": DISPOSABLE_INTEGRATION,
-            "error": "Disposable runner did not prove isolated order and status-log persistence.",
+            "error": "Disposable runner did not prove isolated persistence and completed cleanup.",
             "persistence": "unverified",
             "evidence": evidence if isinstance(evidence, dict) else {},
         }

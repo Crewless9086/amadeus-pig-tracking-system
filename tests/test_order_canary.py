@@ -85,6 +85,24 @@ class OrderCanaryTests(unittest.TestCase):
         self.assertEqual(result["persistence"], "unverified")
         runner.assert_called_once()
 
+    def test_disposable_integration_rejects_missing_cleanup_proof(self):
+        runner = Mock(return_value={
+            "isolated_database": True,
+            "order_persisted": True,
+            "status_log_persisted": True,
+        })
+
+        result = run_order_persistence_canary(
+            valid_payload(),
+            mode=DISPOSABLE_INTEGRATION,
+            persistence_requested=True,
+            disposable_persistence_runner=runner,
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["persistence"], "unverified")
+        self.assertIn("completed cleanup", result["error"])
+
     def test_disposable_integration_accepts_order_and_status_log_proof(self):
         runner = Mock(return_value={
             "isolated_database": True,
