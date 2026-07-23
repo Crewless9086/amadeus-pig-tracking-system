@@ -1,7 +1,7 @@
 # Amadeus StoryWorks Status
 
 **Last updated:** 2026-07-23
-**Current phase:** Phase 0 — executive decision pending
+**Current phase:** Phase 1 — lean private pilot production
 **Objective:** Determine whether The Chronicle Vault can support a repeatable, legally supportable and commercially viable media business through a bounded three-pilot validation programme.
 
 ## Isolation boundary
@@ -16,23 +16,23 @@
 
 ## Programme state
 
-- **Last completed outcome:** Phase 0 executive decision pack assembled from current policy research, a 20-channel market comparison and accessible recent-video observations, three positioning alternatives, twelve scored concepts, proposed pilots, unit economics and validation gates.
-- **Current work:** Phase 0 pack is internally reviewed and awaiting owner decision.
-- **Blockers:** Phase 1 must not begin until the owner decides positioning, pilot set and validation ceiling.
-- **Owner decisions required:** Approve/revise/reject the recommended promise; approve the proposed Petra/Rome grain/Inca roads pilots; approve/reduce/reject the R7,500 cash, R35,000 economic-cost and 12-week ceiling; authorise private Phase 1 only if accepted.
-- **Budget status:** No spend authorised; no spend incurred. Proposed maximum: R7,500 cash and R35,000 economic cost across three private pilots.
+- **Last completed outcome:** Petra private text package completed: approved brief, source packet, fact ledger, original script, fact-check, visual/asset plans, provenance, packaging, disclosure/copyright reviews, QA, economics control and measurement plan.
+- **Current work:** Internal package verification followed by human editorial/source review and rights-light storyboard prototypes.
+- **Blockers:** Petra cannot enter final edit until external-asset, map-reference, narration and music rights are resolved. No final video exists. Publishing and external actions remain owner-gated.
+- **Owner decisions required:** None at this stage. A specific decision will be required before any purchase, contractor engagement, channel/account action or publication.
+- **Budget status:** Maximum approved validation envelope: R7,500 cash and R35,000 economic cost. Actual spend remains R0.
 
 ## Next three actions
 
-1. Complete internal link, calculation, encoding and scope checks.
-2. Present the Phase 0 decision pack to the owner.
-3. If and only if approved, begin the private Petra pilot package.
+1. Verify all Petra files, claims, CSV structure, calculations, encoding and Git scope.
+2. Obtain human editorial/source interpretation and pronunciation review without external engagement unless separately approved.
+3. Create private original storyboard/diagram prototypes using no paid or unresolved external assets.
 
 ## Repository record
 
-- **Files changed:** StoryWorks-only documents under `planning/storyworks/`.
+- **Files changed:** StoryWorks-only documents under `planning/storyworks/`, including the private `pilots/petra/` package.
 - **Commits:** `1156d71` — `docs: add StoryWorks phase 0 decision pack`
-- **External actions performed:** Read-only public web research. No contact, publishing, account creation, purchase, deployment, migration, production-system or CORE action.
+- **External actions performed:** Read-only public web research. No contact, publishing, account creation, purchase, contractor engagement, deployment, migration, production-system or CORE action.
 
 ## Current risks
 
