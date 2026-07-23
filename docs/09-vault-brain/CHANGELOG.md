@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-07-23 - Riversdale advisory auction outlet
+
+- Defined Riversdale as an owner-confirmed, advisory-only monthly outlet for extremely slow growers and separately owner-approved candidates.
+- Required first-Wednesday 14-day and 7-day idempotent owner prompts, explicit operating/date confirmation, and a non-overlapping cohort.
+- Required Herdmaster, Ledger, SAM, and Oom Sakkie evidence; missing feed-cost or likely-price evidence blocks profitability wording.
+- Added an unapplied, owner-gated auction-cycle persistence contract. It cannot reserve stock, sell, change pig records, or send customers.
+
 ## 2026-07-22 - Herdmaster owner-approved purpose correction batches
 
 - Defined the additive, unapplied correction-batch contract: persisted owner approval, idempotency, execution-time canonical fresh-weight checks, and atomic per-pig operational audit events.

@@ -4,7 +4,7 @@ Purpose/allocation is dynamic and should use weights, growth, litter quality, de
 
 Fast growers from strong litters are reviewed first for breeding, then meat, then slaughter/abattoir fallback.
 
-Slow growers and underperformers should be considered for livestock sale to reduce feed cost.
+Slow growers and underperformers should be considered for livestock sale to reduce feed cost. Extremely slow growers and separately owner-approved candidates may be reviewed for the monthly Riversdale auction only after the owner confirms that it is operating and gives its date; this is advisory and never a reservation.
 
 Unknown purpose is a data/classification problem, not a silent sale/meat/slaughter decision.
 
@@ -14,6 +14,7 @@ Unknown purpose is a data/classification problem, not a silent sale/meat/slaught
 - Meat candidates should be young and weight-dependent.
 - Meat-window pigs that are not pre-sold in time should fall back to slaughter/abattoir.
 - Lifecycle, purpose, death, movement, medical, litter, mating, breeding, weight, and slaughter records require approved backend paths and owner approval where needed.
+- Auction review must evidence Herdmaster biology/brand quality, Ledger feed cost and likely price, SAM demand, and Oom Sakkie preparation. Missing commercial evidence blocks profitability wording.
 
 ## Readiness Buckets
 

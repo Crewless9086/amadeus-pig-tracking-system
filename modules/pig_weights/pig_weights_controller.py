@@ -6,6 +6,7 @@ from modules.pig_weights.pig_weights_service import (
     get_meat_ready_stock_summary,
     get_sales_metrics,
     get_pig_allocation_readiness,
+    get_riversdale_auction_recommendation,
     get_herdmaster_pig_allocation_alerts,
     get_purpose_review_queue,
     apply_purpose_review_decisions,
@@ -92,6 +93,10 @@ def get_pig_allocation_readiness_data():
 
 def get_pig_allocation_alerts_data():
     return get_herdmaster_pig_allocation_alerts()
+
+
+def get_riversdale_auction_recommendation_data():
+    return get_riversdale_auction_recommendation()
 
 
 def get_purpose_review_queue_data(litter_id: str = ""):

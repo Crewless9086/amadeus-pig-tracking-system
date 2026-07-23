@@ -19,6 +19,7 @@ Farm record writes require approved backend paths and audit evidence.
 | Farm products/settings | Medicine/product defaults and system settings. |
 | Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
 | Pig lifecycle events | Append-only audit evidence for canonical pig lifecycle facts; never a lifecycle write rail or substitute for the current-state projection on `pigs`. |
+| Riversdale auction cycles | Unapplied owner-confirmation and advisory cohort-snapshot rail; never a reservation, sale, lifecycle, or customer-send rail. |
 
 ## Pig Observation Event Contract
 
@@ -52,6 +53,7 @@ Farm record writes require approved backend paths and audit evidence.
 - Pig purpose/allocation must be dynamic and owner-reviewed where it changes operational state.
 - Unknown purpose is a classification gap, not a sale/meat/slaughter decision.
 - Sale/slaughter/meat exits must link back to explicit order or sales transaction evidence where possible.
+- Riversdale auction recommendations remain advisory until a persisted owner confirmation supplies operating status and a confirmed date. Existing customer orders/reservations, retention, health/withdrawal holds, and lifecycle conflicts exclude a pig from the cohort.
 
 ## Litter Detail Read Contract
 

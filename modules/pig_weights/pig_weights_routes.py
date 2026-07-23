@@ -19,6 +19,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_sales_dashboard_data,
     get_pig_allocation_readiness_data,
     get_pig_allocation_alerts_data,
+    get_riversdale_auction_recommendation_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
     create_purpose_correction_batch,
@@ -125,6 +126,14 @@ def pig_allocation_alerts():
     if denied:
         return denied
     return jsonify(get_pig_allocation_alerts_data())
+
+
+@pig_weights_bp.route("/riversdale-auction-recommendation", methods=["GET"])
+def riversdale_auction_recommendation():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    return jsonify(get_riversdale_auction_recommendation_data())
 
 
 @pig_weights_bp.route("/purpose-review", methods=["GET"])

@@ -28,6 +28,7 @@ from modules.pig_weights.mating_service import get_breeding_analytics, link_litt
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
+from modules.sales.riversdale_auction import build_riversdale_auction_packet
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4612,6 +4613,7 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
             "sale_category": sales_meta.get("sale_category", ""),
             "suggested_price_category": sales_meta.get("suggested_price_category", ""),
             "existing_link": sales_meta.get("reserved_for_order_id", ""),
+            "owner_approved_auction_candidate": to_clean_string(row.get("Owner_Approved_Auction_Candidate", "")),
         })
 
     rows.sort(key=lambda item: (
@@ -4644,6 +4646,16 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
         "writes_to_sheets": False,
         "writes_to_supabase": False,
     }
+
+
+def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_evidence=None, sam_demand=None, oom_sakkie_preparation=None):
+    """Read-only SAM Live Stock auction packet grounded in the canonical allocation."""
+    today = today or datetime.now().date()
+    allocation = get_pig_allocation_readiness(today=today)
+    return build_riversdale_auction_packet(
+        allocation, today=today, confirmation=confirmation, ledger_evidence=ledger_evidence,
+        sam_demand=sam_demand, oom_sakkie_preparation=oom_sakkie_preparation,
+    )
 
 
 HERDMASTER_ALERT_FORBIDDEN_ACTIONS = [
