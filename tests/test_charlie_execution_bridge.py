@@ -3354,6 +3354,38 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertIn("vault_sources_used", prompt)
         self.assertIn("vault_updates", prompt)
 
+    def test_targeted_recovery_requirements_override_stale_artifact_prose_in_prompt(self):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "builder",
+                    "reason": "exact_revision_ci_evidence_missing",
+                    "candidate_revision": "d7810e5",
+                },
+                "mission_coordinator": {
+                    "canonical_pr_number": 397,
+                    "canonical_candidate_revision": "d7810e5",
+                    "correction_requirements": [
+                        "Run the Riversdale PostgreSQL test in the existing isolated GitHub workflow."
+                    ],
+                },
+            },
+        }
+
+        prompt = execution_bridge.build_agent_stage_prompt(
+            mission,
+            "builder",
+            artifacts={"security_reviewer": {"next_action": "Old unrelated recovery prose."}},
+            ledger={},
+        )
+
+        self.assertIn("Authoritative targeted recovery requirements", prompt)
+        self.assertIn('"active_for_this_stage": true', prompt)
+        self.assertIn("Run the Riversdale PostgreSQL test in the existing isolated GitHub workflow.", prompt)
+        self.assertIn("override stale next_action", prompt)
+
     def test_architect_prompt_explains_internal_builder_authority_without_protected_authority(self):
         mission = {**MISSION, "metadata": {"pre_builder_scope": {
             "planning_gates": ["positive_and_negative_lifecycle_paths"],
