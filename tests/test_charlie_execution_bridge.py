@@ -1465,6 +1465,29 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(high_risk_gate["passed"])
         self.assertEqual(high_risk_gate["reason"], "qa_red_team confidence 88% is below the required 96%; clarify or inspect more evidence.")
 
+    def test_publisher_confidence_accepts_exact_revision_ci_and_pr_check_evidence(self):
+        artifact = _successful_stage_payload("publisher")
+        artifact.update({
+            "confidence": "98%",
+            "confidence_reason": (
+                "Local HEAD, PR #397 head, and successful disposable-PostgreSQL CI head all equal "
+                "c2529a33. PR is CLEAN and MERGEABLE with all three checks successful."
+            ),
+            "files_inspected": ["modules/charlie/execution_bridge.py"],
+            "test_evidence": [
+                {
+                    "command": "python -m unittest tests.test_charlie_execution_bridge",
+                    "status": "passed",
+                    "result": "passed",
+                }
+            ],
+            "recommended_owner_decision": "approve_final_release",
+        })
+
+        gate = execution_bridge._artifact_confidence_quality_gate("publisher", artifact)
+
+        self.assertTrue(gate["passed"], gate)
+
     def test_review_agent_structured_pass_allows_out_of_scope_release_note(self):
         artifact = _successful_stage_payload("business_reviewer")
         artifact.update({

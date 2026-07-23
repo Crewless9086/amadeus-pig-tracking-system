@@ -4253,8 +4253,14 @@ def _artifact_confidence_quality_gate(agent, artifact):
         }
     if not reason:
         return {"passed": False, "reason": f"{agent} did not record an evidence-backed confidence_reason."}
-    evidence_terms = ("source", "vault", "test", "evidence", "repo", "file", "screenshot", "log", "runtime", "owner")
+    evidence_terms = (
+        "source", "vault", "test", "evidence", "repo", "file", "screenshot", "log", "runtime", "owner",
+        "ci", "check", "revision", "commit", "sha", "pr head", "database",
+    )
     if not any(term in reason.lower() for term in evidence_terms):
+        objective = _objective_evidence_quality_override(agent, artifact, confidence)
+        if objective["passed"]:
+            return objective
         return {"passed": False, "reason": f"{agent} confidence_reason is not evidence-backed."}
     return {"passed": True, "reason": "confidence_gate_passed"}
 
