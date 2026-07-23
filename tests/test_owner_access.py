@@ -93,6 +93,15 @@ class OwnerAccessTests(unittest.TestCase):
         self.assertIn(b"Logged in:</strong> yes", status.data)
         self.assertIn(b"Session level:</strong> admin", status.data)
 
+    def test_authenticated_admin_session_has_opaque_audit_principal(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(ADMIN_TOKEN)
+            with self.client.session_transaction() as owner_session:
+                principal = owner_session["owner_access"]["principal_id"]
+        self.assertTrue(principal.startswith("owner-admin:"))
+        self.assertNotEqual(principal, "owner-admin:local-development")
+
     def test_invalid_token_denied(self):
         with patch.dict(os.environ, owner_env(), clear=False):
             self._configure()

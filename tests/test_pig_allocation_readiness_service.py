@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, datetime, timezone
 import unittest
 from unittest.mock import patch
 
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import pig_weights_service
+from modules.pig_weights import purpose_correction_batch_service
 
 
 class PigAllocationReadinessServiceTests(unittest.TestCase):
@@ -740,7 +741,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-UNKNOWN"]["proposed_purpose"], "Grow_Out")
         self.assertEqual(by_id["PIG-CLASSIFIED"]["review_status"], "classified")
 
-    def test_apply_purpose_review_decisions_updates_only_purpose_notes_and_timestamp(self):
+    def test_apply_purpose_review_decisions_rejects_direct_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -761,18 +762,12 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertFalse(result["dry_run"])
-        self.assertEqual(result["rows_updated"], 1)
-        updates = mock_update.call_args.args[1]["PIG-UNKNOWN"]
-        self.assertEqual(updates["Purpose"], "Grow_Out")
-        self.assertIn("Updated_At", updates)
-        self.assertIn("purpose review", updates["General_Notes"])
-        self.assertIn("Unknown to Grow_Out", updates["General_Notes"])
-        self.assertEqual(set(updates), {"Purpose", "Updated_At", "General_Notes"})
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        mock_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_prefers_supabase_validation_and_write(self):
+    def test_apply_purpose_review_decisions_rejects_direct_supabase_write_without_batch(self):
         pig_rows = [
             {
                 "Pig_ID": "PIG-UNKNOWN",
@@ -798,15 +793,14 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                 dry_run=False,
             )
 
-        self.assertEqual(status_code, 200)
-        self.assertTrue(result["success"])
-        self.assertTrue(result["source"]["writes_to_supabase"])
-        self.assertFalse(result["source"]["writes_to_sheets"])
-        read_pigs.assert_called_once_with(["PIG-UNKNOWN"])
-        update_pigs.assert_called_once()
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_required")
+        read_pigs.assert_not_called()
+        update_pigs.assert_not_called()
         sheet_update.assert_not_called()
 
-    def test_apply_purpose_review_decisions_blocks_reclassify_by_default(self):
+    def test_apply_purpose_review_decisions_blocks_direct_reclassification_without_batch(self):
         pig_rows = [{
             "Pig_ID": "PIG-DONE",
             "Status": "Active",
@@ -823,8 +817,218 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
 
         self.assertEqual(status_code, 409)
         self.assertFalse(result["success"])
-        self.assertIn("already has purpose", result["errors"][0])
+        self.assertEqual(result["status"], "correction_batch_required")
         mock_update.assert_not_called()
+
+    def test_owner_approved_fresh_batch_writes_purpose_and_complete_audit_event(self):
+        """The protected path must update only inside the batch transaction."""
+        approved_at = datetime(2026, 7, 21, tzinfo=timezone.utc)
+        decisions = [{"pig_id": "PIG-1", "purpose": "Meat", "reason": "Fresh weight", "note": "Owner reviewed"}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status, decisions_json" in self.last_sql:
+                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), approved_at, "owner-1")
+                return None
+
+            def fetchall(self):
+                if "from public.pigs pig" in self.last_sql:
+                    return [("PIG-1", "Active", True, "Grow_Out", date(2026, 7, 21), 63.0)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-1", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "correction_batch_executed")
+        self.assertEqual(len(result["event_ids"]), 1)
+        self.assertFalse(result["writes_to_sheets"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertIn("update public.pigs set purpose", sql)
+        self.assertIn("insert into public.operational_events", sql)
+        self.assertIn("status='executed'", sql)
+
+    def test_draft_batch_cannot_write_before_owner_approval(self):
+        class Cursor:
+            calls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.calls.append(sql)
+
+            def fetchone(self):
+                return ("draft", [], purpose_correction_batch_service._decision_hash([]), None, None)
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-DRAFT", actor_id="owner-admin:test", connect_factory=lambda _url: connection
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_not_owner_approved")
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_owner_approved_stale_batch_fails_before_purpose_or_audit_write(self):
+        decisions = [{"pig_id": "PIG-STALE", "purpose": "Meat", "reason": "Old signal", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status, decisions_json" in self.last_sql:
+                    return ("owner_approved", decisions, purpose_correction_batch_service._decision_hash(decisions), datetime(2026, 7, 1, tzinfo=timezone.utc), "owner-1")
+                return None
+
+            def fetchall(self):
+                if "from public.pigs pig" in self.last_sql:
+                    return [("PIG-STALE", "Active", True, "Grow_Out", date(2026, 6, 21), 63.0)]
+                return []
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-STALE", actor_id="owner-admin:test", connect_factory=lambda _url: connection, today=date(2026, 7, 22)
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "correction_batch_weight_not_fresh")
+        self.assertEqual(result["blocked_pig_ids"], ["PIG-STALE"])
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_tampered_approved_batch_cannot_write_under_prior_approval(self):
+        approved_decisions = [{"pig_id": "PIG-1", "purpose": "Meat", "reason": "Fresh", "note": ""}]
+        tampered_decisions = [{"pig_id": "PIG-1", "purpose": "Sale", "reason": "Changed", "note": ""}]
+
+        class Cursor:
+            def __init__(self):
+                self.calls = []
+                self.last_sql = ""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def execute(self, sql, _params=None):
+                self.last_sql = sql
+                self.calls.append(sql)
+
+            def fetchone(self):
+                if "select status, decisions_json" in self.last_sql:
+                    return ("owner_approved", tampered_decisions, purpose_correction_batch_service._decision_hash(approved_decisions), datetime(2026, 7, 21, tzinfo=timezone.utc), "owner-admin:session")
+                return None
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def cursor(self):
+                return self.cursor_instance
+
+        connection = Connection()
+        result, status_code = purpose_correction_batch_service.execute_correction_batch(
+            "BATCH-TAMPERED", actor_id="owner-admin:test", connect_factory=lambda _url: connection
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "correction_batch_decision_tampered")
+        sql = "\n".join(connection.cursor_instance.calls)
+        self.assertNotIn("update public.pigs set purpose", sql)
+        self.assertNotIn("insert into public.operational_events", sql)
+
+    def test_correction_batch_migration_makes_snapshot_immutable(self):
+        from pathlib import Path
+
+        sql = Path("supabase/migrations/202607220001_create_pig_purpose_correction_batches.sql").read_text(encoding="utf-8")
+        self.assertIn("enforce_pig_purpose_correction_batch_integrity", sql)
+        self.assertIn("new.decisions_json is distinct from old.decisions_json", sql)
+        self.assertIn("new.decision_hash is distinct from old.decision_hash", sql)
+        self.assertIn("before update on public.pig_purpose_correction_batches", sql)
 
     def test_purpose_review_recheck_returns_no_write_packet(self):
         allocation_result = {
@@ -1188,6 +1392,20 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         guard.assert_called_once()
         apply_decisions.assert_called_once_with(payload)
+
+    def test_correction_batch_route_forwards_server_bound_owner_principal(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Meat"}], "idempotency_key": "request-1"}
+        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(pig_weights_routes, "owner_admin_principal", return_value="owner-admin:opaque-session") as principal, \
+             patch.object(pig_weights_routes, "create_purpose_correction_batch", return_value=({"success": True}, 201)) as create_batch:
+            response = app.test_client().post("/api/pig-weights/purpose-review/correction-batches", json=payload)
+
+        self.assertEqual(response.status_code, 201)
+        principal.assert_called_once()
+        create_batch.assert_called_once_with(payload, actor_id="owner-admin:opaque-session")
 
     def test_pig_allocation_alert_route_contract_remains_owner_guarded(self):
         from pathlib import Path
