@@ -19,7 +19,7 @@
 - **Last completed outcome:** Petra private text package completed and three small original SVG/PNG style prototypes rendered and visually reviewed. No final media exists.
 - **Current work:** Human editorial/source interpretation and pronunciation review, followed by revision of the private script and prototypes.
 - **Blockers:** Petra cannot enter final edit until external-asset, map-reference, narration and music rights are resolved. No final video exists. Publishing and external actions remain owner-gated.
-- **Owner decisions required:** None at this stage. A specific decision will be required before any purchase, contractor engagement, channel/account action or publication.
+- **Owner decisions required:** Review the Petra script/prototypes or authorise a named human editorial/source reviewer; select owner narration, an approved human narrator, or a separately evaluated synthetic-voice route. Any contractor, provider or spend requires a specific follow-up approval.
 - **Budget status:** Maximum approved validation envelope: R7,500 cash and R35,000 economic cost. Actual spend remains R0.
 
 ## Next three actions
@@ -31,7 +31,7 @@
 ## Repository record
 
 - **Files changed:** StoryWorks-only documents under `planning/storyworks/`, including the private `pilots/petra/` package.
-- **Commits:** `1156d71` — `docs: add StoryWorks phase 0 decision pack`; `67f56a8` — `docs: record StoryWorks phase 0 handoff`; `23d66e3` — `docs: add private Petra pilot package`
+- **Commits:** `1156d71` — `docs: add StoryWorks phase 0 decision pack`; `67f56a8` — `docs: record StoryWorks phase 0 handoff`; `23d66e3` — `docs: add private Petra pilot package`; `fb6c536` — `docs: add Petra visual prototypes`
 - **External actions performed:** Read-only public web research. No contact, publishing, account creation, purchase, contractor engagement, deployment, migration, production-system or CORE action.
 
 ## Current risks
