@@ -5917,7 +5917,11 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
             and decision in {"approve", "approve_final", "approve_final_release"}
             and _artifact_has_passing_test_collection(artifact)
         )
-    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"}:
+    pre_existing_environment = (
+        "pre_existing" in scope
+        and any(term in scope for term in ("environment", "configuration", "test_harness"))
+    )
+    if scope in {"unrelated", "pre_existing", "pre_existing_unrelated", "adjacent_follow_up"} or pre_existing_environment:
         severity = str(value.get("severity") or "").strip().lower()
         acceptance = str(value.get("acceptance_relation") or value.get("acceptance_row") or "").strip().lower()
         if severity not in {"advisory", "informational", "info", "low"}:
@@ -5925,6 +5929,7 @@ def _is_structured_adjacent_follow_up(agent, artifact, value):
         explicitly_non_acceptance = (
             value.get("violates_acceptance_row") is False
             or value.get("acceptance_row_violation") is False
+            or (pre_existing_environment and acceptance in {"none", "not_applicable", "n/a"})
         )
         if not explicitly_non_acceptance and not any(term in acceptance for term in (
             "does not violate", "does not fail acceptance", "outside current acceptance",
