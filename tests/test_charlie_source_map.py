@@ -316,6 +316,44 @@ class CharlieSourceMapTests(unittest.TestCase):
         ]
         self.assertEqual([], missing_paths)
 
+    def test_herdmaster_observation_intent_recovery_maps_capture_sources_not_allocation(self):
+        mission = {
+            "mission_type": "incident repair",
+            "title": "Complete Herdmaster observations with separate management intents and actions",
+            "raw_text": (
+                "Verify append-only pig observation capture and structurally separate advisory "
+                "management intents. Preserve idempotency, owner authority and no-current-state mutation."
+            ),
+            "vault": {
+                "desired_outcome": (
+                    "Herdmaster can use human observations as evidence without treating a management "
+                    "intent as an executed livestock action."
+                )
+            },
+        }
+
+        packet = implementation_source_packet(mission)
+        keys = {section["key"] for section in packet["matched_sections"]}
+
+        self.assertIn("pig_observation_management_intent", keys)
+        self.assertNotIn("pig_allocation_herdmaster", keys)
+        self.assertIn(
+            "modules/pig_weights/pig_observation_capture_service.py",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "tests/test_pig_observation_capture_postgres.py",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql",
+            packet["required_inspection_paths"],
+        )
+        self.assertIn(
+            "/api/pig-weights/pigs/<pig_id>/management-intents",
+            packet["required_routes"],
+        )
+
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {
             "mission_type": "income stream",
