@@ -1436,6 +1436,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         payload = {"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}], "dry_run": True}
         service_result = {"success": True, "dry_run": True}
         with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None) as guard, \
+             patch.object(pig_weights_routes, "owner_actor_reference", return_value="owner-admin-test"), \
              patch.object(
                  pig_weights_routes,
                  "apply_purpose_review_queue_decisions",
@@ -1446,7 +1447,24 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         guard.assert_called_once()
-        apply_decisions.assert_called_once_with(payload)
+        apply_decisions.assert_called_once_with(payload, changed_by="owner-admin-test")
+
+    def test_purpose_review_apply_fails_closed_without_server_owner_reference(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        with patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(pig_weights_routes, "owner_actor_reference", return_value="") as actor, \
+             patch.object(pig_weights_routes, "apply_purpose_review_queue_decisions") as apply_decisions:
+            response = app.test_client().post(
+                "/api/pig-weights/purpose-review/apply",
+                json={"decisions": [{"pig_id": "PIG-1", "purpose": "Grow_Out"}], "changed_by": "forged"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "owner_actor_reference_unavailable")
+        actor.assert_called_once()
+        apply_decisions.assert_not_called()
 
     def test_correction_batch_route_forwards_server_bound_owner_principal(self):
         from app import app
