@@ -32,6 +32,10 @@ from modules.charlie.agent_runtime import delegate_to_agent
 WEBHOOK_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_ENABLED"
 WEBHOOK_TOKEN_ENV = "SAM_LIVE_STOCK_BACKEND_WEBHOOK_TOKEN"
 AUTOREPLY_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED"
+AUTOREPLY_CANARY_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED"
+AUTOREPLY_CANARY_CONVERSATION_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID"
+AUTOREPLY_CANARY_CONTACT_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID"
+AUTOREPLY_CANARY_INBOX_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID"
 LLM_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"
 AGENT_V3_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
@@ -82,6 +86,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
         "autoreply_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
         "autoreply_explicitly_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
+        "autoreply_canary": _autoreply_canary_policy(source),
         "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)) and llm_configured,
         "llm_explicitly_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
         "llm_configured": llm_configured,
@@ -91,6 +96,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "enabled_env": WEBHOOK_ENABLED_ENV,
         "token_env": WEBHOOK_TOKEN_ENV,
         "autoreply_env": AUTOREPLY_ENABLED_ENV,
+        "autoreply_canary_enabled_env": AUTOREPLY_CANARY_ENABLED_ENV,
         "llm_enabled_env": LLM_ENABLED_ENV,
         "agent_v3_enabled_env": AGENT_V3_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
@@ -147,6 +153,8 @@ def handle_sam_live_stock_chatwoot_inbound(
     voice_transcriber=None,
     image_classifier=None,
     chatwoot_sender=None,
+    routine_delivery_claim=None,
+    routine_delivery_evidence_recorder=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -296,6 +304,8 @@ def handle_sam_live_stock_chatwoot_inbound(
         conversation_review,
         source,
         chatwoot_sender=chatwoot_sender,
+        delivery_claim=routine_delivery_claim,
+        delivery_evidence_recorder=routine_delivery_evidence_recorder,
     )
     decision["routine_reply_delivery"] = routine_delivery
     return {
@@ -314,14 +324,16 @@ def handle_sam_live_stock_chatwoot_inbound(
     }, 200
 
 
-def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, environ=None, chatwoot_sender=None):
+def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, environ=None, chatwoot_sender=None, delivery_claim=None, delivery_evidence_recorder=None):
     source = environ if environ is not None else os.environ
     inbound = inbound if isinstance(inbound, dict) else {}
     decision = decision if isinstance(decision, dict) else {}
     review = review if isinstance(review, dict) else {}
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
-    if not _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
-        return {"attempted": False, "sent": False, "status": "routine_reply_disabled"}
+    canary = _autoreply_canary_evaluation(inbound, decision, review, source)
+    decision["autoreply_canary"] = canary
+    if not canary["allowed"]:
+        return {"attempted": False, "sent": False, "status": canary["status"], "canary": canary}
     if not decision.get("should_reply") or not reply:
         return {"attempted": False, "sent": False, "status": "routine_reply_not_recommended"}
     if review.get("escalation_required") or not review.get("safe_to_send"):
@@ -331,6 +343,13 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
     conversation_id = _clean(inbound.get("conversation_id"), 100)
     if not conversation_id:
         return {"attempted": False, "sent": False, "status": "routine_reply_conversation_id_missing"}
+    if delivery_claim is None:
+        return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_unavailable", "canary": canary}
+    claim = delivery_claim(inbound, decision, review)
+    if not isinstance(claim, dict) or not claim.get("success"):
+        return {"attempted": False, "sent": False, "status": "routine_reply_idempotency_claim_failed", "canary": canary}
+    if claim.get("created") is not True:
+        return {"attempted": False, "sent": False, "status": "routine_reply_duplicate_withheld", "canary": canary, "claim": claim}
     try:
         sender = chatwoot_sender or (
             lambda target, message, runtime_source: _send_chatwoot_message(
@@ -341,20 +360,49 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             )
         )
         sent = sender(conversation_id, reply, source)
+        status_code = sent.get("status_code") if isinstance(sent, dict) else None
+        confirmed = isinstance(status_code, int) and 200 <= status_code < 300
+        outcome = {"delivery_status": "chatwoot_send_confirmed" if confirmed else "chatwoot_send_outcome_unknown", "chatwoot_confirmed": confirmed, "status_code": status_code, "automatic_retry_prohibited": True}
+        evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, outcome)
         return {
             "attempted": True,
-            "sent": True,
-            "status": "sam_live_stock_routine_reply_sent",
+            "sent": confirmed,
+            "status": "sam_live_stock_routine_reply_sent" if confirmed else "sam_live_stock_routine_reply_outcome_unknown",
             "chatwoot": sent,
+            "canary": canary,
+            "claim": claim,
+            "delivery_evidence": evidence,
+            "automatic_retry_prohibited": True,
         }
     except Exception as exc:
+        failure_status = "chatwoot_send_failed_before_confirmation" if _send_failure_confirmed(exc) else "chatwoot_send_outcome_unknown"
+        evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, {"delivery_status": failure_status, "chatwoot_confirmed": False, "error_type": exc.__class__.__name__, "automatic_retry_prohibited": True})
         return {
             "attempted": True,
             "sent": False,
             "status": "sam_live_stock_routine_reply_failed",
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
+            "canary": canary,
+            "claim": claim,
+            "delivery_evidence": evidence,
+            "automatic_retry_prohibited": True,
         }
+
+
+def _record_delivery_outcome(recorder, claim, outcome):
+    if recorder is None:
+        return {"success": False, "status": "delivery_outcome_recorder_unavailable"}
+    try:
+        recorded = recorder(claim, outcome)
+        return recorded if isinstance(recorded, dict) else {"success": False, "status": "delivery_outcome_record_invalid"}
+    except Exception as exc:
+        return {"success": False, "status": "delivery_outcome_record_failed", "error_type": exc.__class__.__name__}
+
+
+def _send_failure_confirmed(exc):
+    message = str(exc or "").strip().lower()
+    return message.startswith("chatwoot_http_") and any(code in message for code in ("400", "401", "403", "404", "409", "422"))
 
 
 def parse_chatwoot_inbound(payload):
@@ -393,6 +441,7 @@ def parse_chatwoot_inbound(payload):
         "content": content,
         "conversation_id": conversation_id,
         "contact_id": _clean(payload.get("contact_id") or sender.get("id") or contact.get("id"), 100),
+        "inbox_id": _clean(payload.get("inbox_id") or (conversation.get("inbox") or {}).get("id"), 100),
         "account_id": _clean(payload.get("account_id") or account.get("id"), 100),
         "customer_name": customer_name or "Chatwoot customer",
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
@@ -605,14 +654,25 @@ def summarize_live_stock_availability(rows, facts=None):
     sex = _normal_sex(facts.get("sex"))
     requested_weight_range = facts.get("weight_range") or ""
     matched = []
-    for row in safe_rows:
-        if category and category not in _row_category_tokens(row):
+    considered = []
+    excluded = []
+    for row in rows:
+        if not isinstance(row, dict):
             continue
-        if sex and sex != "any" and sex not in _normal_text(row.get("sex")):
-            continue
-        if requested_weight_range and not _row_matches_requested_weight(row, requested_weight_range):
-            continue
-        matched.append(row)
+        reasons = _availability_exclusion_reasons(row, category, sex, requested_weight_range)
+        public_row = {
+            **_availability_public_row(row),
+            "selection_status": "excluded" if reasons else "eligible_exact_match",
+            "exclusion_reasons": reasons,
+        }
+        considered.append(public_row)
+        if reasons:
+            excluded.append(public_row)
+        else:
+            matched.append(row)
+    requested_bounds = _weight_bounds_from_text(requested_weight_range)
+    requested_midpoint = sum(requested_bounds) / 2 if requested_bounds else None
+    matched.sort(key=lambda row: _availability_rank_key(row, requested_midpoint))
 
     bucket_counts = {}
     for row in safe_rows:
@@ -625,7 +685,14 @@ def summarize_live_stock_availability(rows, facts=None):
         "total_available_count": len(safe_rows),
         "matched_count": len(matched),
         "summary": bucket_counts,
-        "matched_sample": [_availability_public_row(row) for row in matched[:10]],
+        "matched_sample": [
+            {**_availability_public_row(row), "selection_status": "eligible_exact_match", "exclusion_reasons": []}
+            for row in matched[:10]
+        ],
+        "considered_count": len(considered),
+        "considered_sample": considered[:25],
+        "excluded_count": len(excluded),
+        "excluded_sample": excluded[:25],
     }
 
 
@@ -895,6 +962,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         conversation_plan,
         draft_packet,
         price_answer_packet,
+        match_packet,
     )
     owner_correction_examples = _load_owner_correction_examples(
         inbound,
@@ -919,6 +987,14 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         owner_correction_examples=owner_correction_examples,
         conversation_plan=conversation_plan,
     )
+    if llm_draft.get("used") and _reply_exposes_internal_animal_evidence(llm_draft.get("reply_text"), match_packet):
+        llm_draft = {
+            **llm_draft,
+            "used": False,
+            "status": "llm_reply_internal_animal_evidence_blocked",
+            "reply_text": "",
+            "contains_internal_animal_evidence": True,
+        }
     reply = llm_draft.get("reply_text") if llm_draft.get("used") else fallback_reply
     reply_source = llm_draft.get("reply_source") if llm_draft.get("used") else "deterministic_read_only_guard"
     return {
@@ -1070,12 +1146,13 @@ def write_live_stock_intake_if_enabled(inbound, facts, decision, environ=None, i
         }
 
 
-def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_plan=None, draft_packet=None, price_answer_packet=None):
+def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_plan=None, draft_packet=None, price_answer_packet=None, match_packet=None):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
     conversation_plan = conversation_plan if isinstance(conversation_plan, dict) else {}
     draft_packet = draft_packet if isinstance(draft_packet, dict) else {}
     price_answer_packet = price_answer_packet if isinstance(price_answer_packet, dict) else {}
+    match_packet = match_packet if isinstance(match_packet, dict) else {}
     action = _clean(conversation_plan.get("next_action"), 80)
     durable_action = _durable_live_stock_next_action(
         inbound,
@@ -1106,6 +1183,16 @@ def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_p
         "manual_review_required": True,
         "draft_order_ready": bool(draft_packet.get("draft_ready")),
         "price_ready": bool(price_answer_packet.get("can_answer_price")),
+        "stock_preselection": {
+            "selected": list(match_packet.get("matched_sample") or []),
+            "excluded": list(match_packet.get("excluded_sample") or []),
+            "considered_count": int(match_packet.get("considered_count") or 0),
+            "selected_pig_ids": list(match_packet.get("selected_pig_ids") or []),
+            "proposed_order_lines": list(draft_packet.get("proposed_order_lines") or []),
+            "price_evidence": price_answer_packet.get("pricing") if isinstance(price_answer_packet.get("pricing"), dict) else {},
+            "exact_animal_assignment_written": False,
+            "owner_approval_required": True,
+        },
         "routes": action_packet,
         **_authority_flags(),
     }
@@ -1148,6 +1235,7 @@ def _refresh_owner_action_packet_after_draft_order(inbound, facts, decision, dra
         plan,
         decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {},
         decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
+        decision.get("match_packet") if isinstance(decision.get("match_packet"), dict) else {},
     )
 
 
@@ -1176,6 +1264,7 @@ def _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decisi
         plan,
         decision.get("draft_order_packet") if isinstance(decision.get("draft_order_packet"), dict) else {},
         decision.get("price_answer_packet") if isinstance(decision.get("price_answer_packet"), dict) else {},
+        decision.get("match_packet") if isinstance(decision.get("match_packet"), dict) else {},
     )
     packet["status"] = "blocked_until_stock_revalidated"
     packet["label"] = "Recheck draft order stock"
@@ -1370,6 +1459,7 @@ def build_live_stock_match_packet(facts, availability):
         status = "partial_match_available"
     elif quantity > 0 and availability.get("success"):
         status = "no_exact_match"
+    selected = matched[:quantity or 10]
     return {
         "version": "sam_live_stock_match_packet_v1",
         "read_only": True,
@@ -1378,7 +1468,12 @@ def build_live_stock_match_packet(facts, availability):
         "match_status": status,
         "complete_fulfillment": quantity > 0 and exact_count >= quantity,
         "partial_fulfillment": quantity > 0 and 0 < exact_count < quantity,
-        "matched_sample": matched[:quantity or 10],
+        "matched_sample": selected,
+        "selected_pig_ids": [row.get("pig_id") for row in selected if row.get("pig_id")],
+        "considered_count": int(availability.get("considered_count") or 0),
+        "considered_sample": list(availability.get("considered_sample") or []),
+        "excluded_count": int(availability.get("excluded_count") or 0),
+        "excluded_sample": list(availability.get("excluded_sample") or []),
         "owner_review_required": True,
         "can_create_draft_order": quantity > 0 and exact_count > 0,
     }
@@ -1424,6 +1519,21 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
     sync_validation = validate_sync_order_lines_payload(sync_payload)
     errors = list(order_validation.get("errors") or []) + list(sync_validation.get("errors") or [])
     enough_stock = bool(match_packet.get("complete_fulfillment"))
+    proposed_order_lines = [
+        {
+            "pig_id": row.get("pig_id"),
+            "tag_number": row.get("tag_number"),
+            "sex": row.get("sex"),
+            "current_weight_kg": row.get("current_weight_kg"),
+            "latest_weight_date": row.get("latest_weight_date"),
+            "current_pen_id": row.get("current_pen_id"),
+            "pricing": price_rule,
+            "proposal_only": True,
+            "owner_approval_required": True,
+        }
+        for row in (match_packet.get("matched_sample") or [])
+        if isinstance(row, dict) and row.get("pig_id")
+    ]
     return {
         "version": "sam_live_stock_draft_order_packet_v1",
         "draft_ready": not errors and enough_stock,
@@ -1435,6 +1545,8 @@ def build_live_stock_draft_order_packet(inbound, facts, match_packet=None):
         "stock_gate": "passed" if enough_stock else (
             "partial_matching_stock" if match_packet.get("partial_fulfillment") else "no_matching_stock"
         ),
+        "proposed_order_lines": proposed_order_lines,
+        "exact_animal_assignment_written": False,
         "warnings": [
             "Creates draft order only when explicit env gate is enabled.",
             "Does not reserve pigs.",
@@ -3026,6 +3138,10 @@ def _availability_public_row(row):
         "tag_number": _clean(row.get("tag_number"), 80),
         "sex": _clean(row.get("sex"), 40),
         "current_weight_kg": row.get("current_weight_kg"),
+        "latest_weight_date": _clean(row.get("latest_weight_date") or row.get("last_weight_date"), 40),
+        "days_since_weight": row.get("days_since_weight"),
+        "current_pen_id": _clean(row.get("current_pen_id"), 80),
+        "current_pen_name": _clean(row.get("current_pen_name"), 120),
         "weight_band": _clean(row.get("weight_band"), 80),
         "sale_category": _clean(row.get("sale_category"), 120),
         "suggested_price_category": _clean(row.get("suggested_price_category"), 120),
@@ -3037,7 +3153,156 @@ def _availability_public_row(row):
         "reserved_status": _clean(row.get("reserved_status"), 40),
         "available_for_sale": _clean(row.get("available_for_sale"), 40),
         "live_stock_sale_eligible": row.get("live_stock_sale_eligible"),
+        "health_status": _clean(row.get("health_status"), 80),
+        "medical_status": _clean(row.get("medical_status"), 80),
+        "withdrawal_clear": _clean(row.get("withdrawal_clear"), 40),
+        "current_withdrawal_end_date": _clean(row.get("current_withdrawal_end_date"), 40),
+        "reserved_for_order_id": _clean(row.get("reserved_for_order_id"), 100),
+        "eligibility_reason": _clean(row.get("live_stock_sale_reason") or row.get("sales_notes"), 300),
     }
+
+
+def _autoreply_canary_policy(source):
+    source = source if isinstance(source, Mapping) else {}
+    return {
+        "enabled": _truthy(source.get(AUTOREPLY_CANARY_ENABLED_ENV)),
+        "conversation_configured": bool(_clean(source.get(AUTOREPLY_CANARY_CONVERSATION_ENV), 100)),
+        "contact_configured": bool(_clean(source.get(AUTOREPLY_CANARY_CONTACT_ENV), 100)),
+        "inbox_configured": bool(_clean(source.get(AUTOREPLY_CANARY_INBOX_ENV), 100)),
+        "requires_all_three_exact_identity_matches": True,
+        "requires_persistent_idempotency_claim": True,
+        "minimum_llm_confidence": 0.96,
+        "minimum_lane_confidence": 0.90,
+        "contains_identity_values": False,
+        "kill_switch": AUTOREPLY_ENABLED_ENV,
+    }
+
+
+def _autoreply_canary_evaluation(inbound, decision, review, source):
+    source = source if isinstance(source, Mapping) else {}
+    inbound = inbound if isinstance(inbound, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    facts = decision.get("facts") if isinstance(decision.get("facts"), dict) else {}
+    llm = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
+    expected = {
+        "conversation": _clean(source.get(AUTOREPLY_CANARY_CONVERSATION_ENV), 100),
+        "contact": _clean(source.get(AUTOREPLY_CANARY_CONTACT_ENV), 100),
+        "inbox": _clean(source.get(AUTOREPLY_CANARY_INBOX_ENV), 100),
+    }
+    actual = {
+        "conversation": _clean(inbound.get("conversation_id"), 100),
+        "contact": _clean(inbound.get("contact_id"), 100),
+        "inbox": _clean(inbound.get("inbox_id"), 100),
+    }
+    configured = all(expected.values())
+    identity_matches = configured and all(actual[key] == expected[key] for key in expected)
+    llm_confident = _confidence_at_least(llm.get("confidence"), 0.96)
+    lane_confident = _confidence_at_least(facts.get("lane_confidence"), 0.90)
+    checks = {
+        "global_autoreply_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
+        "canary_enabled": _truthy(source.get(AUTOREPLY_CANARY_ENABLED_ENV)),
+        "all_identities_configured": configured,
+        "conversation_matches": bool(expected["conversation"] and actual["conversation"] == expected["conversation"]),
+        "contact_matches": bool(expected["contact"] and actual["contact"] == expected["contact"]),
+        "inbox_matches": bool(expected["inbox"] and actual["inbox"] == expected["inbox"]),
+        "review_safe": review.get("safe_to_send") is True and not review.get("escalation_required"),
+        "reviewed_llm_draft": llm.get("used") is True and str(decision.get("reply_source") or "").startswith("llm_"),
+        "llm_confident": llm_confident,
+        "lane_confident": lane_confident,
+        "intent_unambiguous": str(facts.get("message_intent") or "").lower() not in {"", "empty", "unclear"},
+        "media_review_not_required": facts.get("media_review_required") is not True,
+        "live_stock_lane": facts.get("sales_lane") == LANE_LIVE_STOCK and decision.get("sales_lane", LANE_LIVE_STOCK) == LANE_LIVE_STOCK,
+        "hostile_content_absent": not _hostile_or_scam_signal(inbound.get("content")),
+        "protected_mutation_absent": not any(decision.get(key) is True for key in ("creates_order", "creates_quote", "reserves_stock", "changes_stock", "writes_farm_data", "confirms_payment", "assigns_animal")),
+    }
+    allowed = identity_matches and all(checks.values())
+    if not checks["global_autoreply_enabled"]:
+        status = "routine_reply_disabled"
+    elif not checks["canary_enabled"]:
+        status = "routine_reply_canary_disabled"
+    elif not configured:
+        status = "routine_reply_canary_identity_not_configured"
+    elif not identity_matches:
+        status = "routine_reply_canary_identity_mismatch"
+    elif not checks["reviewed_llm_draft"]:
+        status = "routine_reply_requires_llm_draft"
+    elif not checks["review_safe"]:
+        status = "routine_reply_review_blocked"
+    elif not llm_confident:
+        status = "routine_reply_llm_confidence_blocked"
+    elif not lane_confident:
+        status = "routine_reply_lane_confidence_blocked"
+    elif not checks["intent_unambiguous"]:
+        status = "routine_reply_ambiguous_intent_blocked"
+    elif not checks["media_review_not_required"]:
+        status = "routine_reply_media_review_blocked"
+    elif not checks["live_stock_lane"]:
+        status = "routine_reply_wrong_lane_blocked"
+    elif not checks["hostile_content_absent"]:
+        status = "routine_reply_hostile_content_blocked"
+    elif not checks["protected_mutation_absent"]:
+        status = "routine_reply_protected_mutation_blocked"
+    else:
+        status = "routine_reply_canary_eligible"
+    return {"allowed": allowed, "status": status, "checks": checks, "contains_identity_values": False, "contains_secret_values": False}
+
+
+def _confidence_at_least(value, minimum):
+    try:
+        return float(value) >= float(minimum)
+    except (TypeError, ValueError):
+        return False
+
+
+def _availability_rank_key(row, requested_midpoint=None):
+    try:
+        weight = float(row.get("current_weight_kg"))
+    except (TypeError, ValueError):
+        weight = None
+    distance = abs(weight - requested_midpoint) if weight is not None and requested_midpoint is not None else 9999
+    try:
+        age = float(row.get("days_since_weight"))
+    except (TypeError, ValueError):
+        age = 9999
+    return (distance, age, _clean(row.get("pig_id"), 80))
+
+
+def _reply_exposes_internal_animal_evidence(reply, match_packet):
+    text = str(reply or "").casefold()
+    if not text:
+        return False
+    packet = match_packet if isinstance(match_packet, dict) else {}
+    rows = []
+    for key in ("matched_sample", "excluded_sample", "considered_sample"):
+        rows.extend(packet.get(key) if isinstance(packet.get(key), list) else [])
+    sensitive_keys = (
+        "pig_id", "tag_number", "current_pen_id", "current_pen_name", "health_status",
+        "medical_status", "current_withdrawal_end_date", "reserved_for_order_id",
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in sensitive_keys:
+            value = str(row.get(key) or "").strip()
+            if len(value) >= 3 and value.casefold() in text:
+                return True
+    return False
+
+
+def _availability_exclusion_reasons(row, category, sex, requested_weight_range):
+    reasons = []
+    if not _row_available_for_live_stock(row):
+        reasons.append(_clean(row.get("live_stock_sale_reason") or row.get("sales_notes") or "not currently sale eligible", 300))
+        return reasons
+    if category and category not in _row_category_tokens(row):
+        reasons.append(f"category_mismatch:{category}")
+    row_sex = _normal_text(row.get("sex"))
+    if sex and sex != "any" and sex not in row_sex:
+        reasons.append(f"sex_mismatch:{sex}")
+    if requested_weight_range and not _row_matches_requested_weight(row, requested_weight_range):
+        reasons.append(f"weight_mismatch:{_clean(requested_weight_range, 80)}")
+    return reasons
 
 
 def _normal_category(value):

@@ -126,6 +126,34 @@ def build_sam_live_stock_review_event(inbound, facts, decision, review=None, *, 
     return event
 
 
+def build_sam_live_stock_delivery_outcome_event(claim, outcome):
+    claim = claim if isinstance(claim, dict) else {}
+    outcome = outcome if isinstance(outcome, dict) else {}
+    claim_id = _clean(claim.get("review_event_id"), 120)
+    delivery_status = _clean(outcome.get("delivery_status"), 80)
+    event = build_sam_live_stock_review_event({}, {}, {}, {
+        "score": 0, "safe_to_send": False, "recommended_action": "automatic_retry_prohibited",
+    }, event_source="sam_live_stock_autoreply_delivery_outcome")
+    event["review_event_id"] = _stable_id("SAM-LIVE-DELIVERY", [claim_id, delivery_status])
+    event["recommended_action"] = "automatic_retry_prohibited"
+    event["review_json"] = {
+        "delivery_status": delivery_status,
+        "claim_reference_hash": hashlib.sha256(claim_id.encode("utf-8", errors="ignore")).hexdigest()[:24],
+        "claim_acquired": claim.get("created") is True,
+        "chatwoot_confirmed": outcome.get("chatwoot_confirmed") is True,
+        "automatic_retry_prohibited": True,
+        "error_type": _clean(outcome.get("error_type"), 80),
+        "status_code": outcome.get("status_code") if isinstance(outcome.get("status_code"), int) else None,
+        "contains_configured_identity_values": False,
+        "contains_secret_values": False,
+    }
+    event["customer_message_excerpt"] = ""
+    event["sam_reply_excerpt"] = ""
+    event["facts_json"] = {}
+    event["decision_json"] = {}
+    return event
+
+
 def record_sam_live_stock_review_event(event, database_url=None):
     event = event if isinstance(event, dict) else {}
     params = _review_event_params(event)

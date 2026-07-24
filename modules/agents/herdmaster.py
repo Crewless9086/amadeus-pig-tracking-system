@@ -200,20 +200,21 @@ def _pig_profile(request, readers):
 
 def _sales_availability(question, readers, use_cache=False):
     rows = list(_cached_read("sales_availability", readers["sales_availability"], use_cache) or [])
-    eligible = [row for row in rows if str(row.get("availability_status") or row.get("status") or "").strip().lower() in {"available", "ready", "available_for_sale"} or row.get("available_for_sale") is True]
-    # The canonical service already excludes unsafe candidates; preserve its
-    # rows and provenance for SAM instead of reimplementing eligibility here.
-    effective = eligible if eligible else rows
+    eligible = [row for row in rows if (
+        row.get("live_stock_sale_eligible") is True
+        or str(row.get("availability_status") or "").strip().lower() in {"available", "ready", "available_for_sale"}
+        or str(row.get("available_for_sale") or "").strip().lower() in {"yes", "true", "1"}
+    )]
     return {
         "success": True, "status": "herdmaster_sales_availability_ready", "capability": "sales_availability",
-        "direct_answer": f"Herdmaster found {len(effective)} canonical live-stock sale candidate(s) for SAM to evaluate.",
-        "facts": [{"name": "live_stock_candidate_count", "value": len(effective)}],
-        "metrics": {"candidate_count": len(effective)}, "breakdown": {}, "anomalies": [], "inferences": [],
+        "direct_answer": f"Herdmaster found {len(eligible)} eligible candidate(s) from {len(rows)} canonical animal row(s).",
+        "facts": [{"name": "live_stock_candidate_count", "value": len(eligible)}],
+        "metrics": {"candidate_count": len(eligible), "considered_count": len(rows), "excluded_count": len(rows) - len(eligible)}, "breakdown": {}, "anomalies": [], "inferences": [],
         "recommendations": ["SAM must match customer requirements before preparing an offer."], "unresolved_questions": [],
         "sources": [{"name": "sales_availability", "authority": "Herdmaster/Pig Allocation canonical read model"}],
         "freshness": {"observed_at": datetime.now(timezone.utc).isoformat(), "mode": "live_read", "source": "supabase_canonical"},
-        "confidence": 0.99, "summary": f"Herdmaster supplied {len(effective)} governed live-stock candidate(s).",
-        "availability_rows": effective, "question": question,
+        "confidence": 0.99, "summary": f"Herdmaster supplied {len(rows)} governed row(s), including {len(eligible)} eligible candidate(s).",
+        "availability_rows": rows, "question": question,
     }
 
 

@@ -100,6 +100,7 @@ from modules.sales.sam_live_stock_runtime import (
     send_owner_approved_live_stock_reply,
 )
 from modules.sales.sam_live_stock_launch_control import (
+    build_sam_live_stock_delivery_outcome_event,
     _telegram_send_message,
     apply_sam_live_stock_chatwoot_takeover,
     build_live_stock_reservation_plan,
@@ -467,7 +468,10 @@ def _attach_sam_live_stock_review_event(result, raw_payload):
         event_source="sam_meat_internal_live_stock_handoff",
     )
     learning_result, learning_status = record_sam_live_stock_review_event(event)
-    notification_result = _send_sam_live_stock_owner_notification_if_needed(event, learning_result)
+    delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
+    claim = delivery.get("claim") if isinstance(delivery.get("claim"), dict) else {}
+    notification_learning = claim if claim.get("review_event_id") == event.get("review_event_id") and claim.get("created") is True else learning_result
+    notification_result = _send_sam_live_stock_owner_notification_if_needed(event, notification_learning)
     result["conversation_review_event"] = {
         "status": learning_result.get("status"),
         "status_code": learning_status,
@@ -539,7 +543,11 @@ def sam_live_stock_chatwoot_inbound():
     if owner_reply_capture.get("attempted"):
         return jsonify(owner_reply_capture), owner_reply_capture.get("status_code", 200)
     try:
-        result, status_code = handle_sam_live_stock_chatwoot_inbound(payload)
+        result, status_code = handle_sam_live_stock_chatwoot_inbound(
+            payload,
+            routine_delivery_claim=_claim_sam_live_stock_routine_delivery,
+            routine_delivery_evidence_recorder=_record_sam_live_stock_delivery_outcome,
+        )
     except Exception as exc:
         result, status_code = {
             "success": False,
@@ -557,6 +565,35 @@ def sam_live_stock_chatwoot_inbound():
     if result.get("processed") and isinstance(result.get("sam_decision"), dict):
         _attach_sam_live_stock_review_event(result, payload)
     return jsonify(result), status_code
+
+
+def _claim_sam_live_stock_routine_delivery(inbound, decision, review):
+    event = build_sam_live_stock_review_event(inbound, decision.get("facts") or {}, decision, review)
+    result, status_code = record_sam_live_stock_review_event(event)
+    return {
+        "success": result.get("success") is True,
+        "created": result.get("created") is True,
+        "status": result.get("status"),
+        "status_code": status_code,
+        "review_event_id": result.get("review_event_id") or event.get("review_event_id"),
+        "conversation_event_count": result.get("conversation_event_count"),
+        "contains_secret_values": False,
+    }
+
+
+def _record_sam_live_stock_delivery_outcome(claim, outcome):
+    event = build_sam_live_stock_delivery_outcome_event(claim, outcome)
+    result, status_code = record_sam_live_stock_review_event(event)
+    return {
+        "success": result.get("success") is True,
+        "created": result.get("created") is True,
+        "status": result.get("status"),
+        "status_code": status_code,
+        "delivery_status": (event.get("review_json") or {}).get("delivery_status"),
+        "review_event_id": result.get("review_event_id") or event.get("review_event_id"),
+        "contains_configured_identity_values": False,
+        "contains_secret_values": False,
+    }
 
 
 def _capture_sam_live_stock_owner_reply_if_needed(payload):

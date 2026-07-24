@@ -764,12 +764,32 @@ def _allocation_overview_row(row):
         "Current_Withdrawal_End_Date": _date_text(row.get("current_withdrawal_end_date")),
         "Health_Status": _text(row.get("health_status")),
         "Medical_Status": _text(row.get("medical_status")),
+        "Reserved_Status": _text(row.get("reserved_status")),
+        "Reserved_For_Order_ID": _text(row.get("reserved_for_order_id")),
         "Media_References": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
     }
 
 
 def get_allocation_input_rows(connect_factory=None):
     current_rows = _current_state_rows(connect_factory=connect_factory)
+    allocated_rows = _fetch_all(
+        """
+        select distinct on (line.pig_id)
+            line.pig_id, line.order_id, line.line_status, customer_order.order_status,
+            line.updated_at as line_updated_at, customer_order.updated_at as order_updated_at
+        from public.order_lines line
+        join public.orders customer_order on customer_order.order_id = line.order_id
+        where nullif(btrim(line.pig_id), '') is not null
+          and coalesce(nullif(lower(btrim(line.line_status)), ''), 'unknown') not in ('cancelled', 'collected')
+          and coalesce(nullif(lower(btrim(customer_order.order_status)), ''), 'unknown') not in ('cancelled', 'completed', 'rejected')
+        order by line.pig_id,
+                 case when lower(btrim(line.line_status)) = 'reserved' then 0 else 1 end,
+                 line.updated_at desc nulls last,
+                 line.order_line_id
+        """,
+        connect_factory=connect_factory,
+    )
+    allocated_by_pig = {row["pig_id"]: row for row in allocated_rows}
     medical_rows = _fetch_all(
         """
         select distinct on (pig_id)
@@ -783,6 +803,11 @@ def get_allocation_input_rows(connect_factory=None):
     medical_by_pig = {row["pig_id"]: row for row in medical_rows}
     today = date.today()
     for row in current_rows:
+        allocation = allocated_by_pig.get(row.get("pig_id"), {})
+        row["reserved_status"] = "Reserved" if _text(allocation.get("line_status")).lower() == "reserved" else (
+            "Allocated" if allocation else "Not_Reserved"
+        )
+        row["reserved_for_order_id"] = allocation.get("order_id", "")
         medical = medical_by_pig.get(row.get("pig_id"), {})
         withdrawal_end = medical.get("withdrawal_end_date")
         follow_up_date = medical.get("follow_up_date")
