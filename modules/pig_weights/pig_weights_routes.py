@@ -28,7 +28,8 @@ from modules.pig_weights.pig_weights_controller import (
     get_purpose_review_recheck_packet,
     get_meat_planning_data,
     list_parent_options,
-    list_active_pigs,
+    list_pigs,
+    get_lifecycle_exit_reconciliation_data,
     list_sales_availability,
     list_litters,
     get_family_tree_profile,
@@ -199,7 +200,24 @@ def parent_options():
 
 @pig_weights_bp.route("/pigs", methods=["GET"])
 def pigs():
-    return jsonify(list_active_pigs())
+    scope = request.args.get("scope", "active").strip().lower()
+    if scope not in {"active", "archived"}:
+        return jsonify({"success": False, "error": "scope must be 'active' or 'archived'."}), 400
+    try:
+        return jsonify(list_pigs(scope))
+    except RuntimeError as exc:
+        return jsonify({"success": False, "scope": scope, "error": str(exc)}), 503
+
+
+@pig_weights_bp.route("/lifecycle-exit-reconciliation", methods=["GET"])
+def lifecycle_exit_reconciliation():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    try:
+        return jsonify(get_lifecycle_exit_reconciliation_data())
+    except RuntimeError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
 
 @pig_weights_bp.route("/sales-availability", methods=["GET"])

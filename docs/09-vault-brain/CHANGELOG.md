@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-24 - Pig lifecycle history read repair
+
+- Defined the canonical detail snapshot, explicit active/archive list scopes, and read-only missing-exit-field reconciliation contract.
+- Kept current-state snapshot facts distinct from the unapplied immutable lifecycle-event rail; missing event history is explicit and no dates or reasons are inferred.
+- Retained owner approval for any historical lifecycle correction, migration application, or farm-record write.
+
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 
 - Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.

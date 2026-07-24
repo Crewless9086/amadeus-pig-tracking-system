@@ -13,7 +13,8 @@ from modules.pig_weights.pig_weights_service import (
     build_purpose_review_recheck,
     get_meat_planning_summary,
     get_parent_options,
-    get_active_pigs,
+    get_pigs,
+    get_lifecycle_exit_reconciliation_report,
     get_sales_availability,
     list_litter_overview,
     get_family_tree,
@@ -141,12 +142,18 @@ def list_parent_options():
     }
 
 
-def list_active_pigs():
-    pigs = get_active_pigs()
+def list_pigs(scope="active"):
+    pigs = get_pigs(scope)
     return {
+        "success": True,
+        "scope": scope,
         "count": len(pigs),
         "pigs": pigs
     }
+
+
+def get_lifecycle_exit_reconciliation_data():
+    return get_lifecycle_exit_reconciliation_report()
 
 
 def list_sales_availability():

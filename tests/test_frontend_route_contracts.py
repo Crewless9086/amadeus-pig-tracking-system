@@ -1689,6 +1689,19 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".pig-list-hover-detail", css)
         self.assertIn(".pigs-dashboard-page .pig-list-card:focus-visible", css)
 
+    def test_pig_list_has_a_safe_retained_history_view_contract(self):
+        template = Path("templates/pig-list.html").read_text(encoding="utf-8")
+        js = Path("static/js/pigList.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="pig_archive_view"', template)
+        self.assertIn("Retained history", template)
+        self.assertIn('view=archive', template)
+        self.assertIn('scope=${encodeURIComponent(scope)}', js)
+        self.assertIn('confirmedScope !== scope', js)
+        self.assertIn('return_label: isArchiveView() ? "Back to Retained History"', js)
+        self.assertIn('appendDetail(detailGrid, "Exit Date"', js)
+        self.assertIn('appendDetail(detailGrid, "Exit Reason"', js)
+
     def test_sales_availability_cards_show_current_sam_stock_truth(self):
         js = Path("static/js/salesAvailability.js").read_text(encoding="utf-8")
 
@@ -1748,6 +1761,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("renderLifecycleHistory", js)
         self.assertIn("pig.lifecycle", js)
         self.assertIn("window.confirm", js)
+
+    def test_pig_detail_distinguishes_lifecycle_snapshot_from_audit_history(self):
+        template = Path("templates/pig-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/pigDetail.js").read_text(encoding="utf-8")
+
+        self.assertIn("Current Lifecycle Snapshot", template)
+        self.assertIn('id="lifecycle_audit_history"', template)
+        self.assertIn("Lifecycle Audit History", template)
+        self.assertIn("renderLifecycleAuditHistory", js)
+        self.assertIn("pig.lifecycle_audit", js)
+        self.assertIn("Missing exit details remain visibly unknown", template)
 
     def test_pig_child_pages_return_to_pig_profile(self):
         template_expectations = {
