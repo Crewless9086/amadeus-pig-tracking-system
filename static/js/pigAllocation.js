@@ -192,6 +192,10 @@ function rowSearchText(row) {
     row.current_pen_name,
     row.current_pen_id,
     row.animal_type,
+    row.recorded_animal_type,
+    row.weight_stage,
+    row.reconciliation_status,
+    row.reconciliation_explanation,
     row.sex,
     row.purpose,
     row.suggested_purpose,
@@ -464,7 +468,8 @@ function renderRows(rows) {
       <tr>
         <td>
           <a class="detail-link allocation-pig-link" href="${profileHref}">${escapeHtml(pigLabel(row))}</a>
-          <span class="table-subtext">${escapeHtml(row.animal_type || "-")} / ${escapeHtml(row.sex || "-")}</span>
+          <span class="table-subtext">Recorded: ${escapeHtml(row.recorded_animal_type || row.animal_type || "-")} / ${escapeHtml(row.sex || "-")}</span>
+          <span class="table-subtext">Weight stage: ${escapeHtml(row.weight_stage || "Needs weight")}</span>
         </td>
         <td>
           <span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span>
@@ -499,6 +504,10 @@ function renderRows(rows) {
             <dl>
               <div><dt>Pig ID</dt><dd>${escapeHtml(row.pig_id || "-")}</dd></div>
               <div><dt>Reason</dt><dd>${escapeHtml(row.readiness_reason || "-")}</dd></div>
+              <div><dt>Stage reconciliation</dt><dd>${escapeHtml(row.reconciliation_status || "-")} / ${escapeHtml(row.reconciliation_confidence || "-")}</dd></div>
+              <div><dt>Stage evidence</dt><dd>Recorded: ${escapeHtml(row.recorded_animal_type || "-")} / Weight-derived: ${escapeHtml(row.weight_stage || "Needs weight")}</dd></div>
+              <div><dt>Stage explanation</dt><dd>${escapeHtml(row.reconciliation_explanation || "-")}</dd></div>
+              <div><dt>Correction candidate</dt><dd>${row.correction_candidate && row.correction_candidate.eligible_for_owner_review ? `Owner review: ${escapeHtml(row.correction_candidate.recommended_animal_type || "-")} (batch required; not applied)` : "No correction candidate"}</dd></div>
               <div><dt>Suggested reason</dt><dd>${escapeHtml(row.suggested_purpose_reason || "-")}</dd></div>
               <div><dt>Weaning</dt><dd>${escapeHtml(formatKg(row.wean_weight_kg))} / ${row.wean_date ? `${escapeHtml(row.wean_date)} (${escapeHtml(row.days_since_wean ?? "-")} days)` : "No wean date"}</dd></div>
               <div><dt>Litter / Parents</dt><dd>${escapeHtml(row.litter_id || "-")} / ${escapeHtml(parentText || "No parent links")}</dd></div>

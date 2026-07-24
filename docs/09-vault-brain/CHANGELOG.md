@@ -291,3 +291,7 @@
 - Bound exact Facebook copy, approved media hash, source revisions, cap, price, and SAM attribution into a deterministic packet that is server-revalidated before the existing exact owner confirmation gate.
 - Kept WhatsApp suggestion-only and preserved all no-send, no-reservation, no-order, no-stock-change, no-spend, and no-lifecycle-write boundaries.
 - Added a deterministic append-only pre-send claim so retries and concurrent duplicates stop before Meta, while the returned Facebook post ID remains separate append-only result evidence.
+# 2026-07-22 - Herdmaster weight-stage reconciliation
+
+- Added the read-only Herdmaster rule that recorded animal type and weight-derived production stage remain distinct facts, with frozen `35-<60 kg = Grower` thresholds.
+- Required evidence-backed mismatch explanations and advisory-only correction candidates; stale/missing weights block candidates, and no Animal_Type write rail is introduced.

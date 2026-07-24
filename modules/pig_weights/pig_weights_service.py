@@ -129,6 +129,8 @@ DEFAULT_ALLOCATION_SETTINGS = {
     "good_litter_survival_rate": GOOD_LITTER_SURVIVAL_RATE,
     "stale_weight_days": STALE_WEIGHT_DAYS,
 }
+WEIGHT_STAGE_RULE = "Piglet <15 kg; Weaner 15-<35 kg; Grower 35-<60 kg; Finisher 60 kg+"
+PRODUCTION_WEIGHT_STAGES = {"Piglet", "Weaner", "Grower", "Finisher"}
 PURPOSE_REVIEW_ALLOWED_PURPOSES = {
     "Breeding",
     "Grow_Out",
@@ -148,6 +150,121 @@ SUGGESTED_PURPOSE_TO_STORED_PURPOSE = {
 
 def _allocation_settings():
     return dict(DEFAULT_ALLOCATION_SETTINGS)
+
+
+def _weight_stage(weight_kg):
+    """Return the production stage from the latest recorded weight only.
+
+    This intentionally does not use ``animal_type``: the recorded type is a
+    separate canonical fact that Herdmaster must reconcile rather than mask.
+    """
+    weight = to_float(weight_kg)
+    if weight is None or weight < 0:
+        return ""
+    if weight < 15:
+        return "Piglet"
+    if weight < 35:
+        return "Weaner"
+    if weight < 60:
+        return "Grower"
+    return "Finisher"
+
+
+def _weight_stage_reconciliation(recorded_animal_type, growth, settings):
+    recorded = to_clean_string(recorded_animal_type)
+    latest_weight = growth.get("latest_weight_kg")
+    weight_stage = _weight_stage(latest_weight)
+    days_since_weight = growth.get("days_since_weight")
+    stale_weight_days = settings["stale_weight_days"]
+    freshness = "fresh" if days_since_weight is not None and days_since_weight <= settings["fresh_weight_days"] else "stale"
+    is_stale_or_missing = (
+        not weight_stage
+        or days_since_weight is None
+        or days_since_weight > stale_weight_days
+    )
+
+    evidence = {
+        "recorded_animal_type": recorded,
+        "latest_weight_kg": latest_weight,
+        "latest_weight_date": growth["latest_weight_date"].isoformat() if growth.get("latest_weight_date") else "",
+        "days_since_weight": days_since_weight,
+        "weight_stage_rule": WEIGHT_STAGE_RULE,
+    }
+    candidate = {
+        "action": "none",
+        "recommended_animal_type": "",
+        "eligible_for_owner_review": False,
+        "requires_owner_approved_batch": True,
+        "auto_apply": False,
+        "writes_to_supabase": False,
+        "writes_to_sheets": False,
+    }
+
+    if not weight_stage:
+        return {
+            "recorded_animal_type": recorded,
+            "weight_stage": "",
+            "reconciliation_status": "needs_weight",
+            "reconciliation_confidence": "Low",
+            "reconciliation_explanation": "No valid latest weight is available, so Herdmaster cannot derive a production stage or recommend a type correction.",
+            "reconciliation_evidence": evidence,
+            "correction_candidate": candidate,
+        }
+    if not recorded:
+        candidate.update({
+            "action": "review_recorded_type",
+            "recommended_animal_type": weight_stage,
+            "eligible_for_owner_review": not is_stale_or_missing,
+        })
+        return {
+            "recorded_animal_type": "",
+            "weight_stage": weight_stage,
+            "reconciliation_status": "recorded_type_missing",
+            "reconciliation_confidence": "Medium" if is_stale_or_missing else "High",
+            "reconciliation_explanation": f"Latest weight derives {weight_stage}, but the recorded animal type is missing. Owner review is required; no record is changed.",
+            "reconciliation_evidence": evidence,
+            "correction_candidate": candidate,
+        }
+    if recorded == weight_stage:
+        return {
+            "recorded_animal_type": recorded,
+            "weight_stage": weight_stage,
+            "reconciliation_status": "match",
+            "reconciliation_confidence": "Medium" if is_stale_or_missing else "High",
+            "reconciliation_explanation": f"Recorded animal type matches the {weight_stage} stage derived from the latest weight.",
+            "reconciliation_evidence": evidence,
+            "correction_candidate": candidate,
+        }
+
+    candidate.update({
+        "action": "review_recorded_type",
+        "recommended_animal_type": weight_stage,
+        "eligible_for_owner_review": recorded in PRODUCTION_WEIGHT_STAGES and not is_stale_or_missing,
+    })
+    if is_stale_or_missing:
+        explanation = (
+            f"Recorded animal type is {recorded}, while the latest weight derives {weight_stage}; "
+            "the weight is stale or incomplete, so reweigh before any owner review. No correction can be prepared from this evidence."
+        )
+    elif recorded not in PRODUCTION_WEIGHT_STAGES:
+        explanation = (
+            f"Recorded animal type is {recorded}, while the latest weight derives {weight_stage}. "
+            "The recorded type is a breeding/lifecycle category, so Herdmaster flags the conflict but does not recommend replacing it."
+        )
+    else:
+        explanation = (
+            f"Recorded animal type is {recorded}, while the latest weight derives {weight_stage}. "
+            f"Prepare {recorded} → {weight_stage} only for an explicit owner-approved correction batch; nothing is changed here."
+        )
+    return {
+        "recorded_animal_type": recorded,
+        "weight_stage": weight_stage,
+        "reconciliation_status": "mismatch",
+        "reconciliation_confidence": "Medium" if freshness == "stale" else "High",
+        "reconciliation_explanation": explanation,
+        "reconciliation_evidence": evidence,
+        "correction_candidate": candidate,
+    }
 
 
 def _try_supabase_read(reader, *args):
@@ -4543,6 +4660,9 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
         bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings)
         outlet_action = _recommended_outlet_action(bucket, growth, timing, litter_quality)
         suggested_purpose = _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_quality)
+        stage_reconciliation = _weight_stage_reconciliation(
+            to_clean_string(row.get("Animal_Type", "")), growth, settings
+        )
         buckets[bucket] = buckets.get(bucket, 0) + 1
 
         current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
@@ -4551,6 +4671,7 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
             "pig_id": pig_id,
             "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
             "animal_type": to_clean_string(row.get("Animal_Type", "")),
+            **stage_reconciliation,
             "sex": to_clean_string(row.get(columns["sex"], "")),
             "status": to_clean_string(row.get(columns["status"], "")),
             "on_farm": to_clean_string(row.get(columns["on_farm"], "")),

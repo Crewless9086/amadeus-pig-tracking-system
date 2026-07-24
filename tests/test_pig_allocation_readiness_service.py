@@ -229,6 +229,53 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertFalse(result["writes_to_sheets"])
         self.assertFalse(result["writes_to_supabase"])
 
+    def test_weight_stage_boundaries_and_pig_11_mismatch_are_advisory_only(self):
+        self.assertEqual(pig_weights_service._weight_stage(14.9), "Piglet")
+        self.assertEqual(pig_weights_service._weight_stage(15), "Weaner")
+        self.assertEqual(pig_weights_service._weight_stage(34.9), "Weaner")
+        self.assertEqual(pig_weights_service._weight_stage(35), "Grower")
+        self.assertEqual(pig_weights_service._weight_stage(59.9), "Grower")
+        self.assertEqual(pig_weights_service._weight_stage(60), "Finisher")
+
+        overview_rows = [{
+            "Pig_ID": "PIG-11", "Tag_Number": "11", "Animal_Type": "Weaner",
+            "Status": "Active", "On_Farm": "Yes", "Purpose": "Grow_Out",
+            "Current_Weight_Kg": 45.4, "Last_Weight_Date": "2026-06-28",
+        }]
+        weight_rows = [{"Pig_ID": "PIG-11", "Weight_Date": "2026-06-28", "Weight_Kg": 45.4}]
+        def fake_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW": return overview_rows
+            if sheet_name == "WEIGHT_LOG": return weight_rows
+            return []
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 30))
+
+        pig = result["pigs"][0]
+        self.assertEqual(pig["recorded_animal_type"], "Weaner")
+        self.assertEqual(pig["weight_stage"], "Grower")
+        self.assertEqual(pig["reconciliation_status"], "mismatch")
+        self.assertIn("Weaner → Grower", pig["reconciliation_explanation"])
+        self.assertTrue(pig["correction_candidate"]["eligible_for_owner_review"])
+        self.assertTrue(pig["correction_candidate"]["requires_owner_approved_batch"])
+        self.assertFalse(pig["correction_candidate"]["auto_apply"])
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+
+    def test_stale_or_missing_weight_cannot_prepare_stage_correction(self):
+        settings = pig_weights_service._allocation_settings()
+        stale = pig_weights_service._weight_stage_reconciliation("Weaner", {
+            "latest_weight_kg": 45.4, "latest_weight_date": date(2026, 5, 1), "days_since_weight": 60,
+        }, settings)
+        missing = pig_weights_service._weight_stage_reconciliation("Weaner", {
+            "latest_weight_kg": None, "latest_weight_date": None, "days_since_weight": None,
+        }, settings)
+        self.assertEqual(stale["reconciliation_status"], "mismatch")
+        self.assertEqual(stale["reconciliation_confidence"], "Medium")
+        self.assertFalse(stale["correction_candidate"]["eligible_for_owner_review"])
+        self.assertEqual(missing["reconciliation_status"], "needs_weight")
+        self.assertEqual(missing["reconciliation_confidence"], "Low")
+        self.assertFalse(missing["correction_candidate"]["eligible_for_owner_review"])
+
     def test_sales_stock_outputs_can_use_supabase_allocation(self):
         allocation = {
             "source": "supabase_canonical",
