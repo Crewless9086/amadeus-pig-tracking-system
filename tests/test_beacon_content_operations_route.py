@@ -68,10 +68,19 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
 
         self.assertIn('id="beacon_ranked_ideas"', template)
         self.assertIn('id="beacon_packet_copy"', template)
+        self.assertIn('id="beacon_packet_options"', template)
+        self.assertIn('id="beacon_content_explanations"', template)
         self.assertIn('id="beacon_runtime_state"', template)
         self.assertNotIn('id="beacon_delivery_state"', template)
         self.assertIn('fetchJson("/api/beacon/content-operations")', script)
         self.assertNotIn('["built", "merged", "deployed", "operational"]', script)
+        self.assertIn('"Not imported"', script)
+        self.assertIn('"Not verified"', script)
+        self.assertIn("<summary>Technical diagnostics</summary>", script)
+        self.assertNotIn(
+            '<strong class="beacon-decision-blocker">${escapeHtml(risk)}</strong>',
+            script,
+        )
 
 
 if __name__ == "__main__":

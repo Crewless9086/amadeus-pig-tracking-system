@@ -104,12 +104,92 @@ class BeaconContentOperationsTests(unittest.TestCase):
         self.assertEqual(result["owner_review_packet"]["media"]["asset_id"], "SAFE")
         self.assertNotIn("UNSAFE", str(result["owner_review_packet"]["media"]))
         self.assertIn(
-            "approved farm image", result["owner_review_packet"]["draft_copy"]
+            "recent livestock moment", result["owner_review_packet"]["draft_copy"]
         )
         self.assertEqual(
             result["owner_review_packet"]["supporting_evidence"][-1]["source_reference"],
             "SAFE",
         )
+
+    def test_prefers_approved_piglet_video_and_prepares_three_natural_options(self):
+        image = {
+            "asset_id": "IMAGE", "title": "Waki piglets", "media_type": "image",
+            "effective_approval_status": "approved",
+            "effective_public_use_approved": True, "content_sha256": "a" * 64,
+            "content_hash_provenance": "server_computed_on_upload",
+        }
+        video = {
+            **image, "asset_id": "VIDEO", "title": "Waki (12) Piglets Vid",
+            "media_type": "video", "content_sha256": "b" * 64,
+        }
+
+        result = build_beacon_content_candidate(
+            self.evidence([image, video]), current_facts=[]
+        )
+        packet = result["owner_review_packet"]
+
+        self.assertEqual(packet["media"]["asset_id"], "VIDEO")
+        self.assertEqual(
+            [option["style"] for option in packet["draft_options"]],
+            ["warm_farm_story", "direct_livestock_enquiry", "short_engagement"],
+        )
+        for option in packet["draft_options"]:
+            copy = option["draft_copy"]
+            for phrase in (
+                "livestock type", "quantity", "male or female",
+                "approximate age or weight", "when you need them",
+            ):
+                self.assertIn(phrase, copy)
+            self.assertNotIn("in stock", copy.lower())
+            self.assertNotIn("for sale", copy.lower())
+
+    def test_evidence_summary_distinguishes_missing_metrics_and_media_eligibility(self):
+        unsafe = {
+            "asset_id": "VISIBLE", "approval_status": "approved",
+            "public_use_approved": True, "content_sha256": "",
+            "content_hash_provenance": "",
+        }
+        safe = {
+            **unsafe, "asset_id": "ELIGIBLE", "content_sha256": "c" * 64,
+            "content_hash_provenance": "server_computed_on_upload",
+        }
+
+        result = build_beacon_content_candidate(
+            self.evidence([unsafe, safe]), current_facts=[]
+        )
+
+        self.assertEqual(
+            result["evidence_quality"]["metric_summary"]["spend_amount"]["display"],
+            "Not imported",
+        )
+        self.assertEqual(
+            result["evidence_quality"]["metric_summary"]["qualified_buyer_leads"]["verified_zero_event_count"],
+            0,
+        )
+        self.assertEqual(result["media_summary"]["visible_count"], 2)
+        self.assertEqual(result["media_summary"]["eligible_selection_count"], 1)
+        self.assertIn(
+            "cannot claim stock, price or availability",
+            result["owner_explanations"]["current_facts"],
+        )
+
+    def test_verified_zero_is_distinct_from_missing(self):
+        evidence = self.evidence()
+        evidence["performance_events"]["records"] = [{
+            "performance_event_id": "PERF-ZERO",
+            "metric_evidence": {
+                "spend_amount": {
+                    "value": 0, "status": "verified", "source": "meta_ads_insights",
+                    "source_reference": "insights/1", "retrieved_at": "2026-07-24T08:00:00Z",
+                }
+            },
+        }]
+
+        result = build_beacon_content_candidate(evidence, current_facts=[])
+        metric = result["evidence_quality"]["metric_summary"]["spend_amount"]
+
+        self.assertEqual(metric["display"], "1 verified")
+        self.assertEqual(metric["verified_zero_event_count"], 1)
 
     def test_rejects_unverified_facts_and_never_converts_legacy_metrics_to_claims(self):
         result = build_beacon_content_candidate(
