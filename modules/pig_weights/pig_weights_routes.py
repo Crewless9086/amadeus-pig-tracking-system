@@ -192,27 +192,53 @@ def purpose_review_recheck():
     return jsonify(result), status_code
 
 
-@pig_weights_bp.route("/observations", methods=["POST"])
-def record_observation_route():
+def _pig_scoped_capture_payload(pig_id):
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return None, (jsonify({
+            "success": False,
+            "status": "invalid_capture_payload",
+            "writes_to_pigs": False,
+            "executes_action": False,
+        }), 400)
+    supplied_pig_id = payload.get("pig_id")
+    if supplied_pig_id not in (None, "") and supplied_pig_id != pig_id:
+        return None, (jsonify({
+            "success": False,
+            "status": "pig_id_path_mismatch",
+            "writes_to_pigs": False,
+            "executes_action": False,
+        }), 400)
+    return {**payload, "pig_id": pig_id}, None
+
+
+@pig_weights_bp.route("/pigs/<pig_id>/observations", methods=["POST"])
+def record_observation_route(pig_id):
     denied = require_owner_admin_access()
     if denied:
         return denied
     author_reference = owner_actor_reference()
     if not author_reference:
         return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
-    result, status_code = record_observation(request.get_json(silent=True) or {}, author_reference)
+    payload, invalid_response = _pig_scoped_capture_payload(pig_id)
+    if invalid_response:
+        return invalid_response
+    result, status_code = record_observation(payload, author_reference)
     return jsonify(result), status_code
 
 
-@pig_weights_bp.route("/management-intents", methods=["POST"])
-def record_management_intent_route():
+@pig_weights_bp.route("/pigs/<pig_id>/management-intents", methods=["POST"])
+def record_management_intent_route(pig_id):
     denied = require_owner_admin_access()
     if denied:
         return denied
     author_reference = owner_actor_reference()
     if not author_reference:
         return jsonify({"success": False, "status": "owner_actor_reference_unavailable"}), 403
-    result, status_code = record_management_intent(request.get_json(silent=True) or {}, author_reference)
+    payload, invalid_response = _pig_scoped_capture_payload(pig_id)
+    if invalid_response:
+        return invalid_response
+    result, status_code = record_management_intent(payload, author_reference)
     return jsonify(result), status_code
 
 
