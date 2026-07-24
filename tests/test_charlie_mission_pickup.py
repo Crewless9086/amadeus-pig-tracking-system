@@ -527,6 +527,62 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
+    def test_pickup_uses_authoritative_coordinator_state_not_compact_queue_row(
+        self, update_status, list_owner_work_missions, get_mission
+    ):
+        compact = {
+            **MISSION,
+            "mission_id": "PARENT-CLOSURE",
+            "metadata": {},
+            "agent_workflow": [{"agent": "idea_expander", "status": "active"}],
+        }
+        authoritative = {
+            **compact,
+            "metadata": {
+                "review_packet": {"return_to_stage": "evidence_reviewer"},
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "evidence_reviewer",
+                    "preserved_agents": [],
+                    "coordinator_reconciliation": True,
+                },
+            },
+            "agent_workflow": [
+                {"agent": "evidence_reviewer", "status": "active", "completed_at": None},
+                {"agent": "reviewer", "status": "pending", "completed_at": None},
+                {"agent": "publisher", "status": "pending", "completed_at": None},
+            ],
+        }
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [compact]},
+            200,
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": authoritative},
+            200,
+        )
+        update_status.return_value = (
+            {"success": True, "status": "ok", "mission_status": "in_progress"},
+            200,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "CODEX_CHAT.md"
+            with patch("scripts.charlie_mission_pickup.CODEX_CHAT_PATH", target), patch(
+                "scripts.charlie_mission_pickup._write_execution_lease",
+                return_value={"persisted": True},
+            ):
+                result, status_code = charlie_mission_pickup.pick_up_next_mission()
+            content = target.read_text(encoding="utf-8")
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["workflow_refresh"]["reason"], "explicit_targeted_workflow_preserved")
+        self.assertIn("evidence_reviewer: active", content)
+        self.assertNotIn("idea_expander: active", content)
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_vault")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_refreshes_old_workflow_before_claim(self, update_status, update_vault, list_owner_work_missions, get_mission):
@@ -543,7 +599,10 @@ class CharlieMissionPickupTests(unittest.TestCase):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [old_mission]}, 200)
         update_status.return_value = ({"success": True, "status": "ok", "mission_status": "in_progress"}, 200)
         update_vault.return_value = ({"success": True, "status": "ok"}, 200)
-        get_mission.return_value = ({"success": True, "status": "ok", "mission": refreshed_mission}, 200)
+        get_mission.side_effect = [
+            ({"success": True, "status": "ok", "mission": old_mission}, 200),
+            ({"success": True, "status": "ok", "mission": refreshed_mission}, 200),
+        ]
 
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "CODEX_CHAT.md"
@@ -730,10 +789,12 @@ class CharlieMissionPickupTests(unittest.TestCase):
         build_plan.assert_not_called()
         update_vault.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
-    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):
+    def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions, get_mission):
         list_owner_work_missions.return_value = ({"success": True, "status": "ok", "missions": [MISSION]}, 200)
+        get_mission.return_value = ({"success": True, "status": "ok", "mission": MISSION}, 200)
         update_status.return_value = ({"success": False, "status": "status_claim_lost"}, 409)
 
         with tempfile.TemporaryDirectory() as tmp:
