@@ -132,6 +132,15 @@
     reject: byId("beacon_media_reject"),
     archive: byId("beacon_media_archive"),
     reviewResult: byId("beacon_media_review_result"),
+    contentState: byId("beacon_content_state"),
+    contentRefresh: byId("beacon_content_refresh"),
+    deliveryState: byId("beacon_delivery_state"),
+    rankedIdeas: byId("beacon_ranked_ideas"),
+    contentEvidence: byId("beacon_content_evidence"),
+    packetStatus: byId("beacon_packet_status"),
+    packetMedia: byId("beacon_packet_media"),
+    packetCopy: byId("beacon_packet_copy"),
+    packetMeta: byId("beacon_packet_meta"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -199,6 +208,54 @@
     } else {
       renderDetail(selectedAsset());
     }
+  }
+
+  function renderContentOperations(payload) {
+    const quality = payload.evidence_quality || {};
+    const packet = payload.owner_review_packet || {};
+    const media = packet.media || {};
+    const delivery = payload.delivery_state || {};
+    const ideas = payload.ranked_ideas || [];
+    elements.contentState.textContent = payload.status === "owner_review_packet_ready"
+      ? "Owner-review draft ready"
+      : safe(payload.status, "Evidence incomplete");
+    elements.contentState.dataset.state = payload.status === "owner_review_packet_ready" ? "ready" : "blocked";
+    elements.deliveryState.innerHTML = ["built", "merged", "deployed", "operational"].map((key) => (
+      `<span data-state="${delivery[key] ? "ready" : "blocked"}"><strong>${escapeHtml(key)}</strong>${delivery[key] ? "Yes" : "No"}</span>`
+    )).join("");
+    elements.rankedIdeas.innerHTML = ideas.length ? ideas.map((idea, index) => `
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>#${index + 1} · ${escapeHtml(idea.title)}</span><small>Score ${escapeHtml(idea.score)}</small></div>
+        <p>${escapeHtml(idea.angle)}</p>
+        <small>${escapeHtml(idea.why)}</small>
+        ${(idea.risk_flags || []).map((risk) => `<strong class="beacon-decision-blocker">${escapeHtml(risk)}</strong>`).join("")}
+      </article>
+    `).join("") : '<div class="table-empty">No safely ranked ideas are available.</div>';
+    elements.contentEvidence.innerHTML = `
+      <div><strong>${escapeHtml(quality.historical_post_count || 0)}</strong><span>Historical posts · style/topic only</span></div>
+      <div><strong>${escapeHtml(quality.verified_performance_event_count || 0)}</strong><span>Usable performance events</span></div>
+      <div><strong>${escapeHtml(quality.unusable_performance_event_count || 0)}</strong><span>Excluded performance events</span></div>
+      <p>${escapeHtml(quality.performance_evidence_status)}</p>
+    `;
+    elements.packetStatus.textContent = safe(packet.review_status, "Unavailable");
+    elements.packetStatus.dataset.state = packet.review_status === "awaiting_owner_review" ? "proposed" : "blocked";
+    elements.packetMedia.innerHTML = media.status === "approved_media_selected"
+      ? `<strong>${escapeHtml(media.title)}</strong><span>${escapeHtml(media.media_type)} · ${escapeHtml(media.asset_id)}</span><small>Approved public use · ${escapeHtml(media.content_hash_provenance)}</small>`
+      : `<strong>Media gap</strong><span>${escapeHtml(media.reason)}</span>`;
+    elements.packetCopy.textContent = safe(packet.draft_copy, "No exact copy available.");
+    elements.packetMeta.innerHTML = `
+      <div><strong>${escapeHtml(packet.channel)}</strong><span>${escapeHtml(packet.audience)}</span></div>
+      <div><strong>CTA</strong><span>${escapeHtml(packet.call_to_action)}</span></div>
+      <div><strong>Objective</strong><span>${escapeHtml(packet.measurable_objective?.metric)} · ${escapeHtml(packet.measurable_objective?.measurement_window)}</span></div>
+      <p>${escapeHtml(packet.next_gate)}</p>
+    `;
+  }
+
+  async function loadContentOperations() {
+    elements.contentState.textContent = "Loading evidence";
+    elements.contentState.dataset.state = "loading";
+    const payload = await fetchJson("/api/beacon/content-operations");
+    renderContentOperations(payload);
   }
 
   async function loadCampaignSelection() {
@@ -1016,6 +1073,11 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    elements.contentRefresh.addEventListener("click", () => loadContentOperations().catch((error) => {
+      elements.contentState.textContent = "Evidence unavailable";
+      elements.contentState.dataset.state = "blocked";
+      showMessage(error.message);
+    }));
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
@@ -1050,6 +1112,11 @@
     elements.reject.addEventListener("click", () => recordReviewEvent("rejected_public_use").catch((error) => showMessage(error.message)));
     elements.archive.addEventListener("click", () => recordReviewEvent("archived").catch((error) => showMessage(error.message)));
     setReviewDisabled(true);
+    await loadContentOperations().catch((error) => {
+      elements.contentState.textContent = "Evidence unavailable";
+      elements.contentState.dataset.state = "blocked";
+      showMessage(error.message);
+    });
     await loadBeaconMedia().catch((error) => showMessage(error.message));
   });
 })();

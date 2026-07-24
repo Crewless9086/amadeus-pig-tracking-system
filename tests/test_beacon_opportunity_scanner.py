@@ -1,4 +1,5 @@
 import unittest
+import threading
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -306,3 +307,29 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
             response = app.test_client().get('/api/sales/beacon/opportunities')
         self.assertEqual(response.status_code, 401)
         scanner.assert_not_called()
+
+    def test_dependency_timing_names_the_timed_out_reader_and_fails_closed(self):
+        release = threading.Event()
+        allocation = {
+            'source': 'supabase_canonical',
+            'generated_date': '2026-07-12',
+            'thresholds': {'stale_weight_days': 14},
+            'pigs': [eligible_pig('P1')],
+        }
+
+        result = build_beacon_opportunity_cards(
+            allocation=allocation,
+            live_intakes=None,
+            meat_leads=[],
+            live_intakes_loader=lambda: release.wait(1),
+            dependency_timeout_seconds=0.01,
+            now=NOW,
+        )
+
+        diagnostics = result['dependency_diagnostics']
+        self.assertEqual(diagnostics['allocation_readiness']['status'], 'injected')
+        self.assertEqual(diagnostics['meat_sales_leads']['status'], 'injected')
+        self.assertEqual(diagnostics['sam_live_stock_intakes']['status'], 'timed_out')
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('sam_live_stock_demand_unavailable', live['blockers'])

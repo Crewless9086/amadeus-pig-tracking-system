@@ -43,6 +43,7 @@ class BeaconContentOperationsTests(unittest.TestCase):
             "fact_id": "LITTER-OBS-1",
             "statement": "Today’s livestock check recorded a settled litter",
             "source": "canonical_farm_observation",
+            "adapter_id": "farm_observation_v1",
             "source_reference": "observation/LITTER-OBS-1",
             "observed_at": "2026-07-24T08:00:00Z",
             "status": "canonical_read",
@@ -206,20 +207,30 @@ class BeaconContentOperationsTests(unittest.TestCase):
     def test_verified_commercial_fact_sets_structured_claim_constraints(self):
         fact = {
             "fact_id": "OFFER-1",
-            "statement": "Verified growers are available in Riversdale at R1 200 each",
+            "statement": "caller text is ignored for commercial claims",
             "source": "canonical_sales_offer",
+            "adapter_id": "sales_offer_v1",
             "source_reference": "offer/OFFER-1",
             "observed_at": "2026-07-24T08:00:00Z",
             "status": "canonical_read",
             "claim_types": ["stock", "availability", "location", "price"],
+            "structured_values": {
+                "subject": "growers",
+                "quantity": 3,
+                "availability_status": "available_for_owner_review",
+                "price_amount": 1200,
+                "currency": "ZAR",
+                "location": "Riversdale",
+            },
         }
 
         result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
         packet = result["owner_review_packet"]
         constraints = packet["fact_constraints"]
 
-        self.assertIn("R1 200", packet["draft_copy"])
+        self.assertIn("ZAR 1,200.00", packet["draft_copy"])
         self.assertIn("Riversdale", packet["draft_copy"])
+        self.assertNotIn("caller text", packet["draft_copy"])
         for claim_type in ("stock", "availability", "location", "price"):
             self.assertTrue(constraints[f"{claim_type}_claimed"])
             self.assertEqual(
@@ -241,6 +252,52 @@ class BeaconContentOperationsTests(unittest.TestCase):
                 "customer_claim", "performance_result",
             )
         ))
+
+    def test_invented_source_is_rejected_even_with_canonical_status(self):
+        fact = self.facts()[0]
+        fact["source"] = "canonical_totally_invented_source"
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+
+        self.assertEqual(
+            result["rejected_current_facts"][0]["reason"],
+            "unaccepted_fact_source_adapter",
+        )
+        self.assertNotIn("settled litter", result["owner_review_packet"]["draft_copy"])
+
+    def test_price_statement_cannot_hide_as_husbandry_observation(self):
+        fact = self.facts()[0]
+        fact["statement"] = "Healthy growers cost R1200 each"
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+
+        self.assertEqual(
+            result["rejected_current_facts"][0]["reason"],
+            "statement_claim_type_mismatch",
+        )
+        self.assertNotIn("R1200", result["owner_review_packet"]["draft_copy"])
+
+    def test_source_cannot_supply_unauthorized_claim_type(self):
+        fact = self.facts()[0]
+        fact["claim_types"] = ["price"]
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+
+        self.assertEqual(
+            result["rejected_current_facts"][0]["reason"],
+            "claim_type_not_authorized_for_source",
+        )
+
+    def test_authoritative_adapter_with_compatible_claim_is_accepted(self):
+        fact = self.facts()[0]
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+
+        self.assertEqual(result["rejected_current_facts"], [])
+        self.assertEqual(
+            result["owner_review_packet"]["fact_constraints"]["verified_fact_ids_used"],
+            ["LITTER-OBS-1"],
+        )
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
 from math import ceil, isfinite
+import threading
+import time as time_module
 import re
 
 from modules.oom_sakkie.sales_campaign_store import list_sales_leads
@@ -256,16 +258,40 @@ def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks
     }
 
 
-def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_leads=None, now=None):
+def build_beacon_opportunity_cards(
+    *,
+    allocation=None,
+    live_intakes=None,
+    meat_leads=None,
+    now=None,
+    dependency_timeout_seconds=8,
+    allocation_loader=None,
+    live_intakes_loader=None,
+    meat_leads_loader=None,
+):
     """Compose canonical reads into expiring advisory cards; never write state."""
     now = _utc(now) or datetime.now(timezone.utc)
-    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=now.date(), allow_sheet_fallback=False)
-    if live_intakes is None:
-        result, status = list_sam_live_stock_open_intakes(limit=100)
-        live_intakes = result.get("open_intakes", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
-    if meat_leads is None:
-        result, status = list_sales_leads(limit=100, status_filter="launch_test")
-        meat_leads = result.get("sales_leads", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
+    supplied = {
+        "allocation_readiness": allocation,
+        "sam_live_stock_intakes": live_intakes,
+        "meat_sales_leads": meat_leads,
+    }
+    loaders = {
+        "allocation_readiness": allocation_loader or (
+            lambda: get_pig_allocation_readiness(
+                today=now.date(), allow_sheet_fallback=False
+            )
+        ),
+        "sam_live_stock_intakes": live_intakes_loader or _load_live_intakes,
+        "meat_sales_leads": meat_leads_loader or _load_meat_leads,
+    }
+    loaded, dependency_diagnostics = _bounded_dependency_reads(
+        supplied, loaders, dependency_timeout_seconds
+    )
+    allocation = loaded["allocation_readiness"]
+    live_intakes = loaded["sam_live_stock_intakes"]
+    meat_leads = loaded["meat_sales_leads"]
+    allocation = allocation if isinstance(allocation, dict) else {}
 
     observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"))
     source_ok = allocation.get("source") == "supabase_canonical"
@@ -360,4 +386,105 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     policy = sam_meat_control_policy()
     meat_capacity = {"verified_available": 0, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0, "available_after_buffers": 0, "demand_cap": 0, "formula": "forced_zero_while_sam_meat_is_interest_capture_only", "control_mode": policy["mode"]}
     cards.append(_card(lane="meat", category="meat_preorder", now=now, observed_at=observed_at, demand=meat_demand, capacity=meat_capacity, blockers=meat_blockers, risks=["butcher_capacity_unproven", "owner_review_required"], source_ids=meat_demand["source_ids"]))
-    return {"success": True, "scanner_version": SCANNER_VERSION, "status": "owner_review_only", "generated_at": now.isoformat(), "cards": cards, "authority": dict(AUTHORITY), "writes_to_supabase": False}
+    return {
+        "success": True,
+        "scanner_version": SCANNER_VERSION,
+        "status": "owner_review_only",
+        "generated_at": now.isoformat(),
+        "cards": cards,
+        "dependency_diagnostics": dependency_diagnostics,
+        "authority": dict(AUTHORITY),
+        "writes_to_supabase": False,
+    }
+
+
+def _load_live_intakes():
+    result, status = list_sam_live_stock_open_intakes(limit=100)
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("open_intakes", [])
+    return None
+
+
+def _load_meat_leads():
+    result, status = list_sales_leads(limit=100, status_filter="launch_test")
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("sales_leads", [])
+    return None
+
+
+def _bounded_dependency_reads(supplied, loaders, timeout_seconds):
+    try:
+        timeout = max(0.01, min(float(timeout_seconds), 30.0))
+    except (TypeError, ValueError):
+        timeout = 8.0
+    results = dict(supplied)
+    diagnostics = {}
+    completed = {}
+    lock = threading.Lock()
+    threads = {}
+    started = time_module.monotonic()
+
+    def worker(name, loader):
+        dependency_started = time_module.monotonic()
+        try:
+            value = loader()
+            outcome = {
+                "value": value,
+                "status": "completed",
+                "duration_ms": round(
+                    (time_module.monotonic() - dependency_started) * 1000, 2
+                ),
+                "error_type": "",
+            }
+        except Exception as exc:
+            outcome = {
+                "value": None,
+                "status": "failed",
+                "duration_ms": round(
+                    (time_module.monotonic() - dependency_started) * 1000, 2
+                ),
+                "error_type": exc.__class__.__name__,
+            }
+        with lock:
+            completed[name] = outcome
+
+    for name, value in supplied.items():
+        if value is not None:
+            diagnostics[name] = {
+                "status": "injected",
+                "duration_ms": 0.0,
+                "availability": "usable",
+                "timeout_seconds": timeout,
+            }
+            continue
+        thread = threading.Thread(
+            target=worker,
+            args=(name, loaders[name]),
+            daemon=True,
+            name=f"beacon-{name}",
+        )
+        threads[name] = thread
+        thread.start()
+
+    deadline = started + timeout
+    for name, thread in threads.items():
+        thread.join(max(0.0, deadline - time_module.monotonic()))
+        outcome = completed.get(name)
+        if outcome is None:
+            results[name] = None
+            diagnostics[name] = {
+                "status": "timed_out",
+                "duration_ms": round(timeout * 1000, 2),
+                "availability": "inaccessible",
+                "timeout_seconds": timeout,
+            }
+            continue
+        results[name] = outcome["value"]
+        diagnostics[name] = {
+            "status": outcome["status"],
+            "duration_ms": outcome["duration_ms"],
+            "availability": "usable" if outcome["value"] is not None else "unavailable",
+            "timeout_seconds": timeout,
+            "error_type": outcome["error_type"],
+        }
+    return results, diagnostics

@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import re
 
 from modules.beacon.media_library import list_beacon_media_assets
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
@@ -29,7 +30,7 @@ AUTHORITY = {
 }
 VERIFIED_STATUSES = {"verified", "owner_confirmed", "canonical_read"}
 ACCEPTED_METRIC_STATUSES = {"verified", "owner_correction"}
-REJECTED_EVIDENCE_SOURCES = {
+REJECTED_METRIC_SOURCES = {
     "legacy", "legacy_unlabelled", "inferred", "unavailable", "unknown", "malformed",
 }
 CLAIM_TYPES = {
@@ -43,6 +44,28 @@ CLAIM_TYPES = {
 }
 COMMERCIAL_CLAIM_TYPES = {
     "stock", "price", "availability", "location", "customer_claim", "performance_result",
+}
+AUTHORITATIVE_FACT_ADAPTERS = {
+    "canonical_farm_observation": {
+        "adapter_id": "farm_observation_v1",
+        "allowed_claim_types": {"husbandry_observation"},
+        "statement_mode": "bounded_observation_text",
+    },
+    "canonical_sales_offer": {
+        "adapter_id": "sales_offer_v1",
+        "allowed_claim_types": {"stock", "price", "availability", "location"},
+        "statement_mode": "structured_sales_offer",
+    },
+    "canonical_customer_feedback": {
+        "adapter_id": "customer_feedback_v1",
+        "allowed_claim_types": {"customer_claim"},
+        "statement_mode": "structured_customer_claim",
+    },
+    "beacon_campaign_performance": {
+        "adapter_id": "campaign_performance_v1",
+        "allowed_claim_types": {"performance_result"},
+        "statement_mode": "structured_performance_result",
+    },
 }
 
 
@@ -82,10 +105,18 @@ def gather_beacon_content_evidence(*, database_url=None, now=None, allocation=No
             media_status, media, "assets", "media_assets"
         ),
         "opportunities": {
-            "availability": "usable" if opportunities.get("success") else "inaccessible",
+            "availability": (
+                "inaccessible"
+                if any(
+                    item.get("status") == "timed_out"
+                    for item in opportunities.get("dependency_diagnostics", {}).values()
+                )
+                else "usable" if opportunities.get("success") else "inaccessible"
+            ),
             "records": opportunities.get("cards", []),
             "source": "beacon_opportunity_scanner",
             "observed_at": opportunities.get("generated_at", ""),
+            "dependency_diagnostics": opportunities.get("dependency_diagnostics", {}),
         },
         "authority": deepcopy(AUTHORITY),
     }
@@ -201,6 +232,19 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
                 "owner_correction_event",
             ],
             "rule": "Unknown, inferred, stale, or unreferenced outcomes remain unknown and cannot support positive performance claims.",
+        },
+        "delivery_state": {
+            "built": True,
+            "merged": False,
+            "deployed": False,
+            "operational": False,
+            "operational_detail": {
+                "owner_read_only_packet_generation": True,
+                "current_opportunity_read": (
+                    evidence.get("opportunities", {}).get("availability") == "usable"
+                ),
+                "publishing": False,
+            },
         },
         "authority": deepcopy(AUTHORITY),
     }
@@ -324,6 +368,7 @@ def _verified_facts(value):
         ]
         observed_at = _iso(fact.get("observed_at"))
         source = str(fact.get("source") or "").strip()
+        adapter_id = str(fact.get("adapter_id") or "").strip()
         claim_types = fact.get("claim_types")
         normalized_claim_types = sorted({
             str(item or "").strip().lower()
@@ -338,22 +383,45 @@ def _verified_facts(value):
             reason = "fact_not_verified"
         elif not observed_at:
             reason = "invalid_observed_at"
-        elif source.lower() in REJECTED_EVIDENCE_SOURCES:
-            reason = "unaccepted_fact_source"
-        elif not normalized_claim_types or invalid_claim_types:
+        source_contract = AUTHORITATIVE_FACT_ADAPTERS.get(source)
+        if not reason and (
+            source_contract is None
+            or adapter_id != source_contract["adapter_id"]
+        ):
+            reason = "unaccepted_fact_source_adapter"
+        if not reason and (not normalized_claim_types or invalid_claim_types):
             reason = "invalid_claim_types"
+        if not reason and not set(normalized_claim_types).issubset(source_contract["allowed_claim_types"]):
+            reason = "claim_type_not_authorized_for_source"
+        statement = " ".join(str(fact.get("statement") or "").split())[:400]
+        structured_values = fact.get("structured_values")
+        if not reason and source_contract["statement_mode"] == "bounded_observation_text":
+            undeclared = _statement_commercial_claim_types(statement) - set(normalized_claim_types)
+            if undeclared:
+                reason = "statement_claim_type_mismatch"
+        if not reason and source_contract["statement_mode"] != "bounded_observation_text":
+            statement, structured_reason = _structured_fact_statement(
+                source_contract["statement_mode"],
+                normalized_claim_types,
+                structured_values,
+            )
+            if structured_reason:
+                reason = structured_reason
         if reason:
             rejected.append({
                 "index": index,
                 "reason": reason,
                 "missing": missing,
                 "invalid_claim_types": invalid_claim_types,
+                "source": source,
+                "adapter_id": adapter_id,
             })
             continue
         accepted.append({
             "fact_id": str(fact.get("fact_id") or f"FACT-{index + 1}"),
-            "statement": " ".join(str(fact["statement"]).split())[:400],
+            "statement": statement,
             "source": source[:120],
+            "adapter_id": adapter_id[:120],
             "source_reference": str(fact["source_reference"])[:240],
             "observed_at": observed_at,
             "status": status,
@@ -418,7 +486,7 @@ def _performance_evidence_evaluation(row):
         metric_reasons = []
         if status not in ACCEPTED_METRIC_STATUSES:
             metric_reasons.append("status_unaccepted")
-        if not source or source.lower() in REJECTED_EVIDENCE_SOURCES:
+        if not source or source.lower() in REJECTED_METRIC_SOURCES:
             metric_reasons.append("source_unaccepted")
         if not reference:
             metric_reasons.append("source_reference_missing")
@@ -437,6 +505,80 @@ def _performance_evidence_evaluation(row):
         "usable_metric_names": usable if not reasons else [],
         "reasons": sorted(set(reasons)),
     }
+
+
+def _statement_commercial_claim_types(statement):
+    text = str(statement or "")
+    lowered = text.lower()
+    signals = set()
+    if re.search(r"(?:\bzar\b|\br\s*\d|\bprice\b|\bcosts?\b|\bper\s+(?:pig|animal|head|kg)\b)", lowered):
+        signals.add("price")
+    if re.search(r"\b(?:in stock|stock of|stock level|we have \d+|quantity available)\b", lowered):
+        signals.add("stock")
+    if re.search(r"\b(?:available|availability|ready to collect|ready now)\b", lowered):
+        signals.add("availability")
+    if re.search(r"\b(?:customer|buyer|client)\s+(?:said|reported|confirmed|reviewed)\b", lowered):
+        signals.add("customer_claim")
+    if re.search(r"\b(?:reach|impressions|conversion|performed|qualified leads?|sales result)\b", lowered):
+        signals.add("performance_result")
+    if re.search(r"\b(?:located|location|collection point)\b", lowered) or re.search(
+        r"\b(?:in|near|from)\s+[A-Z][A-Za-z-]+", text
+    ):
+        signals.add("location")
+    return signals
+
+
+def _structured_fact_statement(mode, claim_types, values):
+    if not isinstance(values, dict):
+        return "", "structured_values_required"
+    if mode == "structured_sales_offer":
+        subject = _bounded_value(values.get("subject"), 80)
+        if not subject:
+            return "", "structured_subject_required"
+        parts = [subject]
+        if "stock" in claim_types:
+            quantity = values.get("quantity")
+            if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 0:
+                return "", "structured_stock_quantity_invalid"
+            parts[0] = f"{quantity} {subject}"
+        if "availability" in claim_types:
+            availability = str(values.get("availability_status") or "").strip().lower()
+            if availability not in {"available_for_owner_review", "not_available"}:
+                return "", "structured_availability_status_invalid"
+            parts.append(
+                "are available subject to current-record confirmation"
+                if availability == "available_for_owner_review"
+                else "are not currently available"
+            )
+        if "price" in claim_types:
+            amount = values.get("price_amount")
+            currency = str(values.get("currency") or "").strip().upper()
+            if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount < 0 or currency != "ZAR":
+                return "", "structured_price_invalid"
+            parts.append(f"at ZAR {amount:,.2f}")
+        if "location" in claim_types:
+            location = _bounded_value(values.get("location"), 80)
+            if not location:
+                return "", "structured_location_required"
+            parts.append(f"in {location}")
+        return " ".join(parts) + ".", ""
+    if mode == "structured_customer_claim":
+        summary = _bounded_value(values.get("owner_verified_summary"), 220)
+        if not summary:
+            return "", "structured_customer_summary_required"
+        return f"Owner-verified customer feedback: {summary}.", ""
+    if mode == "structured_performance_result":
+        metric = _bounded_value(values.get("metric_name"), 80)
+        value = values.get("metric_value")
+        window = _bounded_value(values.get("measurement_window"), 80)
+        if not metric or value is None or isinstance(value, bool) or not isinstance(value, (int, float)) or not window:
+            return "", "structured_performance_values_invalid"
+        return f"Verified campaign result: {metric} was {value:g} during {window}.", ""
+    return "", "unsupported_fact_statement_mode"
+
+
+def _bounded_value(value, limit):
+    return " ".join(str(value or "").split())[:limit]
 
 
 def _fact_constraints(facts):

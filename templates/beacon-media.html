@@ -25,6 +25,40 @@
 
       <div id="beacon_media_message" class="message-box hidden"></div>
 
+      <section class="beacon-content-operations" aria-labelledby="beacon_content_operations_title">
+        <header class="beacon-compose-header">
+          <div>
+            <span class="beacon-eyebrow">Evidence-first owner review</span>
+            <h2 id="beacon_content_operations_title">Today’s content recommendations</h2>
+            <p>Three ranked ideas and one exact review packet. This panel can only prepare owner-review evidence; it cannot publish, send, spend, or write business data.</p>
+          </div>
+          <div class="beacon-command-meta">
+            <span id="beacon_content_state" class="beacon-status-chip" data-state="loading">Loading evidence</span>
+            <button type="button" id="beacon_content_refresh" class="button-link button-link-secondary">Refresh recommendations</button>
+          </div>
+        </header>
+        <div id="beacon_delivery_state" class="beacon-delivery-state" aria-label="Candidate delivery state"></div>
+        <div class="beacon-content-grid">
+          <section>
+            <div class="beacon-panel-heading"><h3>Ranked ideas</h3></div>
+            <div id="beacon_ranked_ideas" class="beacon-recommendation-list"><div class="table-empty">Loading ideas…</div></div>
+          </section>
+          <section>
+            <div class="beacon-panel-heading"><h3>Evidence quality and gaps</h3></div>
+            <div id="beacon_content_evidence" class="beacon-content-evidence"><div class="table-empty">Checking evidence…</div></div>
+          </section>
+        </div>
+        <section class="beacon-owner-packet" aria-labelledby="beacon_owner_packet_title">
+          <div class="beacon-panel-heading">
+            <div><span class="beacon-eyebrow">Exact draft only</span><h3 id="beacon_owner_packet_title">Owner-review packet</h3></div>
+            <span id="beacon_packet_status" class="beacon-status-chip" data-state="loading">Preparing</span>
+          </div>
+          <div id="beacon_packet_media" class="beacon-content-media"></div>
+          <pre id="beacon_packet_copy" class="beacon-packet-copy">Loading exact copy…</pre>
+          <div id="beacon_packet_meta" class="beacon-content-evidence"></div>
+        </section>
+      </section>
+
       <main class="beacon-compose" aria-labelledby="beacon_compose_title">
         <header class="beacon-compose-header">
           <div>
