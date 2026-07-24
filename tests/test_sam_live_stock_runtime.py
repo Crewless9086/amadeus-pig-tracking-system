@@ -994,6 +994,40 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(decision["facts"]["llm_used"])
         self.assertEqual(decision["facts"]["llm_status"], "llm_reply_draft_used")
 
+    def test_followup_history_starts_at_latest_explicit_new_request_boundary(self):
+        history = {
+            "success": True,
+            "messages": [
+                {
+                    "id": "old-reservation",
+                    "message_type": 0,
+                    "content": "Reserve 3 male growers until Friday.",
+                },
+                {
+                    "id": "new-request",
+                    "message_type": 0,
+                    "content": "This is a new request. I want 1 male grower around 25 to 30 kg.",
+                },
+                {
+                    "id": "current",
+                    "message_type": 0,
+                    "content": "I would collect in Riversdale. What do you need next?",
+                },
+            ],
+        }
+
+        prior = sam_live_stock_runtime._prior_context_from_chatwoot_history(
+            history,
+            {"message_id": "current"},
+        )
+
+        self.assertEqual(prior["interest"]["quantity"], 1)
+        self.assertEqual(prior["interest"]["category"], "grower")
+        self.assertEqual(prior["interest"]["sex"], "male")
+        self.assertEqual(prior["interest"]["weight_range"], "25-30 kg")
+        self.assertEqual(prior["interest"]["timing"], "")
+        self.assertFalse(prior["interest"]["order_commitment"])
+
     def test_process_environment_mapping_reaches_llm_builder_from_inbound_handler(self):
         calls = []
         environment = {
