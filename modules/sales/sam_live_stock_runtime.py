@@ -211,6 +211,20 @@ def handle_sam_live_stock_chatwoot_inbound(
     facts["llm_used"] = bool(llm_draft.get("used"))
     facts["llm_status"] = llm_draft.get("status") or facts.get("llm_status") or ""
     conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
+    if (
+        str(decision.get("reply_source") or "").startswith("llm_")
+        and "reservation_owner_authority" in (conversation_review.get("protected_action_reasons") or [])
+        and not conversation_review.get("blocked_reasons")
+        and not _reservation_protection_explained(decision.get("suggested_reply_text"))
+    ):
+        original_reply = decision.get("suggested_reply_text", "")
+        decision["suggested_reply_text"] = _repair_reservation_protection_reply(facts, original_reply)
+        decision["reply_source"] = "llm_live_stock_reply_draft_protected_repair"
+        decision["llm_draft_review"] = {
+            "status": "repaired_with_reservation_owner_authority_acknowledgement",
+            "original_reply_text": original_reply,
+        }
+        conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     if _llm_reply_needs_fallback(decision, conversation_review):
         decision["llm_draft_review"] = {
             "status": "rejected_by_safety_review",
@@ -1659,6 +1673,11 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         lowered = reply.lower()
         unsafe_reply_patterns = [
             (r"\breserved\b|\bheld\b|\bbooked\b", "implies_reservation"),
+            (
+                r"\b(?:once|after|when)\b.{0,20}\bpayment\b.{0,50}\b(?:secure|reserve|hold|confirm)\b"
+                r"|\bpayment(?: details?| method)?\b.{0,30}\b(?:will|would|does|can)\b.{0,20}\b(?:secure|reserve|hold|confirm)\b",
+                "implies_payment_secures_animal",
+            ),
             (r"\bpayment\b.{0,40}\b(confirmed|received|cleared|reflects)\b", "confirms_payment"),
             (r"\b(for sale|book now|discount|cheap|budget)\b", "unsafe_sales_or_discount_language"),
             (r"\bexact farm|farm pin|our location\b", "shares_or_invites_exact_location"),
@@ -2552,6 +2571,27 @@ def _llm_reply_needs_fallback(decision, review):
     if not str(decision.get("reply_source") or "").startswith("llm_"):
         return False
     return bool(review.get("blocked_reasons"))
+
+
+def _reservation_protection_explained(reply):
+    text = _normal_text(reply)
+    has_reservation_acknowledgement = bool(re.search(r"\b(reserv(?:e|ation)|reserveer|reservering)\w*\b", text))
+    has_farm_approval = bool(re.search(r"\b(farm|plaas)\b.{0,80}\b(approv\w*|goedkeur\w*)\b", text))
+    has_before_confirmation = bool(re.search(
+        r"\bbefore\b.{0,80}\b(confirm\w*|reserv\w*)\b"
+        r"|\bvoordat\b.{0,80}\b(bevestig\w*|reserveer\w*)\b",
+        text,
+    ))
+    return has_reservation_acknowledgement and has_farm_approval and has_before_confirmation
+
+
+def _repair_reservation_protection_reply(facts, llm_reply):
+    acknowledgement = _localized_reply(
+        facts,
+        "I have noted your reservation request. The farm must approve the exact pig before I can confirm or reserve it for you.",
+        "Ek het jou reserveringsversoek aangeteken. Die plaas moet die presiese vark goedkeur voordat ek dit vir jou kan bevestig of reserveer.",
+    )
+    return _clean_multiline(f"{acknowledgement} {_clean_multiline(llm_reply, 1300)}", 1800)
 
 
 def _live_stock_price_rule_for_packet(facts, match_packet):
