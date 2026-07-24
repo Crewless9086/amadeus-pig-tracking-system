@@ -48,7 +48,7 @@ DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_LLM_MODEL = "gpt-4.1-mini"
 MIN_TOKEN_CHARS = 32
 
-RUNTIME_VERSION = "sam_live_stock_read_only_v1"
+RUNTIME_VERSION = "sam_live_stock_conversation_completion_v1"
 
 SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS = {
     "answer_general_info",
@@ -76,7 +76,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "runtime_version": RUNTIME_VERSION,
         "enabled": _truthy(source.get(WEBHOOK_ENABLED_ENV)),
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
-        "autoreply_enabled": False,
+        "autoreply_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
         "autoreply_explicitly_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
         "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)) and llm_configured,
         "llm_explicitly_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
@@ -106,7 +106,8 @@ def sam_live_stock_webhook_policy(environ=None):
         "llm_default_model": DEFAULT_LLM_MODEL,
         "read_only": True,
         "writes_allowed": False,
-        "customer_send_allowed": False,
+        "customer_send_allowed": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
+        "routine_reply_rule": "Only a reviewed conversational reply may send; protected actions keep their separate owner gates.",
         **_authority_flags(),
     }
 
@@ -140,6 +141,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     owner_example_loader=None,
     voice_transcriber=None,
     image_classifier=None,
+    chatwoot_sender=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -199,6 +201,10 @@ def handle_sam_live_stock_chatwoot_inbound(
         decision["reply_source"] = "deterministic_fallback_after_llm_review"
         conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     decision["conversation_review"] = conversation_review
+    decision["owner_authority_required"] = bool(conversation_review.get("owner_authority_required"))
+    decision["protected_action_reasons"] = list(conversation_review.get("protected_action_reasons") or [])
+    if decision["owner_authority_required"]:
+        decision["owner_gate_required"] = True
     if conversation_review.get("no_reply_recommended"):
         decision["suggested_reply_text"] = ""
         decision["reply_source"] = "natural_close_no_reply_guard"
@@ -249,18 +255,71 @@ def handle_sam_live_stock_chatwoot_inbound(
             decision.setdefault("blockers", []).append(draft_order.get("status") or "draft_order_failed")
             decision["owner_gate_required"] = True
             _refresh_owner_action_packet_after_failed_draft_order(inbound, facts, decision, draft_order)
+    routine_delivery = deliver_sam_live_stock_routine_reply_if_enabled(
+        inbound,
+        decision,
+        conversation_review,
+        source,
+        chatwoot_sender=chatwoot_sender,
+    )
+    decision["routine_reply_delivery"] = routine_delivery
     return {
         "success": True,
-        "status": "sam_live_stock_read_only_processed",
+        "status": "sam_live_stock_conversation_processed",
         "processed": True,
-        "sent": False,
+        "sent": routine_delivery.get("sent") is True,
         "sam_decision": decision,
         "policy": policy,
         **_authority_flags(
             writes_order_intake=bool(intake_write.get("success")),
             creates_order=bool(draft_order.get("success") and draft_order.get("created_order")),
+            sends_customer_message=routine_delivery.get("sent") is True,
+            calls_chatwoot=routine_delivery.get("sent") is True,
         ),
     }, 200
+
+
+def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, environ=None, chatwoot_sender=None):
+    source = environ if environ is not None else os.environ
+    inbound = inbound if isinstance(inbound, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
+    if not _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
+        return {"attempted": False, "sent": False, "status": "routine_reply_disabled"}
+    if not decision.get("should_reply") or not reply:
+        return {"attempted": False, "sent": False, "status": "routine_reply_not_recommended"}
+    if review.get("escalation_required") or not review.get("safe_to_send"):
+        return {"attempted": False, "sent": False, "status": "routine_reply_review_blocked"}
+    if not str(decision.get("reply_source") or "").startswith("llm_"):
+        return {"attempted": False, "sent": False, "status": "routine_reply_requires_llm_draft"}
+    conversation_id = _clean(inbound.get("conversation_id"), 100)
+    if not conversation_id:
+        return {"attempted": False, "sent": False, "status": "routine_reply_conversation_id_missing"}
+    try:
+        sender = chatwoot_sender or (
+            lambda target, message, runtime_source: _send_chatwoot_message(
+                target,
+                message,
+                runtime_source,
+                amadeus_source="sam_live_stock_routine_reply",
+            )
+        )
+        sent = sender(conversation_id, reply, source)
+        return {
+            "attempted": True,
+            "sent": True,
+            "status": "sam_live_stock_routine_reply_sent",
+            "chatwoot": sent,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "sent": False,
+            "status": "sam_live_stock_routine_reply_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+        }
 
 
 def parse_chatwoot_inbound(payload):
@@ -832,7 +891,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "suggested_reply_text": reply,
         "deterministic_fallback_reply_text": fallback_reply,
         "reply_source": reply_source,
-        "should_reply": False,
+        "should_reply": bool(reply),
         "writes_allowed": False,
         "intake_write_allowed": _truthy((environ or {}).get(INTAKE_WRITE_ENABLED_ENV)) and route["lane"] == LANE_LIVE_STOCK,
         "draft_order_create_allowed": _truthy((environ or {}).get(DRAFT_ORDER_CREATE_ENABLED_ENV)) and ready_for_runtime_next_step and draft_packet.get("draft_ready"),
@@ -1182,7 +1241,7 @@ def _durable_live_stock_next_action(inbound, facts, route, missing, blockers, co
     text = _normal_text((inbound or {}).get("content"))
     if _natural_close_signal(text):
         return "no_reply_needed"
-    if route.get("lane") not in {"", LANE_LIVE_STOCK, LANE_FARM_GENERAL} or blockers:
+    if route.get("lane") not in {"", LANE_LIVE_STOCK, LANE_FARM_GENERAL}:
         return "escalate"
     internal_action = _clean(conversation_plan.get("next_action"), 80)
     if price_answer_packet.get("can_answer_price") and _asks_price_question(text):
@@ -1486,6 +1545,7 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
     issues = []
     blocked = []
     escalation_reasons = []
+    protected_action_reasons = []
     score = 100
 
     if _hostile_or_scam_signal(text):
@@ -1493,27 +1553,33 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         issues.append("close_conversation_recommended")
         score -= 35
     if _price_challenge_signal(text):
-        escalation_reasons.append("pricing_challenge_or_negotiation")
-        issues.append("no_negotiation_posture")
-        score -= 25
+        protected_action_reasons.append("negotiated_price_owner_authority")
+        issues.append("negotiated_price_requires_owner_decision")
     if _natural_close_signal(text):
         issues.append("natural_close_no_reply_needed")
         score -= 5
     if facts.get("breeding_interest"):
-        escalation_reasons.append("breeding_or_replacement_interest")
-        score -= 30
+        protected_action_reasons.append("breeding_stock_owner_authority")
     if facts.get("reservation_requested"):
-        escalation_reasons.append("reservation_request")
-        score -= 20
+        protected_action_reasons.append("reservation_owner_authority")
+    if facts.get("order_commitment"):
+        protected_action_reasons.append("final_order_owner_authority")
+    if _payment_confirmation_signal(text):
+        protected_action_reasons.append("payment_confirmation_owner_authority")
     if blockers:
-        escalation_reasons.extend(str(item) for item in blockers)
-        score -= min(40, 10 * len(blockers))
+        for blocker in blockers:
+            blocker = str(blocker)
+            if blocker in {"breeding_or_replacement_stock_owner_gate", "reservation_request_owner_gate"}:
+                continue
+            if blocker.startswith("lane_not_live_stock:"):
+                escalation_reasons.append(blocker)
+            else:
+                issues.append(blocker)
     if decision.get("sales_lane") not in {LANE_LIVE_STOCK, LANE_FARM_GENERAL}:
         escalation_reasons.append("wrong_or_unclear_lane")
         score -= 20
     if missing:
         issues.append("missing_fields:" + ",".join(missing[:5]))
-        score -= min(20, 5 * len(missing))
     if reply:
         lowered = reply.lower()
         unsafe_reply_patterns = [
@@ -1548,13 +1614,22 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         "confidence_target": 96,
         "safe_to_send": safe_to_send,
         "owner_send_required": not safe_to_send and bool(reply),
+        "owner_authority_required": bool(protected_action_reasons),
+        "protected_action_reasons": sorted(set(protected_action_reasons)),
         "no_reply_recommended": _natural_close_signal(text),
         "escalation_required": bool(escalation_reasons or blocked),
         "escalation_reasons": sorted(set(escalation_reasons)),
         "issues": sorted(set(issues)),
         "blocked_reasons": sorted(set(blocked)),
         "conversation_mode_recommendation": "HUMAN" if escalation_reasons or blocked else "AUTO",
-        "recommended_action": _conversation_review_action(text, missing, escalation_reasons, blocked, reply),
+        "recommended_action": _conversation_review_action(
+            text,
+            missing,
+            escalation_reasons,
+            blocked,
+            reply,
+            protected_action_reasons,
+        ),
     }
 
 
@@ -2665,6 +2740,20 @@ def _payment_or_pop_interest(facts):
     return _has_any(text, ("pop", "proof of payment", "paid", "payment", "eft"))
 
 
+def _payment_confirmation_signal(text):
+    text = _normal_text(text)
+    return _has_any(text, (
+        "proof of payment",
+        "payment confirmed",
+        "payment received",
+        "payment cleared",
+        "money reflects",
+        "i have paid",
+        "i paid",
+        "pop sent",
+    ))
+
+
 def _category_from_weight_range(weight_range):
     weight = _representative_weight(weight_range)
     if not weight:
@@ -2873,10 +2962,15 @@ def _denied(status, source):
     }
 
 
-def _authority_flags(writes_order_intake=False, creates_order=False):
+def _authority_flags(
+    writes_order_intake=False,
+    creates_order=False,
+    sends_customer_message=False,
+    calls_chatwoot=False,
+):
     return {
-        "sends_customer_message": False,
-        "calls_chatwoot": False,
+        "sends_customer_message": bool(sends_customer_message),
+        "calls_chatwoot": bool(calls_chatwoot),
         "calls_n8n": False,
         "creates_quote": False,
         "creates_order": bool(creates_order),
@@ -2885,8 +2979,8 @@ def _authority_flags(writes_order_intake=False, creates_order=False):
         "writes_farm_data": False,
         "writes_order_intake": bool(writes_order_intake),
         "writes_sales_transaction": False,
-        "dispatch_enabled": False,
-        "customer_public_output_enabled": False,
+        "dispatch_enabled": bool(sends_customer_message),
+        "customer_public_output_enabled": bool(sends_customer_message),
     }
 
 
@@ -3070,15 +3164,17 @@ def _natural_close_signal(text):
     ))
 
 
-def _conversation_review_action(text, missing, escalation_reasons, blocked, reply):
+def _conversation_review_action(text, missing, escalation_reasons, blocked, reply, protected_action_reasons=None):
     if _natural_close_signal(text):
         return "no_reply_natural_close"
     if escalation_reasons or blocked:
         return "owner_handoff"
+    if protected_action_reasons:
+        return "owner_authority_decision"
     if missing:
         return "ask_one_missing_fact"
     if reply:
-        return "owner_review_send_candidate"
+        return "send_routine_reply"
     return "monitor"
 
 
@@ -3158,7 +3254,7 @@ def _escalation_id(conversation_id, message_id, content):
     return "SAM-LIVE-ESC-" + hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:10].upper()
 
 
-def _send_chatwoot_message(conversation_id, message, source):
+def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam_live_stock_owner_approved_send"):
     conversation_id = _clean(conversation_id, 100)
     message = _clean_multiline(message, 1800)
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
@@ -3174,7 +3270,7 @@ def _send_chatwoot_message(conversation_id, message, source):
         raise RuntimeError("CHATWOOT_ACCOUNT_ID is required")
     if not token:
         raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
-    marker = "sam_live_stock_owner_approved_send"
+    marker = _clean(amadeus_source, 80) or "sam_live_stock_owner_approved_send"
     body = {
         "content": message,
         "message_type": "outgoing",

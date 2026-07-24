@@ -443,6 +443,12 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         f"Draft source: {_owner_card_reply_source_summary(decision)}",
         f"Policy: learning {'on' if _truthy(source.get('SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED', '1')) else 'off'}; meat {'open' if _truthy(source.get('SAM_MEAT_PUBLIC_OFFER_ENABLED')) else 'locked'}",
     ]
+    authority_decision = _owner_authority_decision_summary(review)
+    if authority_decision:
+        parts.append(f"Owner decision needed: {authority_decision}")
+    routine_delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
+    if routine_delivery.get("sent") is True:
+        parts.append("Customer reply: already sent by SAM; do not approve a duplicate send")
     flags = _owner_card_flags(event, review, decision)
     understanding = decision.get("input_understanding") if isinstance(decision.get("input_understanding"), dict) else {}
     if understanding.get("requires_media_review"):
@@ -464,7 +470,7 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
     if links.get("open_intakes_api"):
         parts.append(f"Open intakes: {links['open_intakes_api']}")
     keyboard = []
-    if review_event_id and reply:
+    if review_event_id and reply and routine_delivery.get("sent") is not True:
         keyboard.append([{"text": "Approve Send", "callback_data": f"sam_live_review_approve:{review_event_id}"}])
     chatwoot_url = (
         _clean(links.get("chatwoot_conversation_url"), 500)
@@ -1324,6 +1330,20 @@ def _owner_card_flags(event, review, decision):
         suffix = f": {', '.join(blocked[:3])}" if blocked else ""
         flags.append(f"LLM safety fallback{suffix}")
     return ", ".join(flags)
+
+
+def _owner_authority_decision_summary(review):
+    review = review if isinstance(review, dict) else {}
+    labels = {
+        "negotiated_price_owner_authority": "approve or decline the negotiated price",
+        "reservation_owner_authority": "approve or decline the reservation through the protected order/stock rail",
+        "breeding_stock_owner_authority": "approve or decline the exact breeding animals",
+        "final_order_owner_authority": "approve or decline the final order commitment",
+        "payment_confirmation_owner_authority": "verify or decline payment confirmation from canonical payment evidence",
+    }
+    reasons = review.get("protected_action_reasons") if isinstance(review.get("protected_action_reasons"), list) else []
+    decisions = [labels.get(str(reason)) for reason in reasons if labels.get(str(reason))]
+    return "; ".join(decisions)
 
 
 def _owner_card_reply_source_summary(decision):
