@@ -3,8 +3,10 @@
 from datetime import date, datetime, timezone
 from copy import deepcopy
 from hashlib import sha256
+import hmac
 import json
 import os
+import secrets
 import threading
 import time as time_module
 from urllib import error as urllib_error
@@ -49,6 +51,7 @@ AUTHORITY = {
 }
 _PREVIEW_FLIGHTS = {}
 _PREVIEW_FLIGHTS_LOCK = threading.Lock()
+_PREVIEW_FINGERPRINT_KEY = secrets.token_bytes(32)
 
 
 class MetaPreviewError(Exception):
@@ -905,9 +908,15 @@ def _safe_request_fingerprint(
     version = _normalized_graph_version(
         source.get(GRAPH_VERSION_ENV) or DEFAULT_GRAPH_VERSION
     )
-    safe_dimensions = {
+    fingerprint_dimensions = {
         "adapter": "beacon_meta_ads_preview_v2",
         "configured": configuration["configured"],
+        "configured_account_identity": _normalized_account_id(
+            source.get(AD_ACCOUNT_ID_ENV)
+        ),
+        "ads_reader_token_identity": str(
+            source.get(ADS_READ_TOKEN_ENV) or ""
+        ).strip(),
         "graph_version": version,
         "start": window.get("start"),
         "end": window.get("end"),
@@ -917,8 +926,12 @@ def _safe_request_fingerprint(
         "max_pages": str(max_pages),
         "max_records": str(max_records),
     }
-    return sha256(
-        json.dumps(safe_dimensions, sort_keys=True).encode("utf-8")
+    return hmac.new(
+        _PREVIEW_FINGERPRINT_KEY,
+        json.dumps(
+            fingerprint_dimensions, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8"),
+        sha256,
     ).hexdigest()
 
 
@@ -942,8 +955,9 @@ def _concurrency_diagnostic(status):
         "success_cache_seconds": SUCCESS_CACHE_SECONDS,
         "failure_cooldown_seconds": FAILURE_COOLDOWN_SECONDS,
         "fingerprint_exposed": False,
-        "configured_ad_account_identifier_in_fingerprint": False,
-        "token_in_fingerprint": False,
+        "raw_configured_identifier_in_fingerprint": False,
+        "raw_token_in_fingerprint": False,
+        "configuration_isolated_fingerprint": True,
     }
 
 

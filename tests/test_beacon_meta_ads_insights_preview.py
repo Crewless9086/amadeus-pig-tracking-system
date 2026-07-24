@@ -459,35 +459,80 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
         )
         self.assertGreater(failures["count"], failure_calls)
 
-    def test_singleflight_fingerprint_and_diagnostics_contain_no_secret_or_account(self):
+    def test_singleflight_fingerprint_is_configuration_isolated_and_secret_safe(self):
+        dimensions = {
+            "start_date": None, "end_date": None, "level": "ad",
+            "timeout_seconds": 12, "total_timeout_seconds": 25,
+            "max_pages": 10, "max_records": 500,
+        }
         first = _safe_request_fingerprint(
             self.config(account="111", token="TOKEN-ONE"),
-            start_date=None, end_date=None, level="ad",
-            timeout_seconds=12, total_timeout_seconds=25,
-            max_pages=10, max_records=500,
+            **dimensions,
         )
-        second = _safe_request_fingerprint(
-            self.config(account="999", token="TOKEN-TWO"),
-            start_date=None, end_date=None, level="ad",
-            timeout_seconds=12, total_timeout_seconds=25,
-            max_pages=10, max_records=500,
+        equivalent = _safe_request_fingerprint(
+            self.config(account="act_111", token="TOKEN-ONE"),
+            **dimensions,
         )
-        self.assertEqual(first, second)
-        self.assertNotIn("TOKEN", first)
+        changed_account = _safe_request_fingerprint(
+            self.config(account="999", token="TOKEN-ONE"),
+            **dimensions,
+        )
+        changed_token = _safe_request_fingerprint(
+            self.config(account="111", token="TOKEN-TWO"),
+            **dimensions,
+        )
+        self.assertEqual(first, equivalent)
+        self.assertNotEqual(first, changed_account)
+        self.assertNotEqual(first, changed_token)
+        self.assertNotIn("111", first)
+        self.assertNotIn("TOKEN-ONE", first)
 
         result, _ = build_meta_ads_insights_preview(
-            environ=self.config(), http_get=FakeMetaGetter()
+            environ=self.config(account="111", token="TOKEN-ONE"),
+            http_get=FakeMetaGetter(),
         )
         serialized = json.dumps({
             "concurrency": result["concurrency"],
-            "cache_keys": list(_PREVIEW_FLIGHTS),
+            "cache_state": _PREVIEW_FLIGHTS,
         })
-        self.assertNotIn("act_123", serialized)
-        self.assertNotIn("SUPER-SECRET-TOKEN", serialized)
+        self.assertNotIn("111", serialized)
+        self.assertNotIn("TOKEN-ONE", serialized)
         self.assertFalse(
-            result["concurrency"]["configured_ad_account_identifier_in_fingerprint"]
+            result["concurrency"]["raw_configured_identifier_in_fingerprint"]
         )
-        self.assertFalse(result["concurrency"]["token_in_fingerprint"])
+        self.assertFalse(result["concurrency"]["raw_token_in_fingerprint"])
+        self.assertTrue(
+            result["concurrency"]["configuration_isolated_fingerprint"]
+        )
+        self.assertFalse(result["concurrency"]["fingerprint_exposed"])
+
+    def test_cached_result_is_not_shared_after_account_or_token_rotation(self):
+        first_getter = FakeMetaGetter()
+        first, status = build_meta_ads_insights_preview(
+            environ=self.config(account="111", token="TOKEN-ONE"),
+            http_get=first_getter,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(first["concurrency"]["status"], "executed")
+        self.assertEqual(len(first_getter.calls), 5)
+
+        account_getter = FakeMetaGetter()
+        account_changed, status = build_meta_ads_insights_preview(
+            environ=self.config(account="999", token="TOKEN-ONE"),
+            http_get=account_getter,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(account_changed["concurrency"]["status"], "executed")
+        self.assertEqual(len(account_getter.calls), 5)
+
+        token_getter = FakeMetaGetter()
+        token_changed, status = build_meta_ads_insights_preview(
+            environ=self.config(account="111", token="TOKEN-TWO"),
+            http_get=token_getter,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(token_changed["concurrency"]["status"], "executed")
+        self.assertEqual(len(token_getter.calls), 5)
 
     def test_http_400_meta_error_mapping_uses_codes_not_raw_messages(self):
         cases = (
