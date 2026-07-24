@@ -21,6 +21,7 @@ from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_sta
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids
 from modules.charlie.core_workflow import build_workflow_from_template, workflow_template
 from modules.charlie.mission_governance import validate_acceptance_scope
+from modules.charlie.evidence_reconciliation import targeted_workflow_return
 
 
 def executive_mode():
@@ -583,10 +584,69 @@ def _execute_family_reconciliation(command, command_id, database_url, connect_fa
         "child_states": current_states,
         "closure_owner": "CHARLIE",
     }
-    result, status = transition_mission_review_state(
-        mission_id, "approved", packet, expected_status="paused",
-        notes="CHARLIE resumed the parent after every bounded recovery child reached terminal state.",
-        database_url=database_url, connect_factory=connect_factory,
+    workflow = [
+        dict(item)
+        for item in (mission.get("agent_workflow") if isinstance(mission.get("agent_workflow"), list) else [])
+        if isinstance(item, dict)
+    ]
+    sequence = [
+        str(item.get("agent") or "").strip().lower()
+        for item in workflow
+    ]
+    if "evidence_reviewer" not in sequence:
+        return _finish_failure(
+            command,
+            command_id,
+            {"workflow_agents": sequence},
+            "family_reconciliation_stage_missing",
+            database_url,
+            connect_factory,
+        )
+    target_index = sequence.index("evidence_reviewer")
+    preserved_agents = [
+        sequence[index]
+        for index in range(target_index)
+        if str((workflow[index] or {}).get("status") or "").strip().lower() == "complete"
+        and (workflow[index] or {}).get("completed_at")
+    ]
+    resumed_workflow = targeted_workflow_return(
+        workflow,
+        "evidence_reviewer",
+        "Reconcile terminal child delivery and operational evidence.",
+        preserve_agents=preserved_agents,
+    )
+    coordinator = dict(metadata.get("mission_coordinator") or {})
+    coordinator.update(
+        {
+            "status": "reconciling_children",
+            "child_mission_ids": list(current_states),
+            "completed_child_ids": list(current_states),
+            "child_states": current_states,
+        }
+    )
+    result, status = update_mission_vault(
+        mission_id,
+        {
+            "review_packet": packet,
+            "agent_workflow": resumed_workflow,
+            "mission_coordinator": coordinator,
+            "execution_lease": {},
+            "targeted_invalidation": {
+                "version": "charlie_targeted_invalidation_v1",
+                "target_agent": "evidence_reviewer",
+                "preserved_agents": preserved_agents,
+                "reason": "terminal_child_evidence_reconciliation",
+            },
+        },
+        status="approved",
+        expected_status="paused",
+        owner_decision=(
+            "CHARLIE resumed only Evidence Review after every bounded child reached a terminal state; "
+            "completed upstream work remains preserved."
+        ),
+        notes="CHARLIE atomically resumed the decomposed parent at Evidence Reviewer.",
+        database_url=database_url,
+        connect_factory=connect_factory,
     )
     success = status < 400 and result.get("success")
     complete_control_command(command_id, success=success, result=result, error="" if success else result.get("status", "transition_failed"), database_url=database_url, connect_factory=connect_factory)
