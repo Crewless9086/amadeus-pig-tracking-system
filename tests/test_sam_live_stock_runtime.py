@@ -967,6 +967,25 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["reserves_stock"])
         self.assertFalse(result["changes_stock"])
 
+    def test_fact_aware_fallback_never_auto_sends_even_when_gate_is_enabled(self):
+        sends = []
+        delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {"conversation_id": "1826"},
+            {
+                "should_reply": True,
+                "suggested_reply_text": "I can check the price and stock facts.",
+                "reply_source": "deterministic_read_only_guard",
+                "llm_draft": {"used": False, "status": "llm_disabled"},
+            },
+            {"safe_to_send": True, "escalation_required": False},
+            {"SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1"},
+            chatwoot_sender=lambda *_args: sends.append(True),
+        )
+
+        self.assertEqual(delivery["status"], "routine_reply_requires_llm_draft")
+        self.assertFalse(delivery["sent"])
+        self.assertEqual(sends, [])
+
     def test_reservation_request_keeps_conversation_with_sam_but_requests_owner_authority(self):
         sends = []
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -2068,6 +2087,54 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("negotiated_price_owner_authority", review["protected_action_reasons"])
         self.assertEqual(review["conversation_mode_recommendation"], "AUTO")
         self.assertTrue(review["safe_to_send"])
+
+    def test_negotiated_price_phrases_are_bounded_in_english_and_afrikaans(self):
+        positives = (
+            "Can you give me a better price?",
+            "Can you offer a better deal?",
+            "Can you do better on the price?",
+            "Could you do better?",
+            "What is your lowest price?",
+            "Kan jy vir my 'n beter prys gee?",
+            "Kan julle beter doen?",
+            "Kan jy dit goedkoper maak?",
+            "Is daar afslag?",
+        )
+        negatives = (
+            "What is the current price?",
+            "Please send the price list.",
+            "Die prys is R1200, reg?",
+        )
+
+        for text in positives:
+            with self.subTest(text=text):
+                self.assertTrue(sam_live_stock_runtime._price_challenge_signal(text))
+        for text in negatives:
+            with self.subTest(text=text):
+                self.assertFalse(sam_live_stock_runtime._price_challenge_signal(text))
+
+    def test_one_review_names_negotiated_price_and_reservation_without_execution(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(content="Can you give me a better price and reserve the 3 males for Friday?")
+        )
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "missing_fields": [],
+            "blockers": ["reservation_request_owner_gate"],
+            "suggested_reply_text": "I can ask the owner to review the price and exact animals before confirming anything.",
+        }
+
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(inbound, facts, decision)
+
+        self.assertFalse(review["escalation_required"])
+        self.assertEqual(review["recommended_action"], "owner_authority_decision")
+        self.assertEqual(
+            review["protected_action_reasons"],
+            ["negotiated_price_owner_authority", "reservation_owner_authority"],
+        )
+        self.assertFalse(decision.get("reserves_stock", False))
+        self.assertFalse(decision.get("creates_order", False))
 
     def test_final_order_and_payment_confirmation_keep_separate_owner_authority(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
