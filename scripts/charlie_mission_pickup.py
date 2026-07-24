@@ -803,6 +803,24 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "would_mark_status": "in_progress",
         }, 200
 
+    # Owner-queue rows are deliberately compact.  Never use that projection to
+    # refresh or execute a mission: targeted recovery and coordinator markers
+    # live in the authoritative metadata and can be absent from the queue row.
+    # Refreshing from a compact row can replace a three-stage coordinator
+    # closure with the original full workflow and decompose the parent again.
+    authoritative, authoritative_status = get_mission(mission_id)
+    authoritative_mission = authoritative.get("mission") if isinstance(authoritative, dict) else None
+    if authoritative_status >= 400 or not isinstance(authoritative_mission, dict):
+        return {
+            "success": False,
+            "status": "authoritative_mission_load_failed",
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+            "next_action": "Retry after the canonical mission record is available; no claim or workflow update was written.",
+        }, authoritative_status if authoritative_status >= 400 else 503
+    mission = authoritative_mission
+    codex_chat_preview = _codex_chat_content(mission)
+
     refresh = _refresh_core_plan_for_pickup(mission)
     if refresh.get("refreshed"):
         refreshed, refreshed_status = get_mission(mission_id)
