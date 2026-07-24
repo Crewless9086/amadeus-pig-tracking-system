@@ -18,6 +18,7 @@ Farm record writes require approved backend paths and audit evidence.
 | Pig current/latest views | Read models for dashboard, purpose review, sales availability, and agent summaries. |
 | Farm products/settings | Medicine/product defaults and system settings. |
 | Pig observation events | Append-only factual human observations for read-only Herdmaster evidence; never a lifecycle, purpose, medical, sales, reservation, slaughter, customer, alert-acknowledgement, or owner-decision store. |
+| Pig management-intent events | Append-only, advisory-only management plans that may cite factual observation evidence; never an execution, lifecycle, purpose, sales, reservation, slaughter, customer, or owner-decision rail. |
 | Pig lifecycle events | Append-only audit evidence for canonical pig lifecycle facts; never a lifecycle write rail or substitute for the current-state projection on `pigs`. |
 | Riversdale auction cycles | Unapplied owner-confirmation and advisory cohort-snapshot rail. A canonical active-outlet claim rail permits at most one active customer sale, reservation, auction, meat, breeding, health-hold, keep-growing, abattoir, or future outlet state per pig. The migration synchronizes the current protected Supabase order-reservation, sales-transaction, and meat-batch writers transactionally; a conflicting source write fails closed. Future protected cohort execution must create its matching claim and member transactionally. Neither auction rail is a reservation, sale, lifecycle, or customer-send rail. |
 
@@ -31,6 +32,15 @@ Farm record writes require approved backend paths and audit evidence.
 - The table has RLS enabled and no browser policy is introduced by this migration. A future protected backend capture rail must define its own permission and audit contract.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
+
+## Pig Management-Intent Event Contract
+
+`pig_management_intent_events` is an additive, unapplied advisory rail that is structurally separate from factual observations. Each row has a canonical `pig_id`, intended/recorded timestamps, author/source provenance, a controlled advisory intent type, non-empty rationale, bounded confidence, and a caller idempotency key. It may cite one observation event only when that evidence belongs to the same pig.
+
+- Intent status is fixed to `advisory`. This rail cannot execute a recommendation or change `pigs`, lifecycle, purpose, orders, sales, reservations, slaughter, customer, notification, or any operational projection.
+- Events are append-only. Corrections must be new intent events linked by `supersedes_management_intent_event_id`; normal updates and deletes are database-blocked, and supersession is restricted to the same pig.
+- RLS is enabled. No browser policy or route integration is introduced here; a separately approved lifecycle/capture slice must use a protected backend path that derives the actor and preserves audit evidence.
+- Migration application remains owner-gated. Herdmaster may use these rows only as cited advisory planning evidence and retains no farm-write authority.
 
 ## Pig Lifecycle Event Contract
 
@@ -81,4 +91,5 @@ The current canonical `pig_current_state`/`pigs` read projection does not supply
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 - `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
+- `supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql` (unapplied; application requires explicit owner approval)
 - `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)

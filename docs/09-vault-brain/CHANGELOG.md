@@ -1,5 +1,11 @@
 # Vault Brain Changelog
 
+## 2026-07-24 - Herdmaster observation and management-intent data-model recovery
+
+- Completed the additive, unapplied data contract that separates factual pig observations from advisory-only management-intent events.
+- Required same-pig observation/supersession references, idempotency, RLS, and database-blocked update/delete operations for intents.
+- Kept migration application owner-gated and route/capture integration, lifecycle actions, UI, release, and all farm-state writes outside this data-model slice.
+
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 
 - Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.
