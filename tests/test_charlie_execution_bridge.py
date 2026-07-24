@@ -1163,6 +1163,47 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(artifact, original)
 
+    def test_candidate_binding_rejects_missing_tested_revision_without_mutation(self):
+        artifact = {
+            "source_commit": "abc123def456",
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": "abc123def456",
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        matched = execution_bridge._protected_pause_has_exact_candidate_binding(artifact)
+
+        self.assertFalse(matched)
+        self.assertEqual(artifact, original)
+
+    def test_missing_tested_revision_pause_fails_closed_in_runtime_gate(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "summary": "Code passes; migration application remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [{"id": "operations", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]}],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": "abc123def456",
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": "abc123def456",
+                "candidate_fingerprint": "candidate-123",
+            },
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
     def test_product_review_pending_current_diff_defect_does_not_normalize(self):
         artifact = {
             "summary": "Migration application is owner-gated, but a current defect remains.",

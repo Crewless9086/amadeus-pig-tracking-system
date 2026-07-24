@@ -4935,7 +4935,10 @@ def _protected_pause_has_exact_candidate_binding(artifact):
     if not candidate or candidate != lineage_candidate or not revision or revision != lineage_revision:
         return False
     tested = str(artifact.get("tested_revision") or "").strip().lower()
-    return not tested or tested.startswith(revision) or revision.startswith(tested)
+    # A missing test revision is incomplete evidence, not an implicit match.
+    # Protected-operation pauses must remain blocking until a reviewer proves
+    # that its checks covered this exact packaged candidate.
+    return bool(tested) and (tested.startswith(revision) or revision.startswith(tested))
 
 
 def _normalize_separate_protected_operation_decision(agent, artifact, *, require_candidate_binding=False):
