@@ -3,6 +3,10 @@ import os
 import re
 from urllib import request as urllib_request
 
+from modules.beacon.public_livestock_content_policy import (
+    RISK_STATUS,
+    assess_public_livestock_content,
+)
 
 LLM_ENABLED_ENV = "BEACON_BACKEND_LLM_ENABLED"
 LLM_MODEL_ENV = "BEACON_BACKEND_LLM_MODEL"
@@ -47,7 +51,7 @@ def build_beacon_caption_suggestions(payload=None, historical_events=None, envir
             safe.append(text)
     if not safe:
         return {
-            **_result(False, "all_caption_suggestions_blocked", [], history, source_name),
+            **_result(False, RISK_STATUS, [], history, source_name),
             "blocked_suggestions": blocked,
         }, 409
     return {
@@ -82,7 +86,7 @@ def revise_beacon_caption(payload=None, historical_events=None, environ=None, re
         }, 503
     issues = caption_safety_issues(revised, lane)
     if issues:
-        return {"success": False, "status": "caption_revision_blocked", "blocked_reasons": issues, "caption": caption}, 409
+        return {"success": False, "status": RISK_STATUS, "blocked_reasons": issues, "caption": caption}, 409
     return {
         "success": True,
         "status": "caption_revised",
@@ -94,15 +98,9 @@ def revise_beacon_caption(payload=None, historical_events=None, environ=None, re
 
 
 def caption_safety_issues(text, lane="live_stock_awareness"):
-    lowered = _clean(text, 3000).lower()
-    issues = []
-    if not lowered:
-        issues.append("caption_required")
-    if lane == "live_stock_awareness":
-        issues.extend(f"direct_sales_wording:{term}" for term in DIRECT_SALES_TERMS if _contains_term(lowered, term))
-        if re.search(r"(?:^|\s)r\s?\d|\br\d", lowered):
-            issues.append("livestock_price_wording_blocked")
-    return sorted(set(issues))
+    return assess_public_livestock_content(
+        text, objective="farm_awareness", campaign_lane=lane
+    )["reasons"]
 
 
 def _historical_captions(events):
@@ -134,7 +132,12 @@ def _style_profile(history):
 def _llm_suggestions(brief, lane, history, source, requester=None):
     examples = "\n\n".join(f"PAST POST {index + 1}:\n{text}" for index, text in enumerate(history[:5]))
     boundary = (
-        "This is livestock awareness only. Never mention sales, price, availability, stock, ordering, booking, reserving, or buying."
+        "This is public livestock awareness only. Write only farm-awareness, education, "
+        "husbandry, welfare, responsible-farming or farm-story content. Never sell, solicit, "
+        "advertise or imply animal availability; never request buyer details, livestock "
+        "requirements, messages about acquiring animals, or euphemisms with that meaning. "
+        "Safe calls to action may invite following the farm journey, educational questions, "
+        "behind-the-scenes requests or discussion of responsible animal care."
         if lane == "live_stock_awareness" else
         "This is a meat launch draft. Do not invent prices, availability, quantities, delivery, or guarantees."
     )
@@ -175,7 +178,9 @@ def _llm_suggestions(brief, lane, history, source, requester=None):
 def _llm_revision(caption, instruction, lane, history, source, requester=None):
     examples = "\n\n".join(f"PAST POST {index + 1}:\n{text}" for index, text in enumerate(history[:5]))
     boundary = (
-        "This is livestock awareness only. Never add sales, price, availability, stock, ordering, booking, reserving, or buying language."
+        "Public livestock content is non-commercial only. Never add direct or implied animal "
+        "sales, availability, buyer-detail requests, or transaction-oriented messaging. "
+        "Only awareness, education, husbandry, welfare and farm-story engagement is allowed."
         if lane == "live_stock_awareness" else
         "Do not invent prices, availability, quantities, delivery, or guarantees."
     )
@@ -212,6 +217,18 @@ def _llm_revision(caption, instruction, lane, history, source, requester=None):
 def _fallback_suggestions(brief, lane, history):
     base = brief.rstrip(" .")
     if lane == "live_stock_awareness":
+        return [
+            "A small moment from life at Amadeus Farm. These curious piglets remind "
+            "us how much patient daily care goes into every healthy start.\n\n"
+            "Follow the farm journey for more honest moments from behind the scenes.",
+            "Good piglet care is built on steady routines: clean shelter, fresh water, "
+            "careful observation and calm handling.\n\nAsk an educational question "
+            "about responsible animal care and we may cover it in a future post.",
+            "Curious piglets, patient care and another day on the farm.\n\nWhich "
+            "behind-the-scenes part of responsible piglet care would you like to see next?",
+        ]
+        # The previous brief-interpolating fallback is intentionally unreachable: an
+        # unclassified owner brief must not inject commerce into public livestock copy.
         return [
             f"🐷🌿 A little farm update from Amadeus Farm.\n\n{base}.\n\nThese are the moments we love sharing: healthy animals, steady progress and plenty of personality along the way. We’ll keep sharing their journey as it unfolds. 💛",
             f"There is always something worth noticing on the farm. 🐖\n\n{base}.\n\nIt is rewarding to watch the small daily changes add up, and we are looking forward to sharing more of the journey with you. 🌱",

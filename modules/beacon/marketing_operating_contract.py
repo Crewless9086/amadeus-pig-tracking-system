@@ -113,21 +113,52 @@ def build_beacon_marketing_operating_contract(sale_stream="meat", fulfilment_evi
     if sale_stream not in SUPPORTED_SALE_STREAMS:
         raise ValueError("unsupported_sale_stream")
     target = build_fulfilment_target(fulfilment_evidence, now=now)
+    livestock_public = sale_stream in {"live_stock", "live_stock_awareness"}
+    objectives = (
+        [
+            {"key": "farm_awareness", "status": "required", "rule": "Build familiarity with Amadeus Farm through truthful non-commercial farm stories."},
+            {"key": "education_and_welfare", "status": "required", "rule": "Share responsible animal-care, husbandry and welfare content."},
+            {"key": "community_engagement", "status": "proposed", "rule": "Invite educational questions and farm-journey engagement, never livestock acquisition enquiries."},
+        ]
+        if livestock_public else
+        [
+            {"key": "qualified_demand", "status": "proposed", "rule": "Generate measurable qualified demand within the verified fulfilment ceiling."},
+            {"key": "owner_efficiency", "status": "proposed", "rule": "Prepare exact review packets that reduce owner planning time without executing them."},
+            {"key": "learning", "status": "proposed", "rule": "Use attributable evidence to improve future owner-reviewed recommendations."},
+        ]
+    )
+    kpis = (
+        [
+            {"key": "farm_awareness_engagement", "status": "proposed", "rule": "Report verified engagement without treating it as sales intent."},
+            {"key": "educational_questions", "status": "proposed", "rule": "Count only questions about husbandry, welfare or responsible animal care."},
+        ]
+        if livestock_public else
+        [
+            {"key": "qualified_lead_rate", "status": "proposed", "numerator": "qualified_leads", "denominator": "attributed_inquiries", "formula": "qualified_leads / attributed_inquiries", "unit": "ratio", "attribution_window": "owner_decision_required", "evidence_source": "campaign_performance_events", "zero_denominator": "not_available"},
+            {"key": "inquiry_conversion_rate", "status": "proposed", "numerator": "fulfilled_sales", "denominator": "attributed_inquiries", "formula": "fulfilled_sales / attributed_inquiries", "unit": "ratio", "attribution_window": "owner_decision_required", "evidence_source": "sales_and_fulfilment_records", "zero_denominator": "not_available"},
+            {"key": "capacity_utilisation", "status": "proposed", "numerator": "attributed_fulfilled_units", "denominator": "demand_ceiling", "formula": "attributed_fulfilled_units / demand_ceiling", "unit": "ratio", "attribution_window": "campaign_window", "evidence_source": "verified_fulfilment_evidence", "zero_denominator": "not_available"},
+        ]
+    )
     return {
         "success": True,
         "contract_version": CONTRACT_VERSION,
         "mode": "beacon_marketing_operating_contract_owner_review_only",
         "sale_stream": sale_stream,
         "approval_status": "owner_review_required",
-        "objectives": [
-            {"key": "qualified_demand", "status": "proposed", "rule": "Generate measurable qualified demand within the verified fulfilment ceiling."},
-            {"key": "owner_efficiency", "status": "proposed", "rule": "Prepare exact review packets that reduce owner planning time without executing them."},
-            {"key": "learning", "status": "proposed", "rule": "Use attributable evidence to improve future owner-reviewed recommendations."},
-        ],
+        "objectives": objectives,
         "brand_kit": {
             "status": "proposed_owner_decision_required",
             "voice": ["plain_spoken", "warm", "credible", "specific", "never_pushy"],
-            "copy_rules": ["state only verified availability", "avoid artificial urgency", "never promise final price timing delivery or booking"],
+            "copy_rules": (
+                [
+                    "public livestock content is awareness education husbandry welfare or farm story only",
+                    "never sell solicit advertise or imply live-animal availability",
+                    "never request buyer details or messages about livestock requirements",
+                    "private SAM livestock conversations remain separate",
+                ]
+                if livestock_public else
+                ["state only verified availability", "avoid artificial urgency", "never promise final price timing delivery or booking"]
+            ),
             "visual_rules": ["use approved farm-authentic media only", "show animals and products respectfully", "no sensitive or identifying media without explicit public-use evidence", "no misleading stock imagery"],
         },
         "campaign_target": target,
@@ -139,11 +170,7 @@ def build_beacon_marketing_operating_contract(sale_stream="meat", fulfilment_evi
             "paid_channels_allowed": False,
             "customer_direct_send_allowed": False,
         },
-        "kpis": [
-            {"key": "qualified_lead_rate", "status": "proposed", "numerator": "qualified_leads", "denominator": "attributed_inquiries", "formula": "qualified_leads / attributed_inquiries", "unit": "ratio", "attribution_window": "owner_decision_required", "evidence_source": "campaign_performance_events", "zero_denominator": "not_available"},
-            {"key": "inquiry_conversion_rate", "status": "proposed", "numerator": "fulfilled_sales", "denominator": "attributed_inquiries", "formula": "fulfilled_sales / attributed_inquiries", "unit": "ratio", "attribution_window": "owner_decision_required", "evidence_source": "sales_and_fulfilment_records", "zero_denominator": "not_available"},
-            {"key": "capacity_utilisation", "status": "proposed", "numerator": "attributed_fulfilled_units", "denominator": "demand_ceiling", "formula": "attributed_fulfilled_units / demand_ceiling", "unit": "ratio", "attribution_window": "campaign_window", "evidence_source": "verified_fulfilment_evidence", "zero_denominator": "not_available"},
-        ],
+        "kpis": kpis,
         "approval_tiers": [
             {"tier": "advisory", "allows": ["inspect", "calculate", "draft"], "owner_gate": False, "executes_action": False},
             {"tier": "owner_review", "allows": ["approve_edit_reject_contract", "approve_edit_reject_exact_packet"], "owner_gate": True, "executes_action": False},
