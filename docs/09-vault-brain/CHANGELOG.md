@@ -76,6 +76,12 @@
 - Activated Herdmaster V1 as a read-only operational agent for herd inventory, overview, pens, weights, breeding, litters and pig profiles.
 - Required structured evidence, provenance, freshness, sufficiency checks, bounded repair and natural executive synthesis while preserving zero farm-write authority.
 
+## 2026-07-18 - BEACON autonomy promotion readiness
+
+- Added a separate, server-resolved, versioned SHA-256 threshold-policy lifecycle for read-only Beacon autonomy readiness; only the latest valid `owner_approved` policy can be evaluated.
+- Required strict AND semantics across campaign evidence, unedited approval rate, attribution completeness, recommendation accuracy, safety incidents, trust history, and budget compliance.
+- Kept threshold notification local and idempotent, and preserved zero execution, posting, customer-send, spend, provider-call, order, reservation, stock, and farm-write authority.
+
 ## 2026-07-17 - Herdmaster advisory reasoning v1
 
 - Added one normalized advisory outcome per pig grounded in deterministic Pig Allocation alerts and enriched with read-only litter, growth, breeding, meat-planning, and farm-rule evidence.

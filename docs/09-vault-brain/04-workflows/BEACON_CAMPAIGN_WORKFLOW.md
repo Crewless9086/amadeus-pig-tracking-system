@@ -11,6 +11,14 @@
 9. Compatible recurring weaknesses may produce deterministic follow-up suggestions for owner review. Single-campaign, stale, malformed, duplicated, superseded, missing, or incompatible evidence cannot establish recurrence.
 10. Previewing a suggestion writes nothing. Only a separate authenticated owner-admin action may create the stable suggestion as a deduplicated CORE mission with status `new`, no owner decision, and no approval or execution state.
 
+## Autonomy Promotion Readiness Workflow
+
+1. An owner-approved, versioned, SHA-256 content-addressed threshold policy is resolved from the server-owned lifecycle registry; caller-supplied authority is not trusted.
+2. Proposed, expired, malformed, hash-mismatched, or superseded policies stop the readiness assessment.
+3. The assessment validates campaign evidence, unedited approval rate, attribution completeness, recommendation accuracy, safety incidents, trust history, and budget compliance independently.
+4. Readiness is true only when the policy is eligible and every named gate passes. A pass creates at most one local threshold-met claim for that policy/evidence identity.
+5. The output is owner-review evidence only. It cannot post, send, spend, call providers, create orders, reserve/change stock, write farm data, approve policy, or execute an autonomy promotion.
+
 ## Campaign Outcome Evidence
 
 The authenticated owner may retrieve only provider-supported, allowlisted post metrics. Each metric retains its source, source reference, retrieval time, and evidence status. A numeric zero is verified only when the source explicitly returns zero; absent, unsupported, malformed, or provider-error values remain unavailable and cannot support recommendations or cost calculations.
