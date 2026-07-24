@@ -1,7 +1,7 @@
 """Fail-closed, review-only SAM Meat launch packet.
 
-The deployed route does not call this module yet. Default readers use existing
-production-connected meat sources; tests inject narrow fakes.
+The deployed SAM Meat runtime calls this packet through the existing inbound
+route. Default readers use production-connected sources; tests inject fakes.
 """
 from datetime import datetime, timezone
 import hashlib
@@ -49,9 +49,9 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
     review_id = _id("SAM-MEAT-REVIEW", conversation_ref, source_id, PACKET_VERSION)
     correction_id = _id("SAM-MEAT-CORRECTION", conversation_ref, source_id, PACKET_VERSION) if corrections else ""
     return {
-        "success": True, "packet_version": PACKET_VERSION, "mode": "prepared_owner_review_not_connected",
-        "connection_state": {"deployed_caller_exists": False, "operationally_testable": False,
-            "blocked_shared_file": "modules/sales/sales_transaction_routes.py", "blocked_reason": "active_sam_livestock_claim"},
+        "success": True, "packet_version": PACKET_VERSION, "mode": "prepared_owner_review_connected_no_send",
+        "connection_state": {"deployed_caller_exists": True, "operationally_testable": True,
+            "route": "existing_sam_meat_chatwoot_inbound", "blocked_shared_file": "", "blocked_reason": ""},
         "conversation_ref": str(conversation_ref), "language": language,
         "understood_request": {k: v for k, v in facts.items() if v not in (None, "")},
         "facts": facts, "fact_evidence": evidence, "corrections": corrections,
@@ -294,14 +294,14 @@ def _owner_question(actions, truth):
 
 def _canary():
     return {"selected": False, "conversation_id": "", "contact_id": "", "inbox_id": "", "autoreply_enabled": False,
-        "candidate_sends": False, "prerequisites": ["owner selects one real test conversation identity after deployed caller exists", "owner reviews every prepared reply", "stable replay identity passes before use", "no send, order, payment, reservation, allocation, or farm write"],
+        "candidate_sends": False, "prerequisites": ["owner selects one isolated test conversation identity after deployment", "owner reviews every prepared reply", "stable replay identity passes before use", "no send, order, payment, reservation, allocation, or farm write"],
         "stop_conditions": ["unsupported promise", "known fact is asked again", "truth is unavailable or stale without blocker", "replay produces a second identity", "any mutation or customer send is attempted"]}
 
 
 def _checklist():
-    return {"day_1": ["Review the uncalled packet and reader mapping.", "Resolve the shared-route claim.", "Keep autoreply and protected writes disabled."],
-        "day_2": ["After review, connect inbound runtime to preparation only.", "Expose through existing meat command state; add no dashboard.", "Replay language, correction, and unavailable-truth cases."],
-        "day_3": ["Only after deployment, select one real owner-controlled conversation.", "Review every reply and capture stable evidence.", "Stop on any canary condition; do not enable autoreply."]}
+    return {"day_1": ["Verify the deployed packet and reader mapping.", "Confirm the existing shared route remains released.", "Keep autoreply and protected writes disabled."],
+        "day_2": ["Use the connected inbound runtime for preparation only.", "Review through existing meat command state; add no dashboard.", "Replay language, correction, and unavailable-truth cases."],
+        "day_3": ["Use only the owner-selected test conversation.", "Review every reply and capture stable evidence.", "Stop on any canary condition; do not enable autoreply."]}
 
 
 def _authority():

@@ -113,7 +113,12 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
                     "protected_decision", "authority"):
             self.assertIn(key, result)
         self.assertFalse(any(result["authority"].values()))
-        self.assertFalse(result["connection_state"]["operationally_testable"])
+        self.assertEqual(result["mode"], "prepared_owner_review_connected_no_send")
+        self.assertTrue(result["connection_state"]["deployed_caller_exists"])
+        self.assertTrue(result["connection_state"]["operationally_testable"])
+        self.assertEqual(result["connection_state"]["route"], "existing_sam_meat_chatwoot_inbound")
+        self.assertEqual(result["connection_state"]["blocked_shared_file"], "")
+        self.assertEqual(result["connection_state"]["blocked_reason"], "")
 
     def test_no_final_price_or_fake_selected_canary(self):
         result = packet(["Half carcass Set A, 2 half carcasses, collection next week, EFT."])
