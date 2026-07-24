@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from modules.sales import sam_live_stock_launch_control as launch
 
@@ -845,6 +846,115 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual([row["classification"] for row in result["conversations"]], ["awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual"])
         self.assertFalse(result["bulk_reset_allowed"])
         self.assertFalse(result["writes_performed"])
+
+    def test_human_mode_audit_production_null_item_fails_structured_not_zero(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [None],
+        )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_conversation_shape_invalid")
+        self.assertEqual(result["failure_stage"], "conversation_item")
+        self.assertEqual(result["error_type"], "NoneType")
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_human_mode_audit_tolerates_partial_latest_message_sender_and_timestamp_shapes(self):
+        conversations = [
+            {
+                "id": 1826,
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [None],
+                "last_activity_at": {"unexpected": "shape"},
+            },
+            {
+                "id": 1827,
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "sam_live_stock_review": {"state": "resolved"},
+                "messages": [{"message_type": "outgoing", "sender": ["unexpected"]}],
+            },
+        ]
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"][0]["classification"], "stale_unknown")
+        self.assertIsNone(result["conversations"][0]["latest_message_at"])
+        self.assertFalse(result["conversations"][0]["shape_complete"])
+        self.assertEqual(result["conversations"][1]["classification"], "resolved_but_stuck")
+
+    def test_human_mode_audit_malformed_response_and_attributes_fail_closed(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: {"payload": []},
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_response_shape")
+        self.assertFalse(result["conversation_count_known"])
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [{"id": 1826, "custom_attributes": []}],
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "custom_attributes")
+
+    def test_human_mode_audit_review_loader_failures_are_sanitized_and_unavailable(self):
+        conversations = [{"id": 1826, "custom_attributes": {"conversation_mode": "HUMAN"}}]
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_loader=lambda conversation_id: (_ for _ in ()).throw(RuntimeError("postgres://secret")),
+        )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["failure_stage"], "review_event_load")
+        self.assertEqual(result["error_type"], "RuntimeError")
+        self.assertNotIn("postgres://secret", str(result))
+        self.assertFalse(result["evidence_available"])
+
+    def test_chatwoot_reader_rejects_malformed_pagination_shape(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data":{"payload":{},"meta":[]}}'
+
+        with patch.object(launch.urllib_request, "urlopen", return_value=Response()):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret"},
+            )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_pagination")
+        self.assertNotIn("configured-secret", str(result))
+        self.assertTrue(result["diagnostics"]["chatwoot_token_configured"])
+        self.assertFalse(result["diagnostics"]["secrets_exposed"])
+
+    def test_human_mode_audit_classifies_chatwoot_http_and_timeout_failures(self):
+        http_error = launch.urllib_error.HTTPError(
+            "https://example.invalid", 503, "upstream", {}, None
+        )
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(http_error),
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_chatwoot_http_error")
+        self.assertEqual(result["error_type"], "HTTPError")
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(TimeoutError("token-value")),
+        )
+        self.assertEqual(status, 504)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_chatwoot_timeout")
+        self.assertNotIn("token-value", str(result))
 
 
 if __name__ == "__main__":

@@ -2538,6 +2538,39 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(response.get_json()["boost_ready"])
         readiness.assert_called_once()
 
+    def test_sam_live_stock_human_audit_route_never_returns_generic_500(self):
+        with patch.object(
+            sales_transaction_routes,
+            "audit_sam_live_stock_human_conversations",
+            side_effect=AttributeError("customer-secret"),
+        ):
+            response = self.client.get(
+                "/api/sales/channels/chatwoot/sam-live-stock/human-mode-audit"
+            )
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.get_json()
+        self.assertEqual(payload["failure_stage"], "audit_execution")
+        self.assertEqual(payload["error_type"], "AttributeError")
+        self.assertFalse(payload["bulk_reset_allowed"])
+        self.assertNotIn("customer-secret", str(payload))
+
+    def test_sam_live_stock_human_audit_route_catches_serialization_failure(self):
+        with patch.object(
+            sales_transaction_routes,
+            "audit_sam_live_stock_human_conversations",
+            return_value=({"success": True, "unsafe": object()}, 200),
+        ):
+            response = self.client.get(
+                "/api/sales/channels/chatwoot/sam-live-stock/human-mode-audit"
+            )
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.get_json()
+        self.assertEqual(payload["failure_stage"], "json_serialization")
+        self.assertFalse(payload["conversation_count_known"])
+        self.assertFalse(payload["bulk_reset_allowed"])
+
     def test_sam_live_stock_takeover_and_reservation_routes_call_services(self):
         with patch.object(
             sales_transaction_routes,
