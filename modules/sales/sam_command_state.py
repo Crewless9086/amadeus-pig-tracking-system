@@ -8,6 +8,7 @@ from modules.sales.meat_fulfillment import get_meat_fulfillment_timeline
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.meat_reconciliation import get_meat_reconciliation_status
+from modules.sales.conversation_learning import list_sales_conversation_learning_events
 
 
 REQUIRED_FACTS = ("product_type", "cut_set", "location", "timing", "delivery_or_collection")
@@ -68,6 +69,7 @@ def get_sam_command_state(lead_id, database_url=None, beacon_provider=None):
         ("meat_ops", lambda: get_meat_ops_status(lead_id, database_url=database_url)),
         ("fulfillment", lambda: get_meat_fulfillment_timeline(lead_id, database_url=database_url)),
         ("reconciliation", lambda: get_meat_reconciliation_status(lead_id, database_url=database_url)),
+        ("launch_review", lambda: list_sales_conversation_learning_events(lead_id=lead_id, limit=30, database_url=database_url)),
     ):
         result, status_code = _read_source(reader)
         sources[key] = result
@@ -127,6 +129,7 @@ def get_sam_command_state(lead_id, database_url=None, beacon_provider=None):
         "fulfillment": fulfillment,
         "reconciliation": reconciliation,
         "history": history,
+        "launch_review_packet": _launch_review_packet(sources.get("launch_review")),
         "degraded_sources": degraded_sources,
         "safe_actions": _safe_actions(next_action),
         "forbidden_actions": FORBIDDEN_ACTIONS,
@@ -141,6 +144,40 @@ def get_sam_command_state(lead_id, database_url=None, beacon_provider=None):
     }
     return response, 200
 
+
+def _launch_review_packet(source):
+    source = source if isinstance(source, dict) else {}
+    events = source.get("learning_events") if isinstance(source.get("learning_events"), list) else []
+    event = next((item for item in events if isinstance(item, dict) and item.get("event_source") == "sam_meat_launch_packet" and item.get("event_type") == "owner_review_note"), {})
+    if not event:
+        return {"status": "Unavailable", "persisted": False, "sends_customer_message": False}
+    captured = event.get("captured_facts") if isinstance(event.get("captured_facts"), dict) else {}
+    return {
+        "status": "persisted_owner_review",
+        "persisted": True,
+        "review_event_id": event.get("learning_event_id", ""),
+        "packet_version": captured.get("packet_version", ""),
+        "prepared_reply": event.get("sam_reply_excerpt", ""),
+        "facts": captured.get("facts") if isinstance(captured.get("facts"), dict) else {},
+        "fact_evidence": captured.get("fact_evidence") if isinstance(captured.get("fact_evidence"), dict) else {},
+        "corrections": captured.get("corrections") if isinstance(captured.get("corrections"), list) else [],
+        "missing_facts": event.get("missing_facts") if isinstance(event.get("missing_facts"), list) else [],
+        "catalogue_match": captured.get("catalogue_match") if isinstance(captured.get("catalogue_match"), dict) else {},
+        "quantity": captured.get("quantity") if isinstance(captured.get("quantity"), dict) else {},
+        "price_basis": captured.get("price_basis") if isinstance(captured.get("price_basis"), dict) else {},
+        "availability": captured.get("availability") if isinstance(captured.get("availability"), dict) else {},
+        "fulfilment": captured.get("fulfilment") if isinstance(captured.get("fulfilment"), dict) else {},
+        "butcher_loop": captured.get("butcher_loop") if isinstance(captured.get("butcher_loop"), dict) else {},
+        "protected_decision": captured.get("protected_decision") if isinstance(captured.get("protected_decision"), dict) else {},
+        "diagnostics": captured.get("diagnostics") if isinstance(captured.get("diagnostics"), dict) else {},
+        "authority": captured.get("authority") if isinstance(captured.get("authority"), dict) else {},
+        "sends_customer_message": False,
+        "creates_order": False,
+        "confirms_payment": False,
+        "reserves_stock": False,
+        "changes_stock": False,
+        "writes_to_supabase": False,
+    }
 
 def _read_source(reader):
     try:

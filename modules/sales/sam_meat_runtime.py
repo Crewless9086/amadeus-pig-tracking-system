@@ -39,7 +39,10 @@ from modules.sales.chatwoot_hygiene import (
     HYGIENE_ENABLED_ENV,
     sync_sam_meat_chatwoot_hygiene,
 )
-from modules.sales.conversation_learning import record_learning_event_from_sam_result
+from modules.sales.conversation_learning import (
+    record_learning_event_from_sam_result,
+    record_sam_meat_launch_review_packet,
+)
 from modules.sales.sam_farm_knowledge import (
     load_sam_farm_knowledge,
     meat_sales_knowledge,
@@ -154,6 +157,9 @@ def handle_sam_meat_chatwoot_inbound(
     llm_agent_decider=None,
     llm_agent_v3_decider=None,
     llm_reply_rewriter=None,
+    launch_packet_builder=None,
+    launch_evidence_recorder=None,
+    launch_truth_readers=None,
 ):
     source = environ if environ is not None else os.environ
     control_policy = sam_meat_control_policy()
@@ -414,6 +420,24 @@ def handle_sam_meat_chatwoot_inbound(
         "policy": sam_meat_webhook_policy(source),
         **_authority_flags(sent or document_sent, sent or document_sent),
     }
+    try:
+        if launch_packet_builder is None:
+            from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet
+            launch_packet_builder = build_sam_meat_launch_packet
+        packet_messages = list(inbound.get("recent_messages") or [])
+        packet_messages.append({"message_id": inbound.get("message_id"), "message_type": "incoming", "content": inbound.get("content")})
+        launch_packet = launch_packet_builder(packet_messages, conversation_ref=inbound.get("conversation_id"), inbound_event_id=inbound.get("message_id"), lead_id=decision.get("lead_id") or lead_payload.get("lead_id"), truth_readers=launch_truth_readers)
+        recorder = launch_evidence_recorder or record_sam_meat_launch_review_packet
+        launch_evidence, launch_evidence_status = recorder(launch_packet, decision.get("lead_id") or lead_payload.get("lead_id"))
+        persisted = launch_evidence_status == 200 and launch_evidence.get("persisted") is True
+        launch_packet["review_event"]["persisted"] = persisted
+        if launch_packet.get("correction_event", {}).get("event_id"):
+            launch_packet["correction_event"]["persisted"] = persisted
+        result["sam_meat_launch_packet"] = launch_packet
+        result["sam_meat_launch_evidence"] = {"status_code": launch_evidence_status, "status": launch_evidence.get("status"), "success": launch_evidence.get("success") is True, "persisted": persisted, "review_event_id": launch_packet.get("review_event", {}).get("event_id", ""), "correction_event_id": launch_packet.get("correction_event", {}).get("event_id", ""), "sends_customer_message": False, "creates_order": False, "confirms_payment": False, "reserves_meat": False, "allocates_meat": False, "writes_farm_truth": False}
+    except Exception as exc:
+        result["sam_meat_launch_packet"] = {"success": False, "status": "Unavailable", "operationally_testable": False, "error_type": exc.__class__.__name__, "authority": _authority_flags(False, False)}
+        result["sam_meat_launch_evidence"] = {"success": False, "persisted": False, "status": "sam_meat_launch_packet_unavailable", "sends_customer_message": False, "creates_order": False, "confirms_payment": False, "reserves_meat": False, "allocates_meat": False, "writes_farm_truth": False}
     try:
         learning_result, learning_status = record_learning_event_from_sam_result(result)
     except Exception as exc:
