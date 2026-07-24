@@ -147,6 +147,8 @@ Builder packaging is transactional. CORE stages every actual Git change except r
 
 Review and test evidence must identify the packaged PR head as `expected_revision` and the actual checked commit as `tested_revision`. A proven mismatch is a stale-state recovery event, never valid owner-review evidence.
 
+A reviewer `pause` may be normalized to code-review approval only when the runner-bound artifact has matching candidate fingerprint and revision lineage, passing code evidence, and an explicitly separate owner-gated migration application or live-canary operation. A stale, ambiguous, or unbound pause remains blocking. This classification is pure and does not authorize or execute any protected operation.
+
 Every finding must record `scope_relation`, `introduced_by_current_diff`, `blocking`, `severity`, `evidence`, and `responsible_stage`. Findings outside the current diff cannot block that mission unless they prove an active red-zone safety breach.
 
 Provider-specific stages must use the provider-aware runner path. If Claude/Anthropic fails transiently, CHARLIE may fall back to the local Codex provider for that stage and must record the fallback in runner evidence instead of blocking only because the provider was unavailable.

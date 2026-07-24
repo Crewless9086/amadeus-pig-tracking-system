@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-24 - Candidate-bound protected-operation pause classification
+
+- Required CORE to normalize a reviewer pause only when the artifact's candidate fingerprint and revision lineage match the packaged candidate, code evidence passes, and migration/live-canary work is explicitly separate and owner-gated.
+- Required stale, ambiguous, or unbound pauses to fail closed; classification itself cannot apply migrations, run a canary, or grant protected authority.
+
 ## 2026-07-24 - Herdmaster observation and management-intent completion
 
 - Defined the separate, additive, unapplied `pig_management_intent_events` advisory rail alongside factual observation evidence.
