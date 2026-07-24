@@ -1,4 +1,5 @@
 import json
+import threading
 import unittest
 from unittest.mock import patch
 from urllib import error as urllib_error
@@ -8,7 +9,10 @@ from modules.beacon.meta_ads_insights_preview import (
     ADS_READ_TOKEN_ENV,
     GRAPH_VERSION_ENV,
     MetaPreviewError,
+    _PREVIEW_FLIGHTS,
     _http_get,
+    _reset_meta_preview_singleflight_for_tests,
+    _safe_request_fingerprint,
     build_meta_ads_insights_preview,
     meta_ads_preview_configuration,
 )
@@ -52,6 +56,9 @@ class FakeMetaGetter:
 
 
 class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
+    def setUp(self):
+        _reset_meta_preview_singleflight_for_tests()
+
     def config(self, account="act_123", token="SUPER-SECRET-TOKEN"):
         return {
             AD_ACCOUNT_ID_ENV: account,
@@ -64,6 +71,7 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
             environ=self.config(),
             http_get=getter or FakeMetaGetter(),
             now="2026-07-24T12:00:00Z",
+            singleflight=False,
             **kwargs,
         )
 
@@ -154,6 +162,9 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(rejected["status"], "reporting_range_too_large")
+        malformed, status = self.preview(start_date="not-a-date")
+        self.assertEqual(status, 400)
+        self.assertEqual(malformed["status"], "invalid_reporting_date")
 
     def test_verified_zero_remains_zero_while_missing_and_malformed_remain_distinct(self):
         result, _ = self.preview()
@@ -209,6 +220,10 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
         self.assertEqual(first["idempotency_preview"]["duplicate_key_count"], 0)
         self.assertFalse(first["future_backfill"]["executes_now"])
         self.assertIn("64 legacy rows", first["future_backfill"]["legacy_reconciliation"])
+        self.assertFalse(
+            first["connection"]["configured_ad_account_identifier_exposed"]
+        )
+        self.assertNotIn("identifiers_exposed", first["connection"])
 
     def test_page_and_record_bounds_report_partial_without_unbounded_fetch(self):
         class BoundGetter(FakeMetaGetter):
@@ -277,8 +292,8 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
     def test_permission_rate_limit_api_and_injected_secret_errors_are_safe(self):
         for error, expected in (
             (MetaPreviewError("permission_denied", http_status=403), "permission_denied"),
-            (MetaPreviewError("rate_limited", http_status=429), "API_failed"),
-            (MetaPreviewError("api_failed"), "API_failed"),
+            (MetaPreviewError("rate_limited", http_status=429), "rate_limited"),
+            (MetaPreviewError("api_failed"), "api_failed"),
         ):
             def failing_getter(url, *, headers, timeout, failure=error):
                 raise failure
@@ -296,6 +311,305 @@ class BeaconMetaAdsInsightsPreviewTests(unittest.TestCase):
 
         result, _ = self.preview(arbitrary_failure)
         self.assertNotIn("SUPER-SECRET-TOKEN", json.dumps(result))
+
+    def test_total_deadline_stops_pages_and_marks_remaining_resources(self):
+        class FakeClock:
+            value = 100.0
+
+            def __call__(self):
+                return self.value
+
+            def advance(self, seconds):
+                self.value += seconds
+
+        clock = FakeClock()
+        getter = FakeMetaGetter()
+        original = getter.__call__
+
+        def timed_get(url, *, headers, timeout):
+            payload = original(url, headers=headers, timeout=timeout)
+            clock.advance(min(0.6, timeout))
+            return payload
+
+        result, status = self.preview(
+            timed_get,
+            clock=clock,
+            total_timeout_seconds=1,
+            timeout_seconds=12,
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(len(getter.calls), 2)
+        self.assertEqual(getter.calls[0]["timeout"], 1.0)
+        self.assertAlmostEqual(getter.calls[1]["timeout"], 0.4, places=6)
+        diagnostics = result["resource_diagnostics"]
+        self.assertEqual(diagnostics["account"]["status"], "verified")
+        self.assertEqual(diagnostics["campaigns"]["status"], "timed_out")
+        for name in ("adsets", "ads", "insights"):
+            self.assertEqual(
+                diagnostics[name]["status"],
+                "not_attempted_due_to_total_deadline",
+            )
+        self.assertTrue(result["limits"]["total_deadline_exhausted"])
+        self.assertEqual(result["limits"]["total_elapsed_seconds"], 1.0)
+        self.assertEqual(
+            result["metric_summary"]["spend"]["aggregate_status"],
+            "not_attempted_due_to_total_deadline",
+        )
+        self.assertIsNone(result["metric_summary"]["spend"]["aggregate_value"])
+
+    def test_singleflight_prevents_duplicate_worker_and_returns_cached_success(self):
+        entered = threading.Event()
+        release = threading.Event()
+        getter = FakeMetaGetter()
+        original = getter.__call__
+
+        def blocking_get(url, *, headers, timeout):
+            if not getter.calls:
+                entered.set()
+                release.wait(5)
+            return original(url, headers=headers, timeout=timeout)
+
+        first_result = []
+
+        def run_first():
+            first_result.append(build_meta_ads_insights_preview(
+                environ=self.config(),
+                http_get=blocking_get,
+                now="2026-07-24T12:00:00Z",
+            ))
+
+        worker = threading.Thread(target=run_first)
+        worker.start()
+        self.assertTrue(entered.wait(2))
+        repeated, status = build_meta_ads_insights_preview(
+            environ=self.config(),
+            http_get=blocking_get,
+            now="2026-07-24T12:00:00Z",
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(repeated["status"], "in_progress")
+        self.assertEqual(len(getter.calls), 0)
+        release.set()
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(first_result[0][0]["status"], "preview_ready")
+        self.assertEqual(len(getter.calls), 5)
+
+        cached, status = build_meta_ads_insights_preview(
+            environ=self.config(),
+            http_get=lambda *args, **kwargs: self.fail("cache started a read"),
+            now="2026-07-24T12:00:00Z",
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(cached["concurrency"]["status"], "cached")
+        self.assertEqual(len(getter.calls), 5)
+
+    def test_success_cache_and_failure_cooldown_expire_without_queue(self):
+        class FakeClock:
+            value = 10.0
+
+            def __call__(self):
+                return self.value
+
+            def advance(self, seconds):
+                self.value += seconds
+
+        clock = FakeClock()
+        getter = FakeMetaGetter()
+        first, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=getter, clock=clock
+        )
+        self.assertEqual(first["concurrency"]["status"], "executed")
+        calls = len(getter.calls)
+        cached, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=getter, clock=clock
+        )
+        self.assertEqual(cached["concurrency"]["status"], "cached")
+        self.assertEqual(len(getter.calls), calls)
+        clock.advance(15.1)
+        refreshed, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=getter, clock=clock
+        )
+        self.assertEqual(refreshed["concurrency"]["status"], "executed")
+        self.assertGreater(len(getter.calls), calls)
+
+        _reset_meta_preview_singleflight_for_tests()
+        failures = {"count": 0}
+
+        def failing_get(url, *, headers, timeout):
+            failures["count"] += 1
+            raise MetaPreviewError("api_failed")
+
+        failed, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=failing_get, clock=clock
+        )
+        self.assertEqual(failed["status"], "partial")
+        failure_calls = failures["count"]
+        cooled, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=failing_get, clock=clock
+        )
+        self.assertEqual(cooled["status"], "cooling_down")
+        self.assertEqual(cooled["concurrency"]["status"], "cooling_down")
+        self.assertEqual(failures["count"], failure_calls)
+        clock.advance(2.1)
+        build_meta_ads_insights_preview(
+            environ=self.config(), http_get=failing_get, clock=clock
+        )
+        self.assertGreater(failures["count"], failure_calls)
+
+    def test_singleflight_fingerprint_and_diagnostics_contain_no_secret_or_account(self):
+        first = _safe_request_fingerprint(
+            self.config(account="111", token="TOKEN-ONE"),
+            start_date=None, end_date=None, level="ad",
+            timeout_seconds=12, total_timeout_seconds=25,
+            max_pages=10, max_records=500,
+        )
+        second = _safe_request_fingerprint(
+            self.config(account="999", token="TOKEN-TWO"),
+            start_date=None, end_date=None, level="ad",
+            timeout_seconds=12, total_timeout_seconds=25,
+            max_pages=10, max_records=500,
+        )
+        self.assertEqual(first, second)
+        self.assertNotIn("TOKEN", first)
+
+        result, _ = build_meta_ads_insights_preview(
+            environ=self.config(), http_get=FakeMetaGetter()
+        )
+        serialized = json.dumps({
+            "concurrency": result["concurrency"],
+            "cache_keys": list(_PREVIEW_FLIGHTS),
+        })
+        self.assertNotIn("act_123", serialized)
+        self.assertNotIn("SUPER-SECRET-TOKEN", serialized)
+        self.assertFalse(
+            result["concurrency"]["configured_ad_account_identifier_in_fingerprint"]
+        )
+        self.assertFalse(result["concurrency"]["token_in_fingerprint"])
+
+    def test_http_400_meta_error_mapping_uses_codes_not_raw_messages(self):
+        cases = (
+            (
+                {"message": "expired SUPER-SECRET-TOKEN", "type": "OAuthException",
+                 "code": 190, "error_subcode": 463},
+                "invalid_or_expired_token",
+            ),
+            (
+                {"message": "permission denied", "type": "OAuthException", "code": 10},
+                "permission_denied",
+            ),
+            (
+                {"message": "rate limit", "type": "OAuthException", "code": 4},
+                "rate_limited",
+            ),
+            (
+                {"message": "bad field", "type": "OAuthException", "code": 100},
+                "invalid_field_or_request",
+            ),
+        )
+        for error_payload, expected in cases:
+            error = urllib_error.HTTPError(
+                "https://graph.facebook.com/path?access_token=URL-SECRET",
+                400, "Bad Request", {}, None,
+            )
+            error.read = lambda payload=error_payload: json.dumps(
+                {"error": payload}
+            ).encode()
+            with patch(
+                "modules.beacon.meta_ads_insights_preview.urllib_request.urlopen",
+                side_effect=error,
+            ):
+                with self.assertRaises(MetaPreviewError) as context:
+                    _http_get(
+                        "https://graph.facebook.com/v23.0/act_123/insights",
+                        headers={"Authorization": "Bearer SUPER-SECRET-TOKEN"},
+                        timeout=4,
+                    )
+            exc = context.exception
+            self.assertEqual(exc.status, expected)
+            self.assertEqual(exc.http_status, 400)
+            self.assertEqual(exc.meta_code, error_payload["code"])
+            self.assertEqual(exc.meta_type, "OAuthException")
+            self.assertEqual(
+                exc.meta_subcode, error_payload.get("error_subcode")
+            )
+            self.assertNotIn("SECRET", str(exc))
+            self.assertNotIn("permission denied", str(exc))
+
+    def test_optional_attribution_field_retries_once_and_only_for_exact_error(self):
+        getter = FakeMetaGetter()
+        original = getter.__call__
+        insight_calls = []
+
+        def optional_field_get(url, *, headers, timeout):
+            if "/insights?" in url:
+                insight_calls.append(url)
+                if len(insight_calls) == 1:
+                    raise MetaPreviewError(
+                        "invalid_optional_field",
+                        http_status=400,
+                        meta_code=100,
+                        meta_type="OAuthException",
+                        optional_field="attribution_setting",
+                    )
+            return original(url, headers=headers, timeout=timeout)
+
+        result, _ = self.preview(optional_field_get)
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(len(insight_calls), 2)
+        self.assertIn("attribution_setting", insight_calls[0])
+        self.assertNotIn("attribution_setting", insight_calls[1])
+        diagnostic = result["resource_diagnostics"]["insights"]
+        self.assertTrue(diagnostic["optional_field_retry_performed"])
+        event = result["proposed_append_only_events"][0]
+        self.assertEqual(event["attribution"]["status"], "unsupported")
+        self.assertIsNone(event["attribution"]["setting"])
+
+        for failure in (
+            "permission_denied", "invalid_or_expired_token", "rate_limited",
+            "invalid_field_or_request", "api_failed",
+        ):
+            calls = {"insights": 0}
+
+            def no_retry(url, *, headers, timeout, status=failure):
+                if "/insights?" in url:
+                    calls["insights"] += 1
+                    raise MetaPreviewError(status, http_status=400)
+                return FakeMetaGetter()(url, headers=headers, timeout=timeout)
+
+            self.preview(no_retry)
+            self.assertEqual(calls["insights"], 1, failure)
+
+    def test_http_400_optional_field_classification_does_not_expose_body(self):
+        body = {
+            "error": {
+                "message": "(#100) attribution_setting is not valid. SUPER-SECRET",
+                "type": "OAuthException",
+                "code": 100,
+            }
+        }
+        error = urllib_error.HTTPError(
+            "https://graph.facebook.com/path?access_token=URL-SECRET",
+            400, "Bad Request", {}, None,
+        )
+        error.read = lambda: json.dumps(body).encode()
+        with patch(
+            "modules.beacon.meta_ads_insights_preview.urllib_request.urlopen",
+            side_effect=error,
+        ):
+            with self.assertRaises(MetaPreviewError) as context:
+                _http_get(
+                    "https://graph.facebook.com/v23.0/act_123/insights",
+                    headers={"Authorization": "Bearer SUPER-SECRET"},
+                    timeout=4,
+                )
+        exc = context.exception
+        self.assertEqual(exc.status, "invalid_optional_field")
+        self.assertEqual(exc.optional_field, "attribution_setting")
+        self.assertNotIn("SUPER-SECRET", str(exc))
 
     def test_default_http_adapter_constructs_get_and_sanitizes_http_error(self):
         class Response:

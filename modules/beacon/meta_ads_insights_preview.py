@@ -1,9 +1,12 @@
 """Bounded, secret-safe, GET-only Meta Ads Insights preview for owner review."""
 
 from datetime import date, datetime, timezone
+from copy import deepcopy
 from hashlib import sha256
 import json
 import os
+import threading
+import time as time_module
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
@@ -18,8 +21,11 @@ DEFAULT_END_DATE = "2026-07-14"
 ALLOWED_LEVELS = {"campaign", "adset", "ad"}
 MAX_RANGE_DAYS = 730
 DEFAULT_TIMEOUT_SECONDS = 12.0
+DEFAULT_TOTAL_TIMEOUT_SECONDS = 25.0
 DEFAULT_MAX_PAGES = 10
 DEFAULT_MAX_RECORDS = 500
+SUCCESS_CACHE_SECONDS = 15.0
+FAILURE_COOLDOWN_SECONDS = 2.0
 GRAPH_HOST = "graph.facebook.com"
 METRIC_NAMES = (
     "spend", "reach", "impressions", "clicks", "inline_link_clicks",
@@ -41,16 +47,30 @@ AUTHORITY = {
     "changes_budget_or_payment": False,
     "writes_business_or_farm_data": False,
 }
+_PREVIEW_FLIGHTS = {}
+_PREVIEW_FLIGHTS_LOCK = threading.Lock()
 
 
 class MetaPreviewError(Exception):
     """Safe adapter error that never stores a URL, token, or response body."""
 
-    def __init__(self, status, *, http_status=None, meta_code=None):
+    def __init__(
+        self,
+        status,
+        *,
+        http_status=None,
+        meta_code=None,
+        meta_subcode=None,
+        meta_type="",
+        optional_field="",
+    ):
         super().__init__(status)
         self.status = status
         self.http_status = http_status
         self.meta_code = meta_code
+        self.meta_subcode = meta_subcode
+        self.meta_type = meta_type
+        self.optional_field = optional_field
 
 
 def meta_ads_preview_configuration(environ=None):
@@ -84,8 +104,119 @@ def build_meta_ads_insights_preview(
     http_get=None,
     now=None,
     timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    total_timeout_seconds=DEFAULT_TOTAL_TIMEOUT_SECONDS,
     max_pages=DEFAULT_MAX_PAGES,
     max_records=DEFAULT_MAX_RECORDS,
+    singleflight=True,
+    clock=None,
+):
+    """Run one equivalent preview per process, with short cache/cooldown."""
+    source = environ if hasattr(environ, "get") else os.environ
+    clock = clock or time_module.monotonic
+    if not singleflight:
+        return _build_meta_ads_insights_preview(
+            environ=source,
+            start_date=start_date,
+            end_date=end_date,
+            level=level,
+            http_get=http_get,
+            now=now,
+            timeout_seconds=timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_pages=max_pages,
+            max_records=max_records,
+            clock=clock,
+        )
+    fingerprint = _safe_request_fingerprint(
+        source,
+        start_date=start_date,
+        end_date=end_date,
+        level=level,
+        timeout_seconds=timeout_seconds,
+        total_timeout_seconds=total_timeout_seconds,
+        max_pages=max_pages,
+        max_records=max_records,
+    )
+    current = clock()
+    with _PREVIEW_FLIGHTS_LOCK:
+        _prune_preview_flights(current)
+        state = _PREVIEW_FLIGHTS.get(fingerprint)
+        if state and state.get("active"):
+            return _concurrency_only_result(
+                source, start_date, end_date, "in_progress"
+            ), 202
+        if state and state.get("result") and current < state.get("expires_at", 0):
+            cached = deepcopy(state["result"])
+            cached[0]["concurrency"] = _concurrency_diagnostic("cached")
+            return cached
+        if state and state.get("result") and current < state.get("cooldown_until", 0):
+            cooled = deepcopy(state["result"])
+            cooled[0]["source_preview_status"] = cooled[0].get("status")
+            cooled[0]["status"] = "cooling_down"
+            cooled[0]["success"] = False
+            cooled[0]["concurrency"] = _concurrency_diagnostic("cooling_down")
+            return cooled
+        _PREVIEW_FLIGHTS[fingerprint] = {"active": True}
+    try:
+        result = _build_meta_ads_insights_preview(
+            environ=source,
+            start_date=start_date,
+            end_date=end_date,
+            level=level,
+            http_get=http_get,
+            now=now,
+            timeout_seconds=timeout_seconds,
+            total_timeout_seconds=total_timeout_seconds,
+            max_pages=max_pages,
+            max_records=max_records,
+            clock=clock,
+        )
+        result[0]["concurrency"] = _concurrency_diagnostic("executed")
+    except Exception:
+        configuration = meta_ads_preview_configuration(source)
+        window, _ = _reporting_window(start_date, end_date)
+        result = (
+            _failure(
+                "meta_ads_preview_failed",
+                configuration,
+                window,
+                blockers=["secret_safe_internal_failure"],
+            ),
+            500,
+        )
+        result[0]["concurrency"] = _concurrency_diagnostic("failed")
+    completed = clock()
+    with _PREVIEW_FLIGHTS_LOCK:
+        if result[0].get("status") == "preview_ready" and result[1] == 200:
+            _PREVIEW_FLIGHTS[fingerprint] = {
+                "active": False,
+                "result": deepcopy(result),
+                "expires_at": completed + SUCCESS_CACHE_SECONDS,
+                "cooldown_until": 0,
+            }
+        else:
+            _PREVIEW_FLIGHTS[fingerprint] = {
+                "active": False,
+                "result": deepcopy(result),
+                "expires_at": 0,
+                "cooldown_until": completed + FAILURE_COOLDOWN_SECONDS,
+            }
+    return result
+
+
+def _build_meta_ads_insights_preview(
+    *,
+    environ=None,
+    start_date=None,
+    end_date=None,
+    level="ad",
+    http_get=None,
+    now=None,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+    total_timeout_seconds=DEFAULT_TOTAL_TIMEOUT_SECONDS,
+    max_pages=DEFAULT_MAX_PAGES,
+    max_records=DEFAULT_MAX_RECORDS,
+    clock=None,
 ):
     """Read Meta evidence and return a proposed append-only import without writing."""
     source = environ if hasattr(environ, "get") else os.environ
@@ -124,6 +255,9 @@ def build_meta_ads_insights_preview(
 
     try:
         timeout = max(1.0, min(float(timeout_seconds), 30.0))
+        total_timeout = max(
+            1.0, min(float(total_timeout_seconds), 60.0)
+        )
         page_cap = max(1, min(int(max_pages), 25))
         record_cap = max(1, min(int(max_records), 2000))
     except (TypeError, ValueError):
@@ -135,12 +269,16 @@ def build_meta_ads_insights_preview(
         ), 400
 
     getter = http_get or _http_get
+    clock = clock or time_module.monotonic
+    operation_started = clock()
+    deadline = operation_started + total_timeout
     retrieved_at = _iso(now) or datetime.now(timezone.utc).isoformat()
     base = f"https://{GRAPH_HOST}/{version}/act_{account_id}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     resources = {}
     blockers = []
     partial = False
+    attribution_status_override = ""
 
     requests = {
         "account": (
@@ -194,6 +332,13 @@ def build_meta_ads_insights_preview(
     }
 
     for name, (endpoint, params, cap) in requests.items():
+        if _remaining_seconds(deadline, clock) <= 0:
+            resources[name] = _deadline_resource(
+                "not_attempted_due_to_total_deadline"
+            )
+            blockers.append(f"{name}:not_attempted_due_to_total_deadline")
+            partial = True
+            continue
         try:
             result = _bounded_get_pages(
                 endpoint,
@@ -201,21 +346,51 @@ def build_meta_ads_insights_preview(
                 headers=headers,
                 getter=getter,
                 timeout=timeout,
+                deadline=deadline,
+                clock=clock,
                 max_pages=page_cap,
                 max_records=cap,
                 singleton=name == "account",
             )
         except MetaPreviewError as exc:
-            result = {
-                "status": _error_evidence_status(exc),
-                "records": [],
-                "record_count": 0,
-                "pages_read": 0,
-                "partial": False,
-                "blocker": exc.status,
-                "http_status": exc.http_status,
-                "meta_code": exc.meta_code,
-            }
+            if (
+                name == "insights"
+                and exc.status == "invalid_optional_field"
+                and exc.optional_field == "attribution_setting"
+                and _remaining_seconds(deadline, clock) > 0
+            ):
+                fallback_params = dict(params)
+                fallback_params["fields"] = ",".join(
+                    field
+                    for field in str(params["fields"]).split(",")
+                    if field != "attribution_setting"
+                )
+                try:
+                    result = _bounded_get_pages(
+                        endpoint,
+                        fallback_params,
+                        headers=headers,
+                        getter=getter,
+                        timeout=timeout,
+                        deadline=deadline,
+                        clock=clock,
+                        max_pages=page_cap,
+                        max_records=cap,
+                        singleton=False,
+                    )
+                    result["optional_field_retry_performed"] = True
+                    attribution_status_override = "unsupported"
+                    if result["status"] in {"verified", "partial"}:
+                        result["status"] = "partial"
+                        result["partial"] = True
+                        result["blocker"] = "attribution_setting_unsupported"
+                except MetaPreviewError as fallback_exc:
+                    result = _error_resource(fallback_exc)
+                except Exception:
+                    result = _deadline_resource("API_failed")
+                    result["blocker"] = "api_failed"
+            else:
+                result = _error_resource(exc)
             blockers.append(f"{name}:{exc.status}")
         except Exception:
             result = {
@@ -245,6 +420,7 @@ def build_meta_ads_insights_preview(
             currency=currency,
             retrieved_at=retrieved_at,
             window=window,
+            attribution_status_override=attribution_status_override,
         )
         for row in insights
         if isinstance(row, dict)
@@ -266,7 +442,7 @@ def build_meta_ads_insights_preview(
         "connection": {
             "configured": configuration["configured"],
             "account_read_status": resources["account"]["status"],
-            "identifiers_exposed": False,
+            "configured_ad_account_identifier_exposed": False,
             "token_exposed": False,
         },
         "reporting_window": {**window, "level": normalized_level},
@@ -303,6 +479,13 @@ def build_meta_ads_insights_preview(
         "blockers": sorted(set(blockers)),
         "limits": {
             "timeout_seconds": timeout,
+            "total_timeout_seconds": total_timeout,
+            "total_elapsed_seconds": round(
+                max(0.0, clock() - operation_started), 6
+            ),
+            "total_deadline_exhausted": (
+                _remaining_seconds(deadline, clock) <= 0
+            ),
             "max_pages_per_resource": page_cap,
             "max_records_per_resource": record_cap,
             "partial": partial,
@@ -319,6 +502,8 @@ def _bounded_get_pages(
     headers,
     getter,
     timeout,
+    deadline,
+    clock,
     max_pages,
     max_records,
     singleton=False,
@@ -331,13 +516,26 @@ def _bounded_get_pages(
     partial = False
     blocker = ""
     while url and pages < max_pages and len(records) < max_records:
+        remaining = _remaining_seconds(deadline, clock)
+        if remaining <= 0:
+            partial = True
+            blocker = "timed_out"
+            break
         safe_url = _redacted_url(url)
         if safe_url in seen:
             partial = True
             blocker = "repeated_paging_url"
             break
         seen.add(safe_url)
-        payload = getter(url, headers=dict(headers), timeout=timeout)
+        payload = getter(
+            url,
+            headers=dict(headers),
+            timeout=max(0.01, min(timeout, remaining)),
+        )
+        if _remaining_seconds(deadline, clock) <= 0:
+            partial = True
+            blocker = "timed_out"
+            break
         if not isinstance(payload, dict):
             raise MetaPreviewError("malformed_response")
         page_rows = (
@@ -369,7 +567,10 @@ def _bounded_get_pages(
         partial = True
         blocker = "page_limit_reached"
     return {
-        "status": "partial" if partial else "verified",
+        "status": (
+            "timed_out" if blocker == "timed_out"
+            else "partial" if partial else "verified"
+        ),
         "records": records,
         "record_count": len(records),
         "pages_read": pages,
@@ -384,27 +585,50 @@ def _http_get(url, *, headers, timeout):
         with urllib_request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib_error.HTTPError as exc:
-        meta_code = None
+        error_data = {}
         try:
             payload = json.loads(exc.read().decode("utf-8"))
-            meta_code = payload.get("error", {}).get("code")
+            error_data = (
+                payload.get("error", {})
+                if isinstance(payload, dict)
+                and isinstance(payload.get("error"), dict)
+                else {}
+            )
         except Exception:
             pass
+        classification = _classify_meta_error(exc.code, error_data)
+        raise MetaPreviewError(
+            classification["status"],
+            http_status=exc.code,
+            meta_code=classification["meta_code"],
+            meta_subcode=classification["meta_subcode"],
+            meta_type=classification["meta_type"],
+            optional_field=classification["optional_field"],
+        ) from None
+    except TimeoutError:
+        raise MetaPreviewError("timed_out") from None
+    except urllib_error.URLError as exc:
         status = (
-            "rate_limited" if exc.code == 429
-            else "permission_denied" if exc.code in {401, 403}
+            "timed_out"
+            if isinstance(getattr(exc, "reason", None), TimeoutError)
             else "api_failed"
         )
-        raise MetaPreviewError(
-            status, http_status=exc.code, meta_code=meta_code
-        ) from None
-    except (urllib_error.URLError, TimeoutError, OSError):
+        raise MetaPreviewError(status) from None
+    except OSError:
         raise MetaPreviewError("api_failed") from None
     except (ValueError, json.JSONDecodeError):
         raise MetaPreviewError("malformed_response") from None
 
 
-def _proposed_event(row, *, level, currency, retrieved_at, window):
+def _proposed_event(
+    row,
+    *,
+    level,
+    currency,
+    retrieved_at,
+    window,
+    attribution_status_override="",
+):
     entity_id = str(
         row.get({"campaign": "campaign_id", "adset": "adset_id", "ad": "ad_id"}[level])
         or ""
@@ -469,9 +693,13 @@ def _proposed_event(row, *, level, currency, retrieved_at, window):
         },
         "attribution": {
             "status": (
-                "verified" if row.get("attribution_setting") else "missing"
+                attribution_status_override
+                or ("verified" if row.get("attribution_setting") else "missing")
             ),
-            "setting": row.get("attribution_setting"),
+            "setting": (
+                None
+                if attribution_status_override else row.get("attribution_setting")
+            ),
         },
         "metrics": metrics,
         "actions": {"status": actions_status, "items": actions},
@@ -514,14 +742,7 @@ def _metric_summary(events, resource_status):
             if metric["status"] == "verified":
                 values.append(metric["value"])
         if not events:
-            state = (
-                resource_status
-                if resource_status in {
-                    "permission_denied", "API_failed", "malformed", "partial",
-                }
-                else "not_yet_requested" if resource_status == "not_yet_requested"
-                else "missing"
-            )
+            state = _metric_status_for_resource(resource_status)
             states[state] = 1
         summary[name] = {
             "status_counts": states,
@@ -559,6 +780,189 @@ def _action_summary(events):
         "status_counts": statuses,
         "totals_by_action_type": counts,
     }
+
+
+def _classify_meta_error(http_status, error):
+    """Classify safe structured fields; never return Meta's message/body."""
+    error = error if isinstance(error, dict) else {}
+    code = _safe_meta_int(error.get("code"))
+    subcode = _safe_meta_int(error.get("error_subcode"))
+    meta_type = _safe_meta_type(error.get("type"))
+    message = str(error.get("message") or "").lower()
+    optional_field = ""
+    if (
+        http_status == 400
+        and code == 100
+        and "attribution_setting" in message
+        and any(phrase in message for phrase in (
+            "nonexisting field", "unknown field", "not valid",
+            "cannot query field", "unsupported field",
+        ))
+    ):
+        status = "invalid_optional_field"
+        optional_field = "attribution_setting"
+    elif code == 190 or subcode in {458, 459, 460, 463, 464, 467}:
+        status = "invalid_or_expired_token"
+    elif http_status == 429 or code in {4, 17, 32, 613}:
+        status = "rate_limited"
+    elif code in {10, 200, 299} or http_status == 403:
+        status = "permission_denied"
+    elif http_status == 401:
+        status = "invalid_or_expired_token"
+    elif code == 100 or http_status == 400:
+        status = "invalid_field_or_request"
+    else:
+        status = "api_failed"
+    return {
+        "status": status,
+        "meta_code": code,
+        "meta_subcode": subcode,
+        "meta_type": meta_type,
+        "optional_field": optional_field,
+    }
+
+
+def _error_resource(exc):
+    return {
+        "status": exc.status,
+        "records": [],
+        "record_count": 0,
+        "pages_read": 0,
+        "partial": False,
+        "blocker": exc.status,
+        "http_status": exc.http_status,
+        "meta_code": exc.meta_code,
+        "meta_subcode": exc.meta_subcode,
+        "meta_type": exc.meta_type,
+    }
+
+
+def _deadline_resource(status):
+    return {
+        "status": status,
+        "records": [],
+        "record_count": 0,
+        "pages_read": 0,
+        "partial": status == "timed_out",
+        "blocker": status,
+        "http_status": None,
+        "meta_code": None,
+        "meta_subcode": None,
+        "meta_type": "",
+    }
+
+
+def _remaining_seconds(deadline, clock):
+    return max(0.0, deadline - clock())
+
+
+def _safe_meta_int(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_meta_type(value):
+    text = str(value or "").strip()
+    return text if text in {
+        "OAuthException", "GraphMethodException", "GraphAPIException",
+    } else ""
+
+
+def _metric_status_for_resource(resource_status):
+    if resource_status in {"permission_denied", "invalid_or_expired_token"}:
+        return "permission_denied"
+    if resource_status in {
+        "rate_limited", "invalid_field_or_request", "API_failed", "api_failed",
+    }:
+        return "API_failed"
+    if resource_status in {"malformed", "malformed_response"}:
+        return "malformed"
+    if resource_status in {
+        "partial", "timed_out", "not_attempted_due_to_total_deadline",
+        "not_yet_requested",
+    }:
+        return resource_status
+    return "missing"
+
+
+def _safe_request_fingerprint(
+    source,
+    *,
+    start_date,
+    end_date,
+    level,
+    timeout_seconds,
+    total_timeout_seconds,
+    max_pages,
+    max_records,
+):
+    window, _ = _reporting_window(start_date, end_date)
+    configuration = meta_ads_preview_configuration(source)
+    version = _normalized_graph_version(
+        source.get(GRAPH_VERSION_ENV) or DEFAULT_GRAPH_VERSION
+    )
+    safe_dimensions = {
+        "adapter": "beacon_meta_ads_preview_v2",
+        "configured": configuration["configured"],
+        "graph_version": version,
+        "start": window.get("start"),
+        "end": window.get("end"),
+        "level": str(level or "ad").strip().lower(),
+        "request_timeout": str(timeout_seconds),
+        "total_timeout": str(total_timeout_seconds),
+        "max_pages": str(max_pages),
+        "max_records": str(max_records),
+    }
+    return sha256(
+        json.dumps(safe_dimensions, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _prune_preview_flights(current):
+    expired = [
+        key for key, state in _PREVIEW_FLIGHTS.items()
+        if not state.get("active")
+        and current >= max(
+            state.get("expires_at", 0), state.get("cooldown_until", 0)
+        )
+    ]
+    for key in expired:
+        _PREVIEW_FLIGHTS.pop(key, None)
+
+
+def _concurrency_diagnostic(status):
+    return {
+        "status": status,
+        "single_flight": True,
+        "queued": False,
+        "success_cache_seconds": SUCCESS_CACHE_SECONDS,
+        "failure_cooldown_seconds": FAILURE_COOLDOWN_SECONDS,
+        "fingerprint_exposed": False,
+        "configured_ad_account_identifier_in_fingerprint": False,
+        "token_in_fingerprint": False,
+    }
+
+
+def _concurrency_only_result(source, start, end, status):
+    configuration = meta_ads_preview_configuration(source)
+    window, _ = _reporting_window(start, end)
+    result = _failure(
+        status,
+        configuration,
+        window,
+        blockers=["equivalent_preview_already_in_progress"],
+    )
+    result["concurrency"] = _concurrency_diagnostic(status)
+    return result
+
+
+def _reset_meta_preview_singleflight_for_tests():
+    with _PREVIEW_FLIGHTS_LOCK:
+        _PREVIEW_FLIGHTS.clear()
 
 
 def _future_backfill_contract():
@@ -632,8 +1036,15 @@ def _failure(status, configuration, window, *, blockers):
 
 
 def _reporting_window(start, end):
-    start = _date_text(start) or DEFAULT_START_DATE
-    end = _date_text(end) or DEFAULT_END_DATE
+    raw_start = str(start or "").strip()
+    raw_end = str(end or "").strip()
+    start = _date_text(raw_start) if raw_start else DEFAULT_START_DATE
+    end = _date_text(raw_end) if raw_end else DEFAULT_END_DATE
+    if not start or not end:
+        return {
+            "start": raw_start or DEFAULT_START_DATE,
+            "end": raw_end or DEFAULT_END_DATE,
+        }, "invalid_reporting_date"
     try:
         start_date = date.fromisoformat(start)
         end_date = date.fromisoformat(end)
@@ -755,11 +1166,3 @@ def _iso(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).isoformat()
-
-
-def _error_evidence_status(exc):
-    if exc.status == "permission_denied":
-        return "permission_denied"
-    if exc.status == "malformed_response":
-        return "malformed"
-    return "API_failed"
