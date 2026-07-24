@@ -30,6 +30,10 @@ AUTHORITY = {
 }
 VERIFIED_STATUSES = {"verified", "owner_confirmed", "canonical_read"}
 ACCEPTED_METRIC_STATUSES = {"verified", "owner_correction"}
+PERFORMANCE_METRICS = (
+    "reactions", "comments", "shares", "reach", "impressions", "spend_amount",
+    "messages_to_sam", "qualified_buyer_leads", "sales", "revenue",
+)
 REJECTED_METRIC_SOURCES = {
     "legacy", "legacy_unlabelled", "inferred", "unavailable", "unknown", "malformed",
 }
@@ -144,8 +148,9 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         generated_at=generated_at,
     )[:max(1, min(int(max_ideas or 3), 5))]
     selected = ideas[0]
-    selected_asset = approved_assets[0] if approved_assets else None
-    exact_copy = _draft_copy(selected, facts, selected_asset)
+    selected_asset = _preferred_asset(approved_assets)
+    draft_options = _draft_options(facts, selected_asset)
+    exact_copy = draft_options[0]["draft_copy"]
     fact_constraints = _fact_constraints(facts)
     packet_evidence = list(selected["supporting_evidence"])
     if selected_asset:
@@ -194,6 +199,10 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         "mode": MODE,
         "generated_at": generated_at,
         "evidence_quality": history_quality,
+        "owner_explanations": _owner_explanations(
+            facts, evidence.get("opportunities", {}), opportunities
+        ),
+        "media_summary": _media_summary(assets, approved_assets),
         "rejected_current_facts": rejected_facts,
         "ranked_ideas": ideas,
         "owner_review_packet": {
@@ -207,6 +216,7 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
                 "rationale": "No verified hour-by-hour performance evidence is available; timing is intentionally not presented as optimized.",
             },
             "draft_copy": exact_copy,
+            "draft_options": draft_options,
             "call_to_action": (
                 "Message Amadeus Farm with the livestock type, age or weight range, "
                 "sex, quantity, and timing you are looking for."
@@ -305,6 +315,11 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
             ),
             "supporting_evidence": common,
             "risk_flags": [] if facts else ["no_specific_current_fact_available"],
+            "owner_note": (
+                "Uses verified current farm facts."
+                if facts else
+                "No current farm or sales fact reached Beacon through an approved evidence adapter, so this idea stays non-commercial."
+            ),
         },
         {
             "idea_id": "livestock_education",
@@ -314,6 +329,11 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
             "why": "Educational awareness remains safe when availability and commercial facts are not verified.",
             "supporting_evidence": common,
             "risk_flags": [] if facts else ["no_specific_current_fact_available"],
+            "owner_note": (
+                "Uses verified current husbandry evidence."
+                if facts else
+                "A specific care insight needs a dated, traceable farm observation before it can be used."
+            ),
         },
         {
             "idea_id": "current_livestock_opportunity",
@@ -334,28 +354,149 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
                 },
             ],
             "risk_flags": [] if usable_opportunities else ["current_opportunity_not_proven"],
+            "owner_note": (
+                "Current supply and demand evidence passed."
+                if usable_opportunities else
+                "Beacon could not prove a fresh overlap between eligible livestock and quantified buyer demand, so it will not suggest stock or availability."
+            ),
         },
     ]
     return sorted(candidates, key=lambda item: (-item["score"], item["idea_id"]))
 
 
-def _draft_copy(idea, facts, selected_asset=None):
+def _draft_options(facts, selected_asset=None):
     details = " ".join(fact["statement"].rstrip(".") + "." for fact in facts[:3])
     if details:
-        opening = details
-    elif selected_asset and selected_asset.get("media_type") == "video":
-        opening = "A closer look at the piglets in this approved farm video."
+        subject = details
+    elif selected_asset and "piglet" in (
+        f"{selected_asset.get('title', '')} {selected_asset.get('description', '')}"
+    ).lower():
+        subject = "Here’s a short piglet moment from Amadeus Farm."
     elif selected_asset:
-        opening = "A closer look at the livestock in this approved farm image."
+        subject = "Here’s a recent livestock moment from Amadeus Farm."
     else:
-        opening = "A closer look at the everyday care behind the livestock at Amadeus Farm."
-    return (
-        f"{opening}\n\n"
-        "Good livestock decisions start with real farm evidence and careful observation. "
-        "If you are planning livestock needs, message Amadeus Farm with the type, age or weight range, "
-        "sex, quantity, and timing you are looking for. We will check current records before confirming "
-        "any availability, price, or collection details."
+        subject = "Here’s a glimpse of everyday farm life at Amadeus Farm."
+    cta = (
+        "Tell us the livestock type, quantity, male or female, approximate age or weight, "
+        "and when you need them. We’ll check the latest farm records before confirming "
+        "availability, price or collection details."
     )
+    return [
+        {
+            "rank": 1,
+            "style": "warm_farm_story",
+            "title": "Warm farm story",
+            "draft_copy": (
+                f"{subject}\n\n"
+                "We enjoy sharing the real moments behind the farm, while keeping livestock "
+                "details accurate and up to date.\n\n"
+                f"Planning ahead for your farm? {cta}"
+            ),
+        },
+        {
+            "rank": 2,
+            "style": "direct_livestock_enquiry",
+            "title": "Direct livestock enquiry",
+            "draft_copy": (
+                "Planning livestock for your farm?\n\n"
+                f"{cta}\n\n{subject}"
+            ),
+        },
+        {
+            "rank": 3,
+            "style": "short_engagement",
+            "title": "Short engagement",
+            "draft_copy": (
+                f"{subject} 🐷\n\n"
+                "What are you planning for your farm next? "
+                f"{cta}"
+            ),
+        },
+    ]
+
+
+def _preferred_asset(assets):
+    videos = [asset for asset in assets if asset.get("media_type") == "video"]
+    return (videos or assets or [None])[0]
+
+
+def _media_summary(assets, eligible_assets):
+    approved = [
+        asset for asset in assets
+        if str(
+            asset.get("effective_approval_status")
+            or asset.get("approval_status")
+            or ""
+        ).lower() in {"approved", "approved_public_use"}
+    ]
+    public = [
+        asset for asset in assets
+        if bool(
+            asset.get("effective_public_use_approved")
+            if asset.get("effective_public_use_approved") is not None
+            else asset.get("public_use_approved")
+        )
+    ]
+    hash_verified = [
+        asset for asset in assets
+        if bool(str(asset.get("content_sha256") or "").strip())
+        and asset.get("content_hash_provenance") == "server_computed_on_upload"
+    ]
+    return {
+        "visible_count": len(assets),
+        "approved_count": len(approved),
+        "public_use_approved_count": len(public),
+        "server_hash_verified_count": len(hash_verified),
+        "eligible_selection_count": len(eligible_assets),
+        "explanation": (
+            f"{len(assets)} assets are visible in the library; "
+            f"{len(eligible_assets)} are both approved for public use and protected by a server-computed integrity hash."
+        ),
+    }
+
+
+def _owner_explanations(facts, opportunity_source, opportunities):
+    diagnostics = (
+        opportunity_source.get("dependency_diagnostics", {})
+        if isinstance(opportunity_source, dict) else {}
+    )
+    allocation = diagnostics.get("allocation_readiness", {})
+    allocation_status = str(allocation.get("status") or "")
+    if allocation_status == "timed_out":
+        opportunity = (
+            "The livestock allocation read exceeded Beacon’s 8-second request limit. "
+            "The source is inaccessible for this request, not evidence that no opportunity exists."
+        )
+    elif allocation_status == "in_progress":
+        opportunity = (
+            "The earlier livestock allocation read is still running. Beacon will not start "
+            "a duplicate read or treat the unfinished result as current evidence."
+        )
+    elif not any(
+        card.get("status") == "ready_for_owner_review"
+        and card.get("freshness", {}).get("fresh")
+        for card in opportunities
+    ):
+        opportunity = (
+            "The available evidence does not prove a fresh overlap between eligible livestock "
+            "and quantified buyer demand. This is a blocked opportunity, not a claim of no demand or no stock."
+        )
+    else:
+        opportunity = "Fresh allocation and quantified demand evidence support owner review."
+    return {
+        "current_facts": (
+            "Current facts are available from approved, dated evidence adapters."
+            if facts else
+            "No current farm or sales fact was supplied through an approved, dated evidence adapter. "
+            "Beacon can still prepare a truthful awareness draft, but cannot claim stock, price or availability."
+        ),
+        "current_opportunity": opportunity,
+        "performance": (
+            "Post text, dates, links, reactions, comments and shares can be imported from Page history. "
+            "Ads spend, reach, impressions, messaging results, qualified leads, sales and revenue still need "
+            "Ads Insights or separately verified attribution evidence."
+        ),
+    }
 
 
 def _verified_facts(value):
@@ -452,18 +593,60 @@ def _approved_asset(asset):
 def _history_quality(history, performance):
     evaluations = [_performance_evidence_evaluation(row) for row in performance]
     verified = [evaluation for evaluation in evaluations if evaluation["usable"]]
+    metric_summary = {}
+    for name in PERFORMANCE_METRICS:
+        states = {}
+        verified_count = 0
+        verified_zero_count = 0
+        for row in performance:
+            evidence = row.get("metric_evidence")
+            item = evidence.get(name) if isinstance(evidence, dict) else None
+            status = _metric_display_status(item)
+            states[status] = states.get(status, 0) + 1
+            if status == "verified":
+                verified_count += 1
+                if item.get("value") == 0:
+                    verified_zero_count += 1
+        metric_summary[name] = {
+            "verified_event_count": verified_count,
+            "verified_zero_event_count": verified_zero_count,
+            "status_counts": states,
+            "display": (
+                f"{verified_count} verified"
+                if verified_count else
+                "Not imported" if states.get("not_yet_imported") == len(performance)
+                else "Not verified"
+            ),
+        }
     return {
         "historical_post_count": len(history),
         "performance_event_count": len(performance),
         "verified_performance_event_count": len(verified),
         "unusable_performance_event_count": len(performance) - len(verified),
         "performance_evidence_evaluations": evaluations,
+        "metric_summary": metric_summary,
         "performance_evidence_status": (
             "verified performance evidence is available"
             if verified else
             "performance evidence is unavailable or insufficiently normalized"
         ),
     }
+
+
+def _metric_display_status(item):
+    if not isinstance(item, dict):
+        return "not_yet_imported"
+    status = str(item.get("status") or "").strip().lower()
+    if status in ACCEPTED_METRIC_STATUSES and _performance_evidence_evaluation({
+        "metric_evidence": {"metric": item}
+    })["usable"]:
+        return "verified"
+    if status in {
+        "unavailable", "unsupported", "permission_denied", "malformed",
+        "not_yet_imported",
+    }:
+        return status
+    return "unverified"
 
 
 def _performance_evidence_evaluation(row):

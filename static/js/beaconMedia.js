@@ -137,9 +137,11 @@
     runtimeState: byId("beacon_runtime_state"),
     rankedIdeas: byId("beacon_ranked_ideas"),
     contentEvidence: byId("beacon_content_evidence"),
+    contentExplanations: byId("beacon_content_explanations"),
     packetStatus: byId("beacon_packet_status"),
     packetMedia: byId("beacon_packet_media"),
     packetCopy: byId("beacon_packet_copy"),
+    packetOptions: byId("beacon_packet_options"),
     packetMeta: byId("beacon_packet_meta"),
   };
 
@@ -216,6 +218,8 @@
     const media = packet.media || {};
     const runtime = payload.runtime_status || {};
     const ideas = payload.ranked_ideas || [];
+    const explanations = payload.owner_explanations || {};
+    const mediaSummary = payload.media_summary || {};
     elements.contentState.textContent = payload.status === "owner_review_packet_ready"
       ? "Owner-review draft ready"
       : safe(payload.status, "Evidence incomplete");
@@ -235,7 +239,8 @@
         <div class="beacon-recommendation-title"><span>#${index + 1} · ${escapeHtml(idea.title)}</span><small>Score ${escapeHtml(idea.score)}</small></div>
         <p>${escapeHtml(idea.angle)}</p>
         <small>${escapeHtml(idea.why)}</small>
-        ${(idea.risk_flags || []).map((risk) => `<strong class="beacon-decision-blocker">${escapeHtml(risk)}</strong>`).join("")}
+        <strong class="beacon-decision-blocker">${escapeHtml(safe(idea.owner_note, "Evidence review required."))}</strong>
+        ${(idea.risk_flags || []).length ? `<details><summary>Technical diagnostics</summary><code>${(idea.risk_flags || []).map(escapeHtml).join(", ")}</code></details>` : ""}
       </article>
     `).join("") : '<div class="table-empty">No safely ranked ideas are available.</div>';
     elements.contentEvidence.innerHTML = `
@@ -243,6 +248,16 @@
       <div><strong>${escapeHtml(quality.verified_performance_event_count || 0)}</strong><span>Usable performance events</span></div>
       <div><strong>${escapeHtml(quality.unusable_performance_event_count || 0)}</strong><span>Excluded performance events</span></div>
       <p>${escapeHtml(quality.performance_evidence_status)}</p>
+      <p>${escapeHtml(safe(mediaSummary.explanation, "Media eligibility has not been checked."))}</p>
+    `;
+    const metricSummary = quality.metric_summary || {};
+    elements.contentEvidence.innerHTML += `<div class="beacon-metric-grid">${Object.entries(metricSummary).map(([name, metric]) => (
+      `<span class="beacon-metric-chip" data-state="${metric.verified_event_count ? "verified" : "not_yet_imported"}"><strong>${escapeHtml(name.replaceAll("_", " "))}</strong> ${escapeHtml(metric.display)}</span>`
+    )).join("")}</div>`;
+    elements.contentExplanations.innerHTML = `
+      <p><strong>Current facts:</strong> ${escapeHtml(safe(explanations.current_facts, "Current fact status unavailable."))}</p>
+      <p><strong>Opportunity:</strong> ${escapeHtml(safe(explanations.current_opportunity, "Current opportunity status unavailable."))}</p>
+      <p><strong>Performance:</strong> ${escapeHtml(safe(explanations.performance, "Performance import status unavailable."))}</p>
     `;
     elements.packetStatus.textContent = safe(packet.review_status, "Unavailable");
     elements.packetStatus.dataset.state = packet.review_status === "awaiting_owner_review" ? "proposed" : "blocked";
@@ -250,6 +265,12 @@
       ? `<strong>${escapeHtml(media.title)}</strong><span>${escapeHtml(media.media_type)} · ${escapeHtml(media.asset_id)}</span><small>Approved public use · ${escapeHtml(media.content_hash_provenance)}</small>`
       : `<strong>Media gap</strong><span>${escapeHtml(media.reason)}</span>`;
     elements.packetCopy.textContent = safe(packet.draft_copy, "No exact copy available.");
+    elements.packetOptions.innerHTML = (packet.draft_options || []).map((option) => `
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>#${escapeHtml(option.rank)} · ${escapeHtml(option.title)}</span><small>Owner-review option</small></div>
+        <pre class="beacon-packet-copy">${escapeHtml(option.draft_copy)}</pre>
+      </article>
+    `).join("");
     elements.packetMeta.innerHTML = `
       <div><strong>${escapeHtml(packet.channel)}</strong><span>${escapeHtml(packet.audience)}</span></div>
       <div><strong>CTA</strong><span>${escapeHtml(packet.call_to_action)}</span></div>
@@ -650,6 +671,19 @@
     return Object.entries(evidence).map(([name, item]) => ({name, ...(item || {})}));
   }
 
+  function verifiedMetric(event, name) {
+    const item = event?.metric_evidence?.[name];
+    if (!item || !["verified", "owner_correction"].includes(item.status)) return null;
+    if (item.value == null || !safe(item.source, "") || !safe(item.source_reference, "") || Number.isNaN(Date.parse(item.retrieved_at))) return null;
+    return item.value;
+  }
+
+  function metricDisplay(event, name) {
+    const value = verifiedMetric(event, name);
+    if (value != null) return String(value);
+    return event?.metric_evidence?.[name] ? "Not verified" : "Not imported";
+  }
+
   function openCorrection(event, missing) {
     elements.correctionPanel.classList.remove("hidden");
     elements.correctionSourceId.value = event.performance_event_id;
@@ -679,12 +713,16 @@
   }
 
   function renderCommandBrief(events) {
-    if (!events.length) {
+    const comparableEvents = events.filter((event) => (
+      verifiedMetric(event, "spend_amount") != null
+      && verifiedMetric(event, "qualified_buyer_leads") != null
+    ));
+    if (!comparableEvents.length) {
       elements.commandTruth.textContent = "No evidence";
       elements.commandTruth.dataset.state = "unavailable";
       elements.commandUpdated.textContent = "Last updated: no campaign evidence recorded";
-      elements.weeklySpend.textContent = "R 0.00";
-      elements.weeklyLeads.textContent = "0";
+      elements.weeklySpend.textContent = "Not imported";
+      elements.weeklyLeads.textContent = "Not verified";
       elements.ownerAlerts.innerHTML = "<strong>Evidence needed</strong><span>Record a campaign measurement window before comparing or preparing a decision.</span>";
       elements.ownerAlerts.dataset.state = "blocked";
       elements.comparisonWindow.textContent = "Insufficient data";
@@ -693,20 +731,20 @@
       elements.decisionCount.textContent = "0";
       return;
     }
-    const latest = events[0];
+    const latest = comparableEvents[0];
     const windowName = normalizedWindow(latest.measurement_window);
     const seenCampaigns = new Set();
-    const compatible = events.filter((event) => {
+    const compatible = comparableEvents.filter((event) => {
       if (normalizedWindow(event.measurement_window) !== windowName || safe(event.spend_currency, "ZAR") !== safe(latest.spend_currency, "ZAR")) return false;
       const campaignKey = `${safe(event.publish_packet_id, event.manual_post_event_id || event.channel)}|${windowName}`;
       if (seenCampaigns.has(campaignKey)) return false;
       seenCampaigns.add(campaignKey);
       return true;
     });
-    const spend = compatible.reduce((sum, event) => sum + Number(event.spend_amount || 0), 0);
-    const leads = compatible.reduce((sum, event) => sum + Number(event.qualified_buyer_leads || 0), 0);
+    const spend = compatible.reduce((sum, event) => sum + Number(verifiedMetric(event, "spend_amount")), 0);
+    const leads = compatible.reduce((sum, event) => sum + Number(verifiedMetric(event, "qualified_buyer_leads")), 0);
     const recommendations = compatible.map((event) => ({ event, result: recommendationFor(event) }));
-    const zeroLeadSpend = recommendations.some(({ event }) => Number(event.spend_amount || 0) > 0 && Number(event.qualified_buyer_leads || 0) === 0);
+    const zeroLeadSpend = recommendations.some(({ event }) => Number(verifiedMetric(event, "spend_amount")) > 0 && Number(verifiedMetric(event, "qualified_buyer_leads")) === 0);
     elements.commandTruth.textContent = compatible.length > 1 ? "Comparable evidence" : "Limited evidence";
     elements.commandTruth.dataset.state = compatible.length > 1 ? "ready" : "stale";
     elements.commandUpdated.textContent = `Last updated: ${safe(latest.created_at, "source time unavailable")}`;
@@ -721,8 +759,8 @@
     elements.campaignComparison.innerHTML = compatible.map((event) => `
       <article class="beacon-comparison-row">
         <div><strong>${escapeHtml(safe(event.channel, "Unknown channel"))}</strong><small>${escapeHtml(safe(event.publish_packet_id, event.performance_event_id))}</small></div>
-        <span><small>Spend</small><strong>${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(event.spend_amount || 0).toFixed(2)}</strong></span>
-        <span><small>Qualified leads</small><strong>${Number(event.qualified_buyer_leads || 0)}</strong></span>
+        <span><small>Spend</small><strong>${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(verifiedMetric(event, "spend_amount")).toFixed(2)}</strong></span>
+        <span><small>Qualified leads</small><strong>${Number(verifiedMetric(event, "qualified_buyer_leads"))}</strong></span>
         <span><small>Cost / lead</small><strong>${event.cost_per_qualified_lead == null ? "Unavailable" : `R ${Number(event.cost_per_qualified_lead).toFixed(2)}`}</strong></span>
       </article>`).join("");
     elements.recommendationList.innerHTML = recommendations.map(({ event, result }, index) => `
@@ -783,8 +821,8 @@
     elements.campaignComparison.innerHTML = campaigns.map((event) => `
       <article class="beacon-comparison-row">
         <div><strong>${escapeHtml(safe(event.channel, "Unknown channel"))}</strong><small>${escapeHtml(safe(event.publish_packet_id, event.performance_event_id))}</small></div>
-        <span><small>Spend</small><strong>${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(event.spend_amount || 0).toFixed(2)}</strong></span>
-        <span><small>Qualified leads</small><strong>${Number(event.qualified_buyer_leads || 0)}</strong></span>
+        <span><small>Spend</small><strong>${event.spend_amount == null ? "Not verified" : `${escapeHtml(safe(event.spend_currency, "ZAR"))} ${Number(event.spend_amount).toFixed(2)}`}</strong></span>
+        <span><small>Qualified leads</small><strong>${event.qualified_buyer_leads == null ? "Not verified" : Number(event.qualified_buyer_leads)}</strong></span>
         <span><small>Cost / lead</small><strong>${event.cost_per_qualified_lead == null ? "Unavailable" : `R ${Number(event.cost_per_qualified_lead).toFixed(2)}`}</strong></span>
       </article>`).join("");
     elements.recommendationList.innerHTML = recommendations.map((item, index) => {
@@ -825,7 +863,9 @@
     const valueElement = isSpend ? elements.weeklySpend : elements.weeklyLeads;
     const statusElement = isSpend ? elements.weeklySpendStatus : elements.weeklyLeadsStatus;
     const targetElement = isSpend ? elements.weeklySpendTarget : elements.weeklyLeadsTarget;
-    valueElement.textContent = isSpend ? `${safe(target.currency, "ZAR")} ${value.toFixed(2)}` : String(value);
+    valueElement.textContent = status === "unavailable"
+      ? (isSpend ? "Not imported" : "Not verified")
+      : isSpend ? `${safe(target.currency, "ZAR")} ${value.toFixed(2)}` : String(value);
     statusElement.textContent = label;
     statusElement.dataset.state = status;
     targetElement.textContent = status === "unavailable" ? "Target unavailable · no owner-approved source" : `${label} target: ${target.target ?? "not set"}${target.blocker ? ` · ${target.blocker}` : ""}`;
@@ -888,7 +928,7 @@
       <div class="beacon-performance-item">
         <strong>${escapeHtml(event.recommended_action || event.performance_event_id)}</strong>
         <span>${escapeHtml(safe(event.channel))} | ${escapeHtml(safe(event.measurement_window))} | ${escapeHtml(safe(event.created_at))}</span>
-        <small>Messages ${escapeHtml(String(event.messages_to_sam ?? 0))} | qualified leads ${escapeHtml(String(event.qualified_buyer_leads ?? 0))} | spend ${escapeHtml(safe(event.spend_currency, "ZAR"))} ${escapeHtml(String(event.spend_amount ?? 0))}</small>
+        <small>Messages ${escapeHtml(metricDisplay(event, "messages_to_sam"))} | qualified leads ${escapeHtml(metricDisplay(event, "qualified_buyer_leads"))} | spend ${escapeHtml(metricDisplay(event, "spend_amount"))}</small>
         <small>${escapeHtml(safe(event.recommendation_reason))}</small>
         <div class="beacon-metric-grid">${items.map((item) => `<span class="beacon-metric-chip" data-state="${escapeHtml(item.status)}"><strong>${escapeHtml(item.name.replaceAll("_", " "))}</strong> ${item.value == null ? escapeHtml(item.status) : escapeHtml(String(item.value))} · ${escapeHtml(item.source || "source unavailable")}</span>`).join("")}</div>
         ${missing.length ? `<button type="button" class="button-link button-link-secondary beacon-correct-evidence" data-index="${index}">Correct ${missing.length} missing metric${missing.length === 1 ? "" : "s"}</button>` : ""}
