@@ -28,6 +28,22 @@ AUTHORITY = {
     "owner_exact_packet_approval_required": True,
 }
 VERIFIED_STATUSES = {"verified", "owner_confirmed", "canonical_read"}
+ACCEPTED_METRIC_STATUSES = {"verified", "owner_correction"}
+REJECTED_EVIDENCE_SOURCES = {
+    "legacy", "legacy_unlabelled", "inferred", "unavailable", "unknown", "malformed",
+}
+CLAIM_TYPES = {
+    "husbandry_observation",
+    "stock",
+    "price",
+    "availability",
+    "location",
+    "customer_claim",
+    "performance_result",
+}
+COMMERCIAL_CLAIM_TYPES = {
+    "stock", "price", "availability", "location", "customer_claim", "performance_result",
+}
 
 
 def gather_beacon_content_evidence(*, database_url=None, now=None, allocation=None,
@@ -98,7 +114,19 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
     )[:max(1, min(int(max_ideas or 3), 5))]
     selected = ideas[0]
     selected_asset = approved_assets[0] if approved_assets else None
-    exact_copy = _draft_copy(selected, facts)
+    exact_copy = _draft_copy(selected, facts, selected_asset)
+    fact_constraints = _fact_constraints(facts)
+    packet_evidence = list(selected["supporting_evidence"])
+    if selected_asset:
+        packet_evidence.append({
+            "source": "beacon_media_assets",
+            "source_reference": selected_asset.get("asset_id", ""),
+            "observed_at": selected_asset.get("created_at", ""),
+            "approval_status": selected_asset.get("effective_approval_status")
+            or selected_asset.get("approval_status", ""),
+            "content_hash_provenance": selected_asset.get("content_hash_provenance", ""),
+            "use": "approved_visual_content_evidence",
+        })
     packet_seed = json.dumps(
         {
             "idea": selected["idea_id"],
@@ -148,7 +176,10 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
                 "rationale": "No verified hour-by-hour performance evidence is available; timing is intentionally not presented as optimized.",
             },
             "draft_copy": exact_copy,
-            "call_to_action": "Follow Amadeus Farm for more livestock and farm-life updates.",
+            "call_to_action": (
+                "Message Amadeus Farm with the livestock type, age or weight range, "
+                "sex, quantity, and timing you are looking for."
+            ),
             "measurable_objective": {
                 "metric": "qualified inbound livestock enquiries",
                 "measurement_window": "7 days after an owner-approved post",
@@ -156,16 +187,8 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
             },
             "media": media,
             "recommendation_reason": selected["why"],
-            "supporting_evidence": selected["supporting_evidence"],
-            "fact_constraints": {
-                "verified_fact_ids_used": [fact["fact_id"] for fact in facts],
-                "stock_claimed": False,
-                "price_claimed": False,
-                "availability_claimed": False,
-                "location_claimed": False,
-                "customer_claim_claimed": False,
-                "performance_result_claimed": False,
-            },
+            "supporting_evidence": packet_evidence,
+            "fact_constraints": fact_constraints,
             "next_gate": "owner_approves_the_exact_final_copy_media_channel_and_timing_through_the_existing_protected_publish_rail",
             "authority": deepcopy(AUTHORITY),
         },
@@ -268,17 +291,22 @@ def _ranked_ideas(*, history, opportunities, facts, approved_assets,
     return sorted(candidates, key=lambda item: (-item["score"], item["idea_id"]))
 
 
-def _draft_copy(idea, facts):
+def _draft_copy(idea, facts, selected_asset=None):
     details = " ".join(fact["statement"].rstrip(".") + "." for fact in facts[:3])
     if details:
         opening = details
+    elif selected_asset and selected_asset.get("media_type") == "video":
+        opening = "A closer look at the piglets in this approved farm video."
+    elif selected_asset:
+        opening = "A closer look at the livestock in this approved farm image."
     else:
         opening = "A closer look at the everyday care behind the livestock at Amadeus Farm."
     return (
         f"{opening}\n\n"
-        "Good livestock stories start with real farm evidence, careful observation, and no shortcuts. "
-        "We will share more once each detail and image is ready for public use.\n\n"
-        "Follow Amadeus Farm for more livestock and farm-life updates."
+        "Good livestock decisions start with real farm evidence and careful observation. "
+        "If you are planning livestock needs, message Amadeus Farm with the type, age or weight range, "
+        "sex, quantity, and timing you are looking for. We will check current records before confirming "
+        "any availability, price, or collection details."
     )
 
 
@@ -288,23 +316,48 @@ def _verified_facts(value):
     for index, fact in enumerate(value if isinstance(value, list) else []):
         fact = fact if isinstance(fact, dict) else {}
         missing = [
-            key for key in ("statement", "source", "source_reference", "observed_at", "status")
+            key for key in (
+                "statement", "source", "source_reference", "observed_at", "status",
+                "claim_types",
+            )
             if not str(fact.get(key) or "").strip()
         ]
-        if missing or str(fact.get("status") or "").strip().lower() not in VERIFIED_STATUSES:
+        observed_at = _iso(fact.get("observed_at"))
+        source = str(fact.get("source") or "").strip()
+        claim_types = fact.get("claim_types")
+        normalized_claim_types = sorted({
+            str(item or "").strip().lower()
+            for item in claim_types if str(item or "").strip()
+        }) if isinstance(claim_types, list) else []
+        invalid_claim_types = sorted(set(normalized_claim_types) - CLAIM_TYPES)
+        status = str(fact.get("status") or "").strip().lower()
+        reason = ""
+        if missing:
+            reason = "missing_provenance"
+        elif status not in VERIFIED_STATUSES:
+            reason = "fact_not_verified"
+        elif not observed_at:
+            reason = "invalid_observed_at"
+        elif source.lower() in REJECTED_EVIDENCE_SOURCES:
+            reason = "unaccepted_fact_source"
+        elif not normalized_claim_types or invalid_claim_types:
+            reason = "invalid_claim_types"
+        if reason:
             rejected.append({
                 "index": index,
-                "reason": "missing_provenance" if missing else "fact_not_verified",
+                "reason": reason,
                 "missing": missing,
+                "invalid_claim_types": invalid_claim_types,
             })
             continue
         accepted.append({
             "fact_id": str(fact.get("fact_id") or f"FACT-{index + 1}"),
             "statement": " ".join(str(fact["statement"]).split())[:400],
-            "source": str(fact["source"])[:120],
+            "source": source[:120],
             "source_reference": str(fact["source_reference"])[:240],
-            "observed_at": _iso(fact["observed_at"]) or str(fact["observed_at"])[:80],
-            "status": str(fact["status"]).lower(),
+            "observed_at": observed_at,
+            "status": status,
+            "claim_types": normalized_claim_types,
         })
     return accepted, rejected
 
@@ -325,22 +378,86 @@ def _approved_asset(asset):
 
 
 def _history_quality(history, performance):
-    verified = [
-        row for row in performance
-        if isinstance(row.get("metric_evidence"), dict)
-        and row.get("metric_evidence")
-        and row.get("source_reference")
-        and row.get("retrieved_at")
-    ]
+    evaluations = [_performance_evidence_evaluation(row) for row in performance]
+    verified = [evaluation for evaluation in evaluations if evaluation["usable"]]
     return {
         "historical_post_count": len(history),
         "performance_event_count": len(performance),
         "verified_performance_event_count": len(verified),
+        "unusable_performance_event_count": len(performance) - len(verified),
+        "performance_evidence_evaluations": evaluations,
         "performance_evidence_status": (
             "verified performance evidence is available"
             if verified else
             "performance evidence is unavailable or insufficiently normalized"
         ),
+    }
+
+
+def _performance_evidence_evaluation(row):
+    event_id = str(row.get("performance_event_id") or "")
+    evidence = row.get("metric_evidence")
+    if not isinstance(evidence, dict) or not evidence:
+        return {
+            "performance_event_id": event_id,
+            "usable": False,
+            "usable_metric_names": [],
+            "reasons": ["metric_evidence_missing_or_malformed"],
+        }
+    usable = []
+    reasons = []
+    for name, metric in sorted(evidence.items()):
+        prefix = f"{name}:"
+        if not isinstance(metric, dict):
+            reasons.append(prefix + "metric_evidence_malformed")
+            continue
+        status = str(metric.get("status") or "").strip().lower()
+        source = str(metric.get("source") or "").strip()
+        reference = str(metric.get("source_reference") or "").strip()
+        retrieved_at = _iso(metric.get("retrieved_at"))
+        metric_reasons = []
+        if status not in ACCEPTED_METRIC_STATUSES:
+            metric_reasons.append("status_unaccepted")
+        if not source or source.lower() in REJECTED_EVIDENCE_SOURCES:
+            metric_reasons.append("source_unaccepted")
+        if not reference:
+            metric_reasons.append("source_reference_missing")
+        if not retrieved_at:
+            metric_reasons.append("retrieved_at_invalid")
+        if metric.get("value") is None:
+            metric_reasons.append("value_missing")
+        if metric_reasons:
+            reasons.extend(prefix + reason for reason in metric_reasons)
+        else:
+            usable.append(name)
+    # An event is usable for ranking only when every supplied metric is independently usable.
+    return {
+        "performance_event_id": event_id,
+        "usable": bool(usable) and not reasons,
+        "usable_metric_names": usable if not reasons else [],
+        "reasons": sorted(set(reasons)),
+    }
+
+
+def _fact_constraints(facts):
+    by_type = {claim_type: [] for claim_type in COMMERCIAL_CLAIM_TYPES}
+    for fact in facts:
+        for claim_type in fact.get("claim_types", []):
+            if claim_type in by_type:
+                by_type[claim_type].append({
+                    "fact_id": fact["fact_id"],
+                    "source": fact["source"],
+                    "source_reference": fact["source_reference"],
+                    "observed_at": fact["observed_at"],
+                    "status": fact["status"],
+                })
+    return {
+        "verified_fact_ids_used": [fact["fact_id"] for fact in facts],
+        "claim_provenance": by_type,
+        **{
+            f"{claim_type}_claimed": bool(by_type[claim_type])
+            for claim_type in COMMERCIAL_CLAIM_TYPES
+        },
     }
 
 

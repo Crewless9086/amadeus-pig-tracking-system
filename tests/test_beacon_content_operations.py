@@ -46,6 +46,7 @@ class BeaconContentOperationsTests(unittest.TestCase):
             "source_reference": "observation/LITTER-OBS-1",
             "observed_at": "2026-07-24T08:00:00Z",
             "status": "canonical_read",
+            "claim_types": ["husbandry_observation"],
         }]
 
     def test_ranks_small_set_and_explains_sources_and_dates(self):
@@ -93,13 +94,21 @@ class BeaconContentOperationsTests(unittest.TestCase):
             "media_type": "image", "effective_approval_status": "approved",
             "effective_public_use_approved": True, "content_sha256": "a" * 64,
             "content_hash_provenance": "server_computed_on_upload",
+            "created_at": "2026-07-24T08:00:00Z",
         }
         result = build_beacon_content_candidate(
-            self.evidence([unsafe, safe]), current_facts=self.facts()
+            self.evidence([unsafe, safe]), current_facts=[]
         )
 
         self.assertEqual(result["owner_review_packet"]["media"]["asset_id"], "SAFE")
         self.assertNotIn("UNSAFE", str(result["owner_review_packet"]["media"]))
+        self.assertIn(
+            "approved farm image", result["owner_review_packet"]["draft_copy"]
+        )
+        self.assertEqual(
+            result["owner_review_packet"]["supporting_evidence"][-1]["source_reference"],
+            "SAFE",
+        )
 
     def test_rejects_unverified_facts_and_never_converts_legacy_metrics_to_claims(self):
         result = build_beacon_content_candidate(
@@ -130,6 +139,108 @@ class BeaconContentOperationsTests(unittest.TestCase):
         self.assertFalse(
             result["owner_review_packet"]["fact_constraints"]["availability_claimed"]
         )
+
+    def test_non_empty_but_unverified_metric_evidence_is_not_usable(self):
+        evidence = self.evidence()
+        evidence["performance_events"]["records"] = [{
+            "performance_event_id": "PERF-INFERRED",
+            "metric_evidence": {
+                "reach": {
+                    "value": 1234,
+                    "status": "inferred",
+                    "source": "meta_insights",
+                    "source_reference": "post/1",
+                    "retrieved_at": "2026-07-24T08:00:00Z",
+                }
+            },
+            "source_reference": "event-level-reference",
+            "retrieved_at": "2026-07-24T08:00:00Z",
+        }]
+
+        result = build_beacon_content_candidate(evidence, current_facts=self.facts())
+
+        self.assertEqual(result["evidence_quality"]["verified_performance_event_count"], 0)
+        evaluation = result["evidence_quality"]["performance_evidence_evaluations"][0]
+        self.assertFalse(evaluation["usable"])
+        self.assertIn("reach:status_unaccepted", evaluation["reasons"])
+
+    def test_partially_verified_metric_event_is_not_usable_for_ranking(self):
+        evidence = self.evidence()
+        evidence["performance_events"]["records"] = [{
+            "performance_event_id": "PERF-PARTIAL",
+            "metric_evidence": {
+                "reach": {
+                    "value": 500,
+                    "status": "verified",
+                    "source": "meta_insights",
+                    "source_reference": "post/2/reach",
+                    "retrieved_at": "2026-07-24T08:00:00Z",
+                },
+                "qualified_buyer_leads": {
+                    "value": 4,
+                    "status": "verified",
+                    "source": "",
+                    "source_reference": "",
+                    "retrieved_at": "not-a-date",
+                },
+            },
+        }]
+
+        result = build_beacon_content_candidate(evidence, current_facts=self.facts())
+
+        evaluation = result["evidence_quality"]["performance_evidence_evaluations"][0]
+        self.assertFalse(evaluation["usable"])
+        self.assertEqual(evaluation["usable_metric_names"], [])
+        self.assertIn("qualified_buyer_leads:source_unaccepted", evaluation["reasons"])
+        self.assertIn("qualified_buyer_leads:retrieved_at_invalid", evaluation["reasons"])
+
+    def test_invalid_observed_at_rejects_otherwise_verified_fact(self):
+        fact = self.facts()[0]
+        fact["observed_at"] = "today-ish"
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+
+        self.assertEqual(result["rejected_current_facts"][0]["reason"], "invalid_observed_at")
+        self.assertNotIn("settled litter", result["owner_review_packet"]["draft_copy"])
+
+    def test_verified_commercial_fact_sets_structured_claim_constraints(self):
+        fact = {
+            "fact_id": "OFFER-1",
+            "statement": "Verified growers are available in Riversdale at R1 200 each",
+            "source": "canonical_sales_offer",
+            "source_reference": "offer/OFFER-1",
+            "observed_at": "2026-07-24T08:00:00Z",
+            "status": "canonical_read",
+            "claim_types": ["stock", "availability", "location", "price"],
+        }
+
+        result = build_beacon_content_candidate(self.evidence(), current_facts=[fact])
+        packet = result["owner_review_packet"]
+        constraints = packet["fact_constraints"]
+
+        self.assertIn("R1 200", packet["draft_copy"])
+        self.assertIn("Riversdale", packet["draft_copy"])
+        for claim_type in ("stock", "availability", "location", "price"):
+            self.assertTrue(constraints[f"{claim_type}_claimed"])
+            self.assertEqual(
+                constraints["claim_provenance"][claim_type][0]["fact_id"], "OFFER-1"
+            )
+
+    def test_final_copy_and_fact_constraints_are_consistent(self):
+        result = build_beacon_content_candidate(
+            self.evidence(), current_facts=self.facts()
+        )
+        packet = result["owner_review_packet"]
+
+        self.assertIn("settled litter", packet["draft_copy"])
+        self.assertEqual(packet["fact_constraints"]["verified_fact_ids_used"], ["LITTER-OBS-1"])
+        self.assertFalse(any(
+            packet["fact_constraints"][f"{claim_type}_claimed"]
+            for claim_type in (
+                "stock", "price", "availability", "location",
+                "customer_claim", "performance_result",
+            )
+        ))
 
 
 if __name__ == "__main__":
