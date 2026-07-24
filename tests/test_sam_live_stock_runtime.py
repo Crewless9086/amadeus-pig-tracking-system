@@ -939,6 +939,60 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertFalse(decision["customer_send_allowed"])
         self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
+        self.assertTrue(decision["facts"]["llm_used"])
+        self.assertEqual(decision["facts"]["llm_status"], "llm_reply_draft_used")
+
+    def test_explicit_new_request_does_not_inherit_old_intake_or_history_facts(self):
+        calls = []
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="This is a new request. I am looking for 2 female weaners around 10 to 14 kg. What is the current price?"
+            ),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {
+                    "collection_location": "Any",
+                    "collection_time_text": "friday",
+                    "order_commitment": True,
+                },
+                "items": [{"category": "Grower", "quantity": 3, "sex": "Male"}],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [
+                    {
+                        "id": "old-message",
+                        "message_type": 0,
+                        "content": "Reserve 3 male growers until Friday.",
+                    }
+                ],
+            },
+            availability_loader=lambda: [],
+            llm_drafter=lambda context, source: calls.append((context, source)) or {
+                "reply_text": "Female weaners in that weight range are R500 each, so 2 would be R1,000.",
+                "confidence": 0.99,
+            },
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["facts"]["category"], "weaner")
+        self.assertEqual(decision["facts"]["quantity"], 2)
+        self.assertEqual(decision["facts"]["sex"], "female")
+        self.assertEqual(decision["facts"]["weight_range"], "10-14 kg")
+        self.assertEqual(decision["facts"]["timing"], "")
+        self.assertEqual(decision["facts"]["location"], "")
+        self.assertFalse(decision["facts"].get("order_commitment"))
+        self.assertEqual(decision["read_context"]["prior_context_source"], "")
+        self.assertEqual(calls[0][0]["recent_chatwoot_history"], [])
+        self.assertNotIn("reservation_request_owner_gate", decision["blockers"])
+        self.assertTrue(decision["facts"]["llm_used"])
+        self.assertEqual(decision["facts"]["llm_status"], "llm_reply_draft_used")
 
     def test_process_environment_mapping_reaches_llm_builder_from_inbound_handler(self):
         calls = []

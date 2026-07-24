@@ -182,6 +182,19 @@ def handle_sam_live_stock_chatwoot_inbound(
         availability_evidence=availability_evidence,
         environ=source,
     )
+    if _explicit_new_request(inbound.get("content")):
+        context_packet["prior_context"] = {}
+        context_packet["chatwoot_history_messages"] = []
+        context_packet["intake_context"] = {
+            "success": True,
+            "lookup_status": "context_reset_for_new_request",
+            "known_fields": {},
+            "items": [],
+        }
+        context_packet["context_reset"] = {
+            "applied": True,
+            "reason": "customer_explicit_new_request",
+        }
     facts = merge_prior_live_stock_context(facts, context_packet.get("prior_context") or {})
     decision = build_sam_live_stock_decision(
         inbound,
@@ -191,6 +204,9 @@ def handle_sam_live_stock_chatwoot_inbound(
         llm_drafter=llm_drafter,
         owner_example_loader=owner_example_loader,
     )
+    llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
+    facts["llm_used"] = bool(llm_draft.get("used"))
+    facts["llm_status"] = llm_draft.get("status") or facts.get("llm_status") or ""
     conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     if _llm_reply_needs_fallback(decision, conversation_review):
         decision["llm_draft_review"] = {
@@ -457,6 +473,27 @@ def merge_prior_live_stock_context(facts, prior_context):
     return facts
 
 
+def _explicit_new_request(text):
+    normalized = " ".join(str(text or "").strip().lower().split())
+    if not normalized:
+        return False
+    return any(
+        phrase in normalized
+        for phrase in (
+            "this is a new request",
+            "ignore my old request",
+            "ignore my previous request",
+            "start a new request",
+            "hierdie is 'n nuwe versoek",
+            "hierdie is ’n nuwe versoek",
+            "ignoreer my ou versoek",
+            "ignoreer my vorige versoek",
+            "begin 'n nuwe versoek",
+            "begin ’n nuwe versoek",
+        )
+    )
+
+
 def load_live_stock_read_context(
     inbound,
     facts,
@@ -471,23 +508,26 @@ def load_live_stock_read_context(
     source = environ if environ is not None else os.environ
     context_errors = []
     prior_context = {}
+    reset_prior_context = _explicit_new_request(inbound.get("content"))
     intake = {"success": False, "lookup_status": "not_loaded", "items": []}
     chatwoot_history = {"success": False, "status": "not_loaded", "messages": []}
     if inbound.get("conversation_id"):
         try:
             loader = intake_context_loader or get_intake_context
             intake = loader(inbound.get("conversation_id"))
-            prior_context = _prior_context_from_intake(intake)
+            if not reset_prior_context:
+                prior_context = _prior_context_from_intake(intake)
         except Exception as exc:
             context_errors.append(_integration_failure("order_intake_context_read_failed", exc))
             intake = {"success": False, "lookup_status": "read_failed", "items": []}
         try:
             history_loader = conversation_history_loader or load_chatwoot_conversation_history
             chatwoot_history = history_loader(inbound.get("conversation_id"), source)
-            prior_context = _merge_prior_context_packets(
-                prior_context,
-                _prior_context_from_chatwoot_history(chatwoot_history, inbound),
-            )
+            if not reset_prior_context:
+                prior_context = _merge_prior_context_packets(
+                    prior_context,
+                    _prior_context_from_chatwoot_history(chatwoot_history, inbound),
+                )
         except Exception as exc:
             context_errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
             chatwoot_history = {"success": False, "status": "read_failed", "messages": []}
