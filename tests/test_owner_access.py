@@ -113,7 +113,7 @@ class OwnerAccessTests(unittest.TestCase):
             self._login(ADMIN_TOKEN)
             with patch.object(pig_weights_routes, "record_observation", return_value=({"success": True}, 201)) as capture:
                 response = self.client.post(
-                    "/api/pig-weights/observations",
+                    "/api/pig-weights/pigs/P-1/observations",
                     json=payload,
                     environ_base={"REMOTE_ADDR": "203.0.113.10"},
                 )
