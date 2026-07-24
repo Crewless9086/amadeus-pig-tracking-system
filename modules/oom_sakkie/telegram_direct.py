@@ -172,27 +172,23 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
             "telegram_message_id": callback["telegram_message_id"],
             "owner": "telegram_owner",
         }, environ=environ)
-        telegram_text = _format_sam_live_callback_owner_reply(action_result)
-        send_result, send_status = send_owner_telegram_reply(
-            chat_id=callback["telegram_chat_id"],
-            text=telegram_text,
-            environ=environ,
-        )
-        status_label = send_result.get("status", "telegram_send_failed") if action_result.get("success") else action_result.get("status", "sam_live_callback_failed")
-        body, _ = _direct_result(action_result.get("success") is True and send_result.get("success") is True, status_label, policy, 200 if send_status < 400 else send_status)
+        ack_result, ack_status = acknowledge_telegram_callback(callback["callback_query_id"], environ=environ)
+        status_label = action_result.get("status", "sam_live_callback_failed")
+        body, _ = _direct_result(action_result.get("success") is True and ack_status < 400, status_label, policy, action_status)
         body.update({
             "telegram_user_id": callback["telegram_user_id"],
             "telegram_chat_id": callback["telegram_chat_id"],
             "callback_data": callback["callback_data"],
             "sam_live_callback": action_result,
             "sam_live_callback_status_code": action_status,
-            "telegram_text": telegram_text,
-            "telegram_send": send_result,
-            "sends_telegram": bool(send_result.get("sends_telegram")),
+            "callback_acknowledgement": ack_result,
+            "callback_acknowledgement_status_code": ack_status,
+            "confirmation_message_created": False,
+            "sends_telegram": bool(action_result.get("calls_telegram")),
             "sends_customer_message": bool(action_result.get("sends_customer_message")),
             "calls_chatwoot": bool(action_result.get("calls_chatwoot")),
         })
-        return body, send_status if send_status >= 400 else 200
+        return body, ack_status if ack_status >= 400 else 200
 
     parsed = parse_telegram_gateway_payload(payload)
     if not parsed["text"]:
@@ -257,11 +253,33 @@ def _parse_telegram_callback_payload(payload):
     from_user = callback.get("from") if isinstance(callback.get("from"), dict) else {}
     chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
     return {
+        "callback_query_id": str(callback.get("id") or payload.get("callback_query_id") or "").strip()[:120],
         "callback_data": str(callback.get("data") or payload.get("callback_data") or "").strip()[:240],
         "telegram_user_id": str(payload.get("telegram_user_id") or from_user.get("id") or "").strip()[:80],
         "telegram_chat_id": str(payload.get("telegram_chat_id") or chat.get("id") or "").strip()[:80],
         "telegram_message_id": str(payload.get("telegram_message_id") or message.get("message_id") or "").strip()[:80],
     }
+
+
+def acknowledge_telegram_callback(callback_query_id, environ=None):
+    source = environ if environ is not None else os.environ
+    callback_query_id = str(callback_query_id or "").strip()[:120]
+    if not callback_query_id:
+        return {"success": True, "status": "telegram_callback_acknowledgement_unavailable", "sends_telegram": False}, 200
+    token = str(source.get(BOT_TOKEN_ENV, "") or "").strip()
+    if not token:
+        return {"success": False, "status": "telegram_direct_bot_token_not_configured", "sends_telegram": False}, 503
+    request = urllib_request.Request(
+        f"https://api.telegram.org/bot{token}/answerCallbackQuery",
+        data=json.dumps({"callback_query_id": callback_query_id}).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=15) as response:
+            result = json.loads(response.read().decode("utf-8") or "{}")
+        return {"success": result.get("ok") is True, "status": "telegram_callback_acknowledged", "sends_telegram": False}, 200
+    except (urllib_error.HTTPError, OSError):
+        return {"success": False, "status": "telegram_callback_acknowledgement_failed", "sends_telegram": False}, 502
 
 
 def _format_sam_live_callback_owner_reply(action_result):
