@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -526,7 +527,6 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["posts_publicly"])
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
-
     def test_campaign_performance_recommends_light_boost_without_spend_authority(self):
         packet = build_beacon_boost_recommendation_packet({
             "manual_post_event_id": "BEACON-MANUAL-POST-1",
@@ -742,8 +742,84 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertTrue(result["calls_meta"])
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
-        self.assertEqual([event["execution_status"] for event in recorded], ["record_only_before_send", "facebook_page_post_sent"])
+        self.assertEqual(
+            [event["execution_status"] for event in recorded],
+            ["record_only_before_send", "facebook_page_post_sent"],
+        )
         self.assertTrue(recorded[1]["execution_event_id"].endswith("-RESULT"))
+
+    def test_attempt_claim_persists_exact_media_order_before_meta(self):
+        recorded = []
+        poster_calls = []
+        assets = [
+            {
+                "asset_id": "IMAGE-A", "media_type": "image",
+                "public_use_approved": True, "storage_bucket": "private",
+                "storage_path": "a.png",
+            },
+            {
+                "asset_id": "IMAGE-B", "media_type": "image",
+                "public_use_approved": True, "storage_bucket": "private",
+                "storage_path": "b.png",
+            },
+        ]
+
+        def recorder(params, database_url=None):
+            recorded.append(dict(params))
+            return {"success": True, "created_count": 1}, 201
+
+        result, status = execute_beacon_facebook_page_post({
+            "campaign_lane": "live_stock_awareness",
+            "publish_packet_id": "PACKET-ORDER",
+            "exact_text": "Follow the farm journey for responsible piglet care.",
+            "selected_assets": assets,
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: (
+            poster_calls.append(True) or
+            ({"success": False, "status": "fake_failure"}, 400)
+        ), execution_recorder=recorder, environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "page",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://storage.invalid",
+            "SUPABASE_SERVICE_ROLE_KEY": "private",
+        })
+
+        self.assertEqual(status, 502)
+        claim = json.loads(recorded[0]["facebook_response_json"])
+        self.assertEqual(claim["transport_stage"], "attempt_claimed")
+        self.assertEqual(
+            [item["asset_id"] for item in claim["selected_media"]["assets"]],
+            ["IMAGE-A", "IMAGE-B"],
+        )
+        self.assertNotIn("storage_bucket", json.dumps(claim))
+        self.assertNotIn("storage_path", json.dumps(claim))
+        self.assertEqual(len(poster_calls), 1)
+        self.assertFalse(result["success"])
+
+    def test_duplicate_attempt_is_withheld_before_meta(self):
+        poster_calls = []
+
+        def duplicate_recorder(_params, database_url=None):
+            return {
+                "success": True, "created_count": 0,
+                "status": "beacon_facebook_post_execution_already_recorded",
+            }, 200
+
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "PACKET-DUPLICATE",
+            "exact_text": "A farm-awareness story.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: poster_calls.append(True),
+           execution_recorder=duplicate_recorder, environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+           })
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "facebook_publish_packet_already_claimed")
+        self.assertEqual(poster_calls, [])
 
     def test_facebook_post_execution_retry_is_blocked_before_meta(self):
         calls = []

@@ -9,6 +9,13 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
+from modules.beacon.facebook_media_transport import (
+    create_multi_photo_feed,
+    load_supabase_asset_bytes,
+    manual_composer_handoff,
+    upload_unpublished_photo_binary,
+    validate_facebook_image_asset,
+)
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     assess_public_livestock_content,
@@ -1224,7 +1231,7 @@ def facebook_posting_policy(environ=None):
         "posts_text_only_now": posting_ready,
         "posts_media_now": bool(posting_ready and media_storage_configured),
         "posts_image_now": bool(posting_ready and media_storage_configured),
-        "media_source": "approved_beacon_supabase_image_signed_url",
+        "media_source": "approved_beacon_server_validated_binary_multipart",
         "boosts_or_spends_now": False,
         "required_envs": [
             FACEBOOK_POSTING_ENABLED_ENV,
@@ -1271,6 +1278,15 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
 
     recorder = execution_recorder or _record_facebook_post_execution_event
     params["execution_status"] = "record_only_before_send"
+    params["facebook_response_json"] = json.dumps({
+        "transport_stage": "attempt_claimed",
+        "post_kind": params.get("post_kind", "feed"),
+        "selected_media": _facebook_selected_media(params),
+        "caption_sha256": hashlib.sha256(
+            params.get("exact_text", "").encode("utf-8")
+        ).hexdigest(),
+        "automatic_retry_allowed": False,
+    }, sort_keys=True, default=str)
     claim_result, claim_status = recorder(params, database_url=database_url)
     if claim_status != 201 or not claim_result.get("created_count"):
         return {
@@ -1283,8 +1299,30 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 409 if claim_status < 400 else 503
 
-    post_fn = poster or _post_to_facebook_page
-    post_result, post_status = post_fn(params, policy)
+    if poster:
+        post_result, post_status = poster(params, policy)
+    else:
+        def record_stage(stage):
+            stage_params = dict(params)
+            stage_name = _clean_text(stage.get("transport_stage"))[:80]
+            stage_identity = (
+                f"{stage_name}|{stage.get('asset_position', '')}|"
+                f"{stage.get('asset_id', '')}"
+            )
+            stage_params["execution_event_id"] = (
+                f'{params["execution_event_id"]}-STAGE-'
+                f'{hashlib.sha256(stage_identity.encode()).hexdigest()[:12].upper()}'
+            )
+            stage_params["execution_status"] = "record_only_before_send"
+            stage_params["facebook_response_json"] = json.dumps(
+                stage, sort_keys=True, default=str
+            )
+            result, status = recorder(stage_params, database_url=database_url)
+            return status < 400 and bool(result.get("success"))
+
+        post_result, post_status = _post_to_facebook_page(
+            params, policy, stage_recorder=record_stage
+        )
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
         "execution_event_id": f'{params["execution_event_id"]}-RESULT',
@@ -2052,6 +2090,8 @@ def _performance_params(payload):
         "manual_post_event_id": _clean_text(payload.get("manual_post_event_id"))[:120],
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
+        "campaign_lane": normalize_campaign_lane(payload.get("campaign_lane")),
+        "objective": _clean_text(payload.get("objective") or "farm_awareness")[:120],
         "measurement_window": _clean_text(payload.get("measurement_window") or "manual_snapshot")[:120],
         "spend_amount": spend_amount,
         "spend_currency": _clean_text(payload.get("spend_currency") or "ZAR")[:12],
@@ -2413,13 +2453,17 @@ def _facebook_post_validation_error(params, policy):
     return ""
 
 
-def _post_to_facebook_page(params, policy, environ=None):
+def _post_to_facebook_page(params, policy, environ=None, stage_recorder=None):
     if params.get("post_kind") == "multi_photo":
-        return _post_to_facebook_page_multi_photo(params, policy, environ=environ)
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder
+        )
     if params.get("post_kind") == "video":
         return _post_to_facebook_page_video(params, policy, environ=environ)
     if params.get("asset_id"):
-        return _post_to_facebook_page_photos(params, policy, environ=environ)
+        return _post_to_facebook_page_binary_images(
+            params, policy, environ=environ, stage_recorder=stage_recorder
+        )
     return _post_to_facebook_page_feed(params, policy, environ=environ)
 
 
@@ -2456,6 +2500,230 @@ def _post_to_facebook_page_feed(params, policy, environ=None):
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
         }, 502
+
+
+def _post_to_facebook_page_binary_images(
+    params,
+    policy,
+    environ=None,
+    stage_recorder=None,
+    storage_loader=None,
+    photo_uploader=None,
+    feed_creator=None,
+):
+    """Validate all bytes, then upload once per image with no retry."""
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    assets = [
+        asset for asset in params.get("selected_assets", [])
+        if isinstance(asset, dict)
+    ]
+    load_fn = storage_loader or (
+        lambda asset: load_supabase_asset_bytes(asset, environ=source)
+    )
+    upload_fn = photo_uploader or (
+        lambda asset, data, mime: upload_unpublished_photo_binary(
+            page_id, token, version, asset, data, mime
+        )
+    )
+    feed_fn = feed_creator or (
+        lambda caption, ids: create_multi_photo_feed(
+            page_id, token, version, caption, ids
+        )
+    )
+    stage_fn = stage_recorder or (lambda _stage: True)
+    validations = []
+    loaded = []
+    for position, asset in enumerate(assets, start=1):
+        loaded_result, loaded_status = load_fn(asset)
+        if loaded_status >= 400 or not loaded_result.get("success"):
+            handoff = manual_composer_handoff(
+                params, validations, loaded_result.get("status")
+                or "private_storage_read_failed"
+            )
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "storage_status": loaded_result.get("status"),
+                "manual_handoff": handoff,
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        validation = validate_facebook_image_asset(
+            asset,
+            loaded_result.get("data"),
+            loaded_result.get("returned_mime"),
+        )
+        validation["position"] = position
+        validations.append(validation)
+        if not validation["allowed"]:
+            return {
+                "success": False,
+                "status": "facebook_image_validation_failed",
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "asset_validations": validations,
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, "image_validation_failed"
+                ),
+                "uploaded_media_ids": [],
+                "outcome": "definite_failure_before_meta",
+                "automatic_retry_allowed": False,
+            }, 422
+        loaded.append((
+            asset,
+            loaded_result["data"],
+            validation["returned_mime"],
+        ))
+
+    validation_stage = {
+        "transport_stage": "validation_complete",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "asset_order": [asset.get("asset_id", "") for asset in assets],
+        "asset_validations": validations,
+        "meta_call_performed": False,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(validation_stage):
+        return {
+            "success": False,
+            "status": "facebook_stage_evidence_failed_before_meta",
+            "outcome": "definite_failure_before_meta",
+            "uploaded_media_ids": [],
+            "manual_handoff": manual_composer_handoff(
+                params, validations, "stage_evidence_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, 503
+
+    if params.get("campaign_lane") in {"live_stock_awareness", "live_stock_sales"}:
+        final_policy = assess_public_livestock_content(
+            params.get("exact_text"),
+            objective=params.get("objective") or "farm_awareness",
+            campaign_lane=params.get("campaign_lane"),
+            media=assets,
+        )
+        if not final_policy["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": final_policy,
+                "outcome": "definite_failure_before_meta",
+                "uploaded_media_ids": [],
+                "automatic_retry_allowed": False,
+            }, 409
+
+    media_ids = []
+    for position, (asset, data, mime_type) in enumerate(loaded, start=1):
+        result, status = upload_fn(asset, data, mime_type)
+        media_id = str(result.get("id") or "")
+        upload_stage = {
+            "transport_stage": "image_upload_result",
+            "asset_id": asset.get("asset_id", ""),
+            "asset_position": position,
+            "http_status": status,
+            "success": status < 400 and bool(media_id),
+            "returned_media_id": media_id,
+            "uploaded_media_ids": [*media_ids, *([media_id] if media_id else [])],
+            "meta_error": result.get("meta_error", {}),
+            "outcome": result.get("outcome", ""),
+            "meta_call_performed": True,
+            "automatic_retry_allowed": False,
+        }
+        recorded = stage_fn(upload_stage)
+        if media_id:
+            media_ids.append(media_id)
+        if not recorded:
+            return {
+                "success": False,
+                "status": "facebook_upload_evidence_failed",
+                "outcome": "ambiguous",
+                "uploaded_media_ids": media_ids,
+                "owner_reconciliation_required": True,
+                "automatic_retry_allowed": False,
+            }, 503
+        if status >= 400 or not media_id:
+            outcome = (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "partial_upload_final_post_not_created"
+                if media_ids
+                else "definitely_not_posted_no_media_accepted"
+            )
+            return {
+                **result,
+                "success": False,
+                "post_kind": params.get("post_kind"),
+                "failed_asset_position": position,
+                "uploaded_media_ids": media_ids,
+                "outcome": outcome,
+                "owner_reconciliation_required": bool(media_ids)
+                or outcome == "ambiguous",
+                "manual_handoff": manual_composer_handoff(
+                    params, validations, result.get("status")
+                    or "image_upload_failed"
+                ),
+                "automatic_retry_allowed": False,
+            }, status
+
+    result, status = feed_fn(params.get("exact_text", ""), media_ids)
+    post_id = str(result.get("id") or result.get("post_id") or "")
+    feed_stage = {
+        "transport_stage": "final_feed_result",
+        "http_status": status,
+        "success": status < 400 and bool(post_id),
+        "uploaded_media_ids": media_ids,
+        "final_post_id": post_id,
+        "meta_error": result.get("meta_error", {}),
+        "outcome": result.get("outcome", ""),
+        "meta_call_performed": True,
+        "automatic_retry_allowed": False,
+    }
+    if not stage_fn(feed_stage):
+        return {
+            "success": False,
+            "status": "facebook_final_evidence_failed",
+            "outcome": "ambiguous",
+            "uploaded_media_ids": media_ids,
+            "final_post_id": post_id,
+            "owner_reconciliation_required": True,
+            "automatic_retry_allowed": False,
+        }, 503
+    if status >= 400 or not post_id:
+        return {
+            **result,
+            "success": False,
+            "post_kind": params.get("post_kind"),
+            "uploaded_media_ids": media_ids,
+            "outcome": (
+                "ambiguous"
+                if result.get("outcome") == "ambiguous"
+                else "media_uploaded_final_post_not_published"
+            ),
+            "owner_reconciliation_required": True,
+            "manual_handoff": manual_composer_handoff(
+                params, validations, result.get("status")
+                or "final_feed_failed"
+            ),
+            "automatic_retry_allowed": False,
+        }, status
+    return {
+        "success": True,
+        "status": "facebook_page_post_sent",
+        "post_kind": params.get("post_kind"),
+        "selected_media": _facebook_selected_media(params),
+        "uploaded_media_ids": media_ids,
+        "id": post_id,
+        "facebook_post_id": post_id,
+        "outcome": "post_published_and_evidence_recorded",
+        "automatic_retry_allowed": False,
+    }, status
 
 
 def _post_to_facebook_page_photos(params, policy, environ=None):
@@ -2764,10 +3032,6 @@ def _facebook_selected_media(params):
         "title": asset.get("title", ""),
         "media_type": asset.get("media_type", ""),
         "mime_type": asset.get("mime_type", ""),
-        "storage_bucket": asset.get("storage_bucket", ""),
-        "storage_path": asset.get("storage_path", ""),
-        "privacy_risk": asset.get("privacy_risk", ""),
-        "quality_score": asset.get("quality_score"),
         "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
     } for asset in assets]
     if len(selected) == 1:
