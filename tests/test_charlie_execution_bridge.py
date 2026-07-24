@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 import json
@@ -1144,6 +1145,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
+    def test_candidate_binding_classifier_is_pure_no_mutation(self):
+        artifact = {
+            "source_commit": "abc123def456",
+            "candidate_fingerprint": "candidate-123",
+            "tested_revision": "abc123",
+            "evidence_lineage": {
+                "source_commit": "abc123def456",
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        matched = execution_bridge._protected_pause_has_exact_candidate_binding(artifact)
+
+        self.assertTrue(matched)
+        self.assertEqual(artifact, original)
 
     def test_product_review_pending_current_diff_defect_does_not_normalize(self):
         artifact = {
