@@ -1274,5 +1274,73 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIsNone(result["counts"])
         self.assertFalse(result["bulk_reset_allowed"])
 
+    def test_human_mode_audit_system_exit_is_structured_and_sanitized(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [human_conversation(1826)],
+            review_loader=lambda conversation_id: (_ for _ in ()).throw(
+                SystemExit("PRIVATE-TIMEOUT-CONTENT")
+            ),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["failure_stage"], "review_event_load")
+        self.assertEqual(result["error_type"], "SystemExit")
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+        self.assertFalse(result["writes_performed"])
+        self.assertNotIn("PRIVATE-TIMEOUT-CONTENT", json.dumps(result))
+
+    def test_human_mode_audit_batches_review_loading_once(self):
+        conversations = [
+            human_conversation(1826, lane="unknown"),
+            human_conversation(1827, lane="meat"),
+            human_conversation(1828, lane="unknown"),
+        ]
+        calls = []
+
+        def batch_loader(conversation_ids):
+            calls.append(list(conversation_ids))
+            return {
+                "success": True,
+                "events_by_conversation_id": {
+                    "1826": {
+                        "chatwoot_conversation_id": "1826",
+                        "review_state": "active",
+                    }
+                },
+            }, 200
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_batch_loader=batch_loader,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls, [[1826, 1827, 1828]])
+        self.assertEqual(result["diagnostics"]["review_load_mode"], "single_bounded_batch")
+        self.assertEqual([row["conversation_id"] for row in result["conversations"]], ["1826"])
+        self.assertEqual(result["counts"]["excluded_non_livestock"], 1)
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_human_mode_audit_batch_system_exit_is_structured_not_flask_500(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [human_conversation(1826)],
+            review_batch_loader=lambda conversation_ids: (_ for _ in ()).throw(
+                SystemExit("PRIVATE-WORKER-TIMEOUT")
+            ),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["failure_stage"], "review_event_load")
+        self.assertEqual(result["error_type"], "SystemExit")
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+        self.assertFalse(result["writes_performed"])
+        self.assertNotIn("PRIVATE-WORKER-TIMEOUT", json.dumps(result))
+
 if __name__ == "__main__":
     unittest.main()
