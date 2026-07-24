@@ -26,6 +26,34 @@ def inbound_payload(**overrides):
     return payload
 
 
+def exact_eligible_row(**overrides):
+    row = {
+        "pig_id": "PIG-TEST",
+        "sex": "Female",
+        "status": "Active",
+        "on_farm": "Yes",
+        "purpose": "Sale",
+        "available_for_sale": "Yes",
+        "live_stock_sale_eligible": True,
+        "exact_animal_eligibility_contract_version": "herdmaster_exact_animal_eligibility_v1",
+        "evidence_complete": True,
+        "eligibility_observed_at": "2026-07-24",
+        "allocation_query_status": "known",
+        "allocation_evidence_state": "known_unallocated",
+        "reserved_status": "Not_Reserved",
+        "withdrawal_evidence_state": "not_applicable",
+        "withdrawal_clear": "Yes",
+        "medical_status": "Clear",
+        "calculated_stage": "Weaner",
+        "sale_category": "Weaner",
+        "current_weight_kg": 12,
+        "latest_weight_date": "2026-07-24",
+        "days_since_weight": 0,
+    }
+    row.update(overrides)
+    return row
+
+
 class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_llm_commitment_reservation_reply_is_repaired_before_payment_question(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -641,9 +669,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "known_fields": {**complete_intake["known_fields"], "quote_requested": True},
         }
         availability_rows = [
-            {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Piglet", "current_weight_kg": 8},
-            {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Piglet", "current_weight_kg": 8},
-            {"pig_id": "PIG-3", "sex": "Male", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Piglet", "current_weight_kg": 8},
+            exact_eligible_row(pig_id="PIG-1", sale_category="Piglet", calculated_stage="Piglet", current_weight_kg=8),
+            exact_eligible_row(pig_id="PIG-2", sale_category="Piglet", calculated_stage="Piglet", current_weight_kg=8),
+            exact_eligible_row(pig_id="PIG-3", sex="Male", sale_category="Piglet", calculated_stage="Piglet", current_weight_kg=8),
         ]
         scenarios = [
             {
@@ -904,9 +932,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 12},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 13},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 14},
+                exact_eligible_row(pig_id="PIG-1", current_weight_kg=12),
+                exact_eligible_row(pig_id="PIG-2", current_weight_kg=13),
+                exact_eligible_row(pig_id="PIG-3", current_weight_kg=14),
             ],
             draft_order_creator=creator,
             intake_writer=lambda cleaned: writes.append(cleaned) or {"success": True, "draft_order_id": cleaned["patch"]["draft_order_id"]},
@@ -948,9 +976,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 12},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 13},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 14},
+                exact_eligible_row(pig_id="PIG-1", current_weight_kg=12),
+                exact_eligible_row(pig_id="PIG-2", current_weight_kg=13),
+                exact_eligible_row(pig_id="PIG-3", current_weight_kg=14),
             ],
             draft_order_creator=lambda _order_data, _sync_data: {"success": True, "order_id": "ORD-2026-NOQUOTE"},
             intake_writer=lambda cleaned: writes.append(cleaned) or {"success": True, "draft_order_id": cleaned["patch"]["draft_order_id"]},
@@ -1007,9 +1035,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 12},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 13},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 14},
+                exact_eligible_row(pig_id="PIG-1", current_weight_kg=12),
+                exact_eligible_row(pig_id="PIG-2", current_weight_kg=13),
+                exact_eligible_row(pig_id="PIG-3", current_weight_kg=14),
             ],
             draft_order_creator=lambda order_data, sync_data: creates.append((order_data, sync_data)),
             draft_order_syncer=syncer,
@@ -1077,9 +1105,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             conversation_history_loader=lambda _conversation_id, _source: {"success": True, "messages": []},
             availability_loader=lambda: [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 12},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 13},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner", "current_weight_kg": 14},
+                exact_eligible_row(pig_id="PIG-1", current_weight_kg=12),
+                exact_eligible_row(pig_id="PIG-2", current_weight_kg=13),
+                exact_eligible_row(pig_id="PIG-3", current_weight_kg=14),
             ],
             draft_order_creator=lambda order_data, sync_data: creates.append((order_data, sync_data)),
             draft_order_syncer=syncer,
@@ -1640,17 +1668,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_availability_summary_filters_unsafe_and_matches_category_sex(self):
         rows = [
-            {
-                "pig_id": "PIG-1",
-                "sex": "Female",
-                "status": "Active",
-                "on_farm": "Yes",
-                "reserved_status": "",
-                "available_for_sale": "Yes",
-                "purpose": "Sale",
-                "sale_category": "Weaner",
-                "current_weight_kg": 12,
-            },
+            exact_eligible_row(pig_id="PIG-1"),
             {
                 "pig_id": "PIG-2",
                 "sex": "Male",
@@ -1679,30 +1697,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_availability_summary_respects_requested_weight_range(self):
         rows = [
-            {
-                "pig_id": "PIG-10KG",
-                "sex": "Female",
-                "status": "Active",
-                "on_farm": "Yes",
-                "reserved_status": "",
-                "available_for_sale": "Yes",
-                "purpose": "Sale",
-                "sale_category": "Weaner Piglets",
-                "weight_band": "10_to_14_Kg",
-                "current_weight_kg": 12,
-            },
-            {
-                "pig_id": "PIG-44KG",
-                "sex": "Female",
-                "status": "Active",
-                "on_farm": "Yes",
-                "reserved_status": "",
-                "available_for_sale": "Yes",
-                "purpose": "Sale",
-                "sale_category": "Grower Pigs",
-                "weight_band": "40_to_44_Kg",
-                "current_weight_kg": 44,
-            },
+            exact_eligible_row(pig_id="PIG-10KG", sale_category="Weaner Piglets", weight_band="10_to_14_Kg"),
+            exact_eligible_row(pig_id="PIG-44KG", sale_category="Grower Pigs", weight_band="40_to_44_Kg", current_weight_kg=44, calculated_stage="Grower"),
         ]
 
         summary = sam_live_stock_runtime.summarize_live_stock_availability(
@@ -1715,14 +1711,14 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
     def test_exact_animal_preselection_ranks_evidence_and_keeps_proposals_read_only(self):
         rows = [
-            {
+            {**exact_eligible_row(),
                 "pig_id": "PIG-29", "tag_number": "29", "sex": "Male", "status": "Active", "on_farm": "Yes",
                 "purpose": "Sale", "available_for_sale": "Yes", "live_stock_sale_eligible": True,
                 "sale_category": "Grower", "current_weight_kg": 29, "latest_weight_date": "2026-07-23",
                 "days_since_weight": 1, "current_pen_id": "PEN-G1", "health_status": "Clear",
                 "medical_status": "Clear", "withdrawal_clear": "Yes", "live_stock_sale_reason": "eligible",
             },
-            {
+            {**exact_eligible_row(),
                 "pig_id": "PIG-27", "tag_number": "27", "sex": "Male", "status": "Active", "on_farm": "Yes",
                 "purpose": "Sale", "available_for_sale": "Yes", "live_stock_sale_eligible": True,
                 "sale_category": "Grower", "current_weight_kg": 27, "latest_weight_date": "2026-07-24",
@@ -1770,12 +1766,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         def availability_loader():
             return [
-                {
+                {**exact_eligible_row(),
                     "pig_id": "PIG-1",
                     "sex": "Female",
                     "status": "Active",
                     "on_farm": "Yes",
-                    "reserved_status": "",
                     "available_for_sale": "Yes",
                     "purpose": "Sale",
                     "sale_category": "Weaner",
@@ -2040,39 +2035,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {
-                    "pig_id": "PIG-1",
-                    "sex": "Female",
-                    "status": "Active",
-                    "on_farm": "Yes",
-                    "reserved_status": "",
-                    "available_for_sale": "Yes",
-                    "purpose": "Sale",
-                    "sale_category": "Weaner",
-                    "current_weight_kg": 12,
-                },
-                {
-                    "pig_id": "PIG-2",
-                    "sex": "Female",
-                    "status": "Active",
-                    "on_farm": "Yes",
-                    "reserved_status": "",
-                    "available_for_sale": "Yes",
-                    "purpose": "Sale",
-                    "sale_category": "Weaner",
-                    "current_weight_kg": 13,
-                },
-                {
-                    "pig_id": "PIG-3",
-                    "sex": "Female",
-                    "status": "Active",
-                    "on_farm": "Yes",
-                    "reserved_status": "",
-                    "available_for_sale": "Yes",
-                    "purpose": "Sale",
-                    "sale_category": "Weaner",
-                    "current_weight_kg": 14,
-                },
+                exact_eligible_row(pig_id="PIG-1", current_weight_kg=12),
+                exact_eligible_row(pig_id="PIG-2", current_weight_kg=13),
+                exact_eligible_row(pig_id="PIG-3", current_weight_kg=14),
             ],
             facts,
         )
@@ -2116,9 +2081,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
+                exact_eligible_row(pig_id="PIG-1"),
+                exact_eligible_row(pig_id="PIG-2"),
+                exact_eligible_row(pig_id="PIG-3"),
             ],
             facts,
         )
@@ -2158,9 +2123,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
+                exact_eligible_row(pig_id="PIG-1"),
+                exact_eligible_row(pig_id="PIG-2"),
+                exact_eligible_row(pig_id="PIG-3"),
             ],
             facts,
         )
@@ -2204,9 +2169,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-3", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
+                exact_eligible_row(pig_id="PIG-1"),
+                exact_eligible_row(pig_id="PIG-2"),
+                exact_eligible_row(pig_id="PIG-3"),
             ],
             facts,
         )
@@ -2276,8 +2241,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
+                exact_eligible_row(pig_id="PIG-1"),
+                exact_eligible_row(pig_id="PIG-2"),
             ],
             facts,
         )
@@ -2315,8 +2280,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
         availability = sam_live_stock_runtime.summarize_live_stock_availability(
             [
-                {"pig_id": "PIG-1", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
-                {"pig_id": "PIG-2", "sex": "Female", "status": "Active", "on_farm": "Yes", "available_for_sale": "Yes", "purpose": "Sale", "sale_category": "Weaner"},
+                exact_eligible_row(pig_id="PIG-1"),
+                exact_eligible_row(pig_id="PIG-2"),
             ],
             facts,
         )

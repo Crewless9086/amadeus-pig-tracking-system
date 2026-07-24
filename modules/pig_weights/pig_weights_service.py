@@ -62,6 +62,7 @@ SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = None
 STALE_WEIGHT_DAYS = 30
 LIVE_STOCK_SALE_PURPOSE = "sale"
+EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION = "herdmaster_exact_animal_eligibility_v1"
 LIVE_STOCK_MIN_SALE_WEIGHT_KG = 2
 BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
 BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
@@ -3795,8 +3796,12 @@ def _sales_availability_from_supabase_allocation():
     thresholds = allocation.get("thresholds", {}) if isinstance(allocation, dict) else {}
     sales_rows = []
     for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
-        eligibility = _live_stock_sale_eligibility(pig, thresholds)
-        withdrawal_clear = eligibility.get("withdrawal_clear") or _live_stock_withdrawal_clear(pig)
+        eligibility_pig = {
+            **pig,
+            "allocation_query_status": pig.get("allocation_query_status") or allocation.get("allocation_query_status", ""),
+        }
+        eligibility = _live_stock_sale_eligibility(eligibility_pig, thresholds)
+        withdrawal_clear = eligibility.get("withdrawal_clear") or _live_stock_withdrawal_clear(eligibility_pig)
         sales_rows.append({
             "pig_id": pig.get("pig_id", ""),
             "tag_number": pig.get("tag_number", ""),
@@ -3817,6 +3822,9 @@ def _sales_availability_from_supabase_allocation():
             "medical_status": pig.get("medical_status", ""),
             "reserved_status": pig.get("reserved_status", ""),
             "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
+            "allocation_evidence_state": pig.get("allocation_evidence_state", ""),
+            "allocation_order_status": pig.get("allocation_order_status", ""),
+            "allocation_line_status": pig.get("allocation_line_status", ""),
             "purpose": pig.get("purpose", ""),
             "available_for_sale": "Yes" if eligibility["eligible"] else "No",
             "live_stock_sale_eligible": eligibility["eligible"],
@@ -3831,6 +3839,11 @@ def _sales_availability_from_supabase_allocation():
             "suggested_price_category": eligibility["suggested_price_category"],
             "sales_notes": eligibility["status"],
             "source": "supabase_allocation_readiness",
+            "exact_animal_eligibility_contract_version": EXACT_ANIMAL_ELIGIBILITY_CONTRACT_VERSION,
+            "eligibility_observed_at": allocation.get("generated_date", ""),
+            "evidence_complete": eligibility.get("evidence_complete", False),
+            "withdrawal_evidence_state": eligibility.get("withdrawal_evidence_state", "unknown"),
+            "allocation_query_status": pig.get("allocation_query_status", allocation.get("allocation_query_status", "")),
         })
 
     return sales_rows
@@ -3851,7 +3864,10 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
     latest_weight_date = to_clean_string(pig.get("latest_weight_date", ""))
     days_since_weight = to_float(pig.get("days_since_weight"))
     stale_weight_days = to_float(thresholds.get("stale_weight_days", STALE_WEIGHT_DAYS))
-    withdrawal_clear = _live_stock_withdrawal_clear(pig)
+    withdrawal_state = _live_stock_withdrawal_evidence_state(pig)
+    withdrawal_clear = "Yes" if withdrawal_state in {"not_applicable", "cleared"} else "No"
+    allocation_state = to_clean_string(pig.get("allocation_evidence_state", "")).lower()
+    allocation_query_status = to_clean_string(pig.get("allocation_query_status", "")).lower()
     health_status = to_clean_string(pig.get("health_status", "")).lower()
     medical_status = to_clean_string(pig.get("medical_status", "")).lower()
     hold_status = to_clean_string(pig.get("hold_status", pig.get("sale_hold_status", ""))).lower()
@@ -3861,18 +3877,28 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         return _live_stock_sale_block("not_active", "Pig is not active.")
     if on_farm not in {"yes", "true", "1", "on farm"}:
         return _live_stock_sale_block("not_on_farm", "Pig is not currently on farm.")
-    if reserved_status == "reserved" or reserved_for_order_id:
-        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if normalized_purpose != LIVE_STOCK_SALE_PURPOSE:
         return _live_stock_sale_block("not_sale_purpose", "Only pigs with Purpose = Sale may enter SAM Live stock sales.")
+    if to_clean_string(pig.get("sex", "")).lower() not in {"male", "female", "castrated_male"}:
+        return _live_stock_sale_block("sex_evidence_unknown", "Pig sex evidence is incomplete.")
+    if not (animal_type or calculated_stage):
+        return _live_stock_sale_block("stage_evidence_unknown", "Pig stage/category evidence is incomplete.")
+    if allocation_query_status not in {"known", "success"}:
+        return _live_stock_sale_block("allocation_evidence_unavailable", "Allocation evidence is unavailable.", withdrawal_clear, withdrawal_state)
+    if allocation_state != "known_unallocated":
+        return _live_stock_sale_block("allocated_or_unknown", "Pig allocation evidence is not affirmatively unallocated.", withdrawal_clear, withdrawal_state)
+    if reserved_status not in {"not_reserved", "not reserved"}:
+        return _live_stock_sale_block("reservation_evidence_unknown", "Reservation evidence is not affirmatively clear.", withdrawal_clear, withdrawal_state)
+    if reserved_for_order_id:
+        return _live_stock_sale_block("reserved", "Pig is already reserved or linked to an order.")
     if _is_breeding_or_retained_stage(animal_type, calculated_stage):
         return _live_stock_sale_block("breeding_or_retained", "Breeding and retained animals are excluded from SAM Live stock sales.")
-    if withdrawal_clear == "No":
-        return _live_stock_sale_block("withdrawal_hold", "Pig is blocked by a withdrawal or medical hold.", withdrawal_clear)
+    if withdrawal_state not in {"not_applicable", "cleared"}:
+        return _live_stock_sale_block("withdrawal_evidence_blocked", "Withdrawal evidence is held or incomplete.", withdrawal_clear, withdrawal_state)
     if any(token in health_status for token in ("sick", "injured", "quarantine", "hold")):
         return _live_stock_sale_block("health_hold", "Pig health status blocks SAM Live stock sales.", withdrawal_clear)
-    if any(token in medical_status for token in ("withdrawal", "follow-up hold", "quarantine", "hold")):
-        return _live_stock_sale_block("medical_hold", "Pig medical status blocks SAM Live stock sales.", withdrawal_clear)
+    if medical_status != "clear":
+        return _live_stock_sale_block("medical_evidence_not_clear", "Medical eligibility is not affirmatively clear.", withdrawal_clear, withdrawal_state)
     if hold_status in {"hold", "held", "yes", "true", "medical", "health", "withdrawal"}:
         return _live_stock_sale_block("sale_hold", "Pig is held from sale by source truth.", withdrawal_clear)
     if latest_weight_kg is None:
@@ -3897,10 +3923,12 @@ def _live_stock_sale_eligibility(pig, thresholds=None):
         "weight_band": derived_band,
         "suggested_price_category": f"{category}|{derived_band}",
         "withdrawal_clear": withdrawal_clear,
+        "withdrawal_evidence_state": withdrawal_state,
+        "evidence_complete": True,
     }
 
 
-def _live_stock_sale_block(code, reason, withdrawal_clear=None):
+def _live_stock_sale_block(code, reason, withdrawal_clear=None, withdrawal_evidence_state="unknown"):
     return {
         "eligible": False,
         "reason": reason,
@@ -3909,20 +3937,18 @@ def _live_stock_sale_block(code, reason, withdrawal_clear=None):
         "weight_band": "",
         "suggested_price_category": code,
         "withdrawal_clear": withdrawal_clear or "",
+        "withdrawal_evidence_state": withdrawal_evidence_state or "unknown",
+        "evidence_complete": False,
     }
 
 
+def _live_stock_withdrawal_evidence_state(pig):
+    state = to_clean_string(pig.get("withdrawal_evidence_state", "")).lower()
+    return state if state in {"not_applicable", "cleared", "hold", "unknown"} else "unknown"
+
+
 def _live_stock_withdrawal_clear(pig):
-    explicit = to_clean_string(pig.get("withdrawal_clear", ""))
-    if explicit:
-        return "Yes" if explicit.lower() in {"yes", "true", "1", "clear"} else "No"
-    withdrawal_end = to_clean_string(pig.get("current_withdrawal_end_date", pig.get("withdrawal_end_date", "")))
-    if withdrawal_end:
-        parsed_end = parse_sheet_date(withdrawal_end)
-        if not parsed_end:
-            return "No"
-        return "Yes" if parsed_end <= datetime.now().date() else "No"
-    return "Yes"
+    return "Yes" if _live_stock_withdrawal_evidence_state(pig) in {"not_applicable", "cleared"} else "No"
 
 
 def _live_stock_media_references(pig):
@@ -4608,8 +4634,13 @@ def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
             "health_status": to_clean_string(row.get("Health_Status", "")),
             "medical_status": to_clean_string(row.get("Medical_Status", "")),
             "media_references": row.get("Media_References", []) if isinstance(row.get("Media_References", []), list) else [],
-            "reserved_status": sales_meta.get("reserved_status", ""),
-            "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
+            "reserved_status": sales_meta.get("reserved_status") or to_clean_string(row.get("Reserved_Status", "")),
+            "reserved_for_order_id": sales_meta.get("reserved_for_order_id") or to_clean_string(row.get("Reserved_For_Order_ID", "")),
+            "allocation_evidence_state": to_clean_string(row.get("Allocation_Evidence_State", "")),
+            "allocation_order_status": to_clean_string(row.get("Allocation_Order_Status", "")),
+            "allocation_line_status": to_clean_string(row.get("Allocation_Line_Status", "")),
+            "allocation_query_status": supabase_inputs.get("allocation_query_status", "") if supabase_inputs is not None else "",
+            "withdrawal_evidence_state": to_clean_string(row.get("Withdrawal_Evidence_State", "")),
             "sale_category": sales_meta.get("sale_category", ""),
             "suggested_price_category": sales_meta.get("suggested_price_category", ""),
             "existing_link": sales_meta.get("reserved_for_order_id", ""),
