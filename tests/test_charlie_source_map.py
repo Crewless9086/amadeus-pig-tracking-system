@@ -338,21 +338,11 @@ class CharlieSourceMapTests(unittest.TestCase):
         self.assertIn("pig_observation_management_intent", keys)
         self.assertNotIn("pig_allocation_herdmaster", keys)
         self.assertIn(
-            "modules/pig_weights/pig_observation_capture_service.py",
-            packet["required_inspection_paths"],
-        )
-        self.assertIn(
-            "tests/test_pig_observation_capture_postgres.py",
-            packet["required_inspection_paths"],
-        )
-        self.assertIn(
             "supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql",
             packet["required_inspection_paths"],
         )
-        self.assertIn(
-            "/api/pig-weights/pigs/<pig_id>/management-intents",
-            packet["required_routes"],
-        )
+        self.assertEqual([], packet["required_routes"])
+        self.assertEqual([], next(section for section in packet["matched_sections"] if section["key"] == "pig_observation_management_intent")["code_paths"])
 
     def test_vault_retrieval_includes_implementation_sources(self):
         mission = {
