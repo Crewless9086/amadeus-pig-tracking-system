@@ -59,7 +59,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             },
             availability_loader=lambda: [],
             llm_drafter=lambda *_args: {
-                "reply_text": "Thanks, I understand you are ready to proceed. Which payment method would you prefer?",
+                "reply_text": (
+                    "Hi Charl, thanks for letting me know you're ready. "
+                    "The price is around R1,000. How would you prefer to handle payment?"
+                ),
                 "confidence": 0.99,
             },
         )
@@ -70,13 +73,19 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft_protected_repair")
         self.assertEqual(
             decision["llm_draft_review"]["status"],
-            "repaired_with_reservation_owner_authority_acknowledgement",
+            "composed_with_reservation_owner_authority_acknowledgement",
         )
         self.assertTrue(decision["facts"]["order_commitment"])
         self.assertTrue(decision["facts"]["reservation_requested"])
         self.assertEqual(decision["conversation_plan"]["goal"], "buy_live_stock: 1 Grower 25-29 kg")
-        self.assertLess(reply.index("farm must approve"), reply.index("payment method"))
+        self.assertTrue(reply.startswith("Hi Charl, thanks"))
+        self.assertLess(reply.index("farm must approve"), reply.index("The price"))
+        self.assertLess(reply.index("farm must approve"), reply.index("handle payment"))
         self.assertIn("before I can confirm or reserve it", reply)
+        self.assertEqual(reply.lower().count("hi charl"), 1)
+        self.assertEqual(reply.lower().count("thanks"), 1)
+        self.assertEqual(reply.lower().count("reservation request"), 1)
+        self.assertEqual(reply.count("R1,000"), 1)
         self.assertEqual(reply.count("?"), 1)
         self.assertEqual(
             decision["conversation_review"]["protected_action_reasons"],
@@ -87,6 +96,31 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(decision["creates_order"])
         self.assertFalse(decision["reserves_stock"])
         self.assertFalse(decision["changes_stock"])
+
+    def test_afrikaans_reservation_composition_keeps_greeting_and_one_question(self):
+        reply = sam_live_stock_runtime._compose_reservation_protection_reply(
+            {"customer_language": "afrikaans"},
+            "Hallo Charl, dankie dat jy laat weet het jy is gereed. Die prys is ongeveer R1 000. Hoe wil jy betaling hanteer?",
+        )
+
+        self.assertTrue(reply.startswith("Hallo Charl, dankie"))
+        self.assertLess(reply.index("plaas moet die presiese vark goedkeur"), reply.index("Die prys"))
+        self.assertIn("voordat ek dit vir jou kan bevestig of reserveer", reply)
+        self.assertEqual(reply.lower().count("hallo charl"), 1)
+        self.assertEqual(reply.lower().count("dankie"), 1)
+        self.assertEqual(reply.lower().count("reserveringsversoek"), 1)
+        self.assertEqual(reply.count("R1 000"), 1)
+        self.assertEqual(reply.count("?"), 1)
+
+    def test_partial_reservation_wording_uses_one_complete_localized_reply(self):
+        reply = sam_live_stock_runtime._compose_reservation_protection_reply(
+            {"customer_language": "english"},
+            "Hi Charl, I noted the reservation. Can you confirm payment?",
+        )
+
+        self.assertEqual(reply.lower().count("reservation request"), 1)
+        self.assertEqual(reply.count("?"), 0)
+        self.assertIn("farm must approve the exact pig", reply)
 
     def test_llm_payment_security_implication_is_rejected(self):
         result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(

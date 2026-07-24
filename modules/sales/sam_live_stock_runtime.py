@@ -218,10 +218,10 @@ def handle_sam_live_stock_chatwoot_inbound(
         and not _reservation_protection_explained(decision.get("suggested_reply_text"))
     ):
         original_reply = decision.get("suggested_reply_text", "")
-        decision["suggested_reply_text"] = _repair_reservation_protection_reply(facts, original_reply)
+        decision["suggested_reply_text"] = _compose_reservation_protection_reply(facts, original_reply)
         decision["reply_source"] = "llm_live_stock_reply_draft_protected_repair"
         decision["llm_draft_review"] = {
-            "status": "repaired_with_reservation_owner_authority_acknowledgement",
+            "status": "composed_with_reservation_owner_authority_acknowledgement",
             "original_reply_text": original_reply,
         }
         conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
@@ -2585,13 +2585,37 @@ def _reservation_protection_explained(reply):
     return has_reservation_acknowledgement and has_farm_approval and has_before_confirmation
 
 
-def _repair_reservation_protection_reply(facts, llm_reply):
+def _compose_reservation_protection_reply(facts, llm_reply):
     acknowledgement = _localized_reply(
         facts,
         "I have noted your reservation request. The farm must approve the exact pig before I can confirm or reserve it for you.",
         "Ek het jou reserveringsversoek aangeteken. Die plaas moet die presiese vark goedkeur voordat ek dit vir jou kan bevestig of reserveer.",
     )
-    return _clean_multiline(f"{acknowledgement} {_clean_multiline(llm_reply, 1300)}", 1800)
+    original = _clean_multiline(llm_reply, 1300)
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?])\s+", original) if item.strip()]
+    has_partial_reservation_wording = bool(re.search(r"\b(reserv\w*|reserveer\w*|reservering\w*)\b", original.lower()))
+    question_count = original.count("?")
+    if not sentences or has_partial_reservation_wording or question_count > 1:
+        return _complete_reservation_protection_reply(facts)
+
+    opening_pattern = re.compile(
+        r"^(?:hi|hello|hey|good morning|good afternoon|hallo|goeie m[oô]re|goeiem[oô]re|goeie middag|"
+        r"thanks|thank you|dankie|got it|i understand|ek verstaan)\b",
+        re.IGNORECASE,
+    )
+    if opening_pattern.search(sentences[0]):
+        composed = [sentences[0], acknowledgement, *sentences[1:]]
+    else:
+        composed = [acknowledgement, *sentences]
+    return _clean_multiline(" ".join(composed), 1800)
+
+
+def _complete_reservation_protection_reply(facts):
+    return _localized_reply(
+        facts,
+        "Thanks for letting me know you are ready. I have noted your reservation request, but the farm must approve the exact pig before I can confirm or reserve it for you.",
+        "Dankie dat jy laat weet het jy is gereed. Ek het jou reserveringsversoek aangeteken, maar die plaas moet die presiese vark goedkeur voordat ek dit vir jou kan bevestig of reserveer.",
+    )
 
 
 def _live_stock_price_rule_for_packet(facts, match_packet):
