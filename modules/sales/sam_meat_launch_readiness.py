@@ -1,4 +1,4 @@
-﻿"""Fail-closed, review-only SAM Meat launch packet.
+"""Fail-closed, review-only SAM Meat launch packet.
 
 The deployed route does not call this module yet. Default readers use existing
 production-connected meat sources; tests inject narrow fakes.
@@ -82,7 +82,7 @@ def _messages(messages):
     for index, row in enumerate(messages if isinstance(messages, list) else [messages]):
         if isinstance(row, dict):
             content = str(row.get("content") or "").strip()
-            role = str(row.get("role") or row.get("sender_type") or "customer").lower()
+            role = str(row.get("role") or row.get("sender_type") or row.get("message_type") or "customer").lower()
             message_id = str(row.get("message_id") or row.get("event_id") or "").strip()
         else:
             content, role, message_id = str(row or "").strip(), "customer", ""
@@ -191,10 +191,10 @@ def _read_catalogue(**_):
 
 def _read_pricing(**_):
     result, code = list_meat_price_book_entries(limit=100); entries = result.get("price_entries", []) if isinstance(result, dict) else []
-    usable = code == 200 and bool(entries)
+    usable = code == 200 and result.get("source") == "supabase" and bool(entries)
     times = [str(e.get("effective_from") or "") for e in entries if isinstance(e, dict)]
     return {"usable": usable, "status": "active_price_book", "freshness": "source_effective_time_required",
-        "effective_at": max(times or [""]), "blockers": [] if usable else ["active_price_book_unavailable"],
+        "effective_at": max(times or [""]), "blockers": [] if usable else ["authoritative_supabase_price_book_unavailable"],
         "data": {"entries": entries if usable else [], "mode": result.get("mode", "") if isinstance(result, dict) else ""}}
 
 
