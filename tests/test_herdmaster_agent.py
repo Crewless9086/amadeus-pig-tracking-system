@@ -92,6 +92,16 @@ class HerdmasterAgentTests(unittest.TestCase):
         self.assertEqual(result["availability_rows"][0]["pig_id"], "P1")
         self.assertEqual(result["sources"][0]["name"], "sales_availability")
 
+    def test_sales_availability_preserves_excluded_rows_for_owner_evidence(self):
+        result = run_herdmaster({"capability": "sales_availability"}, readers={
+            "sales_availability": lambda: [
+                {"pig_id": "P1", "available_for_sale": True},
+                {"pig_id": "P2", "available_for_sale": False, "live_stock_sale_reason": "stale weight"},
+            ],
+        })
+        self.assertEqual(result["metrics"], {"candidate_count": 1, "considered_count": 2, "excluded_count": 1})
+        self.assertEqual([row["pig_id"] for row in result["availability_rows"]], ["P1", "P2"])
+
     def test_sales_availability_reuses_bounded_live_snapshot(self):
         calls = {"count": 0}
         def load():

@@ -106,6 +106,7 @@ def classify_message_intent(text: str, attachments: list[Mapping[str, Any]] | No
     if is_order_commitment_confirmation(lower):
         return "order_commitment"
     rules = [
+        ("reservation_request", r"\b(reserve|reservation|hold (?:it|them|the)|book (?:it|them|the)|reserveer|hou (?:dit|hulle|die))\b"),
         ("job_request", r"\b(job|work|hiring|employment|cv|werk|werksgeleentheid)\b"),
         ("location_question", r"\b(where|location|province|address|waar|ligging|adres|provinsie)\b"),
         ("business_question", r"\b(business|advert|ad|about you|what do you do|besigheid|advertensie|vertel my meer)\b"),

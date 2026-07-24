@@ -1713,6 +1713,52 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(summary["matched_count"], 1)
         self.assertEqual(summary["matched_sample"][0]["pig_id"], "PIG-10KG")
 
+    def test_exact_animal_preselection_ranks_evidence_and_keeps_proposals_read_only(self):
+        rows = [
+            {
+                "pig_id": "PIG-29", "tag_number": "29", "sex": "Male", "status": "Active", "on_farm": "Yes",
+                "purpose": "Sale", "available_for_sale": "Yes", "live_stock_sale_eligible": True,
+                "sale_category": "Grower", "current_weight_kg": 29, "latest_weight_date": "2026-07-23",
+                "days_since_weight": 1, "current_pen_id": "PEN-G1", "health_status": "Clear",
+                "medical_status": "Clear", "withdrawal_clear": "Yes", "live_stock_sale_reason": "eligible",
+            },
+            {
+                "pig_id": "PIG-27", "tag_number": "27", "sex": "Male", "status": "Active", "on_farm": "Yes",
+                "purpose": "Sale", "available_for_sale": "Yes", "live_stock_sale_eligible": True,
+                "sale_category": "Grower", "current_weight_kg": 27, "latest_weight_date": "2026-07-24",
+                "days_since_weight": 0, "current_pen_id": "PEN-G1", "health_status": "Clear",
+                "medical_status": "Clear", "withdrawal_clear": "Yes", "live_stock_sale_reason": "eligible",
+            },
+            {
+                "pig_id": "PIG-28-HELD", "sex": "Male", "status": "Active", "on_farm": "Yes", "purpose": "Sale",
+                "available_for_sale": "No", "live_stock_sale_eligible": False, "current_weight_kg": 28,
+                "latest_weight_date": "2026-07-24", "reserved_status": "Allocated", "reserved_for_order_id": "ORD-X",
+                "live_stock_sale_reason": "Pig is already reserved or linked to an order.",
+            },
+        ]
+        facts = {"quantity": 2, "category": "grower", "sex": "male", "weight_range": "25-29 kg"}
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(rows, facts)
+        match = sam_live_stock_runtime.build_live_stock_match_packet(facts, availability)
+        draft = sam_live_stock_runtime.build_live_stock_draft_order_packet(
+            {"conversation_id": "proof", "customer_name": "Sanitized", "channel": "chatwoot"}, facts, match,
+        )
+        price = sam_live_stock_runtime.build_live_stock_price_answer_packet(facts, match)
+        owner = sam_live_stock_runtime.build_live_stock_prepared_owner_action_bundle(
+            {"conversation_id": "proof"}, facts, {}, draft, price, match,
+        )
+        self.assertEqual(match["selected_pig_ids"], ["PIG-27", "PIG-29"])
+        self.assertEqual(match["excluded_count"], 1)
+        self.assertEqual(match["excluded_sample"][0]["reserved_for_order_id"], "ORD-X")
+        self.assertEqual(match["matched_sample"][0]["latest_weight_date"], "2026-07-24")
+        self.assertEqual(match["matched_sample"][0]["current_pen_id"], "PEN-G1")
+        self.assertEqual([line["pig_id"] for line in draft["proposed_order_lines"]], ["PIG-27", "PIG-29"])
+        self.assertTrue(all(line["proposal_only"] for line in draft["proposed_order_lines"]))
+        self.assertFalse(draft["exact_animal_assignment_written"])
+        self.assertNotIn("pig_id", draft["sync_payload"]["requested_items"][0])
+        self.assertEqual(owner["stock_preselection"]["selected_pig_ids"], ["PIG-27", "PIG-29"])
+        self.assertEqual(owner["stock_preselection"]["excluded"][0]["reserved_for_order_id"], "ORD-X")
+        self.assertFalse(owner["stock_preselection"]["exact_animal_assignment_written"])
+
     def test_handle_inbound_builds_read_only_decision_without_writes_or_sends(self):
         def intake_loader(_conversation_id):
             return {

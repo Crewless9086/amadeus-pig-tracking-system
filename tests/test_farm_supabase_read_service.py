@@ -7,6 +7,39 @@ from modules.pig_weights import pig_weights_service
 
 
 class FarmSupabaseReadServiceTests(unittest.TestCase):
+    def test_allocation_inputs_join_active_order_assignments(self):
+        calls = []
+        def fetch(sql, params=(), connect_factory=None):
+            calls.append(sql)
+            if "from public.order_lines line" in sql:
+                return [{"pig_id": "PIG-1", "order_id": "ORD-1", "line_status": "Draft"}]
+            if "from public.pig_medical_events" in sql:
+                return []
+            if "from public.pig_weight_events" in sql:
+                return []
+            if "from public.litters" in sql or "from public.pens" in sql:
+                return []
+            return []
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
+            farm_supabase_read_service, "_fetch_all", side_effect=fetch,
+        ):
+            result = farm_supabase_read_service.get_allocation_input_rows()
+        self.assertEqual(result["overview_rows"][0]["Reserved_Status"], "Allocated")
+        self.assertEqual(result["overview_rows"][0]["Reserved_For_Order_ID"], "ORD-1")
+        self.assertTrue(any("customer_order.order_status" in sql for sql in calls))
+        allocation_sql = next(sql for sql in calls if "from public.order_lines line" in sql)
+        self.assertIn("lower(btrim(line.line_status))", allocation_sql)
+        self.assertIn("lower(btrim(customer_order.order_status))", allocation_sql)
+        self.assertIn("'cancelled', 'collected'", allocation_sql)
+        self.assertIn("'cancelled', 'completed', 'rejected'", allocation_sql)
+
+    def test_allocation_read_failure_fails_closed(self):
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(
+            farm_supabase_read_service, "_fetch_all", side_effect=RuntimeError("order table unavailable"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "order table unavailable"):
+                farm_supabase_read_service.get_allocation_input_rows()
+
     def test_pig_summary_maps_current_state_to_existing_frontend_shape(self):
         row = {
             "pig_id": "PIG-1",
