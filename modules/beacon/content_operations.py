@@ -233,18 +233,22 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
             ],
             "rule": "Unknown, inferred, stale, or unreferenced outcomes remain unknown and cannot support positive performance claims.",
         },
-        "delivery_state": {
-            "built": True,
-            "merged": False,
-            "deployed": False,
-            "operational": False,
-            "operational_detail": {
-                "owner_read_only_packet_generation": True,
-                "current_opportunity_read": (
-                    evidence.get("opportunities", {}).get("availability") == "usable"
-                ),
-                "publishing": False,
+        "capability_status": {
+            "evidence_sources_read": {
+                name: evidence.get(name, {}).get("availability", "unknown")
+                for name in (
+                    "historical_posts",
+                    "performance_events",
+                    "media_assets",
+                    "opportunities",
+                )
             },
+            "packet_generated": True,
+            "current_opportunity_read": (
+                evidence.get("opportunities", {}).get("availability") == "usable"
+            ),
+            "writes_performed": False,
+            "publishing_performed": False,
         },
         "authority": deepcopy(AUTHORITY),
     }

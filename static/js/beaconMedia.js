@@ -134,7 +134,7 @@
     reviewResult: byId("beacon_media_review_result"),
     contentState: byId("beacon_content_state"),
     contentRefresh: byId("beacon_content_refresh"),
-    deliveryState: byId("beacon_delivery_state"),
+    runtimeState: byId("beacon_runtime_state"),
     rankedIdeas: byId("beacon_ranked_ideas"),
     contentEvidence: byId("beacon_content_evidence"),
     packetStatus: byId("beacon_packet_status"),
@@ -214,14 +214,21 @@
     const quality = payload.evidence_quality || {};
     const packet = payload.owner_review_packet || {};
     const media = packet.media || {};
-    const delivery = payload.delivery_state || {};
+    const runtime = payload.runtime_status || {};
     const ideas = payload.ranked_ideas || [];
     elements.contentState.textContent = payload.status === "owner_review_packet_ready"
       ? "Owner-review draft ready"
       : safe(payload.status, "Evidence incomplete");
     elements.contentState.dataset.state = payload.status === "owner_review_packet_ready" ? "ready" : "blocked";
-    elements.deliveryState.innerHTML = ["built", "merged", "deployed", "operational"].map((key) => (
-      `<span data-state="${delivery[key] ? "ready" : "blocked"}"><strong>${escapeHtml(key)}</strong>${delivery[key] ? "Yes" : "No"}</span>`
+    elements.runtimeState.innerHTML = [
+      ["Endpoint available", runtime.endpoint_available],
+      ["Owner read authenticated", runtime.owner_authenticated_read_succeeded],
+      ["Packet generated", runtime.packet_generated],
+      ["Current opportunity read", runtime.current_opportunity_read],
+      ["Writes performed", runtime.writes_performed],
+      ["Publishing performed", runtime.publishing_performed],
+    ].map(([label, value]) => (
+      `<span data-state="${value ? "ready" : "blocked"}"><strong>${escapeHtml(label)}</strong>${value ? "Yes" : "No"}</span>`
     )).join("");
     elements.rankedIdeas.innerHTML = ideas.length ? ideas.map((idea, index) => `
       <article class="beacon-recommendation-card">

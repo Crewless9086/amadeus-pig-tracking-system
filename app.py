@@ -127,7 +127,13 @@ def beacon_content_operations_read():
     if guard:
         return guard
     evidence = gather_beacon_content_evidence()
-    return jsonify(build_beacon_content_candidate(evidence)), 200
+    candidate = build_beacon_content_candidate(evidence)
+    candidate["runtime_status"] = {
+        "endpoint_available": True,
+        "owner_authenticated_read_succeeded": True,
+        **candidate.pop("capability_status"),
+    }
+    return jsonify(candidate), 200
 
 
 @app.route("/sales/meat-driver")

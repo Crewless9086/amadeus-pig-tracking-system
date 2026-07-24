@@ -27,6 +27,10 @@ AUTHORITY = {
     "changes_stock": False,
     "writes_farm_lifecycle": False,
 }
+DEPENDENCY_CACHE_TTL_SECONDS = 15.0
+DEPENDENCY_COOLDOWN_SECONDS = 2.0
+_DEPENDENCY_FLIGHTS = {}
+_DEPENDENCY_FLIGHTS_LOCK = threading.Lock()
 
 
 def _normalized_allocation_thresholds(value):
@@ -265,6 +269,8 @@ def build_beacon_opportunity_cards(
     meat_leads=None,
     now=None,
     dependency_timeout_seconds=8,
+    dependency_cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    dependency_cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
     allocation_loader=None,
     live_intakes_loader=None,
     meat_leads_loader=None,
@@ -286,7 +292,11 @@ def build_beacon_opportunity_cards(
         "meat_sales_leads": meat_leads_loader or _load_meat_leads,
     }
     loaded, dependency_diagnostics = _bounded_dependency_reads(
-        supplied, loaders, dependency_timeout_seconds
+        supplied,
+        loaders,
+        dependency_timeout_seconds,
+        dependency_cache_ttl_seconds,
+        dependency_cooldown_seconds,
     )
     allocation = loaded["allocation_readiness"]
     live_intakes = loaded["sam_live_stock_intakes"]
@@ -412,42 +422,29 @@ def _load_meat_leads():
     return None
 
 
-def _bounded_dependency_reads(supplied, loaders, timeout_seconds):
+def _bounded_dependency_reads(
+    supplied,
+    loaders,
+    timeout_seconds,
+    cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
+):
     try:
         timeout = max(0.01, min(float(timeout_seconds), 30.0))
     except (TypeError, ValueError):
         timeout = 8.0
+    try:
+        cache_ttl = max(0.0, min(float(cache_ttl_seconds), 60.0))
+    except (TypeError, ValueError):
+        cache_ttl = DEPENDENCY_CACHE_TTL_SECONDS
+    try:
+        cooldown = max(0.0, min(float(cooldown_seconds), 30.0))
+    except (TypeError, ValueError):
+        cooldown = DEPENDENCY_COOLDOWN_SECONDS
     results = dict(supplied)
     diagnostics = {}
-    completed = {}
-    lock = threading.Lock()
-    threads = {}
+    tokens = {}
     started = time_module.monotonic()
-
-    def worker(name, loader):
-        dependency_started = time_module.monotonic()
-        try:
-            value = loader()
-            outcome = {
-                "value": value,
-                "status": "completed",
-                "duration_ms": round(
-                    (time_module.monotonic() - dependency_started) * 1000, 2
-                ),
-                "error_type": "",
-            }
-        except Exception as exc:
-            outcome = {
-                "value": None,
-                "status": "failed",
-                "duration_ms": round(
-                    (time_module.monotonic() - dependency_started) * 1000, 2
-                ),
-                "error_type": exc.__class__.__name__,
-            }
-        with lock:
-            completed[name] = outcome
-
     for name, value in supplied.items():
         if value is not None:
             diagnostics[name] = {
@@ -457,34 +454,142 @@ def _bounded_dependency_reads(supplied, loaders, timeout_seconds):
                 "timeout_seconds": timeout,
             }
             continue
+        tokens[name] = _begin_dependency_flight(
+            name, loaders[name], cache_ttl, cooldown, timeout
+        )
+
+    deadline = started + timeout
+    for name, token in tokens.items():
+        value, diagnostic = _finish_dependency_flight(
+            name, token, deadline, timeout
+        )
+        results[name] = value
+        diagnostics[name] = diagnostic
+    return results, diagnostics
+
+
+def _begin_dependency_flight(name, loader, cache_ttl, cooldown, timeout):
+    now = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.setdefault(name, {
+            "generation": 0,
+            "thread": None,
+            "value": None,
+            "completed_at": 0.0,
+            "duration_ms": 0.0,
+            "error_type": "",
+            "cooldown_until": 0.0,
+        })
+        cache_age = now - state["completed_at"] if state["completed_at"] else None
+        if state["value"] is not None and cache_age is not None and cache_age <= cache_ttl:
+            return {
+                "mode": "cached",
+                "value": state["value"],
+                "cache_age_ms": round(cache_age * 1000, 2),
+                "cache_ttl_seconds": cache_ttl,
+                "timeout_seconds": timeout,
+            }
+        thread = state.get("thread")
+        if thread is not None and thread.is_alive():
+            return {"mode": "in_progress", "timeout_seconds": timeout}
+        if now < state.get("cooldown_until", 0.0):
+            return {
+                "mode": "cooling_down",
+                "cooldown_remaining_ms": round(
+                    (state["cooldown_until"] - now) * 1000, 2
+                ),
+                "timeout_seconds": timeout,
+            }
+        state["generation"] += 1
+        generation = state["generation"]
         thread = threading.Thread(
-            target=worker,
-            args=(name, loaders[name]),
+            target=_dependency_worker,
+            args=(name, generation, loader, cooldown),
             daemon=True,
             name=f"beacon-{name}",
         )
-        threads[name] = thread
+        state["thread"] = thread
         thread.start()
-
-    deadline = started + timeout
-    for name, thread in threads.items():
-        thread.join(max(0.0, deadline - time_module.monotonic()))
-        outcome = completed.get(name)
-        if outcome is None:
-            results[name] = None
-            diagnostics[name] = {
-                "status": "timed_out",
-                "duration_ms": round(timeout * 1000, 2),
-                "availability": "inaccessible",
-                "timeout_seconds": timeout,
-            }
-            continue
-        results[name] = outcome["value"]
-        diagnostics[name] = {
-            "status": outcome["status"],
-            "duration_ms": outcome["duration_ms"],
-            "availability": "usable" if outcome["value"] is not None else "unavailable",
+        return {
+            "mode": "started",
+            "generation": generation,
+            "thread": thread,
             "timeout_seconds": timeout,
-            "error_type": outcome["error_type"],
         }
-    return results, diagnostics
+
+
+def _dependency_worker(name, generation, loader, cooldown):
+    started = time_module.monotonic()
+    try:
+        value = loader()
+        status = "usable" if value is not None else "failed"
+        error_type = ""
+    except Exception as exc:
+        value = None
+        status = "failed"
+        error_type = exc.__class__.__name__
+    finished = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.get(name)
+        if not state or state["generation"] != generation:
+            return
+        state["thread"] = None
+        state["duration_ms"] = round((finished - started) * 1000, 2)
+        state["error_type"] = error_type
+        if status == "usable":
+            state["value"] = value
+            state["completed_at"] = finished
+            state["cooldown_until"] = 0.0
+        else:
+            state["value"] = None
+            state["completed_at"] = 0.0
+            state["cooldown_until"] = finished + cooldown
+
+
+def _finish_dependency_flight(name, token, deadline, timeout):
+    mode = token["mode"]
+    if mode == "cached":
+        return token["value"], {
+            "status": "cached",
+            "duration_ms": 0.0,
+            "cache_age_ms": token["cache_age_ms"],
+            "cache_ttl_seconds": token["cache_ttl_seconds"],
+            "availability": "usable",
+            "timeout_seconds": timeout,
+        }
+    if mode in {"in_progress", "cooling_down"}:
+        diagnostic = {
+            "status": mode,
+            "duration_ms": 0.0,
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+        }
+        if mode == "cooling_down":
+            diagnostic["cooldown_remaining_ms"] = token["cooldown_remaining_ms"]
+        return None, diagnostic
+    thread = token["thread"]
+    thread.join(max(0.0, deadline - time_module.monotonic()))
+    if thread.is_alive():
+        return None, {
+            "status": "timed_out",
+            "duration_ms": round(timeout * 1000, 2),
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+            "single_flight_active": True,
+        }
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = dict(_DEPENDENCY_FLIGHTS.get(name, {}))
+    value = state.get("value")
+    status = "usable" if value is not None else "failed"
+    return value, {
+        "status": status,
+        "duration_ms": state.get("duration_ms", 0.0),
+        "availability": "usable" if value is not None else "unavailable",
+        "timeout_seconds": timeout,
+        "error_type": state.get("error_type", ""),
+    }
+
+
+def _reset_dependency_singleflight_for_tests():
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        _DEPENDENCY_FLIGHTS.clear()

@@ -36,6 +36,16 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["owner_review_packet"]["review_status"], "awaiting_owner_review")
+        self.assertNotIn("delivery_state", payload)
+        self.assertNotIn("built", payload["runtime_status"])
+        self.assertNotIn("merged", payload["runtime_status"])
+        self.assertNotIn("deployed", payload["runtime_status"])
+        self.assertNotIn("operational", payload["runtime_status"])
+        self.assertTrue(payload["runtime_status"]["endpoint_available"])
+        self.assertTrue(payload["runtime_status"]["owner_authenticated_read_succeeded"])
+        self.assertTrue(payload["runtime_status"]["packet_generated"])
+        self.assertFalse(payload["runtime_status"]["writes_performed"])
+        self.assertFalse(payload["runtime_status"]["publishing_performed"])
         self.assertFalse(payload["learning_capture"]["writes_performed"])
         for flag in (
             "posts_publicly",
@@ -58,8 +68,10 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
 
         self.assertIn('id="beacon_ranked_ideas"', template)
         self.assertIn('id="beacon_packet_copy"', template)
-        self.assertIn('id="beacon_delivery_state"', template)
+        self.assertIn('id="beacon_runtime_state"', template)
+        self.assertNotIn('id="beacon_delivery_state"', template)
         self.assertIn('fetchJson("/api/beacon/content-operations")', script)
+        self.assertNotIn('["built", "merged", "deployed", "operational"]', script)
 
 
 if __name__ == "__main__":
