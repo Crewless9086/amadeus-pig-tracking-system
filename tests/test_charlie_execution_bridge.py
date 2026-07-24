@@ -6185,6 +6185,39 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "mission_decomposition_children_missing")
         update.assert_not_called()
 
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_decomposed_parent_reconciliation_is_not_repaused(self, update):
+        mission = {
+            "mission_id": "PARENT",
+            "status": "in_progress",
+            "metadata": {
+                "pre_builder_scope": {
+                    "split_required": True,
+                    "linked_children": [{"mission_id": "CHILD-1"}],
+                },
+                "review_packet": {
+                    "return_to_stage": "evidence_reviewer",
+                    "mission_family_reconciliation": {
+                        "version": "charlie_family_reconciliation_v1",
+                        "child_states": {"CHILD-1": "deployed"},
+                    },
+                },
+                "mission_coordinator": {
+                    "status": "reconciling_children",
+                    "child_mission_ids": ["CHILD-1"],
+                    "completed_child_ids": ["CHILD-1"],
+                },
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "evidence_reviewer",
+                    "preserved_agents": ["builder"],
+                },
+            },
+        }
+        result = execution_bridge._pause_decomposed_parent(mission)
+        self.assertIsNone(result)
+        update.assert_not_called()
+
     @patch("modules.charlie.execution_bridge.update_mission_vault", return_value=({"success": True}, 200))
     def test_architect_resolution_durably_enables_builder_only_when_every_gate_is_resolved(self, update):
         mission = {"mission_id": "M-GATES", "metadata": {"pre_builder_scope": {

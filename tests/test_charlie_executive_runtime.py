@@ -283,11 +283,24 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
         self.assertEqual(unfinished["notification_outbox_id"], "OUT-1")
 
     @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
-    @patch("modules.charlie.executive_runtime.transition_mission_review_state", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))
     @patch("modules.charlie.executive_runtime.get_mission")
-    def test_family_reconciliation_resumes_parent_at_evidence_reviewer(self, get_mission, transition, _complete):
+    def test_family_reconciliation_resumes_parent_at_evidence_reviewer(self, get_mission, update, _complete):
         get_mission.side_effect = [
-            ({"mission": {"mission_id": "PARENT", "status": "paused", "metadata": {"review_packet": {}}}}, 200),
+            ({"mission": {
+                "mission_id": "PARENT",
+                "status": "paused",
+                "agent_workflow": [
+                    {"agent": "planner", "status": "complete", "completed_at": "2026-07-01T00:00:00Z"},
+                    {"agent": "builder", "status": "complete", "completed_at": "2026-07-01T00:01:00Z"},
+                    {"agent": "evidence_reviewer", "status": "complete", "completed_at": "2026-07-01T00:02:00Z"},
+                    {"agent": "reviewer", "status": "complete", "completed_at": "2026-07-01T00:03:00Z"},
+                ],
+                "metadata": {
+                    "review_packet": {},
+                    "mission_coordinator": {"status": "waiting_children", "child_mission_ids": ["CHILD"]},
+                },
+            }}, 200),
             ({"mission": {"mission_id": "CHILD", "status": "done"}}, 200),
         ]
         from modules.charlie.executive_runtime import _execute_family_reconciliation
@@ -295,8 +308,20 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
             {"mission_id": "PARENT", "child_states": {"CHILD": "done"}}, "CMD", None, None,
         )
         self.assertEqual(result["status"], "family_reconciled")
-        self.assertEqual(transition.call_args.args[1], "approved")
-        self.assertEqual(transition.call_args.args[2]["return_to_stage"], "evidence_reviewer")
+        self.assertEqual(update.call_args.kwargs["status"], "approved")
+        payload = update.call_args.args[1]
+        self.assertEqual(payload["review_packet"]["return_to_stage"], "evidence_reviewer")
+        self.assertEqual(payload["mission_coordinator"]["status"], "reconciling_children")
+        self.assertEqual(payload["targeted_invalidation"]["target_agent"], "evidence_reviewer")
+        self.assertEqual(
+            [(item["agent"], item["status"]) for item in payload["agent_workflow"]],
+            [
+                ("planner", "complete"),
+                ("builder", "complete"),
+                ("evidence_reviewer", "active"),
+                ("reviewer", "pending"),
+            ],
+        )
 
 
 if __name__ == "__main__":

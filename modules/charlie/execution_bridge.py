@@ -2118,6 +2118,29 @@ def _pause_decomposed_parent(mission, database_url=None, connect_factory=None):
     metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
     family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
     scope = metadata.get("pre_builder_scope") if isinstance(metadata.get("pre_builder_scope"), dict) else {}
+    review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    reconciliation = (
+        review_packet.get("mission_family_reconciliation")
+        if isinstance(review_packet.get("mission_family_reconciliation"), dict)
+        else {}
+    )
+    coordinator = (
+        metadata.get("mission_coordinator")
+        if isinstance(metadata.get("mission_coordinator"), dict)
+        else {}
+    )
+    targeted = (
+        metadata.get("targeted_invalidation")
+        if isinstance(metadata.get("targeted_invalidation"), dict)
+        else {}
+    )
+    if (
+        reconciliation.get("version") == "charlie_family_reconciliation_v1"
+        and str(review_packet.get("return_to_stage") or "").strip().lower() == "evidence_reviewer"
+        and str(coordinator.get("status") or "").strip().lower() == "reconciling_children"
+        and str(targeted.get("target_agent") or "").strip().lower() == "evidence_reviewer"
+    ):
+        return None
     if family.get("parent_mission_id") or not scope.get("split_required"):
         return None
     children = [
