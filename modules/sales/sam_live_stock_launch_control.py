@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import time
 from datetime import datetime, timezone
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -33,15 +34,33 @@ ORDER_RESERVATION_ENABLED_ENV = "SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED"
 OWNER_CARD_EVENT_SOURCE = "sam_live_stock_owner_card_lifecycle"
 OWNER_CARD_ACTIVE_STATES = {"active", "with_owner", "action_failed", "action_claimed"}
 HUMAN_AUDIT_CLASSIFICATIONS = ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")
+HUMAN_AUDIT_LANE_COUNTS = ("lane_unknown", "excluded_non_livestock")
+HUMAN_AUDIT_CHATWOOT_INBOX_ENV = "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID"
+HUMAN_AUDIT_MAX_PAGES = 20
+HUMAN_AUDIT_REQUEST_TIMEOUT_SECONDS = 10
+HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS = 30
 
 
 class SamLiveStockHumanAuditError(RuntimeError):
-    def __init__(self, status, stage, *, http_status=502, error_type="UpstreamEvidenceError"):
+    def __init__(self, status, stage, *, http_status=502, error_type="UpstreamEvidenceError", diagnostics=None):
         super().__init__(status)
         self.status = status
         self.stage = stage
         self.http_status = http_status
         self.error_type = error_type
+        self.diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+
+
+class SamLiveStockHumanAuditConversations(list):
+    def __init__(self, values, *, coverage, pages_read, expected_count, duplicates_removed):
+        super().__init__(values)
+        self.audit_diagnostics = {
+            "coverage": coverage,
+            "pages_read": pages_read,
+            "filtered_conversation_count": expected_count,
+            "duplicates_removed": duplicates_removed,
+            "pagination_complete": True,
+        }
 
 AUTHORITY_FLAGS = {
     "sends_customer_message": False,
@@ -1158,9 +1177,15 @@ def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=No
         **diagnostics,
         "chatwoot_request_status": "completed",
         "conversation_items_received": len(conversations),
+        **(
+            conversations.audit_diagnostics
+            if isinstance(conversations, SamLiveStockHumanAuditConversations)
+            else {"coverage": "injected_reader", "pagination_complete": True}
+        ),
     }
     now = now or datetime.now(timezone.utc)
     rows = []
+    lane_counts = {key: 0 for key in HUMAN_AUDIT_LANE_COUNTS}
     for item_index, conversation in enumerate(conversations):
         if not isinstance(conversation, dict):
             return _human_audit_failure(
@@ -1188,6 +1213,7 @@ def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=No
         attrs = raw_attrs or {}
         if _clean(attrs.get("conversation_mode"), 20).upper() != "HUMAN":
             continue
+        loaded = None
         if review_loader is not None or chatwoot_reader is None:
             try:
                 loaded_result = (review_loader or get_latest_sam_live_stock_review_event_for_conversation)(conversation.get("id"))
@@ -1220,17 +1246,30 @@ def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=No
                     diagnostics,
                     item_index=item_index,
                 )
+        lane_proof = _qualify_human_audit_livestock_lane(conversation, loaded)
+        if not lane_proof["authoritative_livestock_lane"]:
+            lane_counts[lane_proof["classification"]] += 1
+            continue
         try:
-            rows.append(_classify_human_conversation(conversation, now))
+            row = _classify_human_conversation(conversation, now)
+            row["authoritative_livestock_lane"] = True
+            row["lane_proof"] = lane_proof["proof"]
+            row["action_contract"] = _human_audit_action_contract()
+            rows.append(row)
         except Exception as exc:
             return _human_audit_failure(exc, "classification", diagnostics, item_index=item_index)
     return {
         "success": True,
         "status": "sam_live_stock_human_audit_loaded",
         "evidence_available": True,
+        "evidence_complete": True,
         "conversation_count_known": True,
         "conversations": rows,
-        "counts": {key: sum(1 for row in rows if row["classification"] == key) for key in HUMAN_AUDIT_CLASSIFICATIONS},
+        "counts": {
+            **{key: sum(1 for row in rows if row["classification"] == key) for key in HUMAN_AUDIT_CLASSIFICATIONS},
+            **lane_counts,
+        },
+        "action_contract": _human_audit_action_contract(),
         "diagnostics": diagnostics,
         "bulk_reset_allowed": False,
         "writes_performed": False,
@@ -1277,6 +1316,52 @@ def _classify_human_conversation(conversation, now):
     }
 
 
+def _qualify_human_audit_livestock_lane(conversation, loaded_review=None):
+    conversation = conversation if isinstance(conversation, dict) else {}
+    attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    labels = conversation.get("labels") if isinstance(conversation.get("labels"), list) else []
+    normalized_labels = {_clean(label, 80).lower() for label in labels}
+    lane = _clean(attrs.get("sales_lane"), 80).lower()
+    explicit_meat = lane in {"meat_sales", "sam_meat", "meat"} or bool(normalized_labels & {"sam_meat", "meat_sales"})
+    loaded_review = loaded_review if isinstance(loaded_review, dict) else {}
+    event = loaded_review.get("event") if isinstance(loaded_review.get("event"), dict) else {}
+    review_conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
+    exact_conversation_id = _clean(conversation.get("id"), 100)
+    persisted_review = bool(
+        loaded_review.get("success")
+        and review_conversation_id
+        and review_conversation_id == exact_conversation_id
+    )
+    preloaded_review = not loaded_review and isinstance(conversation.get("sam_live_stock_review"), dict)
+    backend_native = bool(
+        lane == "live_stock_sales"
+        and "sam_live_stock" in normalized_labels
+        and _clean(attrs.get("sam_live_stock_gate"), 120)
+    )
+    if explicit_meat and (persisted_review or preloaded_review or backend_native):
+        return {"authoritative_livestock_lane": False, "classification": "lane_unknown", "proof": "conflicting_lane_evidence"}
+    if explicit_meat:
+        return {"authoritative_livestock_lane": False, "classification": "excluded_non_livestock", "proof": "explicit_meat_lane"}
+    if persisted_review:
+        return {"authoritative_livestock_lane": True, "classification": "livestock", "proof": "persisted_livestock_review"}
+    if preloaded_review:
+        return {"authoritative_livestock_lane": True, "classification": "livestock", "proof": "injected_livestock_review"}
+    if backend_native:
+        return {"authoritative_livestock_lane": True, "classification": "livestock", "proof": "backend_native_livestock_takeover"}
+    return {"authoritative_livestock_lane": False, "classification": "lane_unknown", "proof": "livestock_lane_unproven"}
+
+
+def _human_audit_action_contract():
+    return {
+        "exact_conversation_identity_required": True,
+        "authoritative_livestock_lane_required": True,
+        "exact_telegram_card_identity_required_for_cleanup": True,
+        "owner_authority_required": True,
+        "protected_write_gates_required": True,
+        "automatic_reset_allowed": False,
+    }
+
+
 def _age_hours(value, now):
     try:
         if isinstance(value, (int, float)):
@@ -1312,8 +1397,12 @@ def _human_audit_configuration_diagnostics(source):
         "chatwoot_token_configured": bool(
             _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
         ),
-        "bounded_pages": 20,
-        "request_timeout_seconds": 10,
+        "chatwoot_inbox_id_configured": bool(_clean(source.get(HUMAN_AUDIT_CHATWOOT_INBOX_ENV), 80)),
+        "filter_endpoint": "conversations/filter",
+        "filter_method": "POST_read_query",
+        "bounded_pages": HUMAN_AUDIT_MAX_PAGES,
+        "request_timeout_seconds": HUMAN_AUDIT_REQUEST_TIMEOUT_SECONDS,
+        "total_timeout_seconds": HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS,
         "secrets_exposed": False,
     }
 
@@ -1354,13 +1443,18 @@ def _human_audit_failure(exc, default_stage, diagnostics, *, item_index=None):
         stage = default_stage
         status_code = 500
         error_type = exc.__class__.__name__
-    safe_diagnostics = {**diagnostics, "chatwoot_request_status": "failed"}
+    safe_diagnostics = {
+        **diagnostics,
+        **(exc.diagnostics if isinstance(exc, SamLiveStockHumanAuditError) else {}),
+        "chatwoot_request_status": "failed",
+    }
     result = {
         "success": False,
         "status": status,
         "failure_stage": stage,
         "error_type": _clean(error_type, 80) or "UnknownError",
         "evidence_available": False,
+        "evidence_complete": False,
         "conversation_count_known": False,
         "conversations": [],
         "counts": None,
@@ -1387,10 +1481,11 @@ def _json_safe_timestamp(value):
     return None
 
 
-def _chatwoot_read_conversations(source):
+def _chatwoot_read_conversations(source, *, monotonic=None):
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
     account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
     token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    inbox_id = _clean(source.get(HUMAN_AUDIT_CHATWOOT_INBOX_ENV), 80)
     if not token:
         raise SamLiveStockHumanAuditError(
             "sam_live_stock_human_audit_chatwoot_not_configured",
@@ -1398,62 +1493,201 @@ def _chatwoot_read_conversations(source):
             http_status=503,
             error_type="ConfigurationUnavailable",
         )
-    conversations = []
-    for page in range(1, 21):
-        request = urllib_request.Request(
-            f"{base_url}/api/v1/accounts/{account_id}/conversations?status=all&page={page}",
-            headers={"api_access_token": token}, method="GET",
+    if not inbox_id or not inbox_id.isdigit():
+        raise SamLiveStockHumanAuditError(
+            "sam_live_stock_human_audit_inbox_not_configured",
+            "chatwoot_configuration",
+            http_status=503,
+            error_type="InboxConfigurationUnavailable",
+            diagnostics={
+                "coverage": "unavailable",
+                "filter_supported": True,
+                "inbox_filter_required": True,
+            },
         )
-        with urllib_request.urlopen(request, timeout=10) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
+    conditions = [
+        {
+            "attribute_key": "conversation_mode",
+            "filter_operator": "equal_to",
+            "values": ["HUMAN"],
+            "query_operator": "AND",
+        }
+    ]
+    coverage = "sam_livestock_inbox_human_custom_attribute"
+    conditions.append({
+        "attribute_key": "inbox_id",
+        "filter_operator": "equal_to",
+        "values": [int(inbox_id)],
+        "query_operator": None,
+    })
+    body = json.dumps({"payload": conditions}, separators=(",", ":")).encode("utf-8")
+    clock = monotonic or time.monotonic
+    started_at = clock()
+    conversations_by_id = {}
+    duplicates_removed = 0
+    expected_count = None
+    pages_read = 0
+    for page in range(1, HUMAN_AUDIT_MAX_PAGES + 1):
+        elapsed = clock() - started_at
+        remaining = HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS - elapsed
+        if remaining <= 0:
+            raise _human_audit_pagination_error(
+                "sam_live_stock_human_audit_total_timeout",
+                "TotalTimeoutReached",
+                pages_read,
+                len(conversations_by_id),
+                duplicates_removed,
+                coverage,
+                http_status=504,
+            )
+        request_timeout = min(HUMAN_AUDIT_REQUEST_TIMEOUT_SECONDS, remaining)
+        request = urllib_request.Request(
+            f"{base_url}/api/v1/accounts/{account_id}/conversations/filter?page={page}",
+            data=body,
+            headers={"api_access_token": token, "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib_request.urlopen(request, timeout=request_timeout) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
+        except urllib_error.HTTPError as exc:
+            if exc.code in {400, 422}:
+                raise SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_filter_unsupported",
+                    "chatwoot_filter_contract",
+                    http_status=502,
+                    error_type="FilterUnsupported",
+                    diagnostics={
+                        "coverage": "unavailable",
+                        "filter_supported": False,
+                        "fallback_coverage": "known_sam_evidence_only_not_executed",
+                    },
+                ) from None
+            raise
+        pages_read = page
         if not isinstance(payload, dict):
             raise SamLiveStockHumanAuditError(
                 "sam_live_stock_human_audit_malformed_response",
                 "chatwoot_response_shape",
                 error_type=type(payload).__name__,
             )
-        data = payload.get("data")
-        if not isinstance(data, dict):
-            raise SamLiveStockHumanAuditError(
-                "sam_live_stock_human_audit_malformed_response",
-                "chatwoot_response_shape",
-                error_type=type(data).__name__,
-            )
-        batch = data.get("payload")
+        batch = payload.get("payload")
         if not isinstance(batch, list):
             raise SamLiveStockHumanAuditError(
                 "sam_live_stock_human_audit_pagination_invalid",
                 "chatwoot_pagination",
                 error_type=type(batch).__name__,
             )
-        conversations.extend(batch)
-        if not batch:
-            break
-        meta = data.get("meta")
-        if meta is not None and not isinstance(meta, dict):
+        meta = payload.get("meta")
+        if not isinstance(meta, dict):
             raise SamLiveStockHumanAuditError(
                 "sam_live_stock_human_audit_pagination_invalid",
                 "chatwoot_pagination",
                 error_type=type(meta).__name__,
             )
-        meta = meta or {}
         all_count = meta.get("all_count")
-        if all_count is not None and (not isinstance(all_count, int) or all_count < 0):
+        if not isinstance(all_count, int) or isinstance(all_count, bool) or all_count < 0:
             raise SamLiveStockHumanAuditError(
                 "sam_live_stock_human_audit_pagination_invalid",
                 "chatwoot_pagination",
                 error_type=type(all_count).__name__,
             )
-        if isinstance(all_count, int) and len(conversations) >= all_count:
-            break
-        if page == 20:
-            raise SamLiveStockHumanAuditError(
-                "sam_live_stock_human_audit_pagination_limit_reached",
-                "chatwoot_pagination",
-                http_status=503,
-                error_type="PaginationLimitReached",
+        if expected_count is None:
+            expected_count = all_count
+        elif all_count != expected_count:
+            raise _human_audit_pagination_error(
+                "sam_live_stock_human_audit_pagination_meta_changed",
+                "PaginationMetadataChanged",
+                pages_read,
+                len(conversations_by_id),
+                duplicates_removed,
+                coverage,
             )
-    return conversations
+        for conversation in batch:
+            if not isinstance(conversation, dict):
+                raise SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_conversation_shape_invalid",
+                    "conversation_item",
+                    error_type=type(conversation).__name__,
+                )
+            conversation_id = conversation.get("id")
+            if not isinstance(conversation_id, (str, int)) or isinstance(conversation_id, bool) or not str(conversation_id).strip():
+                raise SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_conversation_shape_invalid",
+                    "conversation_item",
+                    error_type="ConversationIdInvalid",
+                )
+            attributes = conversation.get("custom_attributes")
+            if not isinstance(attributes, dict) or _clean(attributes.get("conversation_mode"), 20).upper() != "HUMAN":
+                raise SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_filter_mismatch",
+                    "chatwoot_filter_validation",
+                    error_type="CustomAttributeFilterMismatch",
+                )
+            if inbox_id and _clean(conversation.get("inbox_id"), 80) != inbox_id:
+                raise SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_filter_mismatch",
+                    "chatwoot_filter_validation",
+                    error_type="InboxFilterMismatch",
+                )
+            key = str(conversation_id)
+            if key in conversations_by_id:
+                duplicates_removed += 1
+            else:
+                conversations_by_id[key] = conversation
+        if len(conversations_by_id) == expected_count:
+            return SamLiveStockHumanAuditConversations(
+                list(conversations_by_id.values()),
+                coverage=coverage,
+                pages_read=pages_read,
+                expected_count=expected_count,
+                duplicates_removed=duplicates_removed,
+            )
+        if len(conversations_by_id) > expected_count or not batch:
+            raise _human_audit_pagination_error(
+                "sam_live_stock_human_audit_partial_evidence",
+                "IncompleteFilteredEvidence",
+                pages_read,
+                len(conversations_by_id),
+                duplicates_removed,
+                coverage,
+            )
+        if clock() - started_at >= HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS:
+            raise _human_audit_pagination_error(
+                "sam_live_stock_human_audit_total_timeout",
+                "TotalTimeoutReached",
+                pages_read,
+                len(conversations_by_id),
+                duplicates_removed,
+                coverage,
+                http_status=504,
+            )
+    raise _human_audit_pagination_error(
+        "sam_live_stock_human_audit_pagination_limit_reached",
+        "PaginationLimitReached",
+        pages_read,
+        len(conversations_by_id),
+        duplicates_removed,
+        coverage,
+        http_status=503,
+    )
+
+
+def _human_audit_pagination_error(status, error_type, pages_read, partial_count, duplicates_removed, coverage, *, http_status=502):
+    return SamLiveStockHumanAuditError(
+        status,
+        "chatwoot_pagination",
+        http_status=http_status,
+        error_type=error_type,
+        diagnostics={
+            "coverage": "incomplete_server_filter",
+            "requested_coverage": coverage,
+            "pages_read": pages_read,
+            "partial_filtered_count": partial_count,
+            "duplicates_removed": duplicates_removed,
+            "pagination_complete": False,
+        },
+    )
 
 
 def build_sam_live_stock_launch_readiness(environ=None):
