@@ -152,8 +152,9 @@
         </div>
       </div>
 
-      <section class="lifecycle-action-panel">
-        <div class="section-subtitle">Lifecycle History</div>
+      <section class="lifecycle-action-panel lifecycle-snapshot-panel">
+        <div class="section-subtitle">Current Lifecycle Snapshot</div>
+        <p class="lifecycle-panel-intro">These are the current canonical lifecycle fields for this pig. They describe the latest recorded state; they are not an event log.</p>
         <div class="detail-grid">
           <div class="detail-card">
             <span class="detail-label">Wean Date</span>
@@ -179,6 +180,14 @@
             <span class="detail-label">Linked Exit Order</span>
             <span id="detail_exit_order" class="detail-value">-</span>
           </div>
+        </div>
+      </section>
+
+      <section class="lifecycle-audit-panel" aria-labelledby="lifecycle_audit_heading">
+        <div class="section-subtitle" id="lifecycle_audit_heading">Lifecycle Audit History</div>
+        <p class="lifecycle-panel-intro">Recorded lifecycle events are retained separately from the current snapshot. Missing exit details remain visibly unknown and are not inferred.</p>
+        <div id="lifecycle_audit_history" class="lifecycle-audit-list" aria-live="polite">
+          <div class="lifecycle-audit-empty">Loading lifecycle audit history...</div>
         </div>
       </section>
 

@@ -95,6 +95,12 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
                 "father_pig_id": "BOAR-1",
                 "father_tag_number": "F1",
                 "notes": "Healthy",
+                "wean_date": date(2026, 5, 26),
+                "wean_weight_kg": 12.5,
+                "exit_date": date(2026, 6, 1),
+                "exit_reason": "Sold to Abattoir",
+                "exit_order_id": "SALE-1",
+                "carcass_weight_kg": 68,
             }
 
         with patch.object(farm_supabase_read_service, "_fetch_one", side_effect=fake_fetch_one):
@@ -105,7 +111,42 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(detail["mother_tag_number"], "M1")
         self.assertEqual(detail["father_tag_number"], "F1")
         self.assertEqual(detail["general_notes"], "Healthy")
+        self.assertEqual(detail["lifecycle"]["wean_date"], "2026-05-26")
+        self.assertEqual(detail["lifecycle"]["exit_date"], "2026-06-01")
+        self.assertEqual(detail["lifecycle"]["exit_reason"], "Sold to Abattoir")
+        self.assertFalse(detail["lifecycle_audit"]["available"])
         self.assertEqual(detail["source"], "supabase_canonical")
+
+    def test_pig_scopes_keep_active_list_clean_and_archive_terminal_off_farm_pigs(self):
+        rows = [
+            {"pig_id": "ACTIVE", "status": "Active", "on_farm": True},
+            {"pig_id": "SOLD", "status": "Sold", "on_farm": False, "exit_date": date(2026, 7, 1), "exit_reason": "Livestock sale"},
+            {"pig_id": "BAD", "status": "Sold", "on_farm": True},
+            {"pig_id": "HOLD", "status": "Removed", "on_farm": False},
+        ]
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=rows):
+            active = farm_supabase_read_service.get_pigs("active")
+            archived = farm_supabase_read_service.get_pigs("archived")
+
+        self.assertEqual([pig["pig_id"] for pig in active], ["ACTIVE"])
+        self.assertEqual([pig["pig_id"] for pig in archived], ["SOLD", "HOLD"])
+        self.assertEqual(archived[0]["exit_date"], "2026-07-01")
+
+    def test_lifecycle_reconciliation_reports_missing_fields_without_proposing_values(self):
+        rows = [
+            {"pig_id": "SOLD-1", "tag_number": "10", "status": "Sold", "on_farm": False, "exit_date": None, "exit_reason": ""},
+            {"pig_id": "DEAD-1", "tag_number": "11", "status": "Dead", "on_farm": False, "exit_date": date(2026, 7, 2), "exit_reason": "Died"},
+            {"pig_id": "ACTIVE-1", "tag_number": "12", "status": "Active", "on_farm": True},
+        ]
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=rows):
+            report = farm_supabase_read_service.get_lifecycle_exit_reconciliation_report()
+
+        self.assertEqual(report["write_mode"], "read_only")
+        self.assertEqual(report["terminal_record_count"], 2)
+        self.assertEqual(report["missing_exit_field_count"], 1)
+        self.assertEqual(report["records"][0]["pig_id"], "SOLD-1")
+        self.assertTrue(report["records"][0]["missing_exit_date"])
+        self.assertTrue(report["records"][0]["missing_exit_reason"])
 
     def test_movement_history_maps_pen_names_and_current_pen(self):
         def fake_fetch_all(sql, params=(), connect_factory=None):

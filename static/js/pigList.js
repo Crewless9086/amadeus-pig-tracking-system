@@ -9,8 +9,34 @@ const pigWeighedCount = document.getElementById("pig_weighed_count");
 const pigNoWeightCount = document.getElementById("pig_no_weight_count");
 const pigPenCount = document.getElementById("pig_pen_count");
 const pigVisibleCount = document.getElementById("pig_visible_count");
+const pigActiveView = document.getElementById("pig_active_view");
+const pigArchiveView = document.getElementById("pig_archive_view");
+const pigListDescription = document.getElementById("pig_list_description");
+const pigListScopeNotice = document.getElementById("pig_list_scope_notice");
+const pigTotalLabel = document.getElementById("pig_total_label");
 
 let allPigs = [];
+const pigListView = new URLSearchParams(window.location.search).get("view") === "archive" ? "archive" : "active";
+
+function isArchiveView() {
+  return pigListView === "archive";
+}
+
+function configureListView() {
+  const archive = isArchiveView();
+  document.title = archive ? "Amadeus Pig Retained History" : "Amadeus Pig List";
+  pigActiveView.classList.toggle("pig-list-view-tab-active", !archive);
+  pigArchiveView.classList.toggle("pig-list-view-tab-active", archive);
+  pigActiveView.setAttribute("aria-current", archive ? "false" : "page");
+  pigArchiveView.setAttribute("aria-current", archive ? "page" : "false");
+  pigListDescription.textContent = archive
+    ? "Find exited animal records without mixing them into the on-farm herd."
+    : "Scan the active on-farm herd by pen, weight status, and profile detail.";
+  pigListScopeNotice.textContent = archive
+    ? "Retained history shows exited pigs only. Empty exit dates or reasons are left as unknown for owner-reviewed reconciliation; this page does not change farm records."
+    : "On-farm herd is the default operational view. Retained history is kept separately so exited animals remain discoverable without appearing in the working herd list.";
+  pigTotalLabel.textContent = archive ? "Total Exited" : "Total Active";
+}
 
 function formatTagNumber(value) {
   const raw = String(value || "").trim();
@@ -129,7 +155,12 @@ function appendDetail(parent, label, value) {
 function buildPigCard(pig) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
+  const returnTo = `/pigs${isArchiveView() ? "?view=archive" : ""}`;
   card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
+  card.href += `?${new URLSearchParams({
+    return_to: returnTo,
+    return_label: isArchiveView() ? "Back to Retained History" : "Back to On-farm Herd",
+  }).toString()}`;
 
   const topRow = document.createElement("div");
   topRow.className = "pig-list-top";
@@ -169,12 +200,23 @@ function buildPigCard(pig) {
   statusRow.appendChild(penBadge);
   statusRow.appendChild(weightBadge);
 
+  if (isArchiveView()) {
+    const exitBadge = document.createElement("span");
+    exitBadge.className = "pig-list-badge pig-list-badge-archive";
+    exitBadge.textContent = displayValue(pig.status, "Exited");
+    statusRow.appendChild(exitBadge);
+  }
+
   const detailGrid = document.createElement("div");
   detailGrid.className = "pig-list-detail-grid";
   appendDetail(detailGrid, "Latest Weight", formatWeight(pig));
   appendDetail(detailGrid, "Weight Date", formatWeightDate(pig));
   appendDetail(detailGrid, "Stage", stageLabel(pig));
   appendDetail(detailGrid, "Purpose", displayValue(pig.purpose, "Not set"));
+  if (isArchiveView()) {
+    appendDetail(detailGrid, "Exit Date", displayValue(pig.exit_date, "Unknown"));
+    appendDetail(detailGrid, "Exit Reason", displayValue(pig.exit_reason, "Unknown"));
+  }
 
   const hoverDetail = document.createElement("div");
   hoverDetail.className = "pig-list-hover-detail";
@@ -200,7 +242,7 @@ function renderPigList(pigs) {
     pigListContainer.innerHTML = `
       <div class="empty-state pig-list-empty">
         <strong>No pigs found.</strong>
-        <span>Try another search, pen, stage, or weight filter.</span>
+        <span>${isArchiveView() ? "No exited pigs are available in retained history." : "Try another search, pen, stage, or weight filter."}</span>
       </div>
     `;
     return;
@@ -252,16 +294,29 @@ function filterPigs() {
 async function loadPigList() {
   clearListMessage();
   renderTotals([]);
+  configureListView();
 
   try {
-    const response = await fetch("/api/pig-weights/pigs");
+    const scope = isArchiveView() ? "archived" : "active";
+    const response = await fetch(`/api/pig-weights/pigs?scope=${encodeURIComponent(scope)}`);
     const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load pig list.");
+    }
+    const confirmedScope = data.scope || (scope === "active" ? "active" : "");
+    if (confirmedScope !== scope) {
+      throw new Error("The server did not confirm the requested herd view.");
+    }
 
     allPigs = sortPigsForDisplay(data.pigs || []);
     populateFilters(allPigs);
     renderPigList(allPigs);
   } catch (error) {
-    showListMessage("Could not load pig list.", "error");
+    const message = isArchiveView()
+      ? "Retained history is not available until the canonical archive reader is ready. The on-farm herd remains unchanged."
+      : "Could not load the on-farm herd.";
+    showListMessage(message, "error");
   }
 }
 

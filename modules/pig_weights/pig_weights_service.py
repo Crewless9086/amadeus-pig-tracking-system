@@ -3715,11 +3715,18 @@ def get_parent_options():
     }
 
 
-def get_active_pigs():
-    supabase_result = _try_supabase_read(farm_supabase_read_service.get_active_pigs)
+def get_pigs(scope="active"):
+    if scope not in {"active", "archived"}:
+        raise ValueError("scope must be 'active' or 'archived'.")
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_pigs, scope)
     if supabase_result is not None:
         return supabase_result
+    if scope == "archived":
+        raise RuntimeError("Archived pig history requires the canonical Supabase reader.")
+    return _get_active_pigs_from_sheets()
 
+
+def _get_active_pigs_from_sheets():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -3747,6 +3754,17 @@ def get_active_pigs():
             })
 
     return active_pigs
+
+
+def get_active_pigs():
+    return get_pigs("active")
+
+
+def get_lifecycle_exit_reconciliation_report():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_lifecycle_exit_reconciliation_report)
+    if supabase_result is not None:
+        return supabase_result
+    raise RuntimeError("Lifecycle reconciliation requires the canonical Supabase reader.")
 
 
 def get_sales_availability():

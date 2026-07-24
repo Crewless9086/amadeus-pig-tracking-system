@@ -225,6 +225,12 @@ def _pig_summary(row):
         "weight_band": _weight_band(row.get("current_weight_kg")),
         "is_sale_ready": "",
         "reserved_status": "",
+        "wean_date": _date_text(row.get("wean_date")),
+        "wean_weight_kg": _float_or_none(row.get("wean_weight_kg")),
+        "exit_date": _date_text(row.get("exit_date")),
+        "exit_reason": _text(row.get("exit_reason")),
+        "exit_order_id": _text(row.get("exit_order_id")),
+        "carcass_weight_kg": _float_or_none(row.get("carcass_weight_kg")),
     }
 
 
@@ -266,7 +272,10 @@ def _current_state_rows(connect_factory=None):
             pig.father_pig_id,
             pig.wean_date,
             pig.wean_weight_kg,
+            pig.exit_date,
             pig.exit_reason,
+            pig.exit_order_id,
+            pig.carcass_weight_kg,
             pig.notes
         from public.pig_current_state state
         join public.pigs pig on pig.pig_id = state.pig_id
@@ -396,12 +405,34 @@ def get_dashboard_summary(today=None, connect_factory=None):
     }
 
 
-def get_active_pigs(connect_factory=None):
+_ARCHIVED_PIG_STATUSES = {"sold", "slaughtered", "dead", "died", "removed", "disposed", "completed_sale"}
+
+
+def _normalized_status(row):
+    return _text(row.get("status")).lower().replace("-", "_").replace(" ", "_")
+
+
+def get_pigs(scope="active", connect_factory=None):
+    if scope not in {"active", "archived"}:
+        raise ValueError("scope must be 'active' or 'archived'.")
+
+    rows = _current_state_rows(connect_factory=connect_factory)
+    if scope == "active":
+        return [
+            _pig_summary(row)
+            for row in rows
+            if _normalized_status(row) == "active" and row.get("on_farm") is True
+        ]
+
     return [
         _pig_summary(row)
-        for row in _current_state_rows(connect_factory=connect_factory)
-        if _text(row.get("status")).lower() == "active" and row.get("on_farm") is True
+        for row in rows
+        if row.get("on_farm") is False and _normalized_status(row) in _ARCHIVED_PIG_STATUSES
     ]
+
+
+def get_active_pigs(connect_factory=None):
+    return get_pigs("active", connect_factory=connect_factory)
 
 
 def get_pig_detail(pig_id, connect_factory=None):
@@ -412,6 +443,12 @@ def get_pig_detail(pig_id, connect_factory=None):
             pig.mother_pig_id,
             pig.father_pig_id,
             pig.notes,
+            pig.wean_date,
+            pig.wean_weight_kg,
+            pig.exit_date,
+            pig.exit_reason,
+            pig.exit_order_id,
+            pig.carcass_weight_kg,
             mother.tag_number as mother_tag_number,
             father.tag_number as father_tag_number
         from public.pig_current_state state
@@ -439,16 +476,61 @@ def get_pig_detail(pig_id, connect_factory=None):
         "lifecycle": {
             "status": _text(row.get("status")),
             "on_farm": _yes_no(row.get("on_farm")),
-            "wean_date": "",
-            "wean_weight_kg": None,
-            "exit_date": "",
-            "exit_reason": "",
-            "exit_order_id": "",
-            "carcass_weight_kg": None,
+            "wean_date": _date_text(row.get("wean_date")),
+            "wean_weight_kg": _float_or_none(row.get("wean_weight_kg")),
+            "exit_date": _date_text(row.get("exit_date")),
+            "exit_reason": _text(row.get("exit_reason")),
+            "exit_order_id": _text(row.get("exit_order_id")),
+            "carcass_weight_kg": _float_or_none(row.get("carcass_weight_kg")),
+        },
+        # The current schema has no dedicated immutable lifecycle-event table.
+        # Keep the snapshot and audit concepts distinct rather than inventing events.
+        "lifecycle_audit": {
+            "available": False,
+            "events": [],
+            "unavailable_reason": "No dedicated lifecycle event log is available in the canonical read model.",
         },
         "source": "supabase_canonical",
     })
     return pig
+
+
+def get_lifecycle_exit_reconciliation_report(connect_factory=None):
+    """Return a read-only owner-review queue for incomplete terminal records."""
+    terminal_rows = [
+        row for row in _current_state_rows(connect_factory=connect_factory)
+        if _normalized_status(row) in {"sold", "slaughtered", "dead", "died"}
+    ]
+    missing = []
+    for row in terminal_rows:
+        exit_date = _date_text(row.get("exit_date"))
+        exit_reason = _text(row.get("exit_reason"))
+        if exit_date and exit_reason:
+            continue
+        missing.append({
+            "pig_id": _text(row.get("pig_id")),
+            "tag_number": _text(row.get("tag_number")),
+            "status": _text(row.get("status")),
+            "on_farm": _yes_no(row.get("on_farm")),
+            "exit_date": exit_date,
+            "exit_reason": exit_reason,
+            "missing_exit_date": not bool(exit_date),
+            "missing_exit_reason": not bool(exit_reason),
+        })
+    return {
+        "success": True,
+        "source": "supabase_canonical",
+        "write_mode": "read_only",
+        "terminal_statuses_audited": ["Sold", "Slaughtered", "Dead", "Died"],
+        "terminal_record_count": len(terminal_rows),
+        "missing_exit_field_count": len(missing),
+        "records": missing,
+        "owner_review_plan": [
+            "Review each listed record against existing source evidence before proposing a correction.",
+            "Do not infer an exit date or reason from status, notes, or surrounding records.",
+            "Apply any approved corrections only through a separately authorized, auditable lifecycle workflow.",
+        ],
+    }
 
 
 def get_pens(connect_factory=None):
