@@ -1267,9 +1267,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_reviewed_llm_clarification_sends_when_routine_reply_gate_is_enabled(self):
         sends = []
         result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
-            inbound_payload(content="Hi Sam, I am looking for weaners."),
+            inbound_payload(content="Hi Sam, I am looking for weaners.", conversation={"id": 2401, "inbox": {"id": 77, "channel_type": "Channel::Whatsapp"}}),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID": "2401",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
                 "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
                 "OPENAI_API_KEY": "test-key",
@@ -1279,8 +1283,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             availability_loader=lambda: [],
             llm_drafter=lambda *_args: {
                 "reply_text": "I can help with weaners. How many are you looking for?",
-                "confidence": 0.94,
+                "confidence": 0.99,
             },
+            routine_delivery_claim=lambda *_args: {"success": True, "created": True, "review_event_id": "REVIEW-1"},
             chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
         )
 
@@ -1299,7 +1304,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_fact_aware_fallback_never_auto_sends_even_when_gate_is_enabled(self):
         sends = []
         delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
-            {"conversation_id": "1826"},
+            {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"},
             {
                 "should_reply": True,
                 "suggested_reply_text": "I can check the price and stock facts.",
@@ -1307,7 +1312,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "llm_draft": {"used": False, "status": "llm_disabled"},
             },
             {"safe_to_send": True, "escalation_required": False},
-            {"SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1"},
+            {
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID": "1826",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
+            },
             chatwoot_sender=lambda *_args: sends.append(True),
         )
 
@@ -1318,9 +1329,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_reservation_request_keeps_conversation_with_sam_but_requests_owner_authority(self):
         sends = []
         result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
-            inbound_payload(content="Can you reserve 2 female weaners for me?"),
+            inbound_payload(content="Can you reserve 2 female weaners for me?", conversation={"id": 2401, "inbox": {"id": 77, "channel_type": "Channel::Whatsapp"}}),
             environ={
                 "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID": "2401",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
                 "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
                 "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
                 "OPENAI_API_KEY": "test-key",
@@ -1330,8 +1345,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             availability_loader=lambda: [],
             llm_drafter=lambda *_args: {
                 "reply_text": "I can capture the request and ask the farm to approve the exact animals before I confirm anything.",
-                "confidence": 0.94,
+                "confidence": 0.99,
             },
+            routine_delivery_claim=lambda *_args: {"success": True, "created": True, "review_event_id": "REVIEW-2"},
             chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
         )
 
@@ -1346,6 +1362,41 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(decision["owner_gate_required"])
         self.assertFalse(result["reserves_stock"])
         self.assertFalse(result["creates_order"])
+
+    def test_autoreply_canary_withholds_identity_mismatch_low_confidence_and_duplicate(self):
+        source = {
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID": "1826",
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID": "99",
+            "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID": "77",
+        }
+        base_inbound = {"conversation_id": "1826", "contact_id": "99", "inbox_id": "77"}
+        base_decision = {
+            "should_reply": True,
+            "suggested_reply_text": "How many growers do you need?",
+            "reply_source": "llm_live_stock_reply_draft",
+            "llm_draft": {"used": True, "confidence": 0.99},
+            "sales_lane": "live_stock_sales",
+            "facts": {"sales_lane": "live_stock_sales", "lane_confidence": 0.99, "message_intent": "buying_intent", "media_review_required": False},
+        }
+        review = {"safe_to_send": True, "escalation_required": False}
+        mismatch = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {**base_inbound, "conversation_id": "other"}, base_decision.copy(), review, source,
+            delivery_claim=lambda *_args: {"success": True, "created": True}, chatwoot_sender=lambda *_args: {},
+        )
+        low = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            base_inbound, {**base_decision, "llm_draft": {"used": True, "confidence": 0.70}}, review, source,
+            delivery_claim=lambda *_args: {"success": True, "created": True}, chatwoot_sender=lambda *_args: {},
+        )
+        duplicate = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            base_inbound, base_decision.copy(), review, source,
+            delivery_claim=lambda *_args: {"success": True, "created": False, "review_event_id": "REVIEW-X"}, chatwoot_sender=lambda *_args: {},
+        )
+        self.assertEqual(mismatch["status"], "routine_reply_canary_identity_mismatch")
+        self.assertEqual(low["status"], "routine_reply_llm_confidence_blocked")
+        self.assertEqual(duplicate["status"], "routine_reply_duplicate_withheld")
+        self.assertFalse(mismatch["canary"]["contains_identity_values"])
 
     def test_llm_context_includes_real_chatwoot_history_messages(self):
         calls = []

@@ -2190,7 +2190,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
-        handle_inbound.assert_called_once_with({"event": "message_created"})
+        handle_inbound.assert_called_once_with(
+            {"event": "message_created"},
+            routine_delivery_claim=sales_transaction_routes._claim_sam_live_stock_routine_delivery,
+            routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
+        )
+
+    def test_sam_live_stock_routine_delivery_claim_uses_append_only_review_insert(self):
+        with patch.object(
+            sales_transaction_routes,
+            "build_sam_live_stock_review_event",
+            return_value={"review_event_id": "REV-CANARY"},
+        ) as build, patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({
+                "success": True,
+                "created": False,
+                "status": "sam_live_stock_review_event_already_recorded",
+                "review_event_id": "REV-CANARY",
+                "conversation_event_count": 2,
+            }, 200),
+        ) as record:
+            claim = sales_transaction_routes._claim_sam_live_stock_routine_delivery(
+                {"conversation_id": "1826"}, {"facts": {"category": "grower"}}, {"safe_to_send": True},
+            )
+        self.assertTrue(claim["success"])
+        self.assertFalse(claim["created"])
+        self.assertFalse(claim["contains_secret_values"])
+        build.assert_called_once()
+        record.assert_called_once_with({"review_event_id": "REV-CANARY"})
+
+    def test_sam_live_stock_delivery_outcome_is_separate_append_only_event(self):
+        with patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({"success": True, "created": True, "review_event_id": "DELIVERY-1"}, 201),
+        ) as record:
+            result = sales_transaction_routes._record_sam_live_stock_delivery_outcome(
+                {"created": True, "review_event_id": "CLAIM-1"},
+                {"delivery_status": "chatwoot_send_confirmed", "chatwoot_confirmed": True, "status_code": 200},
+            )
+        event = record.call_args.args[0]
+        self.assertTrue(result["success"])
+        self.assertEqual(event["event_source"], "sam_live_stock_autoreply_delivery_outcome")
+        self.assertEqual(event["review_json"]["delivery_status"], "chatwoot_send_confirmed")
+        self.assertTrue(event["review_json"]["automatic_retry_prohibited"])
+        serialized = str(event)
+        self.assertNotIn("CLAIM-1", serialized)
+        self.assertNotIn("api_access_token", serialized)
+        self.assertEqual(event["facts_json"], {})
+        self.assertEqual(event["decision_json"], {})
 
     def test_sam_live_stock_outgoing_owner_reply_records_learning(self):
         latest_event = {
