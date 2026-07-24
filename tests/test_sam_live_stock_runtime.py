@@ -1490,6 +1490,27 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["weight_range"], "10_to_14_Kg")
         self.assertEqual(payload["items"][0]["sex"], "Female")
 
+    def test_new_request_intake_payload_explicitly_clears_stale_context_fields(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(
+                content="This is a new request. I need 1 male grower around 25 to 30 kg. What is the price?"
+            )
+        )
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+
+        payload = sam_live_stock_runtime.build_live_stock_intake_payload(inbound, facts, {})
+        validation = sam_live_stock_runtime.validate_live_stock_intake_payload(payload)
+
+        self.assertTrue(validation["is_valid"], validation)
+        self.assertTrue(payload["reset_request_context"])
+        self.assertTrue(validation["cleaned_data"]["reset_request_context"])
+        self.assertEqual(payload["patch"]["collection_location"], "")
+        self.assertEqual(payload["patch"]["collection_time_text"], "")
+        self.assertEqual(payload["patch"]["collection_date"], "")
+        self.assertEqual(payload["patch"]["collection_time"], "")
+        self.assertEqual(payload["patch"]["payment_method"], "")
+        self.assertFalse(payload["patch"]["order_commitment"])
+
     def test_intake_write_is_disabled_by_default(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload())
         facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
