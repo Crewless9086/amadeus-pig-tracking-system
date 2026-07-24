@@ -61,6 +61,46 @@
         </section>
       </section>
 
+      <section class="beacon-content-operations" aria-labelledby="beacon_meta_preview_title">
+        <header class="beacon-compose-header">
+          <div>
+            <span class="beacon-eyebrow">Read-only advertising evidence</span>
+            <h2 id="beacon_meta_preview_title">Meta Ads Insights preview</h2>
+            <p><strong>Preview only — nothing imported.</strong> This reads bounded historical advertising evidence and shows what a later owner-authorized append-only import would contain.</p>
+          </div>
+          <div class="beacon-command-meta">
+            <span id="beacon_meta_preview_state" class="beacon-status-chip" data-state="loading">Not requested</span>
+            <button type="button" id="beacon_meta_preview_refresh" class="button-link button-link-secondary">Run read-only preview</button>
+          </div>
+        </header>
+        <div class="beacon-media-review-grid">
+          <div class="form-group">
+            <label for="beacon_meta_preview_start">Reporting start</label>
+            <input id="beacon_meta_preview_start" type="date" value="2025-11-10" />
+          </div>
+          <div class="form-group">
+            <label for="beacon_meta_preview_end">Reporting end</label>
+            <input id="beacon_meta_preview_end" type="date" value="2026-07-14" />
+          </div>
+          <div class="form-group">
+            <label for="beacon_meta_preview_level">Insights level</label>
+            <select id="beacon_meta_preview_level">
+              <option value="ad">Ad</option>
+              <option value="adset">Ad set</option>
+              <option value="campaign">Campaign</option>
+            </select>
+          </div>
+        </div>
+        <div id="beacon_meta_preview_connection" class="beacon-delivery-state" aria-label="Secret-safe Meta connection state"></div>
+        <div id="beacon_meta_preview_counts" class="beacon-content-evidence"></div>
+        <div id="beacon_meta_preview_metrics" class="beacon-metric-grid"></div>
+        <div id="beacon_meta_preview_blockers" class="beacon-content-evidence"></div>
+        <details>
+          <summary>Append-only import preview</summary>
+          <div id="beacon_meta_preview_events" class="beacon-content-evidence"></div>
+        </details>
+      </section>
+
       <main class="beacon-compose" aria-labelledby="beacon_compose_title">
         <header class="beacon-compose-header">
           <div>

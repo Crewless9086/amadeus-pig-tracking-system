@@ -143,6 +143,16 @@
     packetCopy: byId("beacon_packet_copy"),
     packetOptions: byId("beacon_packet_options"),
     packetMeta: byId("beacon_packet_meta"),
+    metaPreviewState: byId("beacon_meta_preview_state"),
+    metaPreviewRefresh: byId("beacon_meta_preview_refresh"),
+    metaPreviewStart: byId("beacon_meta_preview_start"),
+    metaPreviewEnd: byId("beacon_meta_preview_end"),
+    metaPreviewLevel: byId("beacon_meta_preview_level"),
+    metaPreviewConnection: byId("beacon_meta_preview_connection"),
+    metaPreviewCounts: byId("beacon_meta_preview_counts"),
+    metaPreviewMetrics: byId("beacon_meta_preview_metrics"),
+    metaPreviewBlockers: byId("beacon_meta_preview_blockers"),
+    metaPreviewEvents: byId("beacon_meta_preview_events"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -671,6 +681,69 @@
     return Object.entries(evidence).map(([name, item]) => ({name, ...(item || {})}));
   }
 
+  function renderMetaAdsPreview(payload) {
+    const configuration = payload.configuration || {};
+    const connection = payload.connection || {};
+    const counts = payload.resource_counts || {};
+    const metrics = payload.metric_summary || {};
+    const idempotency = payload.idempotency_preview || {};
+    const window = payload.reporting_window || {};
+    elements.metaPreviewState.textContent = payload.status === "preview_ready"
+      ? "Read-only preview ready"
+      : payload.status === "partial" ? "Partial preview" : "Preview blocked";
+    elements.metaPreviewState.dataset.state = payload.status === "preview_ready" ? "ready" : "blocked";
+    elements.metaPreviewConnection.innerHTML = [
+      ["Ad account configured", configuration.ad_account_id_configured, true],
+      ["Ads read token configured", configuration.ads_read_token_configured, true],
+      ["Graph version available", configuration.graph_version_configured || configuration.uses_default_graph_version, true],
+      ["Account read succeeded", connection.account_read_status === "verified", true],
+      ["Token exposed", false, false],
+      ["Anything imported", false, false],
+    ].map(([label, value, expected]) => (
+      `<span data-state="${value === expected ? "ready" : "blocked"}"><strong>${escapeHtml(label)}</strong>${value ? "Yes" : "No"}</span>`
+    )).join("");
+    elements.metaPreviewCounts.innerHTML = `
+      <div><strong>${escapeHtml(safe(payload.account_currency?.value, "Not verified"))}</strong><span>Account currency</span></div>
+      <div><strong>${escapeHtml(counts.campaigns ?? "Not requested")}</strong><span>Campaigns</span></div>
+      <div><strong>${escapeHtml(counts.adsets ?? "Not requested")}</strong><span>Ad sets</span></div>
+      <div><strong>${escapeHtml(counts.ads ?? "Not requested")}</strong><span>Ads</span></div>
+      <div><strong>${escapeHtml(payload.proposed_append_only_event_count ?? 0)}</strong><span>Proposed append-only events</span></div>
+      <p>${escapeHtml(safe(window.start, "Unknown"))} to ${escapeHtml(safe(window.end, "Unknown"))} · ${escapeHtml(safe(window.level, "Unknown"))} level</p>
+    `;
+    elements.metaPreviewMetrics.innerHTML = Object.entries(metrics).map(([name, metric]) => {
+      const value = metric.aggregate_value == null ? metric.aggregate_status : metric.aggregate_value;
+      return `<span class="beacon-metric-chip" data-state="${escapeHtml(metric.aggregate_status)}"><strong>${escapeHtml(name.replaceAll("_", " "))}</strong> ${escapeHtml(value)}</span>`;
+    }).join("");
+    const blockers = payload.blockers || [];
+    elements.metaPreviewBlockers.innerHTML = blockers.length
+      ? `<p><strong>Preview blockers:</strong> ${blockers.map(escapeHtml).join(" · ")}</p>`
+      : "<p>No API or permission blocker was reported by this bounded preview.</p>";
+    elements.metaPreviewEvents.innerHTML = `
+      <p><strong>Preview only — nothing imported.</strong></p>
+      <p>${escapeHtml(payload.proposed_append_only_event_count ?? 0)} proposed event(s); ${escapeHtml(idempotency.duplicate_key_count ?? 0)} duplicate key(s) inside this response.</p>
+      <p>Stable key preview: ${(idempotency.keys || []).slice(0, 5).map(escapeHtml).join(", ") || "No keys proposed."}</p>
+      <p>Existing database duplicate check: ${escapeHtml(safe(idempotency.existing_database_duplicate_check, "Not performed"))}.</p>
+    `;
+  }
+
+  async function loadMetaAdsPreview() {
+    elements.metaPreviewRefresh.disabled = true;
+    elements.metaPreviewState.textContent = "Reading Meta evidence";
+    elements.metaPreviewState.dataset.state = "loading";
+    const params = new URLSearchParams({
+      start: elements.metaPreviewStart.value,
+      end: elements.metaPreviewEnd.value,
+      level: elements.metaPreviewLevel.value,
+    });
+    try {
+      const response = await fetch(`/api/beacon/meta-ads-insights-preview?${params.toString()}`, {method: "GET"});
+      const payload = await response.json().catch(() => ({}));
+      renderMetaAdsPreview(payload);
+    } finally {
+      elements.metaPreviewRefresh.disabled = false;
+    }
+  }
+
   function verifiedMetric(event, name) {
     const item = event?.metric_evidence?.[name];
     if (!item || !["verified", "owner_correction"].includes(item.status)) return null;
@@ -1120,6 +1193,11 @@
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
+    elements.metaPreviewRefresh.addEventListener("click", () => loadMetaAdsPreview().catch((error) => {
+      elements.metaPreviewState.textContent = "Preview unavailable";
+      elements.metaPreviewState.dataset.state = "blocked";
+      showMessage(error.message);
+    }));
     elements.contentRefresh.addEventListener("click", () => loadContentOperations().catch((error) => {
       elements.contentState.textContent = "Evidence unavailable";
       elements.contentState.dataset.state = "blocked";

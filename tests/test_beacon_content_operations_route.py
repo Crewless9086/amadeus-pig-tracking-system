@@ -82,6 +82,63 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
             script,
         )
 
+    def test_meta_ads_preview_requires_owner_auth_and_post_is_405(self):
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch("app.require_owner_read_access", return_value=denied), patch(
+            "app.build_meta_ads_insights_preview"
+        ) as preview:
+            denied_response = self.client.get(
+                "/api/beacon/meta-ads-insights-preview"
+            )
+        self.assertEqual(denied_response.status_code, 403)
+        preview.assert_not_called()
+
+        payload = {
+            "success": True,
+            "status": "preview_ready",
+            "banner": "Preview only — nothing imported",
+            "authority": {"imports_evidence": False, "http_get_only": True},
+        }
+        with patch("app.require_owner_read_access", return_value=None), patch(
+            "app.build_meta_ads_insights_preview", return_value=(payload, 200)
+        ) as preview:
+            response = self.client.get(
+                "/api/beacon/meta-ads-insights-preview"
+                "?start=2026-01-01&end=2026-01-31&level=campaign"
+            )
+            post_response = self.client.post(
+                "/api/beacon/meta-ads-insights-preview", json={}
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "preview_ready")
+        preview.assert_called_once_with(
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            level="campaign",
+        )
+        self.assertEqual(post_response.status_code, 405)
+
+    def test_story_desk_contains_get_only_meta_preview_presentation(self):
+        template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
+        script = Path("static/js/beaconMedia.js").read_text(encoding="utf-8")
+
+        for identifier in (
+            'id="beacon_meta_preview_title"',
+            'id="beacon_meta_preview_state"',
+            'id="beacon_meta_preview_metrics"',
+            'id="beacon_meta_preview_events"',
+        ):
+            self.assertIn(identifier, template)
+        self.assertIn("Preview only — nothing imported", template)
+        self.assertIn(
+            "fetch(`/api/beacon/meta-ads-insights-preview?",
+            script,
+        )
+        self.assertIn('{method: "GET"}', script)
+        self.assertNotIn("graph.facebook.com", script.lower())
+        self.assertNotIn("BEACON_META_ADS_READ_TOKEN", script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
@@ -14,6 +14,9 @@ from modules.auth.owner_access import (
 from modules.beacon.content_operations import (
     build_beacon_content_candidate,
     gather_beacon_content_evidence,
+)
+from modules.beacon.meta_ads_insights_preview import (
+    build_meta_ads_insights_preview,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -134,6 +137,19 @@ def beacon_content_operations_read():
         **candidate.pop("capability_status"),
     }
     return jsonify(candidate), 200
+
+
+@app.route("/api/beacon/meta-ads-insights-preview", methods=["GET"])
+def beacon_meta_ads_insights_preview_read():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status = build_meta_ads_insights_preview(
+        start_date=request.args.get("start"),
+        end_date=request.args.get("end"),
+        level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
 
 
 @app.route("/sales/meat-driver")
