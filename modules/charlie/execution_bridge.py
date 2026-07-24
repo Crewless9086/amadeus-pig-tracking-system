@@ -4932,13 +4932,17 @@ def _protected_pause_has_exact_candidate_binding(artifact):
     lineage_candidate = str(lineage.get("candidate_fingerprint") or "").strip()
     revision = str(artifact.get("source_commit") or "").strip().lower()
     lineage_revision = str(lineage.get("source_commit") or "").strip().lower()
-    if not candidate or candidate != lineage_candidate or not revision or revision != lineage_revision:
+    if (
+        not candidate
+        or candidate != lineage_candidate
+        or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        or revision != lineage_revision
+    ):
         return False
     tested = str(artifact.get("tested_revision") or "").strip().lower()
-    # A missing test revision is incomplete evidence, not an implicit match.
-    # Protected-operation pauses must remain blocking until a reviewer proves
-    # that its checks covered this exact packaged candidate.
-    return bool(tested) and (tested.startswith(revision) or revision.startswith(tested))
+    # A protected-operation pause is a higher-risk exception: accept only the
+    # packaged full SHA exactly, never an unverified or ambiguous abbreviation.
+    return bool(re.fullmatch(r"[0-9a-f]{40}", tested)) and tested == revision
 
 
 def _normalize_separate_protected_operation_decision(agent, artifact, *, require_candidate_binding=False):
