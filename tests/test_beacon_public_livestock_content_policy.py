@@ -27,8 +27,10 @@ class BeaconPublicLivestockContentPolicyTests(unittest.TestCase):
         blocked = (
             "Piglets for sale. Message us for availability.",
             "Planning livestock for your farm? Tell us what you need.",
+            "Message us with your livestock requirements.",
             "These little ones are ready for a new home.",
             "Let us know the type, quantity, sex, age, weight and timing you require.",
+            "Send your details and we will check price, availability or collection.",
         )
         for text in blocked:
             result = self.assess(text)
@@ -49,6 +51,14 @@ class BeaconPublicLivestockContentPolicyTests(unittest.TestCase):
         )
         self.assertFalse(result["allowed"])
         self.assertIn("public_livestock_objective_not_allowlisted", result["reasons"])
+
+    def test_qualified_livestock_enquiries_are_not_a_public_objective(self):
+        result = self.assess(
+            "Follow the piglets as they grow.",
+            objective="qualified_livestock_enquiries",
+        )
+        self.assertFalse(result["allowed"])
+        self.assertEqual(result["status"], RISK_STATUS)
 
     def test_combined_media_and_copy_meaning_is_assessed(self):
         result = self.assess(
