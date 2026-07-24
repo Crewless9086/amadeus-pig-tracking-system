@@ -195,6 +195,36 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         self.assertEqual(repair["child_mission_ids"], ["CHILD-1"])
         self.assertFalse(any(item["action"] == "reconcile_family" for item in cycle["commands"]))
 
+    def test_superseded_children_do_not_reappear_in_parent_links(self):
+        missions = [
+            {
+                "mission_id": "PARENT",
+                "status": "paused",
+                "metadata": {"mission_coordinator": {"child_mission_ids": ["CHILD-1"]}},
+            },
+            {
+                "mission_id": "CHILD-1",
+                "status": "deployed",
+                "metadata": {"mission_family": {"parent_mission_id": "PARENT"}},
+            },
+            {
+                "mission_id": "CHILD-DUPLICATE",
+                "status": "paused",
+                "metadata": {
+                    "mission_family": {"parent_mission_id": "PARENT"},
+                    "portfolio_disposition": {
+                        "status": "superseded",
+                        "canonical_mission_id": "CHILD-1",
+                        "history_preserved": True,
+                    },
+                },
+            },
+        ]
+        cycle = build_executive_cycle(missions, POLICIES, runner={"active_mission_id": "ACTIVE"})
+        self.assertFalse(any(item["action"] == "repair_family_links" for item in cycle["commands"]))
+        command = next(item for item in cycle["commands"] if item["action"] == "reconcile_family")
+        self.assertEqual(command["child_states"], {"CHILD-1": "deployed"})
+
     def test_deployed_but_unapplied_migration_creates_executive_follow_up(self):
         mission = {
             "mission_id": "M-MIG", "status": "deployed", "title": "Lifecycle rail",
