@@ -949,12 +949,26 @@ def build_live_stock_intake_payload(inbound, facts, decision=None):
     decision = decision if isinstance(decision, dict) else {}
     notes = _intake_notes(facts, decision)
     item = _live_stock_intake_item(facts)
+    reset_request_context = _explicit_new_request(inbound.get("content"))
     patch = {
         "collection_location": _normal_intake_location(facts.get("location")),
         "collection_time_text": _clean(facts.get("timing"), 120),
         "last_customer_message": _clean(inbound.get("content"), 600),
         "notes": notes,
     }
+    if reset_request_context:
+        patch.update({
+            "collection_location": (
+                _normal_intake_location(facts.get("location"))
+                if not _blank(facts.get("location"))
+                else ""
+            ),
+            "collection_date": "",
+            "collection_time": "",
+            "payment_method": "",
+            "quote_requested": bool(facts.get("quote_requested")),
+            "order_commitment": bool(facts.get("order_commitment")),
+        })
     if facts.get("quote_requested"):
         patch["quote_requested"] = True
     if facts.get("order_commitment"):
@@ -971,7 +985,12 @@ def build_live_stock_intake_payload(inbound, facts, decision=None):
         "customer_channel": _clean(inbound.get("channel"), 80),
         "customer_language": _clean(facts.get("customer_language"), 40),
         "updated_by": "Sam Live Stock",
-        "patch": {key: value for key, value in patch.items() if value not in ("", None)},
+        "reset_request_context": reset_request_context,
+        "patch": (
+            patch
+            if reset_request_context
+            else {key: value for key, value in patch.items() if value not in ("", None)}
+        ),
         "items": [item] if item else [],
     }
 
