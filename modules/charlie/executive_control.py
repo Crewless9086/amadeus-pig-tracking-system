@@ -119,7 +119,15 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     escalations = []
     children_by_parent = {}
     for item in missions:
-        family = ((item.get("metadata") or {}).get("mission_family") or {}) if isinstance(item.get("metadata"), dict) else {}
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        disposition = (
+            metadata.get("portfolio_disposition")
+            if isinstance(metadata.get("portfolio_disposition"), dict)
+            else {}
+        )
+        if str(disposition.get("status") or "").strip().lower() == "superseded":
+            continue
+        family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
         parent_id = str(family.get("parent_mission_id") or "").strip()
         if parent_id:
             children_by_parent.setdefault(parent_id, []).append(item)
