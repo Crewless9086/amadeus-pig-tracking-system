@@ -1,8 +1,51 @@
+import json
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_launch_control as launch
+
+
+class ChatwootFilterResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def human_conversation(
+    conversation_id,
+    *,
+    inbox_id=77,
+    review_state=None,
+    timestamp="2026-07-24T09:00:00Z",
+    lane="livestock",
+):
+    attributes = {"conversation_mode": "HUMAN"}
+    labels = []
+    if lane == "livestock":
+        attributes.update({"sales_lane": "live_stock_sales", "sam_live_stock_gate": "owner_review"})
+        labels.append("sam_live_stock")
+    elif lane == "meat":
+        attributes["sales_lane"] = "meat_sales"
+        labels.append("sam_meat")
+    conversation = {
+        "id": conversation_id,
+        "inbox_id": inbox_id,
+        "custom_attributes": attributes,
+        "labels": labels,
+        "messages": [{"message_type": "outgoing", "created_at": timestamp, "sender": {"type": "user"}}],
+    }
+    if review_state:
+        conversation["sam_live_stock_review"] = {"state": review_state}
+    return conversation
 
 
 def review_inputs(message="I need 2 weaners in Riversdale next week."):
@@ -836,10 +879,10 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
     def test_human_mode_audit_classifies_without_bulk_reset(self):
         conversations = [
-            {"id": 1, "custom_attributes": {"conversation_mode": "HUMAN", "unrelated": "keep"}, "messages": [{"message_type": "incoming", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "contact"}}]},
+            {**human_conversation(1), "custom_attributes": {**human_conversation(1)["custom_attributes"], "unrelated": "keep"}, "messages": [{"message_type": "incoming", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "contact"}}]},
             {"id": 2, "custom_attributes": {"conversation_mode": "HUMAN"}, "sam_live_stock_review": {"state": "resolved"}, "messages": [{"message_type": "outgoing", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "user"}}]},
-            {"id": 3, "custom_attributes": {"conversation_mode": "HUMAN"}, "messages": [{"message_type": "outgoing", "created_at": "2026-07-20T09:00:00Z", "sender": {"type": "user"}}]},
-            {"id": 4, "custom_attributes": {"conversation_mode": "HUMAN"}, "messages": [{"message_type": "outgoing", "created_at": "2026-07-24T09:00:00Z", "sender": {"type": "user"}}]},
+            human_conversation(3, timestamp="2026-07-20T09:00:00Z"),
+            human_conversation(4),
         ]
         result, status = launch.audit_sam_live_stock_human_conversations(chatwoot_reader=lambda source: conversations, now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc))
         self.assertEqual(status, 200)
@@ -865,7 +908,8 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         conversations = [
             {
                 "id": 1826,
-                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "live_stock_sales", "sam_live_stock_gate": "owner_review"},
+                "labels": ["sam_live_stock"],
                 "messages": [None],
                 "last_activity_at": {"unexpected": "shape"},
             },
@@ -929,7 +973,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
 
         with patch.object(launch.urllib_request, "urlopen", return_value=Response()):
             result, status = launch.audit_sam_live_stock_human_conversations(
-                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret"},
+                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"},
             )
 
         self.assertEqual(status, 502)
@@ -956,6 +1000,279 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "sam_live_stock_human_audit_chatwoot_timeout")
         self.assertNotIn("token-value", str(result))
 
+    def test_human_audit_uses_documented_server_filter_and_sam_inbox(self):
+        calls = []
+
+        def urlopen(request, timeout):
+            calls.append((request, timeout))
+            return ChatwootFilterResponse({
+                "meta": {"all_count": 1},
+                "payload": [human_conversation(1826)],
+            })
+
+        source = {
+            launch.CHATWOOT_TOKEN_ENV: "configured-secret",
+            launch.CHATWOOT_ACCOUNT_ID_ENV: "account-secret",
+            launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77",
+        }
+        with patch.object(launch.urllib_request, "urlopen", side_effect=urlopen):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ=source,
+                review_loader=lambda conversation_id: ({"success": False}, 404),
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["counts"]["active_manual"], 1)
+        self.assertEqual(result["diagnostics"]["coverage"], "sam_livestock_inbox_human_custom_attribute")
+        self.assertTrue(result["diagnostics"]["pagination_complete"])
+        self.assertEqual(len(calls), 1)
+        request, timeout = calls[0]
+        self.assertEqual(request.method, "POST")
+        self.assertEqual(timeout, 10)
+        self.assertTrue(request.full_url.endswith("/conversations/filter?page=1"))
+        body = json.loads(request.data)
+        self.assertEqual(body, {"payload": [
+            {"attribute_key": "conversation_mode", "filter_operator": "equal_to", "values": ["HUMAN"], "query_operator": "AND"},
+            {"attribute_key": "inbox_id", "filter_operator": "equal_to", "values": [77], "query_operator": None},
+        ]})
+        self.assertNotIn("configured-secret", str(result))
+        self.assertNotIn("account-secret", str(result))
+        self.assertNotIn("77", str(result["diagnostics"]))
+
+    def test_human_audit_requires_authoritative_sam_inbox_without_calling_chatwoot(self):
+        with patch.object(launch.urllib_request, "urlopen") as reader:
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "configured-secret"},
+            )
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_inbox_not_configured")
+        self.assertEqual(result["failure_stage"], "chatwoot_configuration")
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+        reader.assert_not_called()
+
+    def test_human_audit_reads_multiple_pages_and_deduplicates_ids(self):
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(1), human_conversation(2)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2), human_conversation(3)]}),
+        ]
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ=source,
+                review_loader=lambda conversation_id: ({"success": False}, 404),
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["conversations"]), 3)
+        self.assertEqual(result["diagnostics"]["pages_read"], 2)
+        self.assertEqual(result["diagnostics"]["duplicates_removed"], 1)
+        self.assertEqual(result["diagnostics"]["filtered_conversation_count"], 3)
+
+    def test_human_audit_rejects_malformed_or_changing_meta(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            return_value=ChatwootFilterResponse({"meta": {"all_count": "1"}, "payload": []}),
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failure_stage"], "chatwoot_pagination")
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2)]}),
+        ]
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_pagination_meta_changed")
+
+    def test_human_audit_filter_http_400_is_unsupported_and_fail_closed(self):
+        error = launch.urllib_error.HTTPError("https://example.invalid", 400, "bad filter", {}, None)
+        with patch.object(launch.urllib_request, "urlopen", side_effect=error):
+            result, status = launch.audit_sam_live_stock_human_conversations(
+                environ={launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"},
+            )
+
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_filter_unsupported")
+        self.assertEqual(result["failure_stage"], "chatwoot_filter_contract")
+        self.assertEqual(result["diagnostics"]["fallback_coverage"], "known_sam_evidence_only_not_executed")
+        self.assertFalse(result["evidence_available"])
+
+    def test_human_audit_pagination_limit_and_partial_evidence_remain_unknown(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 3}, "payload": [human_conversation(2)]}),
+        ]
+        with patch.object(launch, "HUMAN_AUDIT_MAX_PAGES", 2), patch.object(
+            launch.urllib_request, "urlopen", side_effect=responses
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_pagination_limit_reached")
+        self.assertEqual(result["diagnostics"]["partial_filtered_count"], 2)
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
+
+        responses = [
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": [human_conversation(1)]}),
+            ChatwootFilterResponse({"meta": {"all_count": 2}, "payload": []}),
+        ]
+        with patch.object(launch.urllib_request, "urlopen", side_effect=responses):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_partial_evidence")
+        self.assertFalse(result["evidence_available"])
+
+    def test_human_audit_total_timeout_is_bounded_and_sanitized(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        response = ChatwootFilterResponse({
+            "meta": {"all_count": 2},
+            "payload": [human_conversation(1)],
+        })
+        with patch.object(launch.urllib_request, "urlopen", return_value=response), patch.object(
+            launch.time, "monotonic", side_effect=[0, 0, 31]
+        ):
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+
+        self.assertEqual(status, 504)
+        self.assertEqual(result["status"], "sam_live_stock_human_audit_total_timeout")
+        self.assertFalse(result["conversation_count_known"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_human_audit_conclusive_zero_and_review_classification_do_no_writes(self):
+        source = {launch.CHATWOOT_TOKEN_ENV: "token", launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "77"}
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            return_value=ChatwootFilterResponse({"meta": {"all_count": 0}, "payload": []}),
+        ) as reader:
+            result, status = launch.audit_sam_live_stock_human_conversations(environ=source)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(
+            result["counts"],
+            {key: 0 for key in (*launch.HUMAN_AUDIT_CLASSIFICATIONS, *launch.HUMAN_AUDIT_LANE_COUNTS)},
+        )
+        self.assertTrue(result["conversation_count_known"])
+        self.assertTrue(result["evidence_available"])
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertEqual(reader.call_count, 1)
+
+        conversations = [
+            human_conversation(1, review_state="resolved"),
+            human_conversation(2, timestamp="2026-07-20T09:00:00Z"),
+        ]
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda environ: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            [row["classification"] for row in result["conversations"]],
+            ["resolved_but_stuck", "stale_unknown"],
+        )
+
+
+    def test_human_audit_shared_inbox_qualifies_livestock_and_excludes_meat_and_unknown(self):
+        conversations = [
+            human_conversation(301, inbox_id=96568),
+            human_conversation(302, inbox_id=96568, lane="meat"),
+            human_conversation(303, inbox_id=96568, lane="unknown"),
+        ]
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            now=datetime(2026, 7, 24, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["evidence_complete"])
+        self.assertEqual([row["conversation_id"] for row in result["conversations"]], ["301"])
+        self.assertTrue(result["conversations"][0]["authoritative_livestock_lane"])
+        self.assertEqual(result["conversations"][0]["lane_proof"], "backend_native_livestock_takeover")
+        self.assertEqual(result["counts"]["excluded_non_livestock"], 1)
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        self.assertFalse(result["bulk_reset_allowed"])
+        self.assertFalse(result["action_contract"]["automatic_reset_allowed"])
+        self.assertTrue(result["action_contract"]["authoritative_livestock_lane_required"])
+
+    def test_human_audit_exact_persisted_review_is_authoritative_lane_proof(self):
+        conversation = human_conversation(401, inbox_id=96568, lane="unknown")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [conversation],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "401", "review_state": "active"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(result["conversations"]), 1)
+        self.assertEqual(result["conversations"][0]["lane_proof"], "persisted_livestock_review")
+
+    def test_human_audit_mismatched_or_conflicting_lane_evidence_is_non_actionable(self):
+        unknown = human_conversation(501, inbox_id=96568, lane="unknown")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [unknown],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "other-conversation"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        meat = human_conversation(502, inbox_id=96568, lane="meat")
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [meat],
+            review_loader=lambda conversation_id: (
+                {"success": True, "event": {"chatwoot_conversation_id": "502"}}, 200
+            ),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+
+    def test_human_audit_lane_output_is_secret_free_and_private_content_free(self):
+        private = human_conversation(601, inbox_id=96568, lane="meat")
+        private["messages"][0]["content"] = "PRIVATE-CUSTOMER-CONTENT"
+        private["custom_attributes"]["phone_number"] = "+27000000000"
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [private],
+            environ={
+                launch.CHATWOOT_TOKEN_ENV: "CHATWOOT-SECRET-TOKEN",
+                launch.CHATWOOT_ACCOUNT_ID_ENV: "PRIVATE-ACCOUNT-ID",
+                launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "96568",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["conversations"], [])
+        serialized = json.dumps(result)
+        self.assertNotIn("PRIVATE-CUSTOMER-CONTENT", serialized)
+        self.assertNotIn("+27000000000", serialized)
+        self.assertNotIn("CHATWOOT-SECRET-TOKEN", serialized)
+        self.assertNotIn("PRIVATE-ACCOUNT-ID", serialized)
+        self.assertNotIn("96568", serialized)
+
+    def test_human_audit_incomplete_evidence_never_returns_complete_counts(self):
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: (_ for _ in ()).throw(TimeoutError("bounded timeout")),
+        )
+        self.assertEqual(status, 504)
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["evidence_available"])
+        self.assertFalse(result["conversation_count_known"])
+        self.assertIsNone(result["counts"])
+        self.assertFalse(result["bulk_reset_allowed"])
 
 if __name__ == "__main__":
     unittest.main()
