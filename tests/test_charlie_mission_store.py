@@ -5,6 +5,8 @@ from unittest.mock import patch
 from modules.charlie.mission_store import (
     agent_sequence_for_mission,
     build_mission_review_packet,
+    build_protected_review_handoff,
+    protected_review_decision_identity,
     consume_final_agent_artifact,
     finalize_owner_review_transaction,
     get_mission,
@@ -92,6 +94,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         packet = {
             "review_status": "ready_for_owner_review",
             "tested_revision": revision,
+            "recommended_owner_decision": "approve_final_release",
             "execution_artifacts": {"execution_id": "EXEC-1"},
             "github_gate": {"passed": True, "head_revision": revision},
             "evidence_reconciliation": {
@@ -118,9 +121,9 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertEqual(result["mission_status"], "pr_ready")
-        update_sql = cursor.executed[1][0]
+        update_sql, update_params = next((sql, params) for sql, params in cursor.executed if "set status = 'pr_ready'" in sql)
         self.assertIn("set status = 'pr_ready'", update_sql)
-        self.assertEqual(cursor.executed[1][1]["review_packet"].find('"review_generation": "EXEC-1:abc123"') >= 0, True)
+        self.assertEqual(update_params["review_packet"].find('"review_generation": "EXEC-1:abc123"') >= 0, True)
         self.assertTrue(any("atomic_finalisation" in str(params) for _, params in cursor.executed))
 
     def test_atomic_finalizer_refuses_failing_evidence_before_db_write(self):
@@ -145,6 +148,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         revision = "abc123"
         packet = {
             "tested_revision": revision,
+            "recommended_owner_decision": "approve_final_release",
             "execution_artifacts": {"execution_id": "EXEC-1"},
             "github_gate": {"passed": True, "head_revision": "different"},
             "evidence_reconciliation": {
@@ -1313,5 +1317,106 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(result["counts"], {"new": 2, "planned": 1})
 
 
+    def test_review_decision_rejects_stale_handoff_identity_before_write(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        packet = {
+            "review_generation": "EXEC-1:abc", "tested_revision": "abc",
+            "recommended_owner_decision": "approve_final_release",
+            "owner_handoff": {"decision_identity": "current-decision", "authoritative_send_back_target": "tester"},
+        }
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890", "Review", "Review", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"agent_workflow": [{"agent": "tester", "status": "complete"}], "review_packet": packet}, now, now,
+        )
+        result, code = record_mission_review_decision(
+            "MISSION-1", "approve_final_release", expected_review_generation="EXEC-1:abc",
+            expected_decision_identity="stale-decision", database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+        self.assertEqual(code, 409)
+        self.assertEqual(result["status"], "stale_owner_handoff")
+
+    def test_review_decision_rejects_non_authoritative_send_back_target(self):
+        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+        packet = {
+            "review_generation": "EXEC-1:abc", "tested_revision": "abc",
+            "recommended_owner_decision": "send_back",
+            "owner_handoff": {"decision_identity": "current-decision", "authoritative_send_back_target": "product_architect"},
+        }
+        row = (
+            "MISSION-1", "pr_ready", "telegram", "12345", "67890", "Review", "Review", "P1", "feature build", "LEVEL 3",
+            "", "", "", {"agent_workflow": [{"agent": "product_architect", "status": "complete"}, {"agent": "tester", "status": "complete"}], "review_packet": packet}, now, now,
+        )
+        result, code = record_mission_review_decision(
+            "MISSION-1", "send_back", target_stage="tester", expected_review_generation="EXEC-1:abc",
+            expected_decision_identity="current-decision", database_url="postgres://unit-test",
+            connect_factory=lambda _: FakeConnection([row]),
+        )
+        self.assertEqual(code, 409)
+        self.assertEqual(result["status"], "non_authoritative_send_back_target")
+        self.assertEqual(result["authoritative_target"], "product_architect")
+    def test_protected_review_handoff_identity_binds_generation_candidate_and_target(self):
+        packet = {
+            "review_generation": "EXEC-1:abc123",
+            "tested_revision": "abc123",
+            "recommended_owner_decision": "approve_final_release",
+            "authoritative_send_back_target": "product_architect",
+        }
+        first = build_protected_review_handoff("MISSION-1", packet)
+        duplicate = build_protected_review_handoff("MISSION-1", dict(packet))
+        newer = build_protected_review_handoff("MISSION-1", {**packet, "tested_revision": "def456", "review_generation": "EXEC-2:def456"})
+        self.assertTrue(first["success"])
+        self.assertEqual(first["idempotency_key"], duplicate["idempotency_key"])
+        self.assertNotEqual(first["decision_identity"], newer["decision_identity"])
+        self.assertEqual(first["payload"]["tested_revision"], "abc123")
+        self.assertEqual(first["payload"]["authoritative_send_back_target"], "product_architect")
+        self.assertEqual(first["payload"]["handoff_state"], "queued")
+
+    def test_atomic_finalizer_writes_handoff_before_pr_ready_in_same_transaction(self):
+        revision = "abc123"
+        packet = {
+            "review_status": "ready_for_owner_review",
+            "tested_revision": revision,
+            "recommended_owner_decision": "approve_final_release",
+            "execution_artifacts": {"execution_id": "EXEC-1"},
+            "github_gate": {"passed": True, "head_revision": revision},
+            "evidence_reconciliation": {"passed": True, "active_blockers": [], "requires_revalidation": [], "candidate_manifest": {"source_commit": revision}},
+        }
+        connection = FakeConnection()
+        connection.cursor_instance = FinalizationCursor({"agent_workflow": [{"agent": "publisher", "status": "complete"}]})
+        result, code = finalize_owner_review_transaction(
+            "MISSION-1", packet, execution_id="EXEC-1", candidate_revision=revision,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(code, 200)
+        statements = [sql for sql, _params in connection.cursor_instance.executed]
+        outbox_index = next(index for index, sql in enumerate(statements) if "insert into public.charlie_notification_outbox" in sql)
+        mission_index = next(index for index, sql in enumerate(statements) if "set status = 'pr_ready'" in sql)
+        self.assertLess(outbox_index, mission_index)
+        self.assertTrue(result["owner_handoff_decision_identity"])
+
+    def test_outbox_failure_cannot_leave_pr_ready_without_handoff(self):
+        class OutboxFailureCursor(FinalizationCursor):
+            def execute(self, sql, params=None):
+                super().execute(sql, params)
+                if "insert into public.charlie_notification_outbox" in sql:
+                    raise RuntimeError("outbox unavailable")
+        revision = "abc123"
+        packet = {
+            "review_status": "ready_for_owner_review", "tested_revision": revision,
+            "recommended_owner_decision": "approve_final_release",
+            "execution_artifacts": {"execution_id": "EXEC-1"},
+            "github_gate": {"passed": True, "head_revision": revision},
+            "evidence_reconciliation": {"passed": True, "active_blockers": [], "requires_revalidation": [], "candidate_manifest": {"source_commit": revision}},
+        }
+        connection = FakeConnection()
+        connection.cursor_instance = OutboxFailureCursor({"agent_workflow": [{"agent": "builder", "status": "complete"}, {"agent": "reviewer", "status": "complete"}]})
+        result, code = finalize_owner_review_transaction(
+            "MISSION-1", packet, execution_id="EXEC-1", candidate_revision=revision,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(code, 503)
+        self.assertEqual(result["status"], "owner_review_finalization_failed")
+        self.assertFalse(any("set status = 'pr_ready'" in sql for sql, _params in connection.cursor_instance.executed))
 if __name__ == "__main__":
     unittest.main()

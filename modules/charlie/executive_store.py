@@ -6,7 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
-from modules.charlie.mission_store import _connect, _database_url
+from modules.charlie.mission_store import OWNER_HANDOFF_STATES, _connect, _database_url
 
 
 def upsert_executive_goal(goal, database_url=None, connect_factory=None):
@@ -229,6 +229,7 @@ def claim_pending_outbox(limit=10, database_url=None, connect_factory=None):
                     with selected as (
                         select outbox_id from public.charlie_notification_outbox
                         where status in ('pending','failed')
+                          and coalesce(payload_json->>'handoff_state', '') not in ('withheld','superseded','owner_decided')
                           and (next_attempt_at is null or next_attempt_at <= now())
                           and attempt_count < 5
                         order by created_at for update skip locked limit %(limit)s
@@ -244,8 +245,11 @@ def claim_pending_outbox(limit=10, database_url=None, connect_factory=None):
     return {"success": True, "status": "ok", "items": [{"outbox_id": row[0], "event_type": row[1], "payload": row[2] or {}, "attempt_count": row[3]} for row in rows]}, 200
 
 
-def complete_outbox(outbox_id, *, sent, error="", database_url=None, connect_factory=None):
+def complete_outbox(outbox_id, *, sent, error="", handoff_state="", database_url=None, connect_factory=None):
     database_url = _database_url(database_url)
+    handoff_state = str(handoff_state or ("sent" if sent else "failed")).strip().lower()
+    if handoff_state not in OWNER_HANDOFF_STATES:
+        return {"success": False, "status": "invalid_handoff_state"}, 400
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -254,9 +258,15 @@ def complete_outbox(outbox_id, *, sent, error="", database_url=None, connect_fac
                     set status = case when %(sent)s then 'sent' when attempt_count >= 5 then 'dead_letter' else 'failed' end,
                         sent_at = case when %(sent)s then now() else sent_at end,
                         next_attempt_at = case when %(sent)s then null else now() + make_interval(secs => least(900, 30 * power(2, attempt_count)::int)) end,
-                        last_error = %(error)s
+                        last_error = %(error)s,
+                        payload_json = case
+                            when payload_json->>'block_class' = 'protected_review'
+                             and coalesce(payload_json->>'handoff_state', '') not in ('superseded', 'owner_decided')
+                            then payload_json || jsonb_build_object('handoff_state', %(handoff_state)s)
+                            else payload_json
+                        end
                     where outbox_id = %(id)s returning status
-                """, {"sent": bool(sent), "error": str(error or "")[:1000], "id": outbox_id})
+                """, {"sent": bool(sent), "error": str(error or "")[:1000], "handoff_state": handoff_state, "id": outbox_id})
                 row = cursor.fetchone()
     except Exception as exc:
         return {"success": False, "status": "outbox_complete_failed", "error_type": exc.__class__.__name__}, 503
@@ -289,6 +299,10 @@ def mission_outbox_delivery(mission_id, limit=20, database_url=None, connect_fac
         "last_error": row[6], "created_at": row[7].isoformat() if hasattr(row[7], "isoformat") else row[7],
         "sent_at": row[8].isoformat() if hasattr(row[8], "isoformat") else row[8],
         "notification_fingerprint": (row[9] or {}).get("notification_fingerprint", "") if isinstance(row[9], dict) else "",
+        "handoff_state": (row[9] or {}).get("handoff_state", "") if isinstance(row[9], dict) else "",
+        "decision_identity": (row[9] or {}).get("decision_identity", "") if isinstance(row[9], dict) else "",
+        "review_generation": (row[9] or {}).get("review_generation", "") if isinstance(row[9], dict) else "",
+        "tested_revision": (row[9] or {}).get("tested_revision", "") if isinstance(row[9], dict) else "",
     } for row in rows]
     return {"success": True, "status": "mission_outbox_delivery_ready", "mission_id": mission_id, "items": items}, 200
 

@@ -192,21 +192,51 @@ def handle_callback(
     elif action == "sendback":
         if status not in {"blocked", "pr_ready"}:
             return MissionControlResult(False, action, f"action_not_allowed_from_{status}", mission_id), mission
-        stage = parts[3] if len(parts) > 3 else "builder"
-        payload, code = review_updater(mission_id, "send_back", comments="Returned from Telegram owner review.", target_stage=stage)
+        packet = _review_packet(mission)
+        handoff = packet.get("owner_handoff") if isinstance(packet.get("owner_handoff"), dict) else {}
+        if status == "pr_ready":
+            supplied_token = parts[3] if len(parts) > 3 else ""
+            stage = parts[4] if len(parts) > 4 else ""
+            review_generation = str(packet.get("review_generation") or "")
+            tested_revision = str(packet.get("tested_revision") or "")
+            decision_identity = str(handoff.get("decision_identity") or "")
+            authoritative_target = str(handoff.get("authoritative_send_back_target") or "")
+            if (
+                not review_generation
+                or not tested_revision
+                or not decision_identity
+                or supplied_token != review_candidate_token(mission)
+                or stage != authoritative_target
+            ):
+                return MissionControlResult(False, action, "stale_or_generationless_review_callback", mission_id), mission
+            payload, code = review_updater(
+                mission_id,
+                "send_back",
+                comments="Returned from Telegram owner review.",
+                target_stage=stage,
+                expected_review_generation=review_generation,
+                expected_decision_identity=decision_identity,
+            )
+        else:
+            stage = parts[3] if len(parts) > 3 else "builder"
+            payload, code = review_updater(mission_id, "send_back", comments="Returned from Telegram owner review.", target_stage=stage)
     elif action == "approvefinal":
         if status != "pr_ready":
             return MissionControlResult(False, action, f"action_not_allowed_from_{status}", mission_id), mission
-        review_generation = str(_review_packet(mission).get("review_generation") or "")
-        tested_revision = str(_review_packet(mission).get("tested_revision") or "")
+        packet = _review_packet(mission)
+        handoff = packet.get("owner_handoff") if isinstance(packet.get("owner_handoff"), dict) else {}
+        review_generation = str(packet.get("review_generation") or "")
+        tested_revision = str(packet.get("tested_revision") or "")
+        decision_identity = str(handoff.get("decision_identity") or "")
         supplied_token = parts[3] if len(parts) > 3 else ""
-        if not review_generation or not tested_revision or supplied_token != review_candidate_token(mission):
+        if not review_generation or not tested_revision or not decision_identity or supplied_token != review_candidate_token(mission):
             return MissionControlResult(False, action, "stale_or_generationless_review_callback", mission_id), mission
         payload, code = review_updater(
             mission_id,
             "approve_final_release",
             comments="Approved from Telegram owner review.",
             expected_review_generation=review_generation,
+            expected_decision_identity=decision_identity,
         )
     else:
         return MissionControlResult(False, action, "unknown_action", mission_id), mission

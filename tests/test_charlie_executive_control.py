@@ -71,7 +71,7 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         def review(revision):
             return {
                 "mission_id": "M-PAY", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration",
-                "metadata": {"review_packet": {"tested_revision": revision, "pr_url": "https://github.com/o/r/pull/1"}},
+                "metadata": {"review_packet": {"tested_revision": revision, "recommended_owner_decision": "approve_final_release", "pr_url": "https://github.com/o/r/pull/1"}},
             }
         first = build_executive_cycle([review("sha-1")], DELEGATED_POLICIES, runner={})
         second = build_executive_cycle([review("sha-2")], DELEGATED_POLICIES, runner={})
@@ -82,7 +82,7 @@ class CharlieExecutiveControlTests(unittest.TestCase):
             return {
                 "mission_id": "CAL", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration", "urgency": "P1",
                 "metadata": {"review_packet": {
-                    "tested_revision": "8456b697", "pr_url": "https://github.com/o/r/pull/316",
+                    "tested_revision": "8456b697", "recommended_owner_decision": "approve_final_release", "pr_url": "https://github.com/o/r/pull/316",
                     "review_generation": generation,
                 }},
             }
@@ -94,7 +94,7 @@ class CharlieExecutiveControlTests(unittest.TestCase):
         mission = {
             "mission_id": "M-REMIND", "status": "pr_ready", "title": "Payment integration", "raw_text": "Payment integration", "urgency": "P1",
             "updated_at": "2026-07-17T09:00:00+00:00",
-            "metadata": {"review_packet": {"tested_revision": "abc", "review_generation": "EXEC:abc"}},
+            "metadata": {"review_packet": {"tested_revision": "abc", "recommended_owner_decision": "approve_final_release", "review_generation": "EXEC:abc"}},
         }
         cycle = build_executive_cycle([mission], DELEGATED_POLICIES, runner={}, now=datetime(2026, 7, 21, 9, tzinfo=timezone.utc))
         escalation = cycle["escalations"][0]

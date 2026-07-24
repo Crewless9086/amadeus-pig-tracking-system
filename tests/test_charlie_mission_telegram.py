@@ -93,6 +93,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
             "test_evidence": ["Focused tests passed."],
             "review_generation": "EXEC-1:abc123",
             "tested_revision": "abc123",
+            "owner_handoff": {"decision_identity": "decision-1", "authoritative_send_back_target": "tester"},
         }}
         card = charlie_mission_telegram.mission_card_text(self.mission)
         keyboard = charlie_mission_telegram.mission_keyboard(self.mission)
@@ -108,6 +109,7 @@ class CharlieMissionTelegramTests(unittest.TestCase):
             "test_evidence": ["Focused tests passed."],
             "review_generation": "EXEC-1:abc123",
             "tested_revision": "abc123",
+            "owner_handoff": {"decision_identity": "decision-1", "authoritative_send_back_target": "tester"},
         }}
         stale, _ = charlie_mission_telegram.handle_callback(
             charlie_mission_telegram.mission_callback(self.mission["mission_id"], "approvefinal", "stale-token"),
@@ -125,5 +127,48 @@ class CharlieMissionTelegramTests(unittest.TestCase):
         self.assertEqual(self.review_calls[-1][2]["expected_review_generation"], "EXEC-1:abc123")
 
 
+    def test_pr_ready_send_back_is_candidate_generation_and_target_bound(self):
+        self.mission["status"] = "pr_ready"
+        self.mission["metadata"] = {"review_packet": {
+            "review_generation": "EXEC-1:abc123", "tested_revision": "abc123",
+            "owner_handoff": {"decision_identity": "decision-1", "authoritative_send_back_target": "product_architect"},
+        }}
+        stale, _ = charlie_mission_telegram.handle_callback(
+            charlie_mission_telegram.mission_callback(self.mission["mission_id"], "sendback", "stale:product_architect"),
+            list_loader=self.list_loader, get_loader=self.get_loader,
+            status_updater=self.status_updater, review_updater=self.review_updater,
+        )
+        self.assertFalse(stale.ok)
+        self.assertEqual(self.review_calls, [])
+        callback = charlie_mission_telegram.mission_callback(
+            self.mission["mission_id"], "sendback",
+            f"{charlie_mission_telegram.review_candidate_token(self.mission)}:product_architect",
+        )
+        accepted, _ = charlie_mission_telegram.handle_callback(
+            callback, list_loader=self.list_loader, get_loader=self.get_loader,
+            status_updater=self.status_updater, review_updater=self.review_updater,
+        )
+        self.assertTrue(accepted.ok)
+        self.assertEqual(self.review_calls[-1][2]["target_stage"], "product_architect")
+        self.assertEqual(self.review_calls[-1][2]["expected_review_generation"], "EXEC-1:abc123")
+        self.assertEqual(self.review_calls[-1][2]["expected_decision_identity"], "decision-1")
+
+    def test_pr_ready_send_back_rejects_non_authoritative_tester_target(self):
+        self.mission["status"] = "pr_ready"
+        self.mission["metadata"] = {"review_packet": {
+            "review_generation": "EXEC-1:abc123", "tested_revision": "abc123",
+            "owner_handoff": {"decision_identity": "decision-1", "authoritative_send_back_target": "builder"},
+        }}
+        callback = charlie_mission_telegram.mission_callback(
+            self.mission["mission_id"], "sendback",
+            f"{charlie_mission_telegram.review_candidate_token(self.mission)}:tester",
+        )
+        result, _ = charlie_mission_telegram.handle_callback(
+            callback, list_loader=self.list_loader, get_loader=self.get_loader,
+            status_updater=self.status_updater, review_updater=self.review_updater,
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(result.reason, "stale_or_generationless_review_callback")
+        self.assertEqual(self.review_calls, [])
 if __name__ == "__main__":
     unittest.main()

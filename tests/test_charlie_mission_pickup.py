@@ -1294,6 +1294,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             "mission_id": "M1", "status": "pr_ready",
             "metadata": {"review_packet": {
                 "review_generation": "EXEC-1:abc123", "tested_revision": "abc123",
+                "owner_handoff": {"decision_identity": "decision-1", "authoritative_send_back_target": "tester"},
             }},
         }
         keyboard = charlie_mission_pickup._executive_owner_decision_keyboard(payload, mission)

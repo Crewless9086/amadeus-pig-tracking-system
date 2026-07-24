@@ -55,6 +55,7 @@ MISSION_EVENT_TYPES = {
     "queue_updated",
 }
 APPROVAL_LEVELS = {"LEVEL 0", "LEVEL 1", "LEVEL 2", "LEVEL 3", "LEVEL 4", "LEVEL 5"}
+OWNER_HANDOFF_STATES = {"queued", "sent", "failed", "withheld", "superseded", "owner_decided"}
 MISSION_MEDIA_DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$")
 MISSION_MEDIA_DATA_URL_MAX_LEN = 900_000
 MISSION_CONTEXT_DOCS = [
@@ -711,6 +712,77 @@ def transition_mission_review_state(
     return {"success": True, "status": "review_state_transitioned", "mission_id": mission_id, "mission_status": status}, 200
 
 
+def protected_review_decision_identity(mission_id, review_packet):
+    """Return the durable identity for one exact owner-review decision."""
+    packet = review_packet if isinstance(review_packet, dict) else {}
+    identity = {
+        "mission_id": _clean_text(mission_id, 90),
+        "review_generation": _clean_text(packet.get("review_generation"), 180),
+        "tested_revision": _clean_text(packet.get("tested_revision"), 120),
+        "recommended_owner_decision": _clean_text(packet.get("recommended_owner_decision"), 80),
+        "authoritative_send_back_target": _authoritative_send_back_target(packet),
+    }
+    if not all(identity.values()):
+        return ""
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:24]
+
+
+def build_protected_review_handoff(mission_id, review_packet, *, title="", risk_flags=None):
+    """Build one explicit, candidate-bound protected-review outbox record."""
+    packet = review_packet if isinstance(review_packet, dict) else {}
+    decision_identity = protected_review_decision_identity(mission_id, packet)
+    if not decision_identity:
+        return {"success": False, "status": "owner_handoff_identity_incomplete"}
+    outbox_key = f"owner:{mission_id}:protected_review:{decision_identity}"
+    payload = {
+        "version": "charlie_protected_review_handoff_v1",
+        "action": "review_owner_required",
+        "brief_type": "new_actionable_review",
+        "block_class": "protected_review",
+        "reason": "protected_surface_requires_owner",
+        "mission_id": _clean_text(mission_id, 90),
+        "mission_status": "pr_ready",
+        "title": _clean_text(title or mission_id, 300),
+        "review_generation": _clean_text(packet.get("review_generation"), 180),
+        "tested_revision": _clean_text(packet.get("tested_revision"), 120),
+        "candidate_revision": _clean_text(packet.get("tested_revision"), 120),
+        "recommended_owner_decision": _clean_text(packet.get("recommended_owner_decision"), 80),
+        "authoritative_send_back_target": _authoritative_send_back_target(packet),
+        "decision_identity": decision_identity,
+        "notification_fingerprint": decision_identity,
+        "handoff_state": "queued",
+        "risk_flags": list(risk_flags or []),
+        "recommended_action": "Review the exact candidate and explicitly approve or send it back.",
+        "realert_sequence": 0,
+    }
+    return {
+        "success": True,
+        "status": "owner_handoff_ready",
+        "decision_identity": decision_identity,
+        "idempotency_key": outbox_key,
+        "outbox_id": "OUT-" + hashlib.sha256(outbox_key.encode("utf-8")).hexdigest()[:20].upper(),
+        "payload": payload,
+    }
+
+
+def _authoritative_send_back_target(review_packet):
+    packet = review_packet if isinstance(review_packet, dict) else {}
+    handoff = packet.get("owner_handoff") if isinstance(packet.get("owner_handoff"), dict) else {}
+    explicit = _clean_text(
+        packet.get("authoritative_send_back_target")
+        or handoff.get("authoritative_send_back_target")
+        or packet.get("send_back_target")
+        or packet.get("candidate_refresh_target"),
+        80,
+    )
+    if explicit:
+        return explicit
+    if packet.get("candidate_refresh_required") or packet.get("requires_candidate_refresh"):
+        return "product_architect"
+    if packet.get("evidence_requiring_refresh") or packet.get("requires_revalidation"):
+        return "builder"
+    return "tester"
+
 def finalize_owner_review_transaction(
     mission_id,
     review_packet,
@@ -790,11 +862,63 @@ def finalize_owner_review_transaction(
                 # its new execution still needs one fresh owner brief.
                 review_packet = dict(review_packet)
                 review_packet["review_generation"] = f"{execution_id}:{candidate_revision}"
+                handoff = build_protected_review_handoff(
+                    mission_id,
+                    review_packet,
+                    title=str(metadata.get("title") or mission_id),
+                )
+                if not handoff.get("success"):
+                    return {
+                        "success": False,
+                        "status": "finalization_owner_handoff_not_actionable",
+                        "reason": handoff.get("status"),
+                    }, 409
+                review_packet["owner_handoff"] = {
+                    "version": "charlie_protected_review_handoff_v1",
+                    "outbox_id": handoff["outbox_id"],
+                    "decision_identity": handoff["decision_identity"],
+                    "state": "queued",
+                    "review_generation": handoff["payload"]["review_generation"],
+                    "tested_revision": handoff["payload"]["tested_revision"],
+                    "recommended_owner_decision": handoff["payload"]["recommended_owner_decision"],
+                    "authoritative_send_back_target": handoff["payload"]["authoritative_send_back_target"],
+                }
+                cursor.execute(
+                    """
+                    update public.charlie_notification_outbox
+                    set payload_json = payload_json || jsonb_build_object(
+                        'handoff_state', 'superseded',
+                        'superseded_by_decision_identity', %(decision_identity)s,
+                        'superseded_at', now()
+                    )
+                    where event_type = 'NEEDS_OWNER_APPROVAL'
+                      and payload_json->>'mission_id' = %(mission_id)s
+                      and payload_json->>'block_class' = 'protected_review'
+                      and coalesce(payload_json->>'decision_identity', '') <> %(decision_identity)s
+                      and coalesce(payload_json->>'handoff_state', '') not in ('superseded', 'owner_decided')
+                    """,
+                    {"mission_id": mission_id, "decision_identity": handoff["decision_identity"]},
+                )
+                cursor.execute(
+                    """
+                    insert into public.charlie_notification_outbox
+                        (outbox_id, idempotency_key, channel, event_type, payload_json)
+                    values
+                        (%(outbox_id)s, %(idempotency_key)s, 'telegram',
+                         'NEEDS_OWNER_APPROVAL', %(payload)s::jsonb)
+                    on conflict (idempotency_key) do nothing
+                    """,
+                    {
+                        "outbox_id": handoff["outbox_id"],
+                        "idempotency_key": handoff["idempotency_key"],
+                        "payload": json.dumps(handoff["payload"]),
+                    },
+                )
                 cursor.execute(
                     """
                     update public.charlie_missions
                     set status = 'pr_ready',
-                        owner_decision = 'CORE atomically finalised owner review.',
+                        owner_decision = '',
                         metadata_json = (coalesce(metadata_json, '{}'::jsonb) - 'execution_lease')
                             || jsonb_build_object(
                                 'review_packet', %(review_packet)s::jsonb,
@@ -815,12 +939,14 @@ def finalize_owner_review_transaction(
                 )
                 if not cursor.fetchall():
                     return {"success": False, "status": "status_claim_lost"}, 409
-                _insert_event(cursor, mission_id, "status_changed", "CORE atomically finalised owner review.", {
+                _insert_event(cursor, mission_id, "status_changed", "CORE atomically finalised owner review and guaranteed its owner handoff.", {
                     "status": "pr_ready",
                     "review_status": "ready_for_owner_review",
                     "atomic_finalisation": True,
                     "execution_id": execution_id,
                     "candidate_revision": candidate_revision,
+                    "owner_handoff_outbox_id": handoff["outbox_id"],
+                    "owner_handoff_decision_identity": handoff["decision_identity"],
                 })
     except Exception as exc:
         return {"success": False, "status": "owner_review_finalization_failed", "error_type": exc.__class__.__name__}, 503
@@ -831,6 +957,8 @@ def finalize_owner_review_transaction(
         "mission_status": "pr_ready",
         "execution_id": execution_id,
         "candidate_revision": candidate_revision,
+        "owner_handoff_outbox_id": handoff["outbox_id"],
+        "owner_handoff_decision_identity": handoff["decision_identity"],
     }, 200
 
 
@@ -1407,6 +1535,7 @@ def record_mission_review_decision(
     database_url=None,
     connect_factory=None,
     expected_review_generation="",
+    expected_decision_identity="",
 ):
     mission_id = _clean_text(mission_id, 90)
     decision = _clean_text(decision, 40)
@@ -1428,6 +1557,11 @@ def record_mission_review_decision(
     review_packet_before_decision = dict((mission.get("metadata") or {}).get("review_packet") or {})
     current_review_generation = _clean_text(review_packet_before_decision.get("review_generation", ""), 180)
     expected_review_generation = _clean_text(expected_review_generation, 180)
+    handoff_before_decision = review_packet_before_decision.get("owner_handoff") if isinstance(review_packet_before_decision.get("owner_handoff"), dict) else {}
+    current_decision_identity = _clean_text(handoff_before_decision.get("decision_identity"), 80) or protected_review_decision_identity(mission_id, review_packet_before_decision)
+    expected_decision_identity = _clean_text(expected_decision_identity, 80)
+    if expected_decision_identity and expected_decision_identity != current_decision_identity:
+        return {"success": False, "configured": True, "status": "stale_owner_handoff", "mission_id": mission_id}, 409
     if decision == "approve_final_release" and (not current_review_generation or (expected_review_generation and expected_review_generation != current_review_generation)):
         return {"success": False, "configured": True, "status": "stale_review_generation", "mission_id": mission_id}, 409
     final_readiness = evaluate_final_readiness(mission)
@@ -1442,6 +1576,9 @@ def record_mission_review_decision(
         }, 409
     if decision == "send_back":
         target_stage = _normalize_review_send_back_stage(target_stage, mission.get("agent_workflow") or [])
+        authoritative_target = _normalize_review_send_back_stage(_authoritative_send_back_target(review_packet_before_decision), mission.get("agent_workflow") or [])
+        if handoff_before_decision and target_stage != authoritative_target:
+            return {"success": False, "configured": True, "status": "non_authoritative_send_back_target", "mission_id": mission_id, "authoritative_target": authoritative_target}, 409
     metadata = dict(mission.get("metadata") or {})
     decisions = metadata.get("owner_review_decisions") if isinstance(metadata.get("owner_review_decisions"), list) else []
     decision_record = {
@@ -1549,7 +1686,24 @@ def record_mission_review_decision(
                     "comments": comments,
                     "target_stage": target_stage if decision == "send_back" else "",
                     "mission_status": target_status,
+                    "owner_handoff_decision_identity": current_decision_identity,
                 })
+                if current_decision_identity:
+                    cursor.execute(
+                        """
+                        update public.charlie_notification_outbox
+                        set payload_json = payload_json || jsonb_build_object(
+                            'handoff_state', 'owner_decided',
+                            'owner_decision', %(decision)s,
+                            'owner_decided_at', now()
+                        )
+                        where event_type = 'NEEDS_OWNER_APPROVAL'
+                          and payload_json->>'mission_id' = %(mission_id)s
+                          and payload_json->>'decision_identity' = %(decision_identity)s
+                          and coalesce(payload_json->>'handoff_state', '') not in ('superseded', 'owner_decided')
+                        """,
+                        {"mission_id": mission_id, "decision_identity": current_decision_identity, "decision": decision},
+                    )
     except Exception as exc:
         return {
             "success": False,

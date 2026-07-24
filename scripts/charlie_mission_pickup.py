@@ -1768,9 +1768,11 @@ def _executive_owner_decision_keyboard(payload, mission=None):
         rows.append([{"text": "Review Follow-up", "callback_data": mission_callback(follow_up_id, "open")}])
     if status == "pr_ready":
         packet = ((mission.get("metadata") or {}).get("review_packet") or {}) if isinstance(mission.get("metadata"), dict) else {}
-        if packet.get("review_generation") and packet.get("tested_revision"):
+        handoff = packet.get("owner_handoff") if isinstance(packet.get("owner_handoff"), dict) else {}
+        if packet.get("review_generation") and packet.get("tested_revision") and handoff.get("decision_identity"):
             rows.append([{"text": "Approve Release", "callback_data": mission_callback(mission_id, "approvefinal", review_candidate_token(mission))}])
-        rows.append([{"text": "Send Back to Tester", "callback_data": mission_callback(mission_id, "sendback", "tester")}])
+            target = str(handoff.get("authoritative_send_back_target") or "")
+            rows.append([{"text": f"Send Back to {target.replace('_', ' ').title()}", "callback_data": mission_callback(mission_id, "sendback", f"{review_candidate_token(mission)}:{target}")}])
     rows.append([{"text": "Refresh Mission", "callback_data": mission_callback(mission_id, "open")}])
     return {"inline_keyboard": rows}
 

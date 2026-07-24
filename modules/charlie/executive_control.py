@@ -6,6 +6,8 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from modules.charlie.mission_store import build_protected_review_handoff
+
 
 RED_ZONE_TERMS = {
     "customer_send", "public_post", "payment", "deposit", "reservation",
@@ -153,25 +155,19 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     })
             elif assessment.get("reason") == "protected_surface_requires_owner":
                 metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
-                packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
-                review_generation = stable_fingerprint({
-                    "mission_id": mission.get("mission_id"),
-                    "tested_revision": packet.get("tested_revision") or packet.get("current_revision") or "",
-                    "review_generation": _review_generation_identity(mission, packet),
-                    "pr_url": packet.get("pr_url") or metadata.get("pr_url") or "",
-                    "risk_flags": assessment.get("risk_flags", []),
-                })
-                escalation = {
-                    "action": "review_owner_required", "mission_id": mission.get("mission_id"),
-                    "mission_status": "pr_ready",
-                    "title": mission.get("title") or mission.get("mission_id"),
-                    "reason": assessment.get("reason"), "risk_flags": assessment.get("risk_flags", []),
-                    "recommended_action": "Review the protected change and explicitly approve or send it back.",
-                    "authority_tier": "charl_human", "block_class": "protected_review",
-                    "notification_fingerprint": review_generation,
-                }
-                escalation.update(_bounded_review_reminder(mission, review_generation, now))
-                escalations.append(escalation)
+                packet = dict(metadata.get("review_packet")) if isinstance(metadata.get("review_packet"), dict) else {}
+                packet.setdefault("review_generation", _review_generation_identity(mission, packet))
+                handoff = build_protected_review_handoff(
+                    mission.get("mission_id"),
+                    packet,
+                    title=mission.get("title") or mission.get("mission_id"),
+                    risk_flags=assessment.get("risk_flags", []),
+                )
+                if handoff.get("success"):
+                    escalation = dict(handoff["payload"])
+                    escalation["authority_tier"] = "charl_human"
+                    escalation.update(_bounded_review_reminder(mission, handoff["decision_identity"], now))
+                    escalations.append(escalation)
         elif mission.get("status") == "paused":
             children = children_by_parent.get(str(mission.get("mission_id") or ""), [])
             metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
