@@ -1043,7 +1043,15 @@ def _explicit_targeted_workflow_ready(workflow, targeted, resume_stage=""):
         return False
     preserved = [str(agent or "").strip().lower() for agent in (targeted.get("preserved_agents") or []) if str(agent or "").strip()]
     if not preserved:
-        return False
+        if targeted.get("coordinator_reconciliation") is not True:
+            return False
+        if set(items) != {"evidence_reviewer", "reviewer", "publisher"}:
+            return False
+        return all(
+            str((items.get(agent) or {}).get("status") or "").strip().lower() == "pending"
+            and not (items.get(agent) or {}).get("completed_at")
+            for agent in ("reviewer", "publisher")
+        )
     return all(
         str((items.get(agent) or {}).get("status") or "").strip().lower() == "complete"
         and bool((items.get(agent) or {}).get("completed_at"))

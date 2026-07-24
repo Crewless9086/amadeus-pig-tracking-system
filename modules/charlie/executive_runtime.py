@@ -609,12 +609,33 @@ def _execute_family_reconciliation(command, command_id, database_url, connect_fa
         if str((workflow[index] or {}).get("status") or "").strip().lower() == "complete"
         and (workflow[index] or {}).get("completed_at")
     ]
-    resumed_workflow = targeted_workflow_return(
-        workflow,
-        "evidence_reviewer",
-        "Reconcile terminal child delivery and operational evidence.",
-        preserve_agents=preserved_agents,
-    )
+    coordinator_only = not preserved_agents
+    if coordinator_only:
+        by_agent = {
+            str(item.get("agent") or "").strip().lower(): dict(item)
+            for item in workflow
+        }
+        resumed_workflow = []
+        for agent, stage_status in (
+            ("evidence_reviewer", "active"),
+            ("reviewer", "pending"),
+            ("publisher", "pending"),
+        ):
+            item = by_agent.get(agent) or {
+                "agent": agent,
+                "purpose": "Reconcile and close terminal child evidence.",
+                "findings": "",
+                "handoff_to": "",
+            }
+            item.update({"status": stage_status, "completed_at": None})
+            resumed_workflow.append(item)
+    else:
+        resumed_workflow = targeted_workflow_return(
+            workflow,
+            "evidence_reviewer",
+            "Reconcile terminal child delivery and operational evidence.",
+            preserve_agents=preserved_agents,
+        )
     coordinator = dict(metadata.get("mission_coordinator") or {})
     coordinator.update(
         {
@@ -636,6 +657,7 @@ def _execute_family_reconciliation(command, command_id, database_url, connect_fa
                 "target_agent": "evidence_reviewer",
                 "preserved_agents": preserved_agents,
                 "reason": "terminal_child_evidence_reconciliation",
+                "coordinator_reconciliation": coordinator_only,
             },
         },
         status="approved",
