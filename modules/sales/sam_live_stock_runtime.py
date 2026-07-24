@@ -666,6 +666,16 @@ def _prior_context_from_chatwoot_history(history, inbound):
             incoming_texts.append(content)
     if not incoming_texts:
         return {}
+    latest_reset_index = next(
+        (
+            index
+            for index in range(len(incoming_texts) - 1, -1, -1)
+            if _explicit_new_request(incoming_texts[index])
+        ),
+        None,
+    )
+    if latest_reset_index is not None:
+        incoming_texts = incoming_texts[latest_reset_index:]
     facts = {}
     for text in incoming_texts[-8:]:
         extracted = extract_live_stock_facts(text, inbound or {})
