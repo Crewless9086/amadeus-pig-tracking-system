@@ -1,9 +1,14 @@
 import unittest
+import threading
+import time
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from app import app
-from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
+from modules.beacon.opportunity_scanner import (
+    _reset_dependency_singleflight_for_tests,
+    build_beacon_opportunity_cards,
+)
 from modules.sales import sales_transaction_routes
 
 NOW = datetime(2026, 7, 12, 12, tzinfo=timezone.utc)
@@ -14,6 +19,9 @@ def eligible_pig(pig_id='P1', category='Grower', sex='Male'):
 
 
 class BeaconOpportunityScannerTests(unittest.TestCase):
+    def setUp(self):
+        _reset_dependency_singleflight_for_tests()
+
     def test_malformed_allocation_pigs_and_thresholds_fail_closed(self):
         demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 2, 'category': 'Grower'}]
         malformed_values = ((None, 'bad-thresholds'), ({}, None), ('not-pigs', []), ([eligible_pig(), None], 'bad-thresholds'))
@@ -306,3 +314,160 @@ class BeaconOpportunityScannerTests(unittest.TestCase):
             response = app.test_client().get('/api/sales/beacon/opportunities')
         self.assertEqual(response.status_code, 401)
         scanner.assert_not_called()
+
+    def test_dependency_timing_names_the_timed_out_reader_and_fails_closed(self):
+        release = threading.Event()
+        allocation = {
+            'source': 'supabase_canonical',
+            'generated_date': '2026-07-12',
+            'thresholds': {'stale_weight_days': 14},
+            'pigs': [eligible_pig('P1')],
+        }
+
+        result = build_beacon_opportunity_cards(
+            allocation=allocation,
+            live_intakes=None,
+            meat_leads=[],
+            live_intakes_loader=lambda: release.wait(1),
+            dependency_timeout_seconds=0.01,
+            now=NOW,
+        )
+
+        diagnostics = result['dependency_diagnostics']
+        self.assertEqual(diagnostics['allocation_readiness']['status'], 'injected')
+        self.assertEqual(diagnostics['meat_sales_leads']['status'], 'injected')
+        self.assertEqual(diagnostics['sam_live_stock_intakes']['status'], 'timed_out')
+        live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+        self.assertEqual(live['demand_cap'], 0)
+        self.assertIn('sam_live_stock_demand_unavailable', live['blockers'])
+
+    def test_repeated_timeout_keeps_one_allocation_loader_in_flight(self):
+        started = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def allocation_loader():
+            calls.append("allocation")
+            started.set()
+            release.wait(1)
+            return {
+                'source': 'supabase_canonical',
+                'generated_date': '2026-07-12',
+                'thresholds': {'stale_weight_days': 14},
+                'pigs': [eligible_pig('P1')],
+            }
+
+        first = build_beacon_opportunity_cards(
+            allocation=None,
+            live_intakes=[],
+            meat_leads=[],
+            allocation_loader=allocation_loader,
+            dependency_timeout_seconds=0.01,
+            now=NOW,
+        )
+        self.assertTrue(started.is_set())
+        second = build_beacon_opportunity_cards(
+            allocation=None,
+            live_intakes=[],
+            meat_leads=[],
+            allocation_loader=allocation_loader,
+            dependency_timeout_seconds=0.01,
+            now=NOW,
+        )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            first['dependency_diagnostics']['allocation_readiness']['status'],
+            'timed_out',
+        )
+        self.assertEqual(
+            second['dependency_diagnostics']['allocation_readiness']['status'],
+            'in_progress',
+        )
+        release.set()
+        for _ in range(50):
+            third = build_beacon_opportunity_cards(
+                allocation=None,
+                live_intakes=[],
+                meat_leads=[],
+                allocation_loader=allocation_loader,
+                dependency_timeout_seconds=0.01,
+                now=NOW,
+            )
+            if third['dependency_diagnostics']['allocation_readiness']['status'] == 'cached':
+                break
+            time.sleep(0.002)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            third['dependency_diagnostics']['allocation_readiness']['status'],
+            'cached',
+        )
+
+    def test_failed_read_cools_down_then_later_success_recovers(self):
+        calls = []
+
+        def allocation_loader():
+            calls.append("allocation")
+            if len(calls) == 1:
+                raise RuntimeError("bounded test failure")
+            return {
+                'source': 'supabase_canonical',
+                'generated_date': '2026-07-12',
+                'thresholds': {'stale_weight_days': 14},
+                'pigs': [eligible_pig('P1')],
+            }
+
+        first = build_beacon_opportunity_cards(
+            allocation=None, live_intakes=[], meat_leads=[],
+            allocation_loader=allocation_loader,
+            dependency_timeout_seconds=0.05,
+            dependency_cooldown_seconds=0.01,
+            now=NOW,
+        )
+        second = build_beacon_opportunity_cards(
+            allocation=None, live_intakes=[], meat_leads=[],
+            allocation_loader=allocation_loader,
+            dependency_timeout_seconds=0.05,
+            dependency_cooldown_seconds=0.01,
+            now=NOW,
+        )
+        time.sleep(0.015)
+        third = build_beacon_opportunity_cards(
+            allocation=None, live_intakes=[], meat_leads=[],
+            allocation_loader=allocation_loader,
+            dependency_timeout_seconds=0.05,
+            dependency_cooldown_seconds=0.01,
+            now=NOW,
+        )
+
+        self.assertEqual(first['dependency_diagnostics']['allocation_readiness']['status'], 'failed')
+        self.assertEqual(second['dependency_diagnostics']['allocation_readiness']['status'], 'cooling_down')
+        self.assertEqual(third['dependency_diagnostics']['allocation_readiness']['status'], 'usable')
+        self.assertEqual(len(calls), 2)
+
+    def test_cached_stale_allocation_never_proves_current_opportunity(self):
+        stale = {
+            'source': 'supabase_canonical',
+            'generated_date': '2026-07-01',
+            'thresholds': {'stale_weight_days': 14},
+            'pigs': [eligible_pig('P1')],
+        }
+        demand = [{'conversation_id': 'C1', 'intake_status': 'Open', 'quantity': 1, 'category': 'Grower'}]
+        first = build_beacon_opportunity_cards(
+            allocation=None, live_intakes=demand, meat_leads=[],
+            allocation_loader=lambda: stale,
+            dependency_timeout_seconds=0.05,
+            now=NOW,
+        )
+        second = build_beacon_opportunity_cards(
+            allocation=None, live_intakes=demand, meat_leads=[],
+            allocation_loader=lambda: stale,
+            dependency_timeout_seconds=0.05,
+            now=NOW,
+        )
+
+        self.assertEqual(second['dependency_diagnostics']['allocation_readiness']['status'], 'cached')
+        for result in (first, second):
+            live = next(card for card in result['cards'] if card['lane'] == 'live_stock')
+            self.assertEqual(live['demand_cap'], 0)
+            self.assertIn('stale_or_missing_allocation_evidence', live['blockers'])

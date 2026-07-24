@@ -3,6 +3,8 @@
 from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
 from math import ceil, isfinite
+import threading
+import time as time_module
 import re
 
 from modules.oom_sakkie.sales_campaign_store import list_sales_leads
@@ -25,6 +27,10 @@ AUTHORITY = {
     "changes_stock": False,
     "writes_farm_lifecycle": False,
 }
+DEPENDENCY_CACHE_TTL_SECONDS = 15.0
+DEPENDENCY_COOLDOWN_SECONDS = 2.0
+_DEPENDENCY_FLIGHTS = {}
+_DEPENDENCY_FLIGHTS_LOCK = threading.Lock()
 
 
 def _normalized_allocation_thresholds(value):
@@ -256,16 +262,46 @@ def _card(*, lane, category, now, observed_at, demand, capacity, blockers, risks
     }
 
 
-def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_leads=None, now=None):
+def build_beacon_opportunity_cards(
+    *,
+    allocation=None,
+    live_intakes=None,
+    meat_leads=None,
+    now=None,
+    dependency_timeout_seconds=8,
+    dependency_cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    dependency_cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
+    allocation_loader=None,
+    live_intakes_loader=None,
+    meat_leads_loader=None,
+):
     """Compose canonical reads into expiring advisory cards; never write state."""
     now = _utc(now) or datetime.now(timezone.utc)
-    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=now.date(), allow_sheet_fallback=False)
-    if live_intakes is None:
-        result, status = list_sam_live_stock_open_intakes(limit=100)
-        live_intakes = result.get("open_intakes", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
-    if meat_leads is None:
-        result, status = list_sales_leads(limit=100, status_filter="launch_test")
-        meat_leads = result.get("sales_leads", []) if isinstance(result, dict) and status == 200 and result.get("success") else None
+    supplied = {
+        "allocation_readiness": allocation,
+        "sam_live_stock_intakes": live_intakes,
+        "meat_sales_leads": meat_leads,
+    }
+    loaders = {
+        "allocation_readiness": allocation_loader or (
+            lambda: get_pig_allocation_readiness(
+                today=now.date(), allow_sheet_fallback=False
+            )
+        ),
+        "sam_live_stock_intakes": live_intakes_loader or _load_live_intakes,
+        "meat_sales_leads": meat_leads_loader or _load_meat_leads,
+    }
+    loaded, dependency_diagnostics = _bounded_dependency_reads(
+        supplied,
+        loaders,
+        dependency_timeout_seconds,
+        dependency_cache_ttl_seconds,
+        dependency_cooldown_seconds,
+    )
+    allocation = loaded["allocation_readiness"]
+    live_intakes = loaded["sam_live_stock_intakes"]
+    meat_leads = loaded["meat_sales_leads"]
+    allocation = allocation if isinstance(allocation, dict) else {}
 
     observed_at = _utc(allocation.get("generated_at") or allocation.get("generated_date"))
     source_ok = allocation.get("source") == "supabase_canonical"
@@ -360,4 +396,200 @@ def build_beacon_opportunity_cards(*, allocation=None, live_intakes=None, meat_l
     policy = sam_meat_control_policy()
     meat_capacity = {"verified_available": 0, "existing_commitments": 0, "operational_reserve": 0, "safety_buffer": 0, "available_after_buffers": 0, "demand_cap": 0, "formula": "forced_zero_while_sam_meat_is_interest_capture_only", "control_mode": policy["mode"]}
     cards.append(_card(lane="meat", category="meat_preorder", now=now, observed_at=observed_at, demand=meat_demand, capacity=meat_capacity, blockers=meat_blockers, risks=["butcher_capacity_unproven", "owner_review_required"], source_ids=meat_demand["source_ids"]))
-    return {"success": True, "scanner_version": SCANNER_VERSION, "status": "owner_review_only", "generated_at": now.isoformat(), "cards": cards, "authority": dict(AUTHORITY), "writes_to_supabase": False}
+    return {
+        "success": True,
+        "scanner_version": SCANNER_VERSION,
+        "status": "owner_review_only",
+        "generated_at": now.isoformat(),
+        "cards": cards,
+        "dependency_diagnostics": dependency_diagnostics,
+        "authority": dict(AUTHORITY),
+        "writes_to_supabase": False,
+    }
+
+
+def _load_live_intakes():
+    result, status = list_sam_live_stock_open_intakes(limit=100)
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("open_intakes", [])
+    return None
+
+
+def _load_meat_leads():
+    result, status = list_sales_leads(limit=100, status_filter="launch_test")
+    if isinstance(result, dict) and status == 200 and result.get("success"):
+        return result.get("sales_leads", [])
+    return None
+
+
+def _bounded_dependency_reads(
+    supplied,
+    loaders,
+    timeout_seconds,
+    cache_ttl_seconds=DEPENDENCY_CACHE_TTL_SECONDS,
+    cooldown_seconds=DEPENDENCY_COOLDOWN_SECONDS,
+):
+    try:
+        timeout = max(0.01, min(float(timeout_seconds), 30.0))
+    except (TypeError, ValueError):
+        timeout = 8.0
+    try:
+        cache_ttl = max(0.0, min(float(cache_ttl_seconds), 60.0))
+    except (TypeError, ValueError):
+        cache_ttl = DEPENDENCY_CACHE_TTL_SECONDS
+    try:
+        cooldown = max(0.0, min(float(cooldown_seconds), 30.0))
+    except (TypeError, ValueError):
+        cooldown = DEPENDENCY_COOLDOWN_SECONDS
+    results = dict(supplied)
+    diagnostics = {}
+    tokens = {}
+    started = time_module.monotonic()
+    for name, value in supplied.items():
+        if value is not None:
+            diagnostics[name] = {
+                "status": "injected",
+                "duration_ms": 0.0,
+                "availability": "usable",
+                "timeout_seconds": timeout,
+            }
+            continue
+        tokens[name] = _begin_dependency_flight(
+            name, loaders[name], cache_ttl, cooldown, timeout
+        )
+
+    deadline = started + timeout
+    for name, token in tokens.items():
+        value, diagnostic = _finish_dependency_flight(
+            name, token, deadline, timeout
+        )
+        results[name] = value
+        diagnostics[name] = diagnostic
+    return results, diagnostics
+
+
+def _begin_dependency_flight(name, loader, cache_ttl, cooldown, timeout):
+    now = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.setdefault(name, {
+            "generation": 0,
+            "thread": None,
+            "value": None,
+            "completed_at": 0.0,
+            "duration_ms": 0.0,
+            "error_type": "",
+            "cooldown_until": 0.0,
+        })
+        cache_age = now - state["completed_at"] if state["completed_at"] else None
+        if state["value"] is not None and cache_age is not None and cache_age <= cache_ttl:
+            return {
+                "mode": "cached",
+                "value": state["value"],
+                "cache_age_ms": round(cache_age * 1000, 2),
+                "cache_ttl_seconds": cache_ttl,
+                "timeout_seconds": timeout,
+            }
+        thread = state.get("thread")
+        if thread is not None and thread.is_alive():
+            return {"mode": "in_progress", "timeout_seconds": timeout}
+        if now < state.get("cooldown_until", 0.0):
+            return {
+                "mode": "cooling_down",
+                "cooldown_remaining_ms": round(
+                    (state["cooldown_until"] - now) * 1000, 2
+                ),
+                "timeout_seconds": timeout,
+            }
+        state["generation"] += 1
+        generation = state["generation"]
+        thread = threading.Thread(
+            target=_dependency_worker,
+            args=(name, generation, loader, cooldown),
+            daemon=True,
+            name=f"beacon-{name}",
+        )
+        state["thread"] = thread
+        thread.start()
+        return {
+            "mode": "started",
+            "generation": generation,
+            "thread": thread,
+            "timeout_seconds": timeout,
+        }
+
+
+def _dependency_worker(name, generation, loader, cooldown):
+    started = time_module.monotonic()
+    try:
+        value = loader()
+        status = "usable" if value is not None else "failed"
+        error_type = ""
+    except Exception as exc:
+        value = None
+        status = "failed"
+        error_type = exc.__class__.__name__
+    finished = time_module.monotonic()
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = _DEPENDENCY_FLIGHTS.get(name)
+        if not state or state["generation"] != generation:
+            return
+        state["thread"] = None
+        state["duration_ms"] = round((finished - started) * 1000, 2)
+        state["error_type"] = error_type
+        if status == "usable":
+            state["value"] = value
+            state["completed_at"] = finished
+            state["cooldown_until"] = 0.0
+        else:
+            state["value"] = None
+            state["completed_at"] = 0.0
+            state["cooldown_until"] = finished + cooldown
+
+
+def _finish_dependency_flight(name, token, deadline, timeout):
+    mode = token["mode"]
+    if mode == "cached":
+        return token["value"], {
+            "status": "cached",
+            "duration_ms": 0.0,
+            "cache_age_ms": token["cache_age_ms"],
+            "cache_ttl_seconds": token["cache_ttl_seconds"],
+            "availability": "usable",
+            "timeout_seconds": timeout,
+        }
+    if mode in {"in_progress", "cooling_down"}:
+        diagnostic = {
+            "status": mode,
+            "duration_ms": 0.0,
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+        }
+        if mode == "cooling_down":
+            diagnostic["cooldown_remaining_ms"] = token["cooldown_remaining_ms"]
+        return None, diagnostic
+    thread = token["thread"]
+    thread.join(max(0.0, deadline - time_module.monotonic()))
+    if thread.is_alive():
+        return None, {
+            "status": "timed_out",
+            "duration_ms": round(timeout * 1000, 2),
+            "availability": "inaccessible",
+            "timeout_seconds": timeout,
+            "single_flight_active": True,
+        }
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        state = dict(_DEPENDENCY_FLIGHTS.get(name, {}))
+    value = state.get("value")
+    status = "usable" if value is not None else "failed"
+    return value, {
+        "status": status,
+        "duration_ms": state.get("duration_ms", 0.0),
+        "availability": "usable" if value is not None else "unavailable",
+        "timeout_seconds": timeout,
+        "error_type": state.get("error_type", ""),
+    }
+
+
+def _reset_dependency_singleflight_for_tests():
+    with _DEPENDENCY_FLIGHTS_LOCK:
+        _DEPENDENCY_FLIGHTS.clear()

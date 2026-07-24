@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, jsonify, render_template, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
@@ -9,6 +9,11 @@ from modules.auth.owner_access import (
     owner_logout_post,
     owner_status,
     require_owner_page_access,
+    require_owner_read_access,
+)
+from modules.beacon.content_operations import (
+    build_beacon_content_candidate,
+    gather_beacon_content_evidence,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -114,6 +119,21 @@ def beacon_media_page():
     if guard:
         return guard
     return render_template("beacon-media.html")
+
+
+@app.route("/api/beacon/content-operations", methods=["GET"])
+def beacon_content_operations_read():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    evidence = gather_beacon_content_evidence()
+    candidate = build_beacon_content_candidate(evidence)
+    candidate["runtime_status"] = {
+        "endpoint_available": True,
+        "owner_authenticated_read_succeeded": True,
+        **candidate.pop("capability_status"),
+    }
+    return jsonify(candidate), 200
 
 
 @app.route("/sales/meat-driver")
