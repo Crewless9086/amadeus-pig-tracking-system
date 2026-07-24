@@ -555,6 +555,7 @@ def _owner_queue_missions(statuses, limit=10):
             candidates = [
                 mission for mission in candidates
                 if _mission_dependencies_ready(mission, status_cache=dependency_status_cache)
+                and not _coordinator_waiting_for_children(mission)
             ]
         missions.extend(candidates)
         if len(missions) >= parsed_limit:
@@ -597,6 +598,12 @@ def _mission_dependencies_ready(mission, status_cache=None):
         if status_cache[dependency_id] not in {"done", "merged", "deployed"}:
             return False
     return True
+
+
+def _coordinator_waiting_for_children(mission):
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+    return str(coordinator.get("status") or "").strip().lower() == "waiting_children" and bool(coordinator.get("child_mission_ids"))
 
 
 def _queue_health_snapshot():

@@ -217,6 +217,12 @@ def artifact_applicability(
     artifact_commit = _artifact_revision(artifact)
     artifact_scope = _clean(lineage.get("scope_hash") or artifact.get("scope_hash"))
     agent = _clean(lineage.get("agent") or artifact.get("agent") or agent_name).lower()
+    # Candidate-bound release gates prove revision identity before permissive scope rules.
+    if agent == "risk_agent" and candidate_commit:
+        if not artifact_commit:
+            return False, "candidate_revision_required"
+        if artifact_commit != candidate_commit:
+            return False, "different_revision"
     if artifact_fp and candidate_fingerprint and artifact_fp == candidate_fingerprint:
         return True, "exact_candidate"
     if (

@@ -808,9 +808,9 @@ def run_agent_execution_bridge_v2(
                     connect_factory=connect_factory,
                 )
         if not quality["passed"]:
-            backflow_target = _resolve_agent_backflow_target(
-                _agent_backflow_target(agent, artifact, quality),
-                agent_sequence,
+            authoritative_target = _authoritative_targeted_recovery_agent(mission)
+            backflow_target = "" if agent == authoritative_target else _resolve_agent_backflow_target(
+                _agent_backflow_target(agent, artifact, quality), agent_sequence,
             )
             if backflow_target and backflow_counts.get(backflow_target, 0) < AGENT_BACKFLOW_LIMIT:
                 blocker_fingerprint = _backflow_fingerprint(agent, backflow_target, quality["reason"], artifact)
@@ -2846,9 +2846,9 @@ def _explicit_targeted_agent_sequence(mission):
     }
     preserved = [str(agent or "").strip().lower() for agent in targeted.get("preserved_agents") or [] if str(agent or "").strip()]
     if not preserved or any(statuses.get(agent) != "complete" or not completed_at.get(agent) for agent in preserved):
-        return []
-    if statuses.get(target) not in {"active", "complete"}:
-        return []
+        raise ValueError("targeted_recovery_preserved_stage_mismatch")
+    if statuses.get(target) not in {"active", "complete", "pending"}:
+        raise ValueError("targeted_recovery_target_stage_mismatch")
     return sequence
 
 
@@ -2859,6 +2859,8 @@ def _execution_start_agent(mission, agent_sequence=None):
     target = str(review_packet.get("return_to_stage") or "").strip().lower()
     stale_resume_hint = bool(target)
     if target in agent_sequence:
+        if _authoritative_targeted_recovery_agent(mission) == target:
+            return target
         internal_recovery = str(review_packet.get("review_status") or "").strip().lower().startswith("internal_recovery")
         mismatch_recovery = "stage_mismatch" in str(review_packet.get("blocked_reason") or "").lower()
         if internal_recovery or mismatch_recovery:
@@ -6567,6 +6569,14 @@ def _agent_backflow_target(agent, artifact, quality):
     return ""
 
 
+def _authoritative_targeted_recovery_agent(mission):
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    targeted = metadata.get("targeted_invalidation") if isinstance(metadata.get("targeted_invalidation"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    target = str(packet.get("return_to_stage") or targeted.get("target_agent") or "").strip().lower()
+    return target if targeted.get("version") == "charlie_targeted_invalidation_v1" and target in all_agent_names() else ""
+
+
 def _resolve_agent_backflow_target(target_agent, agent_sequence=None):
     target_agent = str(target_agent or "").strip().lower()
     agent_sequence = list(agent_sequence or AGENT_SEQUENCE)
@@ -6722,13 +6732,21 @@ def _durable_backflow_fingerprint_count(mission, fingerprint):
 
 def _bounded_internal_recovery(mission_id, agent, blocked_reason, artifact, disposition, mission=None, database_url=None, connect_factory=None):
     disposition = dict(disposition if isinstance(disposition, dict) else {})
-    fingerprint = _backflow_fingerprint(agent, disposition.get("responsible_stage") or agent, blocked_reason, artifact)
     loaded_mission = mission if isinstance(mission, dict) else {}
     if not loaded_mission and mission_id:
         loaded, status_code = get_mission(mission_id, database_url=database_url, connect_factory=connect_factory)
         if status_code < 400:
             loaded_mission = loaded.get("mission") or {}
     metadata = loaded_mission.get("metadata") if isinstance(loaded_mission.get("metadata"), dict) else {}
+    packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+    manifest = packet.get("candidate_manifest") if isinstance(packet.get("candidate_manifest"), dict) else {}
+    candidate_revision = str(packet.get("tested_revision") or packet.get("candidate_revision") or manifest.get("source_commit") or "").strip().lower()
+    fingerprint = hashlib.sha256(json.dumps({
+        "mission_id": str(mission_id or loaded_mission.get("mission_id") or ""),
+        "recovery_class": str(disposition.get("block_class") or "internal_recovery").strip().lower(),
+        "responsible_stage": str(disposition.get("responsible_stage") or agent).strip().lower(),
+        "candidate_revision": candidate_revision,
+    }, sort_keys=True).encode("utf-8")).hexdigest()
     memory = mission_memory_from_metadata(metadata)
     pattern = (memory.get("recurring_block_patterns") or {}).get(f"fingerprint:{fingerprint}") or {}
     prior_count = int(pattern.get("count") or 0)
