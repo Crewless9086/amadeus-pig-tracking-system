@@ -9,6 +9,11 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
+from modules.beacon.public_livestock_content_policy import (
+    RISK_STATUS,
+    assess_public_livestock_content,
+    public_livestock_policy_contract,
+)
 from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
@@ -343,8 +348,14 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
     if missing_asset_ids:
         errors.append("selected_asset_not_approved_or_not_found")
     exact_text = _clean_caption_text(payload.get("owner_exact_text")) or (draft.get("text", "") if draft else "")
-    if _has_live_stock_direct_sales_wording(exact_text):
-        errors.append("live_stock_awareness_direct_sales_wording_blocked")
+    content_policy = assess_public_livestock_content(
+        exact_text,
+        objective="farm_awareness",
+        campaign_lane="live_stock_awareness",
+        media=assets,
+    )
+    if not content_policy["allowed"]:
+        errors.append(RISK_STATUS)
     channel = selected_channel or (draft.get("channel") if draft else "")
     packet_id = _publish_packet_id(draft_id, "|".join(selected_asset_ids), channel, "live_stock_awareness", exact_text)
     return {
@@ -366,6 +377,7 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "selected_assets": assets,
         "asset_ids": selected_asset_ids,
         "owner_notes": owner_notes,
+        "public_livestock_policy": content_policy,
         "approval_status": "owner_review_required",
         "approval_records_publish": False,
         "approval_sends_or_posts": False,
@@ -374,8 +386,8 @@ def build_live_stock_awareness_campaign_publish_packet(payload=None, approved_as
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
         "safety_checks": {
-            "draft_is_awareness_only": not _has_live_stock_direct_sales_wording(exact_text),
-            "draft_has_no_direct_sales_wording": not _has_live_stock_direct_sales_wording(exact_text),
+            "draft_is_awareness_only": content_policy["allowed"],
+            "draft_has_no_direct_sales_wording": content_policy["allowed"],
             "assets_are_owner_approved": len(assets) == len(selected_asset_ids) and all(
                 item.get("effective_public_use_approved") or item.get("public_use_approved") for item in assets
             ),
@@ -418,9 +430,10 @@ def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None
     truth, errors = _live_stock_sales_truth(payload)
     ranked = [asset for asset in _rank_approved_assets(approved_assets or [], campaign_lane="live_stock_sales")
               if asset.get("public_use_approved") and asset.get("content_sha256")]
-    drafts = _live_stock_sales_drafts(truth) if not errors else []
+    errors.append(RISK_STATUS)
+    drafts = []
     return {
-        "success": not errors,
+        "success": False,
         "mode": "beacon_live_stock_sales_campaign_review_only",
         "campaign_lane": "live_stock_sales",
         "campaign": {"name": "Live-Stock Sales", "status": "owner_review_required", "product_focus": truth.get("product_focus", "")},
@@ -432,7 +445,8 @@ def build_live_stock_sales_campaign_selection(payload=None, approved_assets=None
         "errors": errors,
         "handoff_to_sam": {"sales_lane": "live_stock_sales", "campaign_attribution_id": truth.get("campaign_attribution_id", ""), "negotiates": False, "reserves": False, "creates_order": False},
         "whatsapp_suggestion_only": True,
-        "next_gate": "owner_selects_exact_facebook_copy_and_approved_image" if not errors else "restore_current_supabase_and_sheet_lineaged_sales_evidence",
+        "public_livestock_policy": public_livestock_policy_contract(),
+        "next_gate": "use_private_sam_livestock_sales_for_independent_customer_enquiries",
         "authority": deepcopy(AUTHORITY_FLAGS),
         "forbidden_actions": list(FORBIDDEN_ACTIONS),
     }
@@ -1224,8 +1238,23 @@ def facebook_posting_policy(environ=None):
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
                                       meat_launch_authorized=False):
     payload = payload if isinstance(payload, dict) else {}
-    if normalize_campaign_lane(payload.get("campaign_lane")) == "meat_launch" and not meat_launch_authorized:
+    campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
+        assessment = assess_public_livestock_content(
+            payload.get("exact_text") or payload.get("message"),
+            objective=payload.get("objective") or "farm_awareness",
+            campaign_lane=campaign_lane,
+            media=payload.get("selected_assets") or payload.get("selected_asset"),
+        )
+        if not assessment["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": assessment,
+                **_facebook_execution_authority(False),
+            }, 409
     policy = facebook_posting_policy(environ=environ)
     params = _facebook_post_params(payload, policy)
     validation_error = _facebook_post_validation_error(params, policy)
@@ -2058,6 +2087,18 @@ def _performance_params(payload):
 
 def _recommend_boost(payload, spend_amount, messages, qualified, evidence=None):
     evidence = evidence or _performance_metric_evidence(payload)
+    campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
+        return {
+            "recommended_action": "do_not_boost",
+            "recommendation_reason": (
+                "Public livestock performance may be reported, but clicks, messages "
+                "and engagement cannot optimize or graduate commercial livestock copy."
+            ),
+            "recommended_spend_amount": 0,
+            "recommended_duration_days": 0,
+            "public_livestock_commerce_optimization_allowed": False,
+        }
     fulfillment_risk = _clean_text(payload.get("fulfillment_risk")).lower()
     safety_risk = _clean_text(payload.get("safety_risk")).lower()
     owner_blocked = str(payload.get("owner_blocked") or "").strip().lower() in {"1", "true", "yes", "on"}

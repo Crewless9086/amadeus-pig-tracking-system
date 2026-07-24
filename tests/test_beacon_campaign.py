@@ -43,11 +43,12 @@ class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
         return [{"asset_id": "ASSET-1", "effective_approval_status": "approved", "effective_public_use_approved": True,
                  "media_type": "image", "content_sha256": "abc123", "sale_stream_relevance": ["live_stock_sales"], "privacy_risk": "low"}]
 
-    def test_sales_lane_builds_distinct_facebook_and_whatsapp_suggestions(self):
+    def test_public_sales_lane_is_disabled_and_private_sam_remains_separate(self):
         from modules.sales.beacon_campaign import build_beacon_campaign_selection
         result = build_beacon_campaign_selection(self.evidence(), approved_assets=self.assets())
-        self.assertTrue(result["success"])
-        self.assertEqual([d["channel"] for d in result["channel_drafts"]], ["Facebook", "WhatsApp"])
+        self.assertFalse(result["success"])
+        self.assertEqual(result["channel_drafts"], [])
+        self.assertIn("owner_review_required_meta_livestock_commerce_risk", result["errors"])
         self.assertTrue(result["whatsapp_suggestion_only"])
         self.assertEqual(result["source_truth"]["fulfilment_cap"], 3)
         self.assertEqual(result["source_truth"]["price_source"], "supabase")
@@ -65,19 +66,14 @@ class BeaconLiveStockSalesCampaignTests(unittest.TestCase):
         self.assertIn("sheet_lineaged_supabase_price_required", result["errors"])
         self.assertEqual(result["channel_drafts"], [])
 
-    def test_exact_packet_binds_copy_media_source_revisions_cap_price_and_attribution(self):
+    def test_sales_packet_is_never_publishable_even_with_complete_evidence(self):
         from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
         payload = {**self.evidence(), "draft_id": "facebook_live_stock_sales", "asset_id": "ASSET-1", "channel": "Facebook"}
         first = build_beacon_campaign_publish_packet(payload, approved_assets=self.assets())
         second = build_beacon_campaign_publish_packet(payload, approved_assets=self.assets())
-        self.assertTrue(first["success"])
+        self.assertFalse(first["success"])
         self.assertEqual(first["publish_packet_id"], second["publish_packet_id"])
-        binding = first["packet_binding"]
-        self.assertEqual(binding["asset_hash"], "abc123")
-        self.assertEqual(binding["opportunity_fingerprint"], "opportunity-revision-1")
-        self.assertEqual(binding["fulfilment_cap"], 3)
-        self.assertEqual(binding["pricing_id"], "PRICE-1")
-        self.assertTrue(binding["campaign_attribution_id"].startswith("BEACON-SAM-LIVE-"))
+        self.assertIn("owner_review_required_meta_livestock_commerce_risk", first["errors"])
 
     def test_sales_packet_requires_owner_approved_image(self):
         from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
@@ -560,6 +556,21 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(preview["calls_meta"])
         self.assertFalse(preview["spends_money"])
 
+    def test_livestock_metrics_cannot_optimize_toward_commerce_or_boost(self):
+        packet = build_beacon_boost_recommendation_packet({
+            "campaign_lane": "live_stock_awareness",
+            "publish_packet_id": "BEACON-LIVESTOCK-AWARENESS-1",
+            "messages_to_sam": 50,
+            "qualified_buyer_leads": 10,
+            "recommended_spend_amount": 150,
+        })
+
+        self.assertEqual(packet["recommended_action"], "do_not_boost")
+        self.assertEqual(packet["recommended_spend_amount"], 0)
+        self.assertFalse(packet["recommends_boost"])
+        self.assertFalse(packet["boosts_post"])
+        self.assertFalse(packet["spends_money"])
+
     def test_campaign_performance_builds_boost_packet_rules_before_db_when_missing_config(self):
         result, status = record_beacon_campaign_performance_event({
             "manual_post_event_id": "BEACON-MANUAL-POST-1",
@@ -686,6 +697,22 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(result["status"], "facebook_mixed_media_requires_manual_composer")
         self.assertEqual(called, [])
+
+    def test_final_execution_gate_withholds_indirect_livestock_commerce(self):
+        calls = []
+        result, status = execute_beacon_facebook_page_post({
+            "campaign_lane": "live_stock_awareness",
+            "publish_packet_id": "PACKET-RISK",
+            "channel": "Facebook",
+            "exact_text": "Planning livestock? Message us with the quantity and timing you need.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: calls.append("meta"), execution_recorder=lambda *_args, **_kwargs: calls.append("db"))
+
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "owner_review_required_meta_livestock_commerce_risk")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["calls_meta"])
 
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
         recorded = []

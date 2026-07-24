@@ -35,9 +35,7 @@ class BeaconPostComposerTests(unittest.TestCase):
 
     def test_unsafe_livestock_sales_copy_is_blocked(self):
         issues = caption_safety_issues("Piglets available now for sale. Price R450.", "live_stock_awareness")
-        self.assertIn("direct_sales_wording:available", issues)
-        self.assertIn("direct_sales_wording:sale", issues)
-        self.assertIn("livestock_price_wording_blocked", issues)
+        self.assertIn("direct_livestock_commerce_meaning", issues)
 
     def test_local_fallback_remains_awareness_only(self):
         result, status = build_beacon_caption_suggestions(
