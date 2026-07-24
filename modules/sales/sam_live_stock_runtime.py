@@ -21,7 +21,10 @@ from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_pro
 from modules.sales.sam_pricing import resolve_live_stock_price_rule
 from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, classify_sam_sales_lane
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
-from modules.sales.sam_live_stock_understanding import understand_live_stock_inbound
+from modules.sales.sam_live_stock_understanding import (
+    is_order_commitment_confirmation,
+    understand_live_stock_inbound,
+)
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
 from modules.charlie.agent_runtime import delegate_to_agent
 
@@ -408,6 +411,7 @@ def extract_live_stock_facts(message, inbound=None):
         "transport_expectation": _extract_transport(text),
         "payment_method": _extract_payment(text),
         "quote_requested": _asks_quote(text),
+        "order_commitment": is_order_commitment_confirmation(text),
         "reservation_requested": _asks_reservation(text),
         "breeding_interest": _has_any(text, ("breeding", "breed", "gilt", "gilts", "boar", "boars", "sow", "sows")),
         "customer_name": inbound.get("customer_name") or "",
@@ -1946,6 +1950,12 @@ def _safe_reply_draft(facts, route, missing, availability, blockers, price_answe
             "Ek verstaan dit is vir teel. Ek kan 'n geskikte vroulike-en-manlike groep voorberei en die aangetekende verwantskappe nagaan, maar die plaas moet die presiese diere goedkeur voordat ons hulle belowe.",
         )
     if facts.get("reservation_requested"):
+        if facts.get("order_commitment"):
+            return _localized_reply(
+                facts,
+                "Thanks, I understand that you are ready to proceed. I have noted your reservation request, but the farm must approve the exact animal before I can confirm or reserve it for you.",
+                "Dankie, ek verstaan dat jy gereed is om voort te gaan. Ek het jou reserveringsversoek aangeteken, maar die plaas moet die presiese dier goedkeur voordat ek dit vir jou kan bevestig of reserveer.",
+            )
         return "I can note your interest, but I cannot confirm those animals for you until the farm approves it on the system."
     action_reply = _reply_for_next_action(facts, conversation_plan, price_answer_packet)
     if action_reply:
@@ -2822,6 +2832,7 @@ def _asks_reservation(text):
         "keep those",
         "keep the",
         "book them",
+        "reserveer",
         "hou hulle",
     ))
 

@@ -103,6 +103,8 @@ def classify_message_intent(text: str, attachments: list[Mapping[str, Any]] | No
         return "voice_note"
     if not lower and any(item.get("kind") == "image" for item in attachments):
         return "image_only"
+    if is_order_commitment_confirmation(lower):
+        return "order_commitment"
     rules = [
         ("job_request", r"\b(job|work|hiring|employment|cv|werk|werksgeleentheid)\b"),
         ("location_question", r"\b(where|location|province|address|waar|ligging|adres|provinsie)\b"),
@@ -121,6 +123,24 @@ def classify_message_intent(text: str, attachments: list[Mapping[str, Any]] | No
         if re.search(pattern, lower):
             return intent
     return "unclear" if lower else "empty"
+
+
+def is_order_commitment_confirmation(text: str) -> bool:
+    """Recognise explicit, bounded customer confirmation without treating a bare yes as commitment."""
+    lower = clean_text(text, 1800).lower().replace("’", "'")
+    patterns = (
+        r"\bi(?:'m| am) ready to (?:proceed|go ahead)\b",
+        r"\byes,? (?:please )?(?:proceed|go ahead)\b",
+        r"\b(?:i want|i would like|i'd like) to go ahead\b",
+        r"\blet(?:'s| us) (?:proceed|go ahead)\b",
+        r"\bplease (?:proceed|go ahead)(?: with (?:it|the (?:pig|order)))?\b",
+        r"\bek is gereed om voort te gaan\b",
+        r"\bja,? (?:asseblief )?gaan voort\b",
+        r"\bek wil (?:daarmee )?voortgaan\b",
+        r"\bons kan (?:daarmee )?voortgaan\b",
+        r"\bgaan asseblief voort(?: met (?:dit|die (?:vark|bestelling)))?\b",
+    )
+    return any(re.search(pattern, lower) for pattern in patterns)
 
 
 def _voice_packet(attachments, payload, transcriber):
