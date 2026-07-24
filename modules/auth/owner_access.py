@@ -2,6 +2,7 @@ import hmac
 import ipaddress
 import os
 import uuid
+from hashlib import sha256
 from datetime import datetime, timezone
 
 from flask import jsonify, redirect, render_template, request, session, url_for
@@ -107,15 +108,19 @@ def owner_session_is_valid(required_role="read"):
     return role in {"read", "admin"}
 
 
-def set_owner_session(role):
+def set_owner_session(role, actor_reference):
     if role not in {"read", "admin"}:
         raise ValueError("owner session role must be read or admin")
+    actor_reference = str(actor_reference or "").strip()
+    if not actor_reference:
+        raise ValueError("owner session actor reference is required")
     session.clear()
     session[SESSION_KEY] = {
         "role": role,
         # This opaque, server-signed session principal is audit provenance.  It
         # is deliberately not supplied by a browser request body.
         "principal_id": f"owner-{role}:{uuid.uuid4().hex}",
+        "actor_reference": actor_reference,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     session.permanent = False
@@ -198,7 +203,7 @@ def owner_login_post():
             session_role=_session_role(),
             status_mode=False,
         ), 403
-    set_owner_session(role)
+    set_owner_session(role, _actor_reference_for_token(role, token))
     return redirect(_safe_next(request.form.get("next")) or url_for("meat_sales_leads_page"))
 
 
@@ -230,9 +235,24 @@ def owner_status_payload():
     }
 
 
+def owner_actor_reference():
+    """Return the server-derived, non-secret author reference for a write."""
+    data = session.get(SESSION_KEY)
+    if isinstance(data, dict):
+        actor_reference = str(data.get("actor_reference") or "").strip()
+        if actor_reference and owner_session_is_valid("admin"):
+            return actor_reference
+    # Local development remains explicitly marked and is never used for a
+    # remotely authenticated production write.
+    if _access_disabled_or_local_allowed():
+        return "local-development-owner-admin"
+    return ""
+
+
 def _access_disabled_or_local_allowed():
-    if not owner_access_enabled():
-        return True
+    # Protected write rails must never become remotely public merely because a
+    # deployment omitted the owner-access switch.  The only sessionless escape
+    # hatch is an explicitly enabled request from the loopback interface.
     return owner_local_dev_allowed() and is_loopback_request(request)
 
 
@@ -269,6 +289,15 @@ def _role_for_token(token):
     if len(read) >= MIN_OWNER_TOKEN_CHARS and hmac.compare_digest(token, read):
         return "read"
     return ""
+
+
+def _actor_reference_for_token(role, token):
+    digest = hmac.new(
+        _secret().encode("utf-8"),
+        f"owner-access:{role}:{token}".encode("utf-8"),
+        sha256,
+    ).hexdigest()
+    return f"owner-{role}-{digest[:24]}"
 
 
 def _valid_token_env(name):
