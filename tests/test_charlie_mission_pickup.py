@@ -701,6 +701,35 @@ class CharlieMissionPickupTests(unittest.TestCase):
         build_plan.assert_not_called()
         update_vault.assert_not_called()
 
+    @patch("scripts.charlie_mission_pickup.update_mission_vault")
+    @patch("scripts.charlie_mission_pickup.build_core_plan")
+    def test_refresh_preserves_minimal_decomposed_parent_closure(self, build_plan, update_vault):
+        mission = {
+            "mission_id": "PARENT-CLOSURE",
+            "metadata": {
+                "review_packet": {"return_to_stage": "evidence_reviewer"},
+                "targeted_invalidation": {
+                    "version": "charlie_targeted_invalidation_v1",
+                    "target_agent": "evidence_reviewer",
+                    "preserved_agents": [],
+                    "reason": "terminal_child_evidence_reconciliation",
+                    "coordinator_reconciliation": True,
+                },
+            },
+            "agent_workflow": [
+                {"agent": "evidence_reviewer", "status": "active", "completed_at": None},
+                {"agent": "reviewer", "status": "pending", "completed_at": None},
+                {"agent": "publisher", "status": "pending", "completed_at": None},
+            ],
+        }
+
+        result = charlie_mission_pickup._refresh_core_plan_for_pickup(mission)
+
+        self.assertFalse(result["refreshed"])
+        self.assertEqual(result["reason"], "explicit_targeted_workflow_preserved")
+        build_plan.assert_not_called()
+        update_vault.assert_not_called()
+
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_claim_lost_does_not_write_codex_chat(self, update_status, list_owner_work_missions):

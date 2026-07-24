@@ -323,6 +323,45 @@ class CharlieExecutiveRuntimeTests(unittest.TestCase):
             ],
         )
 
+    @patch("modules.charlie.executive_runtime.complete_control_command", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.update_mission_vault", return_value=({"success": True}, 200))
+    @patch("modules.charlie.executive_runtime.get_mission")
+    def test_family_reconciliation_uses_minimal_closure_when_parent_has_no_completed_stages(
+        self, get_mission, update, _complete,
+    ):
+        get_mission.side_effect = [
+            ({"mission": {
+                "mission_id": "PARENT",
+                "status": "paused",
+                "agent_workflow": [
+                    {"agent": "idea_expander", "status": "pending", "completed_at": None},
+                    {"agent": "evidence_reviewer", "status": "pending", "completed_at": None},
+                    {"agent": "reviewer", "status": "pending", "completed_at": None},
+                    {"agent": "publisher", "status": "pending", "completed_at": None},
+                ],
+                "metadata": {
+                    "review_packet": {},
+                    "mission_coordinator": {"status": "waiting_children", "child_mission_ids": ["CHILD"]},
+                },
+            }}, 200),
+            ({"mission": {"mission_id": "CHILD", "status": "deployed"}}, 200),
+        ]
+        from modules.charlie.executive_runtime import _execute_family_reconciliation
+        result = _execute_family_reconciliation(
+            {"mission_id": "PARENT", "child_states": {"CHILD": "deployed"}}, "CMD", None, None,
+        )
+        self.assertEqual(result["status"], "family_reconciled")
+        payload = update.call_args.args[1]
+        self.assertTrue(payload["targeted_invalidation"]["coordinator_reconciliation"])
+        self.assertEqual(
+            [(item["agent"], item["status"]) for item in payload["agent_workflow"]],
+            [
+                ("evidence_reviewer", "active"),
+                ("reviewer", "pending"),
+                ("publisher", "pending"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
