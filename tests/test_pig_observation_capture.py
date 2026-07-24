@@ -111,7 +111,7 @@ class PigObservationCaptureTests(unittest.TestCase):
         app.config.update(TESTING=True)
         denied = ({"success": False, "status": "owner_access_denied"}, 403)
         with app.test_client() as client, patch.object(pig_weights_routes, "require_owner_admin_access", return_value=denied), patch.object(pig_weights_routes, "record_observation") as capture:
-            response = client.post("/api/pig-weights/observations", json=self.observation)
+            response = client.post("/api/pig-weights/pigs/P-1/observations", json=self.observation)
         self.assertEqual(response.status_code, 403)
         capture.assert_not_called()
 
@@ -119,7 +119,7 @@ class PigObservationCaptureTests(unittest.TestCase):
         app = __import__("app").app
         app.config.update(TESTING=True)
         with app.test_client() as client, patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), patch.object(pig_weights_routes, "owner_actor_reference", return_value="owner-admin-test"), patch.object(pig_weights_routes, "record_management_intent", return_value=({"success": True, "advisory_only": True}, 201)) as capture:
-            response = client.post("/api/pig-weights/management-intents", json=self.intent)
+            response = client.post("/api/pig-weights/pigs/P-1/management-intents", json=self.intent)
         self.assertEqual(response.status_code, 201)
         capture.assert_called_once_with(self.intent, "owner-admin-test")
 
@@ -127,10 +127,44 @@ class PigObservationCaptureTests(unittest.TestCase):
         app = __import__("app").app
         app.config.update(TESTING=True)
         with app.test_client() as client, patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), patch.object(pig_weights_routes, "owner_actor_reference", return_value=""), patch.object(pig_weights_routes, "record_observation") as capture:
-            response = client.post("/api/pig-weights/observations", json=self.observation)
+            response = client.post("/api/pig-weights/pigs/P-1/observations", json=self.observation)
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["status"], "owner_actor_reference_unavailable")
         capture.assert_not_called()
+
+    def test_observation_route_derives_pig_id_from_path(self):
+        app = __import__("app").app
+        app.config.update(TESTING=True)
+        payload = {key: value for key, value in self.observation.items() if key != "pig_id"}
+        with app.test_client() as client, patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), patch.object(pig_weights_routes, "owner_actor_reference", return_value="owner-admin-test"), patch.object(pig_weights_routes, "record_observation", return_value=({"success": True}, 201)) as capture:
+            response = client.post("/api/pig-weights/pigs/P-1/observations", json=payload)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(capture.call_args.args[0]["pig_id"], "P-1")
+        self.assertEqual(capture.call_args.args[1], "owner-admin-test")
+
+    def test_capture_routes_reject_body_pig_id_mismatch_before_service(self):
+        app = __import__("app").app
+        app.config.update(TESTING=True)
+        with app.test_client() as client, patch.object(pig_weights_routes, "require_owner_admin_access", return_value=None), patch.object(pig_weights_routes, "owner_actor_reference", return_value="owner-admin-test"), patch.object(pig_weights_routes, "record_observation") as observation_capture, patch.object(pig_weights_routes, "record_management_intent") as intent_capture:
+            observation_response = client.post("/api/pig-weights/pigs/P-2/observations", json=self.observation)
+            intent_response = client.post("/api/pig-weights/pigs/P-2/management-intents", json=self.intent)
+        self.assertEqual(observation_response.status_code, 400)
+        self.assertEqual(observation_response.get_json()["status"], "pig_id_path_mismatch")
+        self.assertFalse(observation_response.get_json()["writes_to_pigs"])
+        self.assertFalse(observation_response.get_json()["executes_action"])
+        self.assertEqual(intent_response.status_code, 400)
+        self.assertEqual(intent_response.get_json()["status"], "pig_id_path_mismatch")
+        observation_capture.assert_not_called()
+        intent_capture.assert_not_called()
+
+    def test_global_capture_routes_are_not_exposed(self):
+        app = __import__("app").app
+        app.config.update(TESTING=True)
+        with app.test_client() as client:
+            observation_response = client.post("/api/pig-weights/observations", json=self.observation)
+            intent_response = client.post("/api/pig-weights/management-intents", json=self.intent)
+        self.assertEqual(observation_response.status_code, 404)
+        self.assertEqual(intent_response.status_code, 404)
 
     def test_capture_rejects_missing_server_author_before_database_write(self):
         result, status = record_observation(self.observation, "", connect_factory=lambda _: self.fail("must not connect"))
