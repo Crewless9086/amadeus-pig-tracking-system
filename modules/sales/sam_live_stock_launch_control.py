@@ -32,6 +32,16 @@ CHATWOOT_TAKEOVER_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_EN
 ORDER_RESERVATION_ENABLED_ENV = "SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED"
 OWNER_CARD_EVENT_SOURCE = "sam_live_stock_owner_card_lifecycle"
 OWNER_CARD_ACTIVE_STATES = {"active", "with_owner", "action_failed", "action_claimed"}
+HUMAN_AUDIT_CLASSIFICATIONS = ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")
+
+
+class SamLiveStockHumanAuditError(RuntimeError):
+    def __init__(self, status, stage, *, http_status=502, error_type="UpstreamEvidenceError"):
+        super().__init__(status)
+        self.status = status
+        self.stage = stage
+        self.http_status = http_status
+        self.error_type = error_type
 
 AUTHORITY_FLAGS = {
     "sends_customer_message": False,
@@ -1129,27 +1139,109 @@ def list_sam_live_stock_open_intakes(limit=25, *, database_url=None):
 def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=None, review_loader=None, now=None):
     """Owner-only caller surface: read and classify HUMAN conversations; never resets them."""
     source = environ if environ is not None else os.environ
+    diagnostics = _human_audit_configuration_diagnostics(source)
     try:
         conversations = (chatwoot_reader or _chatwoot_read_conversations)(source)
     except Exception as exc:
-        return {"success": False, "status": "sam_live_stock_human_audit_read_failed", "error": _clean(str(exc), 240), "conversations": [], "bulk_reset_allowed": False, **AUTHORITY_FLAGS}, 502
+        return _human_audit_failure(exc, "chatwoot_request", diagnostics)
+    if not isinstance(conversations, list):
+        return _human_audit_failure(
+            SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_malformed_response",
+                "chatwoot_response_shape",
+                error_type=type(conversations).__name__,
+            ),
+            "chatwoot_response_shape",
+            diagnostics,
+        )
+    diagnostics = {
+        **diagnostics,
+        "chatwoot_request_status": "completed",
+        "conversation_items_received": len(conversations),
+    }
     now = now or datetime.now(timezone.utc)
     rows = []
-    for conversation in conversations if isinstance(conversations, list) else []:
-        attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    for item_index, conversation in enumerate(conversations):
+        if not isinstance(conversation, dict):
+            return _human_audit_failure(
+                SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_conversation_shape_invalid",
+                    "conversation_item",
+                    error_type=type(conversation).__name__,
+                ),
+                "conversation_item",
+                diagnostics,
+                item_index=item_index,
+            )
+        raw_attrs = conversation.get("custom_attributes")
+        if raw_attrs is not None and not isinstance(raw_attrs, dict):
+            return _human_audit_failure(
+                SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_attribute_shape_invalid",
+                    "custom_attributes",
+                    error_type=type(raw_attrs).__name__,
+                ),
+                "custom_attributes",
+                diagnostics,
+                item_index=item_index,
+            )
+        attrs = raw_attrs or {}
         if _clean(attrs.get("conversation_mode"), 20).upper() != "HUMAN":
             continue
         if review_loader is not None or chatwoot_reader is None:
-            loaded, loaded_status = (review_loader or get_latest_sam_live_stock_review_event_for_conversation)(conversation.get("id"))
+            try:
+                loaded_result = (review_loader or get_latest_sam_live_stock_review_event_for_conversation)(conversation.get("id"))
+                if not isinstance(loaded_result, tuple) or len(loaded_result) != 2:
+                    raise SamLiveStockHumanAuditError(
+                        "sam_live_stock_human_audit_review_response_invalid",
+                        "review_event_load",
+                        error_type=type(loaded_result).__name__,
+                    )
+                loaded, loaded_status = loaded_result
+                if not isinstance(loaded, dict) or not isinstance(loaded_status, int):
+                    raise SamLiveStockHumanAuditError(
+                        "sam_live_stock_human_audit_review_response_invalid",
+                        "review_event_load",
+                        error_type=type(loaded).__name__,
+                    )
+            except Exception as exc:
+                return _human_audit_failure(exc, "review_event_load", diagnostics, item_index=item_index)
             if loaded_status < 400 and loaded.get("success"):
                 conversation = {**conversation, "sam_live_stock_review": _human_audit_review_state(loaded.get("event"))}
-        rows.append(_classify_human_conversation(conversation, now))
-    return {"success": True, "status": "sam_live_stock_human_audit_loaded", "conversations": rows, "counts": {key: sum(1 for row in rows if row["classification"] == key) for key in ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")}, "bulk_reset_allowed": False, "writes_performed": False, **AUTHORITY_FLAGS}, 200
+            elif loaded_status != 404:
+                return _human_audit_failure(
+                    SamLiveStockHumanAuditError(
+                        "sam_live_stock_human_audit_review_unavailable",
+                        "review_event_load",
+                        http_status=503,
+                        error_type=_clean(loaded.get("error_type"), 80) or "ReviewEvidenceUnavailable",
+                    ),
+                    "review_event_load",
+                    diagnostics,
+                    item_index=item_index,
+                )
+        try:
+            rows.append(_classify_human_conversation(conversation, now))
+        except Exception as exc:
+            return _human_audit_failure(exc, "classification", diagnostics, item_index=item_index)
+    return {
+        "success": True,
+        "status": "sam_live_stock_human_audit_loaded",
+        "evidence_available": True,
+        "conversation_count_known": True,
+        "conversations": rows,
+        "counts": {key: sum(1 for row in rows if row["classification"] == key) for key in HUMAN_AUDIT_CLASSIFICATIONS},
+        "diagnostics": diagnostics,
+        "bulk_reset_allowed": False,
+        "writes_performed": False,
+        **AUTHORITY_FLAGS,
+    }, 200
 
 
 def _classify_human_conversation(conversation, now):
-    messages = conversation.get("messages") if isinstance(conversation.get("messages"), list) else []
-    latest = messages[-1] if messages else {}
+    raw_messages = conversation.get("messages")
+    messages = raw_messages if isinstance(raw_messages, list) else []
+    latest = messages[-1] if messages and isinstance(messages[-1], dict) else {}
     direction = _clean(latest.get("message_type") or latest.get("direction"), 40).lower()
     sender_type = _clean((latest.get("sender") or {}).get("type") if isinstance(latest.get("sender"), dict) else latest.get("sender_type"), 40).lower()
     timestamp = latest.get("created_at") or conversation.get("last_activity_at")
@@ -1169,7 +1261,20 @@ def _classify_human_conversation(conversation, now):
         "stale_unknown": "Inspect the exact conversation and evidence before any mode change.",
         "active_manual": "Leave in HUMAN while Charl is actively handling it; return explicitly when done.",
     }
-    return {"conversation_id": _clean(conversation.get("id"), 100), "classification": classification, "latest_message_direction": direction or "unknown", "latest_sender_type": sender_type or "unknown", "latest_message_at": timestamp, "age_hours": age_hours, "owner_action": actions[classification], "auto_reset_allowed": False}
+    return {
+        "conversation_id": _clean(conversation.get("id"), 100),
+        "classification": classification,
+        "latest_message_direction": direction or "unknown",
+        "latest_sender_type": sender_type or "unknown",
+        "latest_message_at": _json_safe_timestamp(timestamp),
+        "age_hours": age_hours,
+        "shape_complete": (
+            (raw_messages is None or isinstance(raw_messages, list))
+            and (not messages or isinstance(messages[-1], dict))
+        ),
+        "owner_action": actions[classification],
+        "auto_reset_allowed": False,
+    }
 
 
 def _age_hours(value, now):
@@ -1200,12 +1305,99 @@ def _human_audit_review_state(event):
     return {"state": "unknown", "evidence_id": _clean(event.get("review_event_id"), 120)}
 
 
+def _human_audit_configuration_diagnostics(source):
+    return {
+        "chatwoot_base_url_configured": bool(_clean(source.get(CHATWOOT_BASE_URL_ENV), 200)),
+        "chatwoot_account_id_configured": bool(_clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 80)),
+        "chatwoot_token_configured": bool(
+            _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+        ),
+        "bounded_pages": 20,
+        "request_timeout_seconds": 10,
+        "secrets_exposed": False,
+    }
+
+
+def _human_audit_failure(exc, default_stage, diagnostics, *, item_index=None):
+    if isinstance(exc, SamLiveStockHumanAuditError):
+        status = exc.status
+        stage = exc.stage
+        status_code = exc.http_status
+        error_type = exc.error_type
+    elif isinstance(exc, TimeoutError):
+        status = "sam_live_stock_human_audit_chatwoot_timeout"
+        stage = default_stage
+        status_code = 504
+        error_type = exc.__class__.__name__
+    elif isinstance(exc, urllib_error.HTTPError):
+        status = "sam_live_stock_human_audit_chatwoot_http_error"
+        stage = default_stage
+        status_code = 502
+        error_type = exc.__class__.__name__
+    elif isinstance(exc, urllib_error.URLError):
+        status = "sam_live_stock_human_audit_chatwoot_unavailable"
+        stage = default_stage
+        status_code = 502
+        error_type = exc.__class__.__name__
+    elif isinstance(exc, (json.JSONDecodeError, UnicodeDecodeError)):
+        status = "sam_live_stock_human_audit_malformed_response"
+        stage = default_stage
+        status_code = 502
+        error_type = exc.__class__.__name__
+    elif default_stage == "review_event_load":
+        status = "sam_live_stock_human_audit_review_unavailable"
+        stage = default_stage
+        status_code = 503
+        error_type = exc.__class__.__name__
+    else:
+        status = "sam_live_stock_human_audit_internal_failure"
+        stage = default_stage
+        status_code = 500
+        error_type = exc.__class__.__name__
+    safe_diagnostics = {**diagnostics, "chatwoot_request_status": "failed"}
+    result = {
+        "success": False,
+        "status": status,
+        "failure_stage": stage,
+        "error_type": _clean(error_type, 80) or "UnknownError",
+        "evidence_available": False,
+        "conversation_count_known": False,
+        "conversations": [],
+        "counts": None,
+        "diagnostics": safe_diagnostics,
+        "bulk_reset_allowed": False,
+        "writes_performed": False,
+        **AUTHORITY_FLAGS,
+    }
+    if isinstance(item_index, int):
+        result["failed_item_index"] = item_index
+    return result, status_code
+
+
+def build_sam_live_stock_human_audit_failure(exc, stage, environ=None):
+    source = environ if environ is not None else os.environ
+    return _human_audit_failure(exc, stage, _human_audit_configuration_diagnostics(source))
+
+
+def _json_safe_timestamp(value):
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
 def _chatwoot_read_conversations(source):
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
     account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
     token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
     if not token:
-        raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
+        raise SamLiveStockHumanAuditError(
+            "sam_live_stock_human_audit_chatwoot_not_configured",
+            "chatwoot_configuration",
+            http_status=503,
+            error_type="ConfigurationUnavailable",
+        )
     conversations = []
     for page in range(1, 21):
         request = urllib_request.Request(
@@ -1214,15 +1406,53 @@ def _chatwoot_read_conversations(source):
         )
         with urllib_request.urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-        batch = data.get("payload") if isinstance(data.get("payload"), list) else []
+        if not isinstance(payload, dict):
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_malformed_response",
+                "chatwoot_response_shape",
+                error_type=type(payload).__name__,
+            )
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_malformed_response",
+                "chatwoot_response_shape",
+                error_type=type(data).__name__,
+            )
+        batch = data.get("payload")
+        if not isinstance(batch, list):
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_pagination_invalid",
+                "chatwoot_pagination",
+                error_type=type(batch).__name__,
+            )
         conversations.extend(batch)
         if not batch:
             break
-        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+        meta = data.get("meta")
+        if meta is not None and not isinstance(meta, dict):
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_pagination_invalid",
+                "chatwoot_pagination",
+                error_type=type(meta).__name__,
+            )
+        meta = meta or {}
         all_count = meta.get("all_count")
+        if all_count is not None and (not isinstance(all_count, int) or all_count < 0):
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_pagination_invalid",
+                "chatwoot_pagination",
+                error_type=type(all_count).__name__,
+            )
         if isinstance(all_count, int) and len(conversations) >= all_count:
             break
+        if page == 20:
+            raise SamLiveStockHumanAuditError(
+                "sam_live_stock_human_audit_pagination_limit_reached",
+                "chatwoot_pagination",
+                http_status=503,
+                error_type="PaginationLimitReached",
+            )
     return conversations
 
 

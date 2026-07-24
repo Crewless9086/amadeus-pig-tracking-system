@@ -104,6 +104,7 @@ from modules.sales.sam_live_stock_launch_control import (
     _telegram_send_message,
     apply_sam_live_stock_chatwoot_takeover,
     audit_sam_live_stock_human_conversations,
+    build_sam_live_stock_human_audit_failure,
     build_live_stock_reservation_plan,
     build_sam_live_stock_launch_readiness,
     build_sam_live_stock_review_event,
@@ -740,8 +741,15 @@ def sam_live_stock_human_mode_audit():
     guard = _require_owner_meat_money_path_access()
     if guard:
         return guard
-    result, status_code = audit_sam_live_stock_human_conversations()
-    return jsonify(result), status_code
+    try:
+        result, status_code = audit_sam_live_stock_human_conversations()
+    except Exception as exc:
+        result, status_code = build_sam_live_stock_human_audit_failure(exc, "audit_execution")
+    try:
+        return jsonify(result), status_code
+    except Exception as exc:
+        fallback, fallback_status = build_sam_live_stock_human_audit_failure(exc, "json_serialization")
+        return jsonify(fallback), fallback_status
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/owner-send", methods=["POST"])
