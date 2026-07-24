@@ -10,6 +10,7 @@
     meatCapReady: false,
     exactImageReady: false,
     performanceEvents: [],
+    metaImportPacket: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -153,6 +154,12 @@
     metaPreviewMetrics: byId("beacon_meta_preview_metrics"),
     metaPreviewBlockers: byId("beacon_meta_preview_blockers"),
     metaPreviewEvents: byId("beacon_meta_preview_events"),
+    metaImportState: byId("beacon_meta_import_state"),
+    metaImportPrepare: byId("beacon_meta_import_prepare"),
+    metaImportSummary: byId("beacon_meta_import_summary"),
+    metaImportApproval: byId("beacon_meta_import_approval"),
+    metaImportExecute: byId("beacon_meta_import_execute"),
+    metaImportResult: byId("beacon_meta_import_result"),
   };
 
   const safe = (value, fallback = "--") => {
@@ -744,6 +751,72 @@
     }
   }
 
+  function renderMetaImportPacket(payload) {
+    state.metaImportPacket = payload.success ? payload : null;
+    elements.metaImportState.textContent = payload.success ? "Exact packet ready" : "Packet blocked";
+    elements.metaImportState.dataset.state = payload.success ? "ready" : "blocked";
+    elements.metaImportApproval.checked = false;
+    elements.metaImportApproval.disabled = !payload.success;
+    elements.metaImportExecute.disabled = true;
+    if (!payload.success) {
+      elements.metaImportSummary.innerHTML = `<p>${escapeHtml(safe(payload.status, "Packet preparation failed"))}</p>`;
+      return;
+    }
+    const packet = payload.packet || {};
+    const database = packet.database_snapshot || {};
+    elements.metaImportSummary.innerHTML = `
+      <p><strong>Exact packet hash:</strong> <code>${escapeHtml(payload.packet_hash)}</code></p>
+      <p><strong>Expires:</strong> ${escapeHtml(payload.approval_expires_at)}</p>
+      <p>${escapeHtml(payload.proposed_insert_count)} proposed insert(s); ${escapeHtml(payload.existing_duplicate_count)} duplicate(s) withheld; ${escapeHtml(payload.correction_supersession_count)} correction/supersession(s); ${escapeHtml(payload.excluded_count)} exclusion(s).</p>
+      <p>False-zero exclusions: ${escapeHtml(payload.false_zero_exclusion_count)}. Compatibility-only scalar fields: ${escapeHtml((payload.compatibility_placeholder_fields || []).join(", ") || "None")}.</p>
+      <p>Existing performance rows: ${escapeHtml(database.total_performance_rows)}; legacy rows protected: ${escapeHtml(database.legacy_row_count)}.</p>
+      <p><strong>Nothing imported by preparation.</strong> Missing remains distinct from verified zero. Meta actions are not leads, sales or revenue.</p>
+    `;
+  }
+
+  async function prepareMetaImportPacket() {
+    elements.metaImportPrepare.disabled = true;
+    elements.metaImportState.textContent = "Preparing bounded packet";
+    elements.metaImportState.dataset.state = "loading";
+    const params = new URLSearchParams({
+      start: elements.metaPreviewStart.value,
+      end: elements.metaPreviewEnd.value,
+      level: elements.metaPreviewLevel.value,
+    });
+    try {
+      const response = await fetch(`/api/beacon/meta-ads-import-packet?${params.toString()}`, {method: "GET"});
+      const payload = await response.json().catch(() => ({}));
+      renderMetaImportPacket(payload);
+    } finally {
+      elements.metaImportPrepare.disabled = false;
+    }
+  }
+
+  async function executeMetaImportPacket() {
+    const prepared = state.metaImportPacket;
+    if (!prepared || !elements.metaImportApproval.checked) throw new Error("Approve the exact prepared packet first.");
+    elements.metaImportExecute.disabled = true;
+    const response = await fetch("/api/beacon/meta-ads-import-packet/execute", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        owner_approved: true,
+        packet: prepared.packet,
+        packet_hash: prepared.packet_hash,
+        approved_packet_hash: prepared.packet_hash,
+        approval_signature: prepared.approval_signature,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(safe(result.status, "Import rejected"));
+    state.metaImportPacket = null;
+    elements.metaImportApproval.checked = false;
+    elements.metaImportApproval.disabled = true;
+    elements.metaImportState.textContent = "Approved evidence appended";
+    elements.metaImportState.dataset.state = "ready";
+    elements.metaImportResult.innerHTML = `<p>${escapeHtml(result.created_count)} event(s) appended; ${escapeHtml(result.duplicate_withheld_count)} duplicate(s) withheld. Legacy rows untouched: ${result.legacy_rows_untouched ? "Yes" : "No"}.</p>`;
+  }
+
   function verifiedMetric(event, name) {
     const item = event?.metric_evidence?.[name];
     if (!item || !["verified", "owner_correction"].includes(item.status)) return null;
@@ -1198,6 +1271,15 @@
       elements.metaPreviewState.dataset.state = "blocked";
       showMessage(error.message);
     }));
+    elements.metaImportPrepare.addEventListener("click", () => prepareMetaImportPacket().catch((error) => {
+      elements.metaImportState.textContent = "Packet unavailable";
+      elements.metaImportState.dataset.state = "blocked";
+      showMessage(error.message);
+    }));
+    elements.metaImportApproval.addEventListener("change", () => {
+      elements.metaImportExecute.disabled = !elements.metaImportApproval.checked || !state.metaImportPacket;
+    });
+    elements.metaImportExecute.addEventListener("click", () => executeMetaImportPacket().catch((error) => showMessage(error.message)));
     elements.contentRefresh.addEventListener("click", () => loadContentOperations().catch((error) => {
       elements.contentState.textContent = "Evidence unavailable";
       elements.contentState.dataset.state = "blocked";

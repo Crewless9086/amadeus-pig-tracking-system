@@ -139,6 +139,88 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertNotIn("graph.facebook.com", script.lower())
         self.assertNotIn("BEACON_META_ADS_READ_TOKEN", script)
 
+    def test_meta_import_prepare_and_execute_use_separate_owner_guards(self):
+        denied = ({"success": False, "status": "owner_access_denied"}, 403)
+        with patch("app.require_owner_read_access", return_value=denied), patch(
+            "app.prepare_meta_ads_import_packet"
+        ) as prepare:
+            response = self.client.get(
+                "/api/beacon/meta-ads-import-packet"
+                "?start=2026-07-01&end=2026-07-14&level=ad"
+            )
+        self.assertEqual(response.status_code, 403)
+        prepare.assert_not_called()
+
+        packet = {
+            "success": True,
+            "status": "meta_import_packet_prepared",
+            "packet_hash": "HASH",
+        }
+        with patch("app.require_owner_read_access", return_value=None), patch(
+            "app.prepare_meta_ads_import_packet", return_value=(packet, 200)
+        ) as prepare:
+            response = self.client.get(
+                "/api/beacon/meta-ads-import-packet"
+                "?start=2026-07-01&end=2026-07-14&level=ad"
+            )
+            post_prepare = self.client.post(
+                "/api/beacon/meta-ads-import-packet", json={}
+            )
+        self.assertEqual(response.status_code, 200)
+        prepare.assert_called_once_with(
+            start_date="2026-07-01",
+            end_date="2026-07-14",
+            level="ad",
+        )
+        self.assertEqual(post_prepare.status_code, 405)
+
+        with patch("app.require_owner_admin_access", return_value=denied), patch(
+            "app.execute_meta_ads_import_packet"
+        ) as execute:
+            denied_execute = self.client.post(
+                "/api/beacon/meta-ads-import-packet/execute", json={}
+            )
+        self.assertEqual(denied_execute.status_code, 403)
+        execute.assert_not_called()
+        self.assertEqual(
+            self.client.get(
+                "/api/beacon/meta-ads-import-packet/execute"
+            ).status_code,
+            405,
+        )
+
+    def test_unapproved_import_post_is_rejected_without_write(self):
+        rejected = {
+            "success": False,
+            "status": "owner_exact_packet_approval_required",
+            "created_count": 0,
+        }
+        with patch("app.require_owner_admin_access", return_value=None), patch(
+            "app.execute_meta_ads_import_packet", return_value=(rejected, 403)
+        ) as execute:
+            response = self.client.post(
+                "/api/beacon/meta-ads-import-packet/execute", json={}
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["created_count"], 0)
+        execute.assert_called_once_with({})
+
+    def test_story_desk_contains_exact_import_review_panel(self):
+        template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
+        script = Path("static/js/beaconMedia.js").read_text(encoding="utf-8")
+        for identifier in (
+            'id="beacon_meta_import_title"',
+            'id="beacon_meta_import_prepare"',
+            'id="beacon_meta_import_approval"',
+            'id="beacon_meta_import_execute"',
+        ):
+            self.assertIn(identifier, template)
+        self.assertIn("/api/beacon/meta-ads-import-packet?", script)
+        self.assertIn("/api/beacon/meta-ads-import-packet/execute", script)
+        self.assertIn("approved_packet_hash", script)
+        self.assertIn("owner_approved: true", script)
+        self.assertNotIn("BEACON_META_ADS_READ_TOKEN", script)
+
 
 if __name__ == "__main__":
     unittest.main()
