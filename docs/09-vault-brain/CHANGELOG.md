@@ -1,5 +1,10 @@
 # Vault Brain Changelog
 
+## 2026-07-24 - Herdmaster breeding match safety-field repair
+
+- Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.
+- Required those missing values to be explicit `Unknown` signals and to fail closed with no safe-match claim; no migration, fallback, inference, or farm-record write is authorized.
+
 ## 2026-07-23 - Riversdale advisory auction outlet
 
 - Defined Riversdale as an owner-confirmed, advisory-only monthly outlet for extremely slow growers and separately owner-approved candidates.
@@ -15,6 +20,11 @@
 
 - Defined the additive, unapplied correction-batch contract: persisted owner approval, idempotency, execution-time canonical fresh-weight checks, and atomic per-pig operational audit events.
 - Kept the former purpose-review apply path preview-only and prohibited Sheets fallback for protected corrections.
+
+## 2026-07-22 - Herdmaster read-only breeding planner repair
+
+- Added Herdmaster's canonical-only, fail-closed breeding-planner advisory capability.
+- Kept calendar/reminder outputs calculated and stateless: no persistence, scheduler, delivery, acknowledgement, migration, lifecycle, mating, or farm write authority.
 
 ## 2026-07-21 - Reviewer executable test-evidence gate
 

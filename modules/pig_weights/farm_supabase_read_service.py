@@ -642,6 +642,13 @@ def get_pig_master_rows(connect_factory=None):
         "Current_Pen_ID": _text(row.get("current_pen_id")),
         "Purpose": _text(row.get("purpose")),
         "General_Notes": _text(row.get("notes")),
+        # These breeding-match safety facts are not represented by the
+        # canonical read model yet.  Expose the absence explicitly so callers
+        # fail closed instead of treating an omitted key as a cleared signal.
+        "Genetics": "",
+        "Available_For_Breeding": "Unknown",
+        "Reserved_Status": "Unknown",
+        "Source_Conflict": "Unknown",
         "Exit_Date": _date_text(row.get("exit_date")),
         "Exit_Reason": _text(row.get("exit_reason")),
         "Exit_Order_ID": _text(row.get("exit_order_id")),

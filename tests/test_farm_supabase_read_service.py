@@ -1099,6 +1099,27 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["action_type"], "review_litter_counts")
         self.assertEqual(summary["items"][0]["reason"], "Review litter counts.")
 
+    def test_pig_master_rows_explicitly_mark_unwired_breeding_safety_facts_unknown(self):
+        canonical_row = {
+            "pig_id": "SOW-1", "tag_number": "M1", "status": "Active", "on_farm": True,
+            "litter_id": "LIT-1", "sex": "Female", "current_weight_kg": 120.0,
+            "last_weight_date": date(2026, 7, 23), "current_pen_id": "PEN-SOW",
+            "pig_name": "Sow One", "animal_type": "Sow", "date_of_birth": date(2024, 1, 1),
+            "purpose": "Breeding", "notes": "good condition", "exit_date": None,
+            "exit_reason": "", "exit_order_id": "", "litter_size_born": 10,
+            "litter_size_weaned": 9, "wean_date": None, "wean_weight_kg": None,
+            "earmarked": False, "earmark_date": None,
+        }
+
+        with patch.object(farm_supabase_read_service, "_fetch_all", return_value=[canonical_row]):
+            row = farm_supabase_read_service.get_pig_master_rows()[0]
+
+        self.assertEqual(row["Genetics"], "")
+        self.assertEqual(row["Available_For_Breeding"], "Unknown")
+        self.assertEqual(row["Reserved_Status"], "Unknown")
+        self.assertEqual(row["Source_Conflict"], "Unknown")
+        self.assertEqual(row["source"], "supabase_canonical")
+
     def test_breeding_reads_map_supabase_mating_and_litter_data(self):
         current_rows = [
             {
