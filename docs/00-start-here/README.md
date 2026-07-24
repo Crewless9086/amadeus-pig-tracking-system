@@ -4,12 +4,14 @@ This folder is the active entry point for future Cursor/Codex sessions.
 
 Read in this order:
 
-1. `CURRENT_STATE.md` - what is live, what is protected, and what is risky now.
-2. `NEXT_STEPS.md` - the current priority queue.
-3. `WORKFLOW.md` - how owner notes become scoped plans and phases.
-4. `DEPLOYMENT_SOP.md` - release and branch safety rules.
-5. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
-6. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
+1. `OPERATING_STATUS.md` - concise built/merged/deployed/operational status,
+   faults, containment and owner handoff.
+2. `CURRENT_STATE.md` - longer historical state and system context.
+3. `NEXT_STEPS.md` - the current priority queue.
+4. `WORKFLOW.md` - how owner notes become scoped plans and phases.
+5. `DEPLOYMENT_SOP.md` - release and branch safety rules.
+6. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
+7. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
 
 Raw intake can use `planning/ToDoList.md` today and the `planning/inbox/` structure as it grows.
 
@@ -37,6 +39,7 @@ No customer sends, public posts, payment/deposit actions, reservations, dispatch
 
 ## Canonical Active Docs
 
+- `docs/00-start-here/OPERATING_STATUS.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/NEXT_STEPS.md`
 - `docs/00-start-here/WORKFLOW.md`
