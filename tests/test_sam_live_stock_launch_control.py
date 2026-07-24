@@ -340,7 +340,10 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             "safe_to_send": True,
             "recommended_action": "owner_authority_decision",
             "owner_authority_required": True,
-            "protected_action_reasons": ["negotiated_price_owner_authority"],
+            "protected_action_reasons": [
+                "negotiated_price_owner_authority",
+                "reservation_owner_authority",
+            ],
         }
         event = launch.build_sam_live_stock_review_event(inbound, facts, decision, review)
 
@@ -353,8 +356,20 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         ]
 
         self.assertIn("Owner decision needed: approve or decline the negotiated price", text)
+        self.assertIn("approve or decline the reservation through the protected order/stock rail", text)
         self.assertIn("Customer reply: already sent by SAM", text)
         self.assertNotIn("Approve Send", labels)
+
+    def test_fact_aware_fallback_label_maps_the_llm_disabled_status(self):
+        inbound, facts, decision = review_inputs()
+        decision["reply_source"] = "deterministic_read_only_guard"
+        decision["llm_draft"] = {"used": False, "status": "llm_disabled"}
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision)
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+
+        self.assertEqual(launch._owner_card_reply_source_summary(decision), "Fact-aware fallback")
+        self.assertIn("Draft source: Fact-aware fallback", packet["telegram_packet"]["text"])
 
     def test_owner_review_card_surfaces_llm_failure_status(self):
         inbound, facts, decision = review_inputs()
