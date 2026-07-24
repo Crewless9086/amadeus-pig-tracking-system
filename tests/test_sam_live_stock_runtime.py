@@ -27,6 +27,105 @@ def inbound_payload(**overrides):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_llm_commitment_reservation_reply_is_repaired_before_payment_question(self):
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="Yes, I am ready to proceed. Please reserve the pig for me.",
+                conversation={"id": 1826, "inbox": {"channel_type": "Channel::Whatsapp"}},
+            ),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {"collection_location": "Riversdale", "order_commitment": False},
+                "items": [{
+                    "quantity": 1,
+                    "category": "Grower",
+                    "weight_range": "25-29 kg",
+                    "sex": "Male",
+                    "status": "active",
+                }],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [
+                    {"id": "1826-1", "message_type": 0, "content": "I want 1 male grower around 25 to 29 kg."},
+                    {"id": "1826-2", "message_type": 0, "content": "I will collect in Riversdale."},
+                    {"id": "1826-3", "message_type": 1, "content": "Are you ready to commit to this order?"},
+                ],
+            },
+            availability_loader=lambda: [],
+            llm_drafter=lambda *_args: {
+                "reply_text": "Thanks, I understand you are ready to proceed. Which payment method would you prefer?",
+                "confidence": 0.99,
+            },
+        )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft_protected_repair")
+        self.assertEqual(
+            decision["llm_draft_review"]["status"],
+            "repaired_with_reservation_owner_authority_acknowledgement",
+        )
+        self.assertTrue(decision["facts"]["order_commitment"])
+        self.assertTrue(decision["facts"]["reservation_requested"])
+        self.assertEqual(decision["conversation_plan"]["goal"], "buy_live_stock: 1 Grower 25-29 kg")
+        self.assertLess(reply.index("farm must approve"), reply.index("payment method"))
+        self.assertIn("before I can confirm or reserve it", reply)
+        self.assertEqual(reply.count("?"), 1)
+        self.assertEqual(
+            decision["conversation_review"]["protected_action_reasons"],
+            ["final_order_owner_authority", "reservation_owner_authority"],
+        )
+        self.assertFalse(result["sent"])
+        self.assertFalse(decision["customer_send_allowed"])
+        self.assertFalse(decision["creates_order"])
+        self.assertFalse(decision["reserves_stock"])
+        self.assertFalse(decision["changes_stock"])
+
+    def test_llm_payment_security_implication_is_rejected(self):
+        result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Yes, proceed and reserve the pig for me."),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {
+                "success": True,
+                "known_fields": {"collection_location": "Riversdale"},
+                "items": [{"quantity": 1, "category": "Grower", "weight_range": "25-29 kg", "sex": "Male"}],
+            },
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{
+                    "id": "1826-prior",
+                    "message_type": 0,
+                    "content": "I want 1 male grower around 25 to 29 kg and will collect in Riversdale.",
+                }],
+            },
+            availability_loader=lambda: [],
+            llm_drafter=lambda *_args: {
+                "reply_text": "Thanks. Your payment method will secure the pig. Which method will you use?",
+                "confidence": 0.99,
+            },
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(decision["reply_source"], "deterministic_fallback_after_llm_review")
+        self.assertEqual(decision["llm_draft_review"]["status"], "rejected_by_safety_review")
+        self.assertIn("implies_payment_secures_animal", decision["llm_draft_review"]["blocked_reasons"])
+        self.assertIn("farm must approve", decision["suggested_reply_text"])
+        self.assertFalse(result["sent"])
+        self.assertFalse(decision["creates_order"])
+        self.assertFalse(decision["reserves_stock"])
+        self.assertFalse(decision["changes_stock"])
+
     def test_commitment_and_reservation_followup_preserves_context_and_owner_gate(self):
         variants = (
             (
