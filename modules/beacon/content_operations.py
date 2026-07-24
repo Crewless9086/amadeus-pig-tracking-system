@@ -670,6 +670,22 @@ def _performance_evidence_evaluation(row):
         source = str(metric.get("source") or "").strip()
         reference = str(metric.get("source_reference") or "").strip()
         retrieved_at = _iso(metric.get("retrieved_at"))
+        placeholder = metric.get("compatibility_placeholder")
+        if (
+            status in {"missing", "unsupported"}
+            and metric.get("value") is None
+            and isinstance(placeholder, dict)
+            and placeholder.get("evidentiary") is False
+            and placeholder.get("stored_value") == 0
+            and source
+            and source.lower() not in REJECTED_METRIC_SOURCES
+            and reference
+            and retrieved_at
+        ):
+            # NOT NULL compatibility zeros are storage placeholders only.
+            # Their explicit evidence state remains non-rankable and does not
+            # invalidate independently verified metrics in the same snapshot.
+            continue
         if (
             status == "unsupported"
             and metric.get("value") is None

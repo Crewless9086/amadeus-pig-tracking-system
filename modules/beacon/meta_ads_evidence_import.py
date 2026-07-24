@@ -7,7 +7,6 @@ from hashlib import sha256
 import hmac
 import json
 import os
-import secrets
 
 from modules.beacon.meta_ads_insights_preview import (
     build_meta_ads_insights_preview,
@@ -18,7 +17,6 @@ DATABASE_URL_ENV = "DATABASE_URL"
 PACKET_TTL_SECONDS = 600
 IMPORT_SOURCE = "meta_ads_insights"
 IMPORT_MODE = "beacon_meta_ads_owner_approved_append_only_import"
-_PACKET_SIGNING_KEY = secrets.token_bytes(32)
 _METRIC_NAMES = (
     "spend", "reach", "impressions", "clicks", "inline_link_clicks",
 )
@@ -37,6 +35,22 @@ AUTHORITY = {
     "changes_budget_or_payment": False,
     "writes_business_or_farm_data": False,
 }
+SIGNING_DIAGNOSTICS = {
+    "stable_signing_source_required": True,
+    "stable_signing_source_configured": False,
+    "configured_secret_exposed": False,
+    "derived_signing_key_exposed": False,
+    "process_local_fallback_enabled": False,
+    "cross_worker_validation_supported": False,
+}
+COMPATIBILITY_PLACEHOLDER_FIELDS = (
+    "reactions",
+    "comments",
+    "shares",
+    "messages_to_sam",
+    "qualified_buyer_leads",
+    "booking_review_requests",
+)
 
 
 def prepare_meta_ads_import_packet(
@@ -51,6 +65,9 @@ def prepare_meta_ads_import_packet(
 ):
     """Prepare a signed exact packet; performs Meta/DB reads but no writes."""
     now_dt = _now(now)
+    signing_key = _stable_signing_key()
+    if signing_key is None:
+        return _signing_unavailable(), 503
     preview_builder = preview_builder or build_meta_ads_insights_preview
     preview, preview_http_status = preview_builder(
         start_date=start_date, end_date=end_date, level=level
@@ -99,7 +116,7 @@ def prepare_meta_ads_import_packet(
         "authority": dict(AUTHORITY),
     }
     packet_hash = _packet_hash(packet)
-    signature = _packet_signature(packet_hash, expires_at)
+    signature = _packet_signature(packet_hash, expires_at, signing_key)
     counts = _packet_counts(planned, exclusions)
     return {
         "success": True,
@@ -110,6 +127,10 @@ def prepare_meta_ads_import_packet(
         "approval_signature": signature,
         "approval_expires_at": expires_at,
         "approval_requires_exact_hash": True,
+        "signing": _signing_diagnostics(True),
+        "compatibility_placeholder_fields": list(
+            COMPATIBILITY_PLACEHOLDER_FIELDS
+        ),
         **counts,
         **AUTHORITY,
     }, 200
@@ -124,6 +145,9 @@ def execute_meta_ads_import_packet(
 ):
     """Append the exact owner-approved signed packet; never updates/deletes."""
     payload = payload if isinstance(payload, dict) else {}
+    signing_key = _stable_signing_key()
+    if signing_key is None:
+        return _signing_unavailable(), 503
     packet = payload.get("packet") if isinstance(payload.get("packet"), dict) else {}
     supplied_hash = str(payload.get("packet_hash") or "").strip()
     approved_hash = str(payload.get("approved_packet_hash") or "").strip()
@@ -136,7 +160,7 @@ def execute_meta_ads_import_packet(
     if not approved_hash or not hmac.compare_digest(approved_hash, exact_hash):
         return _rejected("approved_packet_hash_mismatch"), 409
     expires_at = str(packet.get("expires_at") or "")
-    if not _valid_signature(exact_hash, expires_at, signature):
+    if not _valid_signature(exact_hash, expires_at, signature, signing_key):
         return _rejected("packet_signature_invalid"), 409
     expiry = _parse_time(expires_at)
     if expiry is None or _now(now) >= expiry:
@@ -219,6 +243,10 @@ def execute_meta_ads_import_packet(
                 item["performance_event_id"]
                 for item in items if item["disposition"] != "duplicate"
             ],
+        ),
+        "signing": _signing_diagnostics(True),
+        "compatibility_placeholder_fields": list(
+            COMPATIBILITY_PLACEHOLDER_FIELDS
         ),
         **AUTHORITY,
     }, 201 if created_count else 200
@@ -307,6 +335,9 @@ def _event_exclusion_reason(event):
             or not _parse_time(metric.get("retrieved_at"))
         ):
             return f"{name}_provenance_incomplete"
+    for name in ("spend", "reach", "impressions"):
+        if ((event.get("metrics") or {}).get(name) or {}).get("status") != "verified":
+            return f"{name}_required_scalar_evidence_not_verified"
     actions = event.get("actions") or {}
     if actions.get("status") not in {"verified", "missing"}:
         return "actions_evidence_unusable"
@@ -448,13 +479,31 @@ def _insert_params(item, batch_id, packet_hash):
         "source_reference": item["source_reference"],
         "retrieved_at": item["retrieved_at"],
     }
-    for name in ("qualified_buyer_leads", "orders", "sales", "revenue"):
-        evidence[name] = {
-            **deepcopy(event_evidence.get(name) or {
+    for name in COMPATIBILITY_PLACEHOLDER_FIELDS:
+        if name == "qualified_buyer_leads":
+            placeholder_evidence = deepcopy(event_evidence.get(name) or {
                 "status": "unsupported", "value": None,
-            }),
+            })
+        else:
+            placeholder_evidence = {"status": "missing", "value": None}
+        evidence[name] = {
+            **placeholder_evidence,
             **provenance,
+            "compatibility_placeholder": {
+                "scalar_column": name,
+                "stored_value": 0,
+                "evidentiary": False,
+                "reason": "database_not_null_compatibility_only",
+            },
         }
+    for name in ("qualified_buyer_leads", "orders", "sales", "revenue"):
+        if name not in evidence:
+            evidence[name] = {
+                **deepcopy(event_evidence.get(name) or {
+                    "status": "unsupported", "value": None,
+                }),
+                **provenance,
+            }
     # Non-metric Meta context is nested on one real metric so existing
     # per-metric consumers never mistake metadata/actions for rankable values.
     evidence["spend_amount"].update({
@@ -518,28 +567,31 @@ def _packet_hash(packet):
     return sha256(_canonical(packet)).hexdigest()
 
 
-def _packet_signature(packet_hash, expires_at):
+def _packet_signature(packet_hash, expires_at, signing_key):
     digest = hmac.new(
-        _packet_signing_key(),
+        signing_key,
         f"{packet_hash}|{expires_at}".encode("utf-8"),
         sha256,
     ).digest()
     return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def _packet_signing_key():
+def _stable_signing_key(environ=None):
+    source = environ if hasattr(environ, "get") else os.environ
     configured = str(
-        os.getenv("OWNER_SESSION_SECRET") or os.getenv("SECRET_KEY") or ""
-    ).encode("utf-8")
+        source.get("OWNER_SESSION_SECRET") or source.get("SECRET_KEY") or ""
+    ).strip()
     if not configured:
-        return _PACKET_SIGNING_KEY
+        return None
     return hmac.new(
-        configured, b"beacon-meta-import-packet-v1", sha256
+        configured.encode("utf-8"),
+        b"beacon-meta-import-packet-v1",
+        sha256,
     ).digest()
 
 
-def _valid_signature(packet_hash, expires_at, signature):
-    expected = _packet_signature(packet_hash, expires_at)
+def _valid_signature(packet_hash, expires_at, signature, signing_key):
+    expected = _packet_signature(packet_hash, expires_at, signing_key)
     return bool(signature) and hmac.compare_digest(signature, expected)
 
 
@@ -555,6 +607,12 @@ def _packet_counts(items, exclusions):
         "existing_duplicate_count": counts["duplicate"],
         "correction_supersession_count": counts["correction"],
         "excluded_count": len(exclusions),
+        "false_zero_exclusion_count": sum(
+            str(item.get("reason") or "").endswith(
+                "_required_scalar_evidence_not_verified"
+            )
+            for item in exclusions
+        ),
     }
 
 
@@ -669,6 +727,25 @@ def _rejected(status):
         "success": False,
         "status": status,
         "created_count": 0,
+        **AUTHORITY,
+    }
+
+
+def _signing_diagnostics(configured):
+    return {
+        **SIGNING_DIAGNOSTICS,
+        "stable_signing_source_configured": bool(configured),
+        "cross_worker_validation_supported": bool(configured),
+    }
+
+
+def _signing_unavailable():
+    return {
+        "success": False,
+        "status": "stable_packet_signing_source_not_configured",
+        "packet_prepared": False,
+        "created_count": 0,
+        "signing": _signing_diagnostics(False),
         **AUTHORITY,
     }
 

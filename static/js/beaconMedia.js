@@ -768,6 +768,7 @@
       <p><strong>Exact packet hash:</strong> <code>${escapeHtml(payload.packet_hash)}</code></p>
       <p><strong>Expires:</strong> ${escapeHtml(payload.approval_expires_at)}</p>
       <p>${escapeHtml(payload.proposed_insert_count)} proposed insert(s); ${escapeHtml(payload.existing_duplicate_count)} duplicate(s) withheld; ${escapeHtml(payload.correction_supersession_count)} correction/supersession(s); ${escapeHtml(payload.excluded_count)} exclusion(s).</p>
+      <p>False-zero exclusions: ${escapeHtml(payload.false_zero_exclusion_count)}. Compatibility-only scalar fields: ${escapeHtml((payload.compatibility_placeholder_fields || []).join(", ") || "None")}.</p>
       <p>Existing performance rows: ${escapeHtml(database.total_performance_rows)}; legacy rows protected: ${escapeHtml(database.legacy_row_count)}.</p>
       <p><strong>Nothing imported by preparation.</strong> Missing remains distinct from verified zero. Meta actions are not leads, sales or revenue.</p>
     `;

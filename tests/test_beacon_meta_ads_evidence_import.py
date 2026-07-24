@@ -1,5 +1,9 @@
+from copy import deepcopy
 import json
+import os
+import threading
 import unittest
+from unittest.mock import patch
 
 from modules.beacon.meta_ads_evidence_import import (
     execute_meta_ads_import_packet,
@@ -53,6 +57,12 @@ class FakeCursor:
                 count = len(self.connection.rows)
             self.rows = [(count,)]
         elif normalized.startswith("insert into public.beacon_campaign_performance_events"):
+            self.connection.insert_attempts += 1
+            if (
+                self.connection.fail_on_insert_number
+                == self.connection.insert_attempts
+            ):
+                raise RuntimeError("injected insert failure")
             if any(
                 row.get("performance_event_id") == params["performance_event_id"]
                 for row in self.connection.rows
@@ -82,15 +92,21 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self, rows=None):
-        self.rows = list(rows or [])
+    def __init__(self, rows=None, *, copy_rows=True, fail_on_insert_number=0):
+        self.rows = list(rows or []) if copy_rows else rows
         self.committed = False
         self.rolled_back = False
+        self.fail_on_insert_number = fail_on_insert_number
+        self.insert_attempts = 0
+        self._transaction_snapshot = None
 
     def __enter__(self):
+        self._transaction_snapshot = deepcopy(self.rows)
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type, *_args):
+        if exc_type is not None:
+            self.rollback()
         return False
 
     def cursor(self):
@@ -98,12 +114,15 @@ class FakeConnection:
 
     def commit(self):
         self.committed = True
+        self._transaction_snapshot = deepcopy(self.rows)
 
     def rollback(self):
         self.rolled_back = True
+        if self._transaction_snapshot is not None:
+            self.rows[:] = deepcopy(self._transaction_snapshot)
 
 
-def preview_event(*, spend=0, reach=None, retrieved_at="2026-07-24T12:00:00+00:00"):
+def preview_event(*, spend=0, reach=0, retrieved_at="2026-07-24T12:00:00+00:00"):
     def metric(name, value):
         return {
             "metric": name,
@@ -169,6 +188,11 @@ def preview_builder(event):
 
 class BeaconMetaAdsEvidenceImportTests(unittest.TestCase):
     def setUp(self):
+        self.secret_patch = patch.dict(
+            os.environ, {"OWNER_SESSION_SECRET": "A" * 64}
+        )
+        self.secret_patch.start()
+        self.addCleanup(self.secret_patch.stop)
         self.connection = FakeConnection([
             {
                 "performance_event_id": f"LEGACY-{index}",
@@ -232,13 +256,13 @@ class BeaconMetaAdsEvidenceImportTests(unittest.TestCase):
         self.assertEqual((status, result["status"]), (409, "packet_expired"))
         self.assertEqual(len(self.connection.rows), 64)
 
-    def test_append_only_insert_preserves_verified_zero_and_missing(self):
-        prepared, _ = self.prepare(preview_event(spend=0, reach=None))
+    def test_append_only_insert_preserves_verified_zero_and_marks_placeholders(self):
+        prepared, _ = self.prepare(preview_event(spend=0, reach=0))
         item = prepared["packet"]["items"][0]
         self.assertEqual(item["evidence"]["metrics"]["spend"]["status"], "verified")
         self.assertEqual(item["evidence"]["metrics"]["spend"]["value"], 0)
-        self.assertEqual(item["evidence"]["metrics"]["reach"]["status"], "missing")
-        self.assertIsNone(item["evidence"]["metrics"]["reach"]["value"])
+        self.assertEqual(item["evidence"]["metrics"]["reach"]["status"], "verified")
+        self.assertEqual(item["evidence"]["metrics"]["reach"]["value"], 0)
         result, status = execute_meta_ads_import_packet(
             self.approval(prepared),
             database_url="postgresql://fake",
@@ -251,7 +275,7 @@ class BeaconMetaAdsEvidenceImportTests(unittest.TestCase):
         self.assertEqual(len(self.connection.rows), 65)
         imported = self.connection.rows[-1]["metric_evidence"]
         self.assertEqual(imported["spend_amount"]["value"], 0)
-        self.assertIsNone(imported["reach"]["value"])
+        self.assertEqual(imported["reach"]["value"], 0)
         self.assertEqual(
             imported["spend_amount"]["meta_reported_actions"]["items"][0][
                 "classification"
@@ -261,6 +285,31 @@ class BeaconMetaAdsEvidenceImportTests(unittest.TestCase):
         self.assertEqual(
             imported["qualified_buyer_leads"]["status"], "unsupported"
         )
+        for name in (
+            "reactions", "comments", "shares", "messages_to_sam",
+            "qualified_buyer_leads", "booking_review_requests",
+        ):
+            evidence = imported[name]
+            self.assertIn(evidence["status"], {"missing", "unsupported"})
+            self.assertIsNone(evidence["value"])
+            self.assertFalse(
+                evidence["compatibility_placeholder"]["evidentiary"]
+            )
+            self.assertEqual(
+                evidence["compatibility_placeholder"]["stored_value"], 0
+            )
+
+    def test_missing_required_scalar_metric_is_excluded_not_written_as_zero(self):
+        prepared, status = self.prepare(preview_event(spend=0, reach=None))
+        self.assertEqual(status, 200)
+        self.assertEqual(prepared["proposed_insert_count"], 0)
+        self.assertEqual(prepared["excluded_count"], 1)
+        self.assertEqual(prepared["false_zero_exclusion_count"], 1)
+        self.assertEqual(
+            prepared["packet"]["exclusions"][0]["reason"],
+            "reach_required_scalar_evidence_not_verified",
+        )
+        self.assertEqual(len(self.connection.rows), 64)
 
     def test_duplicate_is_withheld_idempotently(self):
         prepared, _ = self.prepare()
@@ -357,6 +406,208 @@ class BeaconMetaAdsEvidenceImportTests(unittest.TestCase):
         )
         self.assertEqual((status, result["status"]), (409, "packet_database_state_changed"))
         self.assertTrue(self.connection.rolled_back)
+
+    def test_stable_secret_validates_across_workers_and_rotation_fails(self):
+        with patch.dict(
+            os.environ, {"OWNER_SESSION_SECRET": "S" * 64}, clear=False
+        ):
+            prepared, status = self.prepare()
+        self.assertEqual(status, 200)
+        self.assertTrue(
+            prepared["signing"]["stable_signing_source_configured"]
+        )
+        self.assertFalse(prepared["signing"]["configured_secret_exposed"])
+        self.assertFalse(prepared["signing"]["derived_signing_key_exposed"])
+        self.assertFalse(
+            prepared["signing"]["process_local_fallback_enabled"]
+        )
+
+        # Simulated worker B derives the same domain-separated key from the
+        # same configured owner-session secret.
+        with patch.dict(
+            os.environ, {"OWNER_SESSION_SECRET": "S" * 64}, clear=False
+        ):
+            accepted, accepted_status = execute_meta_ads_import_packet(
+                self.approval(prepared),
+                database_url="postgresql://fake",
+                connect_factory=self.connect,
+                now="2026-07-24T12:01:00+00:00",
+            )
+        self.assertEqual(accepted_status, 201)
+        self.assertEqual(accepted["created_count"], 1)
+
+        fresh_connection = FakeConnection(self.connection.rows[:64])
+        with patch.dict(
+            os.environ, {"OWNER_SESSION_SECRET": "T" * 64}, clear=False
+        ):
+            rejected, rejected_status = execute_meta_ads_import_packet(
+                self.approval(prepared),
+                database_url="postgresql://fake",
+                connect_factory=lambda _url: fresh_connection,
+                now="2026-07-24T12:01:00+00:00",
+            )
+        self.assertEqual(rejected_status, 409)
+        self.assertEqual(rejected["status"], "packet_signature_invalid")
+        self.assertEqual(len(fresh_connection.rows), 64)
+
+    def test_missing_stable_secret_fails_closed_before_preview_or_database(self):
+        called = {"preview": 0, "database": 0}
+
+        def preview(**_kwargs):
+            called["preview"] += 1
+            return {}, 500
+
+        def connect(_url):
+            called["database"] += 1
+            return self.connection
+
+        with patch.dict(os.environ, {}, clear=True):
+            prepared, status = prepare_meta_ads_import_packet(
+                start_date="2026-07-01",
+                end_date="2026-07-14",
+                level="ad",
+                preview_builder=preview,
+                database_url="postgresql://fake",
+                connect_factory=connect,
+            )
+            executed, execute_status = execute_meta_ads_import_packet(
+                {}, database_url="postgresql://fake", connect_factory=connect
+            )
+        self.assertEqual(status, 503)
+        self.assertEqual(
+            prepared["status"], "stable_packet_signing_source_not_configured"
+        )
+        self.assertEqual(execute_status, 503)
+        self.assertEqual(
+            executed["status"], "stable_packet_signing_source_not_configured"
+        )
+        self.assertFalse(
+            prepared["signing"]["stable_signing_source_configured"]
+        )
+        self.assertEqual(called, {"preview": 0, "database": 0})
+
+    def test_concurrent_exact_packet_execution_has_one_append_only_winner(self):
+        prepared, _ = self.prepare()
+        shared_rows = self.connection.rows
+        transaction_lock = threading.Lock()
+
+        class LockedConnection(FakeConnection):
+            def __enter__(inner_self):
+                transaction_lock.acquire()
+                return super(LockedConnection, inner_self).__enter__()
+
+            def __exit__(inner_self, exc_type, *args):
+                try:
+                    return super(LockedConnection, inner_self).__exit__(
+                        exc_type, *args
+                    )
+                finally:
+                    transaction_lock.release()
+
+        def factory(_url):
+            return LockedConnection(shared_rows, copy_rows=False)
+
+        outcomes = []
+
+        def execute():
+            outcomes.append(execute_meta_ads_import_packet(
+                self.approval(prepared),
+                database_url="postgresql://fake",
+                connect_factory=factory,
+                now="2026-07-24T12:01:00+00:00",
+            ))
+
+        workers = [threading.Thread(target=execute) for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(5)
+            self.assertFalse(worker.is_alive())
+
+        statuses = sorted(status for _result, status in outcomes)
+        self.assertEqual(statuses, [201, 409])
+        self.assertEqual(
+            sum(result.get("created_count", 0) for result, _ in outcomes), 1
+        )
+        self.assertEqual(len(shared_rows), 65)
+
+    def test_partial_insert_failure_rolls_back_entire_transaction(self):
+        events = []
+        for index in range(2):
+            event = preview_event(spend=index, reach=index)
+            event["identity"]["ad_id"] = f"AD-{index}"
+            reference = (
+                f"meta_ads_insights/ad/AD-{index}/"
+                "2026-07-01/2026-07-14"
+            )
+            event["source_reference"] = reference
+            for metric in event["metrics"].values():
+                metric["source_reference"] = reference
+            events.append(event)
+
+        def builder(**kwargs):
+            return {
+                "status": "preview_ready",
+                "reporting_window": {
+                    "start": kwargs["start_date"],
+                    "end": kwargs["end_date"],
+                    "level": kwargs["level"],
+                },
+                "retrieved_at": "2026-07-24T12:00:00+00:00",
+                "account_currency": {"status": "verified", "value": "ZAR"},
+                "proposed_append_only_events": events,
+                "blockers": [],
+            }, 200
+
+        prepared, _ = prepare_meta_ads_import_packet(
+            start_date="2026-07-01",
+            end_date="2026-07-14",
+            level="ad",
+            preview_builder=builder,
+            database_url="postgresql://fake",
+            connect_factory=self.connect,
+            now="2026-07-24T12:00:00+00:00",
+        )
+        failing = FakeConnection(
+            self.connection.rows, fail_on_insert_number=2
+        )
+        result, status = execute_meta_ads_import_packet(
+            self.approval(prepared),
+            database_url="postgresql://fake",
+            connect_factory=lambda _url: failing,
+            now="2026-07-24T12:01:00+00:00",
+        )
+        self.assertEqual(status, 500)
+        self.assertEqual(result["status"], "execute_append_failed")
+        self.assertTrue(failing.rolled_back)
+        self.assertEqual(len(failing.rows), 64)
+
+    def test_executed_packet_replay_is_safely_rejected_without_second_insert(self):
+        prepared, _ = self.prepare()
+        first, first_status = execute_meta_ads_import_packet(
+            self.approval(prepared),
+            database_url="postgresql://fake",
+            connect_factory=self.connect,
+            now="2026-07-24T12:01:00+00:00",
+        )
+        second, second_status = execute_meta_ads_import_packet(
+            self.approval(prepared),
+            database_url="postgresql://fake",
+            connect_factory=self.connect,
+            now="2026-07-24T12:02:00+00:00",
+        )
+        self.assertEqual(first_status, 201)
+        self.assertEqual(first["created_count"], 1)
+        self.assertEqual(second_status, 409)
+        self.assertEqual(second["status"], "packet_database_state_changed")
+        self.assertEqual(len(self.connection.rows), 65)
+
+    def test_import_service_contains_no_update_or_delete_sql(self):
+        from modules.beacon import meta_ads_evidence_import as service
+
+        sql = service._INSERT_SQL.lower()
+        self.assertNotIn(" update ", f" {sql} ")
+        self.assertNotIn(" delete ", f" {sql} ")
 
     def test_authority_and_exclusion_rollback_contract(self):
         prepared, _ = self.prepare()

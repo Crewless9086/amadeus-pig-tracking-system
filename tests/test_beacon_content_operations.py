@@ -235,6 +235,56 @@ class BeaconContentOperationsTests(unittest.TestCase):
             {"unsupported": 1},
         )
 
+    def test_compatibility_zero_is_not_ranked_or_aggregated_as_evidence(self):
+        evidence = self.evidence()
+        provenance = {
+            "source": "meta_ads_insights",
+            "source_reference": "insights/ad/1/2026-07-01/2026-07-14",
+            "retrieved_at": "2026-07-24T08:00:00Z",
+        }
+        placeholder = {
+            "scalar_column": "reactions",
+            "stored_value": 0,
+            "evidentiary": False,
+            "reason": "database_not_null_compatibility_only",
+        }
+        evidence["performance_events"]["records"] = [{
+            "performance_event_id": "PERF-COMPATIBILITY-ZERO",
+            "reactions": 0,
+            "metric_evidence": {
+                "spend_amount": {
+                    **provenance, "value": 0, "status": "verified",
+                },
+                "reach": {
+                    **provenance, "value": 100, "status": "verified",
+                },
+                "impressions": {
+                    **provenance, "value": 120, "status": "verified",
+                },
+                "reactions": {
+                    **provenance,
+                    "value": None,
+                    "status": "missing",
+                    "compatibility_placeholder": placeholder,
+                },
+            },
+        }]
+
+        result = build_beacon_content_candidate(evidence, current_facts=[])
+        evaluation = result[
+            "evidence_quality"
+        ]["performance_evidence_evaluations"][0]
+        reactions = result[
+            "evidence_quality"
+        ]["metric_summary"]["reactions"]
+
+        self.assertTrue(evaluation["usable"])
+        self.assertNotIn("reactions", evaluation["usable_metric_names"])
+        self.assertEqual(reactions["verified_event_count"], 0)
+        self.assertEqual(reactions["verified_zero_event_count"], 0)
+        self.assertEqual(reactions["display"], "Not verified")
+        self.assertEqual(reactions["status_counts"], {"unverified": 1})
+
     def test_rejects_unverified_facts_and_never_converts_legacy_metrics_to_claims(self):
         result = build_beacon_content_candidate(
             self.evidence(),
