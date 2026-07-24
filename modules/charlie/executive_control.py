@@ -233,8 +233,10 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     })
     status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
     approved = [item for item in missions if item.get("status") == "approved"]
-    runnable = [item for item in approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
-    dependency_blocked = [item for item in approved if item not in runnable]
+    waiting_coordinators = [item for item in approved if _coordinator_waiting_for_children(item)]
+    executable_approved = [item for item in approved if item not in waiting_coordinators]
+    runnable = [item for item in executable_approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
+    dependency_blocked = [item for item in executable_approved if item not in runnable]
     ranked = sorted(runnable, key=lambda item: (-portfolio_priority(item, active_goal_ids=active_goal_ids), str(item.get("created_at") or "")))
     runner = runner if isinstance(runner, dict) else {}
     if ranked and not runner.get("active_mission_id"):
@@ -268,7 +270,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                     "authority_tier": selection_authority["authority_tier"], "policy_id": selection_authority.get("policy_id", ""),
                     "idempotency_key": f"queue-select:{item.get('mission_id')}:{fingerprint}",
                 })
-    if approved and not runnable and not runner.get("active_mission_id"):
+    if executable_approved and not runnable and not runner.get("active_mission_id"):
         escalations.append({
             "action": "queue_deadlock", "block_class": "queue_dependency_deadlock",
             "authority_tier": "charlie_delegated", "reason": "approved_work_exists_but_none_is_runnable",
@@ -284,7 +286,8 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
             "approved_count": len(approved), "runnable_count": len(runnable),
             "dependency_blocked_count": len(dependency_blocked),
             "dependency_blocked_ids": [item.get("mission_id") for item in dependency_blocked],
-            "deadlocked": bool(approved and not runnable and not runner.get("active_mission_id")),
+            "waiting_coordinator_ids": [item.get("mission_id") for item in waiting_coordinators],
+            "deadlocked": bool(executable_approved and not runnable and not runner.get("active_mission_id")),
         },
         "queue_rank": [{"mission_id": item.get("mission_id"), "score": portfolio_priority(item, active_goal_ids=active_goal_ids)} for item in ranked],
         "status_counts": {
@@ -296,6 +299,12 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
 
 def _dependencies_ready(mission, status_by_id, dependency_loader):
     return all(status_by_id.get(dependency_id) in TERMINAL_STATUSES for dependency_id in dependency_loader(mission))
+
+
+def _coordinator_waiting_for_children(mission):
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    coordinator = metadata.get("mission_coordinator") if isinstance(metadata.get("mission_coordinator"), dict) else {}
+    return str(coordinator.get("status") or "").strip().lower() == "waiting_children" and bool(coordinator.get("child_mission_ids"))
 
 
 def capability_tier(metrics):

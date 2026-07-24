@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+from modules.charlie.executive_control import build_executive_cycle
 from modules.charlie.executive_runtime import (
     _execute_decomposition, _execute_delegated_review, _execute_queue_selection, _load_executive_missions,
     _execute_recovery, _execute_outcome_follow_up, _execute_incident_repair, run_executive_cycle,
@@ -19,6 +20,15 @@ POLICY = {"policy_id": "POLICY-1", "capability": "core.internal_recovery", "auth
 
 
 class CharlieExecutiveRuntimeTests(unittest.TestCase):
+    def test_waiting_coordinator_yields_queue_to_existing_ready_child(self):
+        parent = {"mission_id": "PARENT", "status": "approved", "urgency": "P0", "metadata": {"mission_coordinator": {"status": "waiting_children", "child_mission_ids": ["CHILD"]}}}
+        child = {"mission_id": "CHILD", "status": "approved", "urgency": "P1", "metadata": {"mission_family": {"parent_mission_id": "PARENT"}}}
+        policies = [{"policy_id": "QUEUE", "capability": "core.queue_continue", "authority_tier": "auto", "enabled": True}]
+        cycle = build_executive_cycle([parent, child], policies, runner={"active_mission_id": ""})
+        queue = [item for item in cycle["commands"] if item.get("action") == "ensure_queue_progress"]
+        self.assertEqual([item["mission_id"] for item in queue], ["CHILD"])
+        self.assertFalse(cycle["queue_health"]["deadlocked"])
+
     @patch("modules.charlie.executive_runtime.list_missions")
     def test_executive_loads_each_actionable_bucket_so_reviews_are_not_hidden(self, list_missions):
         def bucket(*, status, **_kwargs):

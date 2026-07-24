@@ -1065,11 +1065,12 @@ def consume_final_agent_artifact(
                     if current_agent == agent:
                         current.update({"status": "complete", "findings": _clean_text(artifact.get("summary"), 1200), "completed_at": consumed_at})
                         seen = True
-                    elif seen and not next_agent and str(current.get("status") or "").lower() != "complete":
+                    else:
+                        if str(current.get("status") or "").lower() == "active":
+                            current["status"] = "pending"
+                    if current_agent != agent and seen and not next_agent and str(current.get("status") or "").lower() != "complete":
                         current["status"] = "active"
                         next_agent = current_agent
-                    elif str(current.get("status") or "").lower() == "active":
-                        current["status"] = "pending"
                     updated_workflow.append(current)
                 claim = {
                     "identity": identity,

@@ -200,9 +200,23 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             ],
         }
 
-        sequence = execution_bridge._mission_agent_sequence(mission)
+        with self.assertRaisesRegex(ValueError, "targeted_recovery_preserved_stage_mismatch"):
+            execution_bridge._mission_agent_sequence(mission)
 
-        self.assertNotEqual(sequence, ["idea_expander", "planner", "builder"])
+    def test_return_to_risk_overrides_stale_displayed_builder(self):
+        mission = {
+            "metadata": {
+                "review_packet": {"review_status": "internal_recovery_queued", "return_to_stage": "risk_agent"},
+                "targeted_invalidation": {"version": "charlie_targeted_invalidation_v1", "target_agent": "risk_agent", "preserved_agents": ["builder", "tester"]},
+            },
+            "agent_workflow": [
+                {"agent": "risk_agent", "status": "pending"},
+                {"agent": "builder", "status": "active", "completed_at": "2026-07-24T00:00:00Z"},
+                {"agent": "tester", "status": "complete", "completed_at": "2026-07-24T00:01:00Z"},
+            ],
+        }
+        self.assertEqual(execution_bridge._execution_start_agent(mission, ["risk_agent", "builder", "tester"]), "risk_agent")
+        self.assertEqual(execution_bridge._authoritative_targeted_recovery_agent(mission), "risk_agent")
 
     def setUp(self):
         self.builder_admission = patch(
@@ -453,16 +467,14 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "responsible_stage": "evidence_reviewer",
             "block_class": "stale_state_reconciliation_required",
         }
-        fingerprint = execution_bridge._backflow_fingerprint(
-            "business_reviewer", "evidence_reviewer", "reviewed wrong revision", artifact,
+        _, first = execution_bridge._bounded_internal_recovery(
+            "MISSION-1", "business_reviewer", "reviewed wrong revision", artifact, disposition,
+            mission={"metadata": {"review_packet": {"tested_revision": "569fccd"}}},
         )
         mission = {
             "metadata": {
-                "mission_memory": {
-                    "recurring_block_patterns": {
-                        f"fingerprint:{fingerprint}": {"count": 1},
-                    },
-                },
+                "review_packet": {"tested_revision": "569fccd"},
+                "mission_memory": {"recurring_block_patterns": {f"fingerprint:{first['fingerprint']}": {"count": 1}}},
             },
         }
 

@@ -2,6 +2,7 @@ import unittest
 
 from modules.charlie.evidence_reconciliation import (
     applicable_passing_agents,
+    artifact_applicability,
     bind_artifact_to_candidate,
     build_candidate_manifest,
     resolve_effective_agent_results,
@@ -144,12 +145,20 @@ class CharlieEvidenceReconciliationTests(unittest.TestCase):
             artifacts, current_manifest, workflow=[{"agent": agent} for agent in planning_agents],
         )
 
-        self.assertTrue(result["passed"])
-        self.assertEqual(result["requires_revalidation"], [])
+        self.assertFalse(result["passed"])
+        self.assertIn("risk_agent", [item["agent"] for item in result["requires_revalidation"]])
         self.assertTrue(all(
             item["applicability"] == "accepted_frozen_scope"
-            for item in result["effective_results"].values()
+            for agent, item in result["effective_results"].items() if agent != "risk_agent"
         ))
+
+    def test_risk_revision_binding_precedes_scope_acceptance(self):
+        base = {"agent": "risk_agent", "status": "pass", "summary": "risk pass", "accepted_frozen_scope": True, "scope_hash": "same"}
+        self.assertEqual(artifact_applicability(base, "", "569fccd", "same")[1], "candidate_revision_required")
+        stale = {**base, "tested_revision": "af1308a"}
+        self.assertEqual(artifact_applicability(stale, "", "569fccd", "same")[1], "different_revision")
+        exact = {**base, "tested_revision": "569fccd"}
+        self.assertTrue(artifact_applicability(exact, "", "569fccd", "same")[0])
 
     def test_frozen_governance_matrix_is_the_stable_scope_source(self):
         mission = {
