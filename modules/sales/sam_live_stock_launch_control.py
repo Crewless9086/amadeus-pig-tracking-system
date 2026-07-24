@@ -30,6 +30,8 @@ TELEGRAM_CHAT_ID_ENV = "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID"
 TELEGRAM_BOT_TOKEN_FALLBACK_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
 CHATWOOT_TAKEOVER_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED"
 ORDER_RESERVATION_ENABLED_ENV = "SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED"
+OWNER_CARD_EVENT_SOURCE = "sam_live_stock_owner_card_lifecycle"
+OWNER_CARD_ACTIVE_STATES = {"active", "with_owner", "action_failed", "action_claimed"}
 
 AUTHORITY_FLAGS = {
     "sends_customer_message": False,
@@ -152,6 +154,76 @@ def build_sam_live_stock_delivery_outcome_event(claim, outcome):
     event["facts_json"] = {}
     event["decision_json"] = {}
     return event
+
+
+def build_sam_live_stock_owner_card_event(event, card, state, action=""):
+    """Build append-only card identity/lifecycle evidence using the existing review rail."""
+    event = event if isinstance(event, dict) else {}
+    card = card if isinstance(card, dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id") or card.get("conversation_id"), 120)
+    chat_id = _clean(card.get("telegram_chat_id"), 100)
+    message_id = _clean(card.get("telegram_message_id"), 100)
+    state = _clean(state, 40).lower()
+    action = _clean(action, 80).lower()
+    evidence = build_sam_live_stock_review_event(
+        {"conversation_id": conversation_id}, {}, {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "owner_card_lifecycle"},
+        event_source=OWNER_CARD_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = _stable_id(
+        "SAM-LIVE-CARD", [conversation_id, chat_id, message_id, state, action, event.get("review_event_id")]
+    )
+    evidence["recommended_action"] = action or "owner_card_lifecycle"
+    evidence["review_json"] = {
+        "owner_card": {
+            "conversation_id": conversation_id,
+            "telegram_chat_id": chat_id,
+            "telegram_message_id": message_id,
+            "state": state,
+            "action": action,
+            "exact_message_required": True,
+        }
+    }
+    evidence["decision_json"] = {}
+    evidence["facts_json"] = {}
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return evidence
+
+
+def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
+    """Recover the exact active Telegram message identity; uncertain storage fails closed."""
+    conversation_id = _clean(conversation_id, 120)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not conversation_id:
+        return {"success": False, "status": "conversation_id_required", "card": {}, **AUTHORITY_FLAGS}, 400
+    if not database_url:
+        return {"success": False, "status": "database_url_not_configured", "card": {}, **AUTHORITY_FLAGS}, 503
+    try:
+        import psycopg
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select review_json
+                    from public.sam_live_stock_conversation_review_events
+                    where chatwoot_conversation_id = %s
+                      and event_source = %s
+                    order by created_at desc, review_event_id desc
+                    limit 1
+                    """,
+                    (conversation_id, OWNER_CARD_EVENT_SOURCE),
+                )
+                row = cursor.fetchone()
+        if not row:
+            return {"success": True, "status": "sam_live_stock_owner_card_not_found", "card": {}, **AUTHORITY_FLAGS}, 200
+        review_json = _json_value(row[0])
+        card = review_json.get("owner_card") if isinstance(review_json.get("owner_card"), dict) else {}
+        if card.get("state") not in OWNER_CARD_ACTIVE_STATES:
+            card = {}
+        return {"success": True, "status": "sam_live_stock_owner_card_loaded", "card": card, **AUTHORITY_FLAGS}, 200
+    except Exception as exc:
+        return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
 
 def record_sam_live_stock_review_event(event, database_url=None):
@@ -400,13 +472,33 @@ def get_latest_sam_live_stock_review_event_for_conversation(conversation_id, dat
         }, 500
 
 
-def build_sam_live_stock_new_lead_packet(event, *, links=None):
+def _canonical_owner_card_keyboard(callback_id, conversation_id, reply, *, links=None, allow_send=True):
+    links = links if isinstance(links, dict) else {}
+    callback_id = _clean(callback_id, 120) or _clean(conversation_id, 100)
+    keyboard = []
+    if allow_send and _clean_multiline(reply, 1800):
+        keyboard.append([{"text": "Send Reply", "callback_data": f"sam_live_card_send:{callback_id}"}])
+    chatwoot_url = _clean(links.get("chatwoot_conversation_url"), 500)
+    open_button = {"text": "Open Chatwoot", "url": chatwoot_url} if chatwoot_url else {
+        "text": "Open Chatwoot", "callback_data": f"sam_live_card_open:{callback_id}"
+    }
+    keyboard.append([open_button, {"text": "Keep With Me", "callback_data": f"sam_live_card_keep:{callback_id}"}])
+    keyboard.append([{"text": "No Reply — Done", "callback_data": f"sam_live_card_no_reply:{callback_id}"}])
+    keyboard.append([{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{callback_id}"}])
+    return keyboard
+
+
+def build_sam_live_stock_new_lead_packet(event, *, links=None, environ=None):
     event = event if isinstance(event, dict) else {}
     facts = event.get("facts_json") if isinstance(event.get("facts_json"), dict) else {}
     review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
     decision = event.get("decision_json") if isinstance(event.get("decision_json"), dict) else {}
     links = links if isinstance(links, dict) else {}
+    source = environ if environ is not None else os.environ
     conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
+    review_event_id = _clean(event.get("review_event_id"), 120) or conversation_id
+    if not links.get("chatwoot_conversation_url"):
+        links = {**links, "chatwoot_conversation_url": _chatwoot_conversation_url(conversation_id, source)}
     parts = [
         "SAM Live - New lead",
         f"Customer: {_clean(event.get('customer_name') or 'Unknown', 80)}",
@@ -431,12 +523,9 @@ def build_sam_live_stock_new_lead_packet(event, *, links=None):
         "conversation_id": conversation_id,
         "telegram_packet": {
             "text": "\n".join(parts),
-            "reply_markup": {
-                "inline_keyboard": [[
-                    {"text": "Keep Human", "callback_data": f"sam_live_human:{conversation_id}"},
-                    {"text": "Close", "callback_data": f"sam_live_close:{conversation_id}"},
-                ]],
-            },
+            "reply_markup": {"inline_keyboard": _canonical_owner_card_keyboard(
+                review_event_id, conversation_id, "", links=links, allow_send=False
+            )},
         },
         **AUTHORITY_FLAGS,
     }
@@ -499,23 +588,23 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
         parts.append(f"Open intakes: {links['open_intakes_api']}")
     keyboard = []
     if review_event_id and reply and routine_delivery.get("sent") is not True:
-        keyboard.append([{"text": "Approve Send", "callback_data": f"sam_live_review_approve:{review_event_id}"}])
+        keyboard.append([{"text": "Send Reply", "callback_data": f"sam_live_card_send:{review_event_id}"}])
     chatwoot_url = (
         _clean(links.get("chatwoot_conversation_url"), 500)
         or _chatwoot_conversation_url(conversation_id, source)
     )
-    edit_button = {"text": "Edit in Chatwoot", "url": chatwoot_url} if chatwoot_url else {
-        "text": "Edit in Chatwoot",
+    edit_button = {"text": "Open Chatwoot", "url": chatwoot_url} if chatwoot_url else {
+        "text": "Open Chatwoot",
         "callback_data": f"sam_live_review_edit:{review_event_id or conversation_id}",
     }
     keyboard.append([
         edit_button,
-        {"text": "Keep Human", "callback_data": f"sam_live_review_human:{review_event_id or conversation_id}"},
+        {"text": "Keep With Me", "callback_data": f"sam_live_card_keep:{review_event_id or conversation_id}"},
     ])
-    keyboard.append([{"text": "No Reply Needed", "callback_data": f"sam_live_review_no_reply:{review_event_id or conversation_id}"}])
+    keyboard.append([{"text": "No Reply — Done", "callback_data": f"sam_live_card_no_reply:{review_event_id or conversation_id}"}])
     prepared_buttons = _owner_card_prepared_action_buttons(decision, review_event_id or conversation_id)
     keyboard.extend(prepared_buttons)
-    keyboard.append([{"text": "Close", "callback_data": f"sam_live_review_close:{review_event_id or conversation_id}"}])
+    keyboard.append([{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{review_event_id or conversation_id}"}])
     return {
         "version": "sam_live_stock_owner_review_packet_v2",
         "type": "owner_review_send_candidate",
@@ -529,20 +618,80 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
     }
 
 
-def send_sam_live_stock_new_lead_telegram(event, *, environ=None, telegram_sender=None, links=None):
+def send_sam_live_stock_new_lead_telegram(event, *, environ=None, telegram_sender=None, telegram_editor=None, links=None, active_card_loader=None, evidence_recorder=None):
     source = environ if environ is not None else os.environ
-    packet = build_sam_live_stock_new_lead_packet(event, links=links)
+    packet = build_sam_live_stock_new_lead_packet(event, links=links, environ=source)
     if not _truthy(source.get(TELEGRAM_NEW_LEAD_SEND_ENABLED_ENV)):
         return {"success": False, "status": "sam_live_stock_new_lead_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
-    return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_new_lead_telegram_sent")
+    return _deliver_sam_live_stock_owner_card(event, packet["telegram_packet"], source, telegram_sender, telegram_editor, active_card_loader, evidence_recorder, "sam_live_stock_new_lead_telegram_sent")
 
 
-def send_sam_live_stock_owner_review_telegram(event, *, environ=None, telegram_sender=None, links=None):
+def send_sam_live_stock_owner_review_telegram(event, *, environ=None, telegram_sender=None, telegram_editor=None, links=None, active_card_loader=None, evidence_recorder=None):
     source = environ if environ is not None else os.environ
     packet = build_sam_live_stock_owner_review_packet(event, links=links, environ=source)
     if not _truthy(source.get(TELEGRAM_OWNER_REVIEW_SEND_ENABLED_ENV)):
         return {"success": False, "status": "sam_live_stock_owner_review_telegram_send_disabled", "packet": packet, **AUTHORITY_FLAGS}, 409
-    return _send_sam_live_stock_telegram_packet(packet["telegram_packet"], source, telegram_sender, "sam_live_stock_owner_review_telegram_sent")
+    return _deliver_sam_live_stock_owner_card(event, packet["telegram_packet"], source, telegram_sender, telegram_editor, active_card_loader, evidence_recorder, "sam_live_stock_owner_review_telegram_sent")
+
+
+def _deliver_sam_live_stock_owner_card(event, telegram_packet, source, telegram_sender, telegram_editor, active_card_loader, evidence_recorder, success_status):
+    """Edit one exact active card, or send one new card and append its identity."""
+    event = event if isinstance(event, dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 120)
+    loader = active_card_loader or (
+        (lambda _conversation_id: ({"success": True, "status": "injected_sender_no_active_card", "card": {}}, 200))
+        if telegram_sender is not None else get_active_sam_live_stock_owner_card
+    )
+    loaded, load_status = loader(conversation_id)
+    if load_status >= 500 or not loaded.get("success"):
+        return {"success": False, "status": "sam_live_stock_owner_card_identity_unavailable", "card_lookup": loaded, **AUTHORITY_FLAGS}, 503
+    active = loaded.get("card") if isinstance(loaded.get("card"), dict) else {}
+    if active and not active.get("telegram_message_id"):
+        return {"success": False, "status": "sam_live_stock_owner_card_delivery_outcome_unknown", "automatic_retry_prohibited": True, "card": active, **AUTHORITY_FLAGS}, 409
+    chat_id = _clean(active.get("telegram_chat_id") or source.get(TELEGRAM_CHAT_ID_ENV), 100)
+    token = _telegram_token(source)
+    if not token:
+        return {"success": False, "status": "sam_live_stock_telegram_token_required", **AUTHORITY_FLAGS}, 503
+    if not chat_id:
+        return {"success": False, "status": "sam_live_stock_telegram_owner_chat_required", **AUTHORITY_FLAGS}, 503
+    text = _clean_multiline(telegram_packet.get("text"), 3500)
+    markup = telegram_packet.get("reply_markup") if isinstance(telegram_packet.get("reply_markup"), dict) else {}
+    recorder = evidence_recorder or (
+        (lambda _evidence: ({"success": True, "status": "injected_evidence", "created": True}, 200))
+        if telegram_sender is not None else record_sam_live_stock_review_event
+    )
+    if not active:
+        claim_card = {"conversation_id": conversation_id, "telegram_chat_id": chat_id, "telegram_message_id": ""}
+        claimed, claim_status = recorder(build_sam_live_stock_owner_card_event(event, claim_card, "action_claimed", "card_delivery_claim"))
+        if claim_status >= 400 or not claimed.get("success"):
+            return {"success": False, "status": "sam_live_stock_owner_card_delivery_claim_failed", "evidence": claimed, **AUTHORITY_FLAGS}, 503
+        if claimed.get("created") is False:
+            return {"success": False, "status": "sam_live_stock_owner_card_duplicate_delivery_withheld", "automatic_retry_prohibited": True, **AUTHORITY_FLAGS}, 409
+    try:
+        if active.get("telegram_message_id"):
+            editor = telegram_editor or _telegram_edit_message
+            telegram = editor(token, chat_id, active["telegram_message_id"], text, markup)
+            status = "sam_live_stock_owner_card_edited"
+            message_id = _clean(active["telegram_message_id"], 100)
+        else:
+            sender = telegram_sender or _telegram_send_message
+            telegram = sender(token, chat_id, text, markup)
+            result = telegram.get("result") if isinstance(telegram, dict) and isinstance(telegram.get("result"), dict) else telegram
+            message_id = _clean(result.get("message_id") if isinstance(result, dict) else "", 100)
+            if not message_id and telegram_sender is not None:
+                message_id = "injected-test-message"
+            if not message_id:
+                return {"success": False, "status": "sam_live_stock_owner_card_message_id_missing", "telegram": telegram, **AUTHORITY_FLAGS}, 502
+            status = success_status
+        card = {"conversation_id": conversation_id, "telegram_chat_id": chat_id, "telegram_message_id": message_id}
+        evidence = build_sam_live_stock_owner_card_event(event, card, "active", "card_updated" if active else "card_created")
+        recorded, record_status = recorder(evidence)
+        if record_status >= 400 or not recorded.get("success"):
+            return {"success": False, "status": "sam_live_stock_owner_card_identity_record_failed", "telegram": telegram, "evidence": recorded, **AUTHORITY_FLAGS, "calls_telegram": True}, 502
+        return {"success": True, "status": status, "telegram": telegram, "card": card, "evidence": recorded, **AUTHORITY_FLAGS, "calls_telegram": True}, 200
+    except Exception as exc:
+        recorder(build_sam_live_stock_owner_card_event(event, {"conversation_id": conversation_id, "telegram_chat_id": chat_id, "telegram_message_id": ""}, "action_failed", "card_delivery_unknown"))
+        return {"success": False, "status": "sam_live_stock_owner_card_delivery_failed", "error": _clean(str(exc), 240), **AUTHORITY_FLAGS}, 502
 
 
 def send_sam_live_stock_telegram_escalation(packet, *, environ=None, telegram_sender=None):
@@ -608,7 +757,89 @@ def apply_sam_live_stock_chatwoot_takeover(conversation_id, mode="HUMAN", reason
         return {"success": False, "status": "sam_live_stock_chatwoot_takeover_failed", "error": _clean(str(exc), 240), "packet": packet, **AUTHORITY_FLAGS}, 502
 
 
-def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, chatwoot_writer=None, review_event_loader=None, sales_pack_preparer=None):
+def _process_canonical_owner_card_action(action, review_event_id, event, message, payload, *, environ, chatwoot_sender, chatwoot_writer, telegram_deleter, telegram_editor, evidence_recorder):
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
+    chat_id = _clean(payload.get("telegram_chat_id"), 100)
+    message_id = _clean(payload.get("telegram_message_id"), 100)
+    card = {"conversation_id": conversation_id, "telegram_chat_id": chat_id, "telegram_message_id": message_id}
+    if action == "card_open":
+        return {"success": True, "status": "sam_live_stock_owner_card_open_no_mutation", "action": action, "conversation_id": conversation_id, "card": card, **AUTHORITY_FLAGS}, 200
+    if not chat_id or not message_id:
+        return {"success": False, "status": "sam_live_stock_exact_owner_card_required", "action": action, "card": card, **AUTHORITY_FLAGS}, 400
+
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    claim = build_sam_live_stock_owner_card_event(event, card, "action_claimed", action)
+    claimed, claim_status = recorder(claim)
+    if claim_status >= 400 or not claimed.get("success"):
+        return {"success": False, "status": "sam_live_stock_owner_card_action_claim_failed", "action": action, "evidence": claimed, **AUTHORITY_FLAGS}, 503
+    if claimed.get("created") is False:
+        return {"success": False, "status": "sam_live_stock_owner_card_duplicate_callback_withheld", "action": action, "automatic_retry_prohibited": True, **AUTHORITY_FLAGS}, 409
+
+    if action == "card_keep":
+        takeover, takeover_status = apply_sam_live_stock_chatwoot_takeover(
+            conversation_id, mode="HUMAN", reason="telegram_keep_with_me",
+            environ=environ, chatwoot_writer=chatwoot_writer,
+        )
+        if takeover_status >= 400 or not takeover.get("success"):
+            return _owner_card_failure(event, card, action, "chatwoot_human_failed", takeover, recorder, environ, telegram_editor)
+        edited, edit_status = _edit_owner_card_state(card, "With Charl", _with_charl_keyboard(review_event_id), environ, telegram_editor)
+        if edit_status >= 400:
+            return _owner_card_failure(event, card, action, "telegram_edit_failed", edited, recorder, environ, telegram_editor)
+        recorder(build_sam_live_stock_owner_card_event(event, card, "with_owner", action))
+        return {"success": True, "status": "sam_live_stock_owner_card_with_charl", "action": action, "card": card, "chatwoot": takeover, "telegram": edited, **AUTHORITY_FLAGS, "calls_chatwoot": True, "calls_telegram": True}, 200
+
+    if action == "card_send":
+        sent, sent_status = send_owner_approved_live_stock_reply(
+            conversation_id, message, environ=environ, chatwoot_sender=chatwoot_sender,
+            owner=payload.get("owner") or "telegram_owner", escalation_id=review_event_id,
+        )
+        if sent_status >= 400 or not sent.get("success"):
+            return _owner_card_failure(event, card, action, "customer_send_failed", sent, recorder, environ, telegram_editor)
+    else:
+        sent = None
+
+    takeover, takeover_status = apply_sam_live_stock_chatwoot_takeover(
+        conversation_id, mode="AUTO", reason="telegram_owner_card_done",
+        environ=environ, chatwoot_writer=chatwoot_writer,
+    )
+    if takeover_status >= 400 or not takeover.get("success"):
+        return _owner_card_failure(event, card, action, "chatwoot_auto_failed", takeover, recorder, environ, telegram_editor, customer_send_confirmed=sent is not None)
+
+    deleted, delete_status = delete_sam_live_stock_telegram_escalation(
+        review_event_id, chat_id, message_id, environ=environ, telegram_deleter=telegram_deleter,
+    )
+    if delete_status >= 400 or not deleted.get("success"):
+        resolved, resolved_status = _edit_owner_card_state(card, "Resolved", [], environ, telegram_editor)
+        if resolved_status >= 400:
+            return _owner_card_failure(event, card, action, "telegram_cleanup_failed", deleted, recorder, environ, telegram_editor, customer_send_confirmed=sent is not None)
+        deleted = {"success": True, "status": "sam_live_stock_owner_card_resolved_by_edit", "edit": resolved}
+    recorder(build_sam_live_stock_owner_card_event(event, card, "resolved", action))
+    return {"success": True, "status": "sam_live_stock_owner_card_completed", "action": action, "card": card, "customer_send": sent, "chatwoot": takeover, "telegram_cleanup": deleted, **AUTHORITY_FLAGS, "sends_customer_message": sent is not None, "calls_chatwoot": True, "calls_telegram": True}, 200
+
+
+def _owner_card_failure(event, card, action, failed_step, detail, recorder, environ, telegram_editor, customer_send_confirmed=False):
+    recorder(build_sam_live_stock_owner_card_event(event, card, "action_failed", f"{action}:{failed_step}"))
+    _edit_owner_card_state(card, f"Action failed safely: {failed_step}. Card retained; do not repeat a confirmed customer send.", _with_charl_keyboard(event.get("review_event_id") or card.get("conversation_id")), environ, telegram_editor)
+    return {"success": False, "status": "sam_live_stock_owner_card_action_failed", "action": action, "failed_step": failed_step, "card_retained": True, "customer_send_confirmed": customer_send_confirmed, "automatic_customer_send_retry_prohibited": True, "detail": detail, **AUTHORITY_FLAGS, "sends_customer_message": customer_send_confirmed}, 502
+
+
+def _edit_owner_card_state(card, text, keyboard, environ, telegram_editor):
+    source = environ if environ is not None else os.environ
+    token = _telegram_token(source)
+    if not token:
+        return {"success": False, "status": "sam_live_stock_telegram_token_required"}, 503
+    try:
+        result = (telegram_editor or _telegram_edit_message)(token, card["telegram_chat_id"], card["telegram_message_id"], text, {"inline_keyboard": keyboard})
+        return {"success": True, "status": "sam_live_stock_owner_card_edited", "telegram": result}, 200
+    except Exception as exc:
+        return {"success": False, "status": "sam_live_stock_owner_card_edit_failed", "error": _clean(str(exc), 240)}, 502
+
+
+def _with_charl_keyboard(callback_id):
+    return [[{"text": "Open Chatwoot", "callback_data": f"sam_live_card_open:{callback_id}"}], [{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{callback_id}"}]]
+
+
+def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, sales_pack_preparer=None, evidence_recorder=None):
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
@@ -623,6 +854,11 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
         "review_prepare_quote",
         "review_prepare_sales_pack",
         "review_picture_reply",
+        "card_send",
+        "card_open",
+        "card_keep",
+        "card_no_reply",
+        "card_done",
     }
     if action["action"] in review_actions:
         loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
@@ -632,6 +868,26 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
         conversation_id = event.get("chatwoot_conversation_id")
         decision_json = _json_value(event.get("decision_json"))
         message = _clean_multiline(decision_json.get("suggested_reply_text") or event.get("sam_reply_excerpt"), 1800)
+        legacy_terminal = {
+            "review_approve_send": "card_send",
+            "review_human": "card_keep",
+            "review_no_reply": "card_no_reply",
+            "review_close": "card_done",
+        }.get(action["action"])
+        if legacy_terminal and payload.get("telegram_chat_id") and payload.get("telegram_message_id"):
+            return _process_canonical_owner_card_action(
+                legacy_terminal, escalation_id, event, message, payload,
+                environ=environ, chatwoot_sender=chatwoot_sender,
+                chatwoot_writer=chatwoot_writer, telegram_deleter=telegram_deleter,
+                telegram_editor=telegram_editor, evidence_recorder=evidence_recorder,
+            )
+        if action["action"] in {"card_send", "card_open", "card_keep", "card_no_reply", "card_done"}:
+            return _process_canonical_owner_card_action(
+                action["action"], escalation_id, event, message, payload,
+                environ=environ, chatwoot_sender=chatwoot_sender,
+                chatwoot_writer=chatwoot_writer, telegram_deleter=telegram_deleter,
+                telegram_editor=telegram_editor, evidence_recorder=evidence_recorder,
+            )
         if action["action"] in {
             "review_no_reply",
             "review_prepare_draft_order",
@@ -870,6 +1126,106 @@ def list_sam_live_stock_open_intakes(limit=25, *, database_url=None):
         return {"success": False, "status": "sam_live_stock_open_intakes_failed", "error": _clean(str(exc), 240), "open_intakes": [], **AUTHORITY_FLAGS}, 500
 
 
+def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=None, review_loader=None, now=None):
+    """Owner-only caller surface: read and classify HUMAN conversations; never resets them."""
+    source = environ if environ is not None else os.environ
+    try:
+        conversations = (chatwoot_reader or _chatwoot_read_conversations)(source)
+    except Exception as exc:
+        return {"success": False, "status": "sam_live_stock_human_audit_read_failed", "error": _clean(str(exc), 240), "conversations": [], "bulk_reset_allowed": False, **AUTHORITY_FLAGS}, 502
+    now = now or datetime.now(timezone.utc)
+    rows = []
+    for conversation in conversations if isinstance(conversations, list) else []:
+        attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+        if _clean(attrs.get("conversation_mode"), 20).upper() != "HUMAN":
+            continue
+        if review_loader is not None or chatwoot_reader is None:
+            loaded, loaded_status = (review_loader or get_latest_sam_live_stock_review_event_for_conversation)(conversation.get("id"))
+            if loaded_status < 400 and loaded.get("success"):
+                conversation = {**conversation, "sam_live_stock_review": _human_audit_review_state(loaded.get("event"))}
+        rows.append(_classify_human_conversation(conversation, now))
+    return {"success": True, "status": "sam_live_stock_human_audit_loaded", "conversations": rows, "counts": {key: sum(1 for row in rows if row["classification"] == key) for key in ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")}, "bulk_reset_allowed": False, "writes_performed": False, **AUTHORITY_FLAGS}, 200
+
+
+def _classify_human_conversation(conversation, now):
+    messages = conversation.get("messages") if isinstance(conversation.get("messages"), list) else []
+    latest = messages[-1] if messages else {}
+    direction = _clean(latest.get("message_type") or latest.get("direction"), 40).lower()
+    sender_type = _clean((latest.get("sender") or {}).get("type") if isinstance(latest.get("sender"), dict) else latest.get("sender_type"), 40).lower()
+    timestamp = latest.get("created_at") or conversation.get("last_activity_at")
+    age_hours = _age_hours(timestamp, now)
+    review_state = _clean((conversation.get("sam_live_stock_review") or {}).get("state") if isinstance(conversation.get("sam_live_stock_review"), dict) else "", 60).lower()
+    if direction in {"incoming", "0"} or sender_type in {"contact", "customer"}:
+        classification = "awaiting_owner"
+    elif review_state in {"resolved", "done", "no_reply_done", "sent"}:
+        classification = "resolved_but_stuck"
+    elif age_hours is None or age_hours >= 48:
+        classification = "stale_unknown"
+    else:
+        classification = "active_manual"
+    actions = {
+        "awaiting_owner": "Review in Chatwoot; choose Send Reply, Keep With Me, or a no-send terminal action.",
+        "resolved_but_stuck": "Owner may explicitly return this conversation to SAM after confirming resolution.",
+        "stale_unknown": "Inspect the exact conversation and evidence before any mode change.",
+        "active_manual": "Leave in HUMAN while Charl is actively handling it; return explicitly when done.",
+    }
+    return {"conversation_id": _clean(conversation.get("id"), 100), "classification": classification, "latest_message_direction": direction or "unknown", "latest_sender_type": sender_type or "unknown", "latest_message_at": timestamp, "age_hours": age_hours, "owner_action": actions[classification], "auto_reset_allowed": False}
+
+
+def _age_hours(value, now):
+    try:
+        if isinstance(value, (int, float)):
+            parsed = datetime.fromtimestamp(value, tz=timezone.utc)
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return round(max(0.0, (now - parsed.astimezone(timezone.utc)).total_seconds() / 3600), 2)
+    except Exception:
+        return None
+
+
+def _human_audit_review_state(event):
+    event = event if isinstance(event, dict) else {}
+    review = _json_value(event.get("review_json"))
+    owner_card = review.get("owner_card") if isinstance(review.get("owner_card"), dict) else {}
+    card_state = _clean(owner_card.get("state"), 40).lower()
+    if card_state == "resolved":
+        return {"state": "resolved", "evidence_id": _clean(event.get("review_event_id"), 120)}
+    if card_state in OWNER_CARD_ACTIVE_STATES:
+        return {"state": "active", "evidence_id": _clean(event.get("review_event_id"), 120)}
+    action = _clean(event.get("recommended_action"), 80).lower()
+    if action in {"no_reply_needed", "review_close", "done", "resolved"}:
+        return {"state": "resolved", "evidence_id": _clean(event.get("review_event_id"), 120)}
+    return {"state": "unknown", "evidence_id": _clean(event.get("review_event_id"), 120)}
+
+
+def _chatwoot_read_conversations(source):
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    if not token:
+        raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
+    conversations = []
+    for page in range(1, 21):
+        request = urllib_request.Request(
+            f"{base_url}/api/v1/accounts/{account_id}/conversations?status=all&page={page}",
+            headers={"api_access_token": token}, method="GET",
+        )
+        with urllib_request.urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace") or "{}")
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        batch = data.get("payload") if isinstance(data.get("payload"), list) else []
+        conversations.extend(batch)
+        if not batch:
+            break
+        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+        all_count = meta.get("all_count")
+        if isinstance(all_count, int) and len(conversations) >= all_count:
+            break
+    return conversations
+
+
 def build_sam_live_stock_launch_readiness(environ=None):
     source = environ if environ is not None else os.environ
     policy = sam_live_stock_launch_control_policy(source)
@@ -977,6 +1333,13 @@ def _telegram_delete_message(token, chat_id, message_id):
     return _telegram_api(token, "deleteMessage", {"chat_id": chat_id, "message_id": message_id})
 
 
+def _telegram_edit_message(token, chat_id, message_id, text, reply_markup=None):
+    body = {"chat_id": chat_id, "message_id": message_id, "text": text}
+    if reply_markup is not None:
+        body["reply_markup"] = reply_markup
+    return _telegram_api(token, "editMessageText", body)
+
+
 def _telegram_api(token, method, body):
     request = urllib_request.Request(
         f"https://api.telegram.org/bot{token}/{method}",
@@ -1051,6 +1414,11 @@ def _callback_action(callback_data):
         "sam_live_review_prepare_sales_pack": "review_prepare_sales_pack",
         "sam_live_review_picture": "review_picture_reply",
         "sam_live_review_close": "review_close",
+        "sam_live_card_send": "card_send",
+        "sam_live_card_open": "card_open",
+        "sam_live_card_keep": "card_keep",
+        "sam_live_card_no_reply": "card_no_reply",
+        "sam_live_card_done": "card_done",
         "approve_send": "approve_send",
         "close": "close",
         "human": "human",

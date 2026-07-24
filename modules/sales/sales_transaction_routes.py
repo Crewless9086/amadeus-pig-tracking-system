@@ -103,6 +103,7 @@ from modules.sales.sam_live_stock_launch_control import (
     build_sam_live_stock_delivery_outcome_event,
     _telegram_send_message,
     apply_sam_live_stock_chatwoot_takeover,
+    audit_sam_live_stock_human_conversations,
     build_live_stock_reservation_plan,
     build_sam_live_stock_launch_readiness,
     build_sam_live_stock_review_event,
@@ -495,8 +496,8 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
     packet = decision.get("escalation_packet") if isinstance(decision.get("escalation_packet"), dict) else {}
     if packet and review.get("escalation_required"):
-        sent, status_code = send_sam_live_stock_telegram_escalation(packet)
-        return {"attempted": True, "type": "escalation", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
+        sent, status_code = send_sam_live_stock_owner_review_telegram(event)
+        return {"attempted": True, "type": "canonical_owner_card", "legacy_reason": "escalation", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
     if _sam_live_stock_owner_review_notification_needed(event):
         sent, status_code = send_sam_live_stock_owner_review_telegram(event)
         return {"attempted": True, "type": "owner_review", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
@@ -731,6 +732,15 @@ def sam_live_stock_launch_readiness():
     if guard:
         return guard
     result, status_code = build_sam_live_stock_launch_readiness()
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-live-stock/human-mode-audit", methods=["GET"])
+def sam_live_stock_human_mode_audit():
+    guard = _require_owner_meat_money_path_access()
+    if guard:
+        return guard
+    result, status_code = audit_sam_live_stock_human_conversations()
     return jsonify(result), status_code
 
 

@@ -507,7 +507,8 @@ class OomSakkieRouteTests(unittest.TestCase):
             "telegram_message_id": "987",
             "owner": "telegram_owner",
         }, environ=None)
-        mock_send.assert_called_once()
+        self.assertFalse(data["confirmation_message_created"])
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -583,7 +584,7 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
-        self.assertEqual(data["status"], "telegram_sent")
+        self.assertEqual(data["status"], "sam_live_stock_review_prepare_quote_ready")
         self.assertEqual(data["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
         self.assertEqual(data["sam_live_callback"]["action"], "review_prepare_quote")
         self.assertFalse(data["sends_customer_message"])
@@ -593,7 +594,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         callback_payload = mock_callback.call_args.args[0]
         self.assertEqual(callback_payload["callback_data"], "sam_live_review_prepare_quote:SAM-LIVE-REVIEW-ABC123")
         self.assertEqual(callback_payload["telegram_chat_id"], "67890")
-        mock_send.assert_called_once()
+        self.assertFalse(data["confirmation_message_created"])
+        mock_send.assert_not_called()
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(

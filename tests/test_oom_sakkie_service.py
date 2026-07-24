@@ -1041,10 +1041,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["sends_customer_message"])
         self.assertTrue(result["calls_chatwoot"])
-        self.assertIn("Approved reply sent to WhatsApp", result["telegram_text"])
+        self.assertFalse(result["confirmation_message_created"])
         mock_handle.assert_not_called()
         mock_callback.assert_called_once()
-        mock_send.assert_called_once()
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -1078,10 +1078,12 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertFalse(result["success"])
-        self.assertTrue(result["sends_telegram"])
+        self.assertFalse(result["sends_telegram"])
         self.assertFalse(result["sends_customer_message"])
         self.assertEqual(result["status"], "sam_live_stock_owner_send_disabled")
-        self.assertIn("blocked by a safety gate", result["telegram_text"])
+        self.assertFalse(result["confirmation_message_created"])
+        self.assertEqual(result["sam_live_callback_status_code"], 409)
+        mock_send.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
