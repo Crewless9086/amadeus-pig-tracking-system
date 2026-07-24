@@ -27,6 +27,72 @@ def inbound_payload(**overrides):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    def test_commitment_and_reservation_followup_preserves_context_and_owner_gate(self):
+        variants = (
+            (
+                "Yes, I am ready to proceed. Please reserve the pig for me.",
+                "english",
+                "ready to proceed",
+            ),
+            (
+                "Ja, ek is gereed om voort te gaan. Reserveer asseblief die vark vir my.",
+                "afrikaans",
+                "gereed is om voort te gaan",
+            ),
+        )
+        prior_messages = [
+            {"id": "1826-1", "message_type": 0, "content": "I want 1 male grower around 25 to 29 kg."},
+            {"id": "1826-2", "message_type": 0, "content": "I will collect in Riversdale."},
+            {"id": "1826-3", "message_type": 1, "content": "Are you ready to commit to this order?"},
+        ]
+        for message, language, acknowledgement in variants:
+            with self.subTest(message=message):
+                result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                    inbound_payload(content=message, conversation={
+                        "id": 1826,
+                        "inbox": {"channel_type": "Channel::Whatsapp"},
+                    }),
+                    environ={},
+                    intake_context_loader=lambda _conversation_id: {
+                        "success": True,
+                        "known_fields": {
+                            "collection_location": "Riversdale",
+                            "order_commitment": False,
+                        },
+                        "items": [{
+                            "quantity": 1,
+                            "category": "Grower",
+                            "weight_range": "25-29 kg",
+                            "sex": "Male",
+                            "status": "active",
+                        }],
+                    },
+                    conversation_history_loader=lambda *_args: {
+                        "success": True,
+                        "messages": prior_messages,
+                    },
+                    availability_loader=lambda: [],
+                )
+
+                decision = result["sam_decision"]
+                self.assertEqual(status, 200)
+                self.assertEqual(decision["facts"]["message_intent"], "order_commitment")
+                self.assertEqual(decision["facts"]["customer_language"], language)
+                self.assertTrue(decision["facts"]["order_commitment"])
+                self.assertTrue(decision["facts"]["reservation_requested"])
+                self.assertEqual(decision["conversation_plan"]["goal"], "buy_live_stock: 1 Grower 25-29 kg")
+                self.assertNotIn("order_commitment", decision["missing_fields"])
+                self.assertIn(acknowledgement, decision["suggested_reply_text"])
+                self.assertIn("farm" if language == "english" else "plaas", decision["suggested_reply_text"])
+                self.assertNotIn("ready to commit", decision["suggested_reply_text"].lower())
+                self.assertIn("reservation_request_owner_gate", decision["blockers"])
+                self.assertIn("reservation_owner_authority", decision["conversation_review"]["protected_action_reasons"])
+                self.assertFalse(result["sent"])
+                self.assertFalse(decision["customer_send_allowed"])
+                self.assertFalse(decision["creates_order"])
+                self.assertFalse(decision["reserves_stock"])
+                self.assertFalse(decision["changes_stock"])
+
     @patch("modules.sales.sam_live_stock_runtime.delegate_to_agent")
     def test_production_availability_path_delegates_to_herdmaster(self, delegate):
         delegate.return_value = ({
