@@ -191,6 +191,50 @@ class BeaconContentOperationsTests(unittest.TestCase):
         self.assertEqual(metric["display"], "1 verified")
         self.assertEqual(metric["verified_zero_event_count"], 1)
 
+    def test_explicit_unsupported_outcomes_do_not_invalidate_verified_meta_metrics(self):
+        evidence = self.evidence()
+        provenance = {
+            "source": "meta_ads_insights",
+            "source_reference": "insights/ad/1/2026-07-01/2026-07-14",
+            "retrieved_at": "2026-07-24T08:00:00Z",
+        }
+        evidence["performance_events"]["records"] = [{
+            "performance_event_id": "PERF-META",
+            "metric_evidence": {
+                "spend_amount": {
+                    **provenance, "value": 0, "status": "verified",
+                },
+                "reach": {
+                    **provenance, "value": 100, "status": "verified",
+                },
+                "qualified_buyer_leads": {
+                    **provenance, "value": None, "status": "unsupported",
+                },
+                "sales": {
+                    **provenance, "value": None, "status": "unsupported",
+                },
+                "revenue": {
+                    **provenance, "value": None, "status": "unsupported",
+                },
+            },
+        }]
+
+        result = build_beacon_content_candidate(evidence, current_facts=[])
+        evaluation = result[
+            "evidence_quality"
+        ]["performance_evidence_evaluations"][0]
+
+        self.assertTrue(evaluation["usable"])
+        self.assertEqual(
+            evaluation["usable_metric_names"], ["reach", "spend_amount"]
+        )
+        self.assertEqual(
+            result["evidence_quality"]["metric_summary"][
+                "qualified_buyer_leads"
+            ]["status_counts"],
+            {"unsupported": 1},
+        )
+
     def test_rejects_unverified_facts_and_never_converts_legacy_metrics_to_claims(self):
         result = build_beacon_content_candidate(
             self.evidence(),

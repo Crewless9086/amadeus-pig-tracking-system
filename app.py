@@ -8,6 +8,7 @@ from modules.auth.owner_access import (
     owner_login_post,
     owner_logout_post,
     owner_status,
+    require_owner_admin_access,
     require_owner_page_access,
     require_owner_read_access,
 )
@@ -17,6 +18,10 @@ from modules.beacon.content_operations import (
 )
 from modules.beacon.meta_ads_insights_preview import (
     build_meta_ads_insights_preview,
+)
+from modules.beacon.meta_ads_evidence_import import (
+    execute_meta_ads_import_packet,
+    prepare_meta_ads_import_packet,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -148,6 +153,30 @@ def beacon_meta_ads_insights_preview_read():
         start_date=request.args.get("start"),
         end_date=request.args.get("end"),
         level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet", methods=["GET"])
+def beacon_meta_ads_import_packet_prepare():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status = prepare_meta_ads_import_packet(
+        start_date=request.args.get("start"),
+        end_date=request.args.get("end"),
+        level=request.args.get("level", "ad"),
+    )
+    return jsonify(result), status
+
+
+@app.route("/api/beacon/meta-ads-import-packet/execute", methods=["POST"])
+def beacon_meta_ads_import_packet_execute():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status = execute_meta_ads_import_packet(
+        request.get_json(silent=True) or {}
     )
     return jsonify(result), status
 

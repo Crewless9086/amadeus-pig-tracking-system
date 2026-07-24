@@ -99,6 +99,26 @@
           <summary>Append-only import preview</summary>
           <div id="beacon_meta_preview_events" class="beacon-content-evidence"></div>
         </details>
+        <section class="beacon-owner-packet" aria-labelledby="beacon_meta_import_title">
+          <div class="beacon-panel-heading">
+            <div>
+              <span class="beacon-eyebrow">Owner approval required</span>
+              <h3 id="beacon_meta_import_title">Exact Meta evidence import packet</h3>
+            </div>
+            <span id="beacon_meta_import_state" class="beacon-status-chip" data-state="waiting">Not prepared</span>
+          </div>
+          <p>Preparation performs bounded reads only. Import remains disabled until an owner administrator approves the exact unexpired packet hash.</p>
+          <button type="button" id="beacon_meta_import_prepare" class="button-link button-link-secondary">Prepare exact import packet</button>
+          <div id="beacon_meta_import_summary" class="beacon-content-evidence"><p>No packet prepared.</p></div>
+          <div class="form-group">
+            <label>
+              <input id="beacon_meta_import_approval" type="checkbox" disabled />
+              I approve this exact packet hash for append-only evidence import.
+            </label>
+          </div>
+          <button type="button" id="beacon_meta_import_execute" class="button-link" disabled>Append approved evidence</button>
+          <div id="beacon_meta_import_result" class="beacon-content-evidence"></div>
+        </section>
       </section>
 
       <main class="beacon-compose" aria-labelledby="beacon_compose_title">

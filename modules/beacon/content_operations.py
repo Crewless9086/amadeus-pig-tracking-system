@@ -670,6 +670,18 @@ def _performance_evidence_evaluation(row):
         source = str(metric.get("source") or "").strip()
         reference = str(metric.get("source_reference") or "").strip()
         retrieved_at = _iso(metric.get("retrieved_at"))
+        if (
+            status == "unsupported"
+            and metric.get("value") is None
+            and source
+            and source.lower() not in REJECTED_METRIC_SOURCES
+            and reference
+            and retrieved_at
+        ):
+            # Explicit provider limitations are truthful non-rankable evidence.
+            # They do not invalidate independently verified metrics in the same
+            # append-only snapshot.
+            continue
         metric_reasons = []
         if status not in ACCEPTED_METRIC_STATUSES:
             metric_reasons.append("status_unaccepted")
