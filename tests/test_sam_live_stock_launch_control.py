@@ -331,6 +331,31 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         ]
         self.assertIn("Send Picture Reply", labels)
 
+    def test_protected_authority_card_names_one_decision_and_suppresses_duplicate_send(self):
+        inbound, facts, decision = review_inputs()
+        decision["routine_reply_delivery"] = {"sent": True, "status": "sam_live_stock_routine_reply_sent"}
+        review = {
+            "score": 99,
+            "confidence_target": 96,
+            "safe_to_send": True,
+            "recommended_action": "owner_authority_decision",
+            "owner_authority_required": True,
+            "protected_action_reasons": ["negotiated_price_owner_authority"],
+        }
+        event = launch.build_sam_live_stock_review_event(inbound, facts, decision, review)
+
+        packet = launch.build_sam_live_stock_owner_review_packet(event)
+        text = packet["telegram_packet"]["text"]
+        labels = [
+            button["text"]
+            for row in packet["telegram_packet"]["reply_markup"]["inline_keyboard"]
+            for button in row
+        ]
+
+        self.assertIn("Owner decision needed: approve or decline the negotiated price", text)
+        self.assertIn("Customer reply: already sent by SAM", text)
+        self.assertNotIn("Approve Send", labels)
+
     def test_owner_review_card_surfaces_llm_failure_status(self):
         inbound, facts, decision = review_inputs()
         decision["llm_draft"] = {"used": False, "status": "llm_call_failed"}

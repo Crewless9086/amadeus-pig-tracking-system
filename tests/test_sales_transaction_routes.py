@@ -2303,6 +2303,22 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         record.assert_not_called()
         handle_inbound.assert_not_called()
 
+    def test_protected_action_creates_one_owner_decision_notification_without_escalation(self):
+        event = {
+            "sam_reply_excerpt": "I can ask the farm to approve the exact animals before confirming anything.",
+            "recommended_action": "owner_authority_decision",
+            "no_reply_recommended": False,
+            "escalation_required": False,
+            "review_json": {
+                "owner_authority_required": True,
+                "protected_action_reasons": ["reservation_owner_authority"],
+            },
+        }
+
+        self.assertTrue(sales_transaction_routes._sam_live_stock_owner_review_notification_needed(event))
+        event["review_json"]["owner_authority_required"] = False
+        self.assertFalse(sales_transaction_routes._sam_live_stock_owner_review_notification_needed(event))
+
     def test_order_document_delivery_echo_is_not_captured_as_owner_reply(self):
         with patch.object(
             sales_transaction_routes,

@@ -130,12 +130,12 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         self.assertTrue(policy["enabled"])
         self.assertTrue(policy["autoreply_explicitly_enabled"])
-        self.assertFalse(policy["autoreply_enabled"])
+        self.assertTrue(policy["autoreply_enabled"])
         self.assertTrue(policy["llm_enabled"])
         self.assertFalse(policy["agent_v3_enabled"])
         self.assertTrue(policy["read_only"])
         self.assertFalse(policy["writes_allowed"])
-        self.assertFalse(policy["customer_send_allowed"])
+        self.assertTrue(policy["customer_send_allowed"])
         self.assertTrue(policy["owner_example_retrieval_enabled"])
         self.assertEqual(policy["owner_example_retrieval_env"], "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED")
         self.assertTrue(policy["intake_write_enabled"])
@@ -934,6 +934,70 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertFalse(decision["customer_send_allowed"])
         self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
+
+    def test_reviewed_llm_clarification_sends_when_routine_reply_gate_is_enabled(self):
+        sends = []
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Hi Sam, I am looking for weaners."),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+            llm_drafter=lambda *_args: {
+                "reply_text": "I can help with weaners. How many are you looking for?",
+                "confidence": 0.94,
+            },
+            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertTrue(decision["should_reply"])
+        self.assertTrue(decision["conversation_review"]["safe_to_send"])
+        self.assertEqual(decision["conversation_review"]["recommended_action"], "ask_one_missing_fact")
+        self.assertTrue(result["sent"])
+        self.assertTrue(result["sends_customer_message"])
+        self.assertEqual(sends, [("2401", "I can help with weaners. How many are you looking for?")])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["changes_stock"])
+
+    def test_reservation_request_keeps_conversation_with_sam_but_requests_owner_authority(self):
+        sends = []
+        result, _status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can you reserve 2 female weaners for me?"),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [],
+            llm_drafter=lambda *_args: {
+                "reply_text": "I can capture the request and ask the farm to approve the exact animals before I confirm anything.",
+                "confidence": 0.94,
+            },
+            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
+        )
+
+        decision = result["sam_decision"]
+        review = decision["conversation_review"]
+        self.assertFalse(review["escalation_required"])
+        self.assertEqual(review["conversation_mode_recommendation"], "AUTO")
+        self.assertTrue(review["owner_authority_required"])
+        self.assertIn("reservation_owner_authority", review["protected_action_reasons"])
+        self.assertEqual(review["recommended_action"], "owner_authority_decision")
+        self.assertTrue(result["sent"])
+        self.assertTrue(decision["owner_gate_required"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["creates_order"])
 
     def test_llm_context_includes_real_chatwoot_history_messages(self):
         calls = []
@@ -1985,7 +2049,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertIn("waste your time", decision["suggested_reply_text"])
         self.assertEqual(decision["suggested_reply_text"], decision["escalation_packet"]["suggested_response"])
 
-    def test_price_challenge_escalates_without_discount_posture(self):
+    def test_price_challenge_requests_owner_authority_without_conversation_takeover(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
             inbound_payload(content="That price is too expensive. I can get cheaper pigs elsewhere.")
         )
@@ -1994,14 +2058,36 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "sales_lane": "live_stock_sales",
             "missing_fields": [],
             "blockers": [],
-            "suggested_reply_text": "I understand that our animals and pricing will not fit everyone's budget. Thanks for showing interest.",
+            "suggested_reply_text": "I understand. I can ask the owner whether the current price can be adjusted before I confirm anything.",
         }
 
         review = sam_live_stock_runtime.review_sam_live_stock_conversation(inbound, facts, decision)
 
-        self.assertTrue(review["escalation_required"])
-        self.assertIn("pricing_challenge_or_negotiation", review["escalation_reasons"])
-        self.assertFalse(review["safe_to_send"])
+        self.assertFalse(review["escalation_required"])
+        self.assertTrue(review["owner_authority_required"])
+        self.assertIn("negotiated_price_owner_authority", review["protected_action_reasons"])
+        self.assertEqual(review["conversation_mode_recommendation"], "AUTO")
+        self.assertTrue(review["safe_to_send"])
+
+    def test_final_order_and_payment_confirmation_keep_separate_owner_authority(self):
+        inbound = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(content="I have paid and want to finalise the order.")
+        )
+        facts = sam_live_stock_runtime.extract_live_stock_facts(inbound["content"], inbound)
+        facts["order_commitment"] = True
+        decision = {
+            "sales_lane": "live_stock_sales",
+            "missing_fields": [],
+            "blockers": [],
+            "suggested_reply_text": "Thanks, I will have the farm verify the payment and final order before confirming either.",
+        }
+
+        review = sam_live_stock_runtime.review_sam_live_stock_conversation(inbound, facts, decision)
+
+        self.assertFalse(review["escalation_required"])
+        self.assertTrue(review["owner_authority_required"])
+        self.assertIn("final_order_owner_authority", review["protected_action_reasons"])
+        self.assertIn("payment_confirmation_owner_authority", review["protected_action_reasons"])
 
     def test_natural_close_recommends_no_reply(self):
         inbound = sam_live_stock_runtime.parse_chatwoot_inbound(inbound_payload(content="Thanks, have a good day."))

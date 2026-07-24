@@ -509,7 +509,14 @@ def _sam_live_stock_owner_review_notification_needed(event):
         return False
     reply = str(event.get("sam_reply_excerpt") or "").strip()
     action = str(event.get("recommended_action") or "").strip()
-    return bool(reply and action == "owner_review_send_candidate")
+    review = event.get("review_json") if isinstance(event.get("review_json"), dict) else {}
+    return bool(
+        reply
+        and (
+            action == "owner_review_send_candidate"
+            or review.get("owner_authority_required") is True
+        )
+    )
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/policy", methods=["GET"])
