@@ -26,12 +26,50 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
             result = farm_supabase_read_service.get_allocation_input_rows()
         self.assertEqual(result["overview_rows"][0]["Reserved_Status"], "Allocated")
         self.assertEqual(result["overview_rows"][0]["Reserved_For_Order_ID"], "ORD-1")
+        self.assertEqual(result["overview_rows"][0]["Allocation_Evidence_State"], "allocated")
+        self.assertEqual(result["allocation_query_status"], "known")
         self.assertTrue(any("customer_order.order_status" in sql for sql in calls))
         allocation_sql = next(sql for sql in calls if "from public.order_lines line" in sql)
         self.assertIn("lower(btrim(line.line_status))", allocation_sql)
         self.assertIn("lower(btrim(customer_order.order_status))", allocation_sql)
         self.assertIn("'cancelled', 'collected'", allocation_sql)
         self.assertIn("'cancelled', 'completed', 'rejected'", allocation_sql)
+
+    def test_allocation_inputs_model_withdrawal_evidence_states(self):
+        current = [
+            {"pig_id": "PIG-NONE"},
+            {"pig_id": "PIG-NA"},
+            {"pig_id": "PIG-CLEAR"},
+            {"pig_id": "PIG-HOLD"},
+            {"pig_id": "PIG-UNKNOWN"},
+        ]
+        medical = [
+            {"pig_id": "PIG-NA", "withdrawal_days": 0},
+            {"pig_id": "PIG-CLEAR", "withdrawal_days": 7, "withdrawal_end_date": date.today() - timedelta(days=1)},
+            {"pig_id": "PIG-HOLD", "withdrawal_days": 7, "withdrawal_end_date": date.today() + timedelta(days=1)},
+            {"pig_id": "PIG-UNKNOWN", "withdrawal_days": None, "withdrawal_end_date": None},
+        ]
+
+        def fetch(sql, params=(), connect_factory=None):
+            if "from public.order_lines line" in sql:
+                return []
+            if "from public.pig_medical_events" in sql:
+                return medical
+            return []
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=current), patch.object(
+            farm_supabase_read_service, "_fetch_all", side_effect=fetch,
+        ):
+            result = farm_supabase_read_service.get_allocation_input_rows()
+
+        states = {row["Pig_ID"]: row["Withdrawal_Evidence_State"] for row in result["overview_rows"]}
+        self.assertEqual(states, {
+            "PIG-NONE": "not_applicable",
+            "PIG-NA": "not_applicable",
+            "PIG-CLEAR": "cleared",
+            "PIG-HOLD": "hold",
+            "PIG-UNKNOWN": "unknown",
+        })
 
     def test_allocation_read_failure_fails_closed(self):
         with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=[{"pig_id": "PIG-1"}]), patch.object(

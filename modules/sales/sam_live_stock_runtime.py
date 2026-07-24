@@ -682,6 +682,13 @@ def summarize_live_stock_availability(rows, facts=None):
         "success": True,
         "status": "loaded",
         "read_only": True,
+        "contract_version": "herdmaster_exact_animal_eligibility_v1",
+        "observation_timestamp": next((_clean(row.get("eligibility_observed_at"), 40) for row in rows if isinstance(row, dict) and row.get("eligibility_observed_at")), ""),
+        "allocation_query_status": next((_clean(row.get("allocation_query_status"), 40) for row in rows if isinstance(row, dict) and row.get("allocation_query_status")), "unavailable"),
+        "evidence_complete": bool(matched) and all(
+            isinstance(row, dict) and row.get("evidence_complete") is True
+            for row in matched
+        ),
         "total_available_count": len(safe_rows),
         "matched_count": len(matched),
         "summary": bucket_counts,
@@ -1188,6 +1195,12 @@ def build_live_stock_prepared_owner_action_bundle(inbound, facts, conversation_p
             "excluded": list(match_packet.get("excluded_sample") or []),
             "considered_count": int(match_packet.get("considered_count") or 0),
             "selected_pig_ids": list(match_packet.get("selected_pig_ids") or []),
+            "quantity_shortfall": int(match_packet.get("quantity_shortfall") or 0),
+            "proposal_only": True,
+            "observation_timestamp": _clean(match_packet.get("observation_timestamp"), 40),
+            "allocation_query_status": _clean(match_packet.get("allocation_query_status"), 40) or "unavailable",
+            "evidence_complete": match_packet.get("evidence_complete") is True,
+            "ranking": list(match_packet.get("ranking") or []),
             "proposed_order_lines": list(draft_packet.get("proposed_order_lines") or []),
             "price_evidence": price_answer_packet.get("pricing") if isinstance(price_answer_packet.get("pricing"), dict) else {},
             "exact_animal_assignment_written": False,
@@ -1468,6 +1481,7 @@ def build_live_stock_match_packet(facts, availability):
         "match_status": status,
         "complete_fulfillment": quantity > 0 and exact_count >= quantity,
         "partial_fulfillment": quantity > 0 and 0 < exact_count < quantity,
+        "quantity_shortfall": max(quantity - exact_count, 0),
         "matched_sample": selected,
         "selected_pig_ids": [row.get("pig_id") for row in selected if row.get("pig_id")],
         "considered_count": int(availability.get("considered_count") or 0),
@@ -1476,6 +1490,14 @@ def build_live_stock_match_packet(facts, availability):
         "excluded_sample": list(availability.get("excluded_sample") or []),
         "owner_review_required": True,
         "can_create_draft_order": quantity > 0 and exact_count > 0,
+        "observation_timestamp": _clean(availability.get("observation_timestamp"), 40),
+        "allocation_query_status": _clean(availability.get("allocation_query_status"), 40) or "unavailable",
+        "evidence_complete": availability.get("evidence_complete") is True,
+        "ranking": [
+            {"rank": index + 1, "pig_id": row.get("pig_id"), "basis": "weight_distance_then_freshness_then_pig_id"}
+            for index, row in enumerate(selected)
+        ],
+        "proposal_only": True,
     }
 
 
@@ -3061,9 +3083,19 @@ def _row_available_for_live_stock(row):
     # Herdmaster must explicitly classify an animal as Sale before it can
     # support matching, price evidence, or draft/quote preparation.  An
     # omitted purpose is unknown, not an implicit sale approval.
+    if _clean(row.get("exact_animal_eligibility_contract_version"), 100) != "herdmaster_exact_animal_eligibility_v1":
+        return False
+    if row.get("live_stock_sale_eligible") is not True or row.get("evidence_complete") is not True:
+        return False
     if _normal_text(row.get("purpose")) != "sale":
         return False
-    if "live_stock_sale_eligible" in row and row.get("live_stock_sale_eligible") is not True:
+    if _normal_text(row.get("allocation_query_status")) not in {"known", "success"}:
+        return False
+    if _normal_text(row.get("allocation_evidence_state")) != "known unallocated":
+        return False
+    if _normal_text(row.get("withdrawal_evidence_state")) not in {"not applicable", "cleared"}:
+        return False
+    if _normal_text(row.get("medical_status")) != "clear":
         return False
     status = _normal_text(row.get("status"))
     on_farm = _normal_text(row.get("on_farm"))
@@ -3073,7 +3105,7 @@ def _row_available_for_live_stock(row):
         return False
     if on_farm and on_farm not in {"yes", "true", "1", "on farm"}:
         return False
-    if reserved and reserved not in {"", "available", "no", "not reserved"}:
+    if reserved not in {"not reserved"}:
         return False
     if available and available not in {"yes", "true", "1"}:
         return False
@@ -3117,7 +3149,7 @@ def _row_matches_requested_weight(row, requested_weight_range):
         pass
     row_band = _weight_bounds_from_text(row.get("weight_band") or row.get("suggested_price_category") or "")
     if not row_band:
-        return True
+        return False
     row_low, row_high = row_band
     return row_low <= high and row_high >= low
 
@@ -3153,9 +3185,15 @@ def _availability_public_row(row):
         "reserved_status": _clean(row.get("reserved_status"), 40),
         "available_for_sale": _clean(row.get("available_for_sale"), 40),
         "live_stock_sale_eligible": row.get("live_stock_sale_eligible"),
+        "exact_animal_eligibility_contract_version": _clean(row.get("exact_animal_eligibility_contract_version"), 100),
+        "evidence_complete": row.get("evidence_complete"),
+        "eligibility_observed_at": _clean(row.get("eligibility_observed_at"), 40),
+        "allocation_query_status": _clean(row.get("allocation_query_status"), 40),
+        "allocation_evidence_state": _clean(row.get("allocation_evidence_state"), 60),
         "health_status": _clean(row.get("health_status"), 80),
         "medical_status": _clean(row.get("medical_status"), 80),
         "withdrawal_clear": _clean(row.get("withdrawal_clear"), 40),
+        "withdrawal_evidence_state": _clean(row.get("withdrawal_evidence_state"), 40),
         "current_withdrawal_end_date": _clean(row.get("current_withdrawal_end_date"), 40),
         "reserved_for_order_id": _clean(row.get("reserved_for_order_id"), 100),
         "eligibility_reason": _clean(row.get("live_stock_sale_reason") or row.get("sales_notes"), 300),
@@ -3295,10 +3333,11 @@ def _availability_exclusion_reasons(row, category, sex, requested_weight_range):
     if not _row_available_for_live_stock(row):
         reasons.append(_clean(row.get("live_stock_sale_reason") or row.get("sales_notes") or "not currently sale eligible", 300))
         return reasons
-    if category and category not in _row_category_tokens(row):
+    category_tokens = _row_category_tokens(row)
+    if category and (not category_tokens or category not in category_tokens):
         reasons.append(f"category_mismatch:{category}")
-    row_sex = _normal_text(row.get("sex"))
-    if sex and sex != "any" and sex not in row_sex:
+    row_sex = _normal_sex(row.get("sex"))
+    if sex and sex != "any" and sex != row_sex:
         reasons.append(f"sex_mismatch:{sex}")
     if requested_weight_range and not _row_matches_requested_weight(row, requested_weight_range):
         reasons.append(f"weight_mismatch:{_clean(requested_weight_range, 80)}")

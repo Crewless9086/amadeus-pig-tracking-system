@@ -766,6 +766,10 @@ def _allocation_overview_row(row):
         "Medical_Status": _text(row.get("medical_status")),
         "Reserved_Status": _text(row.get("reserved_status")),
         "Reserved_For_Order_ID": _text(row.get("reserved_for_order_id")),
+        "Allocation_Evidence_State": _text(row.get("allocation_evidence_state")),
+        "Allocation_Order_Status": _text(row.get("allocation_order_status")),
+        "Allocation_Line_Status": _text(row.get("allocation_line_status")),
+        "Withdrawal_Evidence_State": _text(row.get("withdrawal_evidence_state")),
         "Media_References": row.get("media_references") if isinstance(row.get("media_references"), list) else [],
     }
 
@@ -792,15 +796,20 @@ def get_allocation_input_rows(connect_factory=None):
     allocated_by_pig = {row["pig_id"]: row for row in allocated_rows}
     medical_rows = _fetch_all(
         """
-        select distinct on (pig_id)
-            pig_id, treatment_type, reason_for_treatment, withdrawal_end_date,
+        select
+            pig_id, treatment_type, reason_for_treatment, withdrawal_days, withdrawal_end_date,
             follow_up_required, follow_up_date
         from public.pig_medical_events
         order by pig_id, treatment_date desc, created_at desc, medical_event_id desc
         """,
         connect_factory=connect_factory,
     )
-    medical_by_pig = {row["pig_id"]: row for row in medical_rows}
+    medical_by_pig = {}
+    medical_history_by_pig = {}
+    for medical_row in medical_rows:
+        pig_id = medical_row["pig_id"]
+        medical_by_pig.setdefault(pig_id, medical_row)
+        medical_history_by_pig.setdefault(pig_id, []).append(medical_row)
     today = date.today()
     for row in current_rows:
         allocation = allocated_by_pig.get(row.get("pig_id"), {})
@@ -808,14 +817,43 @@ def get_allocation_input_rows(connect_factory=None):
             "Allocated" if allocation else "Not_Reserved"
         )
         row["reserved_for_order_id"] = allocation.get("order_id", "")
+        row["allocation_evidence_state"] = "allocated" if allocation else "known_unallocated"
+        row["allocation_order_status"] = allocation.get("order_status", "")
+        row["allocation_line_status"] = allocation.get("line_status", "")
         medical = medical_by_pig.get(row.get("pig_id"), {})
+        withdrawal_history = medical_history_by_pig.get(row.get("pig_id"), [])
         withdrawal_end = medical.get("withdrawal_end_date")
         follow_up_date = medical.get("follow_up_date")
         withdrawal_hold = isinstance(withdrawal_end, date) and withdrawal_end > today
+        active_withdrawal_end_dates = [
+            item.get("withdrawal_end_date")
+            for item in withdrawal_history
+            if isinstance(item.get("withdrawal_end_date"), date) and item.get("withdrawal_end_date") > today
+        ]
+        applicable_ended = any(
+            isinstance(item.get("withdrawal_end_date"), date) and item.get("withdrawal_end_date") <= today
+            for item in withdrawal_history
+        )
+        unknown_withdrawal = any(
+            item.get("withdrawal_days") is None and not isinstance(item.get("withdrawal_end_date"), date)
+            for item in withdrawal_history
+        )
+        if active_withdrawal_end_dates:
+            withdrawal_evidence_state = "hold"
+            withdrawal_end = max(active_withdrawal_end_dates)
+        elif unknown_withdrawal:
+            withdrawal_evidence_state = "unknown"
+        elif applicable_ended:
+            withdrawal_evidence_state = "cleared"
+        elif not withdrawal_history or all(item.get("withdrawal_days") == 0 for item in withdrawal_history):
+            withdrawal_evidence_state = "not_applicable"
+        else:
+            withdrawal_evidence_state = "unknown"
         follow_up_hold = bool(medical.get("follow_up_required")) and (
             not isinstance(follow_up_date, date) or follow_up_date >= today
         )
         row["current_withdrawal_end_date"] = withdrawal_end
+        row["withdrawal_evidence_state"] = withdrawal_evidence_state
         row["medical_status"] = "Withdrawal hold" if withdrawal_hold else "Follow-up hold" if follow_up_hold else "Clear"
         row["health_status"] = _text(medical.get("reason_for_treatment") or medical.get("treatment_type"))
         # No canonical animal-media table exists yet. Keep the contract explicit and empty;
@@ -880,6 +918,8 @@ def get_allocation_input_rows(connect_factory=None):
         "litter_rows": formatted_litter_rows,
         "pen_lookup": pen_lookup,
         "source": "supabase_canonical",
+        "allocation_query_status": "known",
+        "medical_query_status": "known",
     }
 
 

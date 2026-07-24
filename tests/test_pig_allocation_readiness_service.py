@@ -232,6 +232,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_stock_outputs_can_use_supabase_allocation(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-MEAT",
@@ -295,6 +296,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
     def test_sales_availability_only_marks_purpose_sale_weaned_price_band_rows_ready_for_sam_live(self):
         allocation = {
             "source": "supabase_canonical",
+            "allocation_query_status": "known",
             "pigs": [
                 {
                     "pig_id": "PIG-WEANER",
@@ -311,6 +313,10 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
                     "weight_band": "10_to_14_Kg",
                     "wean_date": "2026-06-01",
                     "withdrawal_clear": "Yes",
+                    "withdrawal_evidence_state": "not_applicable",
+                    "allocation_evidence_state": "known_unallocated",
+                    "reserved_status": "Not_Reserved",
+                    "medical_status": "Clear",
                     "media_references": [{"type": "photo", "reference": "/pigs/pig-weaner.jpg"}],
                 },
                 {
@@ -376,7 +382,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(by_id["PIG-WEANER"]["latest_weight_date"], "2026-06-22")
         self.assertEqual(by_id["PIG-WEANER"]["media_references"][0]["type"], "photo")
         self.assertEqual(by_id["PIG-NEWBORN"]["available_for_sale"], "No")
-        self.assertIn("still with the sow", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
+        self.assertIn("allocation evidence", by_id["PIG-NEWBORN"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-BREEDING"]["available_for_sale"], "No")
         self.assertIn("Purpose = Sale", by_id["PIG-BREEDING"]["live_stock_sale_reason"])
         self.assertEqual(by_id["PIG-WITHDRAWAL"]["available_for_sale"], "No")
