@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -139,6 +140,10 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(policy["owner_example_retrieval_enabled"])
         self.assertEqual(policy["owner_example_retrieval_env"], "SAM_LIVE_STOCK_OWNER_EXAMPLE_RETRIEVAL_ENABLED")
         self.assertTrue(policy["intake_write_enabled"])
+        self.assertTrue(policy["llm_runtime_diagnostics"]["source_is_mapping"])
+        self.assertTrue(policy["llm_runtime_diagnostics"]["llm_enabled"])
+        self.assertTrue(policy["llm_runtime_diagnostics"]["llm_configured"])
+        self.assertFalse(policy["llm_runtime_diagnostics"]["contains_secret_values"])
 
     def test_policy_defaults_llm_model_and_owner_example_retrieval_on(self):
         policy = sam_live_stock_runtime.sam_live_stock_webhook_policy(environ={
@@ -934,6 +939,43 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertFalse(decision["customer_send_allowed"])
         self.assertEqual(calls[0][0]["facts"]["quantity"], 3)
+
+    def test_process_environment_mapping_reaches_llm_builder_from_inbound_handler(self):
+        calls = []
+        environment = {
+            "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+            "OPENAI_API_KEY": "test-secret-key-never-exposed",
+        }
+
+        with patch.dict(os.environ, environment, clear=True):
+            result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                inbound_payload(content="I need 3 male growers around 30 kg for Friday."),
+                intake_context_loader=lambda _conversation_id: {"success": True, "known_fields": {}, "items": []},
+                conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                availability_loader=lambda: [],
+                llm_drafter=lambda context, source: calls.append((context, source)) or {
+                    "reply_text": "I can help with the three male growers and will keep Friday as the requested timing.",
+                    "confidence": 0.96,
+                },
+            )
+
+        decision = result["sam_decision"]
+        diagnostics = decision["llm_draft"]["runtime_diagnostics"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(decision["llm_draft"]["status"], "llm_reply_draft_used")
+        self.assertEqual(decision["reply_source"], "llm_live_stock_reply_draft")
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][1], os.environ)
+        self.assertTrue(diagnostics["source_is_mapping"])
+        self.assertTrue(diagnostics["source_is_process_environment"])
+        self.assertTrue(diagnostics["llm_enabled_key_present"])
+        self.assertTrue(diagnostics["llm_enabled"])
+        self.assertTrue(diagnostics["model_configured"])
+        self.assertTrue(diagnostics["api_key_configured"])
+        self.assertTrue(diagnostics["llm_configured"])
+        self.assertFalse(diagnostics["contains_secret_values"])
+        self.assertNotIn("test-secret-key-never-exposed", json.dumps(diagnostics))
 
     def test_reviewed_llm_clarification_sends_when_routine_reply_gate_is_enabled(self):
         sends = []

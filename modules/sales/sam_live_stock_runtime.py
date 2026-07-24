@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -81,6 +82,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)) and llm_configured,
         "llm_explicitly_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
         "llm_configured": llm_configured,
+        "llm_runtime_diagnostics": _llm_runtime_diagnostics(source),
         "agent_v3_enabled": False,
         "agent_v3_explicitly_enabled": _truthy(source.get(AGENT_V3_ENABLED_ENV)),
         "enabled_env": WEBHOOK_ENABLED_ENV,
@@ -2198,13 +2200,14 @@ def _build_llm_reply_draft_if_enabled(
     owner_correction_examples=None,
     conversation_plan=None,
 ):
-    source = source if isinstance(source, dict) else {}
+    source = source if isinstance(source, Mapping) else {}
+    diagnostics = _llm_runtime_diagnostics(source)
     if not _truthy(source.get(LLM_ENABLED_ENV)):
-        return {"used": False, "status": "llm_disabled"}
+        return {"used": False, "status": "llm_disabled", "runtime_diagnostics": diagnostics}
     if route.get("lane") != LANE_LIVE_STOCK:
-        return {"used": False, "status": "llm_wrong_lane"}
+        return {"used": False, "status": "llm_wrong_lane", "runtime_diagnostics": diagnostics}
     if not (_configured_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
-        return {"used": False, "status": "llm_not_configured"}
+        return {"used": False, "status": "llm_not_configured", "runtime_diagnostics": diagnostics}
     caller = drafter or _call_sam_live_stock_reply_llm
     raw = caller(
         _llm_reply_context_packet(
@@ -2224,12 +2227,12 @@ def _build_llm_reply_draft_if_enabled(
         source,
     )
     if not isinstance(raw, dict):
-        return {"used": False, "status": "llm_empty_response"}
+        return {"used": False, "status": "llm_empty_response", "runtime_diagnostics": diagnostics}
     if raw.get("_llm_error"):
-        return {"used": False, "status": "llm_call_failed", "llm_error": raw.get("_llm_error")}
+        return {"used": False, "status": "llm_call_failed", "llm_error": raw.get("_llm_error"), "runtime_diagnostics": diagnostics}
     reply = _clean_multiline(raw.get("reply_text") or raw.get("suggested_reply_text"), 1800)
     if not reply:
-        return {"used": False, "status": "llm_no_reply_text"}
+        return {"used": False, "status": "llm_no_reply_text", "runtime_diagnostics": diagnostics}
     return {
         "used": True,
         "status": "llm_reply_draft_used",
@@ -2237,6 +2240,25 @@ def _build_llm_reply_draft_if_enabled(
         "reply_text": reply,
         "confidence": raw.get("confidence", ""),
         "notes": _clean(raw.get("notes"), 240),
+        "runtime_diagnostics": diagnostics,
+    }
+
+
+def _llm_runtime_diagnostics(source):
+    supported = isinstance(source, Mapping)
+    source = source if supported else {}
+    enabled_present = LLM_ENABLED_ENV in source
+    model = _configured_model(source) if supported else ""
+    api_key_configured = bool(str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
+    return {
+        "source_is_mapping": supported,
+        "source_is_process_environment": source is os.environ,
+        "llm_enabled_key_present": enabled_present,
+        "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
+        "model_configured": bool(model),
+        "api_key_configured": api_key_configured,
+        "llm_configured": bool(model and api_key_configured),
+        "contains_secret_values": False,
     }
 
 
