@@ -51,6 +51,14 @@ For PR-backed missions it must also include the expected PR head SHA and the exa
 
 "Looks good" is not evidence.
 
+For agent-behavior changes, isolated router, parser, prompt, policy, or unit
+tests are supporting evidence only. The exact-head review packet must also prove
+the complete customer journey across multiple turns: context retention,
+progressive routing, specialist tool boundaries, topic change, review/send
+gates, escalation ownership, and the final customer or owner outcome. It must
+report the defined journey metrics with their denominators; document citations
+alone do not satisfy this gate.
+
 ## Release Evidence
 
 Release/merge/deploy review must include:

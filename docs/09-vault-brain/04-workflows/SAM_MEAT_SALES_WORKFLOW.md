@@ -9,12 +9,19 @@ SAM must not invent price, availability, payment confirmation, final booking, sl
 ## Operating Flow
 
 1. Customer responds inbound through Chatwoot/WhatsApp, public/social campaign exposure, existing relationship, or owner manual capture.
-2. SAM identifies the sales lane and records structured facts.
-3. SAM asks one useful next question when facts are missing.
+2. General SAM greets, acknowledges, uses verified post context, answers a
+   verified general question, or asks one natural clarification as needed.
+3. Before a meat claim, specialist tool, or consequential preparation, SAM
+   explicitly graduates to the meat lane and records structured facts.
 4. Backend validates quote-safe facts, price book, service-window state, and document gates.
 5. Owner/operator reviews estimated quote, deposit request, carcass reservation, abattoir/butcher slot, final invoice, and delivery release when required.
 6. SAM may send or draft wording only when the approved backend gate allows it.
 7. Analyst/Oom Sakkie records learning evidence from confusion, objections, missing facts, conversion/loss reason, and follow-up needs.
+
+The general-conversation doctrine has precedence until graduation. Unknown lane
+alone is valid and must not cause owner interruption or Telegram escalation.
+Conversation ownership (`AUTO_GENERAL`, `AUTO_SPECIALIST`, or `HUMAN`) remains
+independent from business lane.
 
 ## Agentic Conversation Loop
 
@@ -57,6 +64,7 @@ Public meat sales are delivery-first. SAM must not present collection as a norma
 
 ## Source References
 
+- `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`

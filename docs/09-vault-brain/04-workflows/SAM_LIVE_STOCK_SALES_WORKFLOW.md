@@ -8,7 +8,10 @@ SAM Live Stock Sales turns customer interest in live pigs into clean, source-bac
 
 ## Lane Boundary
 
-SAM must classify the sales lane before doing anything material:
+The general-conversation doctrine governs first. SAM must classify and graduate
+to a specialist lane before making specialist claims, calling specialist tools,
+or preparing or performing consequential actions. It need not classify a lane
+before an ordinary conversational reply:
 
 - `meat_sales`: pork, carcass, cut sets, freezer packs, chops, roasts, mince, ribs, belly, delivery of meat;
 - `live_stock_sales`: live pigs, piglets, weaners, growers, finishers, gilts, boars, sows, pigs to raise, pigs to buy alive;
@@ -19,11 +22,17 @@ SAM must classify the sales lane before doing anything material:
 
 Mixed meat/live-stock language must clarify before proceeding. Example: `I want pork and maybe two weaners` is not safe for a single lane.
 
+`unclear` remains a valid discovery state and does not by itself require
+Telegram escalation or HUMAN ownership.
+
 ## Operating Flow
 
 1. Customer message arrives through Chatwoot/WhatsApp, manual owner capture, or a future campaign source.
-2. SAM Sales Router classifies the lane.
-3. If lane is not `live_stock_sales`, hand off to the correct lane or clarify.
+2. General SAM responds or clarifies naturally until specialist graduation is
+   required.
+3. SAM Sales Router classifies the lane before live-stock claims, tools, order
+   preparation, or other consequential work. If the lane is not
+   `live_stock_sales`, continue general discovery or use the correct specialist.
 4. If lane is live stock, collect only the next missing fact.
 5. Load existing conversation/order-intake memory when the backend runtime exists.
 6. Read current availability from backend source truth.
@@ -106,7 +115,8 @@ Live launch should be monitored through Chatwoot and the app dashboards. If SAM 
 
 The old n8n live-sales workflow had useful safeguards that remain required in the backend-native version:
 
-- `conversation_mode` must support `AUTO` versus `HUMAN`;
+- conversation ownership must support `AUTO_GENERAL`, `AUTO_SPECIALIST`, and
+  `HUMAN`, independently from business lane;
 - human escalation must carry enough context for the owner to reply safely;
 - approved owner replies may be sent back to Chatwoot only through an explicit owner-approved send gate;
 - Telegram escalation notifications should be cleaned up after resolution so the owner chat does not become noisy;
@@ -176,6 +186,7 @@ Reservation rule:
 
 ## Source References
 
+- `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
 - `docs/09-vault-brain/02-agents/sales/SAM.md`
 - `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`
