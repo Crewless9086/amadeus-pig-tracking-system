@@ -1925,6 +1925,15 @@ def mission_status_summary(database_url=None, connect_factory=None):
                     """
                 )
                 rows = cursor.fetchall()
+                cursor.execute(
+                    """
+                    select mission_id, status, metadata_json, created_at, updated_at
+                    from public.charlie_missions
+                    order by created_at desc
+                    limit 500
+                    """
+                )
+                throughput_rows = cursor.fetchall()
     except Exception as exc:
         return {
             "success": False,
@@ -1938,7 +1947,68 @@ def mission_status_summary(database_url=None, connect_factory=None):
         "configured": True,
         "status": "ok",
         "counts": {str(row[0]): int(row[1] or 0) for row in rows},
+        "orchestration_throughput": _orchestration_throughput_rows(throughput_rows),
     }, 200
+
+
+def _orchestration_throughput_rows(rows):
+    """Derive owner-visible durable metrics from the existing mission ledger."""
+    missions = []
+    by_tier = {}
+    for row in rows or []:
+        if not isinstance(row, (list, tuple)) or len(row) < 5:
+            continue
+        mission_id, status, raw_metadata, created_at, updated_at = row[:5]
+        if isinstance(raw_metadata, dict):
+            metadata = raw_metadata
+        elif isinstance(raw_metadata, str):
+            try:
+                metadata = json.loads(raw_metadata)
+            except (TypeError, ValueError):
+                metadata = {}
+        else:
+            metadata = {}
+        metadata = metadata if isinstance(metadata, dict) else {}
+        packet = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+        execution = metadata.get("agent_execution") if isinstance(metadata.get("agent_execution"), dict) else {}
+        selected = packet.get("selected_agents") if isinstance(packet.get("selected_agents"), list) else None
+        skipped = packet.get("skipped_agents") if isinstance(packet.get("skipped_agents"), list) else None
+        stages = execution.get("stages") if isinstance(execution.get("stages"), list) else None
+        history = packet.get("expansion_history") if isinstance(packet.get("expansion_history"), list) else None
+        elapsed = packet.get("elapsed_seconds")
+        if elapsed is None and created_at and updated_at:
+            try:
+                elapsed = max(0, int((updated_at - created_at).total_seconds()))
+            except (AttributeError, TypeError):
+                elapsed = None
+        item = {
+            "mission_id": str(mission_id or ""),
+            "tier": packet.get("tier") or "Unavailable",
+            "selected_agent_count": len(selected) if selected is not None else "Unavailable",
+            "skipped_agent_count": len(skipped) if skipped is not None else "Unavailable",
+            "elapsed_seconds": elapsed if elapsed is not None else "Unavailable",
+            "stage_elapsed_seconds": {
+                str(stage.get("agent") or stage.get("stage") or "unknown"): stage.get("elapsed_seconds", "Unavailable")
+                for stage in (stages or []) if isinstance(stage, dict)
+            } if stages is not None else "Unavailable",
+            "attempts": sum(int(stage.get("attempt") or 1) for stage in stages if isinstance(stage, dict)) if stages is not None else "Unavailable",
+            "backflows": len(execution.get("backflow_events") or []) if isinstance(execution.get("backflow_events"), list) else packet.get("backflow_count", "Unavailable"),
+            "expansion_generations": (1 + len(history)) if history is not None else "Unavailable",
+            "final_outcome": packet.get("final_outcome") or status or "Unavailable",
+            "owner_interventions": len(metadata.get("owner_review_decisions") or []) if isinstance(metadata.get("owner_review_decisions"), list) else "Unavailable",
+            "blocked_reason": (metadata.get("review_packet") or {}).get("blocked_reason", "Unavailable") if isinstance(metadata.get("review_packet"), dict) else "Unavailable",
+        }
+        missions.append(item)
+        tier = item["tier"]
+        bucket = by_tier.setdefault(tier, {"missions": 0, "known_elapsed_missions": 0, "elapsed_seconds": 0})
+        bucket["missions"] += 1
+        if isinstance(item["elapsed_seconds"], int):
+            bucket["known_elapsed_missions"] += 1
+            bucket["elapsed_seconds"] += item["elapsed_seconds"]
+    for bucket in by_tier.values():
+        known = bucket["known_elapsed_missions"]
+        bucket["average_elapsed_seconds"] = bucket["elapsed_seconds"] / known if known else "Unavailable"
+    return {"version": "charlie_orchestration_throughput_v1", "missions": missions, "by_tier": by_tier}
 
 
 def _write_normalized_vault_records(mission_id, vault_metadata, database_url=None, connect_factory=None):
