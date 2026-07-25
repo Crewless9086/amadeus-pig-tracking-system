@@ -109,6 +109,15 @@ Every processed inbound Chatwoot live-stock message must expose one durable SAM 
 
 Internal order-intake planner actions may still be preserved as implementation detail, but owner-facing review, learning, and handoff packets should use the durable SAM action. Customer send, quote send, reservation, payment, and stock movement remain owner/backend-gated.
 
+## Outbound Delivery Truth
+
+All normal, owner-approved, Telegram-assisted, and future automatic replies use
+the shared
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+HTTP 2xx or Chatwoot `status=sent` means accepted-unverified until an exact
+provider delivered/read event exists. Accepted or ambiguous outcomes are not
+automatically retried. Owner-card cleanup cannot claim customer completion.
+
 ## Supervision And Intervention Target
 
 Live launch should be monitored through Chatwoot and the app dashboards. If SAM produces a risky draft, hostile conversation, pricing challenge, location challenge, or low-confidence result, the conversation should be owner-handoff.
@@ -187,6 +196,7 @@ Reservation rule:
 ## Source References
 
 - `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
+- `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`
 - `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
 - `docs/09-vault-brain/02-agents/sales/SAM.md`
 - `docs/09-vault-brain/02-agents/sales/LIVE_PIG_SALES_AGENT.md`

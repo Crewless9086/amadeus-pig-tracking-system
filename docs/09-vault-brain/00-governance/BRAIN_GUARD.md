@@ -77,6 +77,12 @@ until an end-to-end journey replay or equivalent integration evidence exercises
 the full customer path and reports the applicable outcome and interruption
 metrics.
 
+For customer-message or document-delivery missions, Brain Guard must enforce
+`../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`. It blocks review-ready
+claims that equate HTTP/Chatwoot acceptance with provider delivery, replace
+provider identity with application idempotency, automatically retry accepted
+or ambiguous attempts, or mark owner-card cleanup as customer completion.
+
 ## Agentic Architecture Gate
 
 Brain Guard must enforce `../07-standards/AGENTIC_ARCHITECTURE_STANDARD.md`. A mission may not add a question-specific CHARLIE handler when the outcome belongs to a domain agent. Review evidence must identify the owning agent and explain why new code is deterministic calculation, validation, governance or execution infrastructure rather than substituted domain intelligence.

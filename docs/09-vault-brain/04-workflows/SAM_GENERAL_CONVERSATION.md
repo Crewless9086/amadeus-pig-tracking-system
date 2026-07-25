@@ -93,6 +93,12 @@ The review packet must report, with denominators and test/evidence scope:
 - unsupported-claim rate; and
 - premature-specialist-tool rate.
 
+Outbound delivery and autonomous completion are governed by
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+A conversationally correct reply, HTTP 2xx, or Chatwoot `status=sent` does not
+prove customer delivery. `handled_autonomously` and safe journey completion
+require exact provider delivered/read evidence.
+
 Passing isolated router, parser, prompt, or component tests does not establish
 journey readiness or operational performance. Live capability still requires
 separate deployment and operational proof.
