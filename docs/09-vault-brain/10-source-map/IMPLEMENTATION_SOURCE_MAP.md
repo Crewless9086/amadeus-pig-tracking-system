@@ -29,6 +29,37 @@ For income, SAM, Beacon, order, WhatsApp, Chatwoot, n8n, or live-sales missions,
 
 ## Current Sections
 
+### CHARLIE CORE Adaptive Mission Orchestration
+
+Current implementation and review surface:
+
+- operating contract:
+  `docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md`;
+- scoring and packet construction:
+  `modules/charlie/adaptive_orchestration.py`,
+  `modules/charlie/core_workflow.py`;
+- durable execution, historical compatibility and evidence-driven expansion:
+  `modules/charlie/execution_bridge.py`,
+  `modules/charlie/mission_store.py`;
+- owner-only throughput surface:
+  `GET /api/charlie/build-relay/missions/summary`;
+- tests:
+  `tests/test_charlie_adaptive_orchestration.py`,
+  `tests/test_charlie_core_workflow.py`,
+  `tests/test_charlie_execution_bridge.py`,
+  `tests/test_charlie_mission_store.py`,
+  `tests/test_charlie_mission_pickup.py`,
+  `tests/test_charlie_runner_control.py`,
+  `tests/test_charlie_runner_supervisor.py`,
+  `tests/test_charlie_runner_watchdog.py`;
+- persistence: existing `charlie_missions.metadata_json`, agent artifacts and
+  execution evidence; no second mission ledger or schema migration;
+- rule: missions about workflow selection, mission scoring, execution tiers,
+  agent budgets, dynamic expansion, historical workflow compatibility or
+  orchestration throughput must inspect this section. Protected triggers and
+  owner gates outrank aggregate scores. Existing persisted workflows remain
+  frozen.
+
 ### CHARLIE CORE Dashboard
 
 Current built active workflow surface:
