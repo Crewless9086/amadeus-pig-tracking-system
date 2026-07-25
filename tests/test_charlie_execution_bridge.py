@@ -2749,6 +2749,11 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
                 execute_codex=True,
                 output_dir=tmp,
                 run_subprocess=fake_runner,
+                artifact_consumer=lambda mission_id, agent, execution_id, attempt, artifact, artifact_hash, **kwargs: (
+                    {"success": True, "status": "final_artifact_consumed", "claim": {
+                        "identity": f"{mission_id}:{execution_id}:{agent}:{attempt}:{artifact_hash}",
+                    }}, 200
+                ),
             )
 
         self.assertEqual(status_code, 200)
@@ -6374,6 +6379,71 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(result["ingestion_attempts"], 1)
         self.assertEqual(len(calls), 1)
+
+
+    @patch("modules.charlie.execution_bridge.write_runner_heartbeat")
+    @patch("modules.charlie.execution_bridge.consume_final_agent_artifact")
+    @patch("modules.charlie.execution_bridge.get_mission")
+    def test_restart_recovery_preserves_attempt_candidate_and_parent_without_rerun(self, get_mission, consume, _heartbeat):
+        revision = "a" * 40
+        payload = _successful_stage_payload("tester")
+        payload.update({"source_commit": revision, "tested_revision": revision, "expected_revision": revision})
+        mission = {
+            "mission_id": "M-RECOVER", "mission_type": "feature build",
+            "agent_workflow": [{"agent": "builder", "status": "complete"}, {"agent": "tester", "status": "active"}],
+            "metadata": {"review_packet": {"agent_artifacts": {"builder": {
+                "artifact_identity": "M-RECOVER:E-RECOVER:builder:1:durable", "source_commit": revision,
+            }}}},
+        }
+        get_mission.return_value = ({"success": True, "mission": mission}, 200)
+        consume.return_value = ({"success": True, "status": "final_artifact_consumed", "next_agent": "", "claim": {"identity": "tester-durable"}}, 200)
+        with tempfile.TemporaryDirectory() as tmp:
+            final_path = Path(tmp) / "E-RECOVER.tester.attempt2.final.md"
+            final_path.write_text(json.dumps(payload), encoding="utf-8")
+            result, status = execution_bridge.recover_pending_final_agent_artifact(
+                "M-RECOVER", status_loader=lambda **_kwargs: {
+                    "last_mission_id": "M-RECOVER", "current_agent": "tester",
+                    "execution_artifact": str(final_path), "agent_ledger": {"execution_id": "E-RECOVER"},
+                },
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "final_artifact_consumed")
+        args = consume.call_args.args
+        self.assertEqual(args[3], 2)
+        stored = args[4]
+        self.assertEqual(stored["candidate_revision"], revision)
+        self.assertEqual(stored["tested_revision"], revision)
+        self.assertEqual(stored["parent_artifact_id"], "M-RECOVER:E-RECOVER:builder:1:durable")
+
+    def test_durable_artifact_contract_links_tester_to_exact_builder_identity(self):
+        revision = "a" * 40
+        builder = {"artifact_identity": "M:E:builder:3:durable"}
+        artifact = {"source_commit": revision, "tested_revision": revision, "candidate_fingerprint": "fp"}
+        prepared = execution_bridge._prepare_durable_artifact_contract(
+            {"mission_id": "M"}, artifact, "tester", "E", 3,
+            {"builder": builder}, ["builder", "tester", "qa_red_team"],
+        )
+        self.assertEqual(prepared["candidate_revision"], revision)
+        self.assertEqual(prepared["expected_revision"], revision)
+        self.assertEqual(prepared["tested_revision"], revision)
+        self.assertEqual(prepared["parent_artifact_id"], builder["artifact_identity"])
+        self.assertEqual(prepared["input_artifact_ids"], [builder["artifact_identity"]])
+        self.assertEqual(prepared["producing_stage"], "tester")
+        self.assertEqual(prepared["attempt"], 3)
+
+    def test_ingestion_retry_forwards_atomic_backflow_intent(self):
+        calls = []
+        def consumer(*args, **kwargs):
+            calls.append(kwargs)
+            return {"success": True, "status": "final_artifact_consumed", "claim": {"identity": "durable"}}, 200
+        result, status = execution_bridge._consume_final_artifact_with_retry(
+            consumer, "M", "tester", "E", 2, {"summary": "send back"}, "hash",
+            transition_target="builder", transition_status="complete", sleep_fn=lambda _: None,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["claim"]["identity"], "durable")
+        self.assertEqual(calls[0]["transition_target"], "builder")
+        self.assertEqual(calls[0]["transition_status"], "complete")
 
 
 if __name__ == "__main__":
