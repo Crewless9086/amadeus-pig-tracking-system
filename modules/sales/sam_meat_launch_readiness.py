@@ -15,6 +15,7 @@ from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_meat_runtime import extract_meat_facts
 from modules.sales.sam_meat_database_deadline import SamMeatDatabaseDeadline
+from modules.sales.sam_meat_truth_snapshot import load_sam_meat_truth_snapshot
 
 PACKET_VERSION = "sam_meat_launch_packet_v2"
 TRUTH_READER_DEADLINE_SECONDS = 5.0
@@ -40,8 +41,10 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
     rows = _messages(messages)
     facts, evidence, corrections = _accumulate(rows)
     language = _language(rows)
-    readers = truth_readers if isinstance(truth_readers, dict) else production_truth_readers()
-    truth = _read_truth_batch(readers, lead_id, facts, current)
+    if isinstance(truth_readers, dict):
+        truth = _read_truth_batch(truth_readers, lead_id, facts, current)
+    else:
+        truth = _read_production_truth_snapshot(lead_id, facts, current)
     catalogue = _catalogue_match(facts, truth["catalogue"])
     price = _price_basis(facts, truth["pricing"], current)
     missing = _missing(facts)
@@ -208,6 +211,57 @@ def _read_truth_batch(readers, lead_id, facts, now, *, deadline_seconds=TRUTH_RE
         executor.shutdown(wait=False, cancel_futures=True)
 
 
+def _read_production_truth_snapshot(lead_id, facts, now):
+    catalogue = _invoke("catalogue", _read_catalogue, lead_id, facts, now)
+    try:
+        snapshot = load_sam_meat_truth_snapshot(
+            lead_id, database_deadline=_database_deadline()
+        )
+    except Exception as exc:
+        blocker = f"snapshot_failed:{exc.__class__.__name__}"
+        return {
+            "catalogue": catalogue,
+            **{
+                name: _unavailable(name, blocker)
+                for name in ("pricing", "availability", "fulfilment", "butcher")
+            },
+        }
+    observed_at = snapshot.get("observed_at", "")
+    entries = snapshot.get("pricing", [])
+    times = [str(row.get("effective_from") or "") for row in entries if isinstance(row, dict)]
+    return {
+        "catalogue": catalogue,
+        "pricing": {
+            "usable": bool(entries), "status": "active_price_book",
+            "freshness": "source_effective_time_required",
+            "effective_at": max(times or [""]), "observed_at": observed_at,
+            "blockers": [] if entries else ["authoritative_supabase_price_book_unavailable"],
+            "data": {"entries": entries, "mode": "sam_meat_bounded_truth_snapshot"},
+        },
+        "availability": {
+            "usable": True, "status": "lead_specific_owner_review",
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [],
+            "verified_zero": snapshot.get("availability", {}).get("assembly", {}).get("committed_half_count") == 0,
+            "data": snapshot.get("availability", {}),
+        },
+        "fulfilment": {
+            "usable": True, "status": "lead_specific_fulfilment",
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [], "data": snapshot.get("fulfilment", {}),
+        },
+        "butcher": {
+            "usable": True,
+            "status": snapshot.get("butcher", {}).get("truth_status", "blocked_unknown"),
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [],
+            "data": {
+                "truth_status": snapshot.get("butcher", {}).get("truth_status"),
+                "next_gate": snapshot.get("butcher", {}).get("next_gate"),
+            },
+        },
+    }
+
 def _observe_finished_future(future):
     """Retrieve a late result without translating process-control exceptions."""
     if not future.cancelled():
@@ -310,7 +364,7 @@ def _next_field(missing, facts, price):
 
 def _question(field, language):
     en = {"product_type": "Are you looking for a half carcass, full carcass, or another pork option?", "cut_set": "Which cut style suits you best: family freezer, braai, lean, or slow-cook?", "quantity": "How much would you like?", "quantity_unit": "Should I record that quantity in kilograms, packs, halves, or whole carcasses?", "delivery_mode": "Do you need delivery, or do you want the owner to review a collection request?", "delivery_town": "Which town or area is the delivery for?", "delivery_address": "What delivery address or farm name should we use for the review?", "timing": "When would you ideally need it?", "payment_method": "The current protected payment path is EFT. Does that suit you?"}
-    af = {"product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?", "cut_set": "Watter snystyl pas jou die beste: gesinspak, braai, maer, of stadig-gaar?", "quantity": "Hoeveel wil jy graag hÃª?", "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?", "delivery_mode": "Moet dit afgelewer word, of wil jy hÃª die eienaar moet 'n afhaalversoek hersien?", "delivery_town": "Vir watter dorp of area is die aflewering?", "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?", "timing": "Wanneer het jy dit ideaal nodig?", "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?"}
+    af = {"product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?", "cut_set": "Watter snystyl pas jou die beste: gesinspak, braai, maer, of stadig-gaar?", "quantity": "Hoeveel wil jy graag hÃƒÂª?", "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?", "delivery_mode": "Moet dit afgelewer word, of wil jy hÃƒÂª die eienaar moet 'n afhaalversoek hersien?", "delivery_town": "Vir watter dorp of area is die aflewering?", "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?", "timing": "Wanneer het jy dit ideaal nodig?", "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?"}
     return (af if language == "af" else en).get(field, "")
 
 
