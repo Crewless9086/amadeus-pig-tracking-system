@@ -6,7 +6,10 @@ Status: Current authority for SAM Live Stock Sales.
 
 - Current stock truth must come from app/Supabase-backed backend reads.
 - Legacy n8n and Google Sheet files are reference history only.
-- SAM must classify the sales lane before any draft reply, order, or reservation path.
+- SAM may conduct ordinary general conversation before lane classification.
+  It must classify and graduate to `live_stock_sales` before making live-stock
+  claims, calling live-stock tools, preparing an order, or entering a
+  reservation path.
 - Meat sales and live-stock sales must stay separate.
 - No stock may be invented.
 - SAM may auto-create a draft order only after the live-stock lane is confirmed, required facts are present, backend availability can fully satisfy the request, and active pricing is resolved.
@@ -112,6 +115,7 @@ This protects the farm's premium posture and avoids low-quality sales conversati
 
 ## Source References
 
+- `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
 - `planning/SAM_LIVE_STOCK_SALES_BUILD_PLAN.md`
 - `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`
 - `docs/09-vault-brain/08-business-rules/PIG_PURPOSE_RULES.md`

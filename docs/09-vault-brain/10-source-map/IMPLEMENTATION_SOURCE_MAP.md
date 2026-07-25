@@ -46,6 +46,42 @@ Current active governance surface:
 - legacy references: `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`, `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`;
 - rule: authority, Claude review, public/customer automation, payment, meat, slaughter, butcher, stock reservation, farm lifecycle, specialist dispatch, runtime authority, or agent registration missions must inspect this section. The matrix documents current authority only; it does not grant new live authority.
 
+### SAM General Conversation
+
+Current governance and implementation-ownership surface:
+
+- routes: `/api/sales/channels/chatwoot/sam-meat/inbound`,
+  `/api/sales/channels/chatwoot/sam-live-stock/inbound`;
+- Vault doctrine:
+  `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`,
+  `docs/09-vault-brain/02-agents/sales/SAM.md`,
+  `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`,
+  `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`;
+- router and context:
+  `modules/sales/sam_sales_router.py`,
+  `modules/sales/sam_shared_context.py`;
+- LLM/review and inbound surfaces:
+  `modules/sales/sam_meat_runtime.py`,
+  `modules/sales/sam_live_stock_runtime.py`,
+  `modules/sales/sales_transaction_routes.py`;
+- journey tests:
+  `tests/test_sam_sales_router.py`,
+  `tests/test_sam_v3_shared_context.py`,
+  `tests/test_sam_v3_replay_stress.py`,
+  `tests/test_sam_meat_runtime.py`,
+  `tests/test_sam_live_stock_runtime.py`,
+  `tests/test_sam_live_stock_replay.py`;
+- migrations: none;
+- legacy reference only:
+  `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/README.md`;
+- rule: missions affecting ordinary SAM dialogue, unknown/general intent,
+  ownership transitions, progressive lane discovery, topic changes, or
+  specialist-tool timing must inspect this domain first and prove the complete
+  customer journey. This map records ownership; it does not claim the doctrine
+  is implemented, deployed, configured, or operational.
+
 ### SAM Meat Sales And Production
 
 Current built pilot surface:
