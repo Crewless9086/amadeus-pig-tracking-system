@@ -33,11 +33,12 @@ DEFAULT_UNVERIFIED_OBSERVATION_SECONDS = 300
 SUPPORTED_PROVIDER_STATUSES = {"sent", "delivered", "read", "failed"}
 
 
-def build_delivery_attempt(inbound, decision, review, *, response_class="", attempt_generation=1):
+def build_delivery_attempt(inbound, decision, review, *, response_class="", attempt_generation=1, require_account_identity=False):
     inbound = inbound if isinstance(inbound, Mapping) else {}
     decision = decision if isinstance(decision, Mapping) else {}
     review = review if isinstance(review, Mapping) else {}
     conversation_id = _clean(inbound.get("conversation_id"), 120)
+    account_id = _clean(inbound.get("account_id"), 120)
     contact_id = _clean(inbound.get("contact_id"), 120)
     inbox_id = _clean(inbound.get("inbox_id"), 120)
     inbound_message_id = _clean(inbound.get("message_id"), 120)
@@ -61,30 +62,23 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         generation = max(1, int(attempt_generation))
     except (TypeError, ValueError):
         generation = 1
-    required = [
-        conversation_id,
-        contact_id,
-        inbox_id,
-        inbound_message_id,
-        reply_hash,
-        review_id,
-        response_class,
+    required_pairs = [
+        ("conversation_id", conversation_id),
+        ("contact_id", contact_id),
+        ("inbox_id", inbox_id),
+        ("inbound_message_id", inbound_message_id),
+        ("reply_hash", reply_hash),
+        ("review_id", review_id),
+        ("response_class", response_class),
     ]
+    if require_account_identity:
+        required_pairs.insert(0, ("account_id", account_id))
+    required = [value for _, value in required_pairs]
     if not all(required):
         return {
             "success": False,
             "status": "delivery_attempt_identity_incomplete",
-            "missing_fields": [
-                name for name, value in zip(
-                    (
-                        "conversation_id", "contact_id", "inbox_id",
-                        "inbound_message_id", "reply_hash", "review_id",
-                        "response_class",
-                    ),
-                    required,
-                )
-                if not value
-            ],
+            "missing_fields": [name for name, value in required_pairs if not value],
         }
     identity_values = [
         conversation_id,
@@ -98,12 +92,15 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         str(generation),
         owner_action_identity,
     ]
+    if require_account_identity:
+        identity_values.insert(0, account_id)
     attempt_id = _stable_id("SAM-DELIVERY-ATTEMPT", identity_values)
     return {
         "success": True,
         "status": ATTEMPT_CLAIMED,
         "delivery_attempt_id": attempt_id,
         "delivery_contract_version": DELIVERY_CONTRACT_VERSION,
+        "account_id": account_id,
         "conversation_id": conversation_id,
         "contact_id": contact_id,
         "inbox_id": inbox_id,
@@ -635,6 +632,7 @@ def _evidence(attempt, state):
     return {
         "delivery_attempt_id": attempt["delivery_attempt_id"],
         "delivery_contract_version": attempt["delivery_contract_version"],
+        "account_id": attempt.get("account_id", ""),
         "conversation_id": attempt["conversation_id"],
         "contact_id": attempt["contact_id"],
         "inbox_id": attempt["inbox_id"],
