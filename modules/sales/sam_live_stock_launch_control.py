@@ -1481,11 +1481,242 @@ def _qualify_human_audit_livestock_lane(conversation, loaded_review=None):
 def _human_audit_action_contract():
     return {
         "exact_conversation_identity_required": True,
+        "conversation_ownership_independent_of_business_lane": True,
+        "business_lane_required_only_before_specialist_tools_or_protected_claims": True,
         "authoritative_livestock_lane_required": True,
         "exact_telegram_card_identity_required_for_cleanup": True,
+        "exact_supersession_evidence_required_for_duplicate_cleanup": True,
+        "newest_authoritative_actionable_card_protected": True,
         "owner_authority_required": True,
         "protected_write_gates_required": True,
         "automatic_reset_allowed": False,
+    }
+
+
+CONVERSATION_OWNERSHIP_STATES = ("AUTO_GENERAL", "AUTO_SPECIALIST", "HUMAN")
+CARD_RECONCILIATION_CLASSIFICATIONS = (
+    "answered_already_auto_or_unproven",
+    "answered_still_human",
+    "unanswered",
+    "duplicate_superseded",
+    "uncertain",
+)
+CARD_RECONCILIATION_LANES = ("general", "meat", "livestock", "other", "unknown")
+
+
+def reconcile_sam_live_stock_exact_cards(conversation, cards):
+    """Build a deterministic read-only plan; never sends, writes, or invokes a business rail."""
+    conversation = conversation if isinstance(conversation, dict) else {}
+    cards = cards if isinstance(cards, list) else []
+    conversation_id = _clean(conversation.get("id"), 120)
+    review_event_id = _clean(conversation.get("review_event_id"), 120)
+    ownership, human_proven = _conversation_ownership_evidence(conversation)
+    lane = _conversation_business_lane(conversation)
+    if not conversation_id or not review_event_id:
+        return _card_reconciliation_failure(conversation_id, ownership, lane, "reconciliation_identity_incomplete")
+    messages = conversation.get("messages")
+    if not isinstance(messages, list):
+        return _card_reconciliation_failure(conversation_id, ownership, lane, "message_evidence_incomplete")
+
+    normalized_messages = [_normalize_reconciliation_message(message) for message in messages]
+    if any(message is None for message in normalized_messages):
+        return _card_reconciliation_failure(conversation_id, ownership, lane, "message_evidence_conflicting")
+    message_by_id = {message["id"]: message for message in normalized_messages if message["id"]}
+    normalized_cards = [_normalize_reconciliation_card(card, conversation_id, review_event_id) for card in cards]
+    if any(card is None for card in normalized_cards):
+        return _card_reconciliation_failure(conversation_id, ownership, lane, "card_evidence_incomplete")
+    if any(card["customer_message_id"] not in message_by_id for card in normalized_cards):
+        return _card_reconciliation_failure(conversation_id, ownership, lane, "card_evidence_mismatch")
+
+    cards_by_message_id = {card["telegram_message_id"]: card for card in normalized_cards}
+    explicitly_superseded = set()
+    for card in normalized_cards:
+        superseded_id = card["supersedes_telegram_message_id"]
+        if superseded_id and superseded_id in cards_by_message_id:
+            prior = cards_by_message_id[superseded_id]
+            if (
+                prior["conversation_id"] == card["conversation_id"]
+                and prior["customer_message_id"] == card["customer_message_id"]
+                and card["created_at"] > prior["created_at"]
+            ):
+                explicitly_superseded.add(superseded_id)
+
+    actionable = [
+        card for card in normalized_cards
+        if card["authoritative"] and card["telegram_message_id"] not in explicitly_superseded
+    ]
+    newest_authoritative_id = (
+        max(actionable, key=lambda card: (card["created_at"], card["telegram_message_id"]))["telegram_message_id"]
+        if actionable else ""
+    )
+    results = []
+    for card in sorted(normalized_cards, key=lambda item: (item["created_at"], item["telegram_message_id"])):
+        telegram_message_id = card["telegram_message_id"]
+        if telegram_message_id in explicitly_superseded:
+            results.append(_card_reconciliation_row(card, lane, "duplicate_superseded", "resolve_card_only"))
+            continue
+        customer_message = message_by_id.get(card["customer_message_id"])
+        if (
+            not card["authoritative"]
+            or not customer_message
+            or customer_message["direction"] != "incoming"
+            or customer_message["created_at"] > card["created_at"]
+        ):
+            results.append(_card_reconciliation_row(card, lane, "uncertain", "no_action"))
+            continue
+        later_messages = [
+            message for message in normalized_messages
+            if message["created_at"] > customer_message["created_at"]
+        ]
+        later_owner_reply = any(message["direction"] == "outgoing" for message in later_messages)
+        newer_unanswered = any(
+            message["direction"] == "incoming"
+            and not any(
+                candidate["direction"] == "outgoing"
+                and candidate["created_at"] > message["created_at"]
+                for candidate in normalized_messages
+            )
+            for message in later_messages
+        )
+        if not later_owner_reply or newer_unanswered:
+            results.append(_card_reconciliation_row(card, lane, "unanswered", "retain_exact_card"))
+            continue
+        if telegram_message_id == newest_authoritative_id and card.get("evidence_conflicting"):
+            results.append(_card_reconciliation_row(card, lane, "uncertain", "no_action"))
+            continue
+        if ownership == "HUMAN" and human_proven:
+            results.append(_card_reconciliation_row(card, lane, "answered_still_human", "candidate_auto_then_resolve"))
+        else:
+            results.append(_card_reconciliation_row(card, lane, "answered_already_auto_or_unproven", "resolve_card_only"))
+
+    return {
+        "success": True,
+        "status": "sam_live_stock_exact_card_reconciliation_ready",
+        "conversation_id": conversation_id,
+        "review_event_id": review_event_id,
+        "ownership": ownership,
+        "human_ownership_proven": human_proven,
+        "business_lane": lane,
+        "cards": results,
+        "newest_authoritative_actionable_telegram_message_id": newest_authoritative_id,
+        "read_only": True,
+        "writes_performed": False,
+        "sends_customer_message": False,
+        "calls_specialist_rail": False,
+        "calls_business_rail": False,
+        **AUTHORITY_FLAGS,
+    }
+
+
+def _conversation_ownership_evidence(conversation):
+    attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    explicit = _clean(attrs.get("conversation_ownership"), 40).upper()
+    if explicit in CONVERSATION_OWNERSHIP_STATES:
+        proof = conversation.get("ownership_evidence") if isinstance(conversation.get("ownership_evidence"), dict) else {}
+        human_proven = explicit == "HUMAN" and proof.get("human_takeover_proven") is True
+        return ("HUMAN", True) if human_proven else ("AUTO_GENERAL", False) if explicit == "HUMAN" else (explicit, False)
+    legacy = _clean(attrs.get("conversation_mode"), 20).upper()
+    proof = conversation.get("ownership_evidence") if isinstance(conversation.get("ownership_evidence"), dict) else {}
+    human_proven = legacy == "HUMAN" and proof.get("human_takeover_proven") is True
+    if human_proven:
+        return "HUMAN", True
+    if legacy == "AUTO":
+        return "AUTO_GENERAL", False
+    return "AUTO_GENERAL", False
+
+
+def _conversation_business_lane(conversation):
+    attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    raw = _clean(attrs.get("sales_lane") or conversation.get("business_lane"), 80).lower()
+    if raw in {"general", "general_conversation"}:
+        return "general"
+    if raw in {"meat", "meat_sales", "sam_meat"}:
+        return "meat"
+    if raw in {"livestock", "live_stock", "live_stock_sales"}:
+        return "livestock"
+    if not raw or raw in {"unknown", "unclear"}:
+        return "unknown"
+    return "other"
+
+
+def _normalize_reconciliation_message(message):
+    if not isinstance(message, dict):
+        return None
+    direction = _clean(message.get("message_type") or message.get("direction"), 40).lower()
+    direction = "incoming" if direction in {"incoming", "0"} else "outgoing" if direction in {"outgoing", "1"} else ""
+    created_at = _timestamp_sort_value(message.get("created_at"))
+    if not direction or created_at is None:
+        return None
+    return {"id": _clean(message.get("id"), 120), "direction": direction, "created_at": created_at}
+
+
+def _normalize_reconciliation_card(card, conversation_id, review_event_id):
+    if not isinstance(card, dict):
+        return None
+    exact_conversation_id = _clean(card.get("conversation_id"), 120)
+    exact_review_event_id = _clean(card.get("review_event_id"), 120)
+    telegram_message_id = _clean(card.get("telegram_message_id"), 120)
+    customer_message_id = _clean(card.get("customer_message_id"), 120)
+    created_at = _timestamp_sort_value(card.get("created_at"))
+    if (
+        exact_conversation_id != conversation_id
+        or exact_review_event_id != review_event_id
+        or not telegram_message_id
+        or not customer_message_id
+        or created_at is None
+    ):
+        return None
+    return {
+        "conversation_id": exact_conversation_id,
+        "review_event_id": exact_review_event_id,
+        "telegram_message_id": telegram_message_id,
+        "customer_message_id": customer_message_id,
+        "created_at": created_at,
+        "authoritative": card.get("authoritative") is True,
+        "supersedes_telegram_message_id": _clean(card.get("supersedes_telegram_message_id"), 120),
+        "evidence_conflicting": card.get("evidence_conflicting") is True,
+    }
+
+
+def _timestamp_sort_value(value):
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).timestamp()
+    except Exception:
+        return None
+
+
+def _card_reconciliation_row(card, lane, classification, action):
+    return {
+        "telegram_message_id": card["telegram_message_id"],
+        "customer_message_id": card["customer_message_id"],
+        "classification": classification,
+        "business_lane": lane,
+        "action": action,
+        "chatwoot_mode_mutation": False,
+        "customer_send": False,
+        "specialist_or_business_rail": False,
+    }
+
+
+def _card_reconciliation_failure(conversation_id, ownership, lane, status):
+    return {
+        "success": False,
+        "status": status,
+        "conversation_id": conversation_id,
+        "ownership": ownership,
+        "business_lane": lane,
+        "cards": [],
+        "read_only": True,
+        "writes_performed": False,
+        "sends_customer_message": False,
+        "calls_specialist_rail": False,
+        "calls_business_rail": False,
+        **AUTHORITY_FLAGS,
     }
 
 

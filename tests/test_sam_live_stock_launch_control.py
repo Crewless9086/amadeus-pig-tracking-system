@@ -1207,7 +1207,8 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["counts"]["lane_unknown"], 1)
         self.assertFalse(result["bulk_reset_allowed"])
         self.assertFalse(result["action_contract"]["automatic_reset_allowed"])
-        self.assertTrue(result["action_contract"]["authoritative_livestock_lane_required"])
+        self.assertTrue(result["action_contract"]["conversation_ownership_independent_of_business_lane"])
+        self.assertTrue(result["action_contract"]["business_lane_required_only_before_specialist_tools_or_protected_claims"])
 
     def test_human_audit_exact_persisted_review_is_authoritative_lane_proof(self):
         conversation = human_conversation(401, inbox_id=96568, lane="unknown")
@@ -1391,6 +1392,288 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["failure_stage"], "chatwoot_request")
         self.assertEqual(result["error_type"], "TimeoutError")
         self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_conversation_1983_resolves_exact_card_only_when_human_is_unproven(self):
+        conversation = {
+            "id": 1983,
+            "review_event_id": "SAM-LIVE-REVIEW-1983",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [
+                {"id": 758530001, "message_type": "incoming", "created_at": "2026-07-25T08:00:00Z"},
+                {"id": 758530099, "message_type": "outgoing", "created_at": "2026-07-25T08:05:00Z"},
+            ],
+        }
+        cards = [{
+            "conversation_id": 1983,
+            "review_event_id": "SAM-LIVE-REVIEW-1983",
+            "customer_message_id": 758530001,
+            "telegram_message_id": 2865,
+            "created_at": "2026-07-25T08:01:00Z",
+            "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["ownership"], "AUTO_GENERAL")
+        self.assertFalse(result["human_ownership_proven"])
+        self.assertEqual(result["business_lane"], "unknown")
+        self.assertEqual(result["newest_authoritative_actionable_telegram_message_id"], "2865")
+        self.assertEqual(result["cards"], [{
+            "telegram_message_id": "2865",
+            "customer_message_id": "758530001",
+            "classification": "answered_already_auto_or_unproven",
+            "business_lane": "unknown",
+            "action": "resolve_card_only",
+            "chatwoot_mode_mutation": False,
+            "customer_send": False,
+            "specialist_or_business_rail": False,
+        }])
+        self.assertFalse(result["writes_performed"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_specialist_rail"])
+        self.assertFalse(result["calls_business_rail"])
+        self.assertEqual(result, launch.reconcile_sam_live_stock_exact_cards(conversation, cards))
+
+    def test_exact_card_reconciliation_requires_proven_human_before_auto_candidate(self):
+        conversation = {
+            "id": "2001",
+            "review_event_id": "SAM-LIVE-REVIEW-2001",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "meat_sales"},
+            "ownership_evidence": {"human_takeover_proven": True},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 120},
+            ],
+        }
+        cards = [{
+            "conversation_id": "2001", "customer_message_id": "customer-1",
+            "review_event_id": "SAM-LIVE-REVIEW-2001",
+            "telegram_message_id": "3001", "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["ownership"], "HUMAN")
+        self.assertEqual(result["business_lane"], "meat")
+        self.assertEqual(result["cards"][0]["classification"], "answered_still_human")
+        self.assertEqual(result["cards"][0]["action"], "candidate_auto_then_resolve")
+        self.assertFalse(result["cards"][0]["chatwoot_mode_mutation"])
+
+    def test_exact_card_reconciliation_retains_card_for_newer_unanswered_message(self):
+        conversation = {
+            "id": "2002",
+            "review_event_id": "SAM-LIVE-REVIEW-2002",
+            "custom_attributes": {"conversation_ownership": "AUTO_SPECIALIST", "sales_lane": "live_stock_sales"},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 120},
+                {"id": "customer-2", "direction": "incoming", "created_at": 130},
+            ],
+        }
+        cards = [{
+            "conversation_id": "2002", "customer_message_id": "customer-1",
+            "review_event_id": "SAM-LIVE-REVIEW-2002",
+            "telegram_message_id": "3002", "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["cards"][0]["classification"], "unanswered")
+        self.assertEqual(result["cards"][0]["action"], "retain_exact_card")
+
+    def test_duplicate_card_cleanup_needs_exact_supersession_and_protects_newest(self):
+        conversation = {
+            "id": "2003",
+            "review_event_id": "SAM-LIVE-REVIEW-2003",
+            "custom_attributes": {"conversation_ownership": "AUTO_GENERAL"},
+            "messages": [
+                {"id": "customer-1", "direction": "incoming", "created_at": 100},
+                {"id": "owner-1", "direction": "outgoing", "created_at": 140},
+            ],
+        }
+        cards = [
+            {
+                "conversation_id": "2003", "customer_message_id": "customer-1",
+                "review_event_id": "SAM-LIVE-REVIEW-2003",
+                "telegram_message_id": "3003", "created_at": 110, "authoritative": True,
+            },
+            {
+                "conversation_id": "2003", "customer_message_id": "customer-1",
+                "review_event_id": "SAM-LIVE-REVIEW-2003",
+                "telegram_message_id": "3004", "created_at": 120, "authoritative": True,
+                "supersedes_telegram_message_id": "3003",
+            },
+        ]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["newest_authoritative_actionable_telegram_message_id"], "3004")
+        self.assertEqual(result["cards"][0]["classification"], "duplicate_superseded")
+        self.assertEqual(result["cards"][0]["action"], "resolve_card_only")
+        self.assertEqual(result["cards"][1]["classification"], "answered_already_auto_or_unproven")
+
+        without_exact_evidence = launch.reconcile_sam_live_stock_exact_cards(
+            conversation, [{**cards[0]}, {**cards[1], "supersedes_telegram_message_id": ""}],
+        )
+        self.assertNotIn("duplicate_superseded", [row["classification"] for row in without_exact_evidence["cards"]])
+
+    def test_incomplete_or_conflicting_exact_card_evidence_is_no_action(self):
+        malformed = launch.reconcile_sam_live_stock_exact_cards(
+            {
+                "id": "2004", "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "messages": [{"id": "customer", "direction": "incoming"}],
+            },
+            [],
+        )
+        self.assertFalse(malformed["success"])
+        self.assertEqual(malformed["status"], "message_evidence_conflicting")
+        self.assertEqual(malformed["cards"], [])
+
+        conflicting = launch.reconcile_sam_live_stock_exact_cards(
+            {
+                "id": "2004",
+                "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "messages": [
+                    {"id": "customer", "direction": "incoming", "created_at": 100},
+                    {"id": "owner", "direction": "outgoing", "created_at": 120},
+                ],
+            },
+            [{
+                "conversation_id": "2004", "customer_message_id": "customer",
+                "review_event_id": "SAM-LIVE-REVIEW-2004",
+                "telegram_message_id": "3005", "created_at": 110,
+                "authoritative": True, "evidence_conflicting": True,
+            }],
+        )
+        self.assertEqual(conflicting["cards"][0]["classification"], "uncertain")
+        self.assertEqual(conflicting["cards"][0]["action"], "no_action")
+
+    def test_general_and_unknown_ownership_model_never_invokes_specialist_rails(self):
+        for lane in ("general", "unknown", "other_enquiry"):
+            with self.subTest(lane=lane):
+                result = launch.reconcile_sam_live_stock_exact_cards(
+                    {
+                        "id": f"general-{lane}",
+                        "review_event_id": f"SAM-LIVE-REVIEW-{lane}",
+                        "custom_attributes": {"conversation_ownership": "AUTO_GENERAL", "sales_lane": lane},
+                        "messages": [
+                            {"id": "customer", "direction": "incoming", "created_at": 100},
+                            {"id": "owner", "direction": "outgoing", "created_at": 120},
+                        ],
+                    },
+                    [{
+                        "conversation_id": f"general-{lane}", "customer_message_id": "customer",
+                        "review_event_id": f"SAM-LIVE-REVIEW-{lane}",
+                        "telegram_message_id": "4001", "created_at": 110, "authoritative": True,
+                    }],
+                )
+                self.assertFalse(result["calls_specialist_rail"])
+                self.assertFalse(result["calls_business_rail"])
+                self.assertFalse(result["sends_customer_message"])
+
+    def test_human_unproven_unanswered_retains_card_and_never_enables_send(self):
+        conversation = {
+            "id": "2005",
+            "review_event_id": "SAM-LIVE-REVIEW-2005",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        cards = [{
+            "conversation_id": "2005", "review_event_id": "SAM-LIVE-REVIEW-2005",
+            "customer_message_id": "customer", "telegram_message_id": "4002",
+            "created_at": 110, "authoritative": True,
+        }]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertEqual(result["ownership"], "AUTO_GENERAL")
+        self.assertFalse(result["human_ownership_proven"])
+        self.assertEqual(result["cards"][0]["classification"], "unanswered")
+        self.assertEqual(result["cards"][0]["action"], "retain_exact_card")
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["cards"][0]["customer_send"])
+        self.assertFalse(result["writes_performed"])
+
+    def test_exact_card_or_review_identity_mismatch_fails_closed(self):
+        conversation = {
+            "id": "2006",
+            "review_event_id": "SAM-LIVE-REVIEW-2006",
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        exact_card = {
+            "conversation_id": "2006", "review_event_id": "SAM-LIVE-REVIEW-2006",
+            "customer_message_id": "customer", "telegram_message_id": "4003",
+            "created_at": 110, "authoritative": True,
+        }
+        for changed, expected in (
+            ({"conversation_id": "other"}, "card_evidence_incomplete"),
+            ({"review_event_id": "SAM-LIVE-REVIEW-OTHER"}, "card_evidence_incomplete"),
+            ({"customer_message_id": "other"}, "card_evidence_mismatch"),
+        ):
+            with self.subTest(changed=changed, expected=expected):
+                result = launch.reconcile_sam_live_stock_exact_cards(
+                    conversation, [{**exact_card, **changed}],
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["cards"], [])
+                self.assertFalse(result["writes_performed"])
+                self.assertFalse(result["sends_customer_message"])
+
+    def test_missing_conversation_card_or_review_identity_fails_closed(self):
+        conversation = {
+            "id": "2007",
+            "review_event_id": "SAM-LIVE-REVIEW-2007",
+            "messages": [{"id": "customer", "direction": "incoming", "created_at": 100}],
+        }
+        card = {
+            "conversation_id": "2007", "review_event_id": "SAM-LIVE-REVIEW-2007",
+            "customer_message_id": "customer", "telegram_message_id": "4004",
+            "created_at": 110, "authoritative": True,
+        }
+        cases = (
+            ({**conversation, "id": ""}, card, "reconciliation_identity_incomplete"),
+            ({**conversation, "review_event_id": ""}, card, "reconciliation_identity_incomplete"),
+            (conversation, {**card, "telegram_message_id": ""}, "card_evidence_incomplete"),
+            (conversation, {**card, "review_event_id": ""}, "card_evidence_incomplete"),
+        )
+        for changed_conversation, changed_card, expected in cases:
+            with self.subTest(expected=expected):
+                result = launch.reconcile_sam_live_stock_exact_cards(changed_conversation, [changed_card])
+                self.assertFalse(result["success"])
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["cards"], [])
+
+    def test_cross_conversation_card_cannot_supersede_exact_card(self):
+        conversation = {
+            "id": "2008",
+            "review_event_id": "SAM-LIVE-REVIEW-2008",
+            "messages": [
+                {"id": "customer", "direction": "incoming", "created_at": 100},
+                {"id": "owner", "direction": "outgoing", "created_at": 140},
+            ],
+        }
+        cards = [
+            {
+                "conversation_id": "2008", "review_event_id": "SAM-LIVE-REVIEW-2008",
+                "customer_message_id": "customer", "telegram_message_id": "4005",
+                "created_at": 110, "authoritative": True,
+            },
+            {
+                "conversation_id": "other", "review_event_id": "SAM-LIVE-REVIEW-2008",
+                "customer_message_id": "customer", "telegram_message_id": "4006",
+                "created_at": 120, "authoritative": True,
+                "supersedes_telegram_message_id": "4005",
+            },
+        ]
+
+        result = launch.reconcile_sam_live_stock_exact_cards(conversation, cards)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "card_evidence_incomplete")
+        self.assertEqual(result["cards"], [])
         self.assertFalse(result["writes_performed"])
 if __name__ == "__main__":
     unittest.main()
