@@ -25,6 +25,23 @@ def inbound_payload(**overrides):
 
 
 class SamMeatRuntimeTests(unittest.TestCase):
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_general_greeting_terminates_before_meat_tools_or_lead(self, record_lead):
+        extractor = Mock(side_effect=AssertionError("Meat extraction must not run"))
+        result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Hi"),
+            environ={},
+            llm_extractor=extractor,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "sam_meat_general_first_withheld")
+        self.assertFalse(result["processed"])
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["lane_route"]["lane"], "unclear")
+        self.assertFalse(result["sam_decision"]["specialist_lane_selected"])
+        extractor.assert_not_called()
+        record_lead.assert_not_called()
+
     def test_authorize_webhook_is_default_off_and_token_gated(self):
         allowed, denied = sam_meat_runtime.authorize_sam_meat_webhook(
             {},

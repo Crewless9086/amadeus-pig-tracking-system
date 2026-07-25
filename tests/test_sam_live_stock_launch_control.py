@@ -1076,6 +1076,99 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertFalse(result["customer_send_confirmed"])
         self.assertTrue(result["card_retained"])
 
+    def test_conversation_2017_malformed_webhook_recovers_exact_delivered_message(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2017", "contact_id": "699428938", "inbox_id": "96568", "message_id": "759674171"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["conversation_id"] = "2017"
+        attempt["inbox_id"] = "96568"
+        attempt["chatwoot_outgoing_message_id"] = "759675071"
+        action["event"]["review_json"]["send_reply_action"].update({
+            "conversation_id": "2017",
+            "telegram_chat_id": card["telegram_chat_id"],
+            "telegram_message_id": card["telegram_message_id"],
+        })
+        records = []
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "account": {"id": "147387"},
+                "conversation": {"id": "2017", "inbox_id": "96568"},
+                "message": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "message_type": "outgoing",
+                    "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            environ={
+                launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+            },
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            reconciliation_loader=lambda *_: {
+                "status_code": 200,
+                "body": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "status": "delivered", "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            evidence_recorder=lambda event: records.append(event) or ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "conversation_id": "2017", "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            telegram_deleter=lambda *_: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "provider_delivered")
+        self.assertEqual(
+            records[0]["review_json"]["reconciliation_source"],
+            "chatwoot_exact_outgoing_message_read",
+        )
+
+    def test_accepted_dispatch_card_edit_ambiguity_returns_no_retry_business_truth(self):
+        review, action, card = send_action_fixture()
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1",
+            },
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True, "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            chatwoot_sender=lambda *_: {
+                "status_code": 200, "body": {"id": "902", "status": "sent"},
+            },
+            telegram_editor=lambda *_: (_ for _ in ()).throw(TimeoutError("ambiguous edit")),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertTrue(result["card_update_ambiguous"])
+        self.assertTrue(result["automatic_retry_prohibited"])
+
     def test_keep_with_me_retains_human_and_open_chatwoot_is_no_mutation(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-5", "chatwoot_conversation_id": "2401", "decision_json": {}}
         calls = []
