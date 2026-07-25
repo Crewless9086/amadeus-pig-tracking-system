@@ -7,6 +7,12 @@
   per-zone proceed/hold/review recommendations, and deterministic zero
   hardware/write/alert authority.
 
+## 2026-07-25 - Herdmaster observation and advisory-intent data-model completion
+
+- Defined the separate, additive and unapplied `pig_management_intent_events` rail alongside factual observations.
+- Required advisory-only status, canonical pig linkage, evidence/supersession links constrained to the same pig, idempotency, RLS, append-only database protection, and backend-only future capture authority.
+- Prohibited current-state, lifecycle, purpose, sales, reservation, customer, notification, and other operational writes; applying or rolling back this migration remains an explicit owner-only operation.
+
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 
 - Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.
