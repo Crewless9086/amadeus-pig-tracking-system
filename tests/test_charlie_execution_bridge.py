@@ -5443,6 +5443,95 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
     @patch("modules.charlie.execution_bridge.update_mission_status")
     @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
     @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_binding_rejection_blocks_at_producing_stage_without_visual_reroute(
+        self,
+        update_vault,
+        update_workflow,
+        update_status,
+        _changed_files,
+    ):
+        update_vault.return_value = ({"success": True, "status": "ok"}, 200)
+        update_workflow.return_value = ({"success": True, "status": "ok"}, 200)
+        update_status.return_value = ({"success": True, "status": "ok"}, 200)
+        ledger = {
+            "version": "charlie_agent_runner_v2",
+            "execution_id": "EXEC-BINDING",
+            "mission_id": "CHARLIE-MISSION-BINDING",
+            "stages": [],
+            "backflow_events": [],
+            "quality_gates": [],
+        }
+        artifact = {
+            "summary": "Screenshots and preview evidence remain unavailable.",
+            "artifact_ingestion": {
+                "status": "final_artifact_binding_invalid",
+                "missing_or_invalid": ["source_revision", "candidate_fingerprint"],
+                "semantic_rejection": {"identity": "semantic-rejection-1"},
+            },
+            "ingestion_blocked": True,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {
+                name: Path(tmp) / f"EXEC-BINDING.architect.{suffix}"
+                for name, suffix in (
+                    ("final_path", "final.md"),
+                    ("stdout_path", "stdout.txt"),
+                    ("stderr_path", "stderr.txt"),
+                    ("prompt_path", "prompt.md"),
+                )
+            }
+            for path in paths.values():
+                path.write_text("", encoding="utf-8")
+            result, status_code = execution_bridge._block_agent_stage(
+                "CHARLIE-MISSION-BINDING",
+                "EXEC-BINDING",
+                ledger,
+                "architect",
+                paths,
+                SimpleNamespace(returncode=0, stdout="", stderr=""),
+                "2026-07-25T17:20:00+00:00",
+                blocked_reason="Final artifact ingestion blocked: final_artifact_binding_invalid",
+                artifact=artifact,
+                artifacts={"architect": artifact},
+            )
+        self.assertEqual(status_code, 504)
+        self.assertEqual(result["status"], "agent_stage_blocked")
+        self.assertEqual(result["block_disposition"]["block_class"], "final_artifact_binding_invalid")
+        self.assertEqual(result["block_disposition"]["responsible_stage"], "architect")
+        self.assertEqual(result["block_disposition"]["return_to_stage"], "architect")
+        self.assertEqual(
+            result["block_disposition"]["semantic_rejection_identity"],
+            "semantic-rejection-1",
+        )
+        packet = update_vault.call_args.args[1]["review_packet"]
+        self.assertEqual(packet["blocked_agent"], "architect")
+        self.assertEqual(packet["block_disposition"]["responsible_stage"], "architect")
+        self.assertNotEqual(packet["block_disposition"]["responsible_stage"], "visual_qa_reviewer")
+        self.assertEqual(update_status.call_args.args[1], "blocked")
+
+    def test_agent_prompt_requires_candidate_and_lineage_binding(self):
+        prompt = execution_bridge.build_agent_stage_prompt(
+            {
+                "mission_id": "MISSION-BINDING-PROMPT",
+                "title": "Bounded internal correction",
+                "mission_type": "bug fix",
+                "raw_text": "Fix one internal regression.",
+                "metadata": {"agent_workflow": [{"agent": "architect", "status": "active"}]},
+            },
+            "architect",
+            artifacts={},
+            ledger={},
+        )
+        self.assertIn("Candidate-bound ingestion requirements", prompt)
+        self.assertIn("source_revision", prompt)
+        self.assertIn("candidate_fingerprint", prompt)
+        self.assertIn("parent_artifact_id", prompt)
+        self.assertIn("Do not invent a revision", prompt)
+
+    @patch("modules.charlie.execution_bridge._changed_files", return_value=[])
+    @patch("modules.charlie.execution_bridge.update_mission_status")
+    @patch("modules.charlie.execution_bridge.update_mission_workflow_step")
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
     def test_exhausted_acceptance_matrix_stops_in_owner_block_instead_of_requeueing_qa(
         self,
         update_vault,

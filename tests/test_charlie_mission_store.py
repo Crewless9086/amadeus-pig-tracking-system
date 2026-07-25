@@ -342,7 +342,74 @@ class CharlieMissionStoreTests(unittest.TestCase):
         )
         self.assertEqual(status_code, 422)
         self.assertEqual(result["status"], "final_artifact_binding_invalid")
-        self.assertEqual(connection.cursor_instance.executed, [])
+        self.assertTrue(result["rejection"]["identity"])
+        self.assertTrue(result["semantic_rejection"]["identity"])
+        statements = connection.cursor_instance.executed
+        self.assertTrue(any("final_artifact_rejections" in sql for sql, _ in statements))
+        self.assertFalse(any("agent_artifact_history" in str(params) for _, params in statements))
+
+    def test_invalid_artifact_rejection_replay_is_idempotent(self):
+        metadata = {
+            "agent_workflow": [{"agent": "architect", "status": "active"}],
+            "review_packet": {"review_generation": "REVIEW-1"},
+        }
+        first = FakeConnection([(metadata,)])
+        first_result, first_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "blocked"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: first,
+        )
+        self.assertEqual(first_status, 422)
+        persisted_rejections = __import__("json").loads(
+            next(
+                params for sql, params in first.cursor_instance.executed
+                if "final_artifact_rejections" in sql
+            )["rejections_json"]
+        )
+        replay_metadata = {**metadata, "final_artifact_rejections": persisted_rejections}
+        replay = FakeConnection([(replay_metadata,)])
+        replay_result, replay_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "blocked"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: replay,
+        )
+        self.assertEqual(replay_status, 422)
+        self.assertTrue(replay_result["rejection_already_recorded"])
+        self.assertEqual(
+            replay_result["rejection"]["identity"],
+            first_result["rejection"]["identity"],
+        )
+        self.assertFalse(any("update public.charlie_missions" in sql for sql, _ in replay.cursor_instance.executed))
+
+    def test_wording_only_invalid_artifact_change_reuses_semantic_rejection(self):
+        metadata = {
+            "agent_workflow": [{"agent": "architect", "status": "active"}],
+            "review_packet": {"review_generation": "REVIEW-1"},
+        }
+        first = FakeConnection([(metadata,)])
+        first_result, _ = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-1", 1, {"summary": "first wording"}, "a" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: first,
+        )
+        persisted_rejections = __import__("json").loads(
+            next(
+                params for sql, params in first.cursor_instance.executed
+                if "final_artifact_rejections" in sql
+            )["rejections_json"]
+        )
+        second = FakeConnection([({**metadata, "final_artifact_rejections": persisted_rejections},)])
+        second_result, second_status = consume_final_agent_artifact(
+            "MISSION-1", "architect", "EXEC-2", 2, {"summary": "different wording"}, "b" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: second,
+        )
+        self.assertEqual(second_status, 422)
+        self.assertNotEqual(
+            first_result["rejection"]["identity"],
+            second_result["rejection"]["identity"],
+        )
+        self.assertEqual(
+            first_result["semantic_rejection"]["identity"],
+            second_result["semantic_rejection"]["identity"],
+        )
+        self.assertEqual(second_result["semantic_rejection"]["observation_count"], 2)
 
     def test_builder_is_durable_before_tester_activation_with_parent_lineage(self):
         metadata = {"agent_workflow": [
