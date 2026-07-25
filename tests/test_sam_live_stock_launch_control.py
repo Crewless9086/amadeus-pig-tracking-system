@@ -1299,7 +1299,14 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(kept["status"], "sam_live_stock_owner_card_with_charl")
 
     def test_delete_failure_marks_exact_card_resolved_and_removes_keyboard(self):
-        event = {"review_event_id": "SAM-LIVE-REVIEW-6", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-6",
+            "chatwoot_conversation_id": "2401",
+            "chatwoot_message_id": "7001",
+            "chatwoot_contact_id": "8100",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
         edits = []
         result, status = launch.process_sam_live_stock_owner_callback(
             {"callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-6", "telegram_chat_id": "555", "telegram_message_id": "996"},
@@ -1311,8 +1318,13 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_editor=lambda token, chat, message, text, markup: edits.append((chat, message, text, markup)) or {"ok": True},
             chronology_loader=lambda *_args, **_kwargs: {
                 "id": "2401",
+                "contact_id": "8100",
+                "inbox_id": "96568",
                 "custom_attributes": {"conversation_mode": "HUMAN"},
-                "messages": [],
+                "messages": [
+                    {"id": "7001", "message_type": "incoming", "created_at": 1},
+                    {"id": "7002", "message_type": "outgoing", "created_at": 2},
+                ],
             },
         )
         self.assertEqual(status, 200)
@@ -1334,9 +1346,89 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
             telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
         )
-        self.assertEqual(status, 502)
-        self.assertEqual(result["failed_step"], "human_ownership_unproven")
-        self.assertEqual(calls, ["retain_edit"])
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["ownership_mutated"])
+        self.assertFalse(result["card_mutated"])
+
+    def test_done_reassessment_rejects_newer_inbound_and_sends_nothing(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-2",
+            "chatwoot_conversation_id": "2402",
+            "chatwoot_message_id": "7101",
+            "chatwoot_contact_id": "8101",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN-2",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "997",
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda _item: ({"success": True, "created": True}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2402",
+                "contact_id": "8101",
+                "inbox_id": "96568",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [
+                    {"id": "7101", "message_type": "incoming", "created_at": 1},
+                    {"id": "7102", "message_type": "outgoing", "created_at": 2},
+                    {"id": "7103", "message_type": "incoming", "created_at": 3},
+                ],
+            },
+            chatwoot_writer=lambda *_args: calls.append("auto") or {"ok": True},
+            telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["detail"]["gates"]["exact_latest_inbound"])
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_done_reassessment_preserves_explicit_human_and_protected_work(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-3",
+            "chatwoot_conversation_id": "2403",
+            "chatwoot_message_id": "7201",
+        }
+        chronology = {
+            "id": "2403",
+            "custom_attributes": {
+                "conversation_mode": "HUMAN",
+                "explicit_human_request": True,
+                "payment_required": True,
+                "specialist_review_required": True,
+            },
+            "messages": [
+                {"id": "7201", "message_type": "incoming", "created_at": 1},
+                {"id": "7202", "message_type": "outgoing", "created_at": 2},
+            ],
+        }
+        assessed = launch.assess_sam_live_stock_human_reassessment(
+            event,
+            chronology,
+            {
+                "conversation_id": "2403",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "998",
+            },
+        )
+        self.assertFalse(assessed["eligible"])
+        self.assertFalse(assessed["gates"]["no_explicit_human_request"])
+        self.assertFalse(assessed["gates"]["no_protected_work"])
+        self.assertFalse(assessed["gates"]["no_specialist_work"])
+        evidence = launch.build_sam_live_stock_human_reassessment_event(
+            event, assessed, "withheld"
+        )
+        self.assertEqual(evidence["customer_message_excerpt"], "")
+        self.assertEqual(evidence["sam_reply_excerpt"], "")
 
     def test_human_mode_audit_classifies_without_bulk_reset(self):
         conversations = [

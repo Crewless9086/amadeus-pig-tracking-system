@@ -1040,9 +1040,29 @@ def _process_canonical_owner_card_action(action, review_event_id, event, message
             )
         except Exception:
             return _owner_card_failure(event, card, action, "human_ownership_unavailable", {}, recorder, environ, telegram_editor)
-        attributes = chronology.get("custom_attributes") if isinstance(chronology, dict) and isinstance(chronology.get("custom_attributes"), dict) else {}
-        if _clean(attributes.get("conversation_mode"), 20).upper() != "HUMAN":
-            return _owner_card_failure(event, card, action, "human_ownership_unproven", {}, recorder, environ, telegram_editor)
+        assessment = assess_sam_live_stock_human_reassessment(event, chronology, card)
+        assessed, assessed_status = recorder(
+            build_sam_live_stock_human_reassessment_event(
+                event,
+                assessment,
+                "approved" if assessment.get("eligible") else "withheld",
+            )
+        )
+        if assessed_status >= 400 or assessed.get("success") is not True:
+            return _owner_card_reassessment_withheld(
+                action,
+                card,
+                "human_reassessment_evidence_failed",
+                assessed,
+                http_status=503,
+            )
+        if not assessment.get("eligible"):
+            return _owner_card_reassessment_withheld(
+                action,
+                card,
+                "human_reassessment_withheld",
+                assessment,
+            )
 
     takeover, takeover_status = apply_sam_live_stock_chatwoot_takeover(
         conversation_id, mode="AUTO", reason="telegram_owner_card_done",
@@ -1067,6 +1087,29 @@ def _owner_card_failure(event, card, action, failed_step, detail, recorder, envi
     recorder(build_sam_live_stock_owner_card_event(event, card, "action_failed", f"{action}:{failed_step}"))
     _edit_owner_card_state(card, f"Action failed safely: {failed_step}. Card retained; do not repeat a confirmed customer send.", _with_charl_keyboard(event.get("review_event_id") or card.get("conversation_id")), environ, telegram_editor)
     return {"success": False, "status": "sam_live_stock_owner_card_action_failed", "action": action, "failed_step": failed_step, "card_retained": True, "customer_send_confirmed": customer_send_confirmed, "automatic_customer_send_retry_prohibited": True, "detail": detail, **AUTHORITY_FLAGS, "sends_customer_message": customer_send_confirmed}, 502
+
+
+def _owner_card_reassessment_withheld(
+    action, card, failed_step, detail, *, http_status=409
+):
+    """Leave HUMAN ownership and the exact card untouched on reassessment failure."""
+    return {
+        "success": False,
+        "status": "sam_live_stock_human_reassessment_withheld",
+        "action": action,
+        "failed_step": failed_step,
+        "card": card,
+        "card_retained": True,
+        "card_mutated": False,
+        "ownership_mutated": False,
+        "customer_send_confirmed": False,
+        "automatic_customer_send_retry_prohibited": True,
+        "detail": detail,
+        **AUTHORITY_FLAGS,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_telegram": False,
+    }, http_status
 
 
 def _edit_owner_card_state(card, text, keyboard, environ, telegram_editor):
@@ -2292,6 +2335,183 @@ CARD_RECONCILIATION_CLASSIFICATIONS = (
     "uncertain",
 )
 CARD_RECONCILIATION_LANES = ("general", "meat", "livestock", "other", "unknown")
+HUMAN_REASSESSMENT_EVENT_SOURCE = "sam_live_stock_human_reassessment"
+HUMAN_REASSESSMENT_CONTRACT_VERSION = "sam_live_stock_human_reassessment_v1"
+
+
+def assess_sam_live_stock_human_reassessment(event, chronology, card):
+    """Fail-closed assessment for the existing Done - Return to SAM action."""
+    event = event if isinstance(event, dict) else {}
+    chronology = chronology if isinstance(chronology, dict) else {}
+    card = card if isinstance(card, dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 120)
+    message_id = _clean(event.get("chatwoot_message_id"), 120)
+    contact_id = _clean(event.get("chatwoot_contact_id"), 120)
+    inbox_id = _clean(event.get("chatwoot_inbox_id"), 120)
+    attributes = (
+        chronology.get("custom_attributes")
+        if isinstance(chronology.get("custom_attributes"), dict)
+        else {}
+    )
+    messages = chronology.get("messages")
+    gates = {
+        "exact_conversation": (
+            bool(conversation_id)
+            and _clean(chronology.get("id") or conversation_id, 120) == conversation_id
+        ),
+        "exact_contact": bool(contact_id)
+        and _clean(chronology.get("contact_id"), 120) == contact_id,
+        "exact_inbox": bool(inbox_id)
+        and _clean(chronology.get("inbox_id"), 120) == inbox_id,
+        "human_ownership": _clean(attributes.get("conversation_mode"), 20).upper() == "HUMAN",
+        "messages_available": isinstance(messages, list),
+        "exact_card": (
+            _clean(card.get("conversation_id"), 120) == conversation_id
+            and bool(_clean(card.get("telegram_chat_id"), 120))
+            and bool(_clean(card.get("telegram_message_id"), 120))
+        ),
+    }
+    normalized = []
+    if isinstance(messages, list):
+        normalized = [_normalize_reconciliation_message(item) for item in messages]
+        gates["messages_available"] = all(item is not None for item in normalized)
+        normalized = [item for item in normalized if item is not None]
+    incoming = [item for item in normalized if item["direction"] == "incoming"]
+    outgoing = [item for item in normalized if item["direction"] == "outgoing"]
+    latest_incoming = max(incoming, key=lambda item: item["created_at"], default={})
+    gates["exact_latest_inbound"] = bool(message_id) and latest_incoming.get("id") == message_id
+    gates["answered"] = bool(
+        latest_incoming
+        and any(item["created_at"] > latest_incoming["created_at"] for item in outgoing)
+    )
+    explicit_human = _truthy(
+        attributes.get("sam_explicit_human_request")
+        or attributes.get("explicit_human_request")
+    ) or _clean(
+        attributes.get("conversation_mode_reason")
+        or attributes.get("sam_owner_reason"),
+        80,
+    ).lower() in {"owner_handoff", "explicit_human_request", "customer_requested_human"}
+    protected = any(
+        _truthy(attributes.get(key))
+        for key in (
+            "sam_protected_action_required",
+            "protected_action_required",
+            "commercial_action_required",
+            "payment_required",
+            "reservation_required",
+            "order_action_required",
+            "complaint_open",
+            "safety_issue_open",
+            "delivery_failure_open",
+            "delivery_exception_open",
+        )
+    )
+    specialist = any(
+        _truthy(attributes.get(key))
+        for key in (
+            "specialist_review_required",
+            "sam_specialist_required",
+            "sam_meat_required",
+            "sam_livestock_required",
+            "herdmaster_required",
+            "pricing_required",
+        )
+    )
+    lane = _clean(
+        attributes.get("sam_sales_lane") or attributes.get("sales_lane"), 80
+    ).lower()
+    gates.update(
+        {
+            "no_explicit_human_request": not explicit_human,
+            "no_protected_work": not protected,
+            "no_specialist_work": not specialist,
+            "general_lane_only": lane in {"", "general", "auto_general"},
+        }
+    )
+    eligible = all(gates.values())
+    return {
+        "success": True,
+        "status": (
+            "sam_live_stock_human_reassessment_eligible"
+            if eligible
+            else "sam_live_stock_human_reassessment_withheld"
+        ),
+        "version": HUMAN_REASSESSMENT_CONTRACT_VERSION,
+        "eligible": eligible,
+        "gates": gates,
+        "conversation_id": conversation_id,
+        "contact_id": contact_id,
+        "inbox_id": inbox_id,
+        "latest_inbound_message_id": _clean(latest_incoming.get("id"), 120),
+        "review_event_id": _clean(event.get("review_event_id"), 120),
+        "telegram_chat_id": _clean(card.get("telegram_chat_id"), 120),
+        "telegram_message_id": _clean(card.get("telegram_message_id"), 120),
+        "sends_customer_message": False,
+        "calls_specialist_rail": False,
+        "calls_business_rail": False,
+        **AUTHORITY_FLAGS,
+    }
+
+
+def build_sam_live_stock_human_reassessment_event(event, assessment, state):
+    """Create content-free append-only evidence for one exact reassessment."""
+    event = event if isinstance(event, dict) else {}
+    assessment = assessment if isinstance(assessment, dict) else {}
+    state = _clean(state, 40).lower()
+    identity = _stable_id(
+        "SAM-LIVE-REASSESS",
+        [
+            HUMAN_REASSESSMENT_CONTRACT_VERSION,
+            assessment.get("conversation_id"),
+            assessment.get("contact_id"),
+            assessment.get("inbox_id"),
+            assessment.get("latest_inbound_message_id"),
+            assessment.get("review_event_id"),
+            assessment.get("telegram_chat_id"),
+            assessment.get("telegram_message_id"),
+            state,
+        ],
+    )
+    evidence = build_sam_live_stock_review_event(
+        {
+            "conversation_id": assessment.get("conversation_id"),
+            "message_id": assessment.get("latest_inbound_message_id"),
+        },
+        {},
+        {},
+        {
+            "score": 0,
+            "safe_to_send": False,
+            "recommended_action": f"human_reassessment_{state}",
+        },
+        event_source=HUMAN_REASSESSMENT_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = identity
+    evidence["recommended_action"] = f"human_reassessment_{state}"
+    evidence["review_json"] = {
+        "human_reassessment": {
+            key: assessment.get(key)
+            for key in (
+                "version",
+                "eligible",
+                "gates",
+                "conversation_id",
+                "contact_id",
+                "inbox_id",
+                "latest_inbound_message_id",
+                "review_event_id",
+                "telegram_chat_id",
+                "telegram_message_id",
+            )
+        }
+    }
+    evidence["review_json"]["human_reassessment"]["state"] = state
+    evidence["decision_json"] = {}
+    evidence["facts_json"] = {}
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return evidence
 
 
 def reconcile_sam_live_stock_exact_cards(conversation, cards):
