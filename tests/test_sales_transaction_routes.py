@@ -2628,6 +2628,154 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json()["status"], "sam_live_stock_order_reservation_disabled")
         reserve.assert_called_once_with("ORD-1", action="reserve")
 
+    def test_auto_general_prepared_reply_creates_one_actionable_owner_card(self):
+        event = {
+            "review_event_id": "SAM-GENERAL-1994",
+            "chatwoot_conversation_id": "1994",
+            "sam_reply_excerpt": "Hi Henry! What would you like to know about Ms. Piggy and her litter?",
+            "recommended_action": "auto_general_reply_candidate",
+            "decision_json": {
+                "conversation_ownership": "AUTO_GENERAL",
+                "handled_autonomously": False,
+                "owner_escalation_required": False,
+                "specialist_tools_called": [],
+                "reason": "routine_reply_waiting_for_owner",
+                "transition_visibility": {
+                    "status": "routine_reply_waiting_for_owner",
+                    "notification_class": "owner_review",
+                    "owner_action_required": True,
+                },
+            },
+            "review_json": {
+                "safe_to_send": True,
+                "escalation_required": False,
+            },
+        }
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-GENERAL-1994",
+            "conversation_event_count": 1,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+            return_value=({"success": True, "status": "sent"}, 200),
+        ) as review_send, patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_new_lead_telegram",
+        ) as new_lead_send:
+            notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                event,
+                learning,
+            )
+        self.assertTrue(notification["attempted"])
+        self.assertEqual(notification["type"], "owner_review")
+        self.assertEqual(notification["reason"], "routine_reply_waiting_for_owner")
+        review_send.assert_called_once_with(event)
+        new_lead_send.assert_not_called()
+
+    def test_auto_general_confirmed_send_and_replay_do_not_create_telegram_card(self):
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-GENERAL-CONFIRMED",
+            "conversation_event_count": 1,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+        ) as review_send:
+            for transition_status, expected_status in (
+                ("routine_reply_confirmed_sent", "auto_general_confirmed_sent_no_telegram"),
+                ("routine_reply_replay_withheld", "auto_general_replay_owned_no_duplicate_telegram"),
+            ):
+                event = {
+                    "decision_json": {
+                        "conversation_ownership": "AUTO_GENERAL",
+                        "owner_escalation_required": False,
+                        "transition_visibility": {"status": transition_status},
+                    },
+                    "review_json": {"escalation_required": False},
+                }
+                notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                    event,
+                    learning,
+                )
+                self.assertFalse(notification["attempted"])
+                self.assertEqual(notification["status"], expected_status)
+        review_send.assert_not_called()
+
+    def test_auto_general_failed_and_ambiguous_send_create_one_exception_card(self):
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-GENERAL-DELIVERY",
+            "conversation_event_count": 1,
+        }
+        for transition_status in (
+            "routine_reply_delivery_failed",
+            "routine_reply_delivery_ambiguous",
+        ):
+            event = {
+                "decision_json": {
+                    "conversation_ownership": "AUTO_GENERAL",
+                    "owner_escalation_required": False,
+                    "transition_visibility": {"status": transition_status},
+                },
+                "review_json": {"escalation_required": False},
+            }
+            with self.subTest(transition_status=transition_status), patch.object(
+                sales_transaction_routes,
+                "send_sam_live_stock_owner_review_telegram",
+                return_value=({"success": True, "status": "sent"}, 200),
+            ) as review_send:
+                notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                    event,
+                    learning,
+                )
+                self.assertTrue(notification["attempted"])
+                self.assertEqual(notification["type"], "delivery_exception")
+                self.assertEqual(notification["reason"], transition_status)
+                review_send.assert_called_once_with(event)
+
+    def test_auto_general_explicit_human_request_remains_exception_telegram(self):
+        event = {
+            "review_event_id": "SAM-GENERAL-HUMAN",
+            "chatwoot_conversation_id": "2401",
+            "sam_reply_excerpt": "Of course, I will ask Charl to help.",
+            "recommended_action": "owner_handoff",
+            "decision_json": {
+                "conversation_ownership": "AUTO_GENERAL",
+                "handled_autonomously": False,
+                "owner_escalation_required": True,
+                "escalation_packet": {"reason": "customer_explicitly_requested_human"},
+            },
+            "review_json": {
+                "safe_to_send": False,
+                "escalation_required": True,
+                "escalation_reasons": ["customer_explicitly_requested_human"],
+            },
+        }
+        learning = {
+            "success": True,
+            "created": True,
+            "review_event_id": "SAM-GENERAL-HUMAN",
+            "conversation_event_count": 1,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "send_sam_live_stock_owner_review_telegram",
+            return_value=({"success": True, "status": "sent"}, 200),
+        ) as review_send:
+            notification = sales_transaction_routes._send_sam_live_stock_owner_notification_if_needed(
+                event,
+                learning,
+            )
+        self.assertTrue(notification["attempted"])
+        self.assertEqual(notification["legacy_reason"], "escalation")
+        review_send.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

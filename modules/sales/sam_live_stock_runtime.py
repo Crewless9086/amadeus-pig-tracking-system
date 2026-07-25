@@ -36,6 +36,11 @@ AUTOREPLY_CANARY_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_ENABLED"
 AUTOREPLY_CANARY_CONVERSATION_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONVERSATION_ID"
 AUTOREPLY_CANARY_CONTACT_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_CONTACT_ID"
 AUTOREPLY_CANARY_INBOX_ENV = "SAM_LIVE_STOCK_BACKEND_AUTOREPLY_CANARY_INBOX_ID"
+AUTO_GENERAL_CANARY_ENABLED_ENV = "SAM_AUTO_GENERAL_CANARY_ENABLED"
+AUTO_GENERAL_AUTOREPLY_ENABLED_ENV = "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED"
+AUTO_GENERAL_CANARY_CONVERSATION_ENV = "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID"
+AUTO_GENERAL_CANARY_CONTACT_ENV = "SAM_AUTO_GENERAL_CANARY_CONTACT_ID"
+AUTO_GENERAL_CANARY_INBOX_ENV = "SAM_AUTO_GENERAL_CANARY_INBOX_ID"
 LLM_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED"
 AGENT_V3_ENABLED_ENV = "SAM_LIVE_STOCK_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_LIVE_STOCK_BACKEND_LLM_MODEL"
@@ -57,6 +62,8 @@ DEFAULT_LLM_MODEL = "gpt-4.1-mini"
 MIN_TOKEN_CHARS = 32
 
 RUNTIME_VERSION = "sam_live_stock_conversation_completion_v1"
+AUTO_GENERAL = "AUTO_GENERAL"
+AUTO_SPECIALIST = "AUTO_SPECIALIST"
 
 SAM_LIVE_STOCK_DURABLE_NEXT_ACTIONS = {
     "answer_general_info",
@@ -87,6 +94,7 @@ def sam_live_stock_webhook_policy(environ=None):
         "autoreply_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
         "autoreply_explicitly_enabled": _truthy(source.get(AUTOREPLY_ENABLED_ENV)),
         "autoreply_canary": _autoreply_canary_policy(source),
+        "auto_general_canary": _auto_general_canary_policy(source),
         "llm_enabled": _truthy(source.get(LLM_ENABLED_ENV)) and llm_configured,
         "llm_explicitly_enabled": _truthy(source.get(LLM_ENABLED_ENV)),
         "llm_configured": llm_configured,
@@ -210,6 +218,91 @@ def handle_sam_live_stock_chatwoot_inbound(
             "policy": policy,
             **_authority_flags(),
         }, 200
+    general_context = load_sam_general_context(
+        inbound,
+        conversation_history_loader=conversation_history_loader,
+        environ=source,
+    )
+    if _should_use_auto_general_path(inbound, facts):
+        decision = (
+            build_sam_live_stock_decision(
+                inbound,
+                facts,
+                general_context,
+                source,
+                llm_drafter=llm_drafter,
+                owner_example_loader=owner_example_loader,
+            )
+            if facts.get("sales_lane") == LANE_FARM_GENERAL
+            else build_sam_general_decision(
+                inbound,
+                facts,
+                general_context,
+                source,
+                llm_drafter=llm_drafter,
+            )
+        )
+        decision["conversation_ownership"] = AUTO_GENERAL
+        decision["handled_autonomously"] = True
+        decision["clarification_asked"] = bool(
+            decision.get("next_action") == "ask_one_missing_detail"
+            or _general_reply_is_clarification(
+                decision.get("suggested_reply_text"),
+                general_context.get("recovered_reference"),
+            )
+        )
+        decision["specialist_lane_selected"] = False
+        decision["specialist_tools_called"] = []
+        decision["customer_send_authorized"] = False
+        decision.setdefault("reason", "general_conversation_safe")
+        conversation_review = review_sam_live_stock_conversation(
+            inbound,
+            facts,
+            decision,
+            general_context,
+        )
+        decision["conversation_review"] = conversation_review
+        decision["owner_escalation_required"] = bool(conversation_review.get("escalation_required"))
+        decision["handled_autonomously"] = not decision["owner_escalation_required"]
+        if decision["owner_escalation_required"]:
+            decision["next_action"] = "escalate"
+            decision["escalation_packet"] = build_sam_live_stock_escalation_packet(
+                inbound,
+                facts,
+                decision,
+                conversation_review,
+            )
+        decision["owner_authority_required"] = False
+        decision["protected_action_reasons"] = []
+        if conversation_review.get("no_reply_recommended"):
+            decision["suggested_reply_text"] = ""
+            decision["should_reply"] = False
+            decision["next_action"] = "no_reply_needed"
+            decision["reply_source"] = "natural_close_no_reply_guard"
+        routine_delivery = deliver_sam_live_stock_routine_reply_if_enabled(
+            inbound,
+            decision,
+            conversation_review,
+            source,
+            chatwoot_sender=chatwoot_sender,
+            delivery_claim=routine_delivery_claim,
+            delivery_evidence_recorder=routine_delivery_evidence_recorder,
+        )
+        decision["routine_reply_delivery"] = routine_delivery
+        decision["customer_send_authorized"] = routine_delivery.get("canary", {}).get("allowed") is True
+        _apply_auto_general_delivery_transition(decision, routine_delivery)
+        return {
+            "success": True,
+            "status": "sam_auto_general_conversation_processed",
+            "processed": True,
+            "sent": routine_delivery.get("sent") is True,
+            "sam_decision": decision,
+            "policy": policy,
+            **_authority_flags(
+                sends_customer_message=routine_delivery.get("sent") is True,
+                calls_chatwoot=routine_delivery.get("sent") is True,
+            ),
+        }, 200
     context_packet = load_live_stock_read_context(
         inbound,
         facts,
@@ -241,6 +334,18 @@ def handle_sam_live_stock_chatwoot_inbound(
         llm_drafter=llm_drafter,
         owner_example_loader=owner_example_loader,
     )
+    decision["conversation_ownership"] = AUTO_SPECIALIST
+    decision["specialist_lane_selected"] = True
+    decision["specialist_tools_called"] = sorted(
+        name
+        for name in (decision.get("agent_evidence") or context_packet.get("agent_evidence") or {})
+        if name in {"herdmaster", "ledger", "butcher"}
+    )
+    decision["handled_autonomously"] = True
+    decision["clarification_asked"] = decision.get("next_action") == "ask_one_missing_detail"
+    decision["owner_escalation_required"] = False
+    decision["reason"] = "affirmative_specialist_intent"
+    decision["customer_send_authorized"] = False
     llm_draft = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
     facts["llm_used"] = bool(llm_draft.get("used"))
     facts["llm_status"] = llm_draft.get("status") or facts.get("llm_status") or ""
@@ -270,6 +375,8 @@ def handle_sam_live_stock_chatwoot_inbound(
         decision["reply_source"] = "deterministic_fallback_after_llm_review"
         conversation_review = review_sam_live_stock_conversation(inbound, facts, decision, context_packet)
     decision["conversation_review"] = conversation_review
+    decision["owner_escalation_required"] = bool(conversation_review.get("escalation_required"))
+    decision["handled_autonomously"] = not decision["owner_escalation_required"]
     decision["owner_authority_required"] = bool(conversation_review.get("owner_authority_required"))
     decision["protected_action_reasons"] = list(conversation_review.get("protected_action_reasons") or [])
     if decision["owner_authority_required"]:
@@ -334,6 +441,7 @@ def handle_sam_live_stock_chatwoot_inbound(
         delivery_evidence_recorder=routine_delivery_evidence_recorder,
     )
     decision["routine_reply_delivery"] = routine_delivery
+    decision["customer_send_authorized"] = routine_delivery.get("canary", {}).get("allowed") is True
     return {
         "success": True,
         "status": "sam_live_stock_conversation_processed",
@@ -356,7 +464,11 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
     decision = decision if isinstance(decision, dict) else {}
     review = review if isinstance(review, dict) else {}
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
-    canary = _autoreply_canary_evaluation(inbound, decision, review, source)
+    canary = (
+        _auto_general_canary_evaluation(inbound, decision, review, source)
+        if decision.get("conversation_ownership") == AUTO_GENERAL
+        else _autoreply_canary_evaluation(inbound, decision, review, source)
+    )
     decision["autoreply_canary"] = canary
     if not canary["allowed"]:
         return {"attempted": False, "sent": False, "status": canary["status"], "canary": canary}
@@ -397,12 +509,14 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             "chatwoot": sent,
             "canary": canary,
             "claim": claim,
+            "delivery_outcome": outcome,
             "delivery_evidence": evidence,
             "automatic_retry_prohibited": True,
         }
     except Exception as exc:
         failure_status = "chatwoot_send_failed_before_confirmation" if _send_failure_confirmed(exc) else "chatwoot_send_outcome_unknown"
-        evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, {"delivery_status": failure_status, "chatwoot_confirmed": False, "error_type": exc.__class__.__name__, "automatic_retry_prohibited": True})
+        failure_outcome = {"delivery_status": failure_status, "chatwoot_confirmed": False, "error_type": exc.__class__.__name__, "automatic_retry_prohibited": True}
+        evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, failure_outcome)
         return {
             "attempted": True,
             "sent": False,
@@ -411,9 +525,76 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             "error": str(exc)[:240],
             "canary": canary,
             "claim": claim,
+            "delivery_outcome": failure_outcome,
             "delivery_evidence": evidence,
             "automatic_retry_prohibited": True,
         }
+
+
+def _apply_auto_general_delivery_transition(decision, delivery):
+    decision = decision if isinstance(decision, dict) else {}
+    delivery = delivery if isinstance(delivery, dict) else {}
+    if decision.get("owner_escalation_required") is True:
+        transition = {
+            "status": "owner_escalation_required",
+            "notification_class": "safety_escalation",
+            "owner_action_required": True,
+            "customer_send_confirmed": False,
+            "automatic_retry_prohibited": True,
+        }
+        decision["handled_autonomously"] = False
+        decision["reason"] = "owner_escalation_required"
+    elif delivery.get("sent") is True:
+        transition = {
+            "status": "routine_reply_confirmed_sent",
+            "notification_class": "none",
+            "owner_action_required": False,
+            "customer_send_confirmed": True,
+            "automatic_retry_prohibited": True,
+        }
+        decision["handled_autonomously"] = True
+        decision["reason"] = "routine_reply_confirmed_sent"
+    elif delivery.get("attempted") is True:
+        ambiguous = (
+            delivery.get("status") == "sam_live_stock_routine_reply_outcome_unknown"
+            or ((delivery.get("delivery_outcome") or {}).get("delivery_status") == "chatwoot_send_outcome_unknown")
+        )
+        reason = "routine_reply_delivery_ambiguous" if ambiguous else "routine_reply_delivery_failed"
+        transition = {
+            "status": reason,
+            "notification_class": "delivery_exception",
+            "owner_action_required": True,
+            "customer_send_confirmed": False,
+            "automatic_retry_prohibited": True,
+        }
+        decision["handled_autonomously"] = False
+        decision["reason"] = reason
+    elif delivery.get("status") == "routine_reply_duplicate_withheld":
+        transition = {
+            "status": "routine_reply_replay_withheld",
+            "notification_class": "claim_owner",
+            "owner_action_required": False,
+            "customer_send_confirmed": False,
+            "automatic_retry_prohibited": True,
+        }
+        decision["handled_autonomously"] = bool(
+            (delivery.get("claim") or {}).get("prior_delivery_confirmed") is True
+        )
+        decision["reason"] = "routine_reply_replay_withheld"
+    else:
+        transition = {
+            "status": "routine_reply_waiting_for_owner",
+            "notification_class": "owner_review",
+            "owner_action_required": True,
+            "customer_send_confirmed": False,
+            "automatic_retry_prohibited": True,
+            "withheld_status": _clean(delivery.get("status"), 120),
+        }
+        decision["handled_autonomously"] = False
+        decision["reason"] = "routine_reply_waiting_for_owner"
+    decision["transition_visibility"] = transition
+    decision["owner_action_required"] = transition["owner_action_required"]
+    decision["customer_send_confirmed"] = transition["customer_send_confirmed"]
 
 
 def _record_delivery_outcome(recorder, claim, outcome):
@@ -459,6 +640,7 @@ def parse_chatwoot_inbound(payload):
     if not content and not attachments:
         return _ignored("ignored_empty_message", event, message_type, content, conversation_id, customer_name, channel)
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    content_attributes = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
     return {
         "processable": True,
         "status": "processable",
@@ -475,8 +657,37 @@ def parse_chatwoot_inbound(payload):
         "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
         "conversation_custom_attributes": custom_attributes,
+        "message_context": _public_message_context(payload, content_attributes),
         "attachments": attachments,
     }
+
+
+def _public_message_context(message, content_attributes=None):
+    message = message if isinstance(message, dict) else {}
+    attributes = content_attributes if isinstance(content_attributes, dict) else {}
+    referral = attributes.get("referral") if isinstance(attributes.get("referral"), dict) else {}
+    quoted = (
+        attributes.get("in_reply_to")
+        or attributes.get("reply_to")
+        or attributes.get("quoted_message")
+    )
+    context = {
+        "source_id": _clean(message.get("source_id") or attributes.get("source_id"), 160),
+        "quoted_message": _clean_multiline(
+            quoted.get("content") if isinstance(quoted, dict) else quoted,
+            500,
+        ),
+        "referral": {
+            "source_type": _clean(referral.get("source_type"), 40),
+            "source_id": _clean(referral.get("source_id"), 160),
+            "source_url": _clean(referral.get("source_url"), 500),
+            "headline": _clean(referral.get("headline"), 300),
+            "body": _clean_multiline(referral.get("body"), 1200),
+            "media_type": _clean(referral.get("media_type"), 40),
+        },
+    }
+    context["referral"] = {key: value for key, value in context["referral"].items() if value}
+    return {key: value for key, value in context.items() if value}
 
 
 def extract_live_stock_facts(message, inbound=None):
@@ -564,6 +775,287 @@ def merge_prior_live_stock_context(facts, prior_context):
         reasons = facts.get("lane_reasons") if isinstance(facts.get("lane_reasons"), list) else []
         facts["lane_reasons"] = [*reasons, "live_stock_context:active_order_intake"]
     return facts
+
+
+def load_sam_general_context(inbound, *, conversation_history_loader=None, environ=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    source = environ if environ is not None else os.environ
+    history = {"success": False, "status": "not_loaded", "messages": []}
+    errors = []
+    if inbound.get("conversation_id"):
+        try:
+            loader = conversation_history_loader or load_chatwoot_conversation_history
+            history = loader(inbound.get("conversation_id"), source)
+        except Exception as exc:
+            errors.append(_integration_failure("chatwoot_conversation_history_read_failed", exc))
+            history = {"success": False, "status": "read_failed", "messages": []}
+    current_context = inbound.get("message_context") if isinstance(inbound.get("message_context"), dict) else {}
+    recovered_reference = _recover_general_reference(current_context, history)
+    return {
+        "success": not errors,
+        "read_only": True,
+        "current_message_context": current_context,
+        "recovered_reference": recovered_reference,
+        "chatwoot_history": _compact_chatwoot_history(history),
+        "chatwoot_history_messages": _compact_chatwoot_history_messages(
+            history,
+            current_message_id=inbound.get("message_id"),
+        ),
+        "context_errors": errors,
+        "specialist_context_loaded": False,
+        "specialist_tools_called": [],
+    }
+
+
+def _recover_general_reference(current_context, history):
+    current_context = current_context if isinstance(current_context, dict) else {}
+    current_referral = current_context.get("referral") if isinstance(current_context.get("referral"), dict) else {}
+    if current_referral:
+        return _reference_from_referral(current_referral, "current_message_referral")
+    if current_context.get("quoted_message"):
+        return {
+            "status": "resolved",
+            "source": "current_message_quote",
+            "subject": _clean_multiline(current_context.get("quoted_message"), 500),
+        }
+    history = history if isinstance(history, dict) else {}
+    for message in reversed(history.get("messages") if isinstance(history.get("messages"), list) else []):
+        context = message.get("message_context") if isinstance(message, dict) and isinstance(message.get("message_context"), dict) else {}
+        referral = context.get("referral") if isinstance(context.get("referral"), dict) else {}
+        if referral:
+            return _reference_from_referral(referral, "recent_chatwoot_referral")
+        if context.get("quoted_message"):
+            return {
+                "status": "resolved",
+                "source": "recent_chatwoot_quote",
+                "subject": _clean_multiline(context.get("quoted_message"), 500),
+            }
+    return {"status": "missing", "source": "none", "subject": ""}
+
+
+def _reference_from_referral(referral, source):
+    referral = referral if isinstance(referral, dict) else {}
+    headline = _clean(referral.get("headline"), 300)
+    body = _clean_multiline(referral.get("body"), 1200)
+    subject = headline or _first_sentence(body)
+    return {
+        "status": "resolved" if subject or referral.get("source_id") else "partial",
+        "source": source,
+        "source_type": _clean(referral.get("source_type"), 40),
+        "source_id": _clean(referral.get("source_id"), 160),
+        "source_url": _clean(referral.get("source_url"), 500),
+        "headline": headline,
+        "body": body,
+        "subject": subject,
+    }
+
+
+def _first_sentence(text):
+    text = _clean_multiline(text, 500)
+    if not text:
+        return ""
+    return re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+
+
+def _current_message_requires_specialist(inbound, facts):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    text = _normal_text(inbound.get("content"))
+    if facts.get("sales_lane") == LANE_MEAT and float(facts.get("lane_confidence") or 0) >= 0.9:
+        return True
+    if facts.get("sales_lane") != LANE_LIVE_STOCK:
+        return bool(
+            facts.get("order_commitment")
+            or facts.get("quote_requested")
+            or facts.get("reservation_requested")
+            or facts.get("breeding_interest")
+            or facts.get("media_review_required")
+            or inbound.get("attachments")
+            or any(
+                not _blank(facts.get(key))
+                for key in ("timing", "location", "transport_expectation")
+            )
+            or _potential_specialist_followup(text)
+        )
+    usable_constraints = sum(
+        1
+        for key in ("category", "quantity", "sex", "weight_range")
+        if not _blank(facts.get(key))
+    )
+    affirmative_language = bool(re.search(
+        r"\b(want|need|buy|purchase|order|quote|price|cost|available|availability|"
+        r"looking for|interested in|reserve|book|soek|koop|wil h[eê]|prys|beskikbaar)\b",
+        text,
+    ))
+    return bool(
+        facts.get("order_commitment")
+        or facts.get("quote_requested")
+        or facts.get("reservation_requested")
+        or facts.get("media_review_required")
+        or inbound.get("attachments")
+        or _potential_specialist_followup(text)
+        or (affirmative_language and usable_constraints >= 1)
+        or (usable_constraints >= 2 and facts.get("quantity"))
+        or any(
+            not _blank(facts.get(key))
+            for key in ("timing", "location", "transport_expectation")
+        )
+    )
+
+
+def _should_use_auto_general_path(inbound, facts):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    text = _normal_text(inbound.get("content"))
+    if _current_message_requires_specialist(inbound, facts):
+        return False
+    if _hostile_or_scam_signal(text) or _price_challenge_signal(text):
+        return False
+    if facts.get("sales_lane") == LANE_FARM_GENERAL:
+        return True
+    if _natural_close_signal(text):
+        return True
+    return facts.get("sales_lane") in {"", "unclear", "owner_handoff", LANE_LIVE_STOCK}
+
+
+def _potential_specialist_followup(text):
+    return bool(re.search(
+        r"\b(location|collection|collect|transport|deliver|delivery|price|quote|"
+        r"reserve|reservation|friday|saturday|sunday|monday|tuesday|wednesday|thursday|"
+        r"afhaal|aflewer|ligging|prys|kwotasie)\b",
+        text or "",
+    ))
+
+
+def build_sam_general_decision(inbound, facts, context_packet, environ=None, llm_drafter=None):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = dict(facts or {})
+    context_packet = context_packet if isinstance(context_packet, dict) else {}
+    source = environ if isinstance(environ, Mapping) else {}
+    reference = context_packet.get("recovered_reference") if isinstance(context_packet.get("recovered_reference"), dict) else {}
+    facts["sales_lane"] = "unclear"
+    fallback = _auto_general_fallback_reply(inbound, reference)
+    llm = _build_auto_general_llm_reply_if_enabled(
+        inbound,
+        facts,
+        context_packet,
+        fallback,
+        source,
+        drafter=llm_drafter,
+    )
+    llm_reply = _clean_multiline(llm.get("reply_text"), 1800) if llm.get("used") else ""
+    reply = llm_reply or fallback
+    reply_source = llm.get("reply_source") if llm_reply else "deterministic_auto_general_fallback"
+    clarification = _general_reply_is_clarification(reply, reference)
+    reason = (
+        "general_reference_resolved"
+        if reference.get("status") == "resolved"
+        else "general_reference_missing_one_clarification"
+    )
+    return {
+        "version": "sam_routine_majority_v1",
+        "agent": "sam_general",
+        "mode": "read_only_auto_general",
+        "conversation_ownership": AUTO_GENERAL,
+        "sales_lane": "unclear",
+        "lane_confidence": float(facts.get("lane_confidence") or 0),
+        "conversational_reply_confidence": llm.get("confidence") if llm.get("used") else 0.98,
+        "facts": facts,
+        "inbound": {
+            "conversation_id": inbound.get("conversation_id") or "",
+            "message_id": inbound.get("message_id") or "",
+            "customer_name": inbound.get("customer_name") or "",
+            "contact_id": inbound.get("contact_id") or "",
+            "inbox_id": inbound.get("inbox_id") or "",
+            "channel": inbound.get("channel") or "",
+            "content": inbound.get("content") or "",
+        },
+        "read_context": context_packet,
+        "llm_draft": llm,
+        "suggested_reply_text": reply,
+        "deterministic_fallback_reply_text": fallback,
+        "reply_source": reply_source,
+        "next_action": "ask_one_missing_detail" if clarification else "answer_general_info",
+        "recommended_action": "auto_general_reply_candidate",
+        "should_reply": True,
+        "handled_autonomously": True,
+        "clarification_asked": clarification,
+        "specialist_lane_selected": False,
+        "owner_escalation_required": False,
+        "reason": reason,
+        "specialist_tools_called": [],
+        "customer_send_authorized": False,
+        "owner_gate_required": False,
+        "owner_authority_required": False,
+        "availability": {"status": "not_loaded_general_state", "matched_count": 0},
+        "match_packet": {},
+        "price_answer_packet": {"can_answer_price": False, "reason": "general_state"},
+        "draft_order_packet": {"draft_ready": False, "reason": "general_state"},
+        "blockers": [],
+        "missing_fields": [],
+        "creates_order": False,
+        "creates_quote": False,
+        "reserves_stock": False,
+        "changes_stock": False,
+        "writes_farm_data": False,
+        "confirms_payment": False,
+        "assigns_animal": False,
+        "writes_order_intake": False,
+        "writes_sales_transaction": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+    }
+
+
+def _auto_general_fallback_reply(inbound, reference):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    reference = reference if isinstance(reference, dict) else {}
+    name = _first_name(inbound.get("customer_name"))
+    greeting = f"Hi {name}!" if name else "Hi!"
+    text = _normal_text(inbound.get("content"))
+    headline = _clean(reference.get("headline") or reference.get("subject"), 300)
+    body = _clean_multiline(reference.get("body"), 1200)
+    if _general_greeting_only(text):
+        return f"{greeting} How can I help you today?"
+    if _explicit_human_request(text):
+        return f"{greeting} Of course. I will ask Charl to help you."
+    if "still just looking" in text or "just looking for now" in text:
+        return f"{greeting} No problem at all. Take your time - I am here if anything catches your eye."
+    if reference.get("status") == "resolved":
+        if "ms. piggy" in body.lower() and "piglet" in body.lower():
+            return f"{greeting} Of course. What would you like to know about Ms. Piggy and her litter of piglets?"
+        subject = headline or "the post you responded to"
+        return f"{greeting} Of course. What would you like to know about {subject}?"
+    if _general_health_age_question(text):
+        return (
+            f"{greeting} They do look healthy. I do not have their exact age in the conversation, "
+            "so I would need to check that detail before giving you a definite answer."
+        )
+    if "piglet" in text and "post" in text:
+        return f"{greeting} Yes, I know the piglet post. What would you like to know about it?"
+    if _general_reference_words(text):
+        return (
+            f"{greeting} Of course. Are you asking about the piglets in the post, "
+            "or was there something else on our page you wanted to know more about?"
+        )
+    return f"{greeting} Of course. What would you like to know more about?"
+
+
+def _general_greeting_only(text):
+    return bool(re.fullmatch(r"(hi|hello|hey|good (morning|afternoon|evening)|hallo)[!. ]*", text or ""))
+
+
+def _general_reference_words(text):
+    return bool(re.search(r"\b(this|that|these|those|it|the post|your post|the ad|your ad)\b", text or ""))
+
+
+def _general_health_age_question(text):
+    return "healthy" in (text or "") and bool(re.search(r"\bhow old\b|\bage\b", text or ""))
+
+
+def _general_reply_is_clarification(reply, reference):
+    return "?" in str(reply or "") and not bool((reference or {}).get("status") == "resolved")
 
 
 def _explicit_new_request(text):
@@ -679,6 +1171,10 @@ def summarize_live_stock_availability(rows, facts=None):
     category = _normal_category(facts.get("category"))
     sex = _normal_sex(facts.get("sex"))
     requested_weight_range = facts.get("weight_range") or ""
+    specialist_match_allowed = bool(
+        facts.get("sales_lane") != "unclear"
+        and (category or requested_weight_range or sex)
+    )
     matched = []
     considered = []
     excluded = []
@@ -686,6 +1182,8 @@ def summarize_live_stock_availability(rows, facts=None):
         if not isinstance(row, dict):
             continue
         reasons = _availability_exclusion_reasons(row, category, sex, requested_weight_range)
+        if not specialist_match_allowed:
+            reasons = [*reasons, "affirmative_specialist_intent_and_minimum_constraints_required"]
         public_row = {
             **_availability_public_row(row),
             "selection_status": "excluded" if reasons else "eligible_exact_match",
@@ -726,6 +1224,10 @@ def summarize_live_stock_availability(rows, facts=None):
         "considered_sample": considered[:25],
         "excluded_count": len(excluded),
         "excluded_sample": excluded[:25],
+        "matching_gate": {
+            "affirmative_specialist_intent": facts.get("sales_lane") == LANE_LIVE_STOCK,
+            "minimum_usable_constraints": specialist_match_allowed,
+        },
     }
 
 
@@ -764,6 +1266,10 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
             "message_type": row.get("message_type"),
             "content": content,
             "created_at": row.get("created_at"),
+            "message_context": _public_message_context(
+                row,
+                row.get("content_attributes") if isinstance(row.get("content_attributes"), dict) else {},
+            ),
         })
     return {"success": True, "status": "loaded", "messages": messages}
 
@@ -1498,7 +2004,16 @@ def build_live_stock_match_packet(facts, availability):
         status = "partial_match_available"
     elif quantity > 0 and availability.get("success"):
         status = "no_exact_match"
-    selected = matched[:quantity or 10]
+    minimum_constraints = bool(
+        facts.get("sales_lane") != "unclear"
+        and quantity > 0
+        and (not _blank(facts.get("category")) or not _blank(facts.get("weight_range")))
+    )
+    if not minimum_constraints:
+        exact_count = 0
+        matched = []
+        status = "not_ready"
+    selected = matched[:quantity] if minimum_constraints else []
     return {
         "version": "sam_live_stock_match_packet_v1",
         "read_only": True,
@@ -1524,6 +2039,10 @@ def build_live_stock_match_packet(facts, availability):
             for index, row in enumerate(selected)
         ],
         "proposal_only": True,
+        "matching_gate": {
+            "affirmative_specialist_intent": facts.get("sales_lane") == LANE_LIVE_STOCK,
+            "minimum_usable_constraints": minimum_constraints,
+        },
     }
 
 
@@ -1796,11 +2315,15 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
     escalation_reasons = []
     protected_action_reasons = []
     score = 100
+    auto_general = decision.get("conversation_ownership") == AUTO_GENERAL
 
     if _hostile_or_scam_signal(text):
         escalation_reasons.append("hostile_or_scam_location_challenge")
         issues.append("close_conversation_recommended")
         score -= 35
+    if auto_general and _explicit_human_request(text):
+        escalation_reasons.append("customer_explicitly_requested_human")
+        score -= 20
     if _price_challenge_signal(text):
         protected_action_reasons.append("negotiated_price_owner_authority")
         issues.append("negotiated_price_requires_owner_decision")
@@ -1815,7 +2338,7 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
         protected_action_reasons.append("final_order_owner_authority")
     if _payment_confirmation_signal(text):
         protected_action_reasons.append("payment_confirmation_owner_authority")
-    if blockers:
+    if blockers and not auto_general:
         for blocker in blockers:
             blocker = str(blocker)
             if blocker in {"breeding_or_replacement_stock_owner_gate", "reservation_request_owner_gate"}:
@@ -1824,7 +2347,7 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
                 escalation_reasons.append(blocker)
             else:
                 issues.append(blocker)
-    if decision.get("sales_lane") not in {LANE_LIVE_STOCK, LANE_FARM_GENERAL}:
+    if not auto_general and decision.get("sales_lane") not in {LANE_LIVE_STOCK, LANE_FARM_GENERAL}:
         escalation_reasons.append("wrong_or_unclear_lane")
         score -= 20
     if missing:
@@ -1885,6 +2408,15 @@ def review_sam_live_stock_conversation(inbound, facts, decision, context_packet=
             protected_action_reasons,
         ),
     }
+
+
+def _explicit_human_request(text):
+    return bool(re.search(
+        r"\b(speak|talk|chat)\s+(to|with)\s+(a\s+)?(human|person|owner|charl)\b"
+        r"|\b(can|may|could)\s+i\s+(speak|talk)\s+(to|with)\s+(charl|the owner|a human|a person)\b"
+        r"|\bput me through to (charl|the owner|a human|a person)\b",
+        text or "",
+    ))
 
 
 def build_sam_live_stock_escalation_packet(inbound, facts, decision, review=None):
@@ -2495,6 +3027,81 @@ def _build_llm_reply_draft_if_enabled(
         "used": True,
         "status": "llm_reply_draft_used",
         "reply_source": "llm_live_stock_reply_draft",
+        "reply_text": reply,
+        "confidence": raw.get("confidence", ""),
+        "notes": _clean(raw.get("notes"), 240),
+        "runtime_diagnostics": diagnostics,
+    }
+
+
+def _build_auto_general_llm_reply_if_enabled(
+    inbound,
+    facts,
+    context_packet,
+    fallback_reply,
+    source,
+    *,
+    drafter=None,
+):
+    source = source if isinstance(source, Mapping) else {}
+    diagnostics = _llm_runtime_diagnostics(source)
+    if not _truthy(source.get(LLM_ENABLED_ENV)):
+        return {"used": False, "status": "llm_disabled", "runtime_diagnostics": diagnostics}
+    if not (_configured_model(source) and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
+        return {"used": False, "status": "llm_not_configured", "runtime_diagnostics": diagnostics}
+    reference = (
+        context_packet.get("recovered_reference")
+        if isinstance(context_packet.get("recovered_reference"), dict)
+        else {}
+    )
+    packet = {
+        "rules": [
+            "Write one short, natural WhatsApp reply as SAM for Amadeus Farm.",
+            "General or unknown intent is valid. Greet, acknowledge, answer verified general context, or ask one useful clarification.",
+            "Use a resolved referral or quoted-message subject naturally. Do not infer a sales lane from vague pronouns.",
+            "Do not claim stock, price, availability, location, performance, age, order, reservation, or payment facts unless explicitly verified here.",
+            "Do not invoke or suggest specialist tools or owner escalation merely because the lane is unknown.",
+            "Ask at most one question.",
+        ],
+        "inbound": {
+            "customer_name": inbound.get("customer_name") or "",
+            "message": _clean(inbound.get("content"), 1000),
+        },
+        "reference": reference,
+        "recent_chatwoot_history": context_packet.get("chatwoot_history_messages") or [],
+        "fallback_reply": fallback_reply,
+    }
+    caller = drafter or _call_sam_live_stock_reply_llm
+    raw = caller(packet, source)
+    if not isinstance(raw, dict):
+        return {"used": False, "status": "llm_empty_response", "runtime_diagnostics": diagnostics}
+    if raw.get("_llm_error"):
+        return {
+            "used": False,
+            "status": "llm_call_failed",
+            "llm_error": raw.get("_llm_error"),
+            "runtime_diagnostics": diagnostics,
+        }
+    proposed_lane = _clean(raw.get("lane") or raw.get("sales_lane"), 80).lower()
+    if proposed_lane and proposed_lane not in {"general", "unknown", "unclear", "auto_general"}:
+        return {
+            "used": False,
+            "status": "llm_wrong_lane_returned_to_auto_general",
+            "runtime_diagnostics": diagnostics,
+        }
+    reply = _clean_multiline(raw.get("reply_text") or raw.get("suggested_reply_text"), 1800)
+    if not reply:
+        return {"used": False, "status": "llm_no_reply_text", "runtime_diagnostics": diagnostics}
+    if reply.count("?") > 1:
+        return {
+            "used": False,
+            "status": "llm_general_multiple_questions_blocked",
+            "runtime_diagnostics": diagnostics,
+        }
+    return {
+        "used": True,
+        "status": "llm_auto_general_reply_draft_used",
+        "reply_source": "llm_auto_general_reply_draft",
         "reply_text": reply,
         "confidence": raw.get("confidence", ""),
         "notes": _clean(raw.get("notes"), 240),
@@ -3239,6 +3846,106 @@ def _autoreply_canary_policy(source):
         "minimum_lane_confidence": 0.90,
         "contains_identity_values": False,
         "kill_switch": AUTOREPLY_ENABLED_ENV,
+    }
+
+
+def _auto_general_canary_policy(source):
+    source = source if isinstance(source, Mapping) else {}
+    return {
+        "enabled": _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV)),
+        "global_enabled": _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV)),
+        "conversation_configured": bool(_clean(source.get(AUTO_GENERAL_CANARY_CONVERSATION_ENV), 100)),
+        "contact_configured": bool(_clean(source.get(AUTO_GENERAL_CANARY_CONTACT_ENV), 100)),
+        "inbox_configured": bool(_clean(source.get(AUTO_GENERAL_CANARY_INBOX_ENV), 100)),
+        "requires_all_three_exact_identity_matches": True,
+        "requires_reviewed_llm_result": True,
+        "requires_persistent_idempotency_claim_before_send": True,
+        "append_only_terminal_outcomes": ["confirmed", "failed", "ambiguous"],
+        "specialist_and_protected_actions_disabled": True,
+        "telegram_exception_only": True,
+        "contains_identity_values": False,
+        "kill_switch": AUTO_GENERAL_AUTOREPLY_ENABLED_ENV,
+    }
+
+
+def _auto_general_canary_evaluation(inbound, decision, review, source):
+    source = source if isinstance(source, Mapping) else {}
+    inbound = inbound if isinstance(inbound, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    review = review if isinstance(review, dict) else {}
+    llm = decision.get("llm_draft") if isinstance(decision.get("llm_draft"), dict) else {}
+    expected = {
+        "conversation": _clean(source.get(AUTO_GENERAL_CANARY_CONVERSATION_ENV), 100),
+        "contact": _clean(source.get(AUTO_GENERAL_CANARY_CONTACT_ENV), 100),
+        "inbox": _clean(source.get(AUTO_GENERAL_CANARY_INBOX_ENV), 100),
+    }
+    actual = {
+        "conversation": _clean(inbound.get("conversation_id"), 100),
+        "contact": _clean(inbound.get("contact_id"), 100),
+        "inbox": _clean(inbound.get("inbox_id"), 100),
+    }
+    configured = all(expected.values())
+    identity_matches = configured and all(actual[key] == expected[key] for key in expected)
+    protected_keys = (
+        "creates_order",
+        "creates_quote",
+        "reserves_stock",
+        "changes_stock",
+        "writes_farm_data",
+        "confirms_payment",
+        "assigns_animal",
+        "writes_order_intake",
+        "writes_sales_transaction",
+    )
+    checks = {
+        "global_auto_general_enabled": _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV)),
+        "canary_enabled": _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV)),
+        "all_identities_configured": configured,
+        "conversation_matches": bool(expected["conversation"] and actual["conversation"] == expected["conversation"]),
+        "contact_matches": bool(expected["contact"] and actual["contact"] == expected["contact"]),
+        "inbox_matches": bool(expected["inbox"] and actual["inbox"] == expected["inbox"]),
+        "auto_general_state": decision.get("conversation_ownership") == AUTO_GENERAL,
+        "review_safe": review.get("safe_to_send") is True and not review.get("escalation_required"),
+        "reviewed_llm_draft": llm.get("used") is True and decision.get("reply_source") == "llm_auto_general_reply_draft",
+        "llm_confident": _confidence_at_least(llm.get("confidence"), 0.96),
+        "low_risk_general_reply": not decision.get("specialist_lane_selected") and not decision.get("owner_escalation_required"),
+        "specialist_tools_absent": not list(decision.get("specialist_tools_called") or []),
+        "protected_mutation_absent": not any(decision.get(key) is True for key in protected_keys),
+        "hostile_content_absent": not _hostile_or_scam_signal(inbound.get("content")),
+    }
+    allowed = identity_matches and all(checks.values())
+    if not checks["global_auto_general_enabled"]:
+        status = "auto_general_reply_disabled"
+    elif not checks["canary_enabled"]:
+        status = "auto_general_canary_disabled"
+    elif not configured:
+        status = "auto_general_canary_identity_not_configured"
+    elif not identity_matches:
+        status = "auto_general_canary_identity_mismatch"
+    elif not checks["auto_general_state"]:
+        status = "auto_general_canary_wrong_ownership"
+    elif not checks["reviewed_llm_draft"]:
+        status = "auto_general_canary_requires_reviewed_llm"
+    elif not checks["llm_confident"]:
+        status = "auto_general_canary_llm_confidence_blocked"
+    elif not checks["review_safe"]:
+        status = "auto_general_canary_review_blocked"
+    elif not checks["low_risk_general_reply"]:
+        status = "auto_general_canary_risk_blocked"
+    elif not checks["specialist_tools_absent"]:
+        status = "auto_general_canary_specialist_tool_blocked"
+    elif not checks["protected_mutation_absent"]:
+        status = "auto_general_canary_protected_action_blocked"
+    elif not checks["hostile_content_absent"]:
+        status = "auto_general_canary_hostile_content_blocked"
+    else:
+        status = "auto_general_canary_eligible"
+    return {
+        "allowed": allowed,
+        "status": status,
+        "checks": checks,
+        "contains_identity_values": False,
+        "contains_secret_values": False,
     }
 
 
