@@ -493,10 +493,11 @@ IMPLEMENTATION_SOURCE_MAP = {
     },
     "pig_observation_management_intent": {
         "label": "Herdmaster Pig Observations And Management Intents",
-        "status": "candidate_built_owner_gated_migration",
+        "status": "data_model_candidate_unapplied_capture_pending",
         "summary": (
             "Append-only factual pig observations, structurally separate advisory management "
-            "intents, owner-only capture routes, idempotency and no-current-state-mutation rails."
+            "intents, idempotency and no-current-state-mutation rails. Capture routes and services are "
+            "a separately approved lifecycle slice and are intentionally absent from this data-model candidate."
         ),
         "keywords": [
             "pig observation",
@@ -515,18 +516,9 @@ IMPLEMENTATION_SOURCE_MAP = {
             "docs/09-vault-brain/06-data/FARM_DATA_MODEL.md",
             "docs/09-vault-brain/00-governance/SOURCE_OF_TRUTH_RULES.md",
         ],
-        "app_routes": [
-            "/api/pig-weights/pigs/<pig_id>/observations",
-            "/api/pig-weights/pigs/<pig_id>/management-intents",
-        ],
-        "code_paths": [
-            "modules/pig_weights/pig_observation_capture_service.py",
-            "modules/pig_weights/pig_weights_controller.py",
-            "modules/pig_weights/pig_weights_routes.py",
-        ],
+        "app_routes": [],
+        "code_paths": [],
         "tests": [
-            "tests/test_pig_observation_capture.py",
-            "tests/test_pig_observation_capture_postgres.py",
             "tests/test_pig_observation_event_migration.py",
             "tests/test_pig_management_intent_event_migration.py",
             "tests/test_owner_access.py",

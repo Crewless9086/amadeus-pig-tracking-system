@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 import json
@@ -1090,6 +1091,166 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(normalized)
         self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
         self.assertEqual({item["op"] for item in artifact["protected_operations"]}, {"apply_migration", "live_canary"})
+
+    def test_protected_pause_requires_exact_bound_candidate_in_runtime_gate(self):
+        revision = "a" * 40
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "summary": "Code passes; migration application and the live canary remain owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [
+                {"id": "code", "status": "passed", "evidence": ["Focused tests passed."]},
+                {"id": "operations", "status": "pending", "evidence": ["Owner-authorized migration and live canary remain pending."]},
+            ],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application and the live canary.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+            "tested_revision": revision,
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(artifact["recommended_owner_decision"], "approve_final_release")
+
+    def test_stale_candidate_pause_fails_closed_without_normalizing(self):
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "summary": "Code passes; migration application remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [{"id": "operations", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]}],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": "abc123def456",
+            "candidate_fingerprint": "current-candidate",
+            "evidence_lineage": {
+                "source_commit": "def456abc123",
+                "candidate_fingerprint": "stale-candidate",
+            },
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
+    def test_candidate_binding_classifier_is_pure_no_mutation(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "tested_revision": revision,
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        matched = execution_bridge._protected_pause_has_exact_candidate_binding(artifact)
+
+        self.assertTrue(matched)
+        self.assertEqual(artifact, original)
+
+    def test_candidate_binding_rejects_missing_tested_revision_without_mutation(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        matched = execution_bridge._protected_pause_has_exact_candidate_binding(artifact)
+
+        self.assertFalse(matched)
+        self.assertEqual(artifact, original)
+
+    def test_missing_tested_revision_pause_fails_closed_in_runtime_gate(self):
+        revision = "a" * 40
+        artifact = _successful_stage_payload("reviewer")
+        artifact.update({
+            "summary": "Code passes; migration application remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "changed_files": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [{"id": "operations", "status": "pending", "evidence": ["Owner-authorized migration remains unapplied."]}],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "61 tests passed"}],
+            "next_action": "Obtain owner authorization for migration application.",
+            "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        })
+
+        result = execution_bridge._agent_quality_gate("reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+
+    def test_candidate_binding_rejects_one_character_prefix(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "tested_revision": "a",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+
+        self.assertFalse(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+
+    def test_candidate_binding_rejects_short_prefix_and_malformed_revision(self):
+        revision = "a" * 40
+        for tested_revision in (revision[:7], "not-a-sha"):
+            with self.subTest(tested_revision=tested_revision):
+                artifact = {
+                    "source_commit": revision,
+                    "candidate_fingerprint": "candidate-123",
+                    "tested_revision": tested_revision,
+                    "evidence_lineage": {
+                        "source_commit": revision,
+                        "candidate_fingerprint": "candidate-123",
+                    },
+                }
+
+                self.assertFalse(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+
+    def test_candidate_binding_rejects_mismatched_full_sha(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "candidate_fingerprint": "candidate-123",
+            "tested_revision": "b" * 40,
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+
+        self.assertFalse(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
 
     def test_product_review_pending_current_diff_defect_does_not_normalize(self):
         artifact = {
