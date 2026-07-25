@@ -49,6 +49,8 @@ Test evidence must include exact commands and results.
 
 For PR-backed missions it must also include the expected PR head SHA and the exact tested SHA. Tests from a base branch, stale branch, or different PR are not evidence for the current mission.
 
+A protected-operation pause may be normalized to a code-review approval only when the artifact has a non-empty exact tested SHA matching its packaged candidate and lineage. Missing, stale, ambiguous, or mismatched tested-revision evidence fails closed; this classification does not authorize the protected operation.
+
 "Looks good" is not evidence.
 
 ## Release Evidence

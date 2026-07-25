@@ -32,6 +32,16 @@ Farm record writes require approved backend paths and audit evidence.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
 
+## Pig Management Intent Event Contract
+
+`pig_management_intent_events` is an additive, unapplied advisory planning rail, structurally separate from factual observations and from every operational action. Each row is tied to one canonical `pig_id`, has intended and recording timestamps, author/source provenance, a constrained intent type, a non-empty rationale, confidence, optional same-pig observation evidence, a caller idempotency key, and an optional same-pig supersession link.
+
+- Every intent status is `advisory`; an intent cannot itself sell, reserve, move, cull, breed, treat, change purpose, or change lifecycle/current state.
+- Events are append-only. Corrections are new intent events linked by `supersedes_management_intent_event_id`; normal updates and deletes are database-blocked. Any cited observation or superseded intent must belong to the same pig.
+- The table has RLS enabled and this data-model slice introduces no browser policy, route, service, UI, or writer integration. Future protected capture and execution paths need separately approved permission, audit, and owner-approval contracts.
+- Herdmaster may consume an intent only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; no intent can trigger an automated farm or commercial write.
+- Applying this migration, any future rollback after application, and any migration/database action remain separately owner-approved. No rollback migration is authorized by this candidate.
+
 ## Pig Lifecycle Event Contract
 
 `pig_lifecycle_events` is an additive, unapplied audit rail for immutable lifecycle evidence linked to one canonical `pig_id`. Each row has a controlled lifecycle-event type, effective and recorded timestamps, actor and source provenance, an object-shaped payload, a caller idempotency key, and an optional correction link.
@@ -81,4 +91,5 @@ The current canonical `pig_current_state`/`pigs` read projection does not supply
 - `docs/03-google-sheets/FORMULA_LOGIC.md`
 - `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 - `supabase/migrations/202607200001_create_pig_observation_events.sql` (unapplied; application requires explicit owner approval)
+- `supabase/migrations/202607220001_complete_pig_observation_and_management_intent_events.sql` (unapplied; application requires explicit owner approval)
 - `supabase/migrations/202607210001_create_pig_lifecycle_events.sql` (unapplied; application requires explicit owner approval)

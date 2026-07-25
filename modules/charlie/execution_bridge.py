@@ -4107,7 +4107,11 @@ def _agent_quality_gate(agent, artifact):
         _normalize_verifier_protected_operation_pending(agent, artifact)
     if agent == "qa_red_team":
         _normalize_verifier_protected_operation_pending(agent, artifact)
-    _normalize_separate_protected_operation_decision(agent, artifact)
+    _normalize_separate_protected_operation_decision(
+        agent,
+        artifact,
+        require_candidate_binding=True,
+    )
     errors = artifact.get("errors") if isinstance(artifact.get("errors"), list) else []
     bugs = artifact.get("bugs") if isinstance(artifact.get("bugs"), list) else []
     errors = _blocking_artifact_items(agent, artifact, errors)
@@ -4912,7 +4916,32 @@ def _normalize_authoritative_diff_followups(agent, artifact):
     return normalized
 
 
-def _normalize_separate_protected_operation_decision(agent, artifact):
+def _protected_pause_has_exact_candidate_binding(artifact):
+    """Return whether a review artifact is bound to one packaged candidate.
+
+    A protected-operation pause can be separated from a code-review decision
+    only after the runner has bound the review artifact to its candidate.  The
+    check is deliberately local and pure: it neither reads live state nor
+    grants authority for the protected operation.
+    """
+    artifact = artifact if isinstance(artifact, dict) else {}
+    lineage = artifact.get("evidence_lineage")
+    if not isinstance(lineage, dict):
+        return False
+    candidate = str(artifact.get("candidate_fingerprint") or "").strip()
+    lineage_candidate = str(lineage.get("candidate_fingerprint") or "").strip()
+    revision = str(artifact.get("source_commit") or "").strip().lower()
+    lineage_revision = str(lineage.get("source_commit") or "").strip().lower()
+    if not candidate or candidate != lineage_candidate or not revision or revision != lineage_revision:
+        return False
+    tested = str(artifact.get("tested_revision") or "").strip().lower()
+    # A missing test revision is incomplete evidence, not an implicit match.
+    # Protected-operation pauses must remain blocking until a reviewer proves
+    # that its checks covered this exact packaged candidate.
+    return bool(tested) and (tested.startswith(revision) or revision.startswith(tested))
+
+
+def _normalize_separate_protected_operation_decision(agent, artifact, *, require_candidate_binding=False):
     """Keep a protected migration application from masquerading as a PR defect.
 
     Review agents occasionally use ``pause`` for the later act of applying a
@@ -4924,6 +4953,8 @@ def _normalize_separate_protected_operation_decision(agent, artifact):
     if agent not in {"product_reviewer", "security_reviewer", "evidence_reviewer", "reviewer"}:
         return False
     if not isinstance(artifact, dict):
+        return False
+    if require_candidate_binding and not _protected_pause_has_exact_candidate_binding(artifact):
         return False
     decision = str(artifact.get("recommended_owner_decision") or "").strip().lower()
     if decision != "pause":
@@ -5486,6 +5517,11 @@ def _protected_operation_pause_only(agent, artifact):
         "evidence_reviewer", "reviewer",
     }
     if agent not in review_agents or not isinstance(artifact, dict):
+        return []
+    # Runner-produced artifacts carry lineage.  Never let a stale or malformed
+    # lineage take the legacy pause path below; older artifacts without lineage
+    # remain readable until their targeted recheck creates bound evidence.
+    if isinstance(artifact.get("evidence_lineage"), dict) and not _protected_pause_has_exact_candidate_binding(artifact):
         return []
     if str(artifact.get("recommended_owner_decision") or "").strip().lower() != "pause":
         return []
