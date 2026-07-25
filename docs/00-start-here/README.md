@@ -4,10 +4,12 @@ This folder is the active entry point for future Cursor/Codex sessions.
 
 Read in this order:
 
-1. `OPERATING_STATUS.md` - concise built/merged/deployed/operational status,
-   faults, containment and owner handoff.
-2. `AGENT_PORTFOLIO_STATUS.md` - per-agent doctrine, implementation, delivery,
-   authority, fault, candidate and evidence-currency matrix.
+1. `AGENT_PORTFOLIO_STATUS.md` - newest dated portfolio reconciliation,
+   including per-agent doctrine, implementation, delivery, authority, active
+   blockers and the complete open-PR triage register.
+2. `OPERATING_STATUS.md` - the older detailed incident/status snapshot plus
+   later bounded addenda. Preserve its historical evidence cut; do not treat
+   every row as live mission, PR or lease state.
 3. `CURRENT_STATE.md` - longer historical state and system context.
 4. `NEXT_STEPS.md` - the current priority queue.
 5. `WORKFLOW.md` - how owner notes become scoped plans and phases.
