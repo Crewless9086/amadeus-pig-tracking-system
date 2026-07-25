@@ -488,6 +488,13 @@ def _attach_sam_live_stock_review_event(result, raw_payload, *, event_source="sa
         review,
         event_source=event_source,
     )
+    transition = decision.get("transition_visibility") if isinstance(decision.get("transition_visibility"), dict) else {}
+    transition_status = str(transition.get("status") or "").strip()
+    if transition_status:
+        event["recommended_action"] = transition_status
+        event["decision_json"]["reason"] = decision.get("reason") or transition_status
+        event["decision_json"]["transition_visibility"] = transition
+        event["review_json"]["transition_reason"] = transition_status
     learning_result, learning_status = record_sam_live_stock_review_event(event)
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
     claim = delivery.get("claim") if isinstance(delivery.get("claim"), dict) else {}
@@ -518,6 +525,40 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if packet and review.get("escalation_required"):
         sent, status_code = send_sam_live_stock_owner_review_telegram(event)
         return {"attempted": True, "type": "canonical_owner_card", "legacy_reason": "escalation", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}
+    if decision.get("conversation_ownership") == "AUTO_GENERAL":
+        transition = decision.get("transition_visibility") if isinstance(decision.get("transition_visibility"), dict) else {}
+        transition_status = str(transition.get("status") or "").strip()
+        if transition_status == "routine_reply_confirmed_sent":
+            return {
+                "attempted": False,
+                "status": "auto_general_confirmed_sent_no_telegram",
+                "review_event_id": learning_result.get("review_event_id"),
+            }
+        if transition_status == "routine_reply_replay_withheld":
+            return {
+                "attempted": False,
+                "status": "auto_general_replay_owned_no_duplicate_telegram",
+                "review_event_id": learning_result.get("review_event_id"),
+            }
+        if transition_status in {"routine_reply_delivery_failed", "routine_reply_delivery_ambiguous"}:
+            sent, status_code = send_sam_live_stock_owner_review_telegram(event)
+            return {
+                "attempted": True,
+                "type": "delivery_exception",
+                "reason": transition_status,
+                "status_code": status_code,
+                "status": sent.get("status"),
+                "sent": sent.get("success") is True,
+            }
+        sent, status_code = send_sam_live_stock_owner_review_telegram(event)
+        return {
+            "attempted": True,
+            "type": "owner_review",
+            "reason": "routine_reply_waiting_for_owner",
+            "status_code": status_code,
+            "status": sent.get("status"),
+            "sent": sent.get("success") is True,
+        }
     if _sam_live_stock_owner_review_notification_needed(event):
         sent, status_code = send_sam_live_stock_owner_review_telegram(event)
         return {"attempted": True, "type": "owner_review", "status_code": status_code, "status": sent.get("status"), "sent": sent.get("success") is True}

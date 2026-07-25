@@ -2682,5 +2682,394 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["reserves_stock"])
 
+    def test_conversation_1994_shape_recovers_referral_and_uses_zero_specialist_tools(self):
+        calls = {"intake": 0, "availability": 0, "send": 0}
+
+        def intake_loader(_conversation_id):
+            calls["intake"] += 1
+            return {"success": True}
+
+        def availability_loader():
+            calls["availability"] += 1
+            return [exact_eligible_row(pig_id=f"PIG-{index}") for index in range(52)]
+
+        def sender(*_args):
+            calls["send"] += 1
+            return {"success": True}
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=759168596,
+                content="Hello! Can I get more info on this?",
+                conversation={
+                    "id": 1994,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699, "name": "Henry", "phone_number": "+27000000000"},
+                content_attributes={
+                    "referral": {
+                        "source_type": "ad",
+                        "source_id": "120248031275440407",
+                        "headline": "Amadeus Farm - Sustainable Piglets & Produce",
+                        "body": "Meet Ms. Piggy and her fearless family! This strong mother has nurtured her litter of 10 piglets.",
+                    },
+                },
+            ),
+            environ={},
+            intake_context_loader=intake_loader,
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=availability_loader,
+            chatwoot_sender=sender,
+        )
+
+        decision = result["sam_decision"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_auto_general_conversation_processed")
+        self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
+        self.assertEqual(decision["sales_lane"], "unclear")
+        self.assertEqual(decision["specialist_tools_called"], [])
+        self.assertEqual(decision["availability"]["matched_count"], 0)
+        self.assertEqual(decision["match_packet"], {})
+        self.assertEqual(calls, {"intake": 0, "availability": 0, "send": 0})
+        self.assertIn("Ms. Piggy", decision["suggested_reply_text"])
+        self.assertIn("litter of piglets", decision["suggested_reply_text"])
+        self.assertFalse(decision["handled_autonomously"])
+        self.assertFalse(decision["clarification_asked"])
+        self.assertFalse(decision["specialist_lane_selected"])
+        self.assertFalse(decision["owner_escalation_required"])
+        self.assertTrue(decision["owner_action_required"])
+        self.assertEqual(decision["reason"], "routine_reply_waiting_for_owner")
+        self.assertEqual(
+            decision["transition_visibility"]["notification_class"],
+            "owner_review",
+        )
+        self.assertFalse(decision["customer_send_authorized"])
+        self.assertFalse(result["sent"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+
+    def test_missing_referral_uses_exact_one_question_general_draft(self):
+        result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                content="Hello! Can I get more info on this?",
+                conversation={"id": 1994, "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}},
+                sender={"id": 699, "name": "Henry"},
+            ),
+            environ={},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: self.fail("general message called availability"),
+            intake_context_loader=lambda *_args: self.fail("general message called order intake"),
+        )
+        reply = result["sam_decision"]["suggested_reply_text"]
+        self.assertEqual(
+            reply,
+            "Hi Henry! Of course. Are you asking about the piglets in the post, "
+            "or was there something else on our page you wanted to know more about?",
+        )
+        self.assertEqual(reply.count("?"), 1)
+        self.assertTrue(result["sam_decision"]["clarification_asked"])
+
+    def test_routine_majority_multiturn_states_do_not_force_a_lane(self):
+        general_turns = [
+            ("Hi", "How can I help"),
+            ("I saw your piglet post.", "piglet post"),
+            ("Can I get more info on this?", "Are you asking about the piglets"),
+            ("They look very healthy. How old are they?", "need to check that detail"),
+            ("Thanks, I am still just looking.", "No problem at all"),
+        ]
+        for message, expected in general_turns:
+            with self.subTest(message=message):
+                result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                    inbound_payload(content=message),
+                    environ={},
+                    conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                    availability_loader=lambda: self.fail("general turn called availability"),
+                    intake_context_loader=lambda *_args: self.fail("general turn called order intake"),
+                )
+                decision = result["sam_decision"]
+                self.assertEqual(status, 200)
+                self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
+                self.assertEqual(decision["specialist_tools_called"], [])
+                self.assertFalse(decision["owner_escalation_required"])
+                self.assertIn(expected, decision["suggested_reply_text"])
+
+        livestock_calls = {"availability": 0}
+
+        def availability():
+            livestock_calls["availability"] += 1
+            return []
+
+        livestock, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I may want two males around 30 kg."),
+            intake_context_loader=lambda *_args: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=availability,
+        )
+        self.assertEqual(livestock["sam_decision"]["sales_lane"], "live_stock_sales")
+        self.assertEqual(livestock_calls["availability"], 1)
+
+    def test_topic_change_and_human_request_have_independent_outcomes(self):
+        meat_calls = {"availability": 0}
+        meat, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I want half a carcass, Set A."),
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{"id": "old", "message_type": 0, "content": "I wanted two male piglets."}],
+            },
+            availability_loader=lambda: meat_calls.__setitem__("availability", meat_calls["availability"] + 1),
+        )
+        self.assertEqual(meat["status"], "sam_live_stock_wrong_lane_guard")
+        self.assertEqual(meat_calls["availability"], 0)
+
+        human, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can I speak to Charl please?"),
+            environ={},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: self.fail("human request called availability"),
+        )
+        decision = human["sam_decision"]
+        self.assertFalse(decision["handled_autonomously"])
+        self.assertTrue(decision["owner_escalation_required"])
+        self.assertEqual(decision["next_action"], "escalate")
+        self.assertEqual(
+            decision["conversation_review"]["escalation_reasons"],
+            ["customer_explicitly_requested_human"],
+        )
+
+    def test_empty_requirements_never_match_all_available_animals(self):
+        availability = sam_live_stock_runtime.summarize_live_stock_availability(
+            [exact_eligible_row(pig_id=f"PIG-{index}") for index in range(52)],
+            {"sales_lane": "unclear", "quantity": "", "category": "", "sex": "", "weight_range": ""},
+        )
+        packet = sam_live_stock_runtime.build_live_stock_match_packet(
+            {"sales_lane": "unclear", "quantity": "", "category": "", "sex": "", "weight_range": ""},
+            availability,
+        )
+        self.assertEqual(availability["matched_count"], 0)
+        self.assertEqual(packet["exact_match_count"], 0)
+        self.assertEqual(packet["matched_sample"], [])
+        self.assertEqual(packet["selected_pig_ids"], [])
+        self.assertFalse(packet["matching_gate"]["minimum_usable_constraints"])
+
+    def test_llm_wrong_lane_returns_to_short_auto_general_fallback(self):
+        result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="Can I get more info on this?", sender={"id": 99, "name": "Henry"}),
+            environ={
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+            },
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: self.fail("wrong-lane LLM result called availability"),
+            llm_drafter=lambda *_args: {
+                "reply_text": "We have 52 piglets available for R450.",
+                "lane": "live_stock_sales",
+                "confidence": 0.99,
+            },
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(decision["llm_draft"]["status"], "llm_wrong_lane_returned_to_auto_general")
+        self.assertEqual(decision["reply_source"], "deterministic_auto_general_fallback")
+        self.assertNotIn("52", decision["suggested_reply_text"])
+        self.assertNotIn("R450", decision["suggested_reply_text"])
+        self.assertFalse(decision["owner_escalation_required"])
+
+    def test_auto_general_canary_is_separate_disabled_exact_identity_boundary(self):
+        policy = sam_live_stock_runtime.sam_live_stock_webhook_policy({})
+        general = policy["auto_general_canary"]
+        self.assertFalse(general["enabled"])
+        self.assertFalse(general["global_enabled"])
+        self.assertTrue(general["requires_all_three_exact_identity_matches"])
+        self.assertTrue(general["requires_reviewed_llm_result"])
+        self.assertTrue(general["requires_persistent_idempotency_claim_before_send"])
+        self.assertEqual(general["append_only_terminal_outcomes"], ["confirmed", "failed", "ambiguous"])
+        self.assertTrue(general["specialist_and_protected_actions_disabled"])
+        self.assertTrue(general["telegram_exception_only"])
+
+    def test_auto_general_canary_claims_before_fake_send_and_records_terminal_outcome(self):
+        order = []
+        inbound = {
+            "conversation_id": "TEST-GENERAL",
+            "contact_id": "TEST-CONTACT",
+            "inbox_id": "TEST-INBOX",
+            "content": "Hello",
+        }
+        decision = {
+            "conversation_ownership": "AUTO_GENERAL",
+            "suggested_reply_text": "Hi! How can I help you today?",
+            "reply_source": "llm_auto_general_reply_draft",
+            "should_reply": True,
+            "llm_draft": {"used": True, "confidence": 0.99},
+            "specialist_lane_selected": False,
+            "specialist_tools_called": [],
+            "owner_escalation_required": False,
+            "creates_order": False,
+            "creates_quote": False,
+            "reserves_stock": False,
+            "changes_stock": False,
+            "writes_farm_data": False,
+        }
+        review = {"safe_to_send": True, "escalation_required": False}
+        source = {
+            "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "TEST-GENERAL",
+            "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "TEST-CONTACT",
+            "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "TEST-INBOX",
+        }
+
+        delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            inbound,
+            decision,
+            review,
+            source,
+            delivery_claim=lambda *_args: (
+                order.append("claim")
+                or {"success": True, "created": True, "review_event_id": "CLAIM-1"}
+            ),
+            chatwoot_sender=lambda *_args: (
+                order.append("fake_send")
+                or {"success": True, "status_code": 200}
+            ),
+            delivery_evidence_recorder=lambda _claim, outcome: (
+                order.append("evidence:" + outcome["delivery_status"])
+                or {"success": True, "status": "recorded"}
+            ),
+        )
+
+        self.assertEqual(order, ["claim", "fake_send", "evidence:chatwoot_send_confirmed"])
+        self.assertTrue(delivery["sent"])
+        self.assertTrue(delivery["automatic_retry_prohibited"])
+        self.assertTrue(delivery["canary"]["allowed"])
+
+    def test_auto_general_disabled_and_wrong_allowlist_remain_actionable_without_tools(self):
+        payload = inbound_payload(
+            content="Hello! Can I get more info on this?",
+            conversation={"id": 1994, "inbox": {"id": 77, "channel_type": "Channel::FacebookPage"}},
+            content_attributes={
+                "source_id": "facebook-post-ms-piggy",
+                "source_name": "Ms. Piggy and her litter of piglets",
+            },
+        )
+        sources = (
+            {},
+            {
+                "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+                "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "different",
+                "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "99",
+                "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "77",
+            },
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                sends = []
+                result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                    payload,
+                    environ=source,
+                    intake_context_loader=lambda *_args: self.fail("general message called intake"),
+                    conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                    availability_loader=lambda: self.fail("general message called availability"),
+                    llm_drafter=lambda *_args: {
+                        "reply_text": "Hi Henry! What would you like to know about Ms. Piggy and her litter of piglets?",
+                        "confidence": 0.99,
+                    },
+                    chatwoot_sender=lambda *_args: sends.append(True),
+                )
+                decision = result["sam_decision"]
+                self.assertEqual(status_code, 200)
+                self.assertEqual(decision["conversation_ownership"], "AUTO_GENERAL")
+                self.assertEqual(decision["specialist_tools_called"], [])
+                self.assertEqual(decision["reason"], "routine_reply_waiting_for_owner")
+                self.assertTrue(decision["owner_action_required"])
+                self.assertFalse(decision["handled_autonomously"])
+                self.assertFalse(result["sent"])
+                self.assertEqual(sends, [])
+
+    def test_auto_general_authorized_send_replay_and_ambiguous_outcome_transitions(self):
+        payload = inbound_payload(
+            content="Hi",
+            conversation={"id": 2401, "inbox": {"id": 77, "channel_type": "Channel::Whatsapp"}},
+        )
+        source = {
+            "SAM_LIVE_STOCK_BACKEND_LLM_ENABLED": "1",
+            "SAM_LIVE_STOCK_BACKEND_LLM_MODEL": "test-model",
+            "OPENAI_API_KEY": "test-key",
+            "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2401",
+            "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "99",
+            "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "77",
+        }
+        created = True
+        sends = []
+        evidence = []
+
+        def claim(*_args):
+            return {
+                "success": True,
+                "created": created,
+                "review_event_id": "GENERAL-CLAIM",
+                "prior_delivery_confirmed": not created,
+            }
+
+        def run(sender):
+            return sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+                payload,
+                environ=source,
+                intake_context_loader=lambda *_args: self.fail("general greeting called intake"),
+                conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+                availability_loader=lambda: self.fail("general greeting called availability"),
+                llm_drafter=lambda *_args: {
+                    "reply_text": "Hi! How can I help you today?",
+                    "confidence": 0.99,
+                },
+                routine_delivery_claim=claim,
+                chatwoot_sender=sender,
+                routine_delivery_evidence_recorder=lambda _claim, outcome: (
+                    evidence.append(outcome.copy()) or {"success": True, "status": "recorded"}
+                ),
+            )
+
+        result, _ = run(lambda *_args: sends.append("sent") or {"status_code": 200})
+        decision = result["sam_decision"]
+        self.assertEqual(sends, ["sent"])
+        self.assertTrue(result["sent"])
+        self.assertTrue(decision["handled_autonomously"])
+        self.assertFalse(decision["owner_escalation_required"])
+        self.assertEqual(decision["reason"], "routine_reply_confirmed_sent")
+        self.assertEqual(evidence[-1]["delivery_status"], "chatwoot_send_confirmed")
+
+        created = False
+        replay, _ = run(lambda *_args: sends.append("duplicate"))
+        self.assertEqual(sends, ["sent"])
+        self.assertFalse(replay["sent"])
+        self.assertEqual(
+            replay["sam_decision"]["reason"],
+            "routine_reply_replay_withheld",
+        )
+
+        created = True
+
+        def ambiguous_sender(*_args):
+            sends.append("ambiguous")
+            raise TimeoutError("confirmation unavailable")
+
+        ambiguous, _ = run(ambiguous_sender)
+        self.assertEqual(sends, ["sent", "ambiguous"])
+        self.assertFalse(ambiguous["sent"])
+        self.assertEqual(
+            ambiguous["sam_decision"]["reason"],
+            "routine_reply_delivery_ambiguous",
+        )
+        self.assertTrue(ambiguous["sam_decision"]["owner_action_required"])
+        self.assertTrue(
+            ambiguous["sam_decision"]["routine_reply_delivery"]["automatic_retry_prohibited"]
+        )
+        self.assertEqual(evidence[-1]["delivery_status"], "chatwoot_send_outcome_unknown")
+
 if __name__ == "__main__":
     unittest.main()
