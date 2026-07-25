@@ -311,5 +311,43 @@ class SamDeliveryTruthTests(unittest.TestCase):
         self.assertTrue(chain[-1]["customer_send_confirmed"])
 
 
+    def test_meat_attempt_requires_and_binds_exact_account_identity(self):
+        inbound = {
+            "account_id": "147387",
+            "conversation_id": "2019",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "message_id": "IN-1",
+        }
+        decision = {"suggested_reply_text": "Which collection town should I note?"}
+        review = {"review_event_id": "SAM-MEAT-REVIEW-1"}
+        first = truth.build_delivery_attempt(
+            inbound, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        replay = truth.build_delivery_attempt(
+            inbound, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        changed_account = truth.build_delivery_attempt(
+            {**inbound, "account_id": "147388"}, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        missing = truth.build_delivery_attempt(
+            {**inbound, "account_id": ""}, decision, review,
+            response_class="sam_meat_routine_reply",
+            require_account_identity=True,
+        )
+        self.assertTrue(first["success"])
+        self.assertEqual(first["account_id"], "147387")
+        self.assertEqual(first["delivery_attempt_id"], replay["delivery_attempt_id"])
+        self.assertNotEqual(first["delivery_attempt_id"], changed_account["delivery_attempt_id"])
+        self.assertFalse(missing["success"])
+        self.assertIn("account_id", missing["missing_fields"])
+
+
 if __name__ == "__main__":
     unittest.main()

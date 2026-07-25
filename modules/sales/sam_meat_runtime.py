@@ -43,6 +43,11 @@ from modules.sales.conversation_learning import (
     record_learning_event_from_sam_result,
     record_sam_meat_launch_review_packet,
 )
+from modules.sales.sam_delivery_truth import (
+    CHATWOOT_ACCEPTED_UNVERIFIED,
+    classify_chatwoot_response,
+    classify_dispatch_exception,
+)
 from modules.sales.sam_farm_knowledge import (
     load_sam_farm_knowledge,
     meat_sales_knowledge,
@@ -177,6 +182,8 @@ def handle_sam_meat_chatwoot_inbound(
     launch_packet_builder=None,
     launch_evidence_recorder=None,
     launch_truth_readers=None,
+    routine_delivery_claim=None,
+    routine_delivery_evidence_recorder=None,
 ):
     source = environ if environ is not None else os.environ
     control_policy = sam_meat_control_policy()
@@ -431,50 +438,75 @@ def handle_sam_meat_chatwoot_inbound(
     except Exception as exc:
         chatwoot_hygiene = _integration_failure("chatwoot_hygiene_sync_failed", exc)
 
+    launch_packet, launch_evidence = _prepare_sam_meat_launch_evidence(
+        inbound,
+        decision,
+        lead_payload,
+        launch_packet_builder=launch_packet_builder,
+        launch_evidence_recorder=launch_evidence_recorder,
+        launch_truth_readers=launch_truth_readers,
+    )
     send_result = {}
+    delivery_claim = {}
+    delivery_outcome = {}
     document_send_result = {}
     sent = False
     document_sent = False
     send_status = "autoreply_not_enabled"
     document_send_status = "not_requested"
-    if decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)) and control_policy["customer_public_output_enabled"]:
+    send_enabled = (
+        decision["should_reply"]
+        and _truthy(source.get(AUTOREPLY_ENABLED_ENV))
+        and control_policy["customer_public_output_enabled"]
+    )
+    if send_enabled:
         if inbound["whatsapp_window_state"] != "open":
             send_status = "whatsapp_window_not_open"
-            document_send_status = "whatsapp_window_not_open"
+        elif not launch_evidence.get("persisted"):
+            send_status = "review_evidence_not_persisted"
+        elif routine_delivery_claim is None or routine_delivery_evidence_recorder is None:
+            send_status = "delivery_truth_integration_unavailable"
         else:
-            sender = chatwoot_sender or _send_chatwoot_message
-            _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_attempted", decision["reply_text"], {
-                "conversation_id": inbound["conversation_id"],
-            })
-            try:
-                send_result = sender(inbound["conversation_id"], decision["reply_text"])
-                sent = True
-                send_status = "sent"
-                _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_sent", decision["reply_text"], send_result)
-                if decision.get("document_send_requested"):
-                    try:
-                        document_payload = {"conversation_id": inbound["conversation_id"]}
-                        if decision.get("document_force_resend_requested"):
-                            document_payload["force_resend"] = True
-                        document_send_result, document_status_code = send_meat_estimated_quote_to_chatwoot(
-                            decision.get("lead_id"),
-                            document_payload,
-                            environ=source,
-                            chatwoot_sender=document_sender,
-                        )
-                        document_sent = bool(document_send_result.get("sent"))
-                        document_send_status = document_send_result.get("status") or f"status_{document_status_code}"
-                    except Exception as exc:
-                        document_send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
-                        document_send_status = "document_send_failed"
-            except Exception as exc:
-                send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
-                send_status = "chatwoot_send_failed"
-                document_send_status = "skipped_autoreply_failed"
-                _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_failed", decision["reply_text"], send_result)
+            delivery_claim = routine_delivery_claim(
+                inbound,
+                {**decision, "suggested_reply_text": decision.get("reply_text", "")},
+                {
+                    "review_event_id": launch_evidence.get("review_event_id", ""),
+                    "owner_action_identity": _clean(
+                        (launch_packet.get("owner_packet") or {}).get("protected_owner_decision"),
+                        120,
+                    ),
+                },
+            )
+            if delivery_claim.get("success") and delivery_claim.get("created"):
+                sender = chatwoot_sender or _send_chatwoot_message
+                try:
+                    send_result = sender(inbound["conversation_id"], decision["reply_text"])
+                    delivery_outcome = classify_chatwoot_response(send_result)
+                except Exception as exc:
+                    delivery_outcome = classify_dispatch_exception(exc)
+                    send_result = {"error_type": exc.__class__.__name__}
+                delivery_record = routine_delivery_evidence_recorder(
+                    delivery_claim, delivery_outcome
+                )
+                delivery_outcome["evidence_recorded"] = bool(
+                    isinstance(delivery_record, dict)
+                    and delivery_record.get("success") is True
+                )
+                delivery_outcome["transition_created"] = bool(
+                    isinstance(delivery_record, dict)
+                    and delivery_record.get("created") is True
+                )
+                sent = bool(delivery_outcome.get("chatwoot_outgoing_message_id"))
+                send_status = delivery_outcome.get("delivery_state") or "delivery_outcome_unavailable"
+                if not delivery_outcome["evidence_recorded"]:
+                    send_status = "delivery_outcome_evidence_failed"
+            elif delivery_claim.get("success"):
+                send_status = "delivery_attempt_already_claimed_no_retry"
+            else:
+                send_status = delivery_claim.get("status") or "delivery_attempt_claim_failed"
     elif decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
         send_status = "controlled_mode_owner_review_required"
-
     status_code = 200 if record_status in {200, 201, 400} else record_status
     result = {
         "success": record_status in {200, 201, 400},
@@ -499,30 +531,21 @@ def handle_sam_meat_chatwoot_inbound(
         "sent": sent,
         "send_status": send_status,
         "chatwoot_send": send_result,
+        "routine_reply_delivery": {
+            "claim": delivery_claim,
+            "outcome": delivery_outcome,
+            "customer_send_confirmed": delivery_outcome.get("customer_send_confirmed") is True,
+            "handled_autonomously": delivery_outcome.get("handled_autonomously") is True,
+            "automatic_retry_prohibited": bool(delivery_claim),
+        },
         "document_sent": document_sent,
         "document_send_status": document_send_status,
         "document_send": document_send_result,
         "policy": sam_meat_webhook_policy(source),
         **_authority_flags(sent or document_sent, sent or document_sent),
     }
-    try:
-        if launch_packet_builder is None:
-            from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet
-            launch_packet_builder = build_sam_meat_launch_packet
-        packet_messages = list(inbound.get("recent_messages") or [])
-        packet_messages.append({"message_id": inbound.get("message_id"), "message_type": "incoming", "content": inbound.get("content")})
-        launch_packet = launch_packet_builder(packet_messages, conversation_ref=inbound.get("conversation_id"), inbound_event_id=inbound.get("message_id"), lead_id=decision.get("lead_id") or lead_payload.get("lead_id"), truth_readers=launch_truth_readers)
-        recorder = launch_evidence_recorder or record_sam_meat_launch_review_packet
-        launch_evidence, launch_evidence_status = recorder(launch_packet, decision.get("lead_id") or lead_payload.get("lead_id"))
-        persisted = launch_evidence_status == 200 and launch_evidence.get("persisted") is True
-        launch_packet["review_event"]["persisted"] = persisted
-        if launch_packet.get("correction_event", {}).get("event_id"):
-            launch_packet["correction_event"]["persisted"] = persisted
-        result["sam_meat_launch_packet"] = launch_packet
-        result["sam_meat_launch_evidence"] = {"status_code": launch_evidence_status, "status": launch_evidence.get("status"), "success": launch_evidence.get("success") is True, "persisted": persisted, "review_event_id": launch_packet.get("review_event", {}).get("event_id", ""), "correction_event_id": launch_packet.get("correction_event", {}).get("event_id", ""), "sends_customer_message": False, "creates_order": False, "confirms_payment": False, "reserves_meat": False, "allocates_meat": False, "writes_farm_truth": False}
-    except Exception as exc:
-        result["sam_meat_launch_packet"] = {"success": False, "status": "Unavailable", "operationally_testable": False, "error_type": exc.__class__.__name__, "authority": _authority_flags(False, False)}
-        result["sam_meat_launch_evidence"] = {"success": False, "persisted": False, "status": "sam_meat_launch_packet_unavailable", "sends_customer_message": False, "creates_order": False, "confirms_payment": False, "reserves_meat": False, "allocates_meat": False, "writes_farm_truth": False}
+    result["sam_meat_launch_packet"] = launch_packet
+    result["sam_meat_launch_evidence"] = launch_evidence
     try:
         learning_result, learning_status = record_learning_event_from_sam_result(result)
     except Exception as exc:
@@ -822,6 +845,76 @@ def _fresh_lead_id(inbound, facts):
     )
     return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
+
+def _prepare_sam_meat_launch_evidence(
+    inbound,
+    decision,
+    lead_payload,
+    *,
+    launch_packet_builder=None,
+    launch_evidence_recorder=None,
+    launch_truth_readers=None,
+):
+    try:
+        if launch_packet_builder is None:
+            from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet
+            launch_packet_builder = build_sam_meat_launch_packet
+        packet_messages = list(inbound.get("recent_messages") or [])
+        packet_messages.append({
+            "message_id": inbound.get("message_id"),
+            "message_type": "incoming",
+            "content": inbound.get("content"),
+        })
+        lead_id = decision.get("lead_id") or lead_payload.get("lead_id")
+        packet = launch_packet_builder(
+            packet_messages,
+            conversation_ref=inbound.get("conversation_id"),
+            inbound_event_id=inbound.get("message_id"),
+            lead_id=lead_id,
+            truth_readers=launch_truth_readers,
+        )
+        recorder = launch_evidence_recorder or record_sam_meat_launch_review_packet
+        recorded, status_code = recorder(packet, lead_id)
+        persisted = status_code == 200 and recorded.get("persisted") is True
+        packet.setdefault("review_event", {})["persisted"] = persisted
+        if packet.get("correction_event", {}).get("event_id"):
+            packet["correction_event"]["persisted"] = persisted
+        evidence = {
+            "status_code": status_code,
+            "status": recorded.get("status"),
+            "success": recorded.get("success") is True,
+            "persisted": persisted,
+            "review_event_id": packet.get("review_event", {}).get("event_id", ""),
+            "correction_event_id": packet.get("correction_event", {}).get("event_id", ""),
+            "sends_customer_message": False,
+            "creates_order": False,
+            "confirms_payment": False,
+            "reserves_meat": False,
+            "allocates_meat": False,
+            "writes_farm_truth": False,
+        }
+        return packet, evidence
+    except Exception as exc:
+        return (
+            {
+                "success": False,
+                "status": "Unavailable",
+                "operationally_testable": False,
+                "error_type": exc.__class__.__name__,
+                "authority": _authority_flags(False, False),
+            },
+            {
+                "success": False,
+                "persisted": False,
+                "status": "sam_meat_launch_packet_unavailable",
+                "sends_customer_message": False,
+                "creates_order": False,
+                "confirms_payment": False,
+                "reserves_meat": False,
+                "allocates_meat": False,
+                "writes_farm_truth": False,
+            },
+        )
 
 def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None, agent_decision=None):
     source = environ if environ is not None else os.environ

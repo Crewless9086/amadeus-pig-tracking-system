@@ -1919,7 +1919,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
-        handle_inbound.assert_called_once_with({"event": "message_created"})
+        handle_inbound.assert_called_once_with(
+            {"event": "message_created"},
+            routine_delivery_claim=sales_transaction_routes._claim_sam_meat_routine_delivery,
+            routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
+        )
 
     def test_sam_meat_backend_routes_live_stock_handoff_to_live_runtime(self):
         meat_result = {
@@ -2872,6 +2876,26 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertTrue(notification["attempted"])
         self.assertEqual(notification["legacy_reason"], "escalation")
         review_send.assert_called_once()
+
+
+    def test_sam_meat_readiness_probe_denies_anonymous_and_is_disabled_by_default(self):
+        denied = ({"success": False, "status": "owner_read_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=denied), patch.object(
+            sales_transaction_routes, "run_sam_meat_readiness_probe"
+        ) as probe:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-meat/readiness-probe")
+        self.assertEqual(response.status_code, 403)
+        probe.assert_not_called()
+
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), patch.object(
+            sales_transaction_routes,
+            "run_sam_meat_readiness_probe",
+            return_value=({"success": False, "status": "sam_meat_readiness_probe_disabled", "writes_performed": False}, 503),
+        ) as probe:
+            response = self.client.get("/api/sales/channels/chatwoot/sam-meat/readiness-probe")
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(response.get_json()["writes_performed"])
+        probe.assert_called_once_with()
 
 
 if __name__ == "__main__":
