@@ -7,6 +7,7 @@ from modules.auth.owner_access import (
     owner_login_get,
     owner_login_post,
     owner_logout_post,
+    owner_admin_principal,
     owner_status,
     require_owner_admin_access,
     require_owner_page_access,
@@ -26,6 +27,10 @@ from modules.beacon.meta_ads_evidence_import import (
 from modules.beacon.weekly_owner_review import (
     PACKET_ID as WEEKLY_OWNER_REVIEW_PACKET_ID,
     load_post_one_thumbnail,
+)
+from modules.beacon.weekly_owner_review_decisions import (
+    get_weekly_owner_review_decision,
+    record_weekly_owner_review_decision,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -140,12 +145,44 @@ def beacon_content_operations_read():
         return guard
     evidence = gather_beacon_content_evidence()
     candidate = build_beacon_content_candidate(evidence)
+    decision, decision_state = get_weekly_owner_review_decision()
+    candidate["weekly_owner_review_decision"] = decision
+    candidate["weekly_owner_review_decision_state"] = decision_state
     candidate["runtime_status"] = {
         "endpoint_available": True,
         "owner_authenticated_read_succeeded": True,
         **candidate.pop("capability_status"),
     }
     return jsonify(candidate), 200
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/decision",
+    methods=["POST"],
+)
+def beacon_weekly_owner_review_decision(packet_id):
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    if payload.get("packet_id") != packet_id:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_mismatch",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 409
+    result, status = record_weekly_owner_review_decision(
+        payload,
+        owner_identity=owner_admin_principal(),
+    )
+    return jsonify(result), status
 
 
 @app.route(

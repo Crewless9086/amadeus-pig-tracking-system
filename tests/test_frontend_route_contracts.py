@@ -6,6 +6,31 @@ from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
+        template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
+        script = Path("static/js/beaconMedia.js").read_text(encoding="utf-8")
+        css = Path("static/css/beaconMedia.css").read_text(encoding="utf-8")
+        app_source = Path("app.py").read_text(encoding="utf-8")
+
+        for label in ("Approve This Post", "Request Changes", "Reject This Post"):
+            self.assertIn(label, template)
+        self.assertIn("Approval does not publish this post", template)
+        self.assertIn("beacon-packet-decision-actions", css)
+        self.assertIn("@media(max-width:720px)", css)
+        self.assertIn("recordWeeklyOwnerDecision", script)
+        self.assertIn("setWeeklyDecisionDisabled(true)", script)
+        self.assertIn('readState !== "persistence_unavailable"', script)
+        self.assertIn("require_owner_admin_access()", app_source)
+        self.assertIn(
+            '"/api/beacon/weekly-owner-review/<packet_id>/decision"',
+            app_source,
+        )
+        self.assertIn('id="beacon_media_approve"', template)
+        self.assertNotEqual(
+            template.index('id="beacon_media_approve"'),
+            template.index('id="beacon_packet_approve"'),
+        )
+
     def test_charlie_v2_shows_acceptance_and_mission_family_progress(self):
         template = Path("templates/charlie-v2.html").read_text(encoding="utf-8")
         script = Path("static/js/charlieMissionControlV2.js").read_text(encoding="utf-8")

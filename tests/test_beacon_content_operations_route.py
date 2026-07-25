@@ -55,6 +55,52 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         gather.assert_not_called()
 
+    def test_weekly_owner_decision_requires_owner_admin(self):
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        path = (
+            "/api/beacon/weekly-owner-review/"
+            "BEACON-WEEK-2026-07-25-P1-S1/decision"
+        )
+        with patch("app.require_owner_admin_access", return_value=denied), patch(
+            "app.record_weekly_owner_review_decision"
+        ) as record:
+            response = self.client.post(path, json={"packet_id": "x"})
+        self.assertEqual(response.status_code, 403)
+        record.assert_not_called()
+
+    def test_owner_admin_exact_decision_route_records_no_publish_authority(self):
+        path = (
+            "/api/beacon/weekly-owner-review/"
+            "BEACON-WEEK-2026-07-25-P1-S1/decision"
+        )
+        payload = {
+            "packet_id": "BEACON-WEEK-2026-07-25-P1-S1",
+            "decision": "approve",
+        }
+        result = {
+            "success": True,
+            "status": "owner_review_decision_recorded",
+            "decision_status": "owner_approved",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+        }
+        with patch("app.require_owner_admin_access", return_value=None), patch(
+            "app.owner_admin_principal", return_value="owner-admin:test"
+        ), patch(
+            "app.record_weekly_owner_review_decision",
+            return_value=(result, 201),
+        ) as record:
+            response = self.client.post(path, json=payload)
+            get_response = self.client.get(path)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(get_response.status_code, 405)
+        self.assertFalse(response.get_json()["publish"])
+        record.assert_called_once_with(payload, owner_identity="owner-admin:test")
+
     def test_endpoint_is_get_only_and_returns_review_packet_without_authority(self):
         evidence = {
             "historical_posts": {"records": []},
@@ -118,6 +164,11 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertIn("<strong>Supersedes</strong>", script)
         self.assertIn("No publication time scheduled", script)
         self.assertIn("Publish false · Meta call false · upload false", script)
+        self.assertIn('id="beacon_packet_approve"', template)
+        self.assertIn('id="beacon_packet_request_changes"', template)
+        self.assertIn('id="beacon_packet_reject"', template)
+        self.assertIn("Approval does not publish this post", template)
+        self.assertIn("recordWeeklyOwnerDecision", script)
         self.assertNotIn(
             '<strong class="beacon-decision-blocker">${escapeHtml(risk)}</strong>',
             script,

@@ -58,6 +58,35 @@
           <pre id="beacon_packet_copy" class="beacon-packet-copy">Loading exact copy…</pre>
           <div id="beacon_packet_options" class="beacon-recommendation-list"></div>
           <div id="beacon_packet_meta" class="beacon-content-evidence"></div>
+          <section id="beacon_packet_decision" class="beacon-packet-decision" aria-labelledby="beacon_packet_decision_title">
+            <div>
+              <span class="beacon-eyebrow">Exact owner decision</span>
+              <h4 id="beacon_packet_decision_title">Review this exact caption and image order</h4>
+              <p class="beacon-approval-warning">Approval does not publish this post.</p>
+            </div>
+            <div class="beacon-packet-decision-fields">
+              <div class="form-group">
+                <label for="beacon_packet_proposed_datetime">Proposed publication date/time (optional)</label>
+                <input id="beacon_packet_proposed_datetime" type="datetime-local" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_packet_proposed_timezone">Timezone</label>
+                <select id="beacon_packet_proposed_timezone">
+                  <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="beacon_packet_owner_notes">Owner notes or requested changes (optional)</label>
+              <textarea id="beacon_packet_owner_notes" rows="3" maxlength="1200" placeholder="Add a concise review note. Notes are required when requesting changes."></textarea>
+            </div>
+            <div id="beacon_packet_decision_actions" class="beacon-packet-decision-actions">
+              <button type="button" id="beacon_packet_approve" class="button-link">Approve This Post</button>
+              <button type="button" id="beacon_packet_request_changes" class="button-link button-link-secondary">Request Changes</button>
+              <button type="button" id="beacon_packet_reject" class="button-link button-link-danger">Reject This Post</button>
+            </div>
+            <div id="beacon_packet_decision_result" class="beacon-decision-result" aria-live="polite"></div>
+          </section>
         </section>
       </section>
 
