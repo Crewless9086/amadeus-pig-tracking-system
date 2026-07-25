@@ -6,16 +6,18 @@ from modules.beacon.content_operations import build_beacon_content_candidate
 class BeaconContentOperationsTests(unittest.TestCase):
     def test_featured_weekly_packet_uses_only_exact_eligible_media(self):
         assets = []
-        for asset_id in (
-            "BEACON-ASSET-3D9A65053184D8181A",
-            "BEACON-ASSET-983952CB4A95A0BEBB",
-            "BEACON-ASSET-13F7A5168AE3BFF676",
-        ):
+        specs = (
+            ("BEACON-ASSET-3D9A65053184D8181A", 4873496, "2026-07-24T17:29:01.555089+00:00"),
+            ("BEACON-ASSET-983952CB4A95A0BEBB", 5493225, "2026-07-24T17:28:53.392664+00:00"),
+            ("BEACON-ASSET-13F7A5168AE3BFF676", 3453322, "2026-07-24T17:28:43.815487+00:00"),
+        )
+        for asset_id, file_size_bytes, created_at in specs:
             assets.append({
                 "asset_id": asset_id,
-                "title": asset_id,
                 "media_type": "image",
                 "mime_type": "image/jpeg",
+                "file_size_bytes": file_size_bytes,
+                "created_at": created_at,
                 "effective_approval_status": "approved",
                 "effective_public_use_approved": True,
                 "content_hash_provenance": "server_computed_on_upload",
@@ -25,10 +27,13 @@ class BeaconContentOperationsTests(unittest.TestCase):
             "media_assets": {"records": assets},
         })
         packet = result["featured_owner_review_packet"]
-        self.assertEqual(packet["packet_id"], "BEACON-WEEK-2026-07-25-P1")
-        self.assertEqual(packet["media"]["asset_count"], 3)
-        self.assertFalse(packet["authority"]["posts_publicly"])
-        self.assertFalse(packet["authority"]["calls_meta"])
+        self.assertEqual(packet["packet_id"], "BEACON-WEEK-2026-07-25-P1-S1")
+        self.assertEqual(len(packet["media"]["assets"]), 3)
+        self.assertFalse(packet["authority"]["publish"])
+        self.assertFalse(packet["authority"]["Meta_call"])
+        history = result["historical_owner_review_packets"]
+        self.assertEqual(history[0]["packet_id"], "BEACON-WEEK-2026-07-25-P1")
+        self.assertFalse(history[0]["current_reviewable"])
 
     def evidence(self, assets=None, opportunity_status="blocked"):
         return {

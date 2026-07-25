@@ -13,7 +13,10 @@ from modules.beacon.public_livestock_content_policy import (
     enforce_public_livestock_drafts,
     public_livestock_policy_contract,
 )
-from modules.beacon.weekly_owner_review import build_post_one_owner_review
+from modules.beacon.weekly_owner_review import (
+    build_post_one_owner_review,
+    historical_post_one_packets,
+)
 from modules.sales.beacon_campaign import (
     list_beacon_campaign_performance_events,
     list_beacon_manual_post_evidence,
@@ -227,6 +230,7 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         "rejected_current_facts": rejected_facts,
         "ranked_ideas": ideas,
         "featured_owner_review_packet": featured_owner_review_packet,
+        "historical_owner_review_packets": historical_post_one_packets(),
         "owner_review_packet": {
             "packet_id": packet_id,
             "review_status": "awaiting_owner_review",

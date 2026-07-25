@@ -22,7 +22,7 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
             "height": 3000,
         }, 200)
         path = (
-            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1/"
+            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1-S1/"
             "media/BEACON-ASSET-3D9A65053184D8181A"
         )
         response = self.client.get(path)
@@ -39,7 +39,7 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
     ):
         guard.return_value = ({"status": "owner_read_access_denied"}, 403)
         response = self.client.get(
-            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1/"
+            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1-S1/"
             "media/BEACON-ASSET-3D9A65053184D8181A"
         )
         self.assertEqual(response.status_code, 403)
@@ -112,6 +112,12 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertIn('"Not imported"', script)
         self.assertIn('"Not verified"', script)
         self.assertIn("<summary>Technical diagnostics</summary>", script)
+        self.assertIn("Owner-confirmed subject:", script)
+        self.assertIn("camera evidence · timezone unknown", script)
+        self.assertIn("Prior confirmed use: none evidenced", script)
+        self.assertIn("<strong>Supersedes</strong>", script)
+        self.assertIn("No publication time scheduled", script)
+        self.assertIn("Publish false · Meta call false · upload false", script)
         self.assertNotIn(
             '<strong class="beacon-decision-blocker">${escapeHtml(risk)}</strong>',
             script,
