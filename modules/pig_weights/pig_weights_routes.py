@@ -5,6 +5,7 @@ from modules.auth.owner_access import (
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
     require_owner_read_access,
+    owner_admin_principal,
 )
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
@@ -61,6 +62,8 @@ from modules.pig_weights.pig_weights_controller import (
     preview_bulk_weight_entries,
     create_treatment_entry,
     create_movement_entry,
+    capture_pig_observation,
+    capture_pig_management_intent,
 )
 
 pig_weights_bp = Blueprint("pig_weights", __name__)
@@ -228,6 +231,28 @@ def pens():
 @pig_weights_bp.route("/pig/<pig_id>", methods=["GET"])
 def pig_profile(pig_id):
     result, status_code = get_pig_profile(pig_id)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/pigs/<pig_id>/observations", methods=["POST"])
+def pig_observation_capture(pig_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = capture_pig_observation(
+        pig_id, request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/pigs/<pig_id>/management-intents", methods=["POST"])
+def pig_management_intent_capture(pig_id):
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = capture_pig_management_intent(
+        pig_id, request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
     return jsonify(result), status_code
 
 

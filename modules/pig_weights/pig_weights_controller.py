@@ -62,6 +62,10 @@ from modules.pig_weights.purpose_correction_batch_service import (
     create_correction_batch,
     execute_correction_batch,
 )
+from modules.pig_weights.pig_observation_capture_service import (
+    capture_management_intent,
+    capture_observation,
+)
 
 
 def get_status():
@@ -69,6 +73,14 @@ def get_status():
         "module": "pig_weights",
         "status": "running"
     }
+
+
+def capture_pig_observation(pig_id: str, payload: dict, *, actor_id: str):
+    return capture_observation(pig_id, payload, actor_id=actor_id)
+
+
+def capture_pig_management_intent(pig_id: str, payload: dict, *, actor_id: str):
+    return capture_management_intent(pig_id, payload, actor_id=actor_id)
 
 
 def get_dashboard_data():
