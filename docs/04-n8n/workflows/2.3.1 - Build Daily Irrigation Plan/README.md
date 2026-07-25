@@ -4,6 +4,12 @@
 
 Daily irrigation planning workflow.
 
+Target authority and staging are governed by
+[`ROOTLINE_CONTROL_ARCHITECTURE.md`](../../../09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+This legacy planner is evidence to reconcile, not the future operational brain.
+ROOTLINE should ultimately create and revise plans through backend-owned
+policy, identity, audit, and safety rails.
+
 Workflow ID: `UNwNmx0TwtFf8mjo`  
 Status at import: active  
 Imported for docs: 2026-05-18
@@ -48,3 +54,5 @@ Imported for docs: 2026-05-18
 - It writes to irrigation sheets and should be treated as a controlled automation workflow.
 - It is outside Phase 7.3 order lookup, but it belongs in the broader Oom Sakkie operating system documentation.
 - Phase 10.3O status: keep this workflow stable while irrigation command/audit planning is done. Do not expand it into hardware-control behavior in this slice.
+- A generated or appended plan does not approve, dispatch, verify, or complete
+  a valve action.
