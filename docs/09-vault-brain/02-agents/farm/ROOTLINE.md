@@ -47,3 +47,16 @@ Examples of future approved behavior:
 Rootline cannot start/stop irrigation, control hardware, or override manual safety constraints without explicit approved hardware-control workflow.
 
 Rootline must not hide failures, low tank levels, no-power states, pump failures, or skipped irrigation.
+
+## Owner Daily Brief Contract
+
+Rootline may compose the existing read-only weather, forecast, power,
+irrigation, and telemetry-rollup readers into one natural owner brief. The
+brief may recommend `proceed`, `hold`, or `review` per zone, reprioritize
+missed work for owner consideration, and identify a forecast-supported next
+window. Missing, stale, or conflicting evidence must remain `Unavailable` or
+require review; it is never converted to zero, normal, or safe.
+
+The daily brief is owner-only and advisory. Its deterministic authority flags
+must keep hardware control, schedule mutation, telemetry/farm writes, alert
+sends, and Telegram actions false.

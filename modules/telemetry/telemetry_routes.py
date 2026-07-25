@@ -8,6 +8,8 @@ from modules.telemetry.power_service import (
 )
 from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.rollup_service import get_daily_rollup_compare
+from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
+from modules.auth.owner_access import require_owner_read_access
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
     get_current_weather_state,
@@ -104,6 +106,15 @@ def telemetry_weather_alerts_evaluate():
 @telemetry_bp.route("/telemetry/rollups/daily", methods=["GET"])
 def telemetry_daily_rollups():
     result, status_code = get_daily_rollup_compare(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/daily-brief", methods=["GET"])
+def telemetry_rootline_daily_brief():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = get_rootline_daily_brief(request.args.get("date"))
     return jsonify(result), status_code
 
 

@@ -1,5 +1,12 @@
 # Vault Brain Changelog
 
+## 2026-07-25
+
+- Added the Rootline owner-only daily brief contract and implementation map:
+  advisory evidence composition, explicit unavailable/stale/conflict handling,
+  per-zone proceed/hold/review recommendations, and deterministic zero
+  hardware/write/alert authority.
+
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 
 - Recorded that the current canonical pig-master projection lacks genetics, breeding availability, reservation clearance, and source-conflict clearance for match ranking.
