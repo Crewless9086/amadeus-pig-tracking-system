@@ -8,6 +8,28 @@ Later fault addendum: **2026-07-25 15:04 UTC** for the SAM outbound
 accepted-unverified incident only. It does not strengthen any other capability
 or operational state in this snapshot.
 
+Later SAM Telegram acceptance addendum: **2026-07-25 20:00 UTC**. This
+addendum supersedes only the older SAM Telegram Send Reply and outbound
+delivery-fault statements below; it does not strengthen adjacent buttons,
+specialist lanes or protected/business actions.
+
+- Production conversation `2019` proved one natural AUTO_GENERAL greeting,
+  one reviewed candidate-bound `SAM-LIVE-CARD-SEND-*` action, one durable
+  delivery attempt before dispatch, one outgoing WhatsApp message, genuine
+  WhatsApp provider evidence, one terminal `provider_delivered` transition,
+  `customer_send_confirmed=true`, and one exact-card Resolved edit with the
+  keyboard removed. No retry, duplicate, specialist call, Meat lead, intake,
+  order or protected/business action occurred.
+- Current candidate-bound Send Reply buttons are operationally approved for
+  routine owner-approved replies. Legacy/review-ID buttons remain prohibited.
+  Failed or ambiguous delivery must remain no-retry and owner-visible.
+- Resolve Card Only and Done - Return to SAM are merged, deployed and tested,
+  but remain production-canary unproven and are not included in this
+  operational approval.
+- Automatic AUTO_GENERAL canary sending, Livestock specialist autoreply, Meat
+  autoreply, intake writes, draft-order creation, takeover, reservations and
+  protected/business writes remain disabled.
+
 This is the concise owner entry point for what the system can safely be treated
 as doing now. It distinguishes code, release and live proof. It does not replace
 Supabase runtime state, GitHub, Render or an owner decision.
