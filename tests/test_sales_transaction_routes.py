@@ -420,6 +420,34 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         authorize.assert_called_once()
         handler.assert_called_once_with({"status": "delivered"})
 
+    def test_shared_delivery_status_route_prefers_exact_sam_attempt(self):
+        sam_result = {
+            "success": True,
+            "status": "sam_delivery_confirmed_card_cleaned",
+            "processed": True,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_meat_document_delivery_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_live_stock_delivery_status_webhook",
+            return_value=(sam_result, 200),
+        ) as sam_handler, patch.object(
+            sales_transaction_routes,
+            "handle_meat_document_delivery_status_webhook",
+        ) as meat_handler:
+            payload = {"event": "message_updated", "message": {"id": 902}}
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/meat-documents/delivery-status",
+                json=payload,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), sam_result)
+        sam_handler.assert_called_once_with(payload)
+        meat_handler.assert_not_called()
+
     def test_meat_whatsapp_templates_route_returns_pack(self):
         with patch.object(
             sales_transaction_routes,

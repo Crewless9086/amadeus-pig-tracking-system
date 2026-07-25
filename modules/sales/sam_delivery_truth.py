@@ -46,6 +46,7 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         or decision.get("conversation_review_id"),
         120,
     )
+    owner_action_identity = _clean(review.get("owner_action_identity"), 120)
     reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
     reply_hash = hashlib.sha256(reply.encode("utf-8", errors="ignore")).hexdigest()
     response_class = _clean(
@@ -94,6 +95,7 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         DELIVERY_CONTRACT_VERSION,
         response_class,
         str(generation),
+        owner_action_identity,
     ]
     attempt_id = _stable_id("SAM-DELIVERY-ATTEMPT", identity_values)
     return {
@@ -106,6 +108,7 @@ def build_delivery_attempt(inbound, decision, review, *, response_class="", atte
         "inbox_id": inbox_id,
         "inbound_message_id": inbound_message_id,
         "review_id": review_id,
+        "owner_action_identity": owner_action_identity,
         "reply_hash": reply_hash,
         "response_class": response_class,
         "attempt_generation": generation,
@@ -390,6 +393,82 @@ def load_attempt_chain(database_url, conversation_id, attempt_id):
     }
 
 
+def load_delivery_attempt_for_outgoing_message(database_url, conversation_id, outgoing_message_id):
+    """Recover one exact attempt from append-only evidence; ambiguity fails closed."""
+    conversation_id = _clean(conversation_id, 120)
+    outgoing_message_id = _clean(outgoing_message_id, 120)
+    if not database_url or not conversation_id or not outgoing_message_id:
+        return {"success": False, "status": "delivery_lookup_identity_incomplete", "attempt": {}}
+    try:
+        import psycopg
+        with psycopg.connect(str(database_url).strip(), connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select review_event_id, event_source, review_json
+                    from public.sam_live_stock_conversation_review_events
+                    where chatwoot_conversation_id = %s
+                      and event_source = any(%s)
+                    order by created_at, review_event_id
+                    """,
+                    (conversation_id, sorted(DELIVERY_EVENT_SOURCES)),
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "delivery_lookup_failed",
+            "error_type": exc.__class__.__name__,
+            "attempt": {},
+        }
+    claims = {}
+    matched_attempt_ids = set()
+    for event_id, event_source, raw_review in rows:
+        if isinstance(raw_review, str):
+            try:
+                raw_review = json.loads(raw_review)
+            except (TypeError, ValueError):
+                raw_review = {}
+        evidence = raw_review if isinstance(raw_review, Mapping) else {}
+        if not isinstance(evidence, Mapping):
+            continue
+        attempt_id = _clean(evidence.get("delivery_attempt_id"), 120)
+        if event_source == "sam_outbound_delivery_attempt_claim" and attempt_id:
+            claims[attempt_id] = dict(evidence)
+        if (
+            event_source == "sam_outbound_delivery_transition"
+            and _clean(evidence.get("chatwoot_outgoing_message_id"), 120) == outgoing_message_id
+            and attempt_id
+        ):
+            matched_attempt_ids.add(attempt_id)
+    if len(matched_attempt_ids) != 1:
+        return {
+            "success": False,
+            "status": "delivery_lookup_not_found" if not matched_attempt_ids else "delivery_lookup_ambiguous",
+            "attempt": {},
+        }
+    attempt_id = next(iter(matched_attempt_ids))
+    claim = claims.get(attempt_id)
+    if not claim:
+        return {"success": False, "status": "delivery_claim_not_found", "attempt": {}}
+    attempt = {
+        "success": True,
+        "delivery_attempt_id": attempt_id,
+        **{
+            key: claim.get(key)
+            for key in (
+                "delivery_contract_version", "conversation_id", "contact_id",
+                "inbox_id", "inbound_message_id", "review_id", "reply_hash",
+                "response_class", "attempt_generation", "owner_action_identity",
+            )
+        },
+        "chatwoot_outgoing_message_id": outgoing_message_id,
+    }
+    if _clean(attempt.get("conversation_id"), 120) != conversation_id:
+        return {"success": False, "status": "delivery_lookup_conversation_mismatch", "attempt": {}}
+    return {"success": True, "status": "delivery_attempt_loaded", "attempt": attempt}
+
+
 def _attempt(value):
     value = dict(value) if isinstance(value, Mapping) else {}
     value["success"] = bool(value.get("success") and value.get("delivery_attempt_id"))
@@ -405,6 +484,7 @@ def _evidence(attempt, state):
         "inbox_id": attempt["inbox_id"],
         "inbound_message_id": attempt["inbound_message_id"],
         "review_id": attempt["review_id"],
+        "owner_action_identity": attempt.get("owner_action_identity", ""),
         "reply_hash": attempt["reply_hash"],
         "response_class": attempt["response_class"],
         "attempt_generation": attempt["attempt_generation"],

@@ -110,6 +110,7 @@ from modules.sales.sam_live_stock_launch_control import (
     delete_sam_live_stock_telegram_escalation,
     execute_live_stock_order_reservation,
     get_latest_sam_live_stock_review_event_for_conversation,
+    handle_sam_live_stock_delivery_status_webhook,
     list_sam_live_stock_open_intakes,
     process_sam_live_stock_owner_callback,
     record_sam_live_stock_review_event,
@@ -969,6 +970,13 @@ def meat_document_delivery_status_webhook():
         status_code = 403 if denied.get("status") == "meat_sales_delivery_webhook_auth_denied" else 503
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
+    sam_result, sam_status = handle_sam_live_stock_delivery_status_webhook(payload)
+    if (
+        sam_status >= 400
+        or sam_result.get("processed") is True
+        or sam_result.get("status") == "sam_delivery_transition_replay_withheld"
+    ):
+        return jsonify(sam_result), sam_status
     result, status_code = handle_meat_document_delivery_status_webhook(payload)
     return jsonify(result), status_code
 
