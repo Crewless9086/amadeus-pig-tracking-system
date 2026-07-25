@@ -19,7 +19,7 @@ from modules.orders.order_validation import validate_new_order_payload, validate
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
 from modules.sales.sam_pricing import resolve_live_stock_price_rule
-from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, classify_sam_sales_lane
+from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.sales.sam_live_stock_understanding import (
     is_order_commitment_confirmation,
@@ -184,6 +184,32 @@ def handle_sam_live_stock_chatwoot_inbound(
     facts["customer_language"] = understanding.get("language") or "unknown"
     facts["message_intent"] = understanding.get("message_intent") or "unclear"
     facts["media_review_required"] = bool(understanding.get("requires_media_review"))
+    if facts.get("sales_lane") == LANE_MEAT and float(facts.get("lane_confidence") or 0) >= 0.9:
+        lane_decision = {
+            "version": "sam_sales_lane_decision_v1",
+            "current_message_classification": {
+                "lane": LANE_MEAT,
+                "confidence": float(facts.get("lane_confidence") or 0),
+                "evidence_source": "current_message_sales_router",
+                "reasons": list(facts.get("lane_reasons") or []),
+            },
+            "context_state": {"status": "not_read_wrong_lane", "context_influenced_route": False},
+            "final_route": LANE_MEAT,
+            "cross_lane_handoff_allowed": False,
+            "writes_performed": False,
+        }
+        return {
+            "success": True,
+            "status": "sam_live_stock_wrong_lane_guard",
+            "processed": False,
+            "sent": False,
+            "inbound": inbound,
+            "facts": facts,
+            "lane_decision": lane_decision,
+            "sam_decision": {},
+            "policy": policy,
+            **_authority_flags(),
+        }, 200
     context_packet = load_live_stock_read_context(
         inbound,
         facts,

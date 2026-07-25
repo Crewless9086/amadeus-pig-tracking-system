@@ -463,6 +463,30 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("Call 2.4.5 - Document Send Callback Worker", node_names)
         self.assertNotIn("2.0B - Oom Sakkie Backend Read-Only Relay", workflow_text)
 
+    def test_gatekeeper_relays_sam_live_callbacks_only_to_authoritative_backend(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        nodes = {node.get("name"): node for node in workflow.get("nodes", [])}
+        normalize = nodes["Code - Normalize Telegram Callback"]["parameters"]["jsCode"]
+        switch = nodes["Switch - Route Telegram Callback Type"]
+        relay = nodes["Relay SAM Callback to Backend"]
+        normalize_targets = workflow["connections"]["Code - Normalize Telegram Callback"]["main"][0]
+        outputs = workflow["connections"]["Switch - Route Telegram Callback Type"]["main"]
+
+        self.assertIn('data.startsWith("sam_live_")', normalize)
+        self.assertIn('action = "route_sam_live_callback"', normalize)
+        self.assertIn("raw_update: $json.raw_update", normalize)
+        self.assertEqual([target["node"] for target in normalize_targets], ["Switch - Route Telegram Callback Type"])
+        self.assertEqual(switch["parameters"]["rules"]["values"][3]["outputKey"], "SAM Live Callback")
+        self.assertEqual([target["node"] for target in outputs[3]], ["Relay SAM Callback to Backend"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[3]])
+        self.assertNotIn("Answer Telegram Callback", [target["node"] for target in outputs[3]])
+        self.assertEqual([target["node"] for target in outputs[2]], ["Acknowledge Unsupported Callback"])
+        self.assertNotIn("Call 2.4 - Approval Callback Worker", [target["node"] for target in outputs[2]])
+        self.assertEqual(relay["parameters"]["method"], "POST")
+        self.assertTrue(relay["parameters"]["url"].endswith("/api/oom-sakkie/channels/telegram/direct-webhook"))
+        self.assertEqual(relay["parameters"]["rawContent"], "={{ JSON.stringify($json.raw_update) }}")
+        self.assertIn("$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET", json.dumps(relay))
+        self.assertNotIn("callback_data.replace", normalize)
     def test_backend_relay_workflow_is_import_inactive_and_has_no_telegram_authority(self):
         workflow = load_workflow(OOM_SAKKIE_BACKEND_RELAY_WORKFLOW)
         workflow_text = json.dumps(workflow)

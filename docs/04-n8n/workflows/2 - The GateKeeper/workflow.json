@@ -340,7 +340,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\n      decision_method: \"Button\"\n    }\n  }\n];"
+                                         "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"sam_live_\")) {\r\n  action = \"route_sam_live_callback\";\r\n} else if (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\r\n      raw_update: $json.raw_update || {},\n      decision_method: \"Button\"\n    }\n  }\n];"
                                      },
                       "type":  "n8n-nodes-base.code",
                       "typeVersion":  2,
@@ -450,6 +450,30 @@
                                                                                          },
                                                                           "renameOutput":  true,
                                                                           "outputKey":  "Invalid Approval Callback"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.action}}",
+                                                                                                                    "rightValue":  "route_sam_live_callback",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "8bb5b50f-91d0-4f49-b985-ea28fdde2502"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "SAM Live Callback"
                                                                       }
                                                                   ]
                                                    },
@@ -662,6 +686,59 @@
                                                               "name":  "Telegram - Oom Sakkie"
                                                           }
                                       }
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/direct-webhook",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "X-Telegram-Bot-Api-Secret-Token",
+                                                                                         "value":  "={{$vars.OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET}}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContent":  "={{ JSON.stringify($json.raw_update) }}",
+                                         "options":  {
+                                                         "timeout":  10000
+                                                     }
+                                     },
+                      "id":  "a36cd52d-31a4-46ce-bf0c-cb555f2d8afd",
+                      "name":  "Relay SAM Callback to Backend",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       2460,
+                                       -140
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "callback",
+                                         "queryId":  "={{ $json.callback_query_id }}",
+                                         "additionalFields":  {
+                                                                  "text":  "Button not recognised; no action was taken."
+                                                              }
+                                     },
+                      "id":  "83bd17a4-f7cf-44ce-af75-bb13cda96809",
+                      "name":  "Acknowledge Unsupported Callback",
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       2460,
+                                       180
+                                   ],
+                      "webhookId":  "c61c0dfc-f237-45c2-bcb3-9e7b3b374d26",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "NyHKP1OktpfxAeb5",
+                                                              "name":  "Oom Sakkie Telegram account"
+                                                          }
+                                      }
                   }
               ],
     "connections":  {
@@ -768,11 +845,6 @@
                                                                                         "node":  "Switch - Route Telegram Callback Type",
                                                                                         "type":  "main",
                                                                                         "index":  0
-                                                                                    },
-                                                                                    {
-                                                                                        "node":  "Answer Telegram Callback",
-                                                                                        "type":  "main",
-                                                                                        "index":  0
                                                                                     }
                                                                                 ]
                                                                             ]
@@ -784,11 +856,9 @@
                                                                                            "node":  "Call 2.4.5 - Document Send Callback Worker",
                                                                                            "type":  "main",
                                                                                            "index":  0
-                                                                                       }
-                                                                                   ],
-                                                                                   [
+                                                                                       },
                                                                                        {
-                                                                                           "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                           "node":  "Answer Telegram Callback",
                                                                                            "type":  "main",
                                                                                            "index":  0
                                                                                        }
@@ -796,6 +866,25 @@
                                                                                    [
                                                                                        {
                                                                                            "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       },
+                                                                                       {
+                                                                                           "node":  "Answer Telegram Callback",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ],
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Acknowledge Unsupported Callback",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ],
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Relay SAM Callback to Backend",
                                                                                            "type":  "main",
                                                                                            "index":  0
                                                                                        }
@@ -812,7 +901,14 @@
                                                                   }
                                                               ]
                                                           ]
-                                             }
+                                             },
+                        "Relay SAM Callback to Backend":  {
+                                                              "main":  [
+                                                                           [
+
+                                                                           ]
+                                                                       ]
+                                                          }
                     },
     "settings":  {
                      "executionOrder":  "v1",

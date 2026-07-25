@@ -2397,11 +2397,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             availability_loader=lambda: [],
         )
 
-        decision = result["sam_decision"]
-        self.assertEqual(decision["sales_lane"], "meat_sales")
-        self.assertTrue(decision["owner_gate_required"])
-        self.assertIn("lane_not_live_stock:meat_sales", decision["blockers"])
-        self.assertIn("live pigs", decision["suggested_reply_text"])
+        self.assertEqual(result["status"], "sam_live_stock_wrong_lane_guard")
+        self.assertFalse(result["processed"])
+        self.assertEqual(result["lane_decision"]["final_route"], "meat_sales")
+        self.assertFalse(result["lane_decision"]["cross_lane_handoff_allowed"])
+        self.assertFalse(result["sent"])
 
     def test_context_read_failure_fails_closed_without_write_authority(self):
         def failing_intake(_conversation_id):
@@ -2657,6 +2657,30 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(cleanup["recommended_action"], "delete_telegram_notification")
         self.assertTrue(cleanup["delete_allowed"])
 
+
+    def test_definitive_meat_guard_runs_before_all_livestock_fact_readers(self):
+        calls = {"context": 0, "availability": 0}
+
+        def context_loader(_conversation_id):
+            calls["context"] += 1
+            return {"success": True}
+
+        def availability_loader():
+            calls["availability"] += 1
+            return []
+
+        result, status_code = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="I want a half carcass, Set A."),
+            intake_context_loader=context_loader,
+            availability_loader=availability_loader,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["status"], "sam_live_stock_wrong_lane_guard")
+        self.assertEqual(calls, {"context": 0, "availability": 0})
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
 
 if __name__ == "__main__":
     unittest.main()

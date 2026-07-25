@@ -641,8 +641,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
             )
 
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["status"], "sam_meat_live_stock_handoff")
-        self.assertEqual(result["send_status"], "wrong_lane_live_stock_no_meat_reply")
+        self.assertEqual(result["status"], "sam_meat_lane_clarification_required")
+        self.assertEqual(result["send_status"], "ambiguous_lane_no_automatic_reply")
         self.assertTrue(result["live_stock_context"]["active"])
         self.assertFalse(result["sent"])
         self.assertEqual(calls, {"record": 0, "send": 0})
@@ -1793,6 +1793,37 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertFalse(review["safe_to_send"])
         self.assertIn("confirms_booking_without_gate", review["blocked_reasons"])
         self.assertIn("confirms_payment_without_bank_gate", review["blocked_reasons"])
+    def test_definitive_meat_outranks_stale_livestock_context(self):
+        phrases = (
+            "I want a half carcass, Set A.",
+            "Ek wil 'n halwe karkas, Stel A.",
+            "Half carcass asseblief, Set A.",
+        )
+        for content in phrases:
+            with self.subTest(content=content), \
+                 patch.object(sam_meat_runtime, "_conversation_live_stock_context") as livestock_context, \
+                 patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", return_value=({"success": True, "lead_id": "MEAT-1"}, 201)):
+                result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                    inbound_payload(content=content),
+                    environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+                )
+            self.assertEqual(status_code, 200)
+            self.assertNotEqual(result["status"], "sam_meat_live_stock_handoff")
+            self.assertEqual(result["lane_decision"]["final_route"], "meat_sales")
+            self.assertFalse(result["lane_decision"]["cross_lane_handoff_allowed"])
+            livestock_context.assert_not_called()
+
+    def test_failed_livestock_context_cannot_convert_explicit_meat_to_livestock(self):
+        with patch.object(sam_meat_runtime, "_conversation_live_stock_context", side_effect=RuntimeError("must not read")) as livestock_context, \
+             patch.object(sam_meat_runtime, "record_sam_meat_intake_lead", return_value=({"success": True, "lead_id": "MEAT-2"}, 201)):
+            result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(content="Carcass Set A"),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+            )
+        self.assertEqual(status_code, 200)
+        self.assertNotEqual(result["status"], "sam_meat_live_stock_handoff")
+        livestock_context.assert_not_called()
+
 if __name__ == "__main__":
 
     unittest.main()

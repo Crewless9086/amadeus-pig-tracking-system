@@ -1899,6 +1899,12 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "status": "sam_meat_live_stock_handoff",
             "processed": True,
             "sent": False,
+            "lane_decision": {
+                "version": "sam_sales_lane_decision_v1",
+                "current_message_classification": {"lane": "live_stock_sales", "confidence": 0.99},
+                "final_route": "live_stock_sales",
+                "cross_lane_handoff_allowed": True,
+            },
         }
         live_result = {
             "success": True,
@@ -1954,6 +1960,12 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "status": "sam_meat_live_stock_handoff",
             "processed": True,
             "sent": False,
+            "lane_decision": {
+                "version": "sam_sales_lane_decision_v1",
+                "current_message_classification": {"lane": "live_stock_sales", "confidence": 0.99},
+                "final_route": "live_stock_sales",
+                "cross_lane_handoff_allowed": True,
+            },
         }
         live_result = {
             "success": True,
@@ -2012,6 +2024,12 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "status": "sam_meat_live_stock_handoff",
             "processed": True,
             "sent": False,
+            "lane_decision": {
+                "version": "sam_sales_lane_decision_v1",
+                "current_message_classification": {"lane": "live_stock_sales", "confidence": 0.99},
+                "final_route": "live_stock_sales",
+                "cross_lane_handoff_allowed": True,
+            },
         }
         live_result = {
             "success": True,

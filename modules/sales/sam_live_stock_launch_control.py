@@ -38,7 +38,10 @@ HUMAN_AUDIT_LANE_COUNTS = ("lane_unknown", "excluded_non_livestock")
 HUMAN_AUDIT_CHATWOOT_INBOX_ENV = "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID"
 HUMAN_AUDIT_MAX_PAGES = 20
 HUMAN_AUDIT_REQUEST_TIMEOUT_SECONDS = 10
-HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS = 30
+HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS = 20
+HUMAN_AUDIT_MAX_CONVERSATIONS = 500
+HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS = 3
+HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS = 5000
 
 
 class SamLiveStockHumanAuditError(RuntimeError):
@@ -1155,14 +1158,78 @@ def list_sam_live_stock_open_intakes(limit=25, *, database_url=None):
         return {"success": False, "status": "sam_live_stock_open_intakes_failed", "error": _clean(str(exc), 240), "open_intakes": [], **AUTHORITY_FLAGS}, 500
 
 
-def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=None, review_loader=None, now=None):
+def load_latest_sam_live_stock_review_events_for_conversations(conversation_ids, database_url=None):
+    conversation_ids = list(dict.fromkeys(
+        _clean(conversation_id, 120)
+        for conversation_id in (conversation_ids or [])
+        if _clean(conversation_id, 120)
+    ))
+    if len(conversation_ids) > HUMAN_AUDIT_MAX_CONVERSATIONS:
+        return {"success": False, "status": "sam_live_stock_review_batch_limit_exceeded", "error_type": "ConversationLimitExceeded", **AUTHORITY_FLAGS}, 503
+    if not conversation_ids:
+        return {"success": True, "status": "sam_live_stock_review_batch_empty", "events_by_conversation_id": {}, **AUTHORITY_FLAGS}, 200
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "status": "database_url_not_configured", **AUTHORITY_FLAGS}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "status": "psycopg_dependency_missing", **AUTHORITY_FLAGS}, 500
+    try:
+        with psycopg.connect(
+            database_url,
+            connect_timeout=HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS,
+            options=f"-c statement_timeout={HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS}",
+        ) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select distinct on (chatwoot_conversation_id)
+                        review_event_id, chatwoot_conversation_id, chatwoot_message_id,
+                        customer_name, channel, event_source, customer_message_excerpt,
+                        sam_reply_excerpt, score, confidence_target, safe_to_send,
+                        owner_send_required, no_reply_recommended, escalation_required,
+                        conversation_mode_recommendation, recommended_action,
+                        review_json, facts_json, decision_json, created_at
+                    from public.sam_live_stock_conversation_review_events
+                    where chatwoot_conversation_id = any(%s)
+                    order by chatwoot_conversation_id, created_at desc
+                    """,
+                    (conversation_ids,),
+                )
+                columns = [column.name for column in cursor.description]
+                rows = cursor.fetchall()
+        events = {}
+        for row in rows:
+            event = dict(zip(columns, row))
+            for key in ("review_json", "facts_json", "decision_json"):
+                event[key] = _json_value(event.get(key))
+            conversation_id = _clean(event.get("chatwoot_conversation_id"), 120)
+            if conversation_id:
+                events[conversation_id] = event
+        return {"success": True, "status": "sam_live_stock_review_batch_loaded", "events_by_conversation_id": events, **AUTHORITY_FLAGS}, 200
+    except Exception as exc:
+        return {"success": False, "status": "sam_live_stock_review_batch_load_failed", "error_type": exc.__class__.__name__, **AUTHORITY_FLAGS}, 503
+
+
+def audit_sam_live_stock_human_conversations(
+    *, environ=None, chatwoot_reader=None, review_loader=None,
+    review_batch_loader=None, now=None, clock=None,
+):
     """Owner-only caller surface: read and classify HUMAN conversations; never resets them."""
     source = environ if environ is not None else os.environ
+    clock = clock or time.perf_counter
+    started_at = clock()
     diagnostics = _human_audit_configuration_diagnostics(source)
+
+    def deadline_exceeded():
+        return clock() - started_at >= HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS
     try:
         conversations = (chatwoot_reader or _chatwoot_read_conversations)(source)
     except Exception as exc:
         return _human_audit_failure(exc, "chatwoot_request", diagnostics)
+    if deadline_exceeded():
+        return _human_audit_failure(TimeoutError("audit deadline exceeded"), "chatwoot_request", diagnostics)
     if not isinstance(conversations, list):
         return _human_audit_failure(
             SamLiveStockHumanAuditError(
@@ -1186,7 +1253,56 @@ def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=No
     now = now or datetime.now(timezone.utc)
     rows = []
     lane_counts = {key: 0 for key in HUMAN_AUDIT_LANE_COUNTS}
+    batch_reviews = None
+    seen_human_conversation_ids = set()
+    if review_batch_loader is not None or (review_loader is None and chatwoot_reader is None):
+        human_conversation_ids = list(dict.fromkeys(
+            _clean(conversation.get("id"), 120) for conversation in conversations
+            if isinstance(conversation, dict)
+            and isinstance(conversation.get("custom_attributes"), dict)
+            and _clean(conversation["custom_attributes"].get("conversation_mode"), 20).upper() == "HUMAN"
+            and _clean(conversation.get("id"), 120)
+        ))
+        if len(human_conversation_ids) > HUMAN_AUDIT_MAX_CONVERSATIONS:
+            return _human_audit_failure(
+                SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_conversation_limit_exceeded", "review_event_load",
+                    http_status=503, error_type="ConversationLimitExceeded",
+                ),
+                "review_event_load", diagnostics,
+            )
+        try:
+            if deadline_exceeded():
+                raise TimeoutError("audit deadline exceeded")
+            batch_result = (review_batch_loader or load_latest_sam_live_stock_review_events_for_conversations)(human_conversation_ids)
+            if deadline_exceeded():
+                raise TimeoutError("audit deadline exceeded")
+            if not isinstance(batch_result, tuple) or len(batch_result) != 2:
+                raise SamLiveStockHumanAuditError("sam_live_stock_human_audit_review_response_invalid", "review_event_load", error_type=type(batch_result).__name__)
+            batch_payload, batch_status = batch_result
+            if not isinstance(batch_payload, dict) or not isinstance(batch_status, int):
+                raise SamLiveStockHumanAuditError("sam_live_stock_human_audit_review_response_invalid", "review_event_load", error_type=type(batch_payload).__name__)
+        except Exception as exc:
+            return _human_audit_failure(exc, "review_event_load", diagnostics)
+        if batch_status >= 400 or not batch_payload.get("success"):
+            return _human_audit_failure(
+                SamLiveStockHumanAuditError(
+                    "sam_live_stock_human_audit_review_unavailable", "review_event_load",
+                    http_status=503,
+                    error_type=_clean(batch_payload.get("error_type"), 80) or "ReviewEvidenceUnavailable",
+                ),
+                "review_event_load", diagnostics,
+            )
+        batch_reviews = batch_payload.get("events_by_conversation_id")
+        if not isinstance(batch_reviews, dict):
+            return _human_audit_failure(
+                SamLiveStockHumanAuditError("sam_live_stock_human_audit_review_response_invalid", "review_event_load", error_type=type(batch_reviews).__name__),
+                "review_event_load", diagnostics,
+            )
+        diagnostics = {**diagnostics, "review_load_mode": "single_bounded_batch", "review_conversation_count": len(human_conversation_ids)}
     for item_index, conversation in enumerate(conversations):
+        if deadline_exceeded():
+            return _human_audit_failure(TimeoutError("audit deadline exceeded"), "classification", diagnostics, item_index=item_index)
         if not isinstance(conversation, dict):
             return _human_audit_failure(
                 SamLiveStockHumanAuditError(
@@ -1213,8 +1329,19 @@ def audit_sam_live_stock_human_conversations(*, environ=None, chatwoot_reader=No
         attrs = raw_attrs or {}
         if _clean(attrs.get("conversation_mode"), 20).upper() != "HUMAN":
             continue
+        exact_conversation_id = _clean(conversation.get("id"), 120)
+        if exact_conversation_id in seen_human_conversation_ids:
+            continue
+        seen_human_conversation_ids.add(exact_conversation_id)
         loaded = None
-        if review_loader is not None or chatwoot_reader is None:
+        if batch_reviews is not None:
+            exact_conversation_id = _clean(conversation.get("id"), 120)
+            event = batch_reviews.get(exact_conversation_id)
+            loaded = {"success": True, "event": event} if isinstance(event, dict) else {"success": False}
+            loaded_status = 200 if isinstance(event, dict) else 404
+            if loaded_status < 400:
+                conversation = {**conversation, "sam_live_stock_review": _human_audit_review_state(event)}
+        elif review_loader is not None or chatwoot_reader is None:
             try:
                 loaded_result = (review_loader or get_latest_sam_live_stock_review_event_for_conversation)(conversation.get("id"))
                 if not isinstance(loaded_result, tuple) or len(loaded_result) != 2:

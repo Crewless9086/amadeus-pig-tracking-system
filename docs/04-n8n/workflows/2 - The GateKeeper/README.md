@@ -70,3 +70,16 @@ Imported for docs: 2026-05-19
 - Do not replace this workflow from the repo export for that test.
 - First import `2.0B - Oom Sakkie Backend Read-Only Relay` inactive.
 - Then follow `BACKEND_RELAY_WIRING_PLAN.md` in the n8n UI: keep this workflow as the only Telegram Trigger owner, replace only the normal-message call target, validate the backend no-authority flags, and send exactly one guarded owner reply from GateKeeper.
+
+## SAM Live Callback Ownership Candidate (2026-07-25)
+
+This source export contains a review-only correction; it has not been imported or activated live.
+
+- GateKeeper remains the only Telegram ingress and authorization owner.
+- Every `sam_live_*` callback is classified as `route_sam_live_callback` and relayed unchanged, as the original `raw_update`, to `POST /api/oom-sakkie/channels/telegram/direct-webhook`.
+- The backend/Oom Sakkie handler is the only component allowed to interpret SAM Live callback actions, bind the exact review/card identity, change Chatwoot mode, send through the owner-send rail, or edit/delete the exact card.
+- GateKeeper does not acknowledge SAM callbacks itself; the backend acknowledges them once without a separate Telegram message.
+- Order approval and document-send callback families retain their existing workers.
+- Unknown callback families are acknowledged as unsupported and never enter legacy Orders approval parsing.
+- Import requires the n8n variable `OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET` to match the existing backend webhook secret. The value must never be exported or logged.
+- Rollback is the prior GateKeeper export; no backend, database, Render, or Telegram migration is required.
