@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
@@ -64,6 +65,11 @@ HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS = 20
 HUMAN_AUDIT_MAX_CONVERSATIONS = 500
 HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS = 3
 HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS = 5000
+DELIVERY_RECONCILIATION_MAX_PAGES = 3
+DELIVERY_RECONCILIATION_MAX_ROWS = 300
+DELIVERY_RECONCILIATION_PAGE_SIZE = 100
+DELIVERY_RECONCILIATION_REQUEST_TIMEOUT_SECONDS = 5
+DELIVERY_RECONCILIATION_TOTAL_TIMEOUT_SECONDS = 10
 
 
 class SamLiveStockHumanAuditError(RuntimeError):
@@ -1206,30 +1212,225 @@ def _open_chatwoot_keyboard(callback_id, conversation_id, source):
     return [[button]]
 
 
-def _chatwoot_read_exact_outgoing_message(conversation_id, message_id, source):
-    """Read one exact Chatwoot message; never searches or dispatches."""
+def _chatwoot_read_exact_outgoing_message(
+    conversation_id,
+    message_id,
+    source,
+    *,
+    urlopen=None,
+    monotonic=None,
+):
+    """Read bounded conversation pages and return only one exact public outgoing message."""
     base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
     account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
     token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
     conversation_id = _clean(conversation_id, 120)
     message_id = _clean(message_id, 120)
     if not base_url or not account_id or not token or not conversation_id or not message_id:
-        return {"status_code": None, "body": {}}
-    url = (
-        f"{base_url}/api/v1/accounts/{account_id}/conversations/"
-        f"{conversation_id}/messages/{message_id}"
-    )
-    request = urllib_request.Request(
-        url,
-        headers={"api_access_token": token, "Accept": "application/json"},
-        method="GET",
-    )
+        return _delivery_reader_failure("reader_identity_incomplete")
     try:
-        with urllib_request.urlopen(request, timeout=5) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            return {"status_code": int(response.status), "body": body if isinstance(body, dict) else {}}
-    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
-        return {"status_code": None, "body": {}}
+        target_number = int(message_id)
+    except (TypeError, ValueError):
+        return _delivery_reader_failure("reader_message_id_non_numeric")
+    clock = monotonic or time.monotonic
+    opener = urlopen or urllib_request.urlopen
+    deadline = clock() + DELIVERY_RECONCILIATION_TOTAL_TIMEOUT_SECONDS
+    after = 0
+    exact_matches = []
+    rows_read = 0
+    pages_read = 0
+    last_cursor = None
+    try:
+        while pages_read < DELIVERY_RECONCILIATION_MAX_PAGES:
+            if clock() >= deadline:
+                return _delivery_reader_failure(
+                    "reader_total_deadline_exceeded",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            query = urllib_parse.urlencode({"after": after})
+            url = (
+                f"{base_url}/api/v1/accounts/{account_id}/conversations/"
+                f"{conversation_id}/messages?{query}"
+            )
+            request = urllib_request.Request(
+                url,
+                headers={"api_access_token": token, "Accept": "application/json"},
+                method="GET",
+            )
+            with opener(
+                request,
+                timeout=min(
+                    DELIVERY_RECONCILIATION_REQUEST_TIMEOUT_SECONDS,
+                    max(1, int(deadline - clock())),
+                ),
+            ) as response:
+                envelope = json.loads(response.read().decode("utf-8"))
+                status_code = int(response.status)
+            pages_read += 1
+            if status_code != 200:
+                return _delivery_reader_failure(
+                    "reader_http_unavailable",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            page = _chatwoot_message_list_rows(envelope)
+            if page is None:
+                return _delivery_reader_failure(
+                    "reader_envelope_malformed",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            rows_read += len(page)
+            if rows_read > DELIVERY_RECONCILIATION_MAX_ROWS:
+                return _delivery_reader_failure(
+                    "reader_row_bound_exceeded",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            for row in page:
+                if _clean(row.get("id") or row.get("message_id"), 120) == message_id:
+                    exact_matches.append(row)
+            if len(exact_matches) > 1:
+                return _delivery_reader_failure(
+                    "reader_duplicate_exact_message",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            if len(exact_matches) == 1:
+                return _validated_exact_chatwoot_message(
+                    exact_matches[0],
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    expected_inbox_id=_clean(source.get(HUMAN_AUDIT_CHATWOOT_INBOX_ENV), 120),
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            if not page or len(page) < DELIVERY_RECONCILIATION_PAGE_SIZE:
+                return _delivery_reader_failure(
+                    "reader_exact_message_not_found",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            numeric_ids = []
+            for row in page:
+                try:
+                    numeric_ids.append(int(row.get("id") or row.get("message_id")))
+                except (TypeError, ValueError):
+                    return _delivery_reader_failure(
+                        "reader_pagination_identity_malformed",
+                        pages_read=pages_read,
+                        rows_read=rows_read,
+                    )
+            cursor = max(numeric_ids)
+            if cursor <= after or cursor == last_cursor:
+                return _delivery_reader_failure(
+                    "reader_pagination_not_progressing",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            last_cursor = cursor
+            after = cursor
+    except (
+        urllib_error.HTTPError,
+        urllib_error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        return _delivery_reader_failure(
+            "reader_request_or_parse_failed",
+            error_type=exc.__class__.__name__,
+            pages_read=pages_read,
+            rows_read=rows_read,
+        )
+    return _delivery_reader_failure(
+        "reader_pagination_incomplete",
+        pages_read=pages_read,
+        rows_read=rows_read,
+    )
+
+
+def _chatwoot_message_list_rows(envelope):
+    if isinstance(envelope, list):
+        rows = envelope
+    elif isinstance(envelope, dict):
+        rows = None
+        for key in ("payload", "messages", "data"):
+            value = envelope.get(key)
+            if isinstance(value, list):
+                rows = value
+                break
+        if rows is None:
+            return None
+    else:
+        return None
+    return rows if all(isinstance(row, dict) for row in rows) else None
+
+
+def _validated_exact_chatwoot_message(
+    row,
+    *,
+    account_id,
+    conversation_id,
+    message_id,
+    expected_inbox_id,
+    pages_read,
+    rows_read,
+):
+    normalized = normalize_chatwoot_delivery_event(row)
+    observed_message = _clean(normalized.get("chatwoot_message_id"), 120)
+    observed_conversation = _clean(normalized.get("conversation_id"), 120)
+    observed_account = _clean(normalized.get("account_id"), 120)
+    observed_inbox = _clean(normalized.get("inbox_id"), 120)
+    message_type = str(normalized.get("message_type") or "").lower()
+    private = row.get("private")
+    if normalized.get("conflict"):
+        return _delivery_reader_failure("reader_identity_or_status_conflict", pages_read=pages_read, rows_read=rows_read)
+    if observed_message != message_id or observed_conversation != conversation_id:
+        return _delivery_reader_failure("reader_exact_identity_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if observed_account and observed_account != account_id:
+        return _delivery_reader_failure("reader_account_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if observed_inbox and expected_inbox_id and observed_inbox != expected_inbox_id:
+        return _delivery_reader_failure("reader_inbox_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if message_type not in {"1", "outgoing"}:
+        return _delivery_reader_failure("reader_message_not_outgoing", pages_read=pages_read, rows_read=rows_read)
+    if private is not False:
+        return _delivery_reader_failure("reader_message_not_public", pages_read=pages_read, rows_read=rows_read)
+    if normalized.get("malformed") or normalized.get("normalized_status") == "unresolved":
+        return _delivery_reader_failure("reader_status_malformed", pages_read=pages_read, rows_read=rows_read)
+    return {
+        "status_code": 200,
+        "body": row,
+        "reader_provenance": {
+            "source": "chatwoot_conversation_messages_list",
+            "status_source_path": normalized.get("status_source_path"),
+            "pages_read": pages_read,
+            "rows_read": rows_read,
+            "provider_identity_class": normalized.get("provider_identity_class"),
+            "event_timestamp": normalized.get("event_timestamp"),
+            "contains_private_message_content": False,
+            "contains_raw_provider_identity": False,
+        },
+    }
+
+
+def _delivery_reader_failure(reason, *, error_type="", pages_read=0, rows_read=0):
+    return {
+        "status_code": None,
+        "body": {},
+        "reader_provenance": {
+            "source": "chatwoot_conversation_messages_list",
+            "failure_class": reason,
+            "error_type": _clean(error_type, 80),
+            "pages_read": int(pages_read or 0),
+            "rows_read": int(rows_read or 0),
+            "contains_private_message_content": False,
+            "contains_raw_provider_identity": False,
+        },
+    }
 
 
 def handle_sam_live_stock_delivery_status_webhook(
@@ -1330,12 +1531,26 @@ def handle_sam_live_stock_delivery_status_webhook(
         ):
             reconciled = classify_chatwoot_response(current)
             if reconciled.get("delivery_state") in CONFIRMED_STATES | {PROVIDER_FAILED}:
+                reader_provenance = (
+                    current.get("reader_provenance")
+                    if isinstance(current.get("reader_provenance"), dict)
+                    else {}
+                )
                 outcome = {
                     **reconciled,
-                    "reconciliation_source": "chatwoot_exact_outgoing_message_read",
-                    "status_source_path": "chatwoot_message.status",
+                    "reconciliation_source": (
+                        reader_provenance.get("source")
+                        or "chatwoot_exact_outgoing_message_read"
+                    ),
+                    "status_source_path": (
+                        reader_provenance.get("status_source_path")
+                        or "chatwoot_message.status"
+                    ),
                     "provider_event_type": normalized.get("event_type"),
-                    "provider_event_timestamp": normalized.get("event_timestamp"),
+                    "provider_event_timestamp": (
+                        reader_provenance.get("event_timestamp")
+                        or normalized.get("event_timestamp")
+                    ),
                     "provider_event_conflict": False,
                     "provider_event_malformed": False,
                 }
