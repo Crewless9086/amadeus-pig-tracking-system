@@ -13,6 +13,7 @@ from modules.beacon.public_livestock_content_policy import (
     enforce_public_livestock_drafts,
     public_livestock_policy_contract,
 )
+from modules.beacon.weekly_owner_review import build_post_one_owner_review
 from modules.sales.beacon_campaign import (
     list_beacon_campaign_performance_events,
     list_beacon_manual_post_evidence,
@@ -142,6 +143,12 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
     assets = _records(evidence.get("media_assets"))
     facts, rejected_facts = _verified_facts(current_facts)
     approved_assets = [asset for asset in assets if _approved_asset(asset)]
+    featured_owner_review_packet = build_post_one_owner_review(assets)
+    if (
+        featured_owner_review_packet.get("review_status")
+        != "awaiting_exact_owner_review"
+    ):
+        featured_owner_review_packet = None
     history_quality = _history_quality(history, performance)
 
     ideas = _ranked_ideas(
@@ -219,6 +226,7 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         "media_summary": _media_summary(assets, approved_assets),
         "rejected_current_facts": rejected_facts,
         "ranked_ideas": ideas,
+        "featured_owner_review_packet": featured_owner_review_packet,
         "owner_review_packet": {
             "packet_id": packet_id,
             "review_status": "awaiting_owner_review",

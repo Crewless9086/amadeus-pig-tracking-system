@@ -4,6 +4,32 @@ from modules.beacon.content_operations import build_beacon_content_candidate
 
 
 class BeaconContentOperationsTests(unittest.TestCase):
+    def test_featured_weekly_packet_uses_only_exact_eligible_media(self):
+        assets = []
+        for asset_id in (
+            "BEACON-ASSET-3D9A65053184D8181A",
+            "BEACON-ASSET-983952CB4A95A0BEBB",
+            "BEACON-ASSET-13F7A5168AE3BFF676",
+        ):
+            assets.append({
+                "asset_id": asset_id,
+                "title": asset_id,
+                "media_type": "image",
+                "mime_type": "image/jpeg",
+                "effective_approval_status": "approved",
+                "effective_public_use_approved": True,
+                "content_hash_provenance": "server_computed_on_upload",
+                "content_sha256": "b" * 64,
+            })
+        result = build_beacon_content_candidate({
+            "media_assets": {"records": assets},
+        })
+        packet = result["featured_owner_review_packet"]
+        self.assertEqual(packet["packet_id"], "BEACON-WEEK-2026-07-25-P1")
+        self.assertEqual(packet["media"]["asset_count"], 3)
+        self.assertFalse(packet["authority"]["posts_publicly"])
+        self.assertFalse(packet["authority"]["calls_meta"])
+
     def evidence(self, assets=None, opportunity_status="blocked"):
         return {
             "historical_posts": {"records": [

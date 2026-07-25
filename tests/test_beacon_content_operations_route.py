@@ -10,6 +10,41 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         app.testing = True
         self.client = app.test_client()
 
+    @patch("app.load_post_one_thumbnail")
+    @patch("app.require_owner_read_access", return_value=None)
+    def test_weekly_packet_thumbnail_is_owner_read_get_only_no_store(
+        self, _guard, loader
+    ):
+        loader.return_value = ({
+            "data": b"jpeg",
+            "mime_type": "image/jpeg",
+            "width": 4000,
+            "height": 3000,
+        }, 200)
+        path = (
+            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1/"
+            "media/BEACON-ASSET-3D9A65053184D8181A"
+        )
+        response = self.client.get(path)
+        post = self.client.post(path)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Cache-Control"], "no-store, private")
+        self.assertEqual(response.headers["X-Beacon-Dimensions"], "4000x3000")
+        self.assertEqual(post.status_code, 405)
+
+    @patch("app.load_post_one_thumbnail")
+    @patch("app.require_owner_read_access")
+    def test_weekly_packet_thumbnail_requires_owner_read(
+        self, guard, loader
+    ):
+        guard.return_value = ({"status": "owner_read_access_denied"}, 403)
+        response = self.client.get(
+            "/api/beacon/weekly-owner-review/BEACON-WEEK-2026-07-25-P1/"
+            "media/BEACON-ASSET-3D9A65053184D8181A"
+        )
+        self.assertEqual(response.status_code, 403)
+        loader.assert_not_called()
+
     def test_endpoint_stops_before_reads_when_owner_access_is_denied(self):
         denied = ({"success": False, "status": "owner_access_denied"}, 403)
         with patch("app.require_owner_read_access", return_value=denied), patch(
