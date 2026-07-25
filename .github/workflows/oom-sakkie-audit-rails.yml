@@ -150,6 +150,9 @@ jobs:
       - name: Run pig lifecycle audit disposable-Postgres tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
 
+      - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres
+
       - name: Run SAM Meat PostgreSQL deadline gates without skips
         env:
           SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
