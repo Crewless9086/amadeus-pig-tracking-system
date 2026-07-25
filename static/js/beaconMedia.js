@@ -231,7 +231,7 @@
 
   function renderContentOperations(payload) {
     const quality = payload.evidence_quality || {};
-    const packet = payload.owner_review_packet || {};
+    const packet = payload.featured_owner_review_packet || payload.owner_review_packet || {};
     const media = packet.media || {};
     const runtime = payload.runtime_status || {};
     const ideas = payload.ranked_ideas || [];
@@ -277,10 +277,17 @@
       <p><strong>Performance:</strong> ${escapeHtml(safe(explanations.performance, "Performance import status unavailable."))}</p>
     `;
     elements.packetStatus.textContent = safe(packet.review_status, "Unavailable");
-    elements.packetStatus.dataset.state = packet.review_status === "awaiting_owner_review" ? "proposed" : "blocked";
-    elements.packetMedia.innerHTML = media.status === "approved_media_selected"
+    elements.packetStatus.dataset.state = ["awaiting_owner_review", "awaiting_exact_owner_review"].includes(packet.review_status) ? "proposed" : "blocked";
+    elements.packetMedia.innerHTML = media.status === "approved_media_sequence_selected"
+      ? `<div class="beacon-content-media-sequence">${(media.assets || []).map((asset) => `
+          <figure>
+            <img src="${escapeHtml(asset.thumbnail_url)}" alt="${escapeHtml(asset.visual)}" loading="lazy" />
+            <figcaption><strong>${escapeHtml(String(asset.order))}. ${escapeHtml(asset.title)}</strong><span>${escapeHtml(asset.dimensions_display)} · approved public use · trusted server hash</span></figcaption>
+          </figure>
+        `).join("")}</div>`
+      : media.status === "approved_media_selected"
       ? `<strong>${escapeHtml(media.title)}</strong><span>${escapeHtml(media.media_type)} · ${escapeHtml(media.asset_id)}</span><small>Approved public use · ${escapeHtml(media.content_hash_provenance)}</small>`
-      : `<strong>Media gap</strong><span>${escapeHtml(media.reason)}</span>`;
+      : `<strong>Media gap</strong><span>${escapeHtml(media.reason || "Exact media sequence unavailable.")}</span>`;
     elements.packetCopy.textContent = safe(packet.draft_copy, "No exact copy available.");
     elements.packetOptions.innerHTML = (packet.draft_options || []).map((option) => `
       <article class="beacon-recommendation-card">
@@ -290,8 +297,9 @@
     `).join("");
     elements.packetMeta.innerHTML = `
       <div><strong>${escapeHtml(packet.channel)}</strong><span>${escapeHtml(packet.audience)}</span></div>
-      <div><strong>CTA</strong><span>${escapeHtml(packet.call_to_action)}</span></div>
+      <div><strong>Packet</strong><span>${escapeHtml(packet.packet_id)} · ${escapeHtml(packet.canonical_sha256)}</span></div>
       <div><strong>Objective</strong><span>${escapeHtml(packet.measurable_objective?.metric)} · ${escapeHtml(packet.measurable_objective?.measurement_window)}</span></div>
+      <div><strong>Safety</strong><span>Publish false · Meta call false · send false · spend false · writes false</span></div>
       <p>${escapeHtml(packet.next_gate)}</p>
     `;
   }

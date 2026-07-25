@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
@@ -22,6 +22,10 @@ from modules.beacon.meta_ads_insights_preview import (
 from modules.beacon.meta_ads_evidence_import import (
     execute_meta_ads_import_packet,
     prepare_meta_ads_import_packet,
+)
+from modules.beacon.weekly_owner_review import (
+    PACKET_ID as WEEKLY_OWNER_REVIEW_PACKET_ID,
+    load_post_one_thumbnail,
 )
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -142,6 +146,38 @@ def beacon_content_operations_read():
         **candidate.pop("capability_status"),
     }
     return jsonify(candidate), 200
+
+
+@app.route(
+    "/api/beacon/weekly-owner-review/<packet_id>/media/<asset_id>",
+    methods=["GET"],
+)
+def beacon_weekly_owner_review_media(packet_id, asset_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    if packet_id != WEEKLY_OWNER_REVIEW_PACKET_ID:
+        return jsonify({
+            "success": False,
+            "status": "weekly_owner_review_packet_not_found",
+            "posts_publicly": False,
+            "calls_meta": False,
+            "writes_performed": False,
+        }), 404
+    result, status = load_post_one_thumbnail(asset_id)
+    if status != 200:
+        return jsonify(result), status
+    return Response(
+        result["data"],
+        status=200,
+        mimetype=result["mime_type"],
+        headers={
+            "Cache-Control": "no-store, private",
+            "X-Content-Type-Options": "nosniff",
+            "X-Beacon-Packet": WEEKLY_OWNER_REVIEW_PACKET_ID,
+            "X-Beacon-Dimensions": f"{result['width']}x{result['height']}",
+        },
+    )
 
 
 @app.route("/api/beacon/meta-ads-insights-preview", methods=["GET"])
