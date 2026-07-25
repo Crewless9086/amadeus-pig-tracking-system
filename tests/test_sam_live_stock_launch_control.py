@@ -1,4 +1,5 @@
 import json
+import types
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -1274,5 +1275,122 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIsNone(result["counts"])
         self.assertFalse(result["bulk_reset_allowed"])
 
+    def test_human_mode_audit_never_swallows_process_control_exceptions(self):
+        for exception in (SystemExit("worker abort"), KeyboardInterrupt()):
+            with self.subTest(exception=type(exception).__name__):
+                with self.assertRaises(type(exception)):
+                    launch.audit_sam_live_stock_human_conversations(
+                        chatwoot_reader=lambda source: [human_conversation(1826)],
+                        review_loader=lambda conversation_id, exc=exception: (_ for _ in ()).throw(exc),
+                    )
+    def test_human_mode_audit_batches_review_loading_once(self):
+        conversations = [
+            human_conversation(1826, lane="unknown"),
+            human_conversation(1827, lane="meat"),
+            human_conversation(1828, lane="unknown"),
+        ]
+        calls = []
+
+        def batch_loader(conversation_ids):
+            calls.append(list(conversation_ids))
+            return {
+                "success": True,
+                "events_by_conversation_id": {
+                    "1826": {
+                        "chatwoot_conversation_id": "1826",
+                        "review_state": "active",
+                    }
+                },
+            }, 200
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_batch_loader=batch_loader,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(calls, [["1826", "1827", "1828"]])
+        self.assertEqual(result["diagnostics"]["review_load_mode"], "single_bounded_batch")
+        self.assertEqual([row["conversation_id"] for row in result["conversations"]], ["1826"])
+        self.assertEqual(result["counts"]["excluded_non_livestock"], 1)
+        self.assertEqual(result["counts"]["lane_unknown"], 1)
+        self.assertFalse(result["bulk_reset_allowed"])
+
+    def test_review_batch_query_is_once_bound_and_time_bounded(self):
+        observed = {"execute_calls": 0}
+
+        class Cursor:
+            description = []
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def execute(self, query, params):
+                observed["execute_calls"] += 1
+                observed["query"] = query
+                observed["params"] = params
+            def fetchall(self): return []
+
+        class Connection:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def cursor(self): return Cursor()
+
+        def connect(database_url, **kwargs):
+            observed["connect_kwargs"] = kwargs
+            return Connection()
+
+        with patch.dict("sys.modules", {"psycopg": types.SimpleNamespace(connect=connect)}):
+            result, status = launch.load_latest_sam_live_stock_review_events_for_conversations(
+                ["1978", "1978", "1980"], database_url="postgresql://configured"
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(observed["execute_calls"], 1)
+        self.assertIn("chatwoot_conversation_id = any(%s)", observed["query"])
+        self.assertNotIn("1978", observed["query"])
+        self.assertEqual(observed["params"], (["1978", "1980"],))
+        self.assertEqual(observed["connect_kwargs"]["connect_timeout"], launch.HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS)
+        self.assertEqual(observed["connect_kwargs"]["options"], f"-c statement_timeout={launch.HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS}")
+
+    def test_human_mode_audit_maximum_batch_is_deduplicated_and_loaded_once(self):
+        conversations = [human_conversation(i, lane="livestock") for i in range(1, launch.HUMAN_AUDIT_MAX_CONVERSATIONS + 1)]
+        conversations.append(human_conversation(1, lane="livestock"))
+        calls = []
+
+        def batch_loader(conversation_ids):
+            calls.append(list(conversation_ids))
+            return {"success": True, "events_by_conversation_id": {}}, 200
+
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations, review_batch_loader=batch_loader,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls[0]), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertEqual(len(set(calls[0])), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertEqual(len(result["conversations"]), launch.HUMAN_AUDIT_MAX_CONVERSATIONS)
+        self.assertLess(len(json.dumps(result)), 1_000_000)
+
+    def test_human_mode_audit_rejects_oversized_batch_before_query(self):
+        conversations = [human_conversation(i) for i in range(1, launch.HUMAN_AUDIT_MAX_CONVERSATIONS + 2)]
+        calls = []
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: conversations,
+            review_batch_loader=lambda ids: calls.append(ids),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(calls, [])
+        self.assertFalse(result["evidence_complete"])
+        self.assertIsNone(result["counts"])
+
+    def test_human_mode_audit_healthy_process_deadline_is_structured(self):
+        ticks = iter((0.0, 21.0))
+        result, status = launch.audit_sam_live_stock_human_conversations(
+            chatwoot_reader=lambda source: [], clock=lambda: next(ticks),
+        )
+        self.assertEqual(status, 504)
+        self.assertEqual(result["failure_stage"], "chatwoot_request")
+        self.assertEqual(result["error_type"], "TimeoutError")
+        self.assertFalse(result["evidence_complete"])
+        self.assertFalse(result["writes_performed"])
 if __name__ == "__main__":
     unittest.main()
