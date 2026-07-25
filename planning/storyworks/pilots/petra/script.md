@@ -43,7 +43,7 @@ Where does the rain fall? Which slope receives it? Where does runoff concentrate
 
 Researchers studying Petra still face gaps in historical rainfall and runoff data, and the chronology of individual structures is not always certain. What survives is not a signed master plan. It is physical evidence that accumulated, changed and was repaired across centuries. [P016]
 
-So the whole-system picture is a reconstruction.
+So this episode’s whole-system picture is a modern synthesis of surviving evidence.
 
 But the surviving landscape makes one principle difficult to miss: control began before water reached the centre.
 
@@ -53,7 +53,7 @@ Above the Treasury Plaza lies the Wadi Hremiyyeh catchment. Modern archaeologica
 
 These were not simply walls waiting for one giant wave.
 
-Spread through the catchment, they could interrupt the journey of water downhill. A structure holds back sediment. Water spreads, loses energy or arrives later. Another structure repeats the effect. The goal is not necessarily to make water disappear. It is to prevent many small flows from combining into one sudden surge. [P005, P006]
+Spread through the catchment, they could interrupt the journey of water downhill. A structure may hold back sediment. Water may spread, lose energy or arrive later. Another structure may repeat part of that effect. One inferred function is to reduce the rapid concentration of many smaller flows, not to make water disappear. [P005, P006]
 
 This distinction matters.
 
@@ -69,7 +69,7 @@ The most visible approach to Petra is the Siq, a winding rock corridor. Water mo
 
 Among the surviving works recognised by UNESCO are a diversion dam and the Muthlim tunnel, along with channels, aqueducts, reservoirs and cisterns. [P007]
 
-The diversion system offered dangerous flow another route instead of allowing all of it to run through the Siq toward the settled basin.
+The diversion system was intended to divert part of the dangerous flow away from the Siq and the settled basin.
 
 It is tempting to tell this as a single heroic construction: build dam, save city.
 
@@ -95,7 +95,7 @@ Those systems had different strengths.
 
 Stored rain creates a reserve, but only if the catchment fills it and the container holds it. A spring can provide continuing flow, but a long conduit must maintain a workable gradient while crossing a landscape cut by ravines.
 
-Researchers studying Petra’s Wadi Mataha pipeline have tried to reconstruct the choices behind its design. The analysis suggests engineers balanced available flow, channel capacity, leakage risk and terrain. That is modern interpretation of ancient fabric—not a surviving Nabataean engineering manual—but it reveals how much reasoning can be embedded in a slope, a pipe and a settling basin. [P009, P016]
+Researchers studying Petra’s Wadi Mataha pipeline have tried to reconstruct the choices behind its design. Ortloff’s analysis reconstructs how available flow, channel capacity, leakage risk and terrain may have shaped design choices. That is modern interpretation of ancient fabric—not a surviving Nabataean engineering manual. [P009, P016]
 
 ## 7:40 — Water must arrive usable
 
@@ -103,7 +103,7 @@ Moving water is not enough.
 
 Runoff carries sand, silt and organic material. A violent storm can turn a clean-looking channel into a conveyor of debris.
 
-Ortloff’s analysis of Petra’s distribution system identifies sequential settling features intended to let suspended material fall out before water continued through parts of the potable supply. [P010]
+Ortloff’s analysis interprets sequential features as allowing suspended material to settle before water continued through parts of the supply network. [P010]
 
 Think of the network as a sequence of decisions:
 
@@ -127,11 +127,11 @@ Petra combined structures with different time horizons: minutes for a flood surg
 
 UNESCO credits Petra’s water-management system with enabling extensive settlement in an essentially arid area through Nabataean, Roman and Byzantine periods. [P012]
 
-Water supported drinking, animals, craft, agriculture and public life.
+Water management supported settlement and urban life.
 
 And at least in elite urban settings, it became something more than survival.
 
-Excavation of Petra’s Garden and Pool Complex revealed a large pool, an island pavilion and a cultivated terrace. Here, water could communicate abundance, leisure and power. [P013]
+Excavation of Petra’s Garden and Pool Complex revealed a large pool, an island pavilion and a cultivated terrace. The complex has been interpreted as communicating abundance, leisure and power. [P013]
 
 That does not mean every resident lived beside a garden pool. It shows what a functioning water system made imaginable.
 
@@ -147,7 +147,7 @@ Popular accounts often call ancient engineering “ahead of its time.”
 
 That phrase hides more than it explains.
 
-Petra sat inside trading and cultural networks. Its builders could draw on technologies circulating through neighbouring societies, while adapting them to local sandstone, wadis, springs and urban demands. Researchers identify both borrowed knowledge and original technical choices. [P014]
+Petra sat inside trading and cultural networks. Researchers identify regional influences alongside locally adapted technical choices suited to Petra’s sandstone, wadis, springs and urban demands. [P014]
 
 The important question is not whether one civilisation possessed secret knowledge.
 
@@ -155,7 +155,7 @@ It is how people selected, combined and maintained techniques under a specific c
 
 Petra’s engineers did not have modern rainfall radar, digital terrain models or concrete spillways. Modern hydrologists studying the site do.
 
-Yet the modern work has returned to an ancient systems insight: flood risk is not only managed at the point of disaster. It can be reduced through interventions distributed across the catchment.
+Modern catchment research highlights a systems principle also visible in Petra’s surviving works: flood risk may be reduced through interventions distributed across a catchment, not only at the point where flows concentrate.
 
 That does not make an ancient wall a ready-made modern solution. Climate, settlement, conservation and safety standards are different.
 
@@ -171,13 +171,11 @@ We rarely photograph the repeated clearing of a channel, the repair of plaster i
 
 But without that work, the system degrades.
 
-UNESCO’s present warning—that the site remains vulnerable if diversion works are not monitored and repaired—reveals something about the ancient city too. [P015]
+UNESCO’s present warning—that the site remains vulnerable if diversion works are not monitored and repaired—shows why maintenance is central to interpreting the system. [P015]
 
-Infrastructure is not complete when it is built.
+The system depended on repeated inspection, cleaning and repair.
 
-It exists only while a society can keep it working.
-
-Petra’s water system also changed under Nabataean, Roman, Byzantine and later occupation. We should not compress those centuries into one frozen diagram, or claim that one failed channel explains the city’s long transformation. [P012, P016]
+Petra’s water system also changed across Nabataean, Roman, Byzantine and later periods. We should not compress those centuries into one frozen diagram, or claim that one failed channel explains the city’s long transformation. [P012, P016]
 
 The evidence is more interesting than a collapse myth.
 
@@ -189,23 +187,23 @@ So how did Petra survive both too little water and too much?
 
 Not perfectly, and not through one invention.
 
-Its inhabitants turned the watershed into layers of defence and supply.
+Across different periods, Petra’s inhabitants developed layers of flood moderation and water supply.
 
-Upstream structures could slow runoff.
+Upstream structures could help slow runoff.
 
-Diversion works could redirect dangerous flow.
+Diversion works could help redirect dangerous flow.
 
-Channels and pipelines could move spring water.
+Channels and pipelines could help move spring water.
 
-Settling features could improve it.
+Settling features could help remove suspended material.
 
-Cisterns and reservoirs could move water through time, saving an irregular arrival for a later need. [P003–P011]
+Cisterns and reservoirs could store an irregular arrival for a later need. [P003–P011]
 
 This episode’s argument is a synthesis of the surviving structures and modern research: Petra managed scarce water and destructive runoff through the layered, engineered and continually maintained system between them. [P015, P017]
 
 And the system carried a price.
 
-It required observation, coordination and maintenance—work far less famous than the Treasury, but more essential to keeping a city alive.
+It required repeated inspection, cleaning and repair—work far less famous than the Treasury, but essential to keeping the system functioning.
 
 The monument is carved into the cliff.
 
