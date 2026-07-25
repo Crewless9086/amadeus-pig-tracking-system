@@ -33,6 +33,7 @@ from modules.sales.sam_delivery_truth import (
     classify_chatwoot_response,
     classify_dispatch_exception,
     load_delivery_attempt_for_outgoing_message,
+    normalize_chatwoot_delivery_event,
 )
 
 
@@ -1185,6 +1186,32 @@ def _open_chatwoot_keyboard(callback_id, conversation_id, source):
     return [[button]]
 
 
+def _chatwoot_read_exact_outgoing_message(conversation_id, message_id, source):
+    """Read one exact Chatwoot message; never searches or dispatches."""
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    conversation_id = _clean(conversation_id, 120)
+    message_id = _clean(message_id, 120)
+    if not base_url or not account_id or not token or not conversation_id or not message_id:
+        return {"status_code": None, "body": {}}
+    url = (
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/"
+        f"{conversation_id}/messages/{message_id}"
+    )
+    request = urllib_request.Request(
+        url,
+        headers={"api_access_token": token, "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=5) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            return {"status_code": int(response.status), "body": body if isinstance(body, dict) else {}}
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+        return {"status_code": None, "body": {}}
+
+
 def handle_sam_live_stock_delivery_status_webhook(
     payload,
     *,
@@ -1195,33 +1222,19 @@ def handle_sam_live_stock_delivery_status_webhook(
     active_card_loader=None,
     telegram_deleter=None,
     telegram_editor=None,
+    reconciliation_loader=None,
 ):
     """Reconcile an exact owner-send attempt from Chatwoot message_updated."""
     source = environ if environ is not None else os.environ
     payload = payload if isinstance(payload, dict) else {}
-    if isinstance(payload.get("message"), dict):
-        message = payload.get("message")
-    elif isinstance(payload.get("messages"), list) and payload.get("messages") and isinstance(payload["messages"][0], dict):
-        message = payload["messages"][0]
-    else:
-        message = payload
-    conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
-    if not conversation and isinstance(message.get("conversation"), dict):
-        conversation = message.get("conversation")
-    event_name = _clean(payload.get("event") or payload.get("event_name"), 80).lower()
-    message_type = message.get("message_type")
-    conversation_id = _clean(
-        payload.get("conversation_id") or message.get("conversation_id") or conversation.get("id"),
-        120,
-    )
-    outgoing_id = _clean(payload.get("message_id") or message.get("id"), 120)
-    status = _clean(
-        payload.get("delivery_status") or payload.get("status")
-        or message.get("delivery_status") or message.get("message_status")
-        or message.get("source_status") or message.get("status"),
-        40,
-    ).lower()
-    if event_name not in {"message_updated", ""} or str(message_type).lower() not in {"1", "outgoing"}:
+    normalized = normalize_chatwoot_delivery_event(payload)
+    event_name = normalized.get("event_type")
+    message_type = normalized.get("message_type")
+    conversation_id = _clean(normalized.get("conversation_id"), 120)
+    outgoing_id = _clean(normalized.get("chatwoot_message_id"), 120)
+    if event_name not in {"message_updated", ""} or (
+        message_type and str(message_type).lower() not in {"1", "outgoing"}
+    ):
         return {"success": True, "status": "sam_delivery_status_ignored", "processed": False}, 200
     loader = attempt_loader or (
         lambda cid, mid: load_delivery_attempt_for_outgoing_message(
@@ -1234,16 +1247,78 @@ def handle_sam_live_stock_delivery_status_webhook(
     attempt = loaded.get("attempt") if isinstance(loaded.get("attempt"), dict) else {}
     if _clean(attempt.get("conversation_id"), 120) != conversation_id or _clean(attempt.get("chatwoot_outgoing_message_id"), 120) != outgoing_id:
         return {"success": False, "status": "sam_delivery_webhook_identity_mismatch", "processed": False}, 409
+    configured_account = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 120)
+    if (
+        normalized.get("conflict")
+        or (normalized.get("inbox_id") and _clean(normalized.get("inbox_id"), 120) != _clean(attempt.get("inbox_id"), 120))
+        or (normalized.get("account_id") and configured_account and _clean(normalized.get("account_id"), 120) != configured_account)
+    ):
+        return {
+            "success": False,
+            "status": "sam_delivery_webhook_identity_or_status_conflict",
+            "processed": False,
+            "automatic_retry_prohibited": True,
+        }, 409
     outcome = classify_chatwoot_response({
         "status_code": 200,
         "body": {
             "id": outgoing_id,
             "conversation_id": conversation_id,
-            "status": status,
-            "source_id": message.get("source_id"),
-            "content_attributes": message.get("content_attributes") if isinstance(message.get("content_attributes"), dict) else {},
+            "status": (
+                "unresolved"
+                if normalized.get("malformed")
+                else normalized.get("normalized_status")
+            ),
         },
     })
+    outcome.update({
+        "provider_identity_class": normalized.get("provider_identity_class") or "absent",
+        "reconciliation_source": "chatwoot_message_updated_webhook",
+        "status_source_path": normalized.get("status_source_path"),
+        "provider_event_type": normalized.get("event_type"),
+        "provider_event_timestamp": normalized.get("event_timestamp"),
+        "provider_event_conflict": normalized.get("conflict") is True,
+        "provider_event_malformed": normalized.get("malformed") is True,
+    })
+    if outcome.get("delivery_state") in {CHATWOOT_ACCEPTED_UNVERIFIED, PROVIDER_OUTCOME_AMBIGUOUS}:
+        try:
+            current = (reconciliation_loader or _chatwoot_read_exact_outgoing_message)(
+                conversation_id, outgoing_id, source
+            )
+        except Exception:
+            current = {}
+        current_body = current.get("body") if isinstance(current, dict) and isinstance(current.get("body"), dict) else {}
+        current_conversation = _clean(
+            current_body.get("conversation_id")
+            or (current_body.get("conversation") or {}).get("id"),
+            120,
+        )
+        current_id = _clean(current_body.get("id") or current_body.get("message_id"), 120)
+        current_normalized = normalize_chatwoot_delivery_event(current_body) if current_body else {}
+        current_inbox = _clean(current_normalized.get("inbox_id"), 120)
+        current_account = _clean(current_normalized.get("account_id"), 120)
+        current_identity_agrees = (
+            not current_normalized.get("conflict")
+            and (not current_inbox or current_inbox == _clean(attempt.get("inbox_id"), 120))
+            and (not current_account or not configured_account or current_account == configured_account)
+        )
+        if (
+            current_body
+            and current_conversation == conversation_id
+            and current_id == outgoing_id
+            and current_identity_agrees
+        ):
+            reconciled = classify_chatwoot_response(current)
+            if reconciled.get("delivery_state") in CONFIRMED_STATES | {PROVIDER_FAILED}:
+                outcome = {
+                    **reconciled,
+                    "reconciliation_source": "chatwoot_exact_outgoing_message_read",
+                    "status_source_path": "chatwoot_message.status",
+                    "provider_event_type": normalized.get("event_type"),
+                    "provider_event_timestamp": normalized.get("event_timestamp"),
+                    "provider_event_conflict": False,
+                    "provider_event_malformed": False,
+                }
     if (
         outcome.get("delivery_state") in CONFIRMED_STATES
         and outcome.get("provider_identity_class") != "whatsapp_provider"

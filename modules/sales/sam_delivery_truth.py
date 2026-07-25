@@ -30,6 +30,7 @@ DELIVERY_EVENT_SOURCES = {
     "sam_outbound_delivery_transition",
 }
 DEFAULT_UNVERIFIED_OBSERVATION_SECONDS = 300
+SUPPORTED_PROVIDER_STATUSES = {"sent", "delivered", "read", "failed"}
 
 
 def build_delivery_attempt(inbound, decision, review, *, response_class="", attempt_generation=1):
@@ -223,6 +224,153 @@ def classify_provider_identity(value):
     return "other" if value else "absent"
 
 
+def normalize_chatwoot_delivery_event(payload):
+    """Normalize a Chatwoot message_updated envelope without retaining raw payload data."""
+    payload = payload if isinstance(payload, Mapping) else {}
+    nodes = [("payload", payload)]
+    for key in ("message", "message_payload", "data"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            nodes.append((f"payload.{key}", value))
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        nodes.extend(
+            (f"payload.messages[{index}]", value)
+            for index, value in enumerate(messages[:2])
+            if isinstance(value, Mapping)
+        )
+
+    def candidates(keys, *, nested=()):
+        found = []
+        for path, node in nodes:
+            for key in keys:
+                value = _clean(node.get(key), 120)
+                if value:
+                    found.append((f"{path}.{key}", value))
+            for container in nested:
+                child = node.get(container)
+                if isinstance(child, Mapping):
+                    for key in keys:
+                        value = _clean(child.get(key), 120)
+                        if value:
+                            found.append((f"{path}.{container}.{key}", value))
+        return found
+
+    event_values = candidates(("event", "event_name", "webhook_event"))
+    event_type = (event_values[0][1] if event_values else "").lower()
+    message_nodes = [
+        (path, node) for path, node in nodes
+        if path != "payload" or any(
+            key in node for key in ("message_id", "message_type", "delivery_status", "message_status")
+        )
+    ]
+    if not message_nodes and any(key in payload for key in ("id", "status", "source_id")):
+        message_nodes = [("payload", payload)]
+
+    status_values = []
+    for path, node in message_nodes:
+        for key in ("delivery_status", "message_status", "source_status", "status"):
+            value = _clean(node.get(key), 40).lower()
+            if value:
+                status_values.append((f"{path}.{key}", value))
+        for container in ("content_attributes", "additional_attributes"):
+            child = node.get(container)
+            if isinstance(child, Mapping):
+                for key in ("delivery_status", "message_status", "source_status"):
+                    value = _clean(child.get(key), 40).lower()
+                    if value:
+                        status_values.append((f"{path}.{container}.{key}", value))
+
+    message_values = []
+    for path, node in message_nodes:
+        for key in ("message_id", "id"):
+            value = _clean(node.get(key), 120)
+            if value:
+                message_values.append((f"{path}.{key}", value))
+    conversation_values = candidates(
+        ("conversation_id", "chatwoot_conversation_id"),
+        nested=("conversation",),
+    )
+    for path, node in nodes:
+        conversation = node.get("conversation")
+        if isinstance(conversation, Mapping):
+            value = _clean(conversation.get("id"), 120)
+            if value:
+                conversation_values.append((f"{path}.conversation.id", value))
+    account_values = candidates(("account_id",), nested=("account",))
+    inbox_values = candidates(("inbox_id",), nested=("inbox", "conversation"))
+    for path, node in nodes:
+        account = node.get("account")
+        if isinstance(account, Mapping):
+            value = _clean(account.get("id"), 120)
+            if value:
+                account_values.append((f"{path}.account.id", value))
+        inbox = node.get("inbox")
+        if isinstance(inbox, Mapping):
+            value = _clean(inbox.get("id"), 120)
+            if value:
+                inbox_values.append((f"{path}.inbox.id", value))
+        for parent in ("conversation",):
+            child = node.get(parent)
+            if isinstance(child, Mapping):
+                inbox = child.get("inbox")
+                if isinstance(inbox, Mapping):
+                    value = _clean(inbox.get("id"), 120)
+                    if value:
+                        inbox_values.append((f"{path}.{parent}.inbox.id", value))
+    type_values = candidates(("message_type",))
+    provider_values = candidates(("source_id",), nested=("content_attributes",))
+    timestamp_values = candidates(("event_timestamp", "updated_at", "created_at"))
+
+    def resolve(found):
+        values = {value for _, value in found}
+        return (next(iter(values)) if len(values) == 1 else "", len(values) > 1)
+
+    message_id, message_conflict = resolve(message_values)
+    conversation_id, conversation_conflict = resolve(conversation_values)
+    account_id, account_conflict = resolve(account_values)
+    inbox_id, inbox_conflict = resolve(inbox_values)
+    message_type, type_conflict = resolve(type_values)
+    recognized_statuses = [(path, value) for path, value in status_values if value in SUPPORTED_PROVIDER_STATUSES]
+    unknown_status = any(value not in SUPPORTED_PROVIDER_STATUSES for _, value in status_values)
+    normalized_status, status_conflict = resolve(recognized_statuses)
+    malformed = not normalized_status or unknown_status
+    conflict = any((
+        message_conflict, conversation_conflict, account_conflict, inbox_conflict,
+        type_conflict, status_conflict,
+    ))
+    provider_classes = {classify_provider_identity(value) for _, value in provider_values}
+    provider_class = next(iter(provider_classes)) if len(provider_classes) == 1 else (
+        "conflicting" if provider_classes else "absent"
+    )
+    provider_conflict = len(provider_classes) > 1
+    conflict = conflict or provider_conflict
+    source_path = next(
+        (path for path, value in recognized_statuses if value == normalized_status),
+        "",
+    )
+    event_timestamp = timestamp_values[0][1] if timestamp_values else ""
+    outgoing = str(message_type).lower() in {"1", "outgoing"}
+    return {
+        "event_type": event_type,
+        "chatwoot_message_id": message_id,
+        "conversation_id": conversation_id,
+        "account_id": account_id,
+        "inbox_id": inbox_id,
+        "message_type": message_type,
+        "outgoing": outgoing,
+        "provider_identity_class": provider_class,
+        "normalized_status": normalized_status or "unresolved",
+        "status_source_path": source_path,
+        "event_timestamp": event_timestamp,
+        "conflict": conflict,
+        "malformed": malformed,
+        "source_count": len(status_values),
+        "contains_raw_provider_identity": False,
+        "contains_private_message_content": False,
+    }
+
+
 def build_delivery_transition_event(attempt, outcome):
     attempt = _attempt(attempt)
     outcome = outcome if isinstance(outcome, Mapping) else {}
@@ -245,10 +393,18 @@ def build_delivery_transition_event(attempt, outcome):
         "customer_send_confirmed": state in CONFIRMED_STATES,
         "handled_autonomously": state in CONFIRMED_STATES,
         "failure_class": _clean(outcome.get("failure_class"), 100),
+        "reconciliation_source": _clean(outcome.get("reconciliation_source"), 80),
+        "status_source_path": _clean(outcome.get("status_source_path"), 160),
+        "provider_event_type": _clean(outcome.get("provider_event_type"), 80),
+        "provider_event_timestamp": _clean(outcome.get("provider_event_timestamp"), 80),
+        "provider_event_conflict": bool(outcome.get("provider_event_conflict")),
+        "provider_event_malformed": bool(outcome.get("provider_event_malformed")),
     })
+    terminal = state in {PROVIDER_DELIVERED, PROVIDER_READ, PROVIDER_FAILED}
     event_id = _stable_id(
-        "SAM-DELIVERY-TRANSITION",
-        [attempt["delivery_attempt_id"], state, outgoing_message_id],
+        "SAM-DELIVERY-TERMINAL" if terminal else "SAM-DELIVERY-TRANSITION",
+        [attempt["delivery_attempt_id"], outgoing_message_id]
+        if terminal else [attempt["delivery_attempt_id"], state, outgoing_message_id],
     )
     return _event(
         event_id,
