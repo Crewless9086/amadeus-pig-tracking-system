@@ -1841,6 +1841,82 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertNotEqual(result["status"], "sam_meat_live_stock_handoff")
         livestock_context.assert_not_called()
 
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_delivery_orders_review_claim_dispatch_and_acceptance(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-DELIVERY-1"}, 201)
+        order = []
+
+        def packet_builder(*_args, **_kwargs):
+            order.append("packet")
+            return {
+                "success": True,
+                "review_event": {"event_id": "SAM-MEAT-REVIEW-1"},
+                "owner_packet": {"protected_owner_decision": "review_reply"},
+            }
+
+        def evidence_recorder(_packet, _lead_id):
+            order.append("review_persisted")
+            return {"success": True, "persisted": True, "status": "persisted"}, 200
+
+        def claim(_inbound, _decision, review):
+            self.assertEqual(review["review_event_id"], "SAM-MEAT-REVIEW-1")
+            order.append("attempt_claimed")
+            return {"success": True, "created": True, "delivery_attempt_id": "ATTEMPT-1"}
+
+        def sender(_conversation_id, _reply):
+            order.append("dispatch")
+            return {"status_code": 200, "body": {"id": "OUT-1", "status": "sent"}}
+
+        def outcome(_claim, value):
+            order.append("acceptance_persisted")
+            self.assertEqual(value["delivery_state"], "chatwoot_accepted_unverified")
+            return {"success": True, "created": True}
+
+        with patch.object(sam_meat_runtime, "sam_meat_control_policy", return_value={"customer_public_output_enabled": True}):
+            result, status = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                inbound_payload(conversation={"id": 1808, "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"}}),
+                environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+                chatwoot_sender=sender,
+                launch_packet_builder=packet_builder,
+                launch_evidence_recorder=evidence_recorder,
+                routine_delivery_claim=claim,
+                routine_delivery_evidence_recorder=outcome,
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(order, ["packet", "review_persisted", "attempt_claimed", "dispatch", "acceptance_persisted"])
+        self.assertEqual(result["send_status"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["routine_reply_delivery"]["customer_send_confirmed"])
+        self.assertFalse(result["routine_reply_delivery"]["handled_autonomously"])
+
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_review_or_claim_failure_prevents_dispatch_and_replay(self, record_lead):
+        record_lead.return_value = ({"success": True, "lead_id": "MEAT-DELIVERY-2"}, 201)
+        sender = Mock()
+        packet = {"success": True, "review_event": {"event_id": "SAM-MEAT-REVIEW-2"}, "owner_packet": {}}
+        common = dict(
+            payload=inbound_payload(),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+            chatwoot_sender=sender,
+            launch_packet_builder=Mock(return_value=packet),
+        )
+        with patch.object(sam_meat_runtime, "sam_meat_control_policy", return_value={"customer_public_output_enabled": True}):
+            failed_review, _ = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                **common,
+                launch_evidence_recorder=Mock(return_value=({"success": False, "persisted": False}, 503)),
+                routine_delivery_claim=Mock(),
+                routine_delivery_evidence_recorder=Mock(),
+            )
+            replay, _ = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+                **common,
+                launch_evidence_recorder=Mock(return_value=({"success": True, "persisted": True}, 200)),
+                routine_delivery_claim=Mock(return_value={"success": True, "created": False, "delivery_attempt_id": "ATTEMPT-2"}),
+                routine_delivery_evidence_recorder=Mock(),
+            )
+        self.assertEqual(failed_review["send_status"], "review_evidence_not_persisted")
+        self.assertEqual(replay["send_status"], "delivery_attempt_already_claimed_no_retry")
+        sender.assert_not_called()
+
+
 if __name__ == "__main__":
 
     unittest.main()

@@ -1919,7 +1919,11 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
-        handle_inbound.assert_called_once_with({"event": "message_created"})
+        handle_inbound.assert_called_once_with(
+            {"event": "message_created"},
+            routine_delivery_claim=sales_transaction_routes._claim_sam_meat_routine_delivery,
+            routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
+        )
 
     def test_sam_meat_backend_routes_live_stock_handoff_to_live_runtime(self):
         meat_result = {

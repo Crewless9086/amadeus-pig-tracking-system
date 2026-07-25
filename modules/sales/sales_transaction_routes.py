@@ -433,7 +433,11 @@ def sam_meat_chatwoot_inbound():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     try:
-        result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+        result, status_code = handle_sam_meat_chatwoot_inbound(
+            payload,
+            routine_delivery_claim=_claim_sam_meat_routine_delivery,
+            routine_delivery_evidence_recorder=_record_sam_live_stock_delivery_outcome,
+        )
         if result.get("status") == "sam_meat_live_stock_handoff" and _valid_sam_live_stock_handoff_packet(result):
             live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)
             _attach_sam_live_stock_review_event(live_result, payload, event_source="sam_meat_internal_live_stock_handoff")
@@ -468,6 +472,40 @@ def sam_meat_chatwoot_inbound():
         }, 500
     return jsonify(result), status_code
 
+
+def _claim_sam_meat_routine_delivery(inbound, decision, review):
+    attempt = build_delivery_attempt(
+        inbound,
+        decision,
+        review,
+        response_class=(decision.get("autoreply_canary") or {}).get("response_class")
+        or "sam_meat_routine_reply",
+        attempt_generation=1,
+        require_account_identity=True,
+    )
+    if not attempt.get("success"):
+        return {**attempt, "created": False, "contains_secret_values": False}
+    event = build_delivery_claim_event(attempt)
+    result, status_code = record_sam_live_stock_review_event(event)
+    claim = {
+        **attempt,
+        "success": result.get("success") is True,
+        "created": result.get("created") is True,
+        "status": result.get("status"),
+        "status_code": status_code,
+        "delivery_claim_event_id": event.get("review_event_id"),
+        "contains_secret_values": False,
+    }
+    if claim["success"] and not claim["created"]:
+        chain = load_attempt_chain(
+            os.getenv("DATABASE_URL", ""),
+            attempt["conversation_id"],
+            attempt["delivery_attempt_id"],
+        )
+        claim["prior_delivery_state"] = chain.get("latest_delivery_state", "")
+        claim["prior_delivery_confirmed"] = chain.get("customer_send_confirmed") is True
+        claim["evidence_chain"] = chain.get("events", [])
+    return claim
 
 def _valid_sam_live_stock_handoff_packet(result):
     packet = result.get("lane_decision") if isinstance(result, dict) else {}
