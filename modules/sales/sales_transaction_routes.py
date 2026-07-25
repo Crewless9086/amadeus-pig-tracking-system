@@ -85,6 +85,7 @@ from modules.sales.meat_production import (
     record_meat_processing_output,
 )
 from modules.sales.meat_template_pack import meat_whatsapp_template_pack
+from modules.sales.sam_meat_readiness_probe import run_sam_meat_readiness_probe
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
     handle_sam_meat_chatwoot_inbound,
@@ -394,6 +395,15 @@ def sam_meat_chatwoot_policy():
         "success": True,
         "policy": sam_meat_webhook_policy(),
     }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-meat/readiness-probe", methods=["GET"])
+def sam_meat_readiness_probe_route():
+    denied = require_owner_read_access()
+    if denied:
+        return denied
+    result, status_code = run_sam_meat_readiness_probe()
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/sam-farm-knowledge", methods=["GET"])
