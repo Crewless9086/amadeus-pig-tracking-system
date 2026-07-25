@@ -24,6 +24,10 @@ class ChatwootFilterResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
+class MessageListResponse(ChatwootFilterResponse):
+    status = 200
+
+
 def human_conversation(
     conversation_id,
     *,
@@ -1075,6 +1079,106 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["delivery_state"], "provider_outcome_ambiguous")
         self.assertFalse(result["customer_send_confirmed"])
         self.assertTrue(result["card_retained"])
+
+    def _delivery_reader_source(self):
+        return {
+            launch.CHATWOOT_BASE_URL_ENV: "https://chatwoot.test",
+            launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+            launch.CHATWOOT_TOKEN_ENV: "secret-token",
+            launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "96568",
+        }
+
+    def _delivery_message(self, message_id="759675071", **overrides):
+        row = {
+            "id": int(message_id),
+            "account_id": 147387,
+            "conversation_id": 2017,
+            "inbox_id": 96568,
+            "message_type": 1,
+            "private": False,
+            "status": "read",
+            "source_id": "wamid.SANITIZED_FIXTURE",
+            "updated_at": "2026-07-25T18:00:00Z",
+        }
+        row.update(overrides)
+        return row
+
+    def test_exact_delivery_reader_uses_supported_message_list_and_one_page(self):
+        urls = []
+        def urlopen(request, timeout):
+            urls.append((request.full_url, timeout))
+            return MessageListResponse({"payload": [self._delivery_message()]})
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "759675071", self._delivery_reader_source(), urlopen=urlopen
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 759675071)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 1)
+        self.assertIn("/conversations/2017/messages?after=0", urls[0][0])
+        self.assertNotIn("/messages/759675071", urls[0][0])
+        self.assertLessEqual(urls[0][1], 5)
+
+    def test_exact_delivery_reader_finds_later_bounded_page(self):
+        first = [self._delivery_message(str(value), status="sent") for value in range(1, 101)]
+        pages = iter([
+            {"payload": first},
+            {"payload": [self._delivery_message("150")]},
+        ])
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "150", self._delivery_reader_source(),
+            urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 150)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 2)
+        self.assertEqual(result["reader_provenance"]["rows_read"], 101)
+
+    def test_exact_delivery_reader_zero_duplicate_incomplete_and_malformed_fail_closed(self):
+        cases = {
+            "zero": ([{"payload": []}], "reader_exact_message_not_found"),
+            "duplicate": ([{"payload": [self._delivery_message(), self._delivery_message()]}], "reader_duplicate_exact_message"),
+            "malformed": ([{"unexpected": []}], "reader_envelope_malformed"),
+            "incomplete": (
+                [
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(1, 101)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(101, 201)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(201, 301)]},
+                ],
+                "reader_pagination_incomplete",
+            ),
+        }
+        for name, (payloads, reason) in cases.items():
+            with self.subTest(name=name):
+                pages = iter(payloads)
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
+
+    def test_exact_delivery_reader_rejects_identity_direction_private_and_status_collisions(self):
+        cases = {
+            "account": ({"account_id": 999}, "reader_account_mismatch"),
+            "conversation": ({"conversation_id": 999}, "reader_exact_identity_mismatch"),
+            "inbox": ({"inbox_id": 999}, "reader_inbox_mismatch"),
+            "incoming": ({"message_type": 0}, "reader_message_not_outgoing"),
+            "private": ({"private": True}, "reader_message_not_public"),
+            "wrong_id_same_content": ({"id": 759675999, "content": "same"}, "reader_exact_message_not_found"),
+            "missing_status": ({"status": ""}, "reader_status_malformed"),
+            "unknown_status": ({"status": "mystery"}, "reader_status_malformed"),
+            "conflicting_status": ({"status": "read", "delivery_status": "failed"}, "reader_identity_or_status_conflict"),
+        }
+        for name, (patch, reason) in cases.items():
+            with self.subTest(name=name):
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, value=patch, **_kwargs: MessageListResponse({
+                        "payload": [self._delivery_message(**value)]
+                    }),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
 
     def test_conversation_2017_malformed_webhook_recovers_exact_delivered_message(self):
         review, action, card = send_action_fixture()
