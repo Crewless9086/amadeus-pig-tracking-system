@@ -75,6 +75,7 @@ from modules.charlie.mission_governance import (
     update_acceptance_matrix,
 )
 from modules.charlie.block_recovery import classify_block, normalize_findings
+from modules.charlie.adaptive_orchestration import expand_orchestration
 from modules.charlie.evidence_reconciliation import (
     bind_artifact_to_candidate,
     build_candidate_manifest,
@@ -980,6 +981,25 @@ def run_agent_execution_bridge_v2(
         )
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
+        expansion, expansion_status = _reconcile_adaptive_expansion(
+            mission, agent, artifact, database_url=database_url, connect_factory=connect_factory,
+        )
+        if expansion_status >= 400:
+            return _block_agent_stage(
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=f"Adaptive orchestration reconciliation blocked: {expansion.get('status', 'unknown')}.",
+                artifact={**artifact, "orchestration_reconciliation": expansion}, artifacts=artifacts,
+                database_url=database_url, connect_factory=connect_factory,
+            )
+        if expansion.get("status") == "orchestration_generation_expanded":
+            mission.setdefault("metadata", {})["orchestration"] = expansion["packet"]
+            for added_agent in expansion.get("added_roles", []):
+                if added_agent not in completed and added_agent not in agent_queue:
+                    protected_consumer = next(
+                        (index for index, queued in enumerate(agent_queue) if queued in {"reviewer", "publisher"}),
+                        len(agent_queue),
+                    )
+                    agent_queue.insert(protected_consumer, added_agent)
         if not ingestion_owned_stage:
             _record_mission_memory_event(
                 mission,
@@ -2871,7 +2891,83 @@ def _mission_agent_sequence(mission):
     context_pack = mission.get("mission_context_pack") if isinstance(mission.get("mission_context_pack"), dict) else {}
     agent_order = context_pack.get("agent_order") if isinstance(context_pack.get("agent_order"), list) else []
     cleaned = [str(agent or "").strip().lower() for agent in agent_order if str(agent or "").strip().lower() in all_agent_names()]
-    return cleaned or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
+    if cleaned:
+        return cleaned
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    orchestration = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    selected = [
+        str(item.get("agent") or "").strip().lower()
+        for item in orchestration.get("selected_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "").strip().lower() in all_agent_names()
+    ]
+    return selected or agent_sequence_for_mission(mission.get("mission_type", ""), mission.get("raw_text", ""))
+
+
+def _reconcile_adaptive_expansion(mission, producing_agent, artifact, *, database_url=None, connect_factory=None):
+    """Persist one new adaptive generation only for materially changed evidence."""
+    mission = mission if isinstance(mission, dict) else {}
+    metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    packet = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    if not packet:
+        return {"success": True, "status": "legacy_orchestration_unchanged", "packet": None}, 200
+    evidence = {
+        "producing_stage": str(producing_agent or ""),
+        "decision": artifact.get("decision"),
+        "status": artifact.get("status"),
+        "risk_flags": artifact.get("risk_flags") or artifact.get("risks"),
+        "findings": artifact.get("findings") or artifact.get("bugs"),
+        "changed_files": artifact.get("changed_files"),
+        "candidate_revision": artifact.get("candidate_revision"),
+        "expected_revision": artifact.get("expected_revision"),
+        "tested_revision": artifact.get("tested_revision"),
+    }
+    evidence = {key: value for key, value in evidence.items() if value not in (None, "", [], {})}
+    try:
+        updated = expand_orchestration(packet, mission, evidence)
+    except (TypeError, ValueError) as exc:
+        return {"success": False, "status": "orchestration_evidence_invalid", "error": str(exc)}, 409
+    if updated.get("generation_identity") == packet.get("generation_identity"):
+        return {"success": True, "status": "orchestration_generation_reused", "packet": packet}, 200
+    prior_agent_packets = [
+        item for item in packet.get("selected_agents", []) if isinstance(item, dict) and item.get("agent")
+    ]
+    # Live generations may expand but never contract an active workflow.
+    updated["selected_agents"] = [
+        *prior_agent_packets,
+        *[
+            item for item in updated.get("selected_agents", [])
+            if isinstance(item, dict) and str(item.get("agent") or "") not in {
+                str(prior.get("agent") or "") for prior in prior_agent_packets
+            }
+        ],
+    ]
+    retained_roles = {str(item.get("agent") or "") for item in updated["selected_agents"]}
+    updated["skipped_agents"] = [
+        item for item in updated.get("skipped_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "") not in retained_roles
+    ]
+    prior_roles = {str(item.get("agent") or "") for item in packet.get("selected_agents", []) if isinstance(item, dict)}
+    added_roles = [
+        str(item.get("agent") or "") for item in updated.get("selected_agents", [])
+        if isinstance(item, dict) and str(item.get("agent") or "") not in prior_roles
+    ]
+    history = updated.get("expansion_history") if isinstance(updated.get("expansion_history"), list) else []
+    if history:
+        history[-1].update({
+            "triggering_stage": str(producing_agent or ""),
+            "triggering_evidence": evidence,
+            "added_roles": added_roles,
+        })
+    result, status = update_mission_vault(
+        mission.get("mission_id", ""),
+        {"orchestration": updated},
+        database_url=database_url,
+        connect_factory=connect_factory,
+    )
+    if status >= 400:
+        return {"success": False, "status": "orchestration_expansion_persistence_failed", "store": result}, status
+    return {"success": True, "status": "orchestration_generation_expanded", "packet": updated,
+            "added_roles": added_roles}, 200
 
 
 def _explicit_targeted_agent_sequence(mission):
@@ -7646,15 +7742,33 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
     sequence = _mission_agent_sequence(mission if isinstance(mission, dict) else {})
     if not sequence:
         return False, {"reason": "Owner-review workflow is empty."}
+    metadata = mission.get("metadata") if isinstance(mission, dict) and isinstance(mission.get("metadata"), dict) else {}
+    historical_workflow = (
+        not isinstance(metadata.get("orchestration"), dict)
+        and isinstance(mission.get("agent_workflow"), list)
+        and bool(mission.get("agent_workflow"))
+    )
     # Older stored missions predate candidate-bound lineage. Preserve their
-    # established gate until a targeted rerun creates versioned evidence.
-    if not any(
+    # established gate even when the current bridge adds lineage to newly
+    # produced artifacts. The adapter is read-only and never rewrites their
+    # frozen persisted workflow.
+    if historical_workflow or not any(
         isinstance(artifact, dict) and isinstance(artifact.get("evidence_lineage"), dict)
         for artifact in artifacts.values()
     ):
+        historical_slice_started = False
         for agent in sequence:
             artifact = artifacts.get(agent) if isinstance(artifacts.get(agent), dict) else {}
+            historical_slice_started = historical_slice_started or bool(artifact)
             if not artifact:
+                if historical_workflow and historical_slice_started:
+                    return False, {
+                        "blocked_agent": agent,
+                        "stage_status": "legacy_required_artifact_missing",
+                        "reason": f"Historical workflow compatibility refused missing required {agent} evidence.",
+                        "legacy_evidence": True,
+                        "compatibility_adapter": "frozen_historical_workflow_v1",
+                    }
                 continue
             judgement = _judgement_evidence_quality_gate(agent, artifact)
             if not judgement.get("passed"):
@@ -7664,7 +7778,11 @@ def _verify_owner_review_artifacts_ready(mission, artifacts):
                     "reason": f"Owner review is not ready: {agent} is non-passing ({judgement.get('reason') or 'quality gate failed'}).",
                     "legacy_evidence": True,
                 }
-        return True, {"reason": "all_workflow_artifacts_passing", "legacy_evidence": True}
+        return True, {
+            "reason": "all_workflow_artifacts_passing",
+            "legacy_evidence": True,
+            "compatibility_adapter": "frozen_historical_workflow_v1" if historical_workflow else "",
+        }
     manifest = build_candidate_manifest(
         mission,
         artifacts,

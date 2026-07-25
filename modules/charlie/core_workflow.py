@@ -566,8 +566,8 @@ def agent_instruction_pack(agent):
             "Check mission vault before opinion.",
             "Cite vault/source context when making claims.",
             "Mark assumptions and uncertainty.",
-            "Target 96% confidence before finalizing; below 96%, ask a clarifying question or inspect more source evidence.",
-            "Do not mark a handoff as complete if confidence is below 96% or if the confidence reason is not evidence-backed.",
+            "Calibrate confidence to consequence; objective acceptance evidence governs reversible low-risk work.",
+            "State uncertainty explicitly and escalate protected impact rather than adding ceremony solely for a subjective percentage.",
             "Write a handoff report before completion.",
         ],
         "output_contract": HANDOFF_VERSION,
@@ -575,7 +575,7 @@ def agent_instruction_pack(agent):
             "All required artifacts for this stage are present.",
             "Tests or review evidence are recorded where applicable.",
             "Risks and owner decisions are explicit.",
-            "Confidence is at least 96% or the output is clearly marked draft/advisory with a clarification request.",
+            "Confidence and evidence strength are proportionate to consequence and protected authority.",
         ],
     }
 
@@ -633,6 +633,7 @@ def build_project_truth(mission):
 
 
 def build_core_plan(mission):
+    from modules.charlie.adaptive_orchestration import build_orchestration_packet
     from modules.charlie.model_registry import model_registry_packet
     from modules.charlie.mission_memory import (
         final_artifact_contract_packet,
@@ -642,9 +643,23 @@ def build_core_plan(mission):
     from modules.charlie.tool_permissions import tool_permission_registry
 
     project_truth = build_project_truth(mission)
+    orchestration = build_orchestration_packet(mission)
     template_id = project_truth["workflow_template"]
     template = right_sized_workflow_template(template_id, mission)
+    template["agent_order"] = [
+        item["agent"] for item in orchestration["selected_agents"]
+    ]
+    template["pipeline_profile"] = f"adaptive_{orchestration['tier'].lower()}"
+    template["right_sized"] = True
+    template["right_sizing_reason"] = "Evidence-based minimum sufficient team."
     agent_workflow = build_workflow_from_template(template)
+    selected = {item["agent"]: item for item in orchestration["selected_agents"]}
+    for stage in agent_workflow:
+        contract = selected.get(stage["agent"], {})
+        stage["selection_reason"] = contract.get("selection_reason", "")
+        stage["mandatory"] = bool(contract.get("mandatory"))
+        stage["authority"] = contract.get("authority", "")
+        stage["budget"] = contract.get("budget", {})
     agent_order = [item.get("agent", "") for item in agent_workflow if isinstance(item, dict)]
     return {
         "version": CHARLIE_CORE_VERSION,
@@ -659,6 +674,7 @@ def build_core_plan(mission):
         "final_artifact_contract": final_artifact_contract_packet(),
         "partial_recovery_contract": partial_recovery_contract_packet(),
         "parallel_agent_planning": parallel_agent_planning_packet(agent_order),
+        "orchestration": orchestration,
         "intelligence_loop": {
             "version": INTELLIGENCE_LOOP_VERSION,
             "lesson_records": [],
@@ -872,6 +888,7 @@ def attach_core_plan_to_metadata(mission, metadata=None):
         "owner_gates": plan["project_truth"]["owner_gates"],
     }
     metadata.setdefault("agent_workflow", plan["agent_workflow"])
+    metadata.setdefault("orchestration", plan["orchestration"])
     metadata.setdefault("charlie_core", {
         "version": CHARLIE_CORE_VERSION,
         "vault_schema": VAULT_SCHEMA,
@@ -894,6 +911,10 @@ def attach_core_plan_to_metadata(mission, metadata=None):
             "shows_risks": True,
             "shows_artifacts": True,
             "shows_review_quality": True,
+            "shows_orchestration_tier": True,
+            "shows_selected_and_skipped_agents": True,
+            "shows_budgets_and_expansion_history": True,
+            "shows_elapsed_attempts_backflows_and_outcome": True,
         },
         "model_registry": plan["model_registry"],
         "tool_permissions": plan["tool_permissions"],

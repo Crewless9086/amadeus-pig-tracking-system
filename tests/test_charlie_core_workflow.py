@@ -159,7 +159,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["mission_vault"]["project_truth"]["workflow_template"], "software_build")
         self.assertIn("builder", agents)
         self.assertIn("tester", agents)
-        self.assertIn("qa_red_team", agents)
+        self.assertEqual(agents, ["builder", "tester", "reviewer"])
         self.assertLess(agents.index("builder"), agents.index("tester"))
 
     def test_ui_product_build_routes_through_design_council(self):
@@ -195,10 +195,7 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         metadata = attach_core_plan_to_metadata(mission, {})
         agents = [item["agent"] for item in metadata["agent_workflow"]]
 
-        self.assertIn("product_architect", agents)
         self.assertIn("product_reviewer", agents)
-        self.assertIn("evidence_reviewer", agents)
-        self.assertLess(agents.index("product_architect"), agents.index("builder"))
         self.assertLess(agents.index("tester"), agents.index("product_reviewer"))
         self.assertLess(agents.index("product_reviewer"), agents.index("reviewer"))
 
@@ -216,8 +213,8 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
         self.assertIn("builder", agents)
         self.assertIn("tester", agents)
-        self.assertIn("qa_red_team", agents)
         self.assertIn("reviewer", agents)
+        self.assertEqual(agents, ["builder", "tester", "reviewer"])
         self.assertNotIn("idea_expander", agents)
         self.assertNotIn("product_architect", agents)
         self.assertLess(len(agents), len(WORKFLOW_TEMPLATES["software_build"]["agent_order"]))
@@ -245,7 +242,8 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertIn("creative_ui_designer", ui_agents)
         self.assertTrue(sensitive_metadata["mission_vault"]["project_truth"]["workflow_right_sized"])
         self.assertEqual(sensitive_metadata["mission_vault"]["project_truth"]["pipeline_profile"], "high_risk_backend")
-        self.assertIn("product_architect", sensitive_agents)
+        self.assertIn("business_reviewer", sensitive_agents)
+        self.assertIn("publisher", sensitive_agents)
 
     def test_design_agents_have_specific_model_assignments(self):
         visual = choose_agent_model("creative_ui_designer", mission_type="dashboard ui")
@@ -256,14 +254,13 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertEqual(implementer["registry_key"], "frontend_build")
         self.assertEqual(qa["registry_key"], "vision_design")
 
-    def test_agent_instruction_pack_requires_confidence_or_clarification(self):
+    def test_agent_instruction_pack_uses_consequence_calibrated_confidence(self):
         pack = agent_instruction_pack("builder")
         rules = " ".join(pack["vault_rules"] + pack["quality_bar"]).lower()
 
-        self.assertIn("96", rules)
-        self.assertIn("clarifying", rules)
         self.assertIn("evidence", rules)
         self.assertIn("confidence", rules)
+        self.assertIn("consequence", rules)
 
     def test_core_plan_attaches_vault_schema_workflow_and_instruction_packs(self):
         mission = {
@@ -281,10 +278,9 @@ class CharlieCoreWorkflowTests(unittest.TestCase):
         self.assertTrue(all(item["required_output"] == HANDOFF_VERSION for item in metadata["agent_workflow"]))
         self.assertTrue(all(item.get("instruction_pack") for item in metadata["agent_workflow"]))
         agents = [item["agent"] for item in metadata["agent_workflow"]]
-        self.assertIn("product_architect", agents)
         self.assertIn("source_mapper", agents)
+        self.assertIn("technical_architect", agents)
         self.assertIn("council_synthesis", agents)
-        self.assertIn("product_reviewer", agents)
         self.assertTrue(all(AGENT_DOCTRINE_PATHS.get(agent) for agent in agents))
 
     def test_handoff_report_requires_auditable_fields(self):

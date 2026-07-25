@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from modules.charlie import execution_bridge
+from modules.charlie.adaptive_orchestration import build_orchestration_packet
 
 
 MISSION = {
@@ -386,6 +387,73 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
 
         self.assertTrue(ready)
         self.assertEqual(detail["reason"], "all_workflow_artifacts_passing")
+
+    def test_historical_workflow_uses_compatibility_adapter_with_new_lineage(self):
+        mission = {
+            "mission_context_pack": {"agent_order": ["builder", "reviewer"]},
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+        }
+        artifacts = {
+            "builder": {"summary": "Built.", "changed_files": ["module.py"], "evidence_lineage": {"candidate": "abc"}},
+            "reviewer": {"summary": "Approved.", "recommended_owner_decision": "approve_final_release",
+                         "quality_gate": {"passed": True}, "evidence_lineage": {"candidate": "abc"}},
+        }
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertTrue(ready)
+        self.assertEqual(detail["compatibility_adapter"], "frozen_historical_workflow_v1")
+
+    def test_unsafe_historical_workflow_still_fails_closed(self):
+        mission = {
+            "mission_context_pack": {"agent_order": ["builder", "security_reviewer", "reviewer"]},
+            "agent_workflow": [{"agent": "builder", "status": "active"}],
+        }
+        artifacts = {"builder": {"summary": "Built.", "evidence_lineage": {"candidate": "abc"}}}
+
+        ready, detail = execution_bridge._verify_owner_review_artifacts_ready(mission, artifacts)
+
+        self.assertFalse(ready)
+        self.assertEqual(detail["blocked_agent"], "security_reviewer")
+        self.assertEqual(detail["stage_status"], "legacy_required_artifact_missing")
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_material_execution_evidence_persists_one_expansion_generation(self, update_vault):
+        packet = build_orchestration_packet({"raw_text": "Fix small bounded module.py regression"})
+        mission = {"mission_id": "M-EXPAND", "raw_text": "Fix small bounded module.py regression",
+                   "metadata": {"orchestration": packet}}
+        update_vault.return_value = ({"success": True}, 200)
+
+        result, status = execution_bridge._reconcile_adaptive_expansion(
+            mission, "tester", {"risk_flags": ["authentication security impact"]},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "orchestration_generation_expanded")
+        self.assertIn("security_reviewer", result["added_roles"])
+        self.assertTrue(
+            {item["agent"] for item in packet["selected_agents"]}.issubset(
+                {item["agent"] for item in result["packet"]["selected_agents"]}
+            )
+        )
+        history = result["packet"]["expansion_history"][-1]
+        self.assertEqual(history["from_generation"], packet["generation_identity"])
+        self.assertEqual(history["triggering_stage"], "tester")
+        update_vault.assert_called_once()
+
+    @patch("modules.charlie.execution_bridge.update_mission_vault")
+    def test_identical_execution_evidence_reuses_generation(self, update_vault):
+        mission_shape = {"raw_text": "Fix authentication security in module.py"}
+        packet = build_orchestration_packet(mission_shape)
+        mission = {"mission_id": "M-SAME", **mission_shape, "metadata": {"orchestration": packet}}
+
+        result, status = execution_bridge._reconcile_adaptive_expansion(
+            mission, "security_reviewer", {"risk_flags": ["authentication security"]},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "orchestration_generation_reused")
+        update_vault.assert_not_called()
 
     def test_reviewer_quality_gate_requires_structured_executable_test_evidence(self):
         artifact = {

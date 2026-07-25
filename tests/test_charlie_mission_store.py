@@ -20,6 +20,7 @@ from modules.charlie.mission_store import (
     transition_mission_review_state,
     update_mission_vault,
     _mission_queue_class,
+    _orchestration_throughput_rows,
     _normalize_review_send_back_stage,
     _return_workflow_to_stage,
     _update_workflow_items,
@@ -1468,6 +1469,28 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
         self.assertEqual(result["counts"], {"new": 2, "planned": 1})
+        self.assertEqual(result["orchestration_throughput"]["missions"], [])
+
+    def test_orchestration_throughput_preserves_unknown_historical_values(self):
+        now = datetime.now(timezone.utc)
+        rows = [
+            ("M-NEW", "pr_ready", {
+                "orchestration": {
+                    "tier": "T1", "selected_agents": [{"agent": "builder"}],
+                    "skipped_agents": [{"agent": "publisher"}], "expansion_history": [],
+                    "final_outcome": "owner_ready",
+                },
+                "agent_execution": {"stages": [{"agent": "builder", "attempt": 1, "elapsed_seconds": 12}]},
+            }, now, now),
+            ("M-OLD", "blocked", {}, None, None),
+        ]
+
+        result = _orchestration_throughput_rows(rows)
+
+        self.assertEqual(result["missions"][0]["selected_agent_count"], 1)
+        self.assertEqual(result["missions"][0]["stage_elapsed_seconds"], {"builder": 12})
+        self.assertEqual(result["missions"][1]["tier"], "Unavailable")
+        self.assertEqual(result["missions"][1]["attempts"], "Unavailable")
 
 
 if __name__ == "__main__":
