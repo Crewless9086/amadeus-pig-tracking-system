@@ -23,7 +23,7 @@ MEAT_INSTRUCTION_WEBHOOK_URL_ENV = "MEAT_INSTRUCTION_WEBHOOK_URL"
 MEAT_INSTRUCTION_WEBHOOK_TOKEN_ENV = "MEAT_INSTRUCTION_WEBHOOK_TOKEN"
 
 
-def get_meat_ops_status(lead_id, database_url=None):
+def get_meat_ops_status(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
@@ -35,7 +35,12 @@ def get_meat_ops_status(lead_id, database_url=None):
     except ImportError:
         return _unavailable("dependency_missing", True), 500
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, lead_id=lead_id))
                 deposits = _fetch_deposits(cursor, lead_id=lead_id)

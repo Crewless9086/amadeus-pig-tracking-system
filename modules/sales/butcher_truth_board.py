@@ -16,18 +16,20 @@ AUTHORITY = {
 }
 
 
-def get_butcher_truth_board(lead_id, database_url=None):
+def get_butcher_truth_board(lead_id, database_url=None, database_deadline=None):
     sources = {}
     for name, loader in (
         ("match", get_sales_lead_meat_match),
         ("ops", get_meat_ops_status),
         ("reconciliation", get_meat_reconciliation_status),
     ):
-        result, code = loader(lead_id, database_url=database_url)
+        result, code = loader(lead_id, database_url=database_url, database_deadline=database_deadline)
         if code != 200:
             return _source_failure(name, result), 503
         sources[name] = result
-    batches, code = list_meat_processing_batches(database_url=database_url)
+    batches, code = list_meat_processing_batches(
+        database_url=database_url, database_deadline=database_deadline,
+    )
     if code != 200:
         return _source_failure("processing_batches", batches), 503
     sources["batches"] = batches
