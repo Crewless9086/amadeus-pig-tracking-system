@@ -114,6 +114,7 @@ from modules.sales.sam_live_stock_launch_control import (
     handle_sam_live_stock_delivery_status_webhook,
     list_sam_live_stock_open_intakes,
     process_sam_live_stock_owner_callback,
+    refresh_sam_live_stock_resolve_card_from_outgoing_event,
     record_sam_live_stock_review_event,
     sam_live_stock_launch_control_policy,
     send_sam_live_stock_new_lead_telegram,
@@ -768,6 +769,28 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "created_at": str((payload or {}).get("created_at") or (payload or {}).get("timestamp") or ""),
     }, latest_event)
     learning, learning_status = record_sales_conversation_learning_event(event)
+    account = payload.get("account") if isinstance(payload.get("account"), dict) else {}
+    conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
+    contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
+    meta = conversation.get("meta") if isinstance(conversation.get("meta"), dict) else {}
+    sender = meta.get("sender") if isinstance(meta.get("sender"), dict) else {}
+    inbox = conversation.get("inbox") if isinstance(conversation.get("inbox"), dict) else {}
+    account_values = [payload.get("account_id"), account.get("id"), conversation.get("account_id")]
+    conversation_values = [payload.get("conversation_id"), conversation.get("id")]
+    contact_values = [payload.get("contact_id"), contact.get("id"), sender.get("id")]
+    inbox_values = [payload.get("inbox_id"), conversation.get("inbox_id"), inbox.get("id")]
+    resolve_refresh = refresh_sam_live_stock_resolve_card_from_outgoing_event({
+        "account_id": next((value for value in account_values if value not in (None, "")), ""),
+        "conversation_id": inbound.get("conversation_id"),
+        "contact_id": next((value for value in contact_values if value not in (None, "")), ""),
+        "inbox_id": next((value for value in inbox_values if value not in (None, "")), ""),
+        "message_id": payload.get("id") or payload.get("message_id"),
+        "public": not _truthy_payload_value(payload.get("private")),
+        "identity_conflicting": any(
+            len({str(value).strip() for value in values if value not in (None, "")}) > 1
+            for values in (account_values, conversation_values, contact_values, inbox_values)
+        ),
+    })
     graduation_notification = {"attempted": False, "status": "learning_event_not_created"}
     if learning.get("success") and int(learning.get("created_count") or 0):
         try:
@@ -796,6 +819,7 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "latest_review_status_code": latest_status,
         "learning_event_id": learning.get("learning_event_id", ""),
         "graduation_notification": graduation_notification,
+        "resolve_card_refresh": resolve_refresh,
         "chatwoot_conversation_id": inbound.get("conversation_id"),
         "source": "sam_live_stock_owner_reply_capture",
         "processed": False,

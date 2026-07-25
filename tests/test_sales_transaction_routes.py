@@ -2387,6 +2387,10 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             return_value=({"success": True, "status": "sales_conversation_learning_event_recorded", "learning_event_id": "MSCL-LIVE-1"}, 201),
         ) as record, patch.object(
             sales_transaction_routes,
+            "refresh_sam_live_stock_resolve_card_from_outgoing_event",
+            return_value={"success": False, "attempted": False, "status": "resolve_card_canary_disabled"},
+        ) as refresh, patch.object(
+            sales_transaction_routes,
             "handle_sam_live_stock_chatwoot_inbound",
         ) as handle_inbound:
             response = self.client.post(
@@ -2395,9 +2399,14 @@ class SalesTransactionRoutesTests(unittest.TestCase):
                     "event": "message_created",
                     "message_type": "outgoing",
                     "id": 9001,
+                    "account": {"id": 147387},
                     "created_at": "2026-07-08T13:05:00+00:00",
                     "content": "We are near Riversdale in the Western Cape.",
-                    "conversation": {"id": 1840, "inbox": {"channel_type": "Channel::Whatsapp"}},
+                    "conversation": {
+                        "id": 1840,
+                        "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                        "meta": {"sender": {"id": 699428938}},
+                    },
                     "sender": {"name": "Charl"},
                 },
             )
@@ -2412,6 +2421,14 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(learning_event["source_agent"], "sam_live_stock_backend")
         self.assertEqual(learning_event["captured_facts"]["owner_reply_classification"], "owner_replaced")
         self.assertEqual(learning_event["captured_facts"]["review_reply_delta_seconds"], 300)
+        refresh.assert_called_once()
+        refresh_identity = refresh.call_args.args[0]
+        self.assertEqual(refresh_identity["conversation_id"], "1840")
+        self.assertEqual(refresh_identity["account_id"], 147387)
+        self.assertEqual(refresh_identity["contact_id"], 699428938)
+        self.assertEqual(refresh_identity["inbox_id"], 96568)
+        self.assertEqual(refresh_identity["message_id"], 9001)
+        self.assertTrue(refresh_identity["public"])
         handle_inbound.assert_not_called()
 
     def test_sam_live_stock_outgoing_private_note_is_not_captured(self):
