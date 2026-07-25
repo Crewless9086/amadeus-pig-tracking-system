@@ -1,6 +1,6 @@
 # Current System Operating Status
 
-Evidence cut: **2026-07-25 07:19 UTC**
+Evidence cut: **2026-07-25 07:35 UTC**
 
 Repository revision: [`fd8b6185eec808f15e06773d146d3c661777e81b`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/fd8b6185eec808f15e06773d146d3c661777e81b) (`origin/main`)
 
@@ -19,6 +19,10 @@ Supabase runtime state, GitHub, Render or an owner decision.
 - SAM Livestock and SAM Meat remain supervised, fail-closed paths. Global
   autoreplies are disabled. Protected sends, orders, reservations, allocations,
   payments and farm writes remain separately gated.
+- SAM Telegram callback ownership is split between backend-native Livestock
+  callback data and the live n8n Telegram trigger. The tested return-to-SAM
+  callback was intercepted by legacy Orders logic and performed no lifecycle
+  action or cleanup; Telegram lifecycle cleanup is not operational.
 - The SAM Meat real canary is stopped after a Meat request also entered the
   Livestock lane. Do not resume it until single-lane routing and bounded truth
   reads are corrected and proven.
@@ -37,7 +41,7 @@ deliberately narrower than deployed.
 | Area | Built | Merged | Deployed | Operational evidence and present limit |
 | --- | --- | --- | --- | --- |
 | CHARLIE / CORE | Yes | Yes | Yes | Runtime, execution worktrees and manifest were promoted to [`5f35c21`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/5f35c2116bb309eed6769477173b207183933ba6); runner, supervisor and watchdog health and natural child scheduling were observed. CORE is active but the current protected-pause recovery is multiplying missions/candidates rather than converging. This is not evidence of a dead runner. |
-| SAM Livestock | Yes | Yes | Yes | Policy/auth guards and the fail-closed exact-animal contract are live. One corrected owner-authenticated GET using the canonical `pigs` envelope observed 213 animals with source/observation timestamps, known allocation-query state and `herdmaster_exact_animal_eligibility_v1` on every row. Deployed SAM → Herdmaster exact matching is operationally proven; the three tested requirements selected none and reported shortfalls 1/2/3 because no animals were affirmatively eligible. This is not zero-physical-stock proof. Global/canary autoreply is off. The HUMAN audit correction is built locally but not merged or deployed, and recovery is not operationally proven. |
+| SAM Livestock | Yes | Yes | Yes | Policy/auth guards and the fail-closed exact-animal contract are live. One corrected owner-authenticated GET using the canonical `pigs` envelope observed 213 animals with source/observation timestamps, known allocation-query state and `herdmaster_exact_animal_eligibility_v1` on every row. Deployed SAM → Herdmaster exact matching is operationally proven; the three tested requirements selected none and reported shortfalls 1/2/3 because no animals were affirmatively eligible. This is not zero-physical-stock proof. Global/canary autoreply is off. The HUMAN audit correction is built locally but not merged or deployed. Telegram callback delivery and lifecycle cleanup are not operational because live webhook ownership remains split with legacy n8n handling. |
 | SAM Meat | Yes | Yes | Yes | Owner-only review UI, policy and fail-closed empty state are proven. Real conversation processing is **NO-GO** after conversation `1978` timed out in Meat and was independently routed into Livestock. No reply or protected business action occurred. |
 | Beacon | Yes | Yes | Yes | Story Desk policy, read-only Meta preview, authoritative opportunity adapter and binary transport code are deployed. Real binary upload was deliberately not exercised, so transport is merged/deployed rather than operationally proven. Meta evidence import has zero verified imported rows after `execute_append_failed`. No post, boost, spend or send is implied. |
 | Herdmaster | Partial | Partial | Partial | Existing read-only herd reasoning and deployed SAM → Herdmaster exact-animal matching are operationally proven. Exact availability still requires complete current evidence; the tested requirements had no affirmatively eligible animals and do not prove zero physical stock. Observation/management-intent Data Model, capture and Frontend candidates remain split across open PRs; their protected migration is unapplied, so that programme is not an operational capability. |
@@ -49,6 +53,7 @@ deliberately narrower than deployed.
 | Fault / evidence | Current containment | Next proof gate |
 | --- | --- | --- |
 | **SAM Meat conversation `1978` wrong-lane incident.** Meat processing timed out after 30.696 seconds before review persistence; a separate webhook then invoked Livestock, which continued readers, matching, pricing and an owner card despite current-message Meat classification. | Canary stopped after step 1. No reply, retry, reset, resolution, order, payment, reservation, allocation, stock or farm write. Autoreply and dispatch remain disabled. | One authoritative lane decision; Livestock must return before readers/cards on wrong-lane input; blank category must produce no match, price or private animal sample; bound slow Meat truth reads; prove duplicate delivery creates only the Meat review identity. |
+| **SAM Telegram callback ownership is split-brain.** Backend-native SAM Livestock creates `callback_data` using `sam_live_review_*`, while the live Telegram trigger remains owned by active n8n workflow `2 - The GateKeeper`. Pressing `Done - Return to SAM` was intercepted by legacy n8n Orders Sub Agent logic, whose exact workflow contains `Invalid approval button data received. No action was taken.` The callback therefore performed no SAM lifecycle action, no HUMAN-to-AUTO transition and no exact-card cleanup. This is separate from conversation `1978`, where definitive Meat input was also delivered to the Livestock inbound lane. | Do not claim Telegram lifecycle cleanup, return-to-SAM handling or callback delivery as operational. Treat `calls_n8n=false` as backend-call behavior only; it does not prove Telegram webhook ownership. Do not retry or mutate the affected card/conversation as part of documentation reconciliation. | Establish one authoritative callback owner and route `sam_live_review_*` to the backend-native lifecycle with exact-card identity, authorization and replay protection; then prove HUMAN-to-AUTO and exact cleanup in one controlled smoke. Separately correct the definitive-Meat-to-Livestock handoff for conversation `1978`. |
 | **SAM Livestock HUMAN audit N+1 timeout and unstructured 500.** The configured audit opened one review query per HUMAN conversation, exceeded Gunicorn timeout and allowed `SystemExit` to escape as generic HTML 500. | Do not retry the production audit. Local candidate [`908dfbf`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/908dfbfb61dea9d832d665968d755e440d509888) batches the latest-review read and returns structured unavailable evidence. It is not merged or deployed. | Review, PR, exact-head CI, merge and exact-revision deploy; then one neutral-login, owner-authenticated GET. Until that succeeds, HUMAN recovery counts and classifications are unknown and recovery is not operationally proven. |
 | **SAM Livestock exact matching is operational; tested availability remains bounded.** A corrected owner-authenticated GET used the canonical `pigs` envelope and observed 213 animals. Source and observation timestamps were present, allocation-query state was known, and every row carried `herdmaster_exact_animal_eligibility_v1`. Requests for one male grower at 25-29 kg, two male growers at 25-29 kg, and three male growers around 30 kg selected 0 and reported shortfalls 1/2/3. | Treat exact matching as operational, but do not translate those shortfalls into zero physical stock. No animal was affirmatively eligible for the tested requirements. Do not expose private animal evidence, promise availability, reserve, assign or write stock/farm state. No private evidence or protected mutation occurred during proof. | Require complete, current evidence on every new exact-availability decision. Missing, stale or incomplete evidence must continue to fail closed. |
 | **Beacon Meta evidence import failed.** A fresh approved execution returned HTTP 500 `execute_append_failed`; the append transaction committed no Meta rows. | Do not retry or reuse the packet. The 64 legacy rows remain; verified Meta import count is zero. Ranking must not treat preview data as imported evidence. | Add sanitized operation-stage/exception-class/SQLSTATE diagnostics and prove transactional rollback in disposable Postgres; prepare a fresh packet and obtain separate owner append authority. |
@@ -67,22 +72,25 @@ Owner actions, in order:
 
 1. Keep SAM Meat conversation `1978` and all autoreply/canary switches stopped.
    Authorize correction work only after shared-route ownership is explicit.
-2. Review the small SAM Livestock HUMAN-audit batching candidate. If accepted,
+2. Resolve SAM Telegram callback ownership before treating owner cards as a
+   working lifecycle. `calls_n8n=false` is not webhook-delivery proof. Keep the
+   conversation `1978` routing correction separate from callback ownership.
+3. Review the small SAM Livestock HUMAN-audit batching candidate. If accepted,
    require a PR, exact-head CI and exact-revision deploy before authorizing one
    owner-authenticated audit GET. Do not interpret prior 500s as zero HUMAN
    conversations.
-3. Choose a single Herdmaster observation/management-intent lineage among open
+4. Choose a single Herdmaster observation/management-intent lineage among open
    PRs #422, #439, #447, #454 and #455; reconcile or close the others. Treat
    #434 as an adjacent overlap. Do not apply the protected migration from any
    candidate.
-4. Decide PR #445 separately. It is a read-only pure canary module with green
+5. Decide PR #445 separately. It is a read-only pure canary module with green
    historical CI, but is stale against current main and not runtime-wired.
-5. Keep Beacon livestock output non-commercial. Decide whether to fund a fresh,
+6. Keep Beacon livestock output non-commercial. Decide whether to fund a fresh,
    instrumented Meta evidence-import diagnostic; do not retry the failed packet.
-6. Authorize real Beacon binary upload proof only as a separate protected
+7. Authorize real Beacon binary upload proof only as a separate protected
    operation. Merged/deployed transport code and GET-only route proof are not a
    successful Facebook upload.
-7. Stop CORE recovery multiplication. Select one protected-pause candidate,
+8. Stop CORE recovery multiplication. Select one protected-pause candidate,
    resolve both failing `charlie-core` expectations, and require fresh
    exact-head CI before owner review. Separately review the built
    `fix/core-atomic-owner-handoff` candidate; do not rely on delayed owner cards
