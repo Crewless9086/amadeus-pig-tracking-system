@@ -54,6 +54,28 @@ def exact_eligible_row(**overrides):
     return row
 
 
+def verified_identity(conversation_id, contact_id, inbox_id):
+    return {
+        "status": "identity_verified",
+        "normalized": {
+            "conversation_id": str(conversation_id),
+            "contact_id": str(contact_id),
+            "inbox_id": str(inbox_id),
+        },
+        "sources": {
+            "conversation_id": [{"source": "test.webhook", "value": str(conversation_id)}],
+            "contact_id": [{"source": "test.webhook", "value": str(contact_id)}],
+            "inbox_id": [{"source": "test.webhook", "value": str(inbox_id)}],
+        },
+        "conflicts": {
+            "conversation_id": False,
+            "contact_id": False,
+            "inbox_id": False,
+        },
+        "configured_allowlist_used_as_evidence": False,
+    }
+
+
 class SamLiveStockRuntimeTests(unittest.TestCase):
     def test_llm_commitment_reservation_reply_is_repaired_before_payment_question(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -2893,6 +2915,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             "contact_id": "TEST-CONTACT",
             "inbox_id": "TEST-INBOX",
             "content": "Hello",
+            "identity_provenance": verified_identity(
+                "TEST-GENERAL",
+                "TEST-CONTACT",
+                "TEST-INBOX",
+            ),
         }
         decision = {
             "conversation_ownership": "AUTO_GENERAL",
@@ -2941,6 +2968,291 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(delivery["sent"])
         self.assertTrue(delivery["automatic_retry_prohibited"])
         self.assertTrue(delivery["canary"]["allowed"])
+
+    def test_production_message_759342561_recovers_authoritative_conversation_inbox(self):
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=759342561,
+                content="Hi",
+                conversation={"id": 2004, "channel_type": "Channel::Whatsapp"},
+                sender={"id": 699428938, "name": "Charl"},
+            ),
+            environ={},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            conversation_identity_loader=lambda conversation_id, *_args: {
+                "success": True,
+                "status": "chatwoot_conversation_identity_loaded",
+                "conversation_id": str(conversation_id),
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+            availability_loader=lambda: self.fail("general greeting called availability"),
+            intake_context_loader=lambda *_args: self.fail("general greeting called intake"),
+        )
+
+        decision = result["sam_decision"]
+        provenance = decision["inbound"]["identity_provenance"]
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            (
+                decision["inbound"]["conversation_id"],
+                decision["inbound"]["contact_id"],
+                decision["inbound"]["inbox_id"],
+            ),
+            ("2004", "699428938", "96568"),
+        )
+        self.assertEqual(provenance["status"], "identity_verified")
+        self.assertTrue(provenance["authoritative_conversation_lookup"]["success"])
+        self.assertFalse(provenance["configured_allowlist_used_as_evidence"])
+
+    def test_webhook_and_conversation_identity_agreement_and_conflict_fail_closed(self):
+        parsed = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(
+                content="Hi",
+                conversation={
+                    "id": 2004,
+                    "inbox_id": 96568,
+                    "inbox": {"id": 96568, "channel_type": "Channel::Whatsapp"},
+                },
+                sender={"id": 699428938, "name": "Charl"},
+            )
+        )
+        agreed = sam_live_stock_runtime.resolve_sam_general_inbound_identity(
+            parsed,
+            {},
+            environ={},
+            conversation_identity_loader=lambda *_args: {
+                "success": True,
+                "status": "loaded",
+                "conversation_id": "2004",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+        )
+        conflicted = sam_live_stock_runtime.resolve_sam_general_inbound_identity(
+            parsed,
+            {},
+            environ={},
+            conversation_identity_loader=lambda *_args: {
+                "success": True,
+                "status": "loaded",
+                "conversation_id": "2004",
+                "contact_id": "699428938",
+                "inbox_id": "DIFFERENT",
+            },
+        )
+
+        self.assertEqual(agreed["inbox_id"], "96568")
+        self.assertEqual(agreed["identity_provenance"]["status"], "identity_verified")
+        self.assertEqual(conflicted["inbox_id"], "")
+        self.assertEqual(conflicted["identity_provenance"]["status"], "identity_conflict")
+        self.assertTrue(conflicted["identity_provenance"]["conflicts"]["inbox_id"])
+
+    def test_inbox_unavailable_or_configured_allowlist_alone_is_not_evidence(self):
+        parsed = sam_live_stock_runtime.parse_chatwoot_inbound(
+            inbound_payload(
+                content="Hi",
+                conversation={"id": 2004, "channel_type": "Channel::Whatsapp"},
+                sender={"id": 699428938, "name": "Charl"},
+            )
+        )
+        unresolved = sam_live_stock_runtime.resolve_sam_general_inbound_identity(
+            parsed,
+            {},
+            environ={
+                "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+            },
+            conversation_identity_loader=lambda *_args: {
+                "success": False,
+                "status": "unavailable",
+            },
+        )
+        self.assertEqual(unresolved["inbox_id"], "")
+        self.assertEqual(
+            unresolved["identity_provenance"]["status"],
+            "identity_evidence_unavailable",
+        )
+        self.assertFalse(
+            unresolved["identity_provenance"]["configured_allowlist_used_as_evidence"]
+        )
+
+    def test_auto_general_low_risk_confidence_and_claim_boundaries(self):
+        source = {
+            "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2004",
+            "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+            "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+        }
+        inbound = {
+            "conversation_id": "2004",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "content": "Hi",
+            "identity_provenance": verified_identity("2004", "699428938", "96568"),
+        }
+        review = {"safe_to_send": True, "escalation_required": False}
+
+        def decision(reply, confidence, **overrides):
+            value = {
+                "conversation_ownership": "AUTO_GENERAL",
+                "suggested_reply_text": reply,
+                "reply_source": "llm_auto_general_reply_draft",
+                "should_reply": True,
+                "llm_draft": {"used": True, "confidence": confidence},
+                "clarification_asked": False,
+                "specialist_lane_selected": False,
+                "specialist_tools_called": [],
+                "owner_escalation_required": False,
+                "creates_order": False,
+                "creates_quote": False,
+                "reserves_stock": False,
+                "changes_stock": False,
+                "writes_farm_data": False,
+                "confirms_payment": False,
+                "assigns_animal": False,
+                "writes_order_intake": False,
+                "writes_sales_transaction": False,
+            }
+            value.update(overrides)
+            return value
+
+        eligible = sam_live_stock_runtime._auto_general_canary_evaluation(
+            inbound,
+            decision("Hi Charl! How can I help you today?", 0.95),
+            review,
+            source,
+        )
+        acknowledgement = sam_live_stock_runtime._auto_general_canary_evaluation(
+            {**inbound, "content": "Thanks"},
+            decision("You are welcome!", 0.95),
+            review,
+            source,
+        )
+        clarification = sam_live_stock_runtime._auto_general_canary_evaluation(
+            {**inbound, "content": "Can I get more info on this?"},
+            decision(
+                "Of course. What would you like to know more about?",
+                0.95,
+                clarification_asked=True,
+            ),
+            review,
+            source,
+        )
+        low = sam_live_stock_runtime._auto_general_canary_evaluation(
+            inbound,
+            decision("Hi Charl! How can I help you today?", 0.94),
+            review,
+            source,
+        )
+        factual = sam_live_stock_runtime._auto_general_canary_evaluation(
+            inbound,
+            decision("Hi! We have 5 piglets available for R450.", 0.99),
+            review,
+            source,
+        )
+        specialist = sam_live_stock_runtime._auto_general_canary_evaluation(
+            inbound,
+            decision(
+                "Hi! How can I help you today?",
+                0.95,
+                conversation_ownership="AUTO_SPECIALIST",
+                specialist_lane_selected=True,
+                specialist_tools_called=["herdmaster"],
+            ),
+            review,
+            source,
+        )
+
+        self.assertTrue(eligible["allowed"])
+        self.assertEqual(eligible["response_class"], "greeting")
+        self.assertEqual(eligible["minimum_llm_confidence"], 0.95)
+        self.assertTrue(acknowledgement["allowed"])
+        self.assertEqual(acknowledgement["response_class"], "acknowledgement")
+        self.assertTrue(clarification["allowed"])
+        self.assertEqual(clarification["response_class"], "clarification")
+        self.assertFalse(low["allowed"])
+        self.assertEqual(low["status"], "auto_general_canary_llm_confidence_blocked")
+        self.assertFalse(factual["allowed"])
+        self.assertEqual(factual["status"], "auto_general_canary_factual_claim_blocked")
+        self.assertFalse(specialist["allowed"])
+        self.assertEqual(specialist["minimum_llm_confidence"], 0.96)
+
+    def test_auto_general_095_exact_claim_send_confirmed_and_replay_withheld(self):
+        source = {
+            "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+            "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2004",
+            "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+            "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+        }
+        inbound = {
+            "conversation_id": "2004",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "content": "Hi",
+            "identity_provenance": verified_identity("2004", "699428938", "96568"),
+        }
+        decision = {
+            "conversation_ownership": "AUTO_GENERAL",
+            "suggested_reply_text": "Hi Charl! How can I help you today?",
+            "reply_source": "llm_auto_general_reply_draft",
+            "should_reply": True,
+            "llm_draft": {"used": True, "confidence": 0.95},
+            "clarification_asked": False,
+            "specialist_lane_selected": False,
+            "specialist_tools_called": [],
+            "owner_escalation_required": False,
+            "creates_order": False,
+            "creates_quote": False,
+            "reserves_stock": False,
+            "changes_stock": False,
+            "writes_farm_data": False,
+            "confirms_payment": False,
+            "assigns_animal": False,
+            "writes_order_intake": False,
+            "writes_sales_transaction": False,
+        }
+        review = {"safe_to_send": True, "escalation_required": False}
+        created = True
+        order = []
+
+        def claim(*_args):
+            order.append("claim")
+            return {"success": True, "created": created, "review_event_id": "CLAIM-2004"}
+
+        first = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            inbound,
+            decision,
+            review,
+            source,
+            delivery_claim=claim,
+            chatwoot_sender=lambda *_args: order.append("send") or {"status_code": 200},
+            delivery_evidence_recorder=lambda _claim, outcome: (
+                order.append("evidence:" + outcome["delivery_status"])
+                or {"success": True, "status": "recorded"}
+            ),
+        )
+        created = False
+        replay = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            inbound,
+            decision,
+            review,
+            source,
+            delivery_claim=claim,
+            chatwoot_sender=lambda *_args: order.append("duplicate_send"),
+        )
+
+        self.assertEqual(
+            order,
+            ["claim", "send", "evidence:chatwoot_send_confirmed", "claim"],
+        )
+        self.assertTrue(first["sent"])
+        self.assertEqual(
+            first["delivery_outcome"]["delivery_status"],
+            "chatwoot_send_confirmed",
+        )
+        self.assertEqual(replay["status"], "routine_reply_duplicate_withheld")
 
     def test_auto_general_disabled_and_wrong_allowlist_remain_actionable_without_tools(self):
         payload = inbound_payload(

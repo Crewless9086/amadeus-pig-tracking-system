@@ -151,6 +151,7 @@ def handle_sam_live_stock_chatwoot_inbound(
     environ=None,
     intake_context_loader=None,
     conversation_history_loader=None,
+    conversation_identity_loader=None,
     availability_loader=None,
     availability_evidence=None,
     intake_writer=None,
@@ -224,6 +225,12 @@ def handle_sam_live_stock_chatwoot_inbound(
         environ=source,
     )
     if _should_use_auto_general_path(inbound, facts):
+        inbound = resolve_sam_general_inbound_identity(
+            inbound,
+            payload,
+            environ=source,
+            conversation_identity_loader=conversation_identity_loader,
+        )
         decision = (
             build_sam_live_stock_decision(
                 inbound,
@@ -242,6 +249,15 @@ def handle_sam_live_stock_chatwoot_inbound(
                 llm_drafter=llm_drafter,
             )
         )
+        decision["normalized_identity_evidence"] = inbound.get("identity_provenance") or {}
+        if isinstance(decision.get("inbound"), dict):
+            decision["inbound"] = {
+                **decision["inbound"],
+                "conversation_id": inbound.get("conversation_id") or "",
+                "contact_id": inbound.get("contact_id") or "",
+                "inbox_id": inbound.get("inbox_id") or "",
+                "identity_provenance": inbound.get("identity_provenance") or {},
+            }
         decision["conversation_ownership"] = AUTO_GENERAL
         decision["handled_autonomously"] = True
         decision["clarification_asked"] = bool(
@@ -641,15 +657,16 @@ def parse_chatwoot_inbound(payload):
         return _ignored("ignored_empty_message", event, message_type, content, conversation_id, customer_name, channel)
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
     content_attributes = payload.get("content_attributes") if isinstance(payload.get("content_attributes"), dict) else {}
+    identity_evidence = _webhook_identity_evidence(payload, conversation, sender, contact)
     return {
         "processable": True,
         "status": "processable",
         "event": event or "message_created",
         "message_type": message_type or "incoming",
         "content": content,
-        "conversation_id": conversation_id,
-        "contact_id": _clean(payload.get("contact_id") or sender.get("id") or contact.get("id"), 100),
-        "inbox_id": _clean(payload.get("inbox_id") or (conversation.get("inbox") or {}).get("id"), 100),
+        "conversation_id": identity_evidence["normalized"]["conversation_id"] or conversation_id,
+        "contact_id": identity_evidence["normalized"]["contact_id"],
+        "inbox_id": identity_evidence["normalized"]["inbox_id"],
         "account_id": _clean(payload.get("account_id") or account.get("id"), 100),
         "customer_name": customer_name or "Chatwoot customer",
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
@@ -658,8 +675,145 @@ def parse_chatwoot_inbound(payload):
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
         "conversation_custom_attributes": custom_attributes,
         "message_context": _public_message_context(payload, content_attributes),
+        "identity_provenance": identity_evidence,
         "attachments": attachments,
     }
+
+
+def _webhook_identity_evidence(payload, conversation, sender, contact):
+    payload = payload if isinstance(payload, dict) else {}
+    conversation = conversation if isinstance(conversation, dict) else {}
+    sender = sender if isinstance(sender, dict) else {}
+    contact = contact if isinstance(contact, dict) else {}
+    top_inbox = payload.get("inbox") if isinstance(payload.get("inbox"), dict) else {}
+    conversation_inbox = (
+        conversation.get("inbox") if isinstance(conversation.get("inbox"), dict) else {}
+    )
+    conversation_meta = (
+        conversation.get("meta") if isinstance(conversation.get("meta"), dict) else {}
+    )
+    conversation_sender = (
+        conversation_meta.get("sender")
+        if isinstance(conversation_meta.get("sender"), dict)
+        else {}
+    )
+    sources = {
+        "conversation_id": _identity_source_rows(
+            ("payload.conversation_id", payload.get("conversation_id")),
+            ("payload.conversation.id", conversation.get("id")),
+            (
+                "payload.conversation",
+                payload.get("conversation") if not isinstance(payload.get("conversation"), dict) else "",
+            ),
+        ),
+        "contact_id": _identity_source_rows(
+            ("payload.contact_id", payload.get("contact_id")),
+            ("payload.sender.id", sender.get("id")),
+            ("payload.contact.id", contact.get("id")),
+            ("payload.conversation.meta.sender.id", conversation_sender.get("id")),
+        ),
+        "inbox_id": _identity_source_rows(
+            ("payload.inbox_id", payload.get("inbox_id")),
+            ("payload.inbox.id", top_inbox.get("id")),
+            ("payload.conversation.inbox_id", conversation.get("inbox_id")),
+            ("payload.conversation.inbox.id", conversation_inbox.get("id")),
+        ),
+    }
+    normalized = {}
+    conflicts = {}
+    for key, rows in sources.items():
+        values = sorted({row["value"] for row in rows})
+        conflicts[key] = len(values) > 1
+        normalized[key] = values[0] if len(values) == 1 else ""
+    return {
+        "status": "webhook_identity_conflict" if any(conflicts.values()) else "webhook_identity_normalized",
+        "normalized": normalized,
+        "sources": sources,
+        "conflicts": conflicts,
+        "authoritative_conversation_lookup": {"attempted": False, "status": "not_attempted"},
+        "configured_allowlist_used_as_evidence": False,
+    }
+
+
+def _identity_source_rows(*pairs):
+    return [
+        {"source": source, "value": value}
+        for source, raw in pairs
+        if (value := _clean(raw, 100))
+    ]
+
+
+def resolve_sam_general_inbound_identity(
+    inbound,
+    payload,
+    *,
+    environ=None,
+    conversation_identity_loader=None,
+):
+    inbound = dict(inbound or {})
+    source = environ if environ is not None else os.environ
+    evidence = (
+        dict(inbound.get("identity_provenance"))
+        if isinstance(inbound.get("identity_provenance"), dict)
+        else _webhook_identity_evidence(payload or {}, {}, {}, {})
+    )
+    evidence["normalized"] = dict(evidence.get("normalized") or {})
+    evidence["sources"] = {
+        key: list((evidence.get("sources") or {}).get(key) or [])
+        for key in ("conversation_id", "contact_id", "inbox_id")
+    }
+    evidence["conflicts"] = dict(evidence.get("conflicts") or {})
+    webhook_complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    canary_active = (
+        _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV))
+        and _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV))
+    )
+    should_lookup = bool(
+        inbound.get("conversation_id")
+        and (not webhook_complete or canary_active or conversation_identity_loader is not None)
+    )
+    authoritative = {"attempted": False, "status": "not_required_webhook_identity_complete"}
+    if should_lookup:
+        loader = conversation_identity_loader or load_chatwoot_conversation_identity
+        try:
+            authoritative = loader(inbound.get("conversation_id"), source)
+        except TypeError:
+            authoritative = loader(inbound.get("conversation_id"))
+        except Exception as exc:
+            authoritative = _integration_failure("chatwoot_conversation_identity_read_failed", exc)
+        authoritative = authoritative if isinstance(authoritative, dict) else {}
+        authoritative = {**authoritative, "attempted": True}
+        if authoritative.get("success") is True:
+            for key in ("conversation_id", "contact_id", "inbox_id"):
+                value = _clean(authoritative.get(key), 100)
+                if value:
+                    evidence["sources"][key].append(
+                        {"source": "chatwoot_conversation_record." + key, "value": value}
+                    )
+    evidence["authoritative_conversation_lookup"] = {
+        "attempted": bool(authoritative.get("attempted")),
+        "status": _clean(authoritative.get("status"), 120),
+        "success": authoritative.get("success") is True,
+    }
+    for key in ("conversation_id", "contact_id", "inbox_id"):
+        values = sorted({row["value"] for row in evidence["sources"][key] if row.get("value")})
+        evidence["conflicts"][key] = len(values) > 1
+        evidence["normalized"][key] = values[0] if len(values) == 1 else ""
+    conflict = any(evidence["conflicts"].values())
+    complete = all(evidence["normalized"].get(key) for key in ("conversation_id", "contact_id", "inbox_id"))
+    evidence["status"] = (
+        "identity_conflict"
+        if conflict
+        else "identity_verified"
+        if complete
+        else "identity_evidence_unavailable"
+    )
+    evidence["configured_allowlist_used_as_evidence"] = False
+    inbound["identity_provenance"] = evidence
+    inbound["conversation_id"] = evidence["normalized"].get("conversation_id") or ""
+    inbound["contact_id"] = evidence["normalized"].get("contact_id") or ""
+    inbound["inbox_id"] = evidence["normalized"].get("inbox_id") or ""
+    return inbound
 
 
 def _public_message_context(message, content_attributes=None):
@@ -969,6 +1123,7 @@ def build_sam_general_decision(inbound, facts, context_packet, environ=None, llm
             "inbox_id": inbound.get("inbox_id") or "",
             "channel": inbound.get("channel") or "",
             "content": inbound.get("content") or "",
+            "identity_provenance": inbound.get("identity_provenance") or {},
         },
         "read_context": context_packet,
         "llm_draft": llm,
@@ -1272,6 +1427,45 @@ def load_chatwoot_conversation_history(conversation_id, environ=None, limit=20):
             ),
         })
     return {"success": True, "status": "loaded", "messages": messages}
+
+
+def load_chatwoot_conversation_identity(conversation_id, environ=None):
+    source = environ if environ is not None else os.environ
+    conversation_id = _clean(conversation_id, 100)
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV), 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    if not conversation_id:
+        return {"success": False, "status": "conversation_id_required"}
+    if not base_url or not account_id or not token:
+        return {"success": False, "status": "chatwoot_conversation_identity_not_configured"}
+    request = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}",
+        headers={"api_access_token": token, "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=10) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            parsed = json.loads(raw or "{}")
+    except urllib_error.HTTPError as exc:
+        return {"success": False, "status": f"chatwoot_conversation_identity_http_{exc.code}"}
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return _integration_failure("chatwoot_conversation_identity_read_failed", exc)
+    conversation = parsed.get("payload") if isinstance(parsed, dict) and isinstance(parsed.get("payload"), dict) else parsed
+    conversation = conversation if isinstance(conversation, dict) else {}
+    inbox = conversation.get("inbox") if isinstance(conversation.get("inbox"), dict) else {}
+    meta = conversation.get("meta") if isinstance(conversation.get("meta"), dict) else {}
+    sender = meta.get("sender") if isinstance(meta.get("sender"), dict) else {}
+    contact = conversation.get("contact") if isinstance(conversation.get("contact"), dict) else {}
+    return {
+        "success": True,
+        "status": "chatwoot_conversation_identity_loaded",
+        "conversation_id": _clean(conversation.get("id") or conversation_id, 100),
+        "contact_id": _clean(sender.get("id") or contact.get("id"), 100),
+        "inbox_id": _clean(conversation.get("inbox_id") or inbox.get("id"), 100),
+        "contains_secret_values": False,
+    }
 
 
 def _prior_context_from_chatwoot_history(history, inbound):
@@ -3884,8 +4078,23 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "contact": _clean(inbound.get("contact_id"), 100),
         "inbox": _clean(inbound.get("inbox_id"), 100),
     }
+    identity_provenance = (
+        inbound.get("identity_provenance")
+        if isinstance(inbound.get("identity_provenance"), dict)
+        else {}
+    )
+    identity_status = _clean(identity_provenance.get("status"), 80)
     configured = all(expected.values())
     identity_matches = configured and all(actual[key] == expected[key] for key in expected)
+    response_class = _auto_general_low_risk_response_class(inbound, decision)
+    claim_free_reply = not _auto_general_reply_has_factual_or_commercial_claim(
+        decision.get("suggested_reply_text")
+    )
+    low_risk_threshold_allowed = (
+        response_class in {"greeting", "acknowledgement", "clarification"}
+        and claim_free_reply
+    )
+    minimum_llm_confidence = 0.95 if low_risk_threshold_allowed else 0.96
     protected_keys = (
         "creates_order",
         "creates_quote",
@@ -3901,13 +4110,17 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "global_auto_general_enabled": _truthy(source.get(AUTO_GENERAL_AUTOREPLY_ENABLED_ENV)),
         "canary_enabled": _truthy(source.get(AUTO_GENERAL_CANARY_ENABLED_ENV)),
         "all_identities_configured": configured,
+        "identity_evidence_available": identity_status not in {"identity_evidence_unavailable", ""},
+        "identity_evidence_conflict_absent": identity_status != "identity_conflict",
         "conversation_matches": bool(expected["conversation"] and actual["conversation"] == expected["conversation"]),
         "contact_matches": bool(expected["contact"] and actual["contact"] == expected["contact"]),
         "inbox_matches": bool(expected["inbox"] and actual["inbox"] == expected["inbox"]),
         "auto_general_state": decision.get("conversation_ownership") == AUTO_GENERAL,
         "review_safe": review.get("safe_to_send") is True and not review.get("escalation_required"),
         "reviewed_llm_draft": llm.get("used") is True and decision.get("reply_source") == "llm_auto_general_reply_draft",
-        "llm_confident": _confidence_at_least(llm.get("confidence"), 0.96),
+        "low_risk_response_class": low_risk_threshold_allowed,
+        "claim_free_reply": claim_free_reply,
+        "llm_confident": _confidence_at_least(llm.get("confidence"), minimum_llm_confidence),
         "low_risk_general_reply": not decision.get("specialist_lane_selected") and not decision.get("owner_escalation_required"),
         "specialist_tools_absent": not list(decision.get("specialist_tools_called") or []),
         "protected_mutation_absent": not any(decision.get(key) is True for key in protected_keys),
@@ -3920,12 +4133,18 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         status = "auto_general_canary_disabled"
     elif not configured:
         status = "auto_general_canary_identity_not_configured"
+    elif not checks["identity_evidence_conflict_absent"]:
+        status = "auto_general_canary_identity_conflict"
+    elif not checks["identity_evidence_available"]:
+        status = "auto_general_canary_identity_evidence_unavailable"
     elif not identity_matches:
         status = "auto_general_canary_identity_mismatch"
     elif not checks["auto_general_state"]:
         status = "auto_general_canary_wrong_ownership"
     elif not checks["reviewed_llm_draft"]:
         status = "auto_general_canary_requires_reviewed_llm"
+    elif not checks["claim_free_reply"]:
+        status = "auto_general_canary_factual_claim_blocked"
     elif not checks["llm_confident"]:
         status = "auto_general_canary_llm_confidence_blocked"
     elif not checks["review_safe"]:
@@ -3944,9 +4163,109 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "allowed": allowed,
         "status": status,
         "checks": checks,
+        "response_class": response_class,
+        "minimum_llm_confidence": minimum_llm_confidence,
         "contains_identity_values": False,
         "contains_secret_values": False,
     }
+
+
+def _auto_general_low_risk_response_class(inbound, decision):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    decision = decision if isinstance(decision, dict) else {}
+    text = _normal_text(inbound.get("content"))
+    reply = _clean_multiline(decision.get("suggested_reply_text"), 1800)
+    if not reply or decision.get("conversation_ownership") != AUTO_GENERAL:
+        return "other"
+    if _general_greeting_only(text):
+        return "greeting"
+    if _general_acknowledgement_only(text):
+        return "acknowledgement"
+    if (
+        decision.get("clarification_asked") is True
+        and reply.count("?") == 1
+        and decision.get("specialist_lane_selected") is not True
+    ):
+        return "clarification"
+    return "other"
+
+
+def _general_acknowledgement_only(text):
+    return bool(re.fullmatch(
+        r"(thanks|thank you|thanks so much|okay|ok|got it|cool|great|perfect|"
+        r"dankie|reg so|goed)[!. ]*",
+        text or "",
+    ))
+
+
+def _auto_general_reply_has_factual_or_commercial_claim(reply):
+    text = _normal_text(reply)
+    if not text:
+        return True
+    if re.search(r"\bR\s?\d|\b\d+(?:[.,]\d+)?\s?(?:kg|g|km|days?|weeks?|months?|years?)\b", text, re.IGNORECASE):
+        return True
+    prohibited = (
+        "available",
+        "availability",
+        "in stock",
+        "out of stock",
+        "price",
+        "cost",
+        "discount",
+        "reserve",
+        "reserved",
+        "order",
+        "quote",
+        "payment",
+        "paid",
+        "bank",
+        "collect at",
+        "located at",
+        "our location is",
+        "farm is at",
+        "we have",
+        "we sell",
+        "we deliver",
+        "we can deliver",
+        "weighs",
+        "weight is",
+        "performance",
+        "growth rate",
+        "daily gain",
+        "healthy",
+        "vaccinated",
+        "age is",
+        "your order",
+        "your payment",
+        "you paid",
+        "you requested",
+    )
+    if any(phrase in text for phrase in prohibited):
+        return True
+    animal_terms = (
+        "piglet",
+        "piglets",
+        "pig",
+        "pigs",
+        "weaner",
+        "weaners",
+        "grower",
+        "growers",
+        "boar",
+        "boars",
+        "sow",
+        "sows",
+        "animal",
+        "animals",
+        "carcass",
+        "meat",
+    )
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?])\s+", str(reply or "")) if item.strip()]
+    return any(
+        any(re.search(rf"\b{re.escape(term)}\b", _normal_text(sentence)) for term in animal_terms)
+        and not sentence.rstrip().endswith("?")
+        for sentence in sentences
+    )
 
 
 def _autoreply_canary_evaluation(inbound, decision, review, source):
