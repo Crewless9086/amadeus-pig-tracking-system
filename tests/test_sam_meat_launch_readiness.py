@@ -1,7 +1,13 @@
 ﻿import unittest
 from datetime import datetime, timezone
+from threading import Event
+from time import monotonic
 
-from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet, production_truth_readers
+from modules.sales.sam_meat_launch_readiness import (
+    _read_truth_batch,
+    build_sam_meat_launch_packet,
+    production_truth_readers,
+)
 
 NOW = datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc)
 
@@ -91,6 +97,33 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
         self.assertTrue(all(call["facts"]["product_type"] == "half_carcass" for call in calls))
         self.assertEqual(result["truth"]["butcher"]["status"], "Unavailable")
 
+    def test_slow_truth_reader_fails_closed_within_packet_deadline(self):
+        release = Event()
+        calls = []
+
+        def slow(**kwargs):
+            calls.append(kwargs)
+            release.wait(1)
+            return {"usable": True, "status": "late", "data": {"promise": "unsafe"}}
+
+        started = monotonic()
+        result = _read_truth_batch(
+            {name: slow for name in production_truth_readers()},
+            "LEAD-1",
+            {"product_type": "half_carcass"},
+            NOW,
+            deadline_seconds=0.05,
+        )
+        elapsed = monotonic() - started
+        release.set()
+
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(len(calls), 5)
+        for state in result.values():
+            self.assertEqual(state["status"], "Unavailable")
+            self.assertEqual(state["blockers"], ["reader_timeout"])
+            self.assertEqual(state["data"], {})
+            self.assertFalse(state["verified_zero"])
     def test_stable_replay_and_correction_ids(self):
         first = packet([{"message_id": "m1", "content": "Half carcass Set A."}], inbound_event_id="m1")
         replay = packet([{"message_id": "m1", "content": "Half carcass Set A."}], inbound_event_id="m1")

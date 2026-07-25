@@ -4,6 +4,7 @@ The deployed SAM Meat runtime calls this packet through the existing inbound
 route. Default readers use production-connected sources; tests inject fakes.
 """
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, wait
 import hashlib
 import re
 
@@ -15,6 +16,7 @@ from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_meat_runtime import extract_meat_facts
 
 PACKET_VERSION = "sam_meat_launch_packet_v2"
+TRUTH_READER_DEADLINE_SECONDS = 5.0
 AF_MARKERS = {"aflewer", "bestel", "betaal", "eintlik", "ek", "halwe", "hele", "ja", "karkas", "nee", "prys", "stel", "vir", "wil"}
 PROTECTED = {
     "confirm_price": r"\b(final price|confirm (?:the )?price|quote me|kwoteer)\b",
@@ -37,8 +39,7 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
     facts, evidence, corrections = _accumulate(rows)
     language = _language(rows)
     readers = truth_readers if isinstance(truth_readers, dict) else production_truth_readers()
-    truth = {name: _invoke(name, readers.get(name), lead_id, facts, current)
-             for name in ("catalogue", "pricing", "availability", "fulfilment", "butcher")}
+    truth = _read_truth_batch(readers, lead_id, facts, current)
     catalogue = _catalogue_match(facts, truth["catalogue"])
     price = _price_basis(facts, truth["pricing"], current)
     missing = _missing(facts)
@@ -177,6 +178,29 @@ def _invoke(name, reader, lead_id, facts, now):
         "blockers": list(raw.get("blockers") or []), "verified_zero": raw.get("verified_zero") is True,
         "data": raw.get("data") if isinstance(raw.get("data"), dict) else {}}
 
+
+def _read_truth_batch(readers, lead_id, facts, now, *, deadline_seconds=TRUTH_READER_DEADLINE_SECONDS):
+    """Read independent truth sources within one request-safe, fail-closed budget."""
+    names = ("catalogue", "pricing", "availability", "fulfilment", "butcher")
+    executor = ThreadPoolExecutor(max_workers=len(names), thread_name_prefix="sam-meat-truth")
+    futures = {
+        executor.submit(_invoke, name, readers.get(name), lead_id, facts, now): name
+        for name in names
+    }
+    done, pending = wait(futures, timeout=max(0.0, float(deadline_seconds)))
+    result = {}
+    for future in done:
+        name = futures[future]
+        try:
+            result[name] = future.result()
+        except BaseException as exc:
+            result[name] = _unavailable(name, f"reader_failed:{exc.__class__.__name__}")
+    for future in pending:
+        name = futures[future]
+        future.cancel()
+        result[name] = _unavailable(name, "reader_timeout")
+    executor.shutdown(wait=False, cancel_futures=True)
+    return {name: result.get(name, _unavailable(name, "reader_result_missing")) for name in names}
 
 def _read_catalogue(**_):
     loaded = load_sam_farm_knowledge(); knowledge = loaded.get("knowledge", {}) if isinstance(loaded, dict) else {}
