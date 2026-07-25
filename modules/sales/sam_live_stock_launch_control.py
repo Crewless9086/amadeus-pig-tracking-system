@@ -1154,11 +1154,30 @@ def execute_sam_live_stock_send_reply(action_event, payload, *, environ=None, re
             edited, edit_status = _edit_owner_card_state(card, "Delivered / Resolved", [], source, telegram_editor)
         else:
             edited, edit_status = cleanup, 200
+        cleanup_action = (
+            "send_reply_cleanup_deleted"
+            if cleanup_status < 400 and cleanup.get("success")
+            else "send_reply_cleanup_resolved_by_edit"
+            if edit_status < 400
+            else "send_reply_cleanup_ambiguous"
+        )
+        recorder(build_sam_live_stock_owner_card_event(
+            action_event,
+            card,
+            "resolved" if edit_status < 400 else "action_failed",
+            cleanup_action,
+        ))
     else:
         label = "Delivery pending confirmation" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"
         edited, edit_status = _edit_owner_card_state(card, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
+        if edit_status >= 400:
+            recorder(build_sam_live_stock_owner_card_event(
+                action_event, card, "action_failed", "send_reply_card_update_ambiguous"
+            ))
+    card_update_ambiguous = edit_status >= 400
+    callback_business_success = state in CONFIRMED_STATES or state == CHATWOOT_ACCEPTED_UNVERIFIED
     return {
-        "success": edit_status < 400,
+        "success": callback_business_success,
         "status": "sam_live_card_send_confirmed" if state in CONFIRMED_STATES else "sam_live_card_send_accepted_unverified" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "sam_live_card_send_failed" if state == PROVIDER_FAILED else "sam_live_card_send_ambiguous",
         "delivery_attempt_id": attempt.get("delivery_attempt_id"),
         "delivery_state": state,
@@ -1167,12 +1186,13 @@ def execute_sam_live_stock_send_reply(action_event, payload, *, environ=None, re
         "handled_autonomously": False,
         "automatic_retry_prohibited": True,
         "card_retained": state not in CONFIRMED_STATES,
+        "card_update_ambiguous": card_update_ambiguous,
         "telegram": edited,
         **AUTHORITY_FLAGS,
         "sends_customer_message": True,
         "calls_chatwoot": True,
         "calls_telegram": True,
-    }, 200 if edit_status < 400 else 502
+    }, 200 if callback_business_success else 502 if edit_status >= 400 else 200
 
 
 def _send_chatwoot_owner_reply(conversation_id, message, source):
@@ -1376,11 +1396,16 @@ def handle_sam_live_stock_delivery_status_webhook(
         if delete_status >= 400 or not deleted.get("success"):
             edited, edit_status = _edit_owner_card_state(expected, "Delivered / Resolved", [], source, telegram_editor)
             if edit_status >= 400:
+                recorder(build_sam_live_stock_owner_card_event(
+                    action_event, expected, "action_failed", "send_reply_cleanup_ambiguous"
+                ))
                 return {"success": False, "status": "sam_delivery_card_cleanup_ambiguous", "processed": True, "delivery_state": state}, 502
             cleanup = {"status": "sam_delivery_card_resolved_by_edit", "edit": edited}
+            cleanup_action = "send_reply_cleanup_resolved_by_edit"
         else:
             cleanup = deleted
-        recorder(build_sam_live_stock_owner_card_event(action_event, expected, "resolved", "send_reply_delivered"))
+            cleanup_action = "send_reply_cleanup_deleted"
+        recorder(build_sam_live_stock_owner_card_event(action_event, expected, "resolved", cleanup_action))
         return {"success": True, "status": "sam_delivery_confirmed_card_cleaned", "processed": True, "delivery_state": state, "customer_send_confirmed": True, "card_cleanup": cleanup}, 200
     if state in {PROVIDER_FAILED, PROVIDER_OUTCOME_AMBIGUOUS}:
         label = "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"

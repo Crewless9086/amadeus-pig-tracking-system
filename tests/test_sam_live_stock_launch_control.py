@@ -1133,6 +1133,42 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             "chatwoot_exact_outgoing_message_read",
         )
 
+    def test_accepted_dispatch_card_edit_ambiguity_returns_no_retry_business_truth(self):
+        review, action, card = send_action_fixture()
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1",
+            },
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True, "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            chatwoot_sender=lambda *_: {
+                "status_code": 200, "body": {"id": "902", "status": "sent"},
+            },
+            telegram_editor=lambda *_: (_ for _ in ()).throw(TimeoutError("ambiguous edit")),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertTrue(result["card_update_ambiguous"])
+        self.assertTrue(result["automatic_retry_prohibited"])
+
     def test_keep_with_me_retains_human_and_open_chatwoot_is_no_mutation(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-5", "chatwoot_conversation_id": "2401", "decision_json": {}}
         calls = []
