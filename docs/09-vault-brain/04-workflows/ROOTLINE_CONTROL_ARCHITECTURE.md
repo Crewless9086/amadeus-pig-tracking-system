@@ -3,7 +3,7 @@
 Status: authoritative target architecture and authority boundary.
 
 Evidence cut: `2026-07-25`, repository revision
-[`3954c5bd`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/3954c5bd32b30b1beec9a53a5015db5e24e0493e).
+[`6123c1e`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/6123c1e54134ccde5b3cc14d607d12ccaecc020d).
 
 This document defines the intended mature ROOTLINE operating model. It does not
 grant hardware authority or claim that planned capabilities are built,
@@ -36,8 +36,8 @@ At maturity ROOTLINE should:
 | --- | --- | --- |
 | Production ROOTLINE | Existing telemetry/read-model services | Read-only telemetry and prepared summaries; no hardware authority. |
 | Irrigation status | Backend status endpoint and workflow `2.3.3` | Read-only. It cannot start, stop, pause, resume, or alter a plan. |
-| Phase A Daily Brief | Local commit [`51ce6a9`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/51ce6a98d4754d992dcfd81124ab76ecaadbcb16); updated PR [#464](https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/464) | Built as a read-only candidate; not merged, deployed, configured, or operational at this evidence cut. Deterministic flags prohibit I/O, writes, alerts, Telegram, schedules, and hardware control. |
-| Latest bounded evidence audit | Phase A lane record, `2026-07-25` | Irrigation state unavailable; tank, pump, and borehole evidence unavailable; forecast stale; power fresh but suspicious because battery, solar, and load all reported zero. None is proof of a safe or normal condition. |
+| Phase A Daily Brief | PR [#464](https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/464), merge [`187e07f`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/187e07fb9f531549d35b04824ec9149875fabb85) | Built, merged, deployed, and owner-route operational as Level 1 read-only advice. One controlled owner-authenticated GET returned structured HTTP 200 evidence. Deterministic flags prohibit writes, alerts, Telegram, schedules, IFTTT, and hardware control. |
+| Latest bounded evidence audit | Controlled owner-only Daily Brief read, `2026-07-25` | Telemetry evidence was partial. Tank, pump, and borehole evidence were unavailable; forecast was stale; power was suspicious/unverified because battery, solar, and load all reported zero. Two planned zones returned `review`; no zone received `proceed`. None is proof of a safe or normal condition. |
 | Legacy controller | Imported workflow `2.3.2` | Inactive. It contains IFTTT ON/OFF calls and must not be casually activated or used as a shortcut to control authority. |
 | Hardware control | No separately approved live proof | Not operational and not authorized. |
 
@@ -257,7 +257,7 @@ Every phase reports:
 | Contradictions corrected | ROOTLINE's end goal is routine physical operation, not permanent dashboard-only advice. The hardware bridge is IFTTT, not FTP/FTTP. Transport acceptance, valve state, flow, and completion are separate evidence states. |
 | Gaps made explicit | No command ledger/state machine, approved adapter, independent physical/flow proof, Level 2 canary, Level 3 envelope, or operational hardware authority is established by current evidence. |
 | Unresolved owner/hardware facts | Complete valve/zone/topology inventory, downstream IFTTT platform, pumps, tanks, sensors, runtime and simultaneity limits, isolation, and failure-safe behavior remain Unknown. |
-| Deferred due to newer candidate | PR #464 changes `ROOTLINE.md`, the implementation source map, and Vault changelog. This document does not edit them; cross-link/source-map/changelog updates should follow after that PR is resolved against this doctrine. |
+| Deferred reconciliation completed | After PR #464 merged, `ROOTLINE.md` was linked to this architecture, the implementation source map recorded the deployed Level 1 route, and the Vault changelog recorded bounded Phase A delivery evidence. The SAM outbound-delivery source-map domain remains separate and unchanged. |
 
 ## Source References
 
