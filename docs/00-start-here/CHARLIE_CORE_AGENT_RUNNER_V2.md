@@ -6,6 +6,83 @@ CHARLIE CORE Agent Runner v2 is the execution model for turning approved CHARLIE
 
 CHARLIE does not launch one large mission prompt and wait blindly. CHARLIE owns the workflow, runs bounded agent stages, records artifacts after each stage, and stops visibly when a stage cannot produce evidence.
 
+## Adaptive Mission Orchestration
+
+New eligible missions receive a versioned orchestration packet before
+execution. The mission score selects the **smallest sufficient workflow**, not
+the smallest possible workflow. Existing persisted workflows remain frozen;
+the compatibility adapter executes valid historical missions without silently
+rewriting them. Adaptive orchestration applies only to newly created eligible
+missions or to a later, explicitly persisted generation caused by materially
+changed evidence.
+
+Every score dimension records a score, evidence, confidence, unknown state and
+reason:
+
+- scope size and component/file count;
+- architectural complexity, uncertainty and evidence availability;
+- reversibility, blast radius and external side effects;
+- customer, privacy, authentication/security and financial impact;
+- schema/migration, hardware/physical, publication/reputation and production
+  configuration impact;
+- owner-decision dependency.
+
+Unknown high-consequence evidence raises the tier or blocks. No numerical score
+can override a mandatory protected trigger.
+
+| Tier | Intended work | Minimum safe path |
+| --- | --- | --- |
+| T0 | Read-only inspection, inventory, audit or advice | One capable source/domain agent; no Builder, repository write or external mutation |
+| T1 | Small reversible mutation | Builder, Tester and Reviewer with bounded source inspection |
+| T2 | Standard bounded feature | Source Mapper or Architect as justified, Builder, Tester and Reviewer |
+| T3 | Cross-module or elevated operational work | Relevant architects/specialists, Builder, Tester, QA Red Team and explicit release evidence |
+| T4 | Protected/high-consequence work | Full relevant governance, mandatory specialists, owner gates and exact operational proof |
+
+T0 is read-only only. A documentation correction and a code correction are
+mutations and therefore require at least T1. UI/reference work mandates design
+specialists and Visual QA; security/authentication mandates Security Reviewer;
+schema/migration mandates database/evidence review; customer delivery mandates
+customer-safety and delivery-truth review; money/payment mandates financial
+governance; hardware/irrigation mandates ROOTLINE hardware safety;
+publication/campaign/spend mandates the relevant publication governance; and
+legal/rights/privacy mandates evidence/security review. These protected
+triggers force T4 where they represent protected action and cannot be
+score-downgraded.
+
+Each selected agent records why it was selected, whether it is mandatory, its
+evidence trigger, required output, authority, tools, allowed mutations,
+prohibited actions, time/token/attempt budget and handoff recipient. Skipped
+normally expected agents record why they are unnecessary. Authority remains
+bounded per mission. Scoring does not authorize deployment, publication,
+financial action, customer sends, migrations or hardware control.
+
+After durable artifact ingestion, materially changed risk, scope, uncertainty,
+binding, lineage, generation or owner evidence may add a new orchestration
+generation. Identical evidence reuses the current generation. Live workflow
+expansion may add safety roles but cannot remove existing, active, completed or
+mandatory gates. Repository writers remain serialized; only independent
+read-only work may run concurrently. Backflow targets the smallest relevant
+stage, and per-stage attempts, total recovery cycles, elapsed time and token
+budgets remain bounded.
+
+Candidate binding and parent/input artifact lineage remain prerequisites for
+protected consumption. Orchestration persistence failure fails closed before a
+transition or protected execution. Recovery cannot silently rebuild a
+different team without material evidence.
+
+The owner-only mission-summary surface derives throughput from the existing
+mission, artifact and execution evidence rather than creating a second ledger.
+It exposes tier, selected/skipped counts, overall and per-stage elapsed time,
+attempts, backflows, expansion generations, final outcome, owner interventions
+and blocked reason. Missing historical values display `Unavailable`, never
+zero.
+
+Delivery truth remains explicit: **implemented** means code and tests exist;
+**deployed** means the reviewed revision reached the service; **promoted**
+means governed CORE runtime, execution and manifest revisions match; and
+**naturally proven** means a real governed mission exercised the behavior with
+durable evidence. None of those states implies another.
+
 ## Agent Stages
 
 - Idea Expander: optional specialist stage for agent/system/workflow/business/content missions; clarifies opportunity, owner value, constraints, and non-goals.
