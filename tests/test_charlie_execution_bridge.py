@@ -1,6 +1,7 @@
+import copy
+import json
 import tempfile
 import unittest
-import json
 import os
 import re
 import shutil
@@ -1199,7 +1200,76 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertFalse(normalized)
         self.assertTrue(artifact["bugs"][0]["introduced_by_current_diff"])
 
+    def test_protected_pause_requires_exact_full_candidate_binding(self):
+        revision = "a" * 40
+        artifact = {
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
+        }
+        original = copy.deepcopy(artifact)
+
+        self.assertTrue(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+        self.assertEqual(artifact, original)
+
+    def test_protected_pause_rejects_blank_short_malformed_historical_and_mismatched_lineage(self):
+        revision = "a" * 40
+        cases = [
+            {"tested_revision": ""},
+            {"tested_revision": "a"},
+            {"tested_revision": revision[:7]},
+            {"tested_revision": "not-a-sha"},
+            {"tested_revision": "b" * 40},
+            {"tested_revision": revision, "lineage_revision": "b" * 40},
+            {"tested_revision": revision, "lineage_candidate": "historical-candidate"},
+        ]
+        for overrides in cases:
+            with self.subTest(overrides=overrides):
+                artifact = {
+                    "source_commit": revision,
+                    "tested_revision": overrides.get("tested_revision"),
+                    "candidate_fingerprint": "candidate-123",
+                    "evidence_lineage": {
+                        "source_commit": overrides.get("lineage_revision", revision),
+                        "candidate_fingerprint": overrides.get("lineage_candidate", "candidate-123"),
+                    },
+                }
+                original = copy.deepcopy(artifact)
+
+                self.assertFalse(execution_bridge._protected_pause_has_exact_candidate_binding(artifact))
+                self.assertEqual(artifact, original)
+
+    def test_unbound_protected_pause_remains_non_passing_without_builder_normalization(self):
+        artifact = _successful_stage_payload("product_reviewer")
+        artifact.update({
+            "summary": "Code passes, but migration application remains owner-gated.",
+            "recommended_owner_decision": "pause",
+            "errors": [],
+            "bugs": [],
+            "files_inspected": ["supabase/migrations/202607220001_additive.sql"],
+            "acceptance_results": [{"id": "authority", "status": "passed", "evidence": ["No protected write."]}],
+            "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "passed"}],
+            "next_action": "Obtain owner authorization before migration application.",
+            "release_notes": ["Do not apply the migration."],
+            "product_review_status": "blocked",
+            "source_commit": "a" * 40,
+            "tested_revision": "b" * 40,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {"source_commit": "a" * 40, "candidate_fingerprint": "candidate-123"},
+        })
+
+        result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(artifact["recommended_owner_decision"], "pause")
+        self.assertNotIn("protected_operations", artifact)
+
     def test_product_protected_pause_accepts_explicit_preexisting_scope_aliases(self):
+        revision = "a" * 40
         artifact = _successful_stage_payload("product_reviewer")
         artifact.update({
             "summary": "Code checks pass; migration application and live canary remain owner-authorized.",
@@ -1231,6 +1301,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "test_evidence": [{"command": "python -m unittest focused", "status": "pass", "result": "59 tests passed"}],
             "next_action": "Obtain owner authorization to apply the additive migration and run the live canary.",
             "release_notes": ["Do not apply the migration without owner authorization."],
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
         })
 
         result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
@@ -4160,6 +4237,7 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
 
     def test_product_reviewer_migration_application_pause_is_not_builder_backflow(self):
+        revision = "a" * 40
         artifact = _successful_stage_payload("product_reviewer")
         artifact.update({
             "summary": "No current-diff product bug. Applying this migration remains owner-gated.",
@@ -4178,6 +4256,13 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
             "next_action": "Obtain owner decisions before migration application.",
             "release_notes": ["Do not apply the migration yet."],
             "product_review_status": "blocked",
+            "source_commit": revision,
+            "tested_revision": revision,
+            "candidate_fingerprint": "candidate-123",
+            "evidence_lineage": {
+                "source_commit": revision,
+                "candidate_fingerprint": "candidate-123",
+            },
         })
 
         result = execution_bridge._agent_quality_gate("product_reviewer", artifact)
