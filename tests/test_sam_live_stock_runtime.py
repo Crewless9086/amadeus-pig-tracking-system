@@ -1336,7 +1336,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "confidence": 0.99,
             },
             routine_delivery_claim=lambda *_args: {"success": True, "created": True, "review_event_id": "REVIEW-1"},
-            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
+            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200, "body": {"id": 1, "status": "delivered"}},
+            routine_delivery_evidence_recorder=lambda *_args: {"success": True, "created": True},
         )
 
         decision = result["sam_decision"]
@@ -1398,7 +1399,8 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "confidence": 0.99,
             },
             routine_delivery_claim=lambda *_args: {"success": True, "created": True, "review_event_id": "REVIEW-2"},
-            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200},
+            chatwoot_sender=lambda conversation_id, message, _source: sends.append((conversation_id, message)) or {"status_code": 200, "body": {"id": 2, "status": "delivered"}},
+            routine_delivery_evidence_recorder=lambda *_args: {"success": True, "created": True},
         )
 
         decision = result["sam_decision"]
@@ -2633,7 +2635,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         def sender(conversation_id, message, source):
             calls.append((conversation_id, message, source))
-            return {"status_code": 200, "body": {"id": 1}}
+            return {"status_code": 200, "body": {"id": 1, "status": "sent"}}
 
         blocked, blocked_status = sam_live_stock_runtime.send_owner_approved_live_stock_reply(
             "2401",
@@ -2658,8 +2660,45 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertEqual(sent_status, 200)
         self.assertTrue(sent["success"])
         self.assertTrue(sent["sends_customer_message"])
+        self.assertFalse(sent["customer_send_confirmed"])
+        self.assertEqual(sent["delivery"]["delivery_state"], "chatwoot_accepted_unverified")
         self.assertTrue(sent["calls_chatwoot"])
         self.assertEqual(calls[0][0], "2401")
+
+    def test_chatwoot_sender_omits_application_source_id(self):
+        captured = []
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"id":11,"status":"sent","source_id":"wamid.SECRET"}'
+
+        with patch.object(
+            sam_live_stock_runtime.urllib_request,
+            "urlopen",
+            side_effect=lambda request, timeout=0: captured.append((request, timeout)) or Response(),
+        ):
+            response = sam_live_stock_runtime._send_chatwoot_message(
+                "2013",
+                "Hi Charl! How can I help you today?",
+                {
+                    "CHATWOOT_BASE_URL": "https://chatwoot.test",
+                    "CHATWOOT_ACCOUNT_ID": "147387",
+                    "CHATWOOT_API_ACCESS_TOKEN": "secret-token",
+                },
+                amadeus_source="sam_live_stock_routine_reply",
+            )
+        body = json.loads(captured[0][0].data.decode())
+        self.assertNotIn("source_id", body)
+        self.assertEqual(body["content_attributes"]["amadeus_source"], "sam_live_stock_routine_reply")
+        self.assertEqual(response["body"]["status"], "sent")
 
     def test_takeover_and_cleanup_packets_are_auditable(self):
         takeover = sam_live_stock_runtime.build_sam_live_stock_chatwoot_takeover_payload(
@@ -2904,7 +2943,11 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(general["requires_all_three_exact_identity_matches"])
         self.assertTrue(general["requires_reviewed_llm_result"])
         self.assertTrue(general["requires_persistent_idempotency_claim_before_send"])
-        self.assertEqual(general["append_only_terminal_outcomes"], ["confirmed", "failed", "ambiguous"])
+        self.assertEqual(
+            general["confirmed_delivery_states"],
+            ["provider_delivered", "provider_read"],
+        )
+        self.assertIn("chatwoot_accepted_unverified", general["delivery_states"])
         self.assertTrue(general["specialist_and_protected_actions_disabled"])
         self.assertTrue(general["telegram_exception_only"])
 
@@ -2956,18 +2999,54 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             ),
             chatwoot_sender=lambda *_args: (
                 order.append("fake_send")
-                or {"success": True, "status_code": 200}
+                or {"success": True, "status_code": 200, "body": {"id": 1, "status": "sent"}}
             ),
             delivery_evidence_recorder=lambda _claim, outcome: (
-                order.append("evidence:" + outcome["delivery_status"])
+                order.append("evidence:" + outcome["delivery_state"])
                 or {"success": True, "status": "recorded"}
             ),
         )
 
-        self.assertEqual(order, ["claim", "fake_send", "evidence:chatwoot_send_confirmed"])
-        self.assertTrue(delivery["sent"])
+        self.assertEqual(order, ["claim", "fake_send", "evidence:chatwoot_accepted_unverified"])
+        self.assertFalse(delivery["sent"])
+        self.assertTrue(delivery["chatwoot_accepted"])
+        self.assertFalse(delivery["delivery_outcome"]["customer_send_confirmed"])
         self.assertTrue(delivery["automatic_retry_prohibited"])
         self.assertTrue(delivery["canary"]["allowed"])
+
+    def test_auto_general_claim_failure_makes_zero_chatwoot_calls(self):
+        calls = []
+        delivery = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
+            {
+                "conversation_id": "2013",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "content": "Hi",
+                "identity_provenance": verified_identity("2013", "699428938", "96568"),
+            },
+            {
+                "conversation_ownership": "AUTO_GENERAL",
+                "suggested_reply_text": "Hi Charl! How can I help you today?",
+                "reply_source": "llm_auto_general_reply_draft",
+                "should_reply": True,
+                "llm_draft": {"used": True, "confidence": 0.95},
+                "specialist_lane_selected": False,
+                "specialist_tools_called": [],
+                "owner_escalation_required": False,
+            },
+            {"safe_to_send": True, "escalation_required": False},
+            {
+                "SAM_AUTO_GENERAL_AUTOREPLY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_ENABLED": "1",
+                "SAM_AUTO_GENERAL_CANARY_CONVERSATION_ID": "2013",
+                "SAM_AUTO_GENERAL_CANARY_CONTACT_ID": "699428938",
+                "SAM_AUTO_GENERAL_CANARY_INBOX_ID": "96568",
+            },
+            delivery_claim=lambda *_args: {"success": False, "created": False},
+            chatwoot_sender=lambda *_args: calls.append("send"),
+        )
+        self.assertEqual(delivery["status"], "routine_reply_idempotency_claim_failed")
+        self.assertEqual(calls, [])
 
     def test_production_message_759342561_recovers_authoritative_conversation_inbox(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
@@ -3219,7 +3298,12 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         def claim(*_args):
             order.append("claim")
-            return {"success": True, "created": created, "review_event_id": "CLAIM-2004"}
+            return {
+                "success": True,
+                "created": created,
+                "review_event_id": "CLAIM-2004",
+                "prior_delivery_state": "chatwoot_accepted_unverified" if not created else "",
+            }
 
         first = sam_live_stock_runtime.deliver_sam_live_stock_routine_reply_if_enabled(
             inbound,
@@ -3227,9 +3311,9 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
             review,
             source,
             delivery_claim=claim,
-            chatwoot_sender=lambda *_args: order.append("send") or {"status_code": 200},
+            chatwoot_sender=lambda *_args: order.append("send") or {"status_code": 200, "body": {"id": 1, "status": "sent"}},
             delivery_evidence_recorder=lambda _claim, outcome: (
-                order.append("evidence:" + outcome["delivery_status"])
+                order.append("evidence:" + outcome["delivery_state"])
                 or {"success": True, "status": "recorded"}
             ),
         )
@@ -3245,12 +3329,13 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
 
         self.assertEqual(
             order,
-            ["claim", "send", "evidence:chatwoot_send_confirmed", "claim"],
+            ["claim", "send", "evidence:chatwoot_accepted_unverified", "claim"],
         )
-        self.assertTrue(first["sent"])
+        self.assertFalse(first["sent"])
+        self.assertTrue(first["chatwoot_accepted"])
         self.assertEqual(
-            first["delivery_outcome"]["delivery_status"],
-            "chatwoot_send_confirmed",
+            first["delivery_outcome"]["delivery_state"],
+            "chatwoot_accepted_unverified",
         )
         self.assertEqual(replay["status"], "routine_reply_duplicate_withheld")
 
@@ -3301,6 +3386,25 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 self.assertFalse(result["sent"])
                 self.assertEqual(sends, [])
 
+    def test_attempt_claimed_replay_is_ambiguous_owner_visible_without_resend(self):
+        decision = {
+            "conversation_ownership": "AUTO_GENERAL",
+            "handled_autonomously": True,
+        }
+        sam_live_stock_runtime._apply_auto_general_delivery_transition(
+            decision,
+            {
+                "attempted": False,
+                "sent": False,
+                "status": "routine_reply_duplicate_withheld",
+                "claim": {"prior_delivery_state": "attempt_claimed"},
+            },
+        )
+        self.assertEqual(decision["reason"], "routine_reply_delivery_ambiguous")
+        self.assertTrue(decision["owner_action_required"])
+        self.assertFalse(decision["customer_send_confirmed"])
+        self.assertFalse(decision["handled_autonomously"])
+
     def test_auto_general_authorized_send_replay_and_ambiguous_outcome_transitions(self):
         payload = inbound_payload(
             content="Hi",
@@ -3326,6 +3430,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 "created": created,
                 "review_event_id": "GENERAL-CLAIM",
                 "prior_delivery_confirmed": not created,
+                "prior_delivery_state": "provider_delivered" if not created else "",
             }
 
         def run(sender):
@@ -3346,14 +3451,14 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
                 ),
             )
 
-        result, _ = run(lambda *_args: sends.append("sent") or {"status_code": 200})
+        result, _ = run(lambda *_args: sends.append("sent") or {"status_code": 200, "body": {"id": 1, "status": "delivered"}})
         decision = result["sam_decision"]
         self.assertEqual(sends, ["sent"])
         self.assertTrue(result["sent"])
         self.assertTrue(decision["handled_autonomously"])
         self.assertFalse(decision["owner_escalation_required"])
-        self.assertEqual(decision["reason"], "routine_reply_confirmed_sent")
-        self.assertEqual(evidence[-1]["delivery_status"], "chatwoot_send_confirmed")
+        self.assertEqual(decision["reason"], "routine_reply_confirmed_delivered")
+        self.assertEqual(evidence[-1]["delivery_state"], "provider_delivered")
 
         created = False
         replay, _ = run(lambda *_args: sends.append("duplicate"))
@@ -3361,7 +3466,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertFalse(replay["sent"])
         self.assertEqual(
             replay["sam_decision"]["reason"],
-            "routine_reply_replay_withheld",
+            "routine_reply_confirmed_delivered",
         )
 
         created = True
@@ -3381,7 +3486,7 @@ class SamLiveStockRuntimeTests(unittest.TestCase):
         self.assertTrue(
             ambiguous["sam_decision"]["routine_reply_delivery"]["automatic_retry_prohibited"]
         )
-        self.assertEqual(evidence[-1]["delivery_status"], "chatwoot_send_outcome_unknown")
+        self.assertEqual(evidence[-1]["delivery_state"], "provider_outcome_ambiguous")
 
 if __name__ == "__main__":
     unittest.main()

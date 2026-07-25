@@ -100,7 +100,6 @@ from modules.sales.sam_live_stock_runtime import (
     send_owner_approved_live_stock_reply,
 )
 from modules.sales.sam_live_stock_launch_control import (
-    build_sam_live_stock_delivery_outcome_event,
     _telegram_send_message,
     apply_sam_live_stock_chatwoot_takeover,
     audit_sam_live_stock_human_conversations,
@@ -118,6 +117,12 @@ from modules.sales.sam_live_stock_launch_control import (
     send_sam_live_stock_new_lead_telegram,
     send_sam_live_stock_owner_review_telegram,
     send_sam_live_stock_telegram_escalation,
+)
+from modules.sales.sam_delivery_truth import (
+    build_delivery_attempt,
+    build_delivery_claim_event,
+    build_delivery_transition_event,
+    load_attempt_chain,
 )
 from modules.sales.sam_live_stock_graduation import notify_new_graduation_candidates
 from modules.sales.sam_command_state import get_sam_command_state
@@ -528,10 +533,16 @@ def _send_sam_live_stock_owner_notification_if_needed(event, learning_result):
     if decision.get("conversation_ownership") == "AUTO_GENERAL":
         transition = decision.get("transition_visibility") if isinstance(decision.get("transition_visibility"), dict) else {}
         transition_status = str(transition.get("status") or "").strip()
-        if transition_status == "routine_reply_confirmed_sent":
+        if transition_status == "routine_reply_confirmed_delivered":
             return {
                 "attempted": False,
-                "status": "auto_general_confirmed_sent_no_telegram",
+                "status": "auto_general_confirmed_delivered_no_telegram",
+                "review_event_id": learning_result.get("review_event_id"),
+            }
+        if transition_status == "routine_reply_accepted_unverified":
+            return {
+                "attempted": False,
+                "status": "auto_general_accepted_unverified_observation_window",
                 "review_event_id": learning_result.get("review_event_id"),
             }
         if transition_status == "routine_reply_replay_withheld":
@@ -630,28 +641,62 @@ def sam_live_stock_chatwoot_inbound():
 
 
 def _claim_sam_live_stock_routine_delivery(inbound, decision, review):
-    event = build_sam_live_stock_review_event(inbound, decision.get("facts") or {}, decision, review)
+    review_event = build_sam_live_stock_review_event(
+        inbound, decision.get("facts") or {}, decision, review
+    )
+    attempt = build_delivery_attempt(
+        inbound,
+        decision,
+        {**(review or {}), "review_event_id": review_event.get("review_event_id")},
+        response_class=(decision.get("autoreply_canary") or {}).get("response_class")
+        or "routine_reply",
+        attempt_generation=1,
+    )
+    if not attempt.get("success"):
+        return {**attempt, "created": False, "contains_secret_values": False}
+    event = build_delivery_claim_event(attempt)
     result, status_code = record_sam_live_stock_review_event(event)
-    return {
+    claim = {
+        **attempt,
         "success": result.get("success") is True,
         "created": result.get("created") is True,
         "status": result.get("status"),
         "status_code": status_code,
-        "review_event_id": result.get("review_event_id") or event.get("review_event_id"),
+        "review_event_id": review_event.get("review_event_id"),
+        "delivery_claim_event_id": event.get("review_event_id"),
         "conversation_event_count": result.get("conversation_event_count"),
         "contains_secret_values": False,
     }
+    if claim["success"] and not claim["created"]:
+        chain = load_attempt_chain(
+            os.getenv("DATABASE_URL", ""),
+            attempt["conversation_id"],
+            attempt["delivery_attempt_id"],
+        )
+        claim["prior_delivery_state"] = chain.get("latest_delivery_state", "")
+        claim["prior_delivery_confirmed"] = chain.get("customer_send_confirmed") is True
+        claim["evidence_chain"] = chain.get("events", [])
+    return claim
 
 
 def _record_sam_live_stock_delivery_outcome(claim, outcome):
-    event = build_sam_live_stock_delivery_outcome_event(claim, outcome)
+    event = build_delivery_transition_event(claim, outcome)
+    if not event:
+        return {
+            "success": False,
+            "created": False,
+            "status": "delivery_transition_event_invalid",
+            "contains_configured_identity_values": False,
+            "contains_secret_values": False,
+        }
     result, status_code = record_sam_live_stock_review_event(event)
     return {
         "success": result.get("success") is True,
         "created": result.get("created") is True,
         "status": result.get("status"),
         "status_code": status_code,
-        "delivery_status": (event.get("review_json") or {}).get("delivery_status"),
+        "delivery_state": (event.get("review_json") or {}).get("delivery_state"),
+        "delivery_attempt_id": (event.get("review_json") or {}).get("delivery_attempt_id"),
         "review_event_id": result.get("review_event_id") or event.get("review_event_id"),
         "contains_configured_identity_values": False,
         "contains_secret_values": False,

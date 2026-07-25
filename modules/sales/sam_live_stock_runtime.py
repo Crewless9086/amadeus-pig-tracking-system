@@ -26,6 +26,14 @@ from modules.sales.sam_live_stock_understanding import (
     understand_live_stock_inbound,
 )
 from modules.sales.sam_live_stock_media import classify_chatwoot_image, media_policy, transcribe_chatwoot_voice
+from modules.sales.sam_delivery_truth import (
+    CHATWOOT_ACCEPTED_UNVERIFIED,
+    CONFIRMED_STATES,
+    PROVIDER_FAILED,
+    PROVIDER_OUTCOME_AMBIGUOUS,
+    classify_chatwoot_response,
+    classify_dispatch_exception,
+)
 from modules.charlie.agent_runtime import delegate_to_agent
 
 
@@ -514,15 +522,41 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             )
         )
         sent = sender(conversation_id, reply, source)
-        status_code = sent.get("status_code") if isinstance(sent, dict) else None
-        confirmed = isinstance(status_code, int) and 200 <= status_code < 300
-        outcome = {"delivery_status": "chatwoot_send_confirmed" if confirmed else "chatwoot_send_outcome_unknown", "chatwoot_confirmed": confirmed, "status_code": status_code, "automatic_retry_prohibited": True}
+        outcome = classify_chatwoot_response(sent)
         evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, outcome)
+        if evidence.get("success") is not True:
+            outcome = {
+                **outcome,
+                "delivery_state": PROVIDER_OUTCOME_AMBIGUOUS,
+                "customer_send_confirmed": False,
+                "handled_autonomously": False,
+                "failure_class": "delivery_outcome_evidence_not_persisted",
+            }
+        confirmed = outcome.get("delivery_state") in CONFIRMED_STATES
+        accepted = outcome.get("delivery_state") in {
+            CHATWOOT_ACCEPTED_UNVERIFIED,
+            *CONFIRMED_STATES,
+        }
         return {
             "attempted": True,
             "sent": confirmed,
-            "status": "sam_live_stock_routine_reply_sent" if confirmed else "sam_live_stock_routine_reply_outcome_unknown",
-            "chatwoot": sent,
+            "chatwoot_accepted": accepted,
+            "status": (
+                "sam_live_stock_routine_reply_confirmed_delivered"
+                if confirmed
+                else "sam_live_stock_routine_reply_accepted_unverified"
+                if outcome.get("delivery_state") == CHATWOOT_ACCEPTED_UNVERIFIED
+                else "sam_live_stock_routine_reply_failed"
+                if outcome.get("delivery_state") == PROVIDER_FAILED
+                else "sam_live_stock_routine_reply_outcome_ambiguous"
+            ),
+            "chatwoot": {
+                "outgoing_message_id": outcome.get("chatwoot_outgoing_message_id"),
+                "response_status": outcome.get("chatwoot_response_status"),
+                "provider_identity_class": outcome.get("provider_identity_class"),
+                "status_code_class": outcome.get("status_code_class"),
+                "contains_raw_provider_identity": False,
+            },
             "canary": canary,
             "claim": claim,
             "delivery_outcome": outcome,
@@ -530,13 +564,12 @@ def deliver_sam_live_stock_routine_reply_if_enabled(inbound, decision, review, e
             "automatic_retry_prohibited": True,
         }
     except Exception as exc:
-        failure_status = "chatwoot_send_failed_before_confirmation" if _send_failure_confirmed(exc) else "chatwoot_send_outcome_unknown"
-        failure_outcome = {"delivery_status": failure_status, "chatwoot_confirmed": False, "error_type": exc.__class__.__name__, "automatic_retry_prohibited": True}
+        failure_outcome = classify_dispatch_exception(exc)
         evidence = _record_delivery_outcome(delivery_evidence_recorder, claim, failure_outcome)
         return {
             "attempted": True,
             "sent": False,
-            "status": "sam_live_stock_routine_reply_failed",
+            "status": "sam_live_stock_routine_reply_outcome_ambiguous",
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
             "canary": canary,
@@ -560,22 +593,33 @@ def _apply_auto_general_delivery_transition(decision, delivery):
         }
         decision["handled_autonomously"] = False
         decision["reason"] = "owner_escalation_required"
-    elif delivery.get("sent") is True:
+    elif (delivery.get("delivery_outcome") or {}).get("delivery_state") in CONFIRMED_STATES:
         transition = {
-            "status": "routine_reply_confirmed_sent",
+            "status": "routine_reply_confirmed_delivered",
             "notification_class": "none",
             "owner_action_required": False,
             "customer_send_confirmed": True,
             "automatic_retry_prohibited": True,
         }
         decision["handled_autonomously"] = True
-        decision["reason"] = "routine_reply_confirmed_sent"
+        decision["reason"] = "routine_reply_confirmed_delivered"
+    elif (delivery.get("delivery_outcome") or {}).get("delivery_state") == CHATWOOT_ACCEPTED_UNVERIFIED:
+        transition = {
+            "status": "routine_reply_accepted_unverified",
+            "notification_class": "delivery_reconciliation",
+            "owner_action_required": False,
+            "customer_send_confirmed": False,
+            "automatic_retry_prohibited": True,
+        }
+        decision["handled_autonomously"] = False
+        decision["reason"] = "routine_reply_accepted_unverified"
     elif delivery.get("attempted") is True:
-        ambiguous = (
-            delivery.get("status") == "sam_live_stock_routine_reply_outcome_unknown"
-            or ((delivery.get("delivery_outcome") or {}).get("delivery_status") == "chatwoot_send_outcome_unknown")
+        state = (delivery.get("delivery_outcome") or {}).get("delivery_state")
+        reason = (
+            "routine_reply_delivery_failed"
+            if state == PROVIDER_FAILED
+            else "routine_reply_delivery_ambiguous"
         )
-        reason = "routine_reply_delivery_ambiguous" if ambiguous else "routine_reply_delivery_failed"
         transition = {
             "status": reason,
             "notification_class": "delivery_exception",
@@ -593,10 +637,31 @@ def _apply_auto_general_delivery_transition(decision, delivery):
             "customer_send_confirmed": False,
             "automatic_retry_prohibited": True,
         }
-        decision["handled_autonomously"] = bool(
-            (delivery.get("claim") or {}).get("prior_delivery_confirmed") is True
-        )
-        decision["reason"] = "routine_reply_replay_withheld"
+        prior_state = (delivery.get("claim") or {}).get("prior_delivery_state")
+        if prior_state in CONFIRMED_STATES:
+            transition["status"] = "routine_reply_confirmed_delivered"
+            transition["notification_class"] = "none"
+            decision["handled_autonomously"] = True
+            decision["reason"] = "routine_reply_confirmed_delivered"
+        elif prior_state == CHATWOOT_ACCEPTED_UNVERIFIED:
+            transition["status"] = "routine_reply_accepted_unverified"
+            transition["notification_class"] = "delivery_reconciliation"
+            decision["handled_autonomously"] = False
+            decision["reason"] = "routine_reply_accepted_unverified"
+        elif prior_state in {"attempt_claimed", PROVIDER_OUTCOME_AMBIGUOUS, PROVIDER_FAILED}:
+            failed = prior_state == PROVIDER_FAILED
+            transition["status"] = (
+                "routine_reply_delivery_failed"
+                if failed
+                else "routine_reply_delivery_ambiguous"
+            )
+            transition["notification_class"] = "delivery_exception"
+            transition["owner_action_required"] = True
+            decision["handled_autonomously"] = False
+            decision["reason"] = transition["status"]
+        else:
+            decision["handled_autonomously"] = False
+            decision["reason"] = "routine_reply_replay_withheld"
     else:
         transition = {
             "status": "routine_reply_waiting_for_owner",
@@ -2716,11 +2781,28 @@ def send_owner_approved_live_stock_reply(conversation_id, message, *, environ=No
     try:
         sender = chatwoot_sender or _send_chatwoot_message
         sent = sender(packet["conversation_id"], packet["message"], source)
+        delivery = classify_chatwoot_response(sent)
+        confirmed = delivery.get("delivery_state") in CONFIRMED_STATES
         return {
             "success": True,
-            "status": "sam_live_stock_owner_reply_sent",
+            "status": (
+                "sam_live_stock_owner_reply_confirmed_delivered"
+                if confirmed
+                else "sam_live_stock_owner_reply_accepted_unverified"
+                if delivery.get("delivery_state") == CHATWOOT_ACCEPTED_UNVERIFIED
+                else "sam_live_stock_owner_reply_delivery_ambiguous"
+            ),
             "packet": packet,
-            "chatwoot": sent,
+            "chatwoot": {
+                "outgoing_message_id": delivery.get("chatwoot_outgoing_message_id"),
+                "response_status": delivery.get("chatwoot_response_status"),
+                "provider_identity_class": delivery.get("provider_identity_class"),
+                "status_code_class": delivery.get("status_code_class"),
+                "contains_raw_provider_identity": False,
+            },
+            "delivery": delivery,
+            "customer_send_confirmed": confirmed,
+            "automatic_retry_prohibited": True,
             **_authority_flags(),
             "sends_customer_message": True,
             "calls_chatwoot": True,
@@ -4054,7 +4136,16 @@ def _auto_general_canary_policy(source):
         "requires_all_three_exact_identity_matches": True,
         "requires_reviewed_llm_result": True,
         "requires_persistent_idempotency_claim_before_send": True,
-        "append_only_terminal_outcomes": ["confirmed", "failed", "ambiguous"],
+        "delivery_states": [
+            "prepared",
+            "attempt_claimed",
+            "chatwoot_accepted_unverified",
+            "provider_delivered",
+            "provider_read",
+            "provider_failed",
+            "provider_outcome_ambiguous",
+        ],
+        "confirmed_delivery_states": ["provider_delivered", "provider_read"],
         "specialist_and_protected_actions_disabled": True,
         "telegram_exception_only": True,
         "contains_identity_values": False,
@@ -4812,7 +4903,6 @@ def _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam
         "content": message,
         "message_type": "outgoing",
         "private": False,
-        "source_id": f"sam_live_stock:{hashlib.sha1(f'{conversation_id}|{message}'.encode('utf-8', errors='ignore')).hexdigest()[:16]}",
         "content_attributes": {
             "amadeus_source": marker,
             "sam_live_stock_generated": True,
