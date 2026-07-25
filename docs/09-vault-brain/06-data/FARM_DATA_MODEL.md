@@ -29,7 +29,7 @@ Farm record writes require approved backend paths and audit evidence.
 - Observations are evidence, not diagnoses, treatment instructions, lifecycle/purpose decisions, or external-action instructions.
 - Events are append-only. Corrections must be new factual events linked by `supersedes_observation_event_id`; normal updates and deletes are database-blocked.
 - A correction can supersede only an earlier observation for the same pig; the observation timestamp cannot be later than its recorded timestamp.
-- The table has RLS enabled and no browser policy is introduced by this migration. A future protected backend capture rail must define its own permission and audit contract.
+- The table has RLS enabled and no browser policy is introduced by this migration. The protected backend capture route is owner-admin-only, derives the audit actor server-side, validates payloads before connecting, requires the canonical pig, and fails closed when the unapplied schema is unavailable. It may append only this rail and never mutates pig current state or commercial/lifecycle records. Migration application remains separately owner-authorized.
 - Herdmaster may consume recent observations only as cited, freshness-aware advisory evidence. It remains read-only and owner-gated; observation presence cannot trigger an automated farm or commercial write.
 - Alert acknowledgements, recommendations, owner decisions, automation state, notification delivery, and retention/deletion policy require separately approved data contracts.
 

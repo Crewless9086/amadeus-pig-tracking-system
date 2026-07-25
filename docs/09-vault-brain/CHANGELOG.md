@@ -11,6 +11,7 @@
 
 - Defined the separate, additive and unapplied `pig_management_intent_events` rail alongside factual observations.
 - Required advisory-only status, canonical pig linkage, evidence/supersession links constrained to the same pig, idempotency, RLS, append-only database protection, and backend-only future capture authority.
+- Added the owner-admin protected backend capture contract: server-derived audit principal, payload validation before database access, canonical-pig validation, idempotency conflict detection, and fail-closed unavailable-schema handling. The route can append evidence only after separate owner migration authority; it does not change current state or execute lifecycle/commercial actions.
 - Prohibited current-state, lifecycle, purpose, sales, reservation, customer, notification, and other operational writes; applying or rolling back this migration remains an explicit owner-only operation.
 
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
