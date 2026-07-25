@@ -66,3 +66,17 @@ Illustrative service scenarios—not an offer:
 | R40,000 | R22,000 | 45% |
 
 The service should not be considered commercially ready until pilots demonstrate quality, effort is measured, rights terms are drafted and the owner approves scope/outreach.
+
+## Revenue allocation boundary
+
+Estimated RPM, views, subscribers, completed media and YPP eligibility are not
+revenue. Platform estimates are not finalised revenue; finalised revenue is
+not received cash; received cash is not distributable profit.
+
+Received cash first covers direct production, tools, rights, contractors and
+other reconciled operating costs, then funds an owner-approved StoryWorks
+operating reserve. Only legally available, reconciled surplus may become
+owner-approved distributable profit. Contributions toward CHARLIE operating
+costs or another named Amadeus venture require separate owner allocation,
+payment and reconciliation evidence. No silent subsidy or commingling is
+permitted.

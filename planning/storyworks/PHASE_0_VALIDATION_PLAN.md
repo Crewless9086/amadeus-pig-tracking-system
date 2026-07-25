@@ -85,6 +85,16 @@ No second channel or software build until:
 7. Publish only the specifically approved canary.
 8. Record the exact public result and run the approved 30-day measurement plan.
 
-## Future CHARLIE/CORE integration proposal
+## Future CHARLIE/CORE relationship — not approved
 
-Not approved and not required now. A later proposal must keep a separate StoryWorks business goal and report business outcome separately from completed production work. It should expose only current pipeline, budget, revenue, protected decisions, safe autonomous work, stale/unknown facts and expected value relative to farm revenue. Architecture options must compare documentation/external tools, isolated monolith module, separate service/repository and lightweight production-management software.
+CHARLIE may eventually govern pipeline priority, budgets, schedules, evidence,
+reviews, protected pauses, performance and business reporting. StoryWorks
+retains its own business goal, accounts, evidence, costs and revenue truth.
+CHARLIE must never treat content completion as commercial success or infer a
+later business state from an earlier one.
+
+Future automation requires a proven manual bottleneck, costed payback, stable
+production doctrine and separate owner approval. Any later proposal must
+compare documentation/external tools, an isolated monolith module, a separate
+service/repository and lightweight production-management software. No
+StoryWorks CORE integration is built, approved, deployed or operational.

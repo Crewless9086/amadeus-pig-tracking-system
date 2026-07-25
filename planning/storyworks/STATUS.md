@@ -1,7 +1,7 @@
 # Amadeus StoryWorks Status
 
-**Last updated:** 2026-07-23
-**Current phase:** Phase 1 — lean private pilot production
+**Last updated:** 2026-07-25
+**Current phase:** Phase 1 — lean private pilot validation
 **Objective:** Determine whether The Chronicle Vault can support a repeatable, legally supportable and commercially viable media business through a bounded three-pilot validation programme.
 
 ## Isolation boundary
@@ -16,17 +16,18 @@
 
 ## Programme state
 
-- **Last completed outcome:** Petra private text package completed and three small original SVG/PNG style prototypes rendered and visually reviewed. No final media exists.
+- **Last completed outcome:** Petra private text/research package and three small original SVG/PNG prototypes are substantially prepared; repository consistency validation exists. This is not a completed video.
 - **Current work:** Human editorial/source interpretation and pronunciation review, followed by revision of the private script and prototypes.
 - **Blockers:** Petra cannot enter final edit until external-asset, map-reference, narration and music rights are resolved. No final video exists. Publishing and external actions remain owner-gated.
 - **Owner decisions required:** Review the Petra script/prototypes or authorise a named human editorial/source reviewer; select owner narration, an approved human narrator, or a separately evaluated synthetic-voice route. Any contractor, provider or spend requires a specific follow-up approval.
-- **Budget status:** Maximum approved validation envelope: R7,500 cash and R35,000 economic cost. Actual spend remains R0.
+- **Budget status:** Maximum approved validation envelope: R7,500 cash and R35,000 economic cost. Actual spend and revenue remain R0.
+- **Commercial state:** No channel, publication, YPP/AdSense operation, platform revenue, received cash, distributable profit or CHARLIE integration. Commercial viability remains unproven.
 
 ## Next three actions
 
-1. Verify all Petra files, claims, CSV structure, calculations, encoding and Git scope.
-2. Obtain human editorial/source interpretation and pronunciation review without external engagement unless separately approved.
-3. Create private original storyboard/diagram prototypes using no paid or unresolved external assets.
+1. Obtain human editorial/source interpretation and pronunciation review without external engagement unless separately approved.
+2. Revise the private Petra script/prototypes against that recorded review.
+3. Resolve map-reference, photograph, narration and music rights before final edit.
 
 ## Repository record
 

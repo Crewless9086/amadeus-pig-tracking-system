@@ -1,20 +1,38 @@
 # Amadeus StoryWorks Validation Programme
 
-This directory is the isolated, documentation-only home for the StoryWorks Phase 0 validation programme.
+This directory is the isolated, documentation-only home for the StoryWorks
+Phase 0/Phase 1 validation programme.
+
+Amadeus StoryWorks is intended to become a standalone, income-producing
+YouTube media enterprise. Its durable goal is commercial self-sustainability:
+fund its own production and operating accounts first, then—only from real,
+received, reconciled and legally available profit—make separately
+owner-approved contributions toward CHARLIE operating costs and other named
+Amadeus ventures.
 
 ## Current scope
 
-Validate one proposed owned-media property, **The Chronicle Vault**, around one audience promise:
+Validate the first proposed owned-media property, **The Chronicle Vault**,
+around one audience promise:
 
 > Forgotten systems, technologies and decisions that shaped civilisation.
 
-Phase 0 tests audience demand, differentiation, production feasibility, unit economics, policy fit and time to revenue. It does not build software, create channels, publish content, spend money, contact prospects, or integrate with CHARLIE/CORE.
+The Chronicle Vault is the first validation property, not necessarily the
+permanent limit of StoryWorks. Phase 0 tests audience demand,
+differentiation, production feasibility, unit economics, policy fit and time
+to revenue. Phase 1 privately tests the manual pilot workflow. Neither phase
+builds software, creates channels, publishes content, spends money, contacts
+prospects, operates YPP/AdSense, or integrates with CHARLIE/CORE.
+
+StoryWorks is not BEACON, farm social media, a farm media library, livestock
+marketing, customer support or farm operations.
 
 ## Authoritative files
 
 - `STATUS.md` — current programme truth and handoff.
 - `PHASE_0_EXECUTIVE_DECISION_PACK.md` — concise owner decision pack.
 - `STORYWORKS_BUSINESS_CHARTER.md` — bounded commercial purpose and authority.
+- `BUSINESS_STATE_LADDER.md` — durable evidence, revenue and allocation states.
 - `CHRONICLE_VAULT_CHANNEL_BIBLE.md` — positioning alternatives and recommended promise.
 - `MARKET_VALIDATION.md` — competitor and demand evidence.
 - `YOUTUBE_POLICY_RESEARCH.md` — current official platform rules.

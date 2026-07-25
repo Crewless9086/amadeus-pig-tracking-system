@@ -6,7 +6,15 @@
 
 ## Executive verdict
 
-**Proceed conditionally to a bounded, private three-pilot production test; do not treat the business as validated and do not launch a channel yet.**
+**Proceed conditionally to a bounded, private three-pilot production test; do
+not treat the business as validated and do not launch a channel yet.**
+
+StoryWorks is intended as a standalone, self-sustaining YouTube media
+enterprise. The Chronicle Vault is its first validation property, not
+necessarily its permanent limit. Current work proves neither audience demand
+nor monetisation, revenue, cash receipt or distributable profit. The durable
+evidence sequence is defined in
+[`BUSINESS_STATE_LADDER.md`](BUSINESS_STATE_LADDER.md).
 
 The category has proven audience demand, but broad history is crowded and quality expectations are high. Chronicle Vault has a credible testable gap in story-led explanations of the practical systems that kept societies alive. Commercial viability remains unproven until original pilots can be made at acceptable cost and public evidence shows qualified viewing demand.
 
