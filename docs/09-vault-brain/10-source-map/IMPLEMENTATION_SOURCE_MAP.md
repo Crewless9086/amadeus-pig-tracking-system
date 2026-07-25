@@ -1,5 +1,17 @@
 # Implementation Source Map
 
+## Rootline owner daily brief
+
+- Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
+- Composer: `modules/telemetry/rootline_daily_brief.py`
+- Owner-only route: `GET /api/telemetry/rootline/daily-brief`
+- Existing owner dashboard surfaces: `templates/dashboard.html`,
+  `static/js/dashboard.js`
+- Focused safety/behavior tests: `tests/test_rootline_daily_brief.py`
+- Underlying truth remains in the existing weather, forecast, power,
+  irrigation, and daily-rollup readers. Rootline adds no write or hardware
+  control authority.
+
 Status: active machine-aligned map, maintained with `modules/charlie/source_map.py`.
 
 Purpose: tell CHARLIE CORE where real implementation truth lives before it advises or builds. Vault Brain carries doctrine and strategy; this map links doctrine to code, routes, tests, migrations, and legacy sources.

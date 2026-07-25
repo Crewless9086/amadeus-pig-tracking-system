@@ -8,6 +8,7 @@ const state = {
   powerCurrent: null,
   irrigation: null,
   rollup: null,
+  rootline: null,
   farm: null,
   orders: null,
 };
@@ -214,6 +215,32 @@ function renderIrrigation() {
     : `<div class="ops-empty-inline">No plan rows for today.</div>`;
 }
 
+function renderRootline() {
+  const brief = state.rootline || {};
+  setText("rootline_status", displayLabel(brief.status, "Unavailable"));
+  setText("rootline_summary", brief.executive_summary || "Rootline daily brief is unavailable.");
+  const conditions = brief.current_conditions || {};
+  setText(
+    "rootline_conditions",
+    conditions.availability === "Available"
+      ? `${numberOrDash(conditions.temperature_c)} °C · ${numberOrDash(conditions.rain_today_mm)} mm · ${numberOrDash(conditions.wind_speed_kmh)} km/h · ${numberOrDash(conditions.pressure_hpa)} hPa`
+      : "Current conditions Unavailable"
+  );
+  const zones = brief.irrigation?.zones || [];
+  byId("rootline_zone_list").innerHTML = zones.length
+    ? zones.map(zone => `
+      <div class="ops-list-row">
+        <strong>${escapeHtml(zone.zone_name || zone.zone_id || "Zone")}</strong>
+        <span>${escapeHtml(displayLabel(zone.recommendation))} - ${escapeHtml((zone.reasoning || []).join(" "))}</span>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">Zone recommendations unavailable.</div>`;
+  const decisions = brief.owner_decisions_needed || [];
+  byId("rootline_decisions").innerHTML = decisions.length
+    ? decisions.map(item => `<div class="ops-list-row"><span>${escapeHtml(item)}</span></div>`).join("")
+    : `<div class="ops-empty-inline">No owner decision is currently supported.</div>`;
+}
+
 function renderFarmSummary() {
   const summary = state.farm?.summary || {};
   const salesMetrics = summary.sales_metrics || state.farm?.sales_metrics || {};
@@ -300,6 +327,7 @@ async function loadDashboard() {
     ["powerCurrent", "/api/telemetry/power/current", "power_panel"],
     ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
     ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
+    ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
   ];
@@ -322,6 +350,7 @@ async function loadDashboard() {
   renderWeather();
   renderPower();
   renderIrrigation();
+  renderRootline();
   renderFarmSummary();
   renderOrders();
 
