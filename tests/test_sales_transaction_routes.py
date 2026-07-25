@@ -2214,30 +2214,46 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             routine_delivery_evidence_recorder=sales_transaction_routes._record_sam_live_stock_delivery_outcome,
         )
 
-    def test_sam_live_stock_routine_delivery_claim_uses_append_only_review_insert(self):
+    def test_sam_live_stock_routine_delivery_claim_uses_distinct_append_only_attempt(self):
         with patch.object(
             sales_transaction_routes,
             "build_sam_live_stock_review_event",
-            return_value={"review_event_id": "REV-CANARY"},
-        ) as build, patch.object(
+            return_value={"review_event_id": "SAM-LIVE-REVIEW-CANARY"},
+        ), patch.object(
             sales_transaction_routes,
             "record_sam_live_stock_review_event",
             return_value=({
                 "success": True,
-                "created": False,
-                "status": "sam_live_stock_review_event_already_recorded",
-                "review_event_id": "REV-CANARY",
+                "created": True,
+                "status": "sam_live_stock_review_event_recorded",
                 "conversation_event_count": 2,
-            }, 200),
+            }, 201),
         ) as record:
             claim = sales_transaction_routes._claim_sam_live_stock_routine_delivery(
-                {"conversation_id": "1826"}, {"facts": {"category": "grower"}}, {"safe_to_send": True},
+                {
+                    "conversation_id": "2013",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "message_id": "759446521",
+                },
+                {
+                    "facts": {},
+                    "suggested_reply_text": "Hi Charl! How can I help you today?",
+                    "autoreply_canary": {"response_class": "greeting"},
+                },
+                {"safe_to_send": True},
             )
         self.assertTrue(claim["success"])
-        self.assertFalse(claim["created"])
+        self.assertTrue(claim["created"])
         self.assertFalse(claim["contains_secret_values"])
-        build.assert_called_once()
-        record.assert_called_once_with({"review_event_id": "REV-CANARY"})
+        self.assertTrue(claim["delivery_attempt_id"].startswith("SAM-DELIVERY-ATTEMPT-"))
+        self.assertNotEqual(claim["delivery_attempt_id"], claim["review_event_id"])
+        self.assertEqual(claim["delivery_claim_event_id"], claim["delivery_attempt_id"])
+        event = record.call_args.args[0]
+        self.assertEqual(event["event_source"], "sam_outbound_delivery_attempt_claim")
+        self.assertEqual(event["chatwoot_conversation_id"], "2013")
+        self.assertEqual(event["chatwoot_message_id"], "759446521")
+        self.assertNotIn("Hi Charl", str(event))
 
     def test_sam_live_stock_delivery_outcome_is_separate_append_only_event(self):
         with patch.object(
@@ -2246,19 +2262,71 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             return_value=({"success": True, "created": True, "review_event_id": "DELIVERY-1"}, 201),
         ) as record:
             result = sales_transaction_routes._record_sam_live_stock_delivery_outcome(
-                {"created": True, "review_event_id": "CLAIM-1"},
-                {"delivery_status": "chatwoot_send_confirmed", "chatwoot_confirmed": True, "status_code": 200},
+                {
+                    "success": True,
+                    "created": True,
+                    "delivery_attempt_id": "SAM-DELIVERY-ATTEMPT-1",
+                    "delivery_contract_version": "sam_outbound_delivery_v1",
+                    "conversation_id": "2013",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "inbound_message_id": "759446521",
+                    "review_id": "SAM-LIVE-REVIEW-1",
+                    "reply_hash": "a" * 64,
+                    "response_class": "greeting",
+                    "attempt_generation": 1,
+                },
+                {
+                    "delivery_state": "chatwoot_accepted_unverified",
+                    "chatwoot_outgoing_message_id": "759446597",
+                    "chatwoot_response_status": "sent",
+                    "provider_identity_class": "whatsapp_provider",
+                },
             )
         event = record.call_args.args[0]
         self.assertTrue(result["success"])
-        self.assertEqual(event["event_source"], "sam_live_stock_autoreply_delivery_outcome")
-        self.assertEqual(event["review_json"]["delivery_status"], "chatwoot_send_confirmed")
+        self.assertEqual(event["event_source"], "sam_outbound_delivery_transition")
+        self.assertEqual(event["chatwoot_conversation_id"], "2013")
+        self.assertEqual(event["chatwoot_message_id"], "759446597")
+        self.assertEqual(event["review_json"]["delivery_state"], "chatwoot_accepted_unverified")
         self.assertTrue(event["review_json"]["automatic_retry_prohibited"])
         serialized = str(event)
-        self.assertNotIn("CLAIM-1", serialized)
+        self.assertNotIn("wamid.", serialized)
         self.assertNotIn("api_access_token", serialized)
         self.assertEqual(event["facts_json"], {})
         self.assertEqual(event["decision_json"], {})
+
+    def test_sam_live_stock_delivery_claim_persistence_failure_is_fail_closed(self):
+        with patch.object(
+            sales_transaction_routes,
+            "build_sam_live_stock_review_event",
+            return_value={"review_event_id": "SAM-LIVE-REVIEW-FAIL"},
+        ), patch.object(
+            sales_transaction_routes,
+            "record_sam_live_stock_review_event",
+            return_value=({
+                "success": False,
+                "created": False,
+                "status": "sam_live_stock_review_event_write_failed",
+            }, 500),
+        ):
+            claim = sales_transaction_routes._claim_sam_live_stock_routine_delivery(
+                {
+                    "conversation_id": "2013",
+                    "contact_id": "699428938",
+                    "inbox_id": "96568",
+                    "message_id": "759446521",
+                },
+                {
+                    "facts": {},
+                    "suggested_reply_text": "Hi Charl! How can I help you today?",
+                    "autoreply_canary": {"response_class": "greeting"},
+                },
+                {"safe_to_send": True},
+            )
+        self.assertFalse(claim["success"])
+        self.assertFalse(claim["created"])
+        self.assertEqual(claim["status"], "sam_live_stock_review_event_write_failed")
 
     def test_sam_live_stock_outgoing_owner_reply_records_learning(self):
         latest_event = {
@@ -2687,7 +2755,8 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "send_sam_live_stock_owner_review_telegram",
         ) as review_send:
             for transition_status, expected_status in (
-                ("routine_reply_confirmed_sent", "auto_general_confirmed_sent_no_telegram"),
+                ("routine_reply_confirmed_delivered", "auto_general_confirmed_delivered_no_telegram"),
+                ("routine_reply_accepted_unverified", "auto_general_accepted_unverified_observation_window"),
                 ("routine_reply_replay_withheld", "auto_general_replay_owned_no_duplicate_telegram"),
             ):
                 event = {

@@ -29,19 +29,20 @@ class SamLiveStockCanaryCorrectionTests(unittest.TestCase):
             inbound or dict(self.inbound), decision or dict(self.decision), review or dict(self.review),
             self.source if source is None else source,
             delivery_claim=claim or (lambda *_: {"success": True, "created": True, "review_event_id": "CLAIM-1"}),
-            chatwoot_sender=sender or (lambda *_: {"status_code": 200}),
-            delivery_evidence_recorder=evidence or (lambda _claim, outcome: {"success": True, "created": True, "delivery_status": outcome["delivery_status"]}),
+            chatwoot_sender=sender or (lambda *_: {"status_code": 200, "body": {"id": 1, "status": "sent"}}),
+            delivery_evidence_recorder=evidence or (lambda _claim, outcome: {"success": True, "created": True, "delivery_state": outcome["delivery_state"]}),
         )
 
-    def test_claim_precedes_send_success_and_confirmed_evidence(self):
+    def test_claim_precedes_send_and_sent_is_accepted_unverified(self):
         calls = []
         result = self.deliver(
             claim=lambda *_: calls.append("claim") or {"success": True, "created": True, "review_event_id": "CLAIM-1"},
-            sender=lambda *_: calls.append("send") or {"status_code": 200},
-            evidence=lambda _claim, outcome: calls.append(outcome["delivery_status"]) or {"success": True},
+            sender=lambda *_: calls.append("send") or {"status_code": 200, "body": {"id": 1, "status": "sent"}},
+            evidence=lambda _claim, outcome: calls.append(outcome["delivery_state"]) or {"success": True},
         )
-        self.assertEqual(calls, ["claim", "send", "chatwoot_send_confirmed"])
-        self.assertTrue(result["sent"])
+        self.assertEqual(calls, ["claim", "send", "chatwoot_accepted_unverified"])
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["chatwoot_accepted"])
         self.assertTrue(result["automatic_retry_prohibited"])
 
     def test_ambiguous_exception_records_unknown_and_replay_never_sends(self):
@@ -59,18 +60,18 @@ class SamLiveStockCanaryCorrectionTests(unittest.TestCase):
         first = self.deliver(claim=claim, sender=sender, evidence=evidence)
         replay = self.deliver(claim=claim, sender=sender, evidence=evidence)
         self.assertEqual(first["delivery_evidence"]["success"], True)
-        self.assertEqual(state["outcomes"][0]["delivery_status"], "chatwoot_send_outcome_unknown")
+        self.assertEqual(state["outcomes"][0]["delivery_state"], "provider_outcome_ambiguous")
         self.assertEqual(replay["status"], "routine_reply_duplicate_withheld")
         self.assertEqual(state["sends"], 1)
 
-    def test_confirmed_client_failure_is_append_only_failure_evidence(self):
+    def test_client_exception_is_append_only_ambiguous_evidence(self):
         outcomes = []
         result = self.deliver(
             sender=lambda *_: (_ for _ in ()).throw(RuntimeError("chatwoot_http_422")),
             evidence=lambda _claim, outcome: outcomes.append(outcome) or {"success": True},
         )
         self.assertFalse(result["sent"])
-        self.assertEqual(outcomes[0]["delivery_status"], "chatwoot_send_failed_before_confirmation")
+        self.assertEqual(outcomes[0]["delivery_state"], "provider_outcome_ambiguous")
 
     def test_all_fail_closed_canary_boundaries_send_nothing(self):
         cases = []
