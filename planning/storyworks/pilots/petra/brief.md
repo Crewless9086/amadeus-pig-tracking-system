@@ -16,9 +16,13 @@ How did water engineering make dense settlement possible at Petra while reducing
 
 How can a city in an arid mountain basin survive both too little water and too much water arriving at once?
 
-## Original thesis
+## Provisional owner-directed thesis
 
-Petra’s achievement was not a single dam or aqueduct. Its inhabitants managed a watershed as a layered system: landscape features slowed and redirected runoff; channels and pipelines conveyed water; settling features improved supply; and cisterns/reservoirs stored it. The same system turned water from an intermittent threat into an urban resource, but it depended on distributed maintenance and changed over centuries.
+Petra managed both scarce water and destructive runoff through a layered,
+engineered and continually maintained water-management system.
+
+This is a factual synthesis, not evidence of one completely controlled flood.
+The episode must not imply that the system eliminated flood danger.
 
 ## Hypothesis tested
 

@@ -1038,7 +1038,17 @@ def consume_final_agent_artifact(
         compared = [value for value in (source_revision, candidate_revision, expected_revision, tested_revision) if value]
         if compared and any(value != compared[0] for value in compared[1:]): missing_binding.append("revision_mismatch")
     if missing_binding:
-        return {"success": False, "status": "final_artifact_binding_invalid", "mission_id": mission_id, "agent": agent, "attempt": attempt, "missing_or_invalid": sorted(set(missing_binding))}, 422
+        return record_final_artifact_rejection(
+            mission_id,
+            agent,
+            execution_id,
+            attempt,
+            artifact,
+            artifact_sha256,
+            sorted(set(missing_binding)),
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
     identity = f"{mission_id}:{execution_id}:{agent}:{attempt}:{candidate_revision}:{candidate_fingerprint}:{artifact_sha256}"
     artifact.update({"mission_id": mission_id, "execution_id": execution_id, "producing_stage": agent, "agent": agent, "attempt": attempt, "source_revision": source_revision, "source_commit": source_revision, "candidate_revision": candidate_revision, "expected_revision": expected_revision, "candidate_fingerprint": candidate_fingerprint, "parent_artifact_id": parent_artifact_id, "input_artifact_ids": input_artifact_ids, "completed_at": _clean_text(artifact.get("completed_at"), 80) or consumed_at, "created_at": _clean_text(artifact.get("created_at") or lineage.get("created_at"), 80) or consumed_at, "artifact_identity": identity})
     if tested_revision:
@@ -1169,6 +1179,212 @@ def consume_final_agent_artifact(
         "next_agent": next_agent,
         "claim": claim,
     }, 200
+
+
+def record_final_artifact_rejection(
+    mission_id,
+    agent,
+    execution_id,
+    attempt,
+    artifact,
+    artifact_sha256,
+    missing_or_invalid,
+    database_url=None,
+    connect_factory=None,
+):
+    """Durably record a rejected final file without accepting it as stage evidence."""
+    mission_id = _clean_text(mission_id, 90)
+    agent = _clean_text(agent, 40).lower()
+    execution_id = _clean_text(execution_id, 160)
+    artifact_sha256 = _clean_text(artifact_sha256, 64).lower()
+    artifact = dict(artifact) if isinstance(artifact, dict) else {}
+    missing_or_invalid = sorted({
+        _clean_text(value, 80)
+        for value in (missing_or_invalid or [])
+        if _clean_text(value, 80)
+    })
+    if not mission_id or not agent or not execution_id or not artifact_sha256:
+        return {"success": False, "status": "artifact_identity_required"}, 400
+    database_url = _database_url(database_url)
+    if not database_url and connect_factory is None:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    observed_at = datetime.now(timezone.utc).isoformat()
+    attempt = int(attempt or 1)
+    lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+    binding = {
+        "source_revision": _clean_text(
+            artifact.get("source_revision") or artifact.get("source_commit") or lineage.get("source_commit"),
+            40,
+        ).lower(),
+        "candidate_revision": _clean_text(artifact.get("candidate_revision"), 40).lower(),
+        "expected_revision": _clean_text(artifact.get("expected_revision"), 40).lower(),
+        "tested_revision": _clean_text(artifact.get("tested_revision"), 40).lower(),
+        "candidate_fingerprint": _clean_text(
+            artifact.get("candidate_fingerprint") or lineage.get("candidate_fingerprint"),
+            128,
+        ),
+        "parent_artifact_id": _clean_text(artifact.get("parent_artifact_id"), 500),
+        "input_artifact_ids": sorted({
+            _clean_text(value, 500)
+            for value in (artifact.get("input_artifact_ids") or [])
+            if _clean_text(value, 500)
+        }),
+    }
+    observation_identity = hashlib.sha256(json.dumps({
+        "mission_id": mission_id,
+        "execution_id": execution_id,
+        "producing_stage": agent,
+        "attempt": attempt,
+        "artifact_sha256": artifact_sha256,
+        "failure_class": "final_artifact_binding_invalid",
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+
+    try:
+        with _connect(database_url, connect_factory) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select metadata_json from public.charlie_missions
+                       where mission_id = %(mission_id)s for update""",
+                    {"mission_id": mission_id},
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {"success": False, "status": "not_found", "mission_id": mission_id}, 404
+                metadata = dict(rows[0][0] or {})
+                review_packet = metadata.get("review_packet") if isinstance(metadata.get("review_packet"), dict) else {}
+                evidence_generation = _clean_text(
+                    review_packet.get("review_generation")
+                    or review_packet.get("evidence_generation")
+                    or metadata.get("execution_generation"),
+                    180,
+                )
+                semantic_identity = hashlib.sha256(json.dumps({
+                    "mission_id": mission_id,
+                    "producing_stage": agent,
+                    "evidence_generation": evidence_generation,
+                    "failure_class": "final_artifact_binding_invalid",
+                    "missing_or_invalid": missing_or_invalid,
+                    "binding": binding,
+                }, sort_keys=True).encode("utf-8")).hexdigest()
+                rejection = dict(metadata.get("final_artifact_rejections") or {})
+                observations = list(rejection.get("observations") or [])
+                semantic_rejections = list(rejection.get("semantic_rejections") or [])
+                existing_observation = next(
+                    (
+                        item for item in observations
+                        if isinstance(item, dict) and item.get("identity") == observation_identity
+                    ),
+                    None,
+                )
+                existing_semantic = next(
+                    (
+                        item for item in semantic_rejections
+                        if isinstance(item, dict) and item.get("identity") == semantic_identity
+                    ),
+                    None,
+                )
+                if existing_observation:
+                    return {
+                        "success": False,
+                        "status": "final_artifact_binding_invalid",
+                        "mission_id": mission_id,
+                        "agent": agent,
+                        "attempt": attempt,
+                        "missing_or_invalid": missing_or_invalid,
+                        "rejection": existing_observation,
+                        "semantic_rejection": existing_semantic or {},
+                        "rejection_already_recorded": True,
+                    }, 422
+                observation = {
+                    "identity": observation_identity,
+                    "semantic_identity": semantic_identity,
+                    "execution_id": execution_id,
+                    "producing_stage": agent,
+                    "attempt": attempt,
+                    "artifact_sha256": artifact_sha256,
+                    "failure_class": "final_artifact_binding_invalid",
+                    "missing_or_invalid": missing_or_invalid,
+                    "binding": binding,
+                    "evidence_generation": evidence_generation,
+                    "return_to_stage": agent,
+                    "observed_at": observed_at,
+                }
+                observations.append(observation)
+                if existing_semantic:
+                    existing_semantic["last_observed_at"] = observed_at
+                    existing_semantic["observation_count"] = int(existing_semantic.get("observation_count") or 0) + 1
+                    existing_semantic["latest_observation_identity"] = observation_identity
+                    semantic_record = existing_semantic
+                else:
+                    semantic_record = {
+                        "identity": semantic_identity,
+                        "mission_id": mission_id,
+                        "producing_stage": agent,
+                        "failure_class": "final_artifact_binding_invalid",
+                        "missing_or_invalid": missing_or_invalid,
+                        "binding": binding,
+                        "evidence_generation": evidence_generation,
+                        "return_to_stage": agent,
+                        "status": "ingestion_blocked",
+                        "first_observed_at": observed_at,
+                        "last_observed_at": observed_at,
+                        "observation_count": 1,
+                        "latest_observation_identity": observation_identity,
+                    }
+                    semantic_rejections.append(semantic_record)
+                rejection.update({
+                    "version": "charlie_final_artifact_rejections_v1",
+                    "observations": observations[-120:],
+                    "semantic_rejections": semantic_rejections[-80:],
+                    "last_rejection": semantic_record,
+                })
+                cursor.execute(
+                    """update public.charlie_missions
+                       set metadata_json = jsonb_set(
+                           coalesce(metadata_json, '{}'::jsonb),
+                           '{final_artifact_rejections}',
+                           %(rejections_json)s::jsonb,
+                           true
+                       ),
+                       updated_at = now()
+                       where mission_id = %(mission_id)s""",
+                    {
+                        "mission_id": mission_id,
+                        "rejections_json": json.dumps(rejection),
+                    },
+                )
+                _insert_event(
+                    cursor,
+                    mission_id,
+                    "workflow_updated",
+                    f"Rejected unbound {agent} final artifact before workflow transition.",
+                    {
+                        "failure_class": "final_artifact_binding_invalid",
+                        "producing_stage": agent,
+                        "observation_identity": observation_identity,
+                        "semantic_rejection_identity": semantic_identity,
+                        "return_to_stage": agent,
+                        "missing_or_invalid": missing_or_invalid,
+                    },
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "final_artifact_rejection_persistence_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+    return {
+        "success": False,
+        "status": "final_artifact_binding_invalid",
+        "mission_id": mission_id,
+        "agent": agent,
+        "attempt": attempt,
+        "missing_or_invalid": missing_or_invalid,
+        "rejection": observation,
+        "semantic_rejection": semantic_record,
+        "rejection_already_recorded": False,
+    }, 422
 
 
 def update_new_mission_intake(

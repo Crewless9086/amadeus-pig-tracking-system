@@ -46,3 +46,10 @@ Private reviewers answer before seeing the script:
 2. Does the image look like evidence, reconstruction or fantasy?
 3. Is any claim misleading?
 4. Which title would you click, and why?
+
+## Provisional owner direction — 2026-07-25
+
+- **How Petra Tamed a Flash Flood** remains a working title only. “Tamed” must mean moderated risk through maintained infrastructure, never proof that one undocumented flood was completely controlled or that all flood danger was eliminated.
+- The current A011 thumbnail is **revision required**, exploratory and not the final thumbnail.
+- Revised directions may test: (a) a recognisable but independently composed Petra/Siq schematic with a bounded runoff/diversion cue; (b) the dry-setting/runoff paradox using original diagrams only; or (c) the five-layer system as the visual subject rather than a dramatic flood.
+- Reject fabricated flood imagery, misleading geography, unlicensed photographs/maps and any visual that implies a documented event. Final direction remains owner-gated after factual, rights, small-size and comprehension QA.

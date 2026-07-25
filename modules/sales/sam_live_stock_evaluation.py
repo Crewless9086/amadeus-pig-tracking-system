@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Any, Iterable, Mapping
 
 
 REQUIRED_PRODUCTION_TURNS = 100
 REQUIRED_COMPLETE_CONVERSATIONS = 20
 REQUIRED_CONSECUTIVE_ACCEPTED = 20
+
+RESPONSE_CLASS_POLICY = {
+    "greeting": {"minimum_samples": 25, "low_risk": True},
+    "acknowledgement": {"minimum_samples": 25, "low_risk": True},
+    "thanks": {"minimum_samples": 25, "low_risk": True},
+    "simple_small_talk": {"minimum_samples": 30, "low_risk": True},
+    "one_clarification": {"minimum_samples": 30, "low_risk": True},
+    "referral_post_context_question": {"minimum_samples": 40, "low_risk": False},
+    "verified_general_factual_answer": {"minimum_samples": 50, "low_risk": False},
+    "livestock_informational_answer": {"minimum_samples": 75, "low_risk": False},
+    "meat_informational_answer": {"minimum_samples": 75, "low_risk": False},
+    "quote_order_payment_reservation_protected": {
+        "minimum_samples": 0,
+        "low_risk": False,
+        "self_graduation_prohibited": True,
+    },
+}
 
 
 def score_replay_case(case: Mapping[str, Any], result: Mapping[str, Any]) -> dict[str, Any]:
@@ -86,6 +106,197 @@ def graduation_by_reply_class(events: Iterable[Mapping[str, Any]]) -> dict[str, 
             "auto_send_enabled": False,
         }
     return {"version": "sam_live_stock_graduation_v1", "classes": classes, "owner_activation_required": True}
+
+
+def evaluate_response_class_graduation(
+    events: Iterable[Mapping[str, Any]], *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Evaluate independent classes; this function never grants runtime authority."""
+    now = now or datetime.now(timezone.utc)
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in events:
+        row = dict(event or {})
+        reply_class = str(row.get("response_class") or row.get("reply_class") or "unknown")
+        grouped[reply_class].append(row)
+    results = {}
+    for reply_class, policy in RESPONSE_CLASS_POLICY.items():
+        rows = sorted(grouped.get(reply_class, []), key=lambda row: str(row.get("observed_at") or ""))
+        total = len(rows)
+        rate = lambda key: None if not total else round(
+            sum(bool(row.get(key)) for row in rows) / total, 4
+        )
+        approvals = rate("owner_approved")
+        delivered = rate("provider_confirmed")
+        wrong_lane = rate("wrong_lane")
+        unsupported = rate("unsupported_claim")
+        duplicate = rate("duplicate_or_retry")
+        escalation = rate("escalation_correct")
+        intervention = rate("owner_intervention_required")
+        ambiguous = rate("delivery_ambiguous")
+        truth_verified = rate("truth_source_verified")
+        class_canary_proven = rate("class_canary_proven")
+        recent_failure_streak = 0
+        for row in reversed(rows):
+            if any(
+                bool(row.get(key))
+                for key in ("wrong_lane", "unsupported_claim", "duplicate_or_retry", "delivery_ambiguous")
+            ):
+                recent_failure_streak += 1
+            else:
+                break
+        timestamps = [_parse_observed_at(row.get("observed_at")) for row in rows]
+        timestamps = [value for value in timestamps if value is not None]
+        freshest_days = None
+        window_days = None
+        if timestamps:
+            freshest_days = max(0, (now - max(timestamps)).days)
+            window_days = max(0, (max(timestamps) - min(timestamps)).days)
+        evidence = {
+            "sample_count": total,
+            "owner_approval_rate": approvals,
+            "provider_delivered_read_rate": delivered,
+            "wrong_lane_rate": wrong_lane,
+            "unsupported_claim_rate": unsupported,
+            "duplicate_retry_rate": duplicate,
+            "escalation_correctness_rate": escalation,
+            "owner_intervention_rate": intervention,
+            "delivery_ambiguity_rate": ambiguous,
+            "verified_truth_rate": truth_verified,
+            "class_canary_proven_rate": class_canary_proven,
+            "recent_failure_streak": recent_failure_streak,
+            "evidence_window_days": window_days,
+            "freshest_evidence_days": freshest_days,
+        }
+        gates = {
+            "sample_count": total >= policy["minimum_samples"],
+            "owner_approval": approvals is not None
+            and approvals >= (0.95 if policy.get("low_risk") else 0.975),
+            "provider_delivery": delivered is not None and delivered >= 0.98,
+            "wrong_lane": wrong_lane is not None and wrong_lane == 0.0,
+            "unsupported_claim": unsupported is not None and unsupported == 0.0,
+            "duplicate_retry": duplicate is not None and duplicate == 0.0,
+            "escalation_correctness": escalation is not None and escalation >= 0.95,
+            "owner_intervention": intervention is not None
+            and intervention <= (0.05 if policy.get("low_risk") else 0.10),
+            "delivery_ambiguity": ambiguous is not None and ambiguous <= 0.02,
+            "failure_streak": recent_failure_streak == 0,
+            "freshness": freshest_days is not None and freshest_days <= 7,
+            "bounded_window": window_days is not None and window_days <= 30,
+            "verified_truth": (
+                truth_verified == 1.0
+                if reply_class
+                in {
+                    "verified_general_factual_answer",
+                    "livestock_informational_answer",
+                    "meat_informational_answer",
+                }
+                else True
+            ),
+            "specialist_canary": (
+                class_canary_proven == 1.0
+                if reply_class
+                in {"livestock_informational_answer", "meat_informational_answer"}
+                else True
+            ),
+            "pre_authorized_low_risk": bool(policy.get("low_risk")),
+            "self_graduation_allowed": not policy.get("self_graduation_prohibited", False),
+        }
+        candidate = all(gates.values())
+        decision = (
+            "promotion_candidate"
+            if candidate
+            else "regressed"
+            if recent_failure_streak > 0
+            else "withheld"
+        )
+        results[reply_class] = {
+            "evidence": evidence,
+            "gates": gates,
+            "decision": decision,
+            "runtime_enabled": False,
+            "owner_activation_required": True,
+            "class_kill_switch": f"SAM_RESPONSE_CLASS_{reply_class.upper()}_ENABLED",
+        }
+    return {
+        "version": "sam_response_class_graduation_v2",
+        "classes": results,
+        "global_kill_switch": "SAM_RESPONSE_CLASS_GRADUATION_ENABLED",
+        "runtime_authority_changed": False,
+        "consequential_self_authorization": False,
+    }
+
+
+def build_response_class_graduation_event(
+    reply_class: str, decision: Mapping[str, Any], *, observed_at: str
+) -> dict[str, Any]:
+    """Build sanitized append-only decision evidence for an existing recorder."""
+    reply_class = str(reply_class or "unknown")
+    decision = dict(decision or {})
+    canonical = {
+        "version": "sam_response_class_graduation_event_v1",
+        "response_class": reply_class,
+        "decision": str(decision.get("decision") or "withheld"),
+        "evidence": dict(decision.get("evidence") or {}),
+        "gates": dict(decision.get("gates") or {}),
+        "observed_at": str(observed_at or ""),
+        "runtime_enabled": False,
+        "owner_activation_required": True,
+    }
+    digest = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()[:24].upper()
+    return {
+        "graduation_event_id": f"SAM-GRADUATION-{digest}",
+        **canonical,
+        "append_only": True,
+        "contains_customer_content": False,
+        "contains_private_provider_identity": False,
+    }
+
+
+def build_charlie_sam_oversight_packet(
+    graduation: Mapping[str, Any],
+    *,
+    human_backlog: Mapping[str, Any],
+    delivery_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Expose sanitized read authority while withholding enable/send authority."""
+    graduation = dict(graduation or {})
+    return {
+        "version": "charlie_sam_oversight_v1",
+        "human_backlog": dict(human_backlog or {}),
+        "delivery": dict(delivery_metrics or {}),
+        "graduated_classes": [
+            key
+            for key, value in (graduation.get("classes") or {}).items()
+            if value.get("runtime_enabled") is True
+        ],
+        "promotion_candidates": [
+            key
+            for key, value in (graduation.get("classes") or {}).items()
+            if value.get("decision") == "promotion_candidate"
+        ],
+        "paused_or_regressed_classes": [
+            key
+            for key, value in (graduation.get("classes") or {}).items()
+            if value.get("decision") in {"paused", "regressed"}
+        ],
+        "read_sanitized_evidence": True,
+        "may_raise_alerts": True,
+        "may_pause_pre_authorized_class": True,
+        "may_propose_promotion": True,
+        "may_enable_consequential_authority": False,
+        "may_send_customer_message": False,
+        "may_mutate_business_state": False,
+    }
+
+
+def _parse_observed_at(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 def readiness_decision(scorecard: Mapping[str, Any], graduation: Mapping[str, Any]) -> dict[str, Any]:

@@ -147,6 +147,23 @@ def authorize_sam_meat_webhook(headers, query_args=None, environ=None):
     return True, {}
 
 
+def _is_low_risk_general_current_message(content):
+    text = re.sub(r"[^a-z0-9\s]", " ", str(content or "").lower())
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return True
+    if text in {
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "thanks", "thank you", "thanks noted", "okay thanks", "ok thanks",
+    }:
+        return True
+    return bool(re.fullmatch(
+        r"(?:hi |hello )?(?:can|could|may) i (?:please )?(?:get|have) "
+        r"(?:some |more )?(?:info|information)(?: on| about)? (?:this|it|the post)",
+        text,
+    ))
+
+
 def handle_sam_meat_chatwoot_inbound(
     payload,
     *,
@@ -175,8 +192,40 @@ def handle_sam_meat_chatwoot_inbound(
             **_authority_flags(False, False),
         }, 200
 
-    facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     lane_route = classify_sam_sales_lane(inbound["content"])
+    if lane_route.get("lane") not in {LANE_MEAT, LANE_LIVE_STOCK} and _is_low_risk_general_current_message(inbound["content"]):
+        return {
+            "success": True,
+            "status": "sam_meat_general_first_withheld",
+            "processed": False,
+            "sent": False,
+            "inbound": inbound,
+            "facts": {},
+            "lane_route": lane_route,
+            "lead_payload": {},
+            "lead_result": {
+                "success": False,
+                "status": "not_recorded_without_current_message_meat_evidence",
+            },
+            "sam_decision": {
+                "reply_text": "",
+                "should_reply": False,
+                "owner_gate_required": False,
+                "specialist_lane_selected": False,
+                "blockers": [],
+            },
+            "agent_decision": {
+                "used": False,
+                "status": "general_first_specialist_not_invoked",
+                "facts_patch": {},
+            },
+            "send_status": "general_first_no_meat_reply",
+            "document_sent": False,
+            "policy": sam_meat_webhook_policy(source),
+            **_authority_flags(False, False),
+        }, 200
+
+    facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     definitive_meat = lane_route.get("lane") == LANE_MEAT and float(lane_route.get("confidence") or 0) >= 0.9
     live_stock_context = (
         {"active": False, "status": "not_read_definitive_current_meat"}

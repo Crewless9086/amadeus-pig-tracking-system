@@ -1,4 +1,6 @@
 import unittest
+import json
+from pathlib import Path
 
 from modules.sales import sam_delivery_truth as truth
 
@@ -21,6 +23,64 @@ def attempt():
 
 
 class SamDeliveryTruthTests(unittest.TestCase):
+    def test_conversation_2017_production_shape_normalizes_safely(self):
+        fixture = json.loads(
+            (Path(__file__).parent / "fixtures" / "sam_chatwoot_delivery_2017_sanitized.json").read_text()
+        )
+        result = truth.normalize_chatwoot_delivery_event(fixture)
+        self.assertEqual(result["event_type"], "message_updated")
+        self.assertEqual(result["chatwoot_message_id"], "759675071")
+        self.assertEqual(result["conversation_id"], "2017")
+        self.assertEqual(result["account_id"], "147387")
+        self.assertEqual(result["inbox_id"], "96568")
+        self.assertEqual(result["normalized_status"], "delivered")
+        self.assertEqual(result["status_source_path"], "payload.message.status")
+        self.assertEqual(result["provider_identity_class"], "whatsapp_provider")
+        self.assertFalse(result["conflict"])
+        self.assertFalse(result["malformed"])
+        self.assertFalse(result["contains_raw_provider_identity"])
+
+    def test_delivery_event_conflicting_or_unknown_status_fails_closed(self):
+        conflicting = truth.normalize_chatwoot_delivery_event({
+            "event": "message_updated",
+            "message": {
+                "id": "759675071",
+                "message_type": "outgoing",
+                "conversation_id": "2017",
+                "status": "delivered",
+                "delivery_status": "failed",
+            },
+        })
+        self.assertTrue(conflicting["conflict"])
+        unknown = truth.normalize_chatwoot_delivery_event({
+            "event": "message_updated",
+            "message": {
+                "id": "759675071",
+                "message_type": "outgoing",
+                "conversation_id": "2017",
+                "status": "mystery",
+            },
+        })
+        self.assertEqual(unknown["normalized_status"], "unresolved")
+        self.assertTrue(unknown["malformed"])
+
+    def test_terminal_transition_identity_is_single_across_delivered_and_read(self):
+        attempt = truth.build_delivery_attempt(
+            {"conversation_id": "2017", "contact_id": "699428938", "inbox_id": "96568", "message_id": "759674171"},
+            {"suggested_reply_text": "Hi Charl! How can I help you today?"},
+            {"review_event_id": "SAM-LIVE-REVIEW-32BF6F531A9A"},
+            response_class="owner_approved_reply",
+        )
+        delivered = truth.build_delivery_transition_event(attempt, {
+            "delivery_state": truth.PROVIDER_DELIVERED,
+            "chatwoot_outgoing_message_id": "759675071",
+        })
+        read = truth.build_delivery_transition_event(attempt, {
+            "delivery_state": truth.PROVIDER_READ,
+            "chatwoot_outgoing_message_id": "759675071",
+        })
+        self.assertEqual(delivered["review_event_id"], read["review_event_id"])
+        self.assertTrue(delivered["review_event_id"].startswith("SAM-DELIVERY-TERMINAL-"))
     def test_attempt_identity_is_distinct_stable_and_sanitized(self):
         first = attempt()
         second = attempt()

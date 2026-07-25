@@ -124,6 +124,14 @@ jobs:
       - name: Run pig lifecycle audit disposable-Postgres tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
 
+      - name: Run SAM Meat PostgreSQL deadline gates without skips
+        env:
+          SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_sam_meat_database_deadline_postgres
+      - name: Run SAM Meat production-shaped snapshot gates without skips
+        env:
+          SAM_MEAT_DEADLINE_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_sam_meat_truth_snapshot_postgres
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
         run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops tests.test_meat_fulfillment tests.test_meat_reconciliation tests.test_sales_conversation_learning tests.test_beacon_media_library tests.test_beacon_campaign
 

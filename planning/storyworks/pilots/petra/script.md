@@ -19,7 +19,9 @@ That is Petra’s real water problem.
 
 Not simply that water was scarce—but that it arrived at the wrong time, in the wrong place, and sometimes with dangerous force.
 
-The city’s answer was not one miraculous aqueduct. It was a layered system spread across the watershed: structures that slowed runoff, works that diverted dangerous flows, channels that carried spring water, settling features that improved it, and cisterns that stored it for later. [P003, P004]
+Petra managed both scarce water and destructive runoff through a layered, engineered and continually maintained water-management system. Across the watershed, structures slowed runoff, works diverted dangerous flows, channels carried spring water, settling features improved it, and cisterns stored it for later. [P003, P004, P015, P017]
+
+That did not eliminate flood danger, and the surviving evidence does not document one flood event that the system completely controlled. Performance depended on the location, scale and maintenance state of the works. [P015, P016]
 
 Petra did not defeat the desert.
 
@@ -199,7 +201,7 @@ Settling features could improve it.
 
 Cisterns and reservoirs could move water through time, saving an irregular arrival for a later need. [P003–P011]
 
-This episode’s argument is a synthesis of the surviving structures and modern research: Petra’s real technology was the system between them. [P017]
+This episode’s argument is a synthesis of the surviving structures and modern research: Petra managed scarce water and destructive runoff through the layered, engineered and continually maintained system between them. [P015, P017]
 
 And the system carried a price.
 

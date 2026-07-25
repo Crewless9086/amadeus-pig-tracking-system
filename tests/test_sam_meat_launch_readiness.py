@@ -1,7 +1,13 @@
-﻿import unittest
+import unittest
 from datetime import datetime, timezone
+from threading import Event
+from time import monotonic
 
-from modules.sales.sam_meat_launch_readiness import build_sam_meat_launch_packet, production_truth_readers
+from modules.sales.sam_meat_launch_readiness import (
+    _read_truth_batch,
+    build_sam_meat_launch_packet,
+    production_truth_readers,
+)
 
 NOW = datetime(2026, 7, 24, 10, 0, tzinfo=timezone.utc)
 
@@ -91,6 +97,44 @@ class SamMeatLaunchReadinessTests(unittest.TestCase):
         self.assertTrue(all(call["facts"]["product_type"] == "half_carcass" for call in calls))
         self.assertEqual(result["truth"]["butcher"]["status"], "Unavailable")
 
+    def test_packet_timeout_is_incomplete_and_retains_only_finished_evidence(self):
+        release = Event()
+
+        def slow(**_kwargs):
+            release.wait(1)
+            return {"usable": True, "status": "late", "data": {"unsafe": True}}
+
+        def complete(**_kwargs):
+            return {"usable": True, "status": "verified", "data": {"products": []}}
+
+        readers_by_name = {name: slow for name in production_truth_readers()}
+        readers_by_name["catalogue"] = complete
+        started = monotonic()
+        result = _read_truth_batch(
+            readers_by_name, "LEAD-1", {}, NOW, deadline_seconds=0.05,
+        )
+        elapsed = monotonic() - started
+        release.set()
+
+        self.assertLess(elapsed, 0.5)
+        self.assertTrue(result["catalogue"]["evidence_complete"])
+        for name in ("pricing", "availability", "fulfilment", "butcher"):
+            self.assertEqual(result[name]["status"], "Unavailable")
+            self.assertFalse(result[name]["evidence_complete"])
+            self.assertFalse(result[name]["verified_zero"])
+            self.assertEqual(result[name]["data"], {})
+
+    def test_process_control_exceptions_propagate(self):
+        for exception in (SystemExit("stop"), KeyboardInterrupt()):
+            with self.subTest(exception=exception.__class__.__name__):
+                def raises(**_kwargs):
+                    raise exception
+
+                with self.assertRaises(exception.__class__):
+                    _read_truth_batch(
+                        {name: raises for name in production_truth_readers()},
+                        "LEAD-1", {}, NOW, deadline_seconds=0.5,
+                    )
     def test_stable_replay_and_correction_ids(self):
         first = packet([{"message_id": "m1", "content": "Half carcass Set A."}], inbound_event_id="m1")
         replay = packet([{"message_id": "m1", "content": "Half carcass Set A."}], inbound_event_id="m1")

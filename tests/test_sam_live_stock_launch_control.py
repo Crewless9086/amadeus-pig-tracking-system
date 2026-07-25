@@ -24,6 +24,10 @@ class ChatwootFilterResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
+class MessageListResponse(ChatwootFilterResponse):
+    status = 200
+
+
 def human_conversation(
     conversation_id,
     *,
@@ -1076,6 +1080,199 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertFalse(result["customer_send_confirmed"])
         self.assertTrue(result["card_retained"])
 
+    def _delivery_reader_source(self):
+        return {
+            launch.CHATWOOT_BASE_URL_ENV: "https://chatwoot.test",
+            launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+            launch.CHATWOOT_TOKEN_ENV: "secret-token",
+            launch.HUMAN_AUDIT_CHATWOOT_INBOX_ENV: "96568",
+        }
+
+    def _delivery_message(self, message_id="759675071", **overrides):
+        row = {
+            "id": int(message_id),
+            "account_id": 147387,
+            "conversation_id": 2017,
+            "inbox_id": 96568,
+            "message_type": 1,
+            "private": False,
+            "status": "read",
+            "source_id": "wamid.SANITIZED_FIXTURE",
+            "updated_at": "2026-07-25T18:00:00Z",
+        }
+        row.update(overrides)
+        return row
+
+    def test_exact_delivery_reader_uses_supported_message_list_and_one_page(self):
+        urls = []
+        def urlopen(request, timeout):
+            urls.append((request.full_url, timeout))
+            return MessageListResponse({"payload": [self._delivery_message()]})
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "759675071", self._delivery_reader_source(), urlopen=urlopen
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 759675071)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 1)
+        self.assertIn("/conversations/2017/messages?after=0", urls[0][0])
+        self.assertNotIn("/messages/759675071", urls[0][0])
+        self.assertLessEqual(urls[0][1], 5)
+
+    def test_exact_delivery_reader_finds_later_bounded_page(self):
+        first = [self._delivery_message(str(value), status="sent") for value in range(1, 101)]
+        pages = iter([
+            {"payload": first},
+            {"payload": [self._delivery_message("150")]},
+        ])
+        result = launch._chatwoot_read_exact_outgoing_message(
+            "2017", "150", self._delivery_reader_source(),
+            urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+        )
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["body"]["id"], 150)
+        self.assertEqual(result["reader_provenance"]["pages_read"], 2)
+        self.assertEqual(result["reader_provenance"]["rows_read"], 101)
+
+    def test_exact_delivery_reader_zero_duplicate_incomplete_and_malformed_fail_closed(self):
+        cases = {
+            "zero": ([{"payload": []}], "reader_exact_message_not_found"),
+            "duplicate": ([{"payload": [self._delivery_message(), self._delivery_message()]}], "reader_duplicate_exact_message"),
+            "malformed": ([{"unexpected": []}], "reader_envelope_malformed"),
+            "incomplete": (
+                [
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(1, 101)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(101, 201)]},
+                    {"payload": [self._delivery_message(str(value), status="sent") for value in range(201, 301)]},
+                ],
+                "reader_pagination_incomplete",
+            ),
+        }
+        for name, (payloads, reason) in cases.items():
+            with self.subTest(name=name):
+                pages = iter(payloads)
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, **_kwargs: MessageListResponse(next(pages)),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
+
+    def test_exact_delivery_reader_rejects_identity_direction_private_and_status_collisions(self):
+        cases = {
+            "account": ({"account_id": 999}, "reader_account_mismatch"),
+            "conversation": ({"conversation_id": 999}, "reader_exact_identity_mismatch"),
+            "inbox": ({"inbox_id": 999}, "reader_inbox_mismatch"),
+            "incoming": ({"message_type": 0}, "reader_message_not_outgoing"),
+            "private": ({"private": True}, "reader_message_not_public"),
+            "wrong_id_same_content": ({"id": 759675999, "content": "same"}, "reader_exact_message_not_found"),
+            "missing_status": ({"status": ""}, "reader_status_malformed"),
+            "unknown_status": ({"status": "mystery"}, "reader_status_malformed"),
+            "conflicting_status": ({"status": "read", "delivery_status": "failed"}, "reader_identity_or_status_conflict"),
+        }
+        for name, (patch, reason) in cases.items():
+            with self.subTest(name=name):
+                result = launch._chatwoot_read_exact_outgoing_message(
+                    "2017", "759675071", self._delivery_reader_source(),
+                    urlopen=lambda *_args, value=patch, **_kwargs: MessageListResponse({
+                        "payload": [self._delivery_message(**value)]
+                    }),
+                )
+                self.assertIsNone(result["status_code"])
+                self.assertEqual(result["reader_provenance"]["failure_class"], reason)
+
+    def test_conversation_2017_malformed_webhook_recovers_exact_delivered_message(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2017", "contact_id": "699428938", "inbox_id": "96568", "message_id": "759674171"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["conversation_id"] = "2017"
+        attempt["inbox_id"] = "96568"
+        attempt["chatwoot_outgoing_message_id"] = "759675071"
+        action["event"]["review_json"]["send_reply_action"].update({
+            "conversation_id": "2017",
+            "telegram_chat_id": card["telegram_chat_id"],
+            "telegram_message_id": card["telegram_message_id"],
+        })
+        records = []
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "account": {"id": "147387"},
+                "conversation": {"id": "2017", "inbox_id": "96568"},
+                "message": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "message_type": "outgoing",
+                    "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            environ={
+                launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+            },
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            reconciliation_loader=lambda *_: {
+                "status_code": 200,
+                "body": {
+                    "id": "759675071", "conversation_id": "2017",
+                    "status": "delivered", "source_id": "wamid.SANITIZED_FIXTURE",
+                },
+            },
+            evidence_recorder=lambda event: records.append(event) or ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "conversation_id": "2017", "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            telegram_deleter=lambda *_: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "provider_delivered")
+        self.assertEqual(
+            records[0]["review_json"]["reconciliation_source"],
+            "chatwoot_exact_outgoing_message_read",
+        )
+
+    def test_accepted_dispatch_card_edit_ambiguity_returns_no_retry_business_truth(self):
+        review, action, card = send_action_fixture()
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1",
+            },
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True, "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            chatwoot_sender=lambda *_: {
+                "status_code": 200, "body": {"id": "902", "status": "sent"},
+            },
+            telegram_editor=lambda *_: (_ for _ in ()).throw(TimeoutError("ambiguous edit")),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertTrue(result["card_update_ambiguous"])
+        self.assertTrue(result["automatic_retry_prohibited"])
+
     def test_keep_with_me_retains_human_and_open_chatwoot_is_no_mutation(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-5", "chatwoot_conversation_id": "2401", "decision_json": {}}
         calls = []
@@ -1102,7 +1299,14 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(kept["status"], "sam_live_stock_owner_card_with_charl")
 
     def test_delete_failure_marks_exact_card_resolved_and_removes_keyboard(self):
-        event = {"review_event_id": "SAM-LIVE-REVIEW-6", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-6",
+            "chatwoot_conversation_id": "2401",
+            "chatwoot_message_id": "7001",
+            "chatwoot_contact_id": "8100",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
         edits = []
         result, status = launch.process_sam_live_stock_owner_callback(
             {"callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-6", "telegram_chat_id": "555", "telegram_message_id": "996"},
@@ -1114,8 +1318,13 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_editor=lambda token, chat, message, text, markup: edits.append((chat, message, text, markup)) or {"ok": True},
             chronology_loader=lambda *_args, **_kwargs: {
                 "id": "2401",
+                "contact_id": "8100",
+                "inbox_id": "96568",
                 "custom_attributes": {"conversation_mode": "HUMAN"},
-                "messages": [],
+                "messages": [
+                    {"id": "7001", "message_type": "incoming", "created_at": 1},
+                    {"id": "7002", "message_type": "outgoing", "created_at": 2},
+                ],
             },
         )
         self.assertEqual(status, 200)
@@ -1137,9 +1346,89 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
             telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
         )
-        self.assertEqual(status, 502)
-        self.assertEqual(result["failed_step"], "human_ownership_unproven")
-        self.assertEqual(calls, ["retain_edit"])
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["ownership_mutated"])
+        self.assertFalse(result["card_mutated"])
+
+    def test_done_reassessment_rejects_newer_inbound_and_sends_nothing(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-2",
+            "chatwoot_conversation_id": "2402",
+            "chatwoot_message_id": "7101",
+            "chatwoot_contact_id": "8101",
+            "chatwoot_inbox_id": "96568",
+            "decision_json": {},
+        }
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN-2",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "997",
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda _item: ({"success": True, "created": True}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2402",
+                "contact_id": "8101",
+                "inbox_id": "96568",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [
+                    {"id": "7101", "message_type": "incoming", "created_at": 1},
+                    {"id": "7102", "message_type": "outgoing", "created_at": 2},
+                    {"id": "7103", "message_type": "incoming", "created_at": 3},
+                ],
+            },
+            chatwoot_writer=lambda *_args: calls.append("auto") or {"ok": True},
+            telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["failed_step"], "human_reassessment_withheld")
+        self.assertEqual(calls, [])
+        self.assertFalse(result["detail"]["gates"]["exact_latest_inbound"])
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_done_reassessment_preserves_explicit_human_and_protected_work(self):
+        event = {
+            "review_event_id": "SAM-LIVE-REVIEW-HUMAN-3",
+            "chatwoot_conversation_id": "2403",
+            "chatwoot_message_id": "7201",
+        }
+        chronology = {
+            "id": "2403",
+            "custom_attributes": {
+                "conversation_mode": "HUMAN",
+                "explicit_human_request": True,
+                "payment_required": True,
+                "specialist_review_required": True,
+            },
+            "messages": [
+                {"id": "7201", "message_type": "incoming", "created_at": 1},
+                {"id": "7202", "message_type": "outgoing", "created_at": 2},
+            ],
+        }
+        assessed = launch.assess_sam_live_stock_human_reassessment(
+            event,
+            chronology,
+            {
+                "conversation_id": "2403",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "998",
+            },
+        )
+        self.assertFalse(assessed["eligible"])
+        self.assertFalse(assessed["gates"]["no_explicit_human_request"])
+        self.assertFalse(assessed["gates"]["no_protected_work"])
+        self.assertFalse(assessed["gates"]["no_specialist_work"])
+        evidence = launch.build_sam_live_stock_human_reassessment_event(
+            event, assessed, "withheld"
+        )
+        self.assertEqual(evidence["customer_message_excerpt"], "")
+        self.assertEqual(evidence["sam_reply_excerpt"], "")
 
     def test_human_mode_audit_classifies_without_bulk_reset(self):
         conversations = [

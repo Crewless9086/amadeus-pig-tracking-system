@@ -3,6 +3,7 @@
 The deployed SAM Meat runtime calls this packet through the existing inbound
 route. Default readers use production-connected sources; tests inject fakes.
 """
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 import hashlib
 import re
@@ -13,8 +14,12 @@ from modules.sales.meat_fulfillment import get_meat_fulfillment_timeline
 from modules.sales.meat_ops import get_meat_ops_status
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_meat_runtime import extract_meat_facts
+from modules.sales.sam_meat_database_deadline import SamMeatDatabaseDeadline
+from modules.sales.sam_meat_truth_snapshot import load_sam_meat_truth_snapshot
 
 PACKET_VERSION = "sam_meat_launch_packet_v2"
+TRUTH_READER_DEADLINE_SECONDS = 5.0
+DATABASE_READER_DEADLINE_SECONDS = 4.5
 AF_MARKERS = {"aflewer", "bestel", "betaal", "eintlik", "ek", "halwe", "hele", "ja", "karkas", "nee", "prys", "stel", "vir", "wil"}
 PROTECTED = {
     "confirm_price": r"\b(final price|confirm (?:the )?price|quote me|kwoteer)\b",
@@ -36,9 +41,10 @@ def build_sam_meat_launch_packet(messages, *, conversation_ref="", inbound_event
     rows = _messages(messages)
     facts, evidence, corrections = _accumulate(rows)
     language = _language(rows)
-    readers = truth_readers if isinstance(truth_readers, dict) else production_truth_readers()
-    truth = {name: _invoke(name, readers.get(name), lead_id, facts, current)
-             for name in ("catalogue", "pricing", "availability", "fulfilment", "butcher")}
+    if isinstance(truth_readers, dict):
+        truth = _read_truth_batch(truth_readers, lead_id, facts, current)
+    else:
+        truth = _read_production_truth_snapshot(lead_id, facts, current)
     catalogue = _catalogue_match(facts, truth["catalogue"])
     price = _price_basis(facts, truth["pricing"], current)
     missing = _missing(facts)
@@ -172,11 +178,98 @@ def _invoke(name, reader, lead_id, facts, now):
     if not isinstance(raw, dict) or raw.get("usable") is not True:
         reason = (raw.get("blockers") or [f"{name}_unavailable"])[0] if isinstance(raw, dict) else "invalid_reader_result"
         return _unavailable(name, reason)
-    return {"source": name, "usable": True, "status": str(raw.get("status") or "verified"),
+    return {"source": name, "usable": True, "evidence_complete": True, "status": str(raw.get("status") or "verified"),
         "freshness": str(raw.get("freshness") or "current"), "effective_at": str(raw.get("effective_at") or ""),
         "blockers": list(raw.get("blockers") or []), "verified_zero": raw.get("verified_zero") is True,
         "data": raw.get("data") if isinstance(raw.get("data"), dict) else {}}
 
+
+def _read_truth_batch(readers, lead_id, facts, now, *, deadline_seconds=TRUTH_READER_DEADLINE_SECONDS):
+    """Run independent, database-bounded truth readers within one packet budget."""
+    names = ("catalogue", "pricing", "availability", "fulfilment", "butcher")
+    executor = ThreadPoolExecutor(max_workers=len(names), thread_name_prefix="sam-meat-truth")
+    futures = {
+        executor.submit(_invoke, name, readers.get(name), lead_id, facts, now): name
+        for name in names
+    }
+    try:
+        done, pending = wait(futures, timeout=max(0.0, float(deadline_seconds)))
+        result = {}
+        for future in done:
+            name = futures[future]
+            try:
+                result[name] = future.result()
+            except Exception as exc:
+                result[name] = _unavailable(name, f"reader_failed:{exc.__class__.__name__}")
+        for future in pending:
+            name = futures[future]
+            if not future.cancel():
+                future.add_done_callback(_observe_finished_future)
+            result[name] = _unavailable(name, "reader_timeout")
+        return {name: result.get(name, _unavailable(name, "reader_result_missing")) for name in names}
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _read_production_truth_snapshot(lead_id, facts, now):
+    catalogue = _invoke("catalogue", _read_catalogue, lead_id, facts, now)
+    try:
+        snapshot = load_sam_meat_truth_snapshot(
+            lead_id, database_deadline=_database_deadline()
+        )
+    except Exception as exc:
+        blocker = f"snapshot_failed:{exc.__class__.__name__}"
+        return {
+            "catalogue": catalogue,
+            **{
+                name: _unavailable(name, blocker)
+                for name in ("pricing", "availability", "fulfilment", "butcher")
+            },
+        }
+    observed_at = snapshot.get("observed_at", "")
+    entries = snapshot.get("pricing", [])
+    times = [str(row.get("effective_from") or "") for row in entries if isinstance(row, dict)]
+    return {
+        "catalogue": catalogue,
+        "pricing": {
+            "usable": bool(entries), "status": "active_price_book",
+            "freshness": "source_effective_time_required",
+            "effective_at": max(times or [""]), "observed_at": observed_at,
+            "blockers": [] if entries else ["authoritative_supabase_price_book_unavailable"],
+            "data": {"entries": entries, "mode": "sam_meat_bounded_truth_snapshot"},
+        },
+        "availability": {
+            "usable": True, "status": "lead_specific_owner_review",
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [],
+            "verified_zero": snapshot.get("availability", {}).get("assembly", {}).get("committed_half_count") == 0,
+            "data": snapshot.get("availability", {}),
+        },
+        "fulfilment": {
+            "usable": True, "status": "lead_specific_fulfilment",
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [], "data": snapshot.get("fulfilment", {}),
+        },
+        "butcher": {
+            "usable": True,
+            "status": snapshot.get("butcher", {}).get("truth_status", "blocked_unknown"),
+            "freshness": "consistent_snapshot", "observed_at": observed_at,
+            "blockers": [],
+            "data": {
+                "truth_status": snapshot.get("butcher", {}).get("truth_status"),
+                "next_gate": snapshot.get("butcher", {}).get("next_gate"),
+            },
+        },
+    }
+
+def _observe_finished_future(future):
+    """Retrieve a late result without translating process-control exceptions."""
+    if not future.cancelled():
+        future.exception()
+
+
+def _database_deadline():
+    return SamMeatDatabaseDeadline(total_seconds=DATABASE_READER_DEADLINE_SECONDS)
 
 def _read_catalogue(**_):
     loaded = load_sam_farm_knowledge(); knowledge = loaded.get("knowledge", {}) if isinstance(loaded, dict) else {}
@@ -190,7 +283,7 @@ def _read_catalogue(**_):
 
 
 def _read_pricing(**_):
-    result, code = list_meat_price_book_entries(limit=100); entries = result.get("price_entries", []) if isinstance(result, dict) else []
+    result, code = list_meat_price_book_entries(limit=100, database_deadline=_database_deadline()); entries = result.get("price_entries", []) if isinstance(result, dict) else []
     usable = code == 200 and result.get("source") == "supabase" and bool(entries)
     times = [str(e.get("effective_from") or "") for e in entries if isinstance(e, dict)]
     return {"usable": usable, "status": "active_price_book", "freshness": "source_effective_time_required",
@@ -200,7 +293,7 @@ def _read_pricing(**_):
 
 def _read_availability(*, lead_id="", **_):
     if not lead_id: return {"usable": False, "blockers": ["lead_id_required_for_capacity_status"]}
-    result, code = get_meat_ops_status(lead_id); assembly = result.get("assembly", {}) if code == 200 else {}
+    result, code = get_meat_ops_status(lead_id, database_deadline=_database_deadline()); assembly = result.get("assembly", {}) if code == 200 else {}
     return {"usable": code == 200, "status": "lead_specific_owner_review", "freshness": "live_database_read",
         "blockers": [] if code == 200 else ["meat_ops_unavailable"], "verified_zero": assembly.get("committed_half_count") == 0,
         "data": {"assembly": assembly} if code == 200 else {}}
@@ -208,7 +301,7 @@ def _read_availability(*, lead_id="", **_):
 
 def _read_fulfilment(*, lead_id="", **_):
     if not lead_id: return {"usable": False, "blockers": ["lead_id_required_for_fulfilment_timeline"]}
-    result, code = get_meat_fulfillment_timeline(lead_id)
+    result, code = get_meat_fulfillment_timeline(lead_id, database_deadline=_database_deadline())
     return {"usable": code == 200, "status": "lead_specific_fulfilment", "freshness": "live_database_read",
         "blockers": [] if code == 200 else ["fulfilment_timeline_unavailable"],
         "data": {"fulfillment": result.get("fulfillment", {})} if code == 200 else {}}
@@ -216,14 +309,14 @@ def _read_fulfilment(*, lead_id="", **_):
 
 def _read_butcher(*, lead_id="", **_):
     if not lead_id: return {"usable": False, "blockers": ["lead_id_required_for_butcher_truth"]}
-    result, code = get_butcher_truth_board(lead_id)
+    result, code = get_butcher_truth_board(lead_id, database_deadline=_database_deadline())
     return {"usable": code == 200, "status": result.get("truth_status", "Unavailable"),
         "freshness": "composed_live_database_reads", "blockers": [] if code == 200 else ["butcher_truth_unavailable"],
         "data": {"truth_status": result.get("truth_status"), "next_gate": result.get("next_gate")} if code == 200 else {}}
 
 
 def _unavailable(name, reason):
-    return {"source": name, "usable": False, "status": "Unavailable", "freshness": "unknown", "effective_at": "",
+    return {"source": name, "usable": False, "evidence_complete": False, "status": "Unavailable", "freshness": "unknown", "effective_at": "",
             "blockers": [reason], "verified_zero": False, "data": {}}
 
 
@@ -271,7 +364,7 @@ def _next_field(missing, facts, price):
 
 def _question(field, language):
     en = {"product_type": "Are you looking for a half carcass, full carcass, or another pork option?", "cut_set": "Which cut style suits you best: family freezer, braai, lean, or slow-cook?", "quantity": "How much would you like?", "quantity_unit": "Should I record that quantity in kilograms, packs, halves, or whole carcasses?", "delivery_mode": "Do you need delivery, or do you want the owner to review a collection request?", "delivery_town": "Which town or area is the delivery for?", "delivery_address": "What delivery address or farm name should we use for the review?", "timing": "When would you ideally need it?", "payment_method": "The current protected payment path is EFT. Does that suit you?"}
-    af = {"product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?", "cut_set": "Watter snystyl pas jou die beste: gesinspak, braai, maer, of stadig-gaar?", "quantity": "Hoeveel wil jy graag hê?", "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?", "delivery_mode": "Moet dit afgelewer word, of wil jy hê die eienaar moet 'n afhaalversoek hersien?", "delivery_town": "Vir watter dorp of area is die aflewering?", "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?", "timing": "Wanneer het jy dit ideaal nodig?", "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?"}
+    af = {"product_type": "Soek jy 'n halwe karkas, 'n hele karkas, of 'n ander varkvleis-opsie?", "cut_set": "Watter snystyl pas jou die beste: gesinspak, braai, maer, of stadig-gaar?", "quantity": "Hoeveel wil jy graag hÃƒÂª?", "quantity_unit": "Moet ek die hoeveelheid as kilogram, pakke, halwes, of hele karkasse noteer?", "delivery_mode": "Moet dit afgelewer word, of wil jy hÃƒÂª die eienaar moet 'n afhaalversoek hersien?", "delivery_town": "Vir watter dorp of area is die aflewering?", "delivery_address": "Watter afleweringsadres of plaasnaam moet ons vir die hersiening gebruik?", "timing": "Wanneer het jy dit ideaal nodig?", "payment_method": "Die huidige beskermde betaalpad is EFT. Pas dit jou?"}
     return (af if language == "af" else en).get(field, "")
 
 

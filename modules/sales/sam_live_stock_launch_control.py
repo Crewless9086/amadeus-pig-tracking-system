@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
@@ -33,6 +34,7 @@ from modules.sales.sam_delivery_truth import (
     classify_chatwoot_response,
     classify_dispatch_exception,
     load_delivery_attempt_for_outgoing_message,
+    normalize_chatwoot_delivery_event,
 )
 
 
@@ -63,6 +65,11 @@ HUMAN_AUDIT_TOTAL_TIMEOUT_SECONDS = 20
 HUMAN_AUDIT_MAX_CONVERSATIONS = 500
 HUMAN_AUDIT_DATABASE_CONNECT_TIMEOUT_SECONDS = 3
 HUMAN_AUDIT_DATABASE_STATEMENT_TIMEOUT_MILLISECONDS = 5000
+DELIVERY_RECONCILIATION_MAX_PAGES = 3
+DELIVERY_RECONCILIATION_MAX_ROWS = 300
+DELIVERY_RECONCILIATION_PAGE_SIZE = 100
+DELIVERY_RECONCILIATION_REQUEST_TIMEOUT_SECONDS = 5
+DELIVERY_RECONCILIATION_TOTAL_TIMEOUT_SECONDS = 10
 
 
 class SamLiveStockHumanAuditError(RuntimeError):
@@ -1033,9 +1040,29 @@ def _process_canonical_owner_card_action(action, review_event_id, event, message
             )
         except Exception:
             return _owner_card_failure(event, card, action, "human_ownership_unavailable", {}, recorder, environ, telegram_editor)
-        attributes = chronology.get("custom_attributes") if isinstance(chronology, dict) and isinstance(chronology.get("custom_attributes"), dict) else {}
-        if _clean(attributes.get("conversation_mode"), 20).upper() != "HUMAN":
-            return _owner_card_failure(event, card, action, "human_ownership_unproven", {}, recorder, environ, telegram_editor)
+        assessment = assess_sam_live_stock_human_reassessment(event, chronology, card)
+        assessed, assessed_status = recorder(
+            build_sam_live_stock_human_reassessment_event(
+                event,
+                assessment,
+                "approved" if assessment.get("eligible") else "withheld",
+            )
+        )
+        if assessed_status >= 400 or assessed.get("success") is not True:
+            return _owner_card_reassessment_withheld(
+                action,
+                card,
+                "human_reassessment_evidence_failed",
+                assessed,
+                http_status=503,
+            )
+        if not assessment.get("eligible"):
+            return _owner_card_reassessment_withheld(
+                action,
+                card,
+                "human_reassessment_withheld",
+                assessment,
+            )
 
     takeover, takeover_status = apply_sam_live_stock_chatwoot_takeover(
         conversation_id, mode="AUTO", reason="telegram_owner_card_done",
@@ -1060,6 +1087,29 @@ def _owner_card_failure(event, card, action, failed_step, detail, recorder, envi
     recorder(build_sam_live_stock_owner_card_event(event, card, "action_failed", f"{action}:{failed_step}"))
     _edit_owner_card_state(card, f"Action failed safely: {failed_step}. Card retained; do not repeat a confirmed customer send.", _with_charl_keyboard(event.get("review_event_id") or card.get("conversation_id")), environ, telegram_editor)
     return {"success": False, "status": "sam_live_stock_owner_card_action_failed", "action": action, "failed_step": failed_step, "card_retained": True, "customer_send_confirmed": customer_send_confirmed, "automatic_customer_send_retry_prohibited": True, "detail": detail, **AUTHORITY_FLAGS, "sends_customer_message": customer_send_confirmed}, 502
+
+
+def _owner_card_reassessment_withheld(
+    action, card, failed_step, detail, *, http_status=409
+):
+    """Leave HUMAN ownership and the exact card untouched on reassessment failure."""
+    return {
+        "success": False,
+        "status": "sam_live_stock_human_reassessment_withheld",
+        "action": action,
+        "failed_step": failed_step,
+        "card": card,
+        "card_retained": True,
+        "card_mutated": False,
+        "ownership_mutated": False,
+        "customer_send_confirmed": False,
+        "automatic_customer_send_retry_prohibited": True,
+        "detail": detail,
+        **AUTHORITY_FLAGS,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_telegram": False,
+    }, http_status
 
 
 def _edit_owner_card_state(card, text, keyboard, environ, telegram_editor):
@@ -1153,11 +1203,30 @@ def execute_sam_live_stock_send_reply(action_event, payload, *, environ=None, re
             edited, edit_status = _edit_owner_card_state(card, "Delivered / Resolved", [], source, telegram_editor)
         else:
             edited, edit_status = cleanup, 200
+        cleanup_action = (
+            "send_reply_cleanup_deleted"
+            if cleanup_status < 400 and cleanup.get("success")
+            else "send_reply_cleanup_resolved_by_edit"
+            if edit_status < 400
+            else "send_reply_cleanup_ambiguous"
+        )
+        recorder(build_sam_live_stock_owner_card_event(
+            action_event,
+            card,
+            "resolved" if edit_status < 400 else "action_failed",
+            cleanup_action,
+        ))
     else:
         label = "Delivery pending confirmation" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"
         edited, edit_status = _edit_owner_card_state(card, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
+        if edit_status >= 400:
+            recorder(build_sam_live_stock_owner_card_event(
+                action_event, card, "action_failed", "send_reply_card_update_ambiguous"
+            ))
+    card_update_ambiguous = edit_status >= 400
+    callback_business_success = state in CONFIRMED_STATES or state == CHATWOOT_ACCEPTED_UNVERIFIED
     return {
-        "success": edit_status < 400,
+        "success": callback_business_success,
         "status": "sam_live_card_send_confirmed" if state in CONFIRMED_STATES else "sam_live_card_send_accepted_unverified" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "sam_live_card_send_failed" if state == PROVIDER_FAILED else "sam_live_card_send_ambiguous",
         "delivery_attempt_id": attempt.get("delivery_attempt_id"),
         "delivery_state": state,
@@ -1166,12 +1235,13 @@ def execute_sam_live_stock_send_reply(action_event, payload, *, environ=None, re
         "handled_autonomously": False,
         "automatic_retry_prohibited": True,
         "card_retained": state not in CONFIRMED_STATES,
+        "card_update_ambiguous": card_update_ambiguous,
         "telegram": edited,
         **AUTHORITY_FLAGS,
         "sends_customer_message": True,
         "calls_chatwoot": True,
         "calls_telegram": True,
-    }, 200 if edit_status < 400 else 502
+    }, 200 if callback_business_success else 502 if edit_status >= 400 else 200
 
 
 def _send_chatwoot_owner_reply(conversation_id, message, source):
@@ -1185,6 +1255,227 @@ def _open_chatwoot_keyboard(callback_id, conversation_id, source):
     return [[button]]
 
 
+def _chatwoot_read_exact_outgoing_message(
+    conversation_id,
+    message_id,
+    source,
+    *,
+    urlopen=None,
+    monotonic=None,
+):
+    """Read bounded conversation pages and return only one exact public outgoing message."""
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    conversation_id = _clean(conversation_id, 120)
+    message_id = _clean(message_id, 120)
+    if not base_url or not account_id or not token or not conversation_id or not message_id:
+        return _delivery_reader_failure("reader_identity_incomplete")
+    try:
+        target_number = int(message_id)
+    except (TypeError, ValueError):
+        return _delivery_reader_failure("reader_message_id_non_numeric")
+    clock = monotonic or time.monotonic
+    opener = urlopen or urllib_request.urlopen
+    deadline = clock() + DELIVERY_RECONCILIATION_TOTAL_TIMEOUT_SECONDS
+    after = 0
+    exact_matches = []
+    rows_read = 0
+    pages_read = 0
+    last_cursor = None
+    try:
+        while pages_read < DELIVERY_RECONCILIATION_MAX_PAGES:
+            if clock() >= deadline:
+                return _delivery_reader_failure(
+                    "reader_total_deadline_exceeded",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            query = urllib_parse.urlencode({"after": after})
+            url = (
+                f"{base_url}/api/v1/accounts/{account_id}/conversations/"
+                f"{conversation_id}/messages?{query}"
+            )
+            request = urllib_request.Request(
+                url,
+                headers={"api_access_token": token, "Accept": "application/json"},
+                method="GET",
+            )
+            with opener(
+                request,
+                timeout=min(
+                    DELIVERY_RECONCILIATION_REQUEST_TIMEOUT_SECONDS,
+                    max(1, int(deadline - clock())),
+                ),
+            ) as response:
+                envelope = json.loads(response.read().decode("utf-8"))
+                status_code = int(response.status)
+            pages_read += 1
+            if status_code != 200:
+                return _delivery_reader_failure(
+                    "reader_http_unavailable",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            page = _chatwoot_message_list_rows(envelope)
+            if page is None:
+                return _delivery_reader_failure(
+                    "reader_envelope_malformed",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            rows_read += len(page)
+            if rows_read > DELIVERY_RECONCILIATION_MAX_ROWS:
+                return _delivery_reader_failure(
+                    "reader_row_bound_exceeded",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            for row in page:
+                if _clean(row.get("id") or row.get("message_id"), 120) == message_id:
+                    exact_matches.append(row)
+            if len(exact_matches) > 1:
+                return _delivery_reader_failure(
+                    "reader_duplicate_exact_message",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            if len(exact_matches) == 1:
+                return _validated_exact_chatwoot_message(
+                    exact_matches[0],
+                    account_id=account_id,
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    expected_inbox_id=_clean(source.get(HUMAN_AUDIT_CHATWOOT_INBOX_ENV), 120),
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            if not page or len(page) < DELIVERY_RECONCILIATION_PAGE_SIZE:
+                return _delivery_reader_failure(
+                    "reader_exact_message_not_found",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            numeric_ids = []
+            for row in page:
+                try:
+                    numeric_ids.append(int(row.get("id") or row.get("message_id")))
+                except (TypeError, ValueError):
+                    return _delivery_reader_failure(
+                        "reader_pagination_identity_malformed",
+                        pages_read=pages_read,
+                        rows_read=rows_read,
+                    )
+            cursor = max(numeric_ids)
+            if cursor <= after or cursor == last_cursor:
+                return _delivery_reader_failure(
+                    "reader_pagination_not_progressing",
+                    pages_read=pages_read,
+                    rows_read=rows_read,
+                )
+            last_cursor = cursor
+            after = cursor
+    except (
+        urllib_error.HTTPError,
+        urllib_error.URLError,
+        TimeoutError,
+        OSError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
+        return _delivery_reader_failure(
+            "reader_request_or_parse_failed",
+            error_type=exc.__class__.__name__,
+            pages_read=pages_read,
+            rows_read=rows_read,
+        )
+    return _delivery_reader_failure(
+        "reader_pagination_incomplete",
+        pages_read=pages_read,
+        rows_read=rows_read,
+    )
+
+
+def _chatwoot_message_list_rows(envelope):
+    if isinstance(envelope, list):
+        rows = envelope
+    elif isinstance(envelope, dict):
+        rows = None
+        for key in ("payload", "messages", "data"):
+            value = envelope.get(key)
+            if isinstance(value, list):
+                rows = value
+                break
+        if rows is None:
+            return None
+    else:
+        return None
+    return rows if all(isinstance(row, dict) for row in rows) else None
+
+
+def _validated_exact_chatwoot_message(
+    row,
+    *,
+    account_id,
+    conversation_id,
+    message_id,
+    expected_inbox_id,
+    pages_read,
+    rows_read,
+):
+    normalized = normalize_chatwoot_delivery_event(row)
+    observed_message = _clean(normalized.get("chatwoot_message_id"), 120)
+    observed_conversation = _clean(normalized.get("conversation_id"), 120)
+    observed_account = _clean(normalized.get("account_id"), 120)
+    observed_inbox = _clean(normalized.get("inbox_id"), 120)
+    message_type = str(normalized.get("message_type") or "").lower()
+    private = row.get("private")
+    if normalized.get("conflict"):
+        return _delivery_reader_failure("reader_identity_or_status_conflict", pages_read=pages_read, rows_read=rows_read)
+    if observed_message != message_id or observed_conversation != conversation_id:
+        return _delivery_reader_failure("reader_exact_identity_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if observed_account and observed_account != account_id:
+        return _delivery_reader_failure("reader_account_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if observed_inbox and expected_inbox_id and observed_inbox != expected_inbox_id:
+        return _delivery_reader_failure("reader_inbox_mismatch", pages_read=pages_read, rows_read=rows_read)
+    if message_type not in {"1", "outgoing"}:
+        return _delivery_reader_failure("reader_message_not_outgoing", pages_read=pages_read, rows_read=rows_read)
+    if private is not False:
+        return _delivery_reader_failure("reader_message_not_public", pages_read=pages_read, rows_read=rows_read)
+    if normalized.get("malformed") or normalized.get("normalized_status") == "unresolved":
+        return _delivery_reader_failure("reader_status_malformed", pages_read=pages_read, rows_read=rows_read)
+    return {
+        "status_code": 200,
+        "body": row,
+        "reader_provenance": {
+            "source": "chatwoot_conversation_messages_list",
+            "status_source_path": normalized.get("status_source_path"),
+            "pages_read": pages_read,
+            "rows_read": rows_read,
+            "provider_identity_class": normalized.get("provider_identity_class"),
+            "event_timestamp": normalized.get("event_timestamp"),
+            "contains_private_message_content": False,
+            "contains_raw_provider_identity": False,
+        },
+    }
+
+
+def _delivery_reader_failure(reason, *, error_type="", pages_read=0, rows_read=0):
+    return {
+        "status_code": None,
+        "body": {},
+        "reader_provenance": {
+            "source": "chatwoot_conversation_messages_list",
+            "failure_class": reason,
+            "error_type": _clean(error_type, 80),
+            "pages_read": int(pages_read or 0),
+            "rows_read": int(rows_read or 0),
+            "contains_private_message_content": False,
+            "contains_raw_provider_identity": False,
+        },
+    }
+
+
 def handle_sam_live_stock_delivery_status_webhook(
     payload,
     *,
@@ -1195,33 +1486,19 @@ def handle_sam_live_stock_delivery_status_webhook(
     active_card_loader=None,
     telegram_deleter=None,
     telegram_editor=None,
+    reconciliation_loader=None,
 ):
     """Reconcile an exact owner-send attempt from Chatwoot message_updated."""
     source = environ if environ is not None else os.environ
     payload = payload if isinstance(payload, dict) else {}
-    if isinstance(payload.get("message"), dict):
-        message = payload.get("message")
-    elif isinstance(payload.get("messages"), list) and payload.get("messages") and isinstance(payload["messages"][0], dict):
-        message = payload["messages"][0]
-    else:
-        message = payload
-    conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
-    if not conversation and isinstance(message.get("conversation"), dict):
-        conversation = message.get("conversation")
-    event_name = _clean(payload.get("event") or payload.get("event_name"), 80).lower()
-    message_type = message.get("message_type")
-    conversation_id = _clean(
-        payload.get("conversation_id") or message.get("conversation_id") or conversation.get("id"),
-        120,
-    )
-    outgoing_id = _clean(payload.get("message_id") or message.get("id"), 120)
-    status = _clean(
-        payload.get("delivery_status") or payload.get("status")
-        or message.get("delivery_status") or message.get("message_status")
-        or message.get("source_status") or message.get("status"),
-        40,
-    ).lower()
-    if event_name not in {"message_updated", ""} or str(message_type).lower() not in {"1", "outgoing"}:
+    normalized = normalize_chatwoot_delivery_event(payload)
+    event_name = normalized.get("event_type")
+    message_type = normalized.get("message_type")
+    conversation_id = _clean(normalized.get("conversation_id"), 120)
+    outgoing_id = _clean(normalized.get("chatwoot_message_id"), 120)
+    if event_name not in {"message_updated", ""} or (
+        message_type and str(message_type).lower() not in {"1", "outgoing"}
+    ):
         return {"success": True, "status": "sam_delivery_status_ignored", "processed": False}, 200
     loader = attempt_loader or (
         lambda cid, mid: load_delivery_attempt_for_outgoing_message(
@@ -1234,16 +1511,92 @@ def handle_sam_live_stock_delivery_status_webhook(
     attempt = loaded.get("attempt") if isinstance(loaded.get("attempt"), dict) else {}
     if _clean(attempt.get("conversation_id"), 120) != conversation_id or _clean(attempt.get("chatwoot_outgoing_message_id"), 120) != outgoing_id:
         return {"success": False, "status": "sam_delivery_webhook_identity_mismatch", "processed": False}, 409
+    configured_account = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV), 120)
+    if (
+        normalized.get("conflict")
+        or (normalized.get("inbox_id") and _clean(normalized.get("inbox_id"), 120) != _clean(attempt.get("inbox_id"), 120))
+        or (normalized.get("account_id") and configured_account and _clean(normalized.get("account_id"), 120) != configured_account)
+    ):
+        return {
+            "success": False,
+            "status": "sam_delivery_webhook_identity_or_status_conflict",
+            "processed": False,
+            "automatic_retry_prohibited": True,
+        }, 409
     outcome = classify_chatwoot_response({
         "status_code": 200,
         "body": {
             "id": outgoing_id,
             "conversation_id": conversation_id,
-            "status": status,
-            "source_id": message.get("source_id"),
-            "content_attributes": message.get("content_attributes") if isinstance(message.get("content_attributes"), dict) else {},
+            "status": (
+                "unresolved"
+                if normalized.get("malformed")
+                else normalized.get("normalized_status")
+            ),
         },
     })
+    outcome.update({
+        "provider_identity_class": normalized.get("provider_identity_class") or "absent",
+        "reconciliation_source": "chatwoot_message_updated_webhook",
+        "status_source_path": normalized.get("status_source_path"),
+        "provider_event_type": normalized.get("event_type"),
+        "provider_event_timestamp": normalized.get("event_timestamp"),
+        "provider_event_conflict": normalized.get("conflict") is True,
+        "provider_event_malformed": normalized.get("malformed") is True,
+    })
+    if outcome.get("delivery_state") in {CHATWOOT_ACCEPTED_UNVERIFIED, PROVIDER_OUTCOME_AMBIGUOUS}:
+        try:
+            current = (reconciliation_loader or _chatwoot_read_exact_outgoing_message)(
+                conversation_id, outgoing_id, source
+            )
+        except Exception:
+            current = {}
+        current_body = current.get("body") if isinstance(current, dict) and isinstance(current.get("body"), dict) else {}
+        current_conversation = _clean(
+            current_body.get("conversation_id")
+            or (current_body.get("conversation") or {}).get("id"),
+            120,
+        )
+        current_id = _clean(current_body.get("id") or current_body.get("message_id"), 120)
+        current_normalized = normalize_chatwoot_delivery_event(current_body) if current_body else {}
+        current_inbox = _clean(current_normalized.get("inbox_id"), 120)
+        current_account = _clean(current_normalized.get("account_id"), 120)
+        current_identity_agrees = (
+            not current_normalized.get("conflict")
+            and (not current_inbox or current_inbox == _clean(attempt.get("inbox_id"), 120))
+            and (not current_account or not configured_account or current_account == configured_account)
+        )
+        if (
+            current_body
+            and current_conversation == conversation_id
+            and current_id == outgoing_id
+            and current_identity_agrees
+        ):
+            reconciled = classify_chatwoot_response(current)
+            if reconciled.get("delivery_state") in CONFIRMED_STATES | {PROVIDER_FAILED}:
+                reader_provenance = (
+                    current.get("reader_provenance")
+                    if isinstance(current.get("reader_provenance"), dict)
+                    else {}
+                )
+                outcome = {
+                    **reconciled,
+                    "reconciliation_source": (
+                        reader_provenance.get("source")
+                        or "chatwoot_exact_outgoing_message_read"
+                    ),
+                    "status_source_path": (
+                        reader_provenance.get("status_source_path")
+                        or "chatwoot_message.status"
+                    ),
+                    "provider_event_type": normalized.get("event_type"),
+                    "provider_event_timestamp": (
+                        reader_provenance.get("event_timestamp")
+                        or normalized.get("event_timestamp")
+                    ),
+                    "provider_event_conflict": False,
+                    "provider_event_malformed": False,
+                }
     if (
         outcome.get("delivery_state") in CONFIRMED_STATES
         and outcome.get("provider_identity_class") != "whatsapp_provider"
@@ -1301,11 +1654,16 @@ def handle_sam_live_stock_delivery_status_webhook(
         if delete_status >= 400 or not deleted.get("success"):
             edited, edit_status = _edit_owner_card_state(expected, "Delivered / Resolved", [], source, telegram_editor)
             if edit_status >= 400:
+                recorder(build_sam_live_stock_owner_card_event(
+                    action_event, expected, "action_failed", "send_reply_cleanup_ambiguous"
+                ))
                 return {"success": False, "status": "sam_delivery_card_cleanup_ambiguous", "processed": True, "delivery_state": state}, 502
             cleanup = {"status": "sam_delivery_card_resolved_by_edit", "edit": edited}
+            cleanup_action = "send_reply_cleanup_resolved_by_edit"
         else:
             cleanup = deleted
-        recorder(build_sam_live_stock_owner_card_event(action_event, expected, "resolved", "send_reply_delivered"))
+            cleanup_action = "send_reply_cleanup_deleted"
+        recorder(build_sam_live_stock_owner_card_event(action_event, expected, "resolved", cleanup_action))
         return {"success": True, "status": "sam_delivery_confirmed_card_cleaned", "processed": True, "delivery_state": state, "customer_send_confirmed": True, "card_cleanup": cleanup}, 200
     if state in {PROVIDER_FAILED, PROVIDER_OUTCOME_AMBIGUOUS}:
         label = "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"
@@ -1977,6 +2335,183 @@ CARD_RECONCILIATION_CLASSIFICATIONS = (
     "uncertain",
 )
 CARD_RECONCILIATION_LANES = ("general", "meat", "livestock", "other", "unknown")
+HUMAN_REASSESSMENT_EVENT_SOURCE = "sam_live_stock_human_reassessment"
+HUMAN_REASSESSMENT_CONTRACT_VERSION = "sam_live_stock_human_reassessment_v1"
+
+
+def assess_sam_live_stock_human_reassessment(event, chronology, card):
+    """Fail-closed assessment for the existing Done - Return to SAM action."""
+    event = event if isinstance(event, dict) else {}
+    chronology = chronology if isinstance(chronology, dict) else {}
+    card = card if isinstance(card, dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 120)
+    message_id = _clean(event.get("chatwoot_message_id"), 120)
+    contact_id = _clean(event.get("chatwoot_contact_id"), 120)
+    inbox_id = _clean(event.get("chatwoot_inbox_id"), 120)
+    attributes = (
+        chronology.get("custom_attributes")
+        if isinstance(chronology.get("custom_attributes"), dict)
+        else {}
+    )
+    messages = chronology.get("messages")
+    gates = {
+        "exact_conversation": (
+            bool(conversation_id)
+            and _clean(chronology.get("id") or conversation_id, 120) == conversation_id
+        ),
+        "exact_contact": bool(contact_id)
+        and _clean(chronology.get("contact_id"), 120) == contact_id,
+        "exact_inbox": bool(inbox_id)
+        and _clean(chronology.get("inbox_id"), 120) == inbox_id,
+        "human_ownership": _clean(attributes.get("conversation_mode"), 20).upper() == "HUMAN",
+        "messages_available": isinstance(messages, list),
+        "exact_card": (
+            _clean(card.get("conversation_id"), 120) == conversation_id
+            and bool(_clean(card.get("telegram_chat_id"), 120))
+            and bool(_clean(card.get("telegram_message_id"), 120))
+        ),
+    }
+    normalized = []
+    if isinstance(messages, list):
+        normalized = [_normalize_reconciliation_message(item) for item in messages]
+        gates["messages_available"] = all(item is not None for item in normalized)
+        normalized = [item for item in normalized if item is not None]
+    incoming = [item for item in normalized if item["direction"] == "incoming"]
+    outgoing = [item for item in normalized if item["direction"] == "outgoing"]
+    latest_incoming = max(incoming, key=lambda item: item["created_at"], default={})
+    gates["exact_latest_inbound"] = bool(message_id) and latest_incoming.get("id") == message_id
+    gates["answered"] = bool(
+        latest_incoming
+        and any(item["created_at"] > latest_incoming["created_at"] for item in outgoing)
+    )
+    explicit_human = _truthy(
+        attributes.get("sam_explicit_human_request")
+        or attributes.get("explicit_human_request")
+    ) or _clean(
+        attributes.get("conversation_mode_reason")
+        or attributes.get("sam_owner_reason"),
+        80,
+    ).lower() in {"owner_handoff", "explicit_human_request", "customer_requested_human"}
+    protected = any(
+        _truthy(attributes.get(key))
+        for key in (
+            "sam_protected_action_required",
+            "protected_action_required",
+            "commercial_action_required",
+            "payment_required",
+            "reservation_required",
+            "order_action_required",
+            "complaint_open",
+            "safety_issue_open",
+            "delivery_failure_open",
+            "delivery_exception_open",
+        )
+    )
+    specialist = any(
+        _truthy(attributes.get(key))
+        for key in (
+            "specialist_review_required",
+            "sam_specialist_required",
+            "sam_meat_required",
+            "sam_livestock_required",
+            "herdmaster_required",
+            "pricing_required",
+        )
+    )
+    lane = _clean(
+        attributes.get("sam_sales_lane") or attributes.get("sales_lane"), 80
+    ).lower()
+    gates.update(
+        {
+            "no_explicit_human_request": not explicit_human,
+            "no_protected_work": not protected,
+            "no_specialist_work": not specialist,
+            "general_lane_only": lane in {"", "general", "auto_general"},
+        }
+    )
+    eligible = all(gates.values())
+    return {
+        "success": True,
+        "status": (
+            "sam_live_stock_human_reassessment_eligible"
+            if eligible
+            else "sam_live_stock_human_reassessment_withheld"
+        ),
+        "version": HUMAN_REASSESSMENT_CONTRACT_VERSION,
+        "eligible": eligible,
+        "gates": gates,
+        "conversation_id": conversation_id,
+        "contact_id": contact_id,
+        "inbox_id": inbox_id,
+        "latest_inbound_message_id": _clean(latest_incoming.get("id"), 120),
+        "review_event_id": _clean(event.get("review_event_id"), 120),
+        "telegram_chat_id": _clean(card.get("telegram_chat_id"), 120),
+        "telegram_message_id": _clean(card.get("telegram_message_id"), 120),
+        "sends_customer_message": False,
+        "calls_specialist_rail": False,
+        "calls_business_rail": False,
+        **AUTHORITY_FLAGS,
+    }
+
+
+def build_sam_live_stock_human_reassessment_event(event, assessment, state):
+    """Create content-free append-only evidence for one exact reassessment."""
+    event = event if isinstance(event, dict) else {}
+    assessment = assessment if isinstance(assessment, dict) else {}
+    state = _clean(state, 40).lower()
+    identity = _stable_id(
+        "SAM-LIVE-REASSESS",
+        [
+            HUMAN_REASSESSMENT_CONTRACT_VERSION,
+            assessment.get("conversation_id"),
+            assessment.get("contact_id"),
+            assessment.get("inbox_id"),
+            assessment.get("latest_inbound_message_id"),
+            assessment.get("review_event_id"),
+            assessment.get("telegram_chat_id"),
+            assessment.get("telegram_message_id"),
+            state,
+        ],
+    )
+    evidence = build_sam_live_stock_review_event(
+        {
+            "conversation_id": assessment.get("conversation_id"),
+            "message_id": assessment.get("latest_inbound_message_id"),
+        },
+        {},
+        {},
+        {
+            "score": 0,
+            "safe_to_send": False,
+            "recommended_action": f"human_reassessment_{state}",
+        },
+        event_source=HUMAN_REASSESSMENT_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = identity
+    evidence["recommended_action"] = f"human_reassessment_{state}"
+    evidence["review_json"] = {
+        "human_reassessment": {
+            key: assessment.get(key)
+            for key in (
+                "version",
+                "eligible",
+                "gates",
+                "conversation_id",
+                "contact_id",
+                "inbox_id",
+                "latest_inbound_message_id",
+                "review_event_id",
+                "telegram_chat_id",
+                "telegram_message_id",
+            )
+        }
+    }
+    evidence["review_json"]["human_reassessment"]["state"] = state
+    evidence["decision_json"] = {}
+    evidence["facts_json"] = {}
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return evidence
 
 
 def reconcile_sam_live_stock_exact_cards(conversation, cards):

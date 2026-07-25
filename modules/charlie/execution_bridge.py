@@ -1948,6 +1948,14 @@ Model assignment:
 Final artifact contract:
 {json.dumps(final_artifact_contract_packet(), indent=2)}
 
+Candidate-bound ingestion requirements:
+- Every protected-stage final artifact must include source_revision, candidate_revision, expected_revision, and candidate_fingerprint.
+- Tester and every downstream review stage must also include tested_revision.
+- Every protected stage after Architect must include parent_artifact_id and input_artifact_ids from durable upstream artifacts.
+- Include evidence_generation or review_generation when supplied by the mission packet.
+- Do not invent a revision, fingerprint, generation, or parent identity. If authoritative binding is unavailable, return a structured blocked artifact that identifies the missing fields and does not authorize a downstream stage.
+- Architect must not authorize Builder unless the candidate binding and every planning gate are concrete and internally consistent.
+
 Partial recovery contract:
 {json.dumps(partial_recovery_contract_packet(), indent=2)}
 
@@ -6950,7 +6958,22 @@ def _block_agent_stage(
     artifacts = artifacts if isinstance(artifacts, dict) else {}
     if artifact and agent not in artifacts:
         artifacts = {**artifacts, agent: artifact}
-    disposition = classify_block(agent, blocked_reason, artifact)
+    ingestion = artifact.get("artifact_ingestion") if isinstance(artifact.get("artifact_ingestion"), dict) else {}
+    binding_rejection = str(ingestion.get("status") or "") == "final_artifact_binding_invalid"
+    if binding_rejection:
+        disposition = {
+            "block_class": "final_artifact_binding_invalid",
+            "reason": blocked_reason,
+            "recoverable": False,
+            "owner_required": True,
+            "responsible_stage": agent,
+            "return_to_stage": agent,
+            "semantic_rejection_identity": str(
+                (ingestion.get("semantic_rejection") or {}).get("identity") or ""
+            ),
+        }
+    else:
+        disposition = classify_block(agent, blocked_reason, artifact)
     disposition, recovery_repeat = _bounded_internal_recovery(
         mission_id, agent, blocked_reason, artifact, disposition,
         database_url=database_url, connect_factory=connect_factory,
