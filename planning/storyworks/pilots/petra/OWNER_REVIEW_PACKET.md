@@ -283,3 +283,18 @@ Charl can copy this block and mark one choice per line:
 | Ready for private edit | Owner-reviewed package; private narration available or an explicitly approved no-narration timing route; every asset entering the edit has an original creation record or verified private-edit rights; unresolved A001/A002/A007/A008/A009/A010 assets are excluded; edit/disclosure controls accepted. |
 | Private video completed | Exact private export exists and passes factual, rights, disclosure, audio/video technical, packaging and comprehension QA; actual time and cash/economic cost are recorded. Completion is not publication or revenue proof. |
 | Ready to request publication-canary approval | Private video completed; full rights manifest/evidence retained; final disclosure decision, title, thumbnail, description, runtime and checksums recorded; owner receives one exact channel/account/upload/visibility/measurement proposal. Publication remains unapproved until a separate explicit decision. |
+
+## 14. Provisional owner decisions recorded — 2026-07-25
+
+Charl directed **revise and proceed** with the factual thesis: “Petra managed both scarce water and destructive runoff through a layered, engineered and continually maintained water-management system.” The working title may remain, but neither title nor script may imply one completely controlled undocumented flood or eliminated flood danger.
+
+- A003 system overview: direction approved, pending final factual and visual QA.
+- A004 headwater control: direction approved, pending final factual and visual QA.
+- A011 thumbnail: revise; exploratory and not final.
+- Narration: Charl is not the default narrator. Prepare a silent timing plan and synthetic-route evaluation; no route, provider or generation is approved.
+- Pronunciation/editorial: human confirmation remains required; no invented phonetics.
+- Rights: rights-light originals and verified assets only; unresolved external media excluded.
+- Audio: no music or external SFX in the first timing candidate.
+- Private editing: not yet authorised; return after the listed corrections and review gates.
+
+Review the bounded [pre-production candidate](PREPRODUCTION_DECISION_CANDIDATE.md), [pronunciation sheet](PRONUNCIATION_REVIEW_SHEET.md), [synthetic-narration evaluation](SYNTHETIC_NARRATION_EVALUATION.md) and revised [timing-edit plan](edit_plan.md). All provider, spend, production, channel, upload, publication, monetisation, financial and CHARLIE actions remain unauthorised.

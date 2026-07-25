@@ -219,6 +219,55 @@ foreach ($boundary in @(
         Add-Failure "Business-state ladder is missing boundary: $boundary"
     }
 }
+$ownerThesis = 'Petra managed both scarce water and destructive runoff through a layered, engineered and continually maintained water-management system.'
+foreach ($name in @('brief.md', 'script.md', 'PREPRODUCTION_DECISION_CANDIDATE.md')) {
+    $text = Read-Utf8Strict (Join-Path $petra $name)
+    $comparable = [regex]::Replace($text, '\s+', ' ')
+    if ($comparable.IndexOf($ownerThesis, [System.StringComparison]::Ordinal) -lt 0) {
+        Add-Failure "$name does not preserve the provisional owner-directed Petra thesis."
+    }
+}
+$p017 = @($facts | Where-Object claim_id -eq 'P017')
+if ($p017.Count -ne 1 -or $p017[0].evidence_status -ne 'inference' -or
+        $p017[0].certainty -ne 'medium-high' -or
+        $p017[0].required_wording_or_limit -notmatch 'flood danger was eliminated') {
+    Add-Failure 'P017 evidence status, certainty or owner-directed uncertainty control changed.'
+}
+$a011 = @($assets | Where-Object asset_id -eq 'CV001-A011')
+if ($a011.Count -ne 1 -or $a011[0].approval_status -ne 'revision_required') {
+    Add-Failure 'A011 must remain an exploratory thumbnail with revision required.'
+}
+$editText = Read-Utf8Strict (Join-Path $petra 'edit_plan.md')
+$editScenes = @([regex]::Matches($editText, '(?m)^\| (V\d{3}) \|') |
+    ForEach-Object { $_.Groups[1].Value })
+if ($editScenes.Count -ne 20 -or ($editScenes | Select-Object -Unique).Count -ne 20 -or
+        $editText -notmatch 'exactly \*\*14:20\*\*') {
+    Add-Failure 'Private timing-edit plan must contain 20 unique scenes and exact 14:20 timing.'
+}
+$candidateText = Read-Utf8Strict (Join-Path $petra 'PREPRODUCTION_DECISION_CANDIDATE.md')
+foreach ($boundary in @(
+    'does not authorise editing',
+    'No asset is permanently rejected',
+    'Charl is not the default business narrator',
+    'no narration, music or external SFX'
+)) {
+    if ($candidateText.IndexOf($boundary, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        Add-Failure "Pre-production candidate is missing boundary: $boundary"
+    }
+}
+$pronunciationText = Read-Utf8Strict (Join-Path $petra 'PRONUNCIATION_REVIEW_SHEET.md')
+if ($pronunciationText.IndexOf('No phonetics have been invented', [System.StringComparison]::Ordinal) -lt 0 -or
+        $pronunciationText.IndexOf('____________________', [System.StringComparison]::Ordinal) -lt 0) {
+    Add-Failure 'Pronunciation sheet lacks its no-invention boundary or blank approval fields.'
+}
+$syntheticText = Read-Utf8Strict (Join-Path $petra 'SYNTHETIC_NARRATION_EVALUATION.md')
+foreach ($criterion in @('Voice quality and suitability', 'Pronunciation control',
+        'Commercial-use rights', 'Provider terms', 'Cost per finished video',
+        'Repeatability and automation', 'Owner approval controls')) {
+    if ($syntheticText.IndexOf($criterion, [System.StringComparison]::Ordinal) -lt 0) {
+        Add-Failure "Synthetic narration evaluation is missing: $criterion"
+    }
+}
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1
