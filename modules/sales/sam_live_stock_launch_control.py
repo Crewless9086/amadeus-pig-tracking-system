@@ -32,6 +32,10 @@ TELEGRAM_BOT_TOKEN_FALLBACK_ENV = "OOM_SAKKIE_TELEGRAM_BOT_TOKEN"
 CHATWOOT_TAKEOVER_WRITE_ENABLED_ENV = "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED"
 ORDER_RESERVATION_ENABLED_ENV = "SAM_LIVE_STOCK_ORDER_RESERVATION_ENABLED"
 OWNER_CARD_EVENT_SOURCE = "sam_live_stock_owner_card_lifecycle"
+RESOLVE_CARD_CANDIDATE_EVENT_SOURCE = "sam_live_stock_resolve_card_candidate"
+RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE = "sam_live_stock_resolve_card_lifecycle"
+RESOLVE_CARD_ACTION_TYPE = "resolve_card_only"
+RESOLVE_CARD_CONTRACT_VERSION = "sam_live_stock_resolve_card_only_v1"
 OWNER_CARD_ACTIVE_STATES = {"active", "with_owner", "action_failed", "action_claimed"}
 HUMAN_AUDIT_CLASSIFICATIONS = ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")
 HUMAN_AUDIT_LANE_COUNTS = ("lane_unknown", "excluded_non_livestock")
@@ -237,7 +241,7 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    select review_json
+                    select review_event_id, review_json
                     from public.sam_live_stock_conversation_review_events
                     where chatwoot_conversation_id = %s
                       and event_source = %s
@@ -249,11 +253,19 @@ def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
                 row = cursor.fetchone()
         if not row:
             return {"success": True, "status": "sam_live_stock_owner_card_not_found", "card": {}, **AUTHORITY_FLAGS}, 200
-        review_json = _json_value(row[0])
+        lifecycle_card_identity = _clean(row[0], 120)
+        review_json = _json_value(row[1])
         card = review_json.get("owner_card") if isinstance(review_json.get("owner_card"), dict) else {}
         if card.get("state") not in OWNER_CARD_ACTIVE_STATES:
             card = {}
-        return {"success": True, "status": "sam_live_stock_owner_card_loaded", "card": card, **AUTHORITY_FLAGS}, 200
+            lifecycle_card_identity = ""
+        return {
+            "success": True,
+            "status": "sam_live_stock_owner_card_loaded",
+            "card": card,
+            "lifecycle_card_identity": lifecycle_card_identity,
+            **AUTHORITY_FLAGS,
+        }, 200
     except Exception as exc:
         return {"success": False, "status": "sam_live_stock_owner_card_load_failed", "error": _clean(str(exc), 240), "card": {}, **AUTHORITY_FLAGS}, 500
 
@@ -871,7 +883,7 @@ def _with_charl_keyboard(callback_id):
     return [[{"text": "Open Chatwoot", "callback_data": f"sam_live_card_open:{callback_id}"}], [{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{callback_id}"}]]
 
 
-def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, sales_pack_preparer=None, evidence_recorder=None):
+def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, active_card_loader=None, chronology_loader=None, sales_pack_preparer=None, evidence_recorder=None):
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
@@ -891,12 +903,25 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
         "card_keep",
         "card_no_reply",
         "card_done",
+        "resolve_card_only",
     }
     if action["action"] in review_actions:
         loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
         if load_status >= 400 or not loaded.get("success"):
             return _callback_result(action["action"], loaded, load_status, escalation_id)
         event = loaded.get("event") if isinstance(loaded.get("event"), dict) else {}
+        if action["action"] == "resolve_card_only":
+            return execute_sam_live_stock_resolve_card_only(
+                event,
+                payload,
+                environ=environ,
+                review_event_loader=review_event_loader,
+                active_card_loader=active_card_loader,
+                chronology_loader=chronology_loader,
+                evidence_recorder=evidence_recorder,
+                telegram_deleter=telegram_deleter,
+                telegram_editor=telegram_editor,
+            )
         conversation_id = event.get("chatwoot_conversation_id")
         decision_json = _json_value(event.get("decision_json"))
         message = _clean_multiline(decision_json.get("suggested_reply_text") or event.get("sam_reply_excerpt"), 1800)
@@ -1608,6 +1633,420 @@ def reconcile_sam_live_stock_exact_cards(conversation, cards):
     }
 
 
+def build_sam_live_stock_resolve_card_candidate(
+    conversation, card, *, reconciliation_generation, lifecycle_card_identity
+):
+    """Bind a planner-approved exact card to one explicit, versioned owner action."""
+    conversation = conversation if isinstance(conversation, dict) else {}
+    card = card if isinstance(card, dict) else {}
+    generation = _clean(reconciliation_generation, 120)
+    lifecycle_identity = _clean(lifecycle_card_identity, 120)
+    chat_id = _clean(card.get("telegram_chat_id"), 120)
+    if not generation or not lifecycle_identity or not chat_id:
+        return {
+            "success": False,
+            "status": "resolve_card_candidate_identity_incomplete",
+            "candidate": {},
+            **AUTHORITY_FLAGS,
+        }
+    plan = reconcile_sam_live_stock_exact_cards(conversation, [card])
+    rows = plan.get("cards") if isinstance(plan, dict) else []
+    row = rows[0] if isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict) else {}
+    if (
+        plan.get("success") is not True
+        or row.get("action") != "resolve_card_only"
+        or row.get("classification") != "answered_already_auto_or_unproven"
+        or plan.get("human_ownership_proven") is True
+    ):
+        return {
+            "success": False,
+            "status": "resolve_card_candidate_not_planner_approved",
+            "candidate": {},
+            "reconciliation": plan,
+            **AUTHORITY_FLAGS,
+        }
+    candidate = {
+        "version": RESOLVE_CARD_CONTRACT_VERSION,
+        "action_type": RESOLVE_CARD_ACTION_TYPE,
+        "action_identity": "",
+        "reconciliation_generation": generation,
+        "conversation_id": _clean(plan.get("conversation_id"), 120),
+        "persisted_review_identity": _clean(plan.get("review_event_id"), 120),
+        "lifecycle_card_identity": lifecycle_identity,
+        "telegram_chat_id": chat_id,
+        "telegram_message_id": _clean(row.get("telegram_message_id"), 120),
+        "customer_message_id": _clean(row.get("customer_message_id"), 120),
+        "card_created_at": card.get("created_at"),
+        "ownership": _clean(plan.get("ownership"), 40),
+        "human_ownership_proven": False,
+        "business_lane": _clean(plan.get("business_lane"), 80),
+        "exact_action_required": True,
+    }
+    candidate["action_identity"] = _resolve_card_action_identity(candidate)
+    return {
+        "success": True,
+        "status": "resolve_card_candidate_ready",
+        "candidate": candidate,
+        "button": build_sam_live_stock_reconciliation_button(row, candidate=candidate),
+        "reconciliation": plan,
+        **AUTHORITY_FLAGS,
+    }
+
+
+def build_sam_live_stock_reconciliation_button(reconciliation_row, *, candidate=None, review_event_id=""):
+    """Render button text and callback from the same planner action."""
+    row = reconciliation_row if isinstance(reconciliation_row, dict) else {}
+    candidate = candidate if isinstance(candidate, dict) else {}
+    action = _clean(row.get("action"), 80)
+    if action == "resolve_card_only":
+        action_identity = _clean(candidate.get("action_identity"), 120)
+        if (
+            candidate.get("action_type") != RESOLVE_CARD_ACTION_TYPE
+            or candidate.get("version") != RESOLVE_CARD_CONTRACT_VERSION
+            or not action_identity
+        ):
+            return {}
+        return {
+            "text": "Resolve Card",
+            "callback_data": f"sam_live_card_resolve:{action_identity}",
+            "action": RESOLVE_CARD_ACTION_TYPE,
+        }
+    if action == "candidate_auto_then_resolve":
+        exact_review = _clean(review_event_id, 120)
+        if not exact_review:
+            return {}
+        return {
+            "text": "Done - Return to SAM",
+            "callback_data": f"sam_live_card_done:{exact_review}",
+            "action": "return_to_auto_then_resolve",
+        }
+    return {}
+
+
+def build_sam_live_stock_resolve_candidate_event(original_event, candidate):
+    original_event = original_event if isinstance(original_event, dict) else {}
+    candidate = candidate if isinstance(candidate, dict) else {}
+    evidence = build_sam_live_stock_review_event(
+        {
+            "conversation_id": candidate.get("conversation_id"),
+            "message_id": candidate.get("customer_message_id"),
+        },
+        {},
+        {},
+        {"score": 0, "safe_to_send": False, "recommended_action": "resolve_card_only_candidate"},
+        event_source=RESOLVE_CARD_CANDIDATE_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = _clean(candidate.get("action_identity"), 120)
+    evidence["recommended_action"] = "resolve_card_only_candidate"
+    evidence["review_json"] = {"resolve_card_only": candidate}
+    evidence["decision_json"] = {}
+    evidence["facts_json"] = {}
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return evidence
+
+
+def prepare_sam_live_stock_resolve_card_action(
+    conversation,
+    card,
+    *,
+    reconciliation_generation,
+    lifecycle_card_identity,
+    original_event,
+    evidence_recorder=None,
+):
+    """Persist the exact candidate before exposing its owner button."""
+    built = build_sam_live_stock_resolve_card_candidate(
+        conversation,
+        card,
+        reconciliation_generation=reconciliation_generation,
+        lifecycle_card_identity=lifecycle_card_identity,
+    )
+    if built.get("success") is not True:
+        return built
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    recorded, status = recorder(
+        build_sam_live_stock_resolve_candidate_event(original_event, built["candidate"])
+    )
+    if status >= 400 or recorded.get("success") is not True:
+        return {
+            "success": False,
+            "status": "resolve_card_candidate_persistence_failed",
+            "candidate": {},
+            "button": {},
+            **AUTHORITY_FLAGS,
+        }
+    return {
+        **built,
+        "status": (
+            "resolve_card_candidate_persisted"
+            if recorded.get("created") is True
+            else "resolve_card_candidate_already_persisted"
+        ),
+        "candidate_persistence": {
+            "created": recorded.get("created") is True,
+            "review_event_id": built["candidate"]["action_identity"],
+        },
+    }
+
+
+def build_sam_live_stock_resolve_lifecycle_event(candidate, state, outcome):
+    candidate = candidate if isinstance(candidate, dict) else {}
+    state = _clean(state, 40).lower()
+    outcome = _clean(outcome, 100).lower()
+    evidence = build_sam_live_stock_review_event(
+        {
+            "conversation_id": candidate.get("conversation_id"),
+            "message_id": candidate.get("customer_message_id"),
+        },
+        {},
+        {},
+        {"score": 0, "safe_to_send": False, "recommended_action": outcome},
+        event_source=RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = _stable_id(
+        "SAM-LIVE-RESOLVE-EVENT",
+        [candidate.get("action_identity"), state, outcome],
+    )
+    evidence["recommended_action"] = outcome
+    evidence["review_json"] = {
+        "resolve_card_only": {
+            **candidate,
+            "state": state,
+            "outcome": outcome,
+        }
+    }
+    evidence["decision_json"] = {}
+    evidence["facts_json"] = {}
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return evidence
+
+
+def execute_sam_live_stock_resolve_card_only(
+    candidate_event,
+    payload,
+    *,
+    environ=None,
+    review_event_loader=None,
+    active_card_loader=None,
+    chronology_loader=None,
+    evidence_recorder=None,
+    telegram_deleter=None,
+    telegram_editor=None,
+):
+    """Resolve one exact Telegram card without any Chatwoot or business adapter."""
+    candidate_event = candidate_event if isinstance(candidate_event, dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    review_json = _json_value(candidate_event.get("review_json"))
+    candidate = review_json.get("resolve_card_only") if isinstance(review_json.get("resolve_card_only"), dict) else {}
+    action_identity = _clean(candidate.get("action_identity"), 120)
+    if (
+        candidate_event.get("event_source") != RESOLVE_CARD_CANDIDATE_EVENT_SOURCE
+        or candidate.get("version") != RESOLVE_CARD_CONTRACT_VERSION
+        or candidate.get("action_type") != RESOLVE_CARD_ACTION_TYPE
+        or not action_identity
+        or action_identity != _resolve_card_action_identity(candidate)
+        or action_identity != _clean(candidate_event.get("review_event_id"), 120)
+        or not _clean(candidate.get("reconciliation_generation"), 120)
+        or not _clean(candidate.get("lifecycle_card_identity"), 120)
+    ):
+        return _resolve_card_failure("resolve_card_candidate_invalid", candidate)
+    if (
+        _clean(payload.get("telegram_chat_id"), 120) != _clean(candidate.get("telegram_chat_id"), 120)
+        or _clean(payload.get("telegram_message_id"), 120) != _clean(candidate.get("telegram_message_id"), 120)
+    ):
+        return _resolve_card_failure("resolve_card_exact_telegram_identity_mismatch", candidate)
+
+    loader = review_event_loader or get_sam_live_stock_review_event
+    loaded, loaded_status = loader(candidate.get("persisted_review_identity"))
+    original_event = loaded.get("event") if isinstance(loaded, dict) and isinstance(loaded.get("event"), dict) else {}
+    if (
+        loaded_status >= 400
+        or loaded.get("success") is not True
+        or _clean(original_event.get("review_event_id"), 120) != _clean(candidate.get("persisted_review_identity"), 120)
+        or _clean(original_event.get("chatwoot_conversation_id"), 120) != _clean(candidate.get("conversation_id"), 120)
+        or _clean(original_event.get("chatwoot_message_id"), 120) != _clean(candidate.get("customer_message_id"), 120)
+    ):
+        return _resolve_card_failure("resolve_card_persisted_review_mismatch", candidate)
+
+    active, active_status = (active_card_loader or get_active_sam_live_stock_owner_card)(
+        candidate.get("conversation_id")
+    )
+    active_card = active.get("card") if isinstance(active, dict) and isinstance(active.get("card"), dict) else {}
+    if (
+        active_status >= 400
+        or active.get("success") is not True
+        or _clean(active.get("lifecycle_card_identity"), 120) != _clean(candidate.get("lifecycle_card_identity"), 120)
+        or _clean(active_card.get("conversation_id"), 120) != _clean(candidate.get("conversation_id"), 120)
+        or _clean(active_card.get("telegram_chat_id"), 120) != _clean(candidate.get("telegram_chat_id"), 120)
+        or _clean(active_card.get("telegram_message_id"), 120) != _clean(candidate.get("telegram_message_id"), 120)
+    ):
+        return _resolve_card_failure("resolve_card_active_identity_mismatch", candidate)
+
+    try:
+        chronology = (chronology_loader or _chatwoot_read_resolve_chronology)(
+            candidate.get("conversation_id"), environ
+        )
+    except Exception:
+        return _resolve_card_failure("resolve_card_chronology_unavailable", candidate)
+    if not isinstance(chronology, dict):
+        return _resolve_card_failure("resolve_card_chronology_invalid", candidate)
+    conversation = {
+        **chronology,
+        "id": candidate.get("conversation_id"),
+        "review_event_id": candidate.get("persisted_review_identity"),
+        "ownership_evidence": {"human_takeover_proven": False},
+    }
+    card = {
+        "conversation_id": candidate.get("conversation_id"),
+        "review_event_id": candidate.get("persisted_review_identity"),
+        "customer_message_id": candidate.get("customer_message_id"),
+        "telegram_chat_id": candidate.get("telegram_chat_id"),
+        "telegram_message_id": candidate.get("telegram_message_id"),
+        "created_at": candidate.get("card_created_at"),
+        "authoritative": True,
+    }
+    refreshed = reconcile_sam_live_stock_exact_cards(conversation, [card])
+    refreshed_rows = refreshed.get("cards") if isinstance(refreshed, dict) else []
+    refreshed_row = refreshed_rows[0] if isinstance(refreshed_rows, list) and len(refreshed_rows) == 1 else {}
+    if (
+        refreshed.get("success") is not True
+        or refreshed_row.get("action") != "resolve_card_only"
+        or refreshed_row.get("classification") != "answered_already_auto_or_unproven"
+    ):
+        return _resolve_card_failure(
+            "resolve_card_fresh_chronology_invalidated",
+            candidate,
+            reconciliation=refreshed,
+        )
+
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    claimed, claim_status = recorder(
+        build_sam_live_stock_resolve_lifecycle_event(candidate, "action_claimed", "resolve_card_only")
+    )
+    if claim_status >= 400 or claimed.get("success") is not True:
+        return _resolve_card_failure("resolve_card_claim_failed", candidate)
+    if claimed.get("created") is not True:
+        return _resolve_card_failure(
+            "resolve_card_replay_withheld",
+            candidate,
+            http_status=409,
+            automatic_retry_prohibited=True,
+        )
+
+    source = environ if environ is not None else os.environ
+    deleted, delete_status = delete_sam_live_stock_telegram_escalation(
+        action_identity,
+        candidate.get("telegram_chat_id"),
+        candidate.get("telegram_message_id"),
+        environ=source,
+        telegram_deleter=telegram_deleter,
+    )
+    cleanup_mode = "deleted"
+    if delete_status >= 400:
+        if deleted.get("status") == "sam_live_stock_telegram_delete_failed":
+            terminal = build_sam_live_stock_resolve_lifecycle_event(
+                candidate, "cleanup_failed", "telegram_delete_outcome_ambiguous"
+            )
+            recorder(terminal)
+            return _resolve_card_failure(
+                "resolve_card_cleanup_outcome_ambiguous",
+                candidate,
+                http_status=502,
+                automatic_retry_prohibited=True,
+                card_retained=True,
+            )
+        edited, edit_status = _edit_owner_card_state(
+            {
+                "telegram_chat_id": candidate.get("telegram_chat_id"),
+                "telegram_message_id": candidate.get("telegram_message_id"),
+            },
+            "Resolved",
+            [],
+            source,
+            telegram_editor,
+        )
+        if edit_status >= 400 or edited.get("success") is not True:
+            recorder(build_sam_live_stock_resolve_lifecycle_event(
+                candidate, "cleanup_failed", "telegram_resolved_edit_failed"
+            ))
+            return _resolve_card_failure(
+                "resolve_card_cleanup_failed",
+                candidate,
+                http_status=502,
+                automatic_retry_prohibited=True,
+                card_retained=True,
+            )
+        cleanup_mode = "resolved_edit"
+    projection_event = build_sam_live_stock_owner_card_event(
+        original_event,
+        {
+            "conversation_id": candidate.get("conversation_id"),
+            "telegram_chat_id": candidate.get("telegram_chat_id"),
+            "telegram_message_id": candidate.get("telegram_message_id"),
+        },
+        "resolved",
+        RESOLVE_CARD_ACTION_TYPE,
+    )
+    projected, projection_status = recorder(projection_event)
+    if projection_status >= 400 or projected.get("success") is not True:
+        return _resolve_card_failure(
+            "resolve_card_active_projection_failed",
+            candidate,
+            http_status=503,
+            automatic_retry_prohibited=True,
+        )
+    terminal, terminal_status = recorder(build_sam_live_stock_resolve_lifecycle_event(
+        candidate, "resolved", f"resolve_card_only_{cleanup_mode}"
+    ))
+    if terminal_status >= 400 or terminal.get("success") is not True:
+        return _resolve_card_failure(
+            "resolve_card_terminal_evidence_failed",
+            candidate,
+            http_status=503,
+            automatic_retry_prohibited=True,
+        )
+    return {
+        "success": True,
+        "status": "sam_live_stock_card_resolved_only",
+        "action": RESOLVE_CARD_ACTION_TYPE,
+        "action_identity": action_identity,
+        "cleanup_mode": cleanup_mode,
+        "card_retained": False,
+        "automatic_retry_prohibited": True,
+        **AUTHORITY_FLAGS,
+        "calls_telegram": True,
+    }, 200
+
+
+def _resolve_card_failure(status, candidate, *, http_status=409, **extra):
+    return {
+        "success": False,
+        "status": status,
+        "action": RESOLVE_CARD_ACTION_TYPE,
+        "action_identity": _clean((candidate or {}).get("action_identity"), 120),
+        "card_retained": True,
+        **AUTHORITY_FLAGS,
+        **extra,
+    }, http_status
+
+
+def _resolve_card_action_identity(candidate):
+    candidate = candidate if isinstance(candidate, dict) else {}
+    return _stable_id("SAM-LIVE-RESOLVE", [
+        candidate.get("version"),
+        candidate.get("action_type"),
+        candidate.get("reconciliation_generation"),
+        candidate.get("conversation_id"),
+        candidate.get("persisted_review_identity"),
+        candidate.get("lifecycle_card_identity"),
+        candidate.get("telegram_chat_id"),
+        candidate.get("telegram_message_id"),
+        candidate.get("customer_message_id"),
+    ])
+
+
 def _conversation_ownership_evidence(conversation):
     attrs = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
     explicit = _clean(attrs.get("conversation_ownership"), 40).upper()
@@ -1642,7 +2081,10 @@ def _conversation_business_lane(conversation):
 def _normalize_reconciliation_message(message):
     if not isinstance(message, dict):
         return None
-    direction = _clean(message.get("message_type") or message.get("direction"), 40).lower()
+    raw_direction = message.get("message_type")
+    if raw_direction is None:
+        raw_direction = message.get("direction")
+    direction = _clean(str(raw_direction) if raw_direction is not None else "", 40).lower()
     direction = "incoming" if direction in {"incoming", "0"} else "outgoing" if direction in {"outgoing", "1"} else ""
     created_at = _timestamp_sort_value(message.get("created_at"))
     if not direction or created_at is None:
@@ -2213,6 +2655,56 @@ def _chatwoot_conversation_url(conversation_id, source):
     return f"{base_url}/app/accounts/{account_id}/conversations/{conversation_id}"
 
 
+def _chatwoot_read_resolve_chronology(conversation_id, environ=None):
+    conversation_id = _clean(conversation_id, 100)
+    source = environ if environ is not None else os.environ
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_TOKEN_ENV) or source.get(CHATWOOT_TOKEN_FALLBACK_ENV), 300)
+    if not conversation_id or not base_url or not account_id or not token:
+        raise RuntimeError("chatwoot_resolve_chronology_not_configured")
+
+    def read(path):
+        request = urllib_request.Request(
+            f"{base_url}/api/v1/accounts/{account_id}{path}",
+            headers={"Accept": "application/json", "api_access_token": token},
+            method="GET",
+        )
+        with urllib_request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace") or "{}")
+
+    conversation = read(f"/conversations/{conversation_id}")
+    message_body = read(f"/conversations/{conversation_id}/messages")
+    messages = message_body.get("payload") if isinstance(message_body, dict) else None
+    if (
+        not isinstance(conversation, dict)
+        or _clean(conversation.get("id"), 100) != conversation_id
+        or not isinstance(messages, list)
+    ):
+        raise RuntimeError("chatwoot_resolve_chronology_invalid")
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        raw_type = message.get("message_type")
+        if str(raw_type) not in {"0", "1", "incoming", "outgoing"}:
+            continue
+        normalized.append({
+            "id": message.get("id"),
+            "message_type": "incoming" if str(raw_type) in {"0", "incoming"} else "outgoing",
+            "created_at": message.get("created_at"),
+        })
+    return {
+        "id": conversation_id,
+        "custom_attributes": (
+            conversation.get("custom_attributes")
+            if isinstance(conversation.get("custom_attributes"), dict)
+            else {}
+        ),
+        "messages": normalized,
+    }
+
+
 def _callback_action(callback_data):
     data = _clean(callback_data, 240)
     if ":" in data:
@@ -2241,6 +2733,7 @@ def _callback_action(callback_data):
         "sam_live_card_keep": "card_keep",
         "sam_live_card_no_reply": "card_no_reply",
         "sam_live_card_done": "card_done",
+        "sam_live_card_resolve": "resolve_card_only",
         "approve_send": "approve_send",
         "close": "close",
         "human": "human",
