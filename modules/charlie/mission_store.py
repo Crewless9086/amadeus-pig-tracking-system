@@ -993,10 +993,12 @@ def consume_final_agent_artifact(
     attempt,
     artifact,
     artifact_sha256,
+    transition_target="",
+    transition_status="complete",
     database_url=None,
     connect_factory=None,
 ):
-    """Atomically claim one valid stage artifact and advance exactly one workflow step."""
+    """Atomically persist one valid stage artifact before changing workflow state."""
     mission_id = _clean_text(mission_id, 90)
     agent = _clean_text(agent, 40).lower()
     execution_id = _clean_text(execution_id, 160)
@@ -1008,8 +1010,39 @@ def consume_final_agent_artifact(
     database_url = _database_url(database_url)
     if not database_url and connect_factory is None:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
-    identity = f"{mission_id}:{execution_id}:{agent}:{int(attempt or 1)}:{artifact_sha256}"
     consumed_at = datetime.now(timezone.utc).isoformat()
+    attempt = int(attempt or 1)
+    transition_target = _clean_text(transition_target, 40).lower()
+    transition_status = _clean_text(transition_status, 40).lower() or "complete"
+    protected_agents = {"risk_agent", "architect", "builder", "tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "visual_qa_reviewer", "reviewer", "publisher"}
+    artifact = dict(artifact)
+    lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+    source_revision = _clean_text(artifact.get("source_revision") or artifact.get("source_commit") or lineage.get("source_commit"), 40).lower()
+    candidate_revision = _clean_text(artifact.get("candidate_revision") or source_revision, 40).lower()
+    expected_revision = _clean_text(artifact.get("expected_revision") or candidate_revision, 40).lower()
+    tested_revision = _clean_text(artifact.get("tested_revision"), 40).lower()
+    candidate_fingerprint = _clean_text(artifact.get("candidate_fingerprint") or lineage.get("candidate_fingerprint"), 128)
+    input_artifact_ids = [_clean_text(value, 500) for value in (artifact.get("input_artifact_ids") or []) if _clean_text(value, 500)]
+    parent_artifact_id = _clean_text(artifact.get("parent_artifact_id"), 500)
+    if parent_artifact_id and parent_artifact_id not in input_artifact_ids:
+        input_artifact_ids.insert(0, parent_artifact_id)
+    sha_pattern = re.compile(r"^[0-9a-f]{40}$")
+    missing_binding = []
+    if agent in protected_agents:
+        if not sha_pattern.fullmatch(source_revision): missing_binding.append("source_revision")
+        if not sha_pattern.fullmatch(candidate_revision): missing_binding.append("candidate_revision")
+        if not sha_pattern.fullmatch(expected_revision): missing_binding.append("expected_revision")
+        if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "visual_qa_reviewer", "reviewer", "publisher"} and not sha_pattern.fullmatch(tested_revision): missing_binding.append("tested_revision")
+        if not candidate_fingerprint: missing_binding.append("candidate_fingerprint")
+        if agent not in {"risk_agent", "architect"} and not input_artifact_ids: missing_binding.append("input_artifact_ids")
+        compared = [value for value in (source_revision, candidate_revision, expected_revision, tested_revision) if value]
+        if compared and any(value != compared[0] for value in compared[1:]): missing_binding.append("revision_mismatch")
+    if missing_binding:
+        return {"success": False, "status": "final_artifact_binding_invalid", "mission_id": mission_id, "agent": agent, "attempt": attempt, "missing_or_invalid": sorted(set(missing_binding))}, 422
+    identity = f"{mission_id}:{execution_id}:{agent}:{attempt}:{candidate_revision}:{candidate_fingerprint}:{artifact_sha256}"
+    artifact.update({"mission_id": mission_id, "execution_id": execution_id, "producing_stage": agent, "agent": agent, "attempt": attempt, "source_revision": source_revision, "source_commit": source_revision, "candidate_revision": candidate_revision, "expected_revision": expected_revision, "candidate_fingerprint": candidate_fingerprint, "parent_artifact_id": parent_artifact_id, "input_artifact_ids": input_artifact_ids, "completed_at": _clean_text(artifact.get("completed_at"), 80) or consumed_at, "created_at": _clean_text(artifact.get("created_at") or lineage.get("created_at"), 80) or consumed_at, "artifact_identity": identity})
+    if tested_revision:
+        artifact["tested_revision"] = tested_revision
     try:
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
@@ -1056,19 +1089,26 @@ def consume_final_agent_artifact(
                 next_agent = ""
                 seen = False
                 updated_workflow = []
+                target_seen = False
                 for item in workflow:
                     current = dict(item) if isinstance(item, dict) else item
                     if not isinstance(current, dict):
                         updated_workflow.append(current)
                         continue
                     current_agent = str(current.get("agent") or "").lower()
-                    if current_agent == agent:
-                        current.update({"status": "complete", "findings": _clean_text(artifact.get("summary"), 1200), "completed_at": consumed_at})
+                    if transition_target:
+                        if current_agent == transition_target:
+                            current.update({"status": "active", "completed_at": None})
+                            next_agent = transition_target
+                            target_seen = True
+                        elif target_seen:
+                            current.update({"status": "pending", "completed_at": None})
+                    elif current_agent == agent:
+                        current.update({"status": transition_status, "findings": _clean_text(artifact.get("summary"), 1200), "completed_at": consumed_at})
                         seen = True
                     else:
-                        if str(current.get("status") or "").lower() == "active":
-                            current["status"] = "pending"
-                    if current_agent != agent and seen and not next_agent and str(current.get("status") or "").lower() != "complete":
+                        if str(current.get("status") or "").lower() == "active": current["status"] = "pending"
+                    if (not transition_target and transition_status == "complete" and current_agent != agent and seen and not next_agent and str(current.get("status") or "").lower() != "complete"):
                         current["status"] = "active"
                         next_agent = current_agent
                     updated_workflow.append(current)
@@ -1078,8 +1118,14 @@ def consume_final_agent_artifact(
                     "agent": agent,
                     "attempt": int(attempt or 1),
                     "sha256": artifact_sha256,
+                    "candidate_revision": candidate_revision,
+                    "candidate_fingerprint": candidate_fingerprint,
+                    "parent_artifact_id": parent_artifact_id,
+                    "input_artifact_ids": input_artifact_ids,
                     "consumed_at": consumed_at,
                     "next_agent": next_agent,
+                    "transition_status": transition_status,
+                    "transition_target": transition_target,
                     "reconciled_after_advance": stage_already_complete,
                 }
                 claims.append(claim)

@@ -86,6 +86,25 @@ class FinalizationCursor(FakeCursor):
         return [("MISSION-1",)]
 
 
+def _bound_artifact(agent, summary="pass", revision=None, fingerprint="candidate-fp", parent="ARTIFACT-PARENT"):
+    revision = revision or ("1" * 40)
+    artifact = {
+        "agent": agent,
+        "summary": summary,
+        "source_commit": revision,
+        "candidate_revision": revision,
+        "expected_revision": revision,
+        "candidate_fingerprint": fingerprint,
+        "evidence_lineage": {"source_commit": revision, "candidate_fingerprint": fingerprint},
+    }
+    if agent in {"tester", "qa_red_team", "product_reviewer", "business_reviewer", "security_reviewer", "evidence_reviewer", "visual_qa_reviewer", "reviewer", "publisher"}:
+        artifact["tested_revision"] = revision
+    if agent not in {"risk_agent", "architect"}:
+        artifact["parent_artifact_id"] = parent
+        artifact["input_artifact_ids"] = [parent]
+    return artifact
+
+
 class CharlieMissionStoreTests(unittest.TestCase):
     def test_atomic_finalizer_is_only_path_to_pr_ready(self):
         revision = "abc123"
@@ -225,7 +244,8 @@ class CharlieMissionStoreTests(unittest.TestCase):
             "mission_vault": {},
         }
         connection = FakeConnection([(metadata,)])
-        artifact = {"summary": "Focused tests passed.", "quality_gate": {"passed": True}}
+        artifact = _bound_artifact("tester", "Focused tests passed.")
+        artifact["quality_gate"] = {"passed": True}
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "tester", "EXEC-1", 1, artifact, "a" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
@@ -241,11 +261,12 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(persisted["final_artifact_ingestion"]["last_claim"]["sha256"], "a" * 64)
 
     def test_final_artifact_duplicate_is_read_only(self):
-        identity = f"MISSION-1:EXEC-1:tester:1:{'b' * 64}"
+        artifact = _bound_artifact("tester")
+        identity = f"MISSION-1:EXEC-1:tester:1:{artifact['candidate_revision']}:{artifact['candidate_fingerprint']}:{'b' * 64}"
         metadata = {"final_artifact_ingestion": {"claims": [{"identity": identity, "agent": "tester"}]}}
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
-            "MISSION-1", "tester", "EXEC-1", 1, {"summary": "pass"}, "b" * 64,
+            "MISSION-1", "tester", "EXEC-1", 1, artifact, "b" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
         self.assertEqual(status_code, 200)
@@ -262,7 +283,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         }
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
-            "MISSION-1", "tester", "EXEC-OLD", 1, {"summary": "Tests passed."}, "c" * 64,
+            "MISSION-1", "tester", "EXEC-OLD", 1, _bound_artifact("tester", "Tests passed."), "c" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
         self.assertEqual(status_code, 200)
@@ -281,7 +302,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "builder", "EXEC-BACKFLOW", 1,
-            {"summary": "Bounded correction completed."}, "d" * 64,
+            _bound_artifact("builder", "Bounded correction completed."), "d" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
 
@@ -305,13 +326,82 @@ class CharlieMissionStoreTests(unittest.TestCase):
         connection = FakeConnection([(metadata,)])
         result, status_code = consume_final_agent_artifact(
             "MISSION-1", "builder", "EXEC-OUT-OF-ORDER", 1,
-            {"summary": "Should not be accepted."}, "e" * 64,
+            _bound_artifact("builder", "Should not be accepted."), "e" * 64,
             database_url="postgres://unit-test", connect_factory=lambda _: connection,
         )
 
         self.assertEqual(status_code, 409)
         self.assertEqual(result["status"], "final_artifact_stage_mismatch")
         self.assertEqual(result["expected_agent"], "risk_agent")
+
+    def test_protected_artifact_binding_failure_blocks_before_transition(self):
+        connection = FakeConnection([({"agent_workflow": [{"agent": "tester", "status": "active"}]},)])
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-1", 1, {"summary": "unbound"}, "f" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 422)
+        self.assertEqual(result["status"], "final_artifact_binding_invalid")
+        self.assertEqual(connection.cursor_instance.executed, [])
+
+    def test_builder_is_durable_before_tester_activation_with_parent_lineage(self):
+        metadata = {"agent_workflow": [
+            {"agent": "architect", "status": "complete"},
+            {"agent": "builder", "status": "active"},
+            {"agent": "tester", "status": "pending"},
+        ], "review_packet": {}, "mission_vault": {}}
+        connection = FakeConnection([(metadata,)])
+        artifact = _bound_artifact("builder", parent="ARCHITECT-DURABLE-ID")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-2", 3, artifact, "1" * 64,
+            database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        persisted = __import__("json").loads(next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)["metadata_json"])
+        self.assertEqual([row["status"] for row in persisted["agent_workflow"]], ["complete", "complete", "active"])
+        stored = persisted["review_packet"]["agent_artifact_history"][-1]
+        self.assertEqual(stored["attempt"], 3)
+        self.assertEqual(stored["parent_artifact_id"], "ARCHITECT-DURABLE-ID")
+        self.assertEqual(stored["artifact_identity"], result["claim"]["identity"])
+
+    def test_tester_backflow_persists_rejected_artifact_before_builder_activation(self):
+        metadata = {"agent_workflow": [
+            {"agent": "builder", "status": "complete"},
+            {"agent": "tester", "status": "active"},
+            {"agent": "qa_red_team", "status": "complete"},
+        ], "review_packet": {}, "mission_vault": {}}
+        connection = FakeConnection([(metadata,)])
+        artifact = _bound_artifact("tester", "release blocker", parent="BUILDER-DURABLE-ID")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "tester", "EXEC-3", 2, artifact, "2" * 64,
+            transition_target="builder", database_url="postgres://unit-test", connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 200)
+        persisted = __import__("json").loads(next(params for sql, params in connection.cursor_instance.executed if "set metadata_json" in sql)["metadata_json"])
+        self.assertEqual([row["status"] for row in persisted["agent_workflow"]], ["active", "pending", "pending"])
+        self.assertEqual(persisted["review_packet"]["agent_artifact_history"][-1]["artifact_identity"], result["claim"]["identity"])
+        self.assertEqual(result["claim"]["transition_target"], "builder")
+
+    def test_attempt_and_candidate_are_part_of_stable_identity(self):
+        metadata = {"agent_workflow": [{"agent": "builder", "status": "active"}], "review_packet": {}, "mission_vault": {}}
+        first = FakeConnection([(metadata,)])
+        second = FakeConnection([(metadata,)])
+        a1 = _bound_artifact("builder", revision="1" * 40)
+        a2 = _bound_artifact("builder", revision="2" * 40)
+        r1, _ = consume_final_agent_artifact("MISSION-1", "builder", "EXEC-4", 2, a1, "3" * 64, database_url="postgres://unit-test", connect_factory=lambda _: first)
+        r2, _ = consume_final_agent_artifact("MISSION-1", "builder", "EXEC-4", 3, a2, "3" * 64, database_url="postgres://unit-test", connect_factory=lambda _: second)
+        self.assertNotEqual(r1["claim"]["identity"], r2["claim"]["identity"])
+        self.assertIn("2" * 40, r2["claim"]["identity"])
+
+    def test_database_failure_cannot_transition_workflow(self):
+        def broken_connect(_):
+            raise RuntimeError("database unavailable")
+        result, status_code = consume_final_agent_artifact(
+            "MISSION-1", "builder", "EXEC-5", 1, _bound_artifact("builder"), "4" * 64,
+            database_url="postgres://unit-test", connect_factory=broken_connect,
+        )
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "final_artifact_ingestion_failed")
 
     def test_update_workflow_items_tolerates_unknown_agent_names(self):
         workflow = [{"agent": "planner", "status": "active", "handoff_to": "builder"}]

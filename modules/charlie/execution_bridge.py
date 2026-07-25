@@ -767,6 +767,9 @@ def run_agent_execution_bridge_v2(
             candidate_manifest,
             previous_artifact=artifacts.get(agent),
         )
+        artifact = _prepare_durable_artifact_contract(
+            mission, artifact, agent, execution_id, stage_attempts[agent], artifacts, agent_sequence,
+        )
         authoritative_pr_files = _authoritative_pr_changed_files(artifact)
         if authoritative_pr_files:
             artifact["authoritative_pr_changed_files"] = authoritative_pr_files
@@ -793,20 +796,23 @@ def run_agent_execution_bridge_v2(
                     "original_quality_gate": quality,
                 }
             elif governance_decision["route"] == "owner_block":
-                return _block_agent_stage(
-                    mission["mission_id"],
-                    execution_id,
-                    ledger,
-                    agent,
-                    stage_paths,
-                    completed,
-                    stage_started,
-                    blocked_reason=governance_decision["reason"],
-                    artifact={**artifact, "quality_gate": quality},
-                    artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
-                    database_url=database_url,
-                    connect_factory=connect_factory,
-                )
+                quality = {
+                    "passed": False,
+                    "reason": governance_decision["reason"],
+                    "owner_block": True,
+                    "original_quality_gate": quality,
+                }
+        if quality["passed"] and agent == "architect":
+            planning_resolution = _record_pre_builder_plan_resolution(
+                mission, artifact, database_url=database_url, connect_factory=connect_factory,
+            )
+            artifact["pre_builder_plan_resolution"] = planning_resolution
+            if not planning_resolution.get("approved"):
+                quality = {
+                    "passed": False,
+                    "reason": planning_resolution.get("reason", "Architect did not resolve every frozen planning gate."),
+                    "ingestion_required_before_transition": True,
+                }
         if not quality["passed"]:
             authoritative_target = _authoritative_targeted_recovery_agent(mission)
             backflow_target = "" if agent == authoritative_target else _resolve_agent_backflow_target(
@@ -818,7 +824,30 @@ def run_agent_execution_bridge_v2(
                     _backflow_fingerprint_count(ledger, blocker_fingerprint)
                     + _durable_backflow_fingerprint_count(mission, blocker_fingerprint)
                 )
-                if prior_same_loop >= HARD_LOOP_REPEAT_LIMIT - 1:
+                loop_detected = prior_same_loop >= HARD_LOOP_REPEAT_LIMIT - 1
+                artifact["quality_gate"] = quality
+                artifact["backflow_fingerprint"] = blocker_fingerprint
+                artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+                if artifact_consumer is None:
+                    ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+                else:
+                    ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                        artifact_consumer,
+                        mission["mission_id"], agent, execution_id, stage_attempts[agent], artifact, artifact_hash,
+                        transition_target="" if loop_detected else backflow_target,
+                        transition_status="blocked" if loop_detected else "complete",
+                        database_url=database_url, connect_factory=connect_factory,
+                    )
+                if ingestion_status >= 400:
+                    return _block_agent_stage(
+                        mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                        blocked_reason=f"Final artifact ingestion blocked before backflow: {ingestion.get('status', 'unknown')}.",
+                        artifact={**artifact, "artifact_ingestion": ingestion, "ingestion_blocked": True},
+                        artifacts=artifacts, database_url=database_url, connect_factory=connect_factory,
+                    )
+                artifact["artifact_ingestion"] = ingestion
+                artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
+                if loop_detected:
                     backflow_counts[backflow_target] = backflow_counts.get(backflow_target, 0) + 1
                     _append_backflow_event(
                         ledger,
@@ -896,19 +925,28 @@ def run_agent_execution_bridge_v2(
                     "agent_ledger_path": str(output_dir / f"{execution_id}.agent-ledger.json"),
                 })
                 continue
+            artifact["quality_gate"] = quality
+            artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
+            if artifact_consumer is None:
+                ingestion, ingestion_status = ({"success": False, "status": "not_configured"}, 503)
+            else:
+                ingestion, ingestion_status = _consume_final_artifact_with_retry(
+                    artifact_consumer, mission["mission_id"], agent, execution_id,
+                    stage_attempts[agent], artifact, artifact_hash, transition_status="blocked",
+                    database_url=database_url, connect_factory=connect_factory,
+                )
+            if ingestion_status < 400:
+                artifact["artifact_ingestion"] = ingestion
+                artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
+            else:
+                artifact["artifact_ingestion"] = ingestion
+                artifact["ingestion_blocked"] = True
             return _block_agent_stage(
-                mission["mission_id"],
-                execution_id,
-                ledger,
-                agent,
-                stage_paths,
-                completed,
-                stage_started,
-                blocked_reason=quality["reason"],
-                artifact={**artifact, "quality_gate": quality},
-                artifacts={**artifacts, agent: {**artifact, "quality_gate": quality}},
-                database_url=database_url,
-                connect_factory=connect_factory,
+                mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
+                blocked_reason=(quality["reason"] if ingestion_status < 400 else
+                                f"Final artifact ingestion blocked: {ingestion.get('status', 'unknown')}"),
+                artifact=artifact, artifacts={**artifacts, agent: artifact},
+                database_url=database_url, connect_factory=connect_factory,
             )
         artifact["quality_gate"] = quality
         artifact_hash = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
@@ -931,6 +969,7 @@ def run_agent_execution_bridge_v2(
                 database_url=database_url, connect_factory=connect_factory,
             )
         artifact["artifact_ingestion"] = ingestion
+        artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
         _record_acceptance_progress(
             mission,
             agent,
@@ -941,21 +980,6 @@ def run_agent_execution_bridge_v2(
         )
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
         artifacts[agent] = artifact
-        if agent == "architect":
-            planning_resolution = _record_pre_builder_plan_resolution(
-                mission,
-                artifact,
-                database_url=database_url,
-                connect_factory=connect_factory,
-            )
-            artifact["pre_builder_plan_resolution"] = planning_resolution
-            if not planning_resolution.get("approved"):
-                return _block_agent_stage(
-                    mission["mission_id"], execution_id, ledger, agent, stage_paths, completed, stage_started,
-                    blocked_reason=planning_resolution.get("reason", "Architect did not resolve every frozen planning gate."),
-                    artifact=artifact, artifacts=artifacts,
-                    database_url=database_url, connect_factory=connect_factory,
-                )
         if not ingestion_owned_stage:
             _record_mission_memory_event(
                 mission,
@@ -1016,7 +1040,9 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
     if not agent:
         agent = next((str(item.get("agent") or "").lower() for item in workflow if isinstance(item, dict) and str(item.get("status") or "").lower() != "complete"), "")
     artifact = _agent_artifact_from_final(agent, final_text)
-    artifact.update({"agent": agent, "artifact_path": str(path), "recovered_after_restart": True})
+    attempt_match = re.search(r"\.attempt(\d+)\.final\.md$", path.name, re.IGNORECASE)
+    attempt = int(artifact.get("attempt") or (attempt_match.group(1) if attempt_match else 1))
+    artifact.update({"agent": agent, "attempt": attempt, "artifact_path": str(path), "recovered_after_restart": True})
     validation = _validate_agent_artifact(agent, artifact)
     if not validation["valid"]:
         return _quarantine_pending_final_artifact(
@@ -1032,11 +1058,30 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
         )
     artifact["quality_gate"] = quality
     execution_id = str(status.get("agent_ledger", {}).get("execution_id") or path.name.split(f".{agent}.")[0] or "recovered")
+    packet = (mission.get("metadata") or {}).get("review_packet") or {}
+    artifacts = dict(packet.get("agent_artifacts") or {})
+    manifest_artifacts = {**artifacts, agent: artifact}
+    candidate_manifest = build_candidate_manifest(
+        mission, manifest_artifacts,
+        source_commit=str(artifact.get("source_revision") or artifact.get("source_commit") or "").strip() or _release_candidate_revision_sha(mission, manifest_artifacts),
+    )
+    artifact = bind_artifact_to_candidate(
+        artifact, agent, execution_id, attempt, candidate_manifest, previous_artifact=artifacts.get(agent),
+    )
+    artifact = _prepare_durable_artifact_contract(
+        mission, artifact, agent, execution_id, attempt, artifacts, _mission_agent_sequence(mission),
+    )
     result, status_code = consume_final_agent_artifact(
-        mission_id, agent, execution_id, int(artifact.get("attempt") or 1), artifact,
+        mission_id, agent, execution_id, attempt, artifact,
         hashlib.sha256(final_text.encode("utf-8")).hexdigest(),
         database_url=database_url, connect_factory=connect_factory,
     )
+    if status_code == 422 and result.get("status") == "final_artifact_binding_invalid":
+        return _quarantine_pending_final_artifact(
+            mission, agent,
+            "Recovered artifact candidate binding is incomplete: " + ", ".join(result.get("missing_or_invalid") or []),
+            database_url=database_url, connect_factory=connect_factory,
+        )
     if status_code == 409 and result.get("status") == "final_artifact_stage_mismatch":
         return _quarantine_pending_final_artifact(
             mission,
@@ -1061,13 +1106,15 @@ def recover_pending_final_agent_artifact(mission_id="", database_url=None, conne
 
 def _consume_final_artifact_with_retry(
     consumer, mission_id, agent, execution_id, attempt, artifact, artifact_hash,
-    *, database_url=None, connect_factory=None, max_attempts=3, sleep_fn=time.sleep,
+    *, transition_target="", transition_status="complete", database_url=None,
+    connect_factory=None, max_attempts=3, sleep_fn=time.sleep,
 ):
     """Retry only transient ingestion failures; never rerun completed agent work for them."""
     last_result, last_status = {"success": False, "status": "not_configured"}, 503
     for ingestion_attempt in range(1, max(1, int(max_attempts or 1)) + 1):
         last_result, last_status = consumer(
             mission_id, agent, execution_id, attempt, artifact, artifact_hash,
+            transition_target=transition_target, transition_status=transition_status,
             database_url=database_url, connect_factory=connect_factory,
         )
         if not (
@@ -6812,6 +6859,44 @@ def _loop_recovery_next_action(agent, backflow_target, reason, artifact):
     if base:
         details.append(f"Agent requested action: {base}")
     return " ".join(details)
+
+
+def _durable_artifact_identity(artifact):
+    artifact = artifact if isinstance(artifact, dict) else {}
+    ingestion = artifact.get("artifact_ingestion") if isinstance(artifact.get("artifact_ingestion"), dict) else {}
+    claim = ingestion.get("claim") if isinstance(ingestion.get("claim"), dict) else {}
+    return str(artifact.get("artifact_identity") or claim.get("identity") or "").strip()
+
+
+def _prepare_durable_artifact_contract(mission, artifact, agent, execution_id, attempt, artifacts, agent_sequence=None):
+    artifact = dict(artifact if isinstance(artifact, dict) else {})
+    lineage = artifact.get("evidence_lineage") if isinstance(artifact.get("evidence_lineage"), dict) else {}
+    revision = str(artifact.get("source_revision") or artifact.get("source_commit") or lineage.get("source_commit") or "").strip().lower()
+    artifact.update({
+        "mission_id": str((mission or {}).get("mission_id") or "").strip(),
+        "execution_id": str(execution_id or "").strip(),
+        "producing_stage": str(agent or "").strip().lower(),
+        "agent": str(agent or "").strip().lower(),
+        "attempt": int(attempt or 1),
+        "source_revision": revision,
+        "candidate_revision": str(artifact.get("candidate_revision") or revision).strip().lower(),
+        "expected_revision": str(artifact.get("expected_revision") or revision).strip().lower(),
+    })
+    sequence = list(agent_sequence or AGENT_SEQUENCE)
+    try:
+        index = sequence.index(agent)
+    except ValueError:
+        index = 0
+    inputs = [str(value).strip() for value in (artifact.get("input_artifact_ids") or []) if str(value).strip()]
+    if not inputs:
+        for upstream in reversed(sequence[:index]):
+            identity = _durable_artifact_identity((artifacts or {}).get(upstream))
+            if identity:
+                inputs.append(identity)
+                break
+    artifact["input_artifact_ids"] = inputs
+    artifact["parent_artifact_id"] = str(artifact.get("parent_artifact_id") or (inputs[0] if inputs else "")).strip()
+    return artifact
 
 
 def _discard_downstream_artifacts(artifacts, target_agent, agent_sequence=None):
