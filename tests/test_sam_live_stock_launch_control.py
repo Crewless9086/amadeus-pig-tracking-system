@@ -1,7 +1,10 @@
 import json
+import inspect
 import types
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Lock
 from unittest.mock import patch
 
 from modules.sales import sam_live_stock_launch_control as launch
@@ -1675,5 +1678,375 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "card_evidence_incomplete")
         self.assertEqual(result["cards"], [])
         self.assertFalse(result["writes_performed"])
+
+    def _resolve_card_fixture(self, generation="reconcile-1983-recovery-2"):
+        conversation = {
+            "id": "1983",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "custom_attributes": {"conversation_mode": "HUMAN", "sales_lane": "unknown"},
+            "messages": [
+                {"id": "758530001", "message_type": 0, "created_at": 100},
+                {"id": "758530099", "message_type": 1, "created_at": 120},
+            ],
+        }
+        card = {
+            "conversation_id": "1983",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "customer_message_id": "758530001",
+            "telegram_chat_id": "555",
+            "telegram_message_id": "2865",
+            "created_at": 110,
+            "authoritative": True,
+        }
+        built = launch.build_sam_live_stock_resolve_card_candidate(
+            conversation,
+            card,
+            reconciliation_generation=generation,
+            lifecycle_card_identity="SAM-LIVE-CARD-8FF523977E92",
+        )
+        original = {
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "chatwoot_conversation_id": "1983",
+            "chatwoot_message_id": "758530001",
+        }
+        candidate_event = launch.build_sam_live_stock_resolve_candidate_event(
+            original, built.get("candidate"),
+        )
+        return conversation, card, built, original, candidate_event
+
+    def _resolve_active_card_loader(self, built):
+        candidate = built["candidate"]
+        return lambda conversation_id: ({
+            "success": True,
+            "lifecycle_card_identity": candidate["lifecycle_card_identity"],
+            "card": {
+                "conversation_id": candidate["conversation_id"],
+                "telegram_chat_id": candidate["telegram_chat_id"],
+                "telegram_message_id": candidate["telegram_message_id"],
+                "state": "action_failed",
+            },
+        }, 200)
+
+    def test_resolve_card_planner_renderer_callback_and_executor_share_one_action(self):
+        conversation, card, built, original, candidate_event = self._resolve_card_fixture()
+        self.assertTrue(built["success"])
+        self.assertEqual(built["reconciliation"]["cards"][0]["action"], "resolve_card_only")
+        self.assertEqual(built["button"]["text"], "Resolve Card")
+        self.assertEqual(built["button"]["action"], "resolve_card_only")
+        self.assertEqual(
+            built["button"]["callback_data"],
+            f"sam_live_card_resolve:{built['candidate']['action_identity']}",
+        )
+        parsed = launch._callback_action(built["button"]["callback_data"])
+        self.assertEqual(parsed, {
+            "action": "resolve_card_only",
+            "escalation_id": built["candidate"]["action_identity"],
+        })
+
+        calls = {"records": [], "deletes": [], "chatwoot": [], "customers": []}
+
+        def loader(identity):
+            event = candidate_event if identity == built["candidate"]["action_identity"] else original
+            return {"success": True, "event": event}, 200
+
+        def recorder(event):
+            calls["records"].append(event)
+            return {"success": True, "created": True, "review_event_id": event["review_event_id"]}, 201
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": built["button"]["callback_data"],
+                "telegram_chat_id": "555",
+                "telegram_message_id": "2865",
+            },
+            environ={
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+            },
+            review_event_loader=loader,
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda conversation_id, source: conversation,
+            evidence_recorder=recorder,
+            telegram_deleter=lambda token, chat_id, message_id: calls["deletes"].append(
+                (chat_id, message_id)
+            ) or {"ok": True},
+            chatwoot_writer=lambda *args: calls["chatwoot"].append(args),
+            chatwoot_sender=lambda *args: calls["customers"].append(args),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["action"], "resolve_card_only")
+        self.assertEqual(result["cleanup_mode"], "deleted")
+        self.assertEqual(calls["deletes"], [("555", "2865")])
+        self.assertEqual(calls["chatwoot"], [])
+        self.assertEqual(calls["customers"], [])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+        self.assertFalse(result["changes_stock"])
+        self.assertFalse(result["writes_farm_data"])
+        self.assertEqual(calls["records"][0]["review_json"]["resolve_card_only"]["state"], "action_claimed")
+        self.assertEqual(calls["records"][1]["review_json"]["owner_card"]["state"], "resolved")
+        self.assertEqual(calls["records"][1]["review_json"]["owner_card"]["action"], "resolve_card_only")
+        self.assertEqual(calls["records"][2]["review_json"]["resolve_card_only"]["state"], "resolved")
+        self.assertEqual(calls["records"][2]["recommended_action"], "resolve_card_only_deleted")
+
+    def test_resolve_card_delete_unavailable_edits_only_exact_card_resolved_without_keyboard(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        edits = []
+        records = []
+
+        def loader(identity):
+            return {
+                "success": True,
+                "event": candidate_event if identity == built["candidate"]["action_identity"] else original,
+            }, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": built["button"]["callback_data"],
+                "telegram_chat_id": "555",
+                "telegram_message_id": "2865",
+            },
+            environ={launch.TELEGRAM_BOT_TOKEN_ENV: "token"},
+            review_event_loader=loader,
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_editor=lambda token, chat_id, message_id, text, markup: edits.append(
+                (chat_id, message_id, text, markup)
+            ) or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["cleanup_mode"], "resolved_edit")
+        self.assertEqual(edits, [("555", "2865", "Resolved", {"inline_keyboard": []})])
+        self.assertEqual(records[-2]["review_json"]["owner_card"]["state"], "resolved")
+        self.assertEqual(records[-1]["review_json"]["resolve_card_only"]["state"], "resolved")
+        self.assertEqual(records[-1]["recommended_action"], "resolve_card_only_resolved_edit")
+
+    def test_resolve_card_button_is_exposed_only_after_candidate_persistence(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        records = []
+        prepared = launch.prepare_sam_live_stock_resolve_card_action(
+            conversation,
+            card,
+            reconciliation_generation=built["candidate"]["reconciliation_generation"],
+            lifecycle_card_identity=built["candidate"]["lifecycle_card_identity"],
+            original_event=original,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+        )
+        self.assertTrue(prepared["success"])
+        self.assertEqual(prepared["status"], "resolve_card_candidate_persisted")
+        self.assertEqual(prepared["button"]["text"], "Resolve Card")
+        self.assertEqual(records[0]["review_event_id"], prepared["candidate"]["action_identity"])
+
+        withheld = launch.prepare_sam_live_stock_resolve_card_action(
+            conversation,
+            card,
+            reconciliation_generation="new-generation",
+            lifecycle_card_identity=built["candidate"]["lifecycle_card_identity"],
+            original_event=original,
+            evidence_recorder=lambda event: ({"success": False}, 503),
+        )
+        self.assertFalse(withheld["success"])
+        self.assertEqual(withheld["button"], {})
+
+    def test_resolve_card_newer_customer_message_invalidates_before_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        conversation["messages"].append(
+            {"id": "new-customer", "message_type": 0, "created_at": 130}
+        )
+        records = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event),
+            telegram_deleter=lambda *args: self.fail("cleanup must not run"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_fresh_chronology_invalidated")
+        self.assertTrue(result["card_retained"])
+        self.assertEqual(records, [])
+
+    def test_resolve_card_identity_mismatch_and_missing_evidence_retain_card(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        for payload in (
+            {"telegram_chat_id": "other", "telegram_message_id": "2865"},
+            {"telegram_chat_id": "555", "telegram_message_id": "other"},
+            {"telegram_chat_id": "", "telegram_message_id": ""},
+        ):
+            with self.subTest(payload=payload):
+                result, status = launch.execute_sam_live_stock_resolve_card_only(
+                    candidate_event,
+                    payload,
+                    review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+                    chronology_loader=lambda *_args: conversation,
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(result["status"], "resolve_card_exact_telegram_identity_mismatch")
+                self.assertTrue(result["card_retained"])
+
+        tampered = json.loads(json.dumps(candidate_event))
+        tampered["review_json"]["resolve_card_only"]["lifecycle_card_identity"] = "other"
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            tampered,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_candidate_invalid")
+
+    def test_resolve_card_latest_active_card_mismatch_fails_before_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        records = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=lambda conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": "SAM-LIVE-CARD-NEWER",
+                "card": {
+                    "conversation_id": conversation_id,
+                    "telegram_chat_id": "555",
+                    "telegram_message_id": "9999",
+                },
+            }, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event),
+            telegram_deleter=lambda *args: self.fail("cleanup must not run"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_active_identity_mismatch")
+        self.assertTrue(result["card_retained"])
+        self.assertEqual(records, [])
+
+    def test_resolve_card_ambiguous_delete_records_failure_and_never_falls_back_or_retries(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        records = []
+        edits = []
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            candidate_event,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+            environ={
+                launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+                launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+            },
+            review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+            active_card_loader=self._resolve_active_card_loader(built),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_deleter=lambda *args: (_ for _ in ()).throw(TimeoutError("unknown outcome")),
+            telegram_editor=lambda *args: edits.append(args),
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["status"], "resolve_card_cleanup_outcome_ambiguous")
+        self.assertTrue(result["automatic_retry_prohibited"])
+        self.assertEqual(edits, [])
+        self.assertEqual(records[-1]["review_json"]["resolve_card_only"]["state"], "cleanup_failed")
+        self.assertEqual(
+            records[-1]["review_json"]["resolve_card_only"]["outcome"],
+            "telegram_delete_outcome_ambiguous",
+        )
+
+    def test_resolve_card_replay_and_concurrent_duplicate_are_withheld_by_one_claim(self):
+        conversation, _card, built, original, candidate_event = self._resolve_card_fixture()
+        created_ids = set()
+        deletes = []
+        record_lock = Lock()
+
+        def recorder(event):
+            with record_lock:
+                created = event["review_event_id"] not in created_ids
+                created_ids.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        def execute():
+            return launch.execute_sam_live_stock_resolve_card_only(
+                candidate_event,
+                {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+                environ={
+                    launch.TELEGRAM_CLEANUP_ENABLED_ENV: "1",
+                    launch.TELEGRAM_BOT_TOKEN_ENV: "token",
+                },
+                review_event_loader=lambda identity: ({"success": True, "event": original}, 200),
+                active_card_loader=self._resolve_active_card_loader(built),
+                chronology_loader=lambda *_args: conversation,
+                evidence_recorder=recorder,
+                telegram_deleter=lambda *args: deletes.append(args) or {"ok": True},
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: execute(), range(2)))
+        statuses = sorted(status for _result, status in results)
+        self.assertEqual(statuses, [200, 409])
+        replay = next(result for result, status in results if status == 409)
+        self.assertEqual(replay["status"], "resolve_card_replay_withheld")
+        self.assertTrue(replay["automatic_retry_prohibited"])
+        self.assertEqual(len(deletes), 1)
+
+        replay_again, replay_again_status = execute()
+        self.assertEqual(replay_again_status, 409)
+        self.assertEqual(replay_again["status"], "resolve_card_replay_withheld")
+        self.assertEqual(len(deletes), 1)
+
+    def test_failed_legacy_card_done_claim_is_immutable_and_new_generation_is_distinct(self):
+        _conversation, _card, first, _original, _event = self._resolve_card_fixture(
+            generation="reconcile-1983-original"
+        )
+        _conversation, _card, recovery, _original, _event = self._resolve_card_fixture(
+            generation="reconcile-1983-recovery-2"
+        )
+        legacy_claim = {
+            "review_event_id": "SAM-LIVE-CARD-22F84CA344BB",
+            "state": "action_claimed",
+            "action": "card_done",
+        }
+        legacy_failure = {
+            "review_event_id": "SAM-LIVE-CARD-4CC9101B8670",
+            "state": "action_failed",
+            "action": "card_done:chatwoot_auto_failed",
+        }
+        before = json.dumps([legacy_claim, legacy_failure], sort_keys=True)
+        self.assertNotEqual(
+            first["candidate"]["action_identity"],
+            recovery["candidate"]["action_identity"],
+        )
+        self.assertTrue(recovery["button"]["callback_data"].startswith("sam_live_card_resolve:"))
+        self.assertEqual(json.dumps([legacy_claim, legacy_failure], sort_keys=True), before)
+
+    def test_proven_human_keeps_done_return_to_sam_button_and_ordering(self):
+        row = {"action": "candidate_auto_then_resolve"}
+        button = launch.build_sam_live_stock_reconciliation_button(
+            row, review_event_id="SAM-LIVE-REVIEW-HUMAN"
+        )
+        self.assertEqual(button, {
+            "text": "Done - Return to SAM",
+            "callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN",
+            "action": "return_to_auto_then_resolve",
+        })
+        source = inspect.getsource(launch._process_canonical_owner_card_action)
+        self.assertLess(source.index("apply_sam_live_stock_chatwoot_takeover"), source.index("delete_sam_live_stock_telegram_escalation"))
+
+    def test_planner_executor_contract_cannot_pass_when_actions_disagree(self):
+        _conversation, _card, built, _original, candidate_event = self._resolve_card_fixture()
+        self.assertEqual(built["reconciliation"]["cards"][0]["action"], "resolve_card_only")
+        mismatched = json.loads(json.dumps(candidate_event))
+        mismatched["review_json"]["resolve_card_only"]["action_type"] = "card_done"
+        result, status = launch.execute_sam_live_stock_resolve_card_only(
+            mismatched,
+            {"telegram_chat_id": "555", "telegram_message_id": "2865"},
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "resolve_card_candidate_invalid")
 if __name__ == "__main__":
     unittest.main()
