@@ -4505,11 +4505,13 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     return "Needs Data", "No trusted allocation rule matched this pig yet."
 
 
-def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True):
+def get_pig_allocation_readiness(today=None, allow_sheet_fallback=True, connect_factory=None):
     today = today or datetime.now().date()
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    supabase_inputs = _try_supabase_read(farm_supabase_read_service.get_allocation_input_rows)
+    supabase_inputs = _try_supabase_read(
+        farm_supabase_read_service.get_allocation_input_rows, connect_factory,
+    )
     if supabase_inputs is not None:
         overview_rows = supabase_inputs.get("overview_rows", [])
         pig_master_rows = supabase_inputs.get("pig_master_rows", [])
@@ -5264,8 +5266,12 @@ def _meat_planning_row(row, planning_bucket):
     }
 
 
-def get_meat_planning_summary(today=None):
-    allocation = get_pig_allocation_readiness(today=today)
+def get_meat_planning_summary(today=None, connect_factory=None, allow_sheet_fallback=True):
+    allocation = get_pig_allocation_readiness(
+        today=today,
+        allow_sheet_fallback=allow_sheet_fallback,
+        connect_factory=connect_factory,
+    )
     planning_rows = []
     buckets = {
         "ready_now": 0,

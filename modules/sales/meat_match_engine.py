@@ -19,17 +19,24 @@ ACTIVE_RESERVATION_STATUSES = {
 }
 
 
-def get_sales_lead_meat_match(lead_id, payload=None, database_url=None):
+def get_sales_lead_meat_match(lead_id, payload=None, database_url=None, database_deadline=None):
     payload = payload if isinstance(payload, dict) else {}
-    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    contract_result, contract_status = get_sales_lead_preorder_contract(
+        lead_id, database_url=database_url, database_deadline=database_deadline,
+    )
     if contract_status != 200:
         return contract_result, contract_status
 
-    price_result, price_status = list_meat_price_book_entries(limit=100, database_url=database_url)
+    price_result, price_status = list_meat_price_book_entries(
+        limit=100, database_url=database_url, database_deadline=database_deadline,
+    )
     if price_status != 200:
         return price_result, price_status
 
-    planning = get_meat_planning_summary()
+    planning = get_meat_planning_summary(
+        connect_factory=database_deadline.connection_factory() if database_deadline is not None else None,
+        allow_sheet_fallback=database_deadline is None,
+    )
     if not planning.get("success"):
         return {
             "success": False,
@@ -42,6 +49,7 @@ def get_sales_lead_meat_match(lead_id, payload=None, database_url=None):
     active_reservations = _fetch_active_carcass_reservations(
         [item.get("pig_id") for item in planning.get("pigs") or []],
         database_url=database_url,
+        database_deadline=database_deadline,
     )
     if active_reservations is None:
         return {
@@ -229,7 +237,7 @@ def _product_type(value):
     return ""
 
 
-def _fetch_active_carcass_reservations(pig_ids, database_url=None):
+def _fetch_active_carcass_reservations(pig_ids, database_url=None, database_deadline=None):
     pig_ids = sorted({str(item or "").strip() for item in pig_ids or [] if str(item or "").strip()})
     if not pig_ids:
         return []
@@ -241,7 +249,12 @@ def _fetch_active_carcass_reservations(pig_ids, database_url=None):
     except ImportError:
         return None
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -256,7 +269,7 @@ def _fetch_active_carcass_reservations(pig_ids, database_url=None):
                 )
                 rows = cursor.fetchall()
     except Exception:
-        return []
+        return None
     return [_reservation_row(row) for row in rows]
 
 

@@ -627,7 +627,7 @@ def record_sam_meat_intake_lead(payload, database_url=None):
     return result, status_code
 
 
-def list_meat_price_book_entries(limit=50, database_url=None):
+def list_meat_price_book_entries(limit=50, database_url=None, database_deadline=None):
     parsed_limit = _bounded_limit(limit)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -648,7 +648,12 @@ def list_meat_price_book_entries(limit=50, database_url=None):
         return _price_book_unavailable("dependency_missing", configured=True), 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -1063,7 +1068,7 @@ def list_sales_leads(limit=20, status_filter=None, database_url=None):
     }, 200
 
 
-def get_sales_lead_preorder_contract(lead_id, database_url=None):
+def get_sales_lead_preorder_contract(lead_id, database_url=None, database_deadline=None):
     lead_id = _clean_text(lead_id, 100)
     if not lead_id:
         return {"success": False, "status": "lead_id_required", **_false_flags()}, 400
@@ -1078,7 +1083,12 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
         return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
 
     try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
+        connection_context = (
+            database_deadline.connect(database_url)
+            if database_deadline is not None
+            else psycopg.connect(database_url, connect_timeout=10)
+        )
+        with connection_context as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
