@@ -50,7 +50,7 @@ from modules.sales.sam_farm_knowledge import (
     public_profile,
 )
 from modules.sales.sam_shared_context import build_sam_v3_context_packet
-from modules.sales.sam_sales_router import LANE_LIVE_STOCK, classify_sam_sales_lane
+from modules.sales.sam_sales_router import LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -177,7 +177,12 @@ def handle_sam_meat_chatwoot_inbound(
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     lane_route = classify_sam_sales_lane(inbound["content"])
-    live_stock_context = _conversation_live_stock_context(inbound.get("conversation_id"))
+    definitive_meat = lane_route.get("lane") == LANE_MEAT and float(lane_route.get("confidence") or 0) >= 0.9
+    live_stock_context = (
+        {"active": False, "status": "not_read_definitive_current_meat"}
+        if definitive_meat
+        else _conversation_live_stock_context(inbound.get("conversation_id"))
+    )
     context_errors = []
     try:
         lead_context = _conversation_lead_context(inbound.get("conversation_id"))
@@ -187,9 +192,36 @@ def handle_sam_meat_chatwoot_inbound(
     explicit_live_stock = lane_route.get("lane") == LANE_LIVE_STOCK and (
         not lead_context.get("lead_id") or _message_explicitly_requests_live_stock(inbound.get("content"))
     )
-    stale_or_ambiguous_live_stock = live_stock_context.get("active") and not lead_context.get("lead_id")
-    if explicit_live_stock or stale_or_ambiguous_live_stock:
+    lane_decision = build_sam_sales_lane_decision_packet(
+        lane_route,
+        live_stock_context,
+        final_route=LANE_LIVE_STOCK if explicit_live_stock else LANE_MEAT,
+        cross_lane_handoff_allowed=bool(explicit_live_stock),
+    )
+    if live_stock_context.get("active") and not lead_context.get("lead_id") and not definitive_meat and not explicit_live_stock:
+        return {
+            "success": True,
+            "status": "sam_meat_lane_clarification_required",
+            "processed": False,
+            "sent": False,
+            "inbound": inbound,
+            "facts": facts,
+            "lane_route": lane_route,
+            "live_stock_context": live_stock_context,
+            "lane_decision": lane_decision,
+            "sam_decision": {
+                "reply_text": "",
+                "owner_gate_required": True,
+                "blockers": ["ambiguous_current_lane_with_live_stock_context"],
+                "lane_decision": lane_decision,
+            },
+            "send_status": "ambiguous_lane_no_automatic_reply",
+            "policy": sam_meat_webhook_policy(source),
+            **_authority_flags(False, False),
+        }, 200
+    if explicit_live_stock:
         decision = build_sam_meat_live_stock_handoff_decision(inbound, facts, lane_route, live_stock_context)
+        decision["lane_decision"] = lane_decision
         return {
             "success": True,
             "status": "sam_meat_live_stock_handoff",
@@ -198,6 +230,7 @@ def handle_sam_meat_chatwoot_inbound(
             "facts": facts,
             "lane_route": lane_route,
             "live_stock_context": live_stock_context,
+            "lane_decision": lane_decision,
             "lead_payload": {},
             "lead_result": {
                 "success": False,
@@ -285,6 +318,8 @@ def handle_sam_meat_chatwoot_inbound(
         prior_context=prior_context,
         agent_decision=agent_decision,
     )
+    decision["lane_decision"] = lane_decision
+
     if booking_confirmation.get("recorded"):
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
@@ -409,6 +444,7 @@ def handle_sam_meat_chatwoot_inbound(
         "pop_capture": pop_capture,
         "fulfillment_capture": fulfillment_capture,
         "chatwoot_hygiene": chatwoot_hygiene,
+        "lane_decision": lane_decision,
         "sam_decision": decision,
         "response_review": response_review,
         "sent": sent,
@@ -1531,6 +1567,29 @@ def _review_sam_response(decision, inbound, facts, prior_context=None, agent_dec
         "blocked_reasons": sorted(set(blocked)),
         "confidence_target": 96,
         "agent_decision": _agent_decision_summary(agent_decision),
+    }
+
+
+def build_sam_sales_lane_decision_packet(lane_route, live_stock_context, *, final_route, cross_lane_handoff_allowed):
+    lane_route = lane_route if isinstance(lane_route, dict) else {}
+    live_stock_context = live_stock_context if isinstance(live_stock_context, dict) else {}
+    return {
+        "version": "sam_sales_lane_decision_v1",
+        "current_message_classification": {
+            "lane": lane_route.get("lane"),
+            "confidence": float(lane_route.get("confidence") or 0),
+            "evidence_source": "current_message_sales_router",
+            "reasons": list(lane_route.get("reasons") or []),
+        },
+        "context_state": {
+            "livestock_status": live_stock_context.get("status"),
+            "livestock_active": bool(live_stock_context.get("active")),
+            "read_failed": live_stock_context.get("status") == "live_stock_context_read_failed",
+            "context_influenced_route": False,
+        },
+        "final_route": final_route,
+        "cross_lane_handoff_allowed": bool(cross_lane_handoff_allowed),
+        "writes_performed": False,
     }
 
 

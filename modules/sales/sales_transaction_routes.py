@@ -428,9 +428,9 @@ def sam_meat_chatwoot_inbound():
     payload = request.get_json(silent=True) or {}
     try:
         result, status_code = handle_sam_meat_chatwoot_inbound(payload)
-        if result.get("status") == "sam_meat_live_stock_handoff":
+        if result.get("status") == "sam_meat_live_stock_handoff" and _valid_sam_live_stock_handoff_packet(result):
             live_result, live_status_code = handle_sam_live_stock_chatwoot_inbound(payload)
-            _attach_sam_live_stock_review_event(live_result, payload)
+            _attach_sam_live_stock_review_event(live_result, payload, event_source="sam_meat_internal_live_stock_handoff")
             result["sam_live_stock_handoff"] = {
                 "status_code": live_status_code,
                 "status": live_result.get("status"),
@@ -439,6 +439,12 @@ def sam_meat_chatwoot_inbound():
                 "sam_decision": live_result.get("sam_decision") if isinstance(live_result.get("sam_decision"), dict) else {},
                 "conversation_review_event": live_result.get("conversation_review_event") if isinstance(live_result.get("conversation_review_event"), dict) else {},
                 "policy": live_result.get("policy") if isinstance(live_result.get("policy"), dict) else {},
+            }
+        elif result.get("status") == "sam_meat_live_stock_handoff":
+            result["sam_live_stock_handoff"] = {
+                "status": "withheld_invalid_lane_decision",
+                "processed": False,
+                "sent": False,
             }
     except Exception as exc:
         result, status_code = {
@@ -457,7 +463,20 @@ def sam_meat_chatwoot_inbound():
     return jsonify(result), status_code
 
 
-def _attach_sam_live_stock_review_event(result, raw_payload):
+def _valid_sam_live_stock_handoff_packet(result):
+    packet = result.get("lane_decision") if isinstance(result, dict) else {}
+    packet = packet if isinstance(packet, dict) else {}
+    current = packet.get("current_message_classification") if isinstance(packet, dict) else {}
+    return (
+        packet.get("version") == "sam_sales_lane_decision_v1"
+        and current.get("lane") == "live_stock_sales"
+        and float(current.get("confidence") or 0) >= 0.9
+        and packet.get("final_route") == "live_stock_sales"
+        and packet.get("cross_lane_handoff_allowed") is True
+    )
+
+
+def _attach_sam_live_stock_review_event(result, raw_payload, *, event_source="sam_live_stock_direct_inbound"):
     if not result.get("processed") or not isinstance(result.get("sam_decision"), dict):
         return
     decision = result["sam_decision"]
@@ -467,7 +486,7 @@ def _attach_sam_live_stock_review_event(result, raw_payload):
         decision.get("facts") if isinstance(decision.get("facts"), dict) else {},
         decision,
         review,
-        event_source="sam_meat_internal_live_stock_handoff",
+        event_source=event_source,
     )
     learning_result, learning_status = record_sam_live_stock_review_event(event)
     delivery = decision.get("routine_reply_delivery") if isinstance(decision.get("routine_reply_delivery"), dict) else {}
