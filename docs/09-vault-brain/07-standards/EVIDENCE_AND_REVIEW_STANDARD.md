@@ -59,6 +59,12 @@ gates, escalation ownership, and the final customer or owner outcome. It must
 report the defined journey metrics with their denominators; document citations
 alone do not satisfy this gate.
 
+For any customer-visible outbound path, review evidence must follow
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+HTTP 2xx, mock success, n8n success, or Chatwoot `status=sent` is acceptance
+evidence only. Exact-head tests cannot substitute for one controlled real
+provider delivered/read proof required for canary or autonomy graduation.
+
 ## Release Evidence
 
 Release/merge/deploy review must include:

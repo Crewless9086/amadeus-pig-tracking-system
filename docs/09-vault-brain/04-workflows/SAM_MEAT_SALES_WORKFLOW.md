@@ -23,6 +23,12 @@ alone is valid and must not cause owner interruption or Telegram escalation.
 Conversation ownership (`AUTO_GENERAL`, `AUTO_SPECIALIST`, or `HUMAN`) remains
 independent from business lane.
 
+Every Meat reply, quote, invoice, or attachment uses
+[`OUTBOUND_DELIVERY_TRUTH_STANDARD.md`](../07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md).
+Preparation, attempt claim, Chatwoot acceptance, provider delivery/read,
+failure, and ambiguity remain distinct. HTTP or mock success cannot complete a
+Meat customer journey or graduate a canary.
+
 ## Agentic Conversation Loop
 
 For each inbound message, SAM must:
@@ -65,6 +71,7 @@ Public meat sales are delivery-first. SAM must not present collection as a norma
 ## Source References
 
 - `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`
+- `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/08-business-modules/SAM_FARM_KNOWLEDGE_PACK.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`

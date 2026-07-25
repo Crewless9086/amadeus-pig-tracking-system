@@ -94,6 +94,37 @@ Current governance and implementation-ownership surface:
   customer journey. This map records ownership; it does not claim the doctrine
   is implemented, deployed, configured, or operational.
 
+### Shared Outbound Delivery Truth
+
+Current cross-system governance surface:
+
+- Vault doctrine:
+  `docs/09-vault-brain/07-standards/OUTBOUND_DELIVERY_TRUTH_STANDARD.md`,
+  `docs/09-vault-brain/07-standards/EVIDENCE_AND_REVIEW_STANDARD.md`,
+  `docs/09-vault-brain/00-governance/BRAIN_GUARD.md`;
+- SAM journeys:
+  `docs/09-vault-brain/04-workflows/SAM_GENERAL_CONVERSATION.md`,
+  `docs/09-vault-brain/04-workflows/SAM_LIVE_STOCK_SALES_WORKFLOW.md`,
+  `docs/09-vault-brain/04-workflows/SAM_MEAT_SALES_WORKFLOW.md`;
+- quote/invoice/attachment doctrine:
+  `docs/02-backend/QUOTE_INVOICE_DESIGN.md`,
+  `docs/04-n8n/workflows/1.5 - outbound-document-delivery/README.md`;
+- implementation surfaces to inspect, not authority granted:
+  `modules/sales/sales_transaction_routes.py`,
+  `modules/sales/sam_live_stock_runtime.py`,
+  `modules/sales/sam_meat_runtime.py`,
+  `modules/documents/document_service.py`;
+- tests to inspect:
+  `tests/test_sales_transaction_routes.py`,
+  `tests/test_sam_live_stock_runtime.py`,
+  `tests/test_sam_meat_runtime.py`,
+  `tests/test_document_service_send.py`;
+- rule: every customer-message, quote, invoice, or attachment delivery mission
+  must distinguish prepared, claimed, Chatwoot-accepted, provider-delivered,
+  provider-read, failed, and ambiguous states. HTTP/mock success is not
+  delivery proof; provider identity and application idempotency remain
+  separate; accepted/ambiguous outcomes are not automatically retried.
+
 ### SAM Meat Sales And Production
 
 Current built pilot surface:
