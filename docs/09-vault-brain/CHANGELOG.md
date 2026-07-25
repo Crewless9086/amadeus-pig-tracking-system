@@ -6,6 +6,13 @@
   advisory evidence composition, explicit unavailable/stale/conflict handling,
   per-zone proceed/hold/review recommendations, and deterministic zero
   hardware/write/alert authority.
+- PR #464 merged and deployed the Level 1 Daily Brief at exact merge
+  `187e07fb9f531549d35b04824ec9149875fabb85`; one controlled owner-only route
+  read returned structured HTTP 200 evidence. Telemetry remained partial:
+  tank, pump, and borehole evidence unavailable; forecast stale; all-zero
+  power suspicious/unverified; no zone received `proceed`. IFTTT and hardware
+  control were not authorized or activated, and autonomous irrigation remains
+  non-operational.
 
 ## 2026-07-24 - Herdmaster breeding match safety-field repair
 

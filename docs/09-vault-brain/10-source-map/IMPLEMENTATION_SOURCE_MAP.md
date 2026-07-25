@@ -3,6 +3,8 @@
 ## Rootline owner daily brief
 
 - Doctrine: `docs/09-vault-brain/02-agents/farm/ROOTLINE.md`
+- Control architecture:
+  `docs/09-vault-brain/04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md`
 - Composer: `modules/telemetry/rootline_daily_brief.py`
 - Owner-only route: `GET /api/telemetry/rootline/daily-brief`
 - Existing owner dashboard surfaces: `templates/dashboard.html`,
@@ -11,6 +13,11 @@
 - Underlying truth remains in the existing weather, forecast, power,
   irrigation, and daily-rollup readers. Rootline adds no write or hardware
   control authority.
+- Delivery evidence: built, merged, and deployed through PR #464 at merge
+  `187e07fb9f531549d35b04824ec9149875fabb85`; the owner-only route returned
+  structured HTTP 200 evidence in one controlled read. This proves the Level 1
+  Daily Brief route, not complete telemetry, hardware control, IFTTT
+  authorization, or autonomous irrigation.
 
 Status: active machine-aligned map, maintained with `modules/charlie/source_map.py`.
 

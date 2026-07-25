@@ -60,3 +60,9 @@ require review; it is never converted to zero, normal, or safe.
 The daily brief is owner-only and advisory. Its deterministic authority flags
 must keep hardware control, schedule mutation, telemetry/farm writes, alert
 sends, and Telegram actions false.
+
+The permanent control boundary, staged authority model, safety interlocks, and
+roadmap are defined in the
+[`ROOTLINE Control Architecture`](../../04-workflows/ROOTLINE_CONTROL_ARCHITECTURE.md).
+The deployed Daily Brief is Level 1 observe-and-advise only; it does not grant
+IFTTT activation, physical hardware control, or autonomous irrigation.
