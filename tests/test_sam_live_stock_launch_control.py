@@ -55,6 +55,8 @@ def human_conversation(
 def review_inputs(message="I need 2 weaners in Riversdale next week."):
     inbound = {
         "conversation_id": "2401",
+        "contact_id": "99",
+        "inbox_id": "77",
         "message_id": "901",
         "customer_name": "Charl N",
         "customer_phone": "+27820000000",
@@ -108,6 +110,27 @@ def review_inputs(message="I need 2 weaners in Riversdale next week."):
         },
     }
     return inbound, facts, decision
+
+
+def send_action_fixture():
+    inbound, facts, decision = review_inputs()
+    event = launch.build_sam_live_stock_review_event(
+        inbound,
+        facts,
+        decision,
+        {"score": 99, "confidence_target": 96, "safe_to_send": True, "recommended_action": "owner_review_send_candidate"},
+    )
+    lifecycle_id = "SAM-LIVE-CARD-LIFECYCLE-1"
+    card = {
+        "conversation_id": "2401",
+        "telegram_chat_id": "555",
+        "telegram_message_id": "991",
+        "lifecycle_card_identity": lifecycle_id,
+    }
+    action = launch.build_sam_live_stock_send_reply_action(
+        event, card, decision["suggested_reply_text"]
+    )
+    return event, action, card
 
 
 class SamLiveStockLaunchControlTests(unittest.TestCase):
@@ -275,6 +298,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
                 "SAM_LIVE_STOCK_TELEGRAM_OWNER_CHAT_ID": "555",
             },
             telegram_sender=lambda token, chat_id, text, reply_markup: calls.append((token, chat_id, text, reply_markup)) or {"ok": True},
+            telegram_editor=lambda token, chat_id, message_id, text, reply_markup: calls.append(("edit", chat_id, message_id, text, reply_markup)) or {"ok": True},
         )
 
         self.assertEqual(sent_status, 200)
@@ -293,9 +317,10 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Draft source: Fact-aware fallback", calls[0][2])
         self.assertIn("Draft reply:", calls[0][2])
         self.assertIn("\n- 2 x Female Weaner", calls[0][2])
-        buttons = calls[0][3]["inline_keyboard"]
+        self.assertNotIn("Send Reply", [button["text"] for row in calls[0][3]["inline_keyboard"] for button in row])
+        buttons = calls[1][4]["inline_keyboard"]
         self.assertEqual(buttons[0][0]["text"], "Send Reply")
-        self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_card_send:SAM-LIVE-REVIEW-"))
+        self.assertTrue(buttons[0][0]["callback_data"].startswith("sam_live_card_send:SAM-LIVE-CARD-SEND-"))
         self.assertEqual(buttons[1][0]["text"], "Open Chatwoot")
         self.assertEqual(buttons[1][0]["url"], "https://app.chatwoot.com/app/accounts/147387/conversations/2401")
         button_labels = [button["text"] for row in buttons for button in row]
@@ -303,7 +328,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertIn("Keep With Me", button_labels)
         self.assertIn("No Reply — Done", button_labels)
         self.assertIn("Prepare Quote", button_labels)
-        self.assertIn("Done — Return to SAM", button_labels)
+        self.assertNotIn("Done — Return to SAM", button_labels)
         self.assertTrue(any(value.startswith("sam_live_review_prepare_quote:SAM-LIVE-REVIEW-") for value in callback_values))
         self.assertTrue(any(value.startswith("sam_live_card_no_reply:SAM-LIVE-REVIEW-") for value in callback_values))
         self.assertTrue(all(not value or value.startswith("sam_live_") for value in callback_values))
@@ -331,12 +356,12 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             for row in packet["telegram_packet"]["reply_markup"]["inline_keyboard"]
             for button in row
         ]
-        self.assertEqual(labels.count("Send Reply"), 1)
+        self.assertEqual(labels.count("Send Reply"), 0)
         self.assertIn("Open Chatwoot", labels)
         self.assertIn("Keep With Me", labels)
         self.assertIn("No Reply — Done", labels)
         self.assertIn("Prepare Quote", labels)
-        self.assertIn("Done — Return to SAM", labels)
+        self.assertNotIn("Done — Return to SAM", labels)
         self.assertNotIn("Prepare Draft Order", labels)
 
         decision["owner_action_packet"].update({
@@ -775,25 +800,21 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(edited[0][:2], ("555", "991"))
         self.assertEqual(evidence[0]["review_json"]["owner_card"]["telegram_message_id"], "991")
 
-    def test_send_reply_sequences_send_then_auto_then_exact_cleanup(self):
+    def test_legacy_review_identity_send_is_withheld_without_dispatch_or_cleanup(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-1", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Safe reply", "decision_json": {}}
         calls = []
-        def record(item):
-            calls.append(("evidence", item["review_json"]["owner_card"]["state"]))
-            return {"success": True, "created": True}, 200
         result, status = launch.process_sam_live_stock_owner_callback(
             {"callback_data": "sam_live_card_send:SAM-LIVE-REVIEW-1", "telegram_chat_id": "555", "telegram_message_id": "991"},
             environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1", "SAM_LIVE_STOCK_CHATWOOT_TAKEOVER_WRITE_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1", "SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
             review_event_loader=lambda _: ({"success": True, "event": event}, 200),
-            evidence_recorder=record,
+            evidence_recorder=lambda item: calls.append(("evidence", item)) or ({"success": True, "created": True}, 200),
             chatwoot_sender=lambda conversation, message, source: calls.append(("send", conversation)) or {"ok": True},
             chatwoot_writer=lambda conversation, attrs, source: calls.append(("mode", attrs["conversation_mode"])) or {"ok": True},
             telegram_deleter=lambda token, chat, message: calls.append(("delete", chat, message)) or {"ok": True},
         )
-        self.assertEqual(status, 200)
-        self.assertTrue(result["sends_customer_message"])
-        self.assertLess(calls.index(("send", "2401")), calls.index(("mode", "AUTO")))
-        self.assertLess(calls.index(("mode", "AUTO")), calls.index(("delete", "555", "991")))
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+        self.assertEqual(calls, [])
 
     def test_failed_send_retains_card_and_never_returns_auto_or_deletes(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-2", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Safe reply", "decision_json": {}}
@@ -808,9 +829,9 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_deleter=lambda *args: calls.append("delete") or {"ok": True},
             telegram_editor=lambda *args: calls.append("edit") or {"ok": True},
         )
-        self.assertEqual(status, 502)
-        self.assertTrue(result["card_retained"])
-        self.assertEqual(calls, ["edit"])
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+        self.assertEqual(calls, [])
 
     def test_no_reply_done_returns_auto_then_cleans_exact_card(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-3", "chatwoot_conversation_id": "2401", "decision_json": {}}
@@ -826,7 +847,7 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertFalse(result["sends_customer_message"])
-        self.assertEqual(calls, [("mode", "AUTO"), ("delete", "555", "993")])
+        self.assertEqual(calls, [("delete", "555", "993")])
 
     def test_duplicate_callback_is_withheld_before_send_or_telegram(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-4", "chatwoot_conversation_id": "2401", "sam_reply_excerpt": "Reply", "decision_json": {}}
@@ -838,7 +859,222 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             telegram_deleter=lambda *args: self.fail("duplicate cleanup"),
         )
         self.assertEqual(status, 409)
-        self.assertEqual(result["status"], "sam_live_stock_owner_card_duplicate_callback_withheld")
+        self.assertEqual(result["status"], "sam_live_card_send_legacy_identity_withheld")
+
+    def test_candidate_bound_send_claims_before_dispatch_and_retains_pending_card(self):
+        review, action, card = send_action_fixture()
+        calls = []
+        events = []
+
+        def load(event_id):
+            event = action["event"] if event_id == action["action_identity"] else review
+            return {"success": True, "event": event}, 200
+
+        def record(event):
+            events.append(event)
+            calls.append(event["event_source"])
+            return {"success": True, "created": True, "review_event_id": event["review_event_id"]}, 201
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401",
+                "contact_id": "99",
+                "inbox_id": "77",
+                "can_reply": True,
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=record,
+            chatwoot_sender=lambda *_args: calls.append("chatwoot") or {
+                "status_code": 200,
+                "body": {"id": "902", "status": "sent", "source_id": "wamid.SECRET"},
+            },
+            telegram_editor=lambda *_args: calls.append("telegram_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "chatwoot_accepted_unverified")
+        self.assertFalse(result["customer_send_confirmed"])
+        self.assertTrue(result["card_retained"])
+        self.assertLess(calls.index("sam_outbound_delivery_attempt_claim"), calls.index("chatwoot"))
+        self.assertLess(calls.index("chatwoot"), calls.index("sam_outbound_delivery_transition"))
+        self.assertNotIn("Hi Charl", str(events))
+        self.assertNotIn("wamid.SECRET", str(events))
+
+    def test_owner_send_transport_omits_application_source_id(self):
+        from modules.sales import sam_live_stock_runtime
+        source = inspect.getsource(sam_live_stock_runtime._send_chatwoot_message)
+        body_source = source[source.index("body = {"):source.index("request = urllib_request.Request")]
+        self.assertNotIn('"source_id"', body_source)
+        self.assertIn('"amadeus_source"', body_source)
+
+    def test_candidate_bound_duplicate_claim_sends_nothing(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {
+                "callback_data": f"sam_live_card_send:{action['action_identity']}",
+                "telegram_chat_id": "555",
+                "telegram_message_id": "991",
+            },
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({
+                "success": True,
+                "card": {**card, "state": "active"},
+                "lifecycle_card_identity": card["lifecycle_card_identity"],
+            }, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "contact_id": "99", "inbox_id": "77",
+                "messages": [{"id": "901", "message_type": "incoming"}],
+            },
+            evidence_recorder=lambda _event: ({"success": True, "created": False}, 200),
+            chatwoot_sender=lambda *_args: self.fail("duplicate must not dispatch"),
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(result["status"], "sam_live_card_send_duplicate_withheld")
+
+    def test_concurrent_candidate_callbacks_dispatch_exactly_once(self):
+        review, action, card = send_action_fixture()
+        claimed = set()
+        lock = Lock()
+        sends = []
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        def record(event):
+            if event["event_source"] != "sam_outbound_delivery_attempt_claim":
+                return {"success": True, "created": True}, 201
+            with lock:
+                created = event["review_event_id"] not in claimed
+                claimed.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        def invoke():
+            return launch.process_sam_live_stock_owner_callback(
+                {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+                environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+                review_event_loader=load,
+                active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+                chronology_loader=lambda *_args, **_kwargs: {"id": "2401", "contact_id": "99", "inbox_id": "77", "can_reply": True, "messages": [{"id": "901", "message_type": "incoming"}]},
+                evidence_recorder=record,
+                chatwoot_sender=lambda *_args: sends.append("send") or {"status_code": 200, "body": {"id": "902", "status": "sent"}},
+                telegram_editor=lambda *_args: {"ok": True},
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _index: invoke(), range(2)))
+        self.assertEqual(sends, ["send"])
+        self.assertEqual(sorted(status for _body, status in results), [200, 409])
+
+    def test_candidate_delivery_claim_failure_dispatches_nothing(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+            environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+            review_event_loader=load,
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {"id": "2401", "contact_id": "99", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}]},
+            evidence_recorder=lambda _event: ({"success": False, "created": False}, 503),
+            chatwoot_sender=lambda *_args: self.fail("claim failure must not dispatch"),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "sam_live_card_send_delivery_claim_failed")
+
+    def test_candidate_bound_send_fails_closed_on_stale_or_wrong_identity(self):
+        review, action, card = send_action_fixture()
+
+        def load(event_id):
+            return {"success": True, "event": action["event"] if event_id == action["action_identity"] else review}, 200
+
+        for chronology in (
+            {"id": "2401", "contact_id": "wrong", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}]},
+            {"id": "2401", "contact_id": "99", "inbox_id": "77", "messages": [{"id": "901", "message_type": "incoming"}, {"id": "newer", "message_type": "incoming"}]},
+        ):
+            with self.subTest(chronology=chronology):
+                result, status = launch.process_sam_live_stock_owner_callback(
+                    {"callback_data": f"sam_live_card_send:{action['action_identity']}", "telegram_chat_id": "555", "telegram_message_id": "991"},
+                    environ={"SAM_LIVE_STOCK_OWNER_APPROVED_SEND_ENABLED": "1"},
+                    review_event_loader=load,
+                    active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+                    chronology_loader=lambda *_args, value=chronology, **_kwargs: value,
+                    chatwoot_sender=lambda *_args: self.fail("stale action must not dispatch"),
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(result["status"], "sam_live_card_send_fresh_identity_or_message_mismatch")
+
+    def test_provider_webhook_confirms_exact_attempt_then_cleans_exact_card(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2401", "contact_id": "99", "inbox_id": "77", "message_id": "901"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        records = []
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {
+                "event": "message_updated",
+                "message": {
+                    "id": "902", "conversation_id": "2401", "message_type": 1,
+                    "status": "delivered", "source_id": "wamid.SECRET",
+                },
+            },
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token", "SAM_LIVE_STOCK_TELEGRAM_CLEANUP_ENABLED": "1"},
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            evidence_recorder=lambda event: records.append(event) or ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            telegram_deleter=lambda token, chat, message: {"ok": (chat, message)},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "sam_delivery_confirmed_card_cleaned")
+        self.assertTrue(result["customer_send_confirmed"])
+        self.assertEqual(records[0]["review_json"]["provider_identity_class"], "whatsapp_provider")
+        self.assertNotIn("wamid.SECRET", str(records))
+
+    def test_provider_webhook_missing_identity_is_ambiguous_and_retains_card(self):
+        review, action, card = send_action_fixture()
+        attempt = launch.build_delivery_attempt(
+            {"conversation_id": "2401", "contact_id": "99", "inbox_id": "77", "message_id": "901"},
+            {"suggested_reply_text": review["decision_json"]["suggested_reply_text"]},
+            {"review_event_id": review["review_event_id"], "owner_action_identity": action["action_identity"]},
+            response_class="owner_approved_reply",
+        )
+        attempt["chatwoot_outgoing_message_id"] = "902"
+        result, status = launch.handle_sam_live_stock_delivery_status_webhook(
+            {"event": "message_updated", "message": {"id": "902", "conversation_id": "2401", "message_type": 1, "status": "read"}},
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            attempt_loader=lambda *_: {"success": True, "attempt": attempt},
+            evidence_recorder=lambda _event: ({"success": True, "created": True}, 201),
+            review_event_loader=lambda _: ({"success": True, "event": action["event"]}, 200),
+            active_card_loader=lambda _: ({"success": True, "card": {**card, "state": "active"}, "lifecycle_card_identity": card["lifecycle_card_identity"]}, 200),
+            telegram_deleter=lambda *_: self.fail("ambiguous delivery must not clean"),
+            telegram_editor=lambda *_: {"ok": True},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["delivery_state"], "provider_outcome_ambiguous")
+        self.assertFalse(result["customer_send_confirmed"])
+        self.assertTrue(result["card_retained"])
 
     def test_keep_with_me_retains_human_and_open_chatwoot_is_no_mutation(self):
         event = {"review_event_id": "SAM-LIVE-REVIEW-5", "chatwoot_conversation_id": "2401", "decision_json": {}}
@@ -876,10 +1112,34 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             chatwoot_writer=lambda *args: {"ok": True},
             telegram_deleter=lambda *args: (_ for _ in ()).throw(RuntimeError("delete unavailable")),
             telegram_editor=lambda token, chat, message, text, markup: edits.append((chat, message, text, markup)) or {"ok": True},
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "messages": [],
+            },
         )
         self.assertEqual(status, 200)
         self.assertEqual(result["telegram_cleanup"]["status"], "sam_live_stock_owner_card_resolved_by_edit")
         self.assertEqual(edits, [("555", "996", "Resolved", {"inline_keyboard": []})])
+
+    def test_done_return_to_sam_requires_proven_human_before_auto_or_cleanup(self):
+        event = {"review_event_id": "SAM-LIVE-REVIEW-HUMAN", "chatwoot_conversation_id": "2401", "decision_json": {}}
+        calls = []
+        result, status = launch.process_sam_live_stock_owner_callback(
+            {"callback_data": "sam_live_card_done:SAM-LIVE-REVIEW-HUMAN", "telegram_chat_id": "555", "telegram_message_id": "996"},
+            environ={"SAM_LIVE_STOCK_TELEGRAM_BOT_TOKEN": "token"},
+            review_event_loader=lambda _: ({"success": True, "event": event}, 200),
+            evidence_recorder=lambda _item: ({"success": True, "created": True}, 200),
+            chronology_loader=lambda *_args, **_kwargs: {
+                "id": "2401", "custom_attributes": {"conversation_mode": "AUTO"}, "messages": [],
+            },
+            chatwoot_writer=lambda *_args: calls.append("auto") or {"ok": True},
+            telegram_deleter=lambda *_args: calls.append("delete") or {"ok": True},
+            telegram_editor=lambda *_args: calls.append("retain_edit") or {"ok": True},
+        )
+        self.assertEqual(status, 502)
+        self.assertEqual(result["failed_step"], "human_ownership_unproven")
+        self.assertEqual(calls, ["retain_edit"])
 
     def test_human_mode_audit_classifies_without_bulk_reset(self):
         conversations = [

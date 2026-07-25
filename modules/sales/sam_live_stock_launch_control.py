@@ -20,6 +20,20 @@ from modules.sales.sam_live_stock_runtime import (
     send_owner_approved_live_stock_reply,
 )
 from modules.sales.sam_live_stock_sales_pack import prepare_live_stock_sales_pack
+from modules.sales.sam_delivery_truth import (
+    ATTEMPT_CLAIMED,
+    CHATWOOT_ACCEPTED_UNVERIFIED,
+    CONFIRMED_STATES,
+    DELIVERY_CONTRACT_VERSION,
+    PROVIDER_FAILED,
+    PROVIDER_OUTCOME_AMBIGUOUS,
+    build_delivery_attempt,
+    build_delivery_claim_event,
+    build_delivery_transition_event,
+    classify_chatwoot_response,
+    classify_dispatch_exception,
+    load_delivery_attempt_for_outgoing_message,
+)
 
 
 TELEGRAM_SEND_ENABLED_ENV = "SAM_LIVE_STOCK_TELEGRAM_ESCALATION_SEND_ENABLED"
@@ -36,6 +50,9 @@ RESOLVE_CARD_CANDIDATE_EVENT_SOURCE = "sam_live_stock_resolve_card_candidate"
 RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE = "sam_live_stock_resolve_card_lifecycle"
 RESOLVE_CARD_ACTION_TYPE = "resolve_card_only"
 RESOLVE_CARD_CONTRACT_VERSION = "sam_live_stock_resolve_card_only_v1"
+SEND_REPLY_ACTION_EVENT_SOURCE = "sam_live_stock_send_reply_action"
+SEND_REPLY_ACTION_TYPE = "send_reply"
+SEND_REPLY_ACTION_CONTRACT_VERSION = "sam_live_card_send_v1"
 OWNER_CARD_ACTIVE_STATES = {"active", "with_owner", "action_failed", "action_claimed"}
 HUMAN_AUDIT_CLASSIFICATIONS = ("awaiting_owner", "resolved_but_stuck", "stale_unknown", "active_manual")
 HUMAN_AUDIT_LANE_COUNTS = ("lane_unknown", "excluded_non_livestock")
@@ -122,7 +139,13 @@ def sam_live_stock_launch_control_policy(environ=None):
 def build_sam_live_stock_review_event(inbound, facts, decision, review=None, *, event_source="chatwoot_inbound"):
     inbound = inbound if isinstance(inbound, dict) else {}
     facts = facts if isinstance(facts, dict) else {}
-    decision = decision if isinstance(decision, dict) else {}
+    decision = dict(decision) if isinstance(decision, dict) else {}
+    decision_inbound = dict(decision.get("inbound")) if isinstance(decision.get("inbound"), dict) else {}
+    for key in ("conversation_id", "contact_id", "inbox_id", "message_id"):
+        if not decision_inbound.get(key) and inbound.get(key):
+            decision_inbound[key] = inbound.get(key)
+    if decision_inbound:
+        decision["inbound"] = decision_inbound
     review = review if isinstance(review, dict) else review_sam_live_stock_conversation(inbound, facts, decision)
     event = {
         "review_event_id": _stable_id("SAM-LIVE-REVIEW", [
@@ -225,6 +248,88 @@ def build_sam_live_stock_owner_card_event(event, card, state, action=""):
     evidence["customer_message_excerpt"] = ""
     evidence["sam_reply_excerpt"] = ""
     return evidence
+
+
+def build_sam_live_stock_send_reply_action(event, card, reply, *, generation=1):
+    """Bind one Telegram button to one exact reviewed reply and lifecycle card."""
+    event = event if isinstance(event, dict) else {}
+    card = card if isinstance(card, dict) else {}
+    decision = _json_value(event.get("decision_json"))
+    inbound = decision.get("inbound") if isinstance(decision.get("inbound"), dict) else {}
+    conversation_id = _clean(event.get("chatwoot_conversation_id"), 120)
+    contact_id = _clean(
+        event.get("contact_id") or inbound.get("contact_id") or decision.get("contact_id"), 120
+    )
+    inbox_id = _clean(
+        event.get("inbox_id") or inbound.get("inbox_id") or decision.get("inbox_id"), 120
+    )
+    inbound_message_id = _clean(
+        event.get("chatwoot_message_id") or inbound.get("message_id"), 120
+    )
+    review_id = _clean(event.get("review_event_id"), 120)
+    reply = _clean_multiline(reply, 1800)
+    reply_hash = hashlib.sha256(reply.encode("utf-8", errors="ignore")).hexdigest()
+    chat_id = _clean(card.get("telegram_chat_id"), 100)
+    telegram_message_id = _clean(card.get("telegram_message_id"), 100)
+    lifecycle_id = _clean(card.get("lifecycle_card_identity"), 120)
+    try:
+        generation = max(1, int(generation))
+    except (TypeError, ValueError):
+        generation = 1
+    required = {
+        "conversation_id": conversation_id,
+        "contact_id": contact_id,
+        "inbox_id": inbox_id,
+        "inbound_message_id": inbound_message_id,
+        "review_id": review_id,
+        "reply_hash": reply_hash if reply else "",
+        "lifecycle_card_identity": lifecycle_id,
+        "telegram_chat_id": chat_id,
+        "telegram_message_id": telegram_message_id,
+    }
+    if not all(required.values()):
+        return {
+            "success": False,
+            "status": "sam_live_card_send_identity_incomplete",
+            "missing_fields": [key for key, value in required.items() if not value],
+        }
+    action_id = _stable_id("SAM-LIVE-CARD-SEND", [
+        *required.values(),
+        DELIVERY_CONTRACT_VERSION,
+        SEND_REPLY_ACTION_CONTRACT_VERSION,
+        str(generation),
+        SEND_REPLY_ACTION_TYPE,
+    ])
+    evidence = build_sam_live_stock_review_event(
+        {"conversation_id": conversation_id, "message_id": inbound_message_id},
+        {},
+        {},
+        {"score": 0, "safe_to_send": False, "recommended_action": SEND_REPLY_ACTION_TYPE},
+        event_source=SEND_REPLY_ACTION_EVENT_SOURCE,
+    )
+    evidence["review_event_id"] = action_id
+    evidence["recommended_action"] = SEND_REPLY_ACTION_TYPE
+    evidence["review_json"] = {
+        "send_reply_action": {
+            **required,
+            "action_identity": action_id,
+            "action": SEND_REPLY_ACTION_TYPE,
+            "action_generation": generation,
+            "action_contract_version": SEND_REPLY_ACTION_CONTRACT_VERSION,
+            "delivery_contract_version": DELIVERY_CONTRACT_VERSION,
+            "contains_private_message_content": False,
+            "contains_raw_provider_identity": False,
+        }
+    }
+    evidence["customer_message_excerpt"] = ""
+    evidence["sam_reply_excerpt"] = ""
+    return {
+        "success": True,
+        "status": "sam_live_card_send_action_prepared",
+        "action_identity": action_id,
+        "action": evidence["review_json"]["send_reply_action"],
+        "event": evidence,
+    }
 
 
 def get_active_sam_live_stock_owner_card(conversation_id, database_url=None):
@@ -528,8 +633,30 @@ def _canonical_owner_card_keyboard(callback_id, conversation_id, reply, *, links
     }
     keyboard.append([open_button, {"text": "Keep With Me", "callback_data": f"sam_live_card_keep:{callback_id}"}])
     keyboard.append([{"text": "No Reply — Done", "callback_data": f"sam_live_card_no_reply:{callback_id}"}])
-    keyboard.append([{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{callback_id}"}])
     return keyboard
+
+
+def _replace_send_reply_callback(markup, action_identity):
+    markup = markup if isinstance(markup, dict) else {}
+    rows = markup.get("inline_keyboard") if isinstance(markup.get("inline_keyboard"), list) else []
+    clean_rows = []
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        buttons = [
+            dict(button) for button in row
+            if isinstance(button, dict)
+            and not str(button.get("callback_data") or "").startswith("sam_live_card_send:")
+        ]
+        if buttons:
+            clean_rows.append(buttons)
+    action_identity = _clean(action_identity, 120)
+    if action_identity:
+        clean_rows.insert(0, [{
+            "text": "Send Reply",
+            "callback_data": f"sam_live_card_send:{action_identity}",
+        }])
+    return {"inline_keyboard": clean_rows}
 
 
 def build_sam_live_stock_new_lead_packet(event, *, links=None, environ=None):
@@ -631,8 +758,13 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
     if links.get("open_intakes_api"):
         parts.append(f"Open intakes: {links['open_intakes_api']}")
     keyboard = []
-    if review_event_id and reply and routine_delivery.get("sent") is not True:
-        keyboard.append([{"text": "Send Reply", "callback_data": f"sam_live_card_send:{review_event_id}"}])
+    send_action_identity = _clean(
+        (review.get("send_reply_action") or {}).get("action_identity")
+        if isinstance(review.get("send_reply_action"), dict) else "",
+        120,
+    )
+    if send_action_identity and reply and routine_delivery.get("sent") is not True:
+        keyboard.append([{"text": "Send Reply", "callback_data": f"sam_live_card_send:{send_action_identity}"}])
     chatwoot_url = (
         _clean(links.get("chatwoot_conversation_url"), 500)
         or _chatwoot_conversation_url(conversation_id, source)
@@ -648,7 +780,6 @@ def build_sam_live_stock_owner_review_packet(event, *, links=None, environ=None)
     keyboard.append([{"text": "No Reply — Done", "callback_data": f"sam_live_card_no_reply:{review_event_id or conversation_id}"}])
     prepared_buttons = _owner_card_prepared_action_buttons(decision, review_event_id or conversation_id)
     keyboard.extend(prepared_buttons)
-    keyboard.append([{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{review_event_id or conversation_id}"}])
     return {
         "version": "sam_live_stock_owner_review_packet_v2",
         "type": "owner_review_send_candidate",
@@ -732,7 +863,48 @@ def _deliver_sam_live_stock_owner_card(event, telegram_packet, source, telegram_
         recorded, record_status = recorder(evidence)
         if record_status >= 400 or not recorded.get("success"):
             return {"success": False, "status": "sam_live_stock_owner_card_identity_record_failed", "telegram": telegram, "evidence": recorded, **AUTHORITY_FLAGS, "calls_telegram": True}, 502
-        return {"success": True, "status": status, "telegram": telegram, "card": card, "evidence": recorded, **AUTHORITY_FLAGS, "calls_telegram": True}, 200
+        lifecycle_id = _clean(recorded.get("review_event_id") or evidence.get("review_event_id"), 120)
+        reply = _clean_multiline(
+            (_json_value(event.get("decision_json"))).get("suggested_reply_text")
+            or event.get("sam_reply_excerpt"),
+            1800,
+        )
+        action = (
+            build_sam_live_stock_send_reply_action(
+                event,
+                {**card, "lifecycle_card_identity": lifecycle_id},
+                reply,
+            )
+            if success_status == "sam_live_stock_owner_review_telegram_sent"
+            else {"success": False, "status": "send_reply_not_applicable"}
+        )
+        action_record = {}
+        if action.get("success"):
+            action_record, action_status = recorder(action["event"])
+            if action_status >= 400 or not action_record.get("success"):
+                return {
+                    "success": False,
+                    "status": "sam_live_card_send_action_persistence_failed",
+                    "card": card,
+                    "evidence": action_record,
+                    **AUTHORITY_FLAGS,
+                    "calls_telegram": True,
+                }, 503
+            final_markup = _replace_send_reply_callback(
+                markup, action["action_identity"]
+            )
+            editor = telegram_editor or _telegram_edit_message
+            telegram = editor(token, chat_id, message_id, text, final_markup)
+        return {
+            "success": True,
+            "status": status,
+            "telegram": telegram,
+            "card": card,
+            "evidence": recorded,
+            "send_reply_action": action_record,
+            **AUTHORITY_FLAGS,
+            "calls_telegram": True,
+        }, 200
     except Exception as exc:
         recorder(build_sam_live_stock_owner_card_event(event, {"conversation_id": conversation_id, "telegram_chat_id": chat_id, "telegram_message_id": ""}, "action_failed", "card_delivery_unknown"))
         return {"success": False, "status": "sam_live_stock_owner_card_delivery_failed", "error": _clean(str(exc), 240), **AUTHORITY_FLAGS}, 502
@@ -801,7 +973,7 @@ def apply_sam_live_stock_chatwoot_takeover(conversation_id, mode="HUMAN", reason
         return {"success": False, "status": "sam_live_stock_chatwoot_takeover_failed", "error": _clean(str(exc), 240), "packet": packet, **AUTHORITY_FLAGS}, 502
 
 
-def _process_canonical_owner_card_action(action, review_event_id, event, message, payload, *, environ, chatwoot_sender, chatwoot_writer, telegram_deleter, telegram_editor, evidence_recorder):
+def _process_canonical_owner_card_action(action, review_event_id, event, message, payload, *, environ, chatwoot_sender, chatwoot_writer, telegram_deleter, telegram_editor, evidence_recorder, chronology_loader=None):
     conversation_id = _clean(event.get("chatwoot_conversation_id"), 100)
     chat_id = _clean(payload.get("telegram_chat_id"), 100)
     message_id = _clean(payload.get("telegram_message_id"), 100)
@@ -841,6 +1013,29 @@ def _process_canonical_owner_card_action(action, review_event_id, event, message
             return _owner_card_failure(event, card, action, "customer_send_failed", sent, recorder, environ, telegram_editor)
     else:
         sent = None
+
+    if action == "card_no_reply":
+        deleted, delete_status = delete_sam_live_stock_telegram_escalation(
+            review_event_id, chat_id, message_id, environ=environ, telegram_deleter=telegram_deleter,
+        )
+        if delete_status >= 400 or not deleted.get("success"):
+            resolved, resolved_status = _edit_owner_card_state(card, "Resolved", [], environ, telegram_editor)
+            if resolved_status >= 400:
+                return _owner_card_failure(event, card, action, "telegram_cleanup_failed", deleted, recorder, environ, telegram_editor)
+            deleted = {"success": True, "status": "sam_live_stock_owner_card_resolved_by_edit", "edit": resolved}
+        recorder(build_sam_live_stock_owner_card_event(event, card, "resolved", action))
+        return {"success": True, "status": "sam_live_stock_owner_card_completed_no_reply", "action": action, "card": card, "telegram_cleanup": deleted, **AUTHORITY_FLAGS, "calls_telegram": True}, 200
+
+    if action == "card_done":
+        try:
+            chronology = (chronology_loader or _chatwoot_read_resolve_chronology)(
+                conversation_id, environ=environ
+            )
+        except Exception:
+            return _owner_card_failure(event, card, action, "human_ownership_unavailable", {}, recorder, environ, telegram_editor)
+        attributes = chronology.get("custom_attributes") if isinstance(chronology, dict) and isinstance(chronology.get("custom_attributes"), dict) else {}
+        if _clean(attributes.get("conversation_mode"), 20).upper() != "HUMAN":
+            return _owner_card_failure(event, card, action, "human_ownership_unproven", {}, recorder, environ, telegram_editor)
 
     takeover, takeover_status = apply_sam_live_stock_chatwoot_takeover(
         conversation_id, mode="AUTO", reason="telegram_owner_card_done",
@@ -883,10 +1078,263 @@ def _with_charl_keyboard(callback_id):
     return [[{"text": "Open Chatwoot", "callback_data": f"sam_live_card_open:{callback_id}"}], [{"text": "Done — Return to SAM", "callback_data": f"sam_live_card_done:{callback_id}"}]]
 
 
+def execute_sam_live_stock_send_reply(action_event, payload, *, environ=None, review_event_loader=None, active_card_loader=None, chronology_loader=None, evidence_recorder=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None):
+    """Dispatch one candidate-bound reply; Chatwoot acceptance retains the card."""
+    source = environ if environ is not None else os.environ
+    if not _truthy(source.get(OWNER_SEND_ENABLED_ENV)):
+        return {"success": False, "status": "sam_live_stock_owner_send_disabled", **AUTHORITY_FLAGS}, 409
+    action_event = action_event if isinstance(action_event, dict) else {}
+    action_json = _json_value(action_event.get("review_json"))
+    action = action_json.get("send_reply_action") if isinstance(action_json.get("send_reply_action"), dict) else {}
+    action_id = _clean(action.get("action_identity"), 120)
+    if action_event.get("event_source") != SEND_REPLY_ACTION_EVENT_SOURCE or action.get("action") != SEND_REPLY_ACTION_TYPE or action_id != _clean(action_event.get("review_event_id"), 120):
+        return {"success": False, "status": "sam_live_card_send_action_invalid", **AUTHORITY_FLAGS}, 409
+    conversation_id = _clean(action.get("conversation_id"), 120)
+    card = {"conversation_id": conversation_id, "telegram_chat_id": _clean(payload.get("telegram_chat_id"), 100), "telegram_message_id": _clean(payload.get("telegram_message_id"), 100)}
+    expected_card = {"conversation_id": conversation_id, "telegram_chat_id": _clean(action.get("telegram_chat_id"), 100), "telegram_message_id": _clean(action.get("telegram_message_id"), 100)}
+    if card != expected_card:
+        return {"success": False, "status": "sam_live_card_send_telegram_identity_mismatch", **AUTHORITY_FLAGS}, 409
+    active_result, active_status = (active_card_loader or get_active_sam_live_stock_owner_card)(conversation_id)
+    active = active_result.get("card") if isinstance(active_result.get("card"), dict) else {}
+    if active_status >= 400 or not active_result.get("success") or any(_clean(active.get(key), 120) != _clean(value, 120) for key, value in expected_card.items()) or _clean(active_result.get("lifecycle_card_identity"), 120) != _clean(action.get("lifecycle_card_identity"), 120):
+        return {"success": False, "status": "sam_live_card_send_active_card_mismatch", **AUTHORITY_FLAGS}, 409
+    review_result, review_status = (review_event_loader or get_sam_live_stock_review_event)(action.get("review_id"))
+    review = review_result.get("event") if isinstance(review_result.get("event"), dict) else {}
+    if review_status >= 400 or not review_result.get("success") or _clean(review.get("review_event_id"), 120) != _clean(action.get("review_id"), 120) or _clean(review.get("chatwoot_conversation_id"), 120) != conversation_id or _clean(review.get("chatwoot_message_id"), 120) != _clean(action.get("inbound_message_id"), 120):
+        return {"success": False, "status": "sam_live_card_send_review_mismatch", **AUTHORITY_FLAGS}, 409
+    decision = _json_value(review.get("decision_json"))
+    message = _clean_multiline(decision.get("suggested_reply_text") or review.get("sam_reply_excerpt"), 1800)
+    if not message or hashlib.sha256(message.encode("utf-8", errors="ignore")).hexdigest() != action.get("reply_hash"):
+        return {"success": False, "status": "sam_live_card_send_reply_hash_changed", **AUTHORITY_FLAGS}, 409
+    if any(bool(decision.get(key)) for key in ("creates_order", "creates_quote", "reserves_stock", "changes_stock", "writes_farm_data", "protected_action_required")):
+        return {"success": False, "status": "sam_live_card_send_final_review_failed", **AUTHORITY_FLAGS}, 409
+    try:
+        chronology = (chronology_loader or _chatwoot_read_resolve_chronology)(conversation_id, environ=source)
+    except Exception:
+        return {"success": False, "status": "sam_live_card_send_chronology_unavailable", **AUTHORITY_FLAGS}, 503
+    messages = chronology.get("messages") if isinstance(chronology, dict) else []
+    incoming_ids = [_clean(row.get("id"), 120) for row in messages if isinstance(row, dict) and row.get("message_type") == "incoming"]
+    if _clean(chronology.get("id"), 120) != conversation_id or _clean(chronology.get("contact_id"), 120) != _clean(action.get("contact_id"), 120) or _clean(chronology.get("inbox_id"), 120) != _clean(action.get("inbox_id"), 120) or chronology.get("can_reply") is False or not incoming_ids or incoming_ids[-1] != _clean(action.get("inbound_message_id"), 120):
+        return {"success": False, "status": "sam_live_card_send_fresh_identity_or_message_mismatch", **AUTHORITY_FLAGS}, 409
+    attempt = build_delivery_attempt(
+        {"conversation_id": conversation_id, "contact_id": action.get("contact_id"), "inbox_id": action.get("inbox_id"), "message_id": action.get("inbound_message_id")},
+        {"suggested_reply_text": message, "response_class": "owner_approved_reply"},
+        {
+            "review_event_id": action.get("review_id"),
+            "owner_action_identity": action_id,
+        },
+        response_class="owner_approved_reply",
+        attempt_generation=action.get("action_generation") or 1,
+    )
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    claimed, claim_status = recorder(build_delivery_claim_event(attempt))
+    if claim_status >= 400 or not claimed.get("success"):
+        return {"success": False, "status": "sam_live_card_send_delivery_claim_failed", **AUTHORITY_FLAGS}, 503
+    if claimed.get("created") is False:
+        return {"success": False, "status": "sam_live_card_send_duplicate_withheld", "delivery_attempt_id": attempt.get("delivery_attempt_id"), "automatic_retry_prohibited": True, **AUTHORITY_FLAGS}, 409
+    try:
+        sent = (chatwoot_sender or _send_chatwoot_owner_reply)(conversation_id, message, source)
+        outcome = classify_chatwoot_response(sent)
+    except Exception as exc:
+        outcome = classify_dispatch_exception(exc)
+    transition = build_delivery_transition_event(attempt, outcome)
+    recorded, record_status = recorder(transition)
+    if record_status >= 400 or not recorded.get("success"):
+        return {"success": False, "status": "sam_live_card_send_outcome_persistence_failed", **AUTHORITY_FLAGS}, 503
+    state = outcome.get("delivery_state")
+    if state in CONFIRMED_STATES and outcome.get("provider_identity_class") != "whatsapp_provider":
+        state = PROVIDER_OUTCOME_AMBIGUOUS
+    if state in CONFIRMED_STATES:
+        cleanup, cleanup_status = delete_sam_live_stock_telegram_escalation(
+            action_id, card["telegram_chat_id"], card["telegram_message_id"],
+            environ=source, telegram_deleter=telegram_deleter,
+        )
+        if cleanup_status >= 400 or not cleanup.get("success"):
+            edited, edit_status = _edit_owner_card_state(card, "Delivered / Resolved", [], source, telegram_editor)
+        else:
+            edited, edit_status = cleanup, 200
+    else:
+        label = "Delivery pending confirmation" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"
+        edited, edit_status = _edit_owner_card_state(card, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
+    return {
+        "success": edit_status < 400,
+        "status": "sam_live_card_send_confirmed" if state in CONFIRMED_STATES else "sam_live_card_send_accepted_unverified" if state == CHATWOOT_ACCEPTED_UNVERIFIED else "sam_live_card_send_failed" if state == PROVIDER_FAILED else "sam_live_card_send_ambiguous",
+        "delivery_attempt_id": attempt.get("delivery_attempt_id"),
+        "delivery_state": state,
+        "chatwoot_outgoing_message_id": outcome.get("chatwoot_outgoing_message_id"),
+        "customer_send_confirmed": state in CONFIRMED_STATES,
+        "handled_autonomously": False,
+        "automatic_retry_prohibited": True,
+        "card_retained": state not in CONFIRMED_STATES,
+        "telegram": edited,
+        **AUTHORITY_FLAGS,
+        "sends_customer_message": True,
+        "calls_chatwoot": True,
+        "calls_telegram": True,
+    }, 200 if edit_status < 400 else 502
+
+
+def _send_chatwoot_owner_reply(conversation_id, message, source):
+    from modules.sales.sam_live_stock_runtime import _send_chatwoot_message
+    return _send_chatwoot_message(conversation_id, message, source, amadeus_source="sam_live_stock_owner_approved_send")
+
+
+def _open_chatwoot_keyboard(callback_id, conversation_id, source):
+    url = _chatwoot_conversation_url(conversation_id, source)
+    button = {"text": "Open Chatwoot", "url": url} if url else {"text": "Open Chatwoot", "callback_data": f"sam_live_card_open:{callback_id}"}
+    return [[button]]
+
+
+def handle_sam_live_stock_delivery_status_webhook(
+    payload,
+    *,
+    environ=None,
+    attempt_loader=None,
+    evidence_recorder=None,
+    review_event_loader=None,
+    active_card_loader=None,
+    telegram_deleter=None,
+    telegram_editor=None,
+):
+    """Reconcile an exact owner-send attempt from Chatwoot message_updated."""
+    source = environ if environ is not None else os.environ
+    payload = payload if isinstance(payload, dict) else {}
+    if isinstance(payload.get("message"), dict):
+        message = payload.get("message")
+    elif isinstance(payload.get("messages"), list) and payload.get("messages") and isinstance(payload["messages"][0], dict):
+        message = payload["messages"][0]
+    else:
+        message = payload
+    conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
+    if not conversation and isinstance(message.get("conversation"), dict):
+        conversation = message.get("conversation")
+    event_name = _clean(payload.get("event") or payload.get("event_name"), 80).lower()
+    message_type = message.get("message_type")
+    conversation_id = _clean(
+        payload.get("conversation_id") or message.get("conversation_id") or conversation.get("id"),
+        120,
+    )
+    outgoing_id = _clean(payload.get("message_id") or message.get("id"), 120)
+    status = _clean(
+        payload.get("delivery_status") or payload.get("status")
+        or message.get("delivery_status") or message.get("message_status")
+        or message.get("source_status") or message.get("status"),
+        40,
+    ).lower()
+    if event_name not in {"message_updated", ""} or str(message_type).lower() not in {"1", "outgoing"}:
+        return {"success": True, "status": "sam_delivery_status_ignored", "processed": False}, 200
+    loader = attempt_loader or (
+        lambda cid, mid: load_delivery_attempt_for_outgoing_message(
+            str(source.get(DATABASE_URL_ENV, "") or "").strip(), cid, mid
+        )
+    )
+    loaded = loader(conversation_id, outgoing_id)
+    if not isinstance(loaded, dict) or not loaded.get("success"):
+        return {"success": True, "status": "sam_delivery_attempt_not_matched", "processed": False}, 200
+    attempt = loaded.get("attempt") if isinstance(loaded.get("attempt"), dict) else {}
+    if _clean(attempt.get("conversation_id"), 120) != conversation_id or _clean(attempt.get("chatwoot_outgoing_message_id"), 120) != outgoing_id:
+        return {"success": False, "status": "sam_delivery_webhook_identity_mismatch", "processed": False}, 409
+    outcome = classify_chatwoot_response({
+        "status_code": 200,
+        "body": {
+            "id": outgoing_id,
+            "conversation_id": conversation_id,
+            "status": status,
+            "source_id": message.get("source_id"),
+            "content_attributes": message.get("content_attributes") if isinstance(message.get("content_attributes"), dict) else {},
+        },
+    })
+    if (
+        outcome.get("delivery_state") in CONFIRMED_STATES
+        and outcome.get("provider_identity_class") != "whatsapp_provider"
+    ):
+        outcome.update({
+            "delivery_state": PROVIDER_OUTCOME_AMBIGUOUS,
+            "customer_send_confirmed": False,
+            "handled_autonomously": False,
+            "failure_class": "provider_identity_missing_or_untrusted",
+        })
+    recorder = evidence_recorder or record_sam_live_stock_review_event
+    recorded, record_status = recorder(build_delivery_transition_event(attempt, outcome))
+    if record_status >= 400 or not recorded.get("success"):
+        return {"success": False, "status": "sam_delivery_transition_persistence_failed", "processed": False}, 503
+    if recorded.get("created") is False:
+        return {
+            "success": True,
+            "status": "sam_delivery_transition_replay_withheld",
+            "processed": False,
+            "delivery_state": outcome.get("delivery_state"),
+            "automatic_retry_prohibited": True,
+        }, 200
+    action_id = _clean(attempt.get("owner_action_identity"), 120)
+    if not action_id:
+        return {"success": True, "status": "sam_delivery_non_owner_attempt_reconciled", "processed": True, "delivery_state": outcome.get("delivery_state")}, 200
+    action_result, action_status = (review_event_loader or get_sam_live_stock_review_event)(action_id)
+    action_event = action_result.get("event") if isinstance(action_result.get("event"), dict) else {}
+    action_json = _json_value(action_event.get("review_json"))
+    action = action_json.get("send_reply_action") if isinstance(action_json.get("send_reply_action"), dict) else {}
+    if action_status >= 400 or action.get("action_identity") != action_id:
+        return {"success": False, "status": "sam_delivery_owner_action_not_found", "processed": True}, 409
+    active_result, active_status = (active_card_loader or get_active_sam_live_stock_owner_card)(conversation_id)
+    active = active_result.get("card") if isinstance(active_result.get("card"), dict) else {}
+    expected = {
+        "conversation_id": conversation_id,
+        "telegram_chat_id": _clean(action.get("telegram_chat_id"), 100),
+        "telegram_message_id": _clean(action.get("telegram_message_id"), 100),
+    }
+    if (
+        active_status >= 400
+        or any(_clean(active.get(key), 120) != _clean(value, 120) for key, value in expected.items())
+        or _clean(active_result.get("lifecycle_card_identity"), 120)
+        != _clean(action.get("lifecycle_card_identity"), 120)
+    ):
+        return {"success": False, "status": "sam_delivery_exact_card_mismatch", "processed": True}, 409
+    state = outcome.get("delivery_state")
+    if state in CONFIRMED_STATES:
+        deleted, delete_status = delete_sam_live_stock_telegram_escalation(
+            action_id,
+            expected["telegram_chat_id"],
+            expected["telegram_message_id"],
+            environ=source,
+            telegram_deleter=telegram_deleter,
+        )
+        if delete_status >= 400 or not deleted.get("success"):
+            edited, edit_status = _edit_owner_card_state(expected, "Delivered / Resolved", [], source, telegram_editor)
+            if edit_status >= 400:
+                return {"success": False, "status": "sam_delivery_card_cleanup_ambiguous", "processed": True, "delivery_state": state}, 502
+            cleanup = {"status": "sam_delivery_card_resolved_by_edit", "edit": edited}
+        else:
+            cleanup = deleted
+        recorder(build_sam_live_stock_owner_card_event(action_event, expected, "resolved", "send_reply_delivered"))
+        return {"success": True, "status": "sam_delivery_confirmed_card_cleaned", "processed": True, "delivery_state": state, "customer_send_confirmed": True, "card_cleanup": cleanup}, 200
+    if state in {PROVIDER_FAILED, PROVIDER_OUTCOME_AMBIGUOUS}:
+        label = "Delivery failed — check Chatwoot" if state == PROVIDER_FAILED else "Delivery unconfirmed — check Chatwoot"
+        edited, _ = _edit_owner_card_state(expected, label, _open_chatwoot_keyboard(action_id, conversation_id, source), source, telegram_editor)
+        return {"success": True, "status": "sam_delivery_exception_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True, "telegram": edited}, 200
+    return {"success": True, "status": "sam_delivery_accepted_card_retained", "processed": True, "delivery_state": state, "customer_send_confirmed": False, "card_retained": True}, 200
+
+
 def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sender=None, telegram_deleter=None, telegram_editor=None, chatwoot_writer=None, review_event_loader=None, active_card_loader=None, chronology_loader=None, sales_pack_preparer=None, evidence_recorder=None):
     payload = payload if isinstance(payload, dict) else {}
     action = _callback_action(payload.get("callback_data") or payload.get("action"))
     escalation_id = _clean(payload.get("escalation_id") or action.get("escalation_id"), 120)
+    if action["action"] == "card_send":
+        loaded, load_status = (review_event_loader or get_sam_live_stock_review_event)(escalation_id)
+        if load_status >= 400 or not loaded.get("success"):
+            return _callback_result(action["action"], loaded, load_status, escalation_id)
+        action_event = loaded.get("event") if isinstance(loaded.get("event"), dict) else {}
+        if action_event.get("event_source") != SEND_REPLY_ACTION_EVENT_SOURCE:
+            return {"success": False, "status": "sam_live_card_send_legacy_identity_withheld", "automatic_retry_prohibited": True, **AUTHORITY_FLAGS}, 409
+        return execute_sam_live_stock_send_reply(
+            action_event, payload, environ=environ,
+            review_event_loader=review_event_loader,
+            active_card_loader=active_card_loader,
+            chronology_loader=chronology_loader,
+            evidence_recorder=evidence_recorder,
+            chatwoot_sender=chatwoot_sender,
+            telegram_deleter=telegram_deleter,
+            telegram_editor=telegram_editor,
+        )
     review_actions = {
         "review_approve_send",
         "review_edit",
@@ -937,6 +1385,7 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
                 environ=environ, chatwoot_sender=chatwoot_sender,
                 chatwoot_writer=chatwoot_writer, telegram_deleter=telegram_deleter,
                 telegram_editor=telegram_editor, evidence_recorder=evidence_recorder,
+                chronology_loader=chronology_loader,
             )
         if action["action"] in {"card_send", "card_open", "card_keep", "card_no_reply", "card_done"}:
             return _process_canonical_owner_card_action(
@@ -944,6 +1393,7 @@ def process_sam_live_stock_owner_callback(payload, *, environ=None, chatwoot_sen
                 environ=environ, chatwoot_sender=chatwoot_sender,
                 chatwoot_writer=chatwoot_writer, telegram_deleter=telegram_deleter,
                 telegram_editor=telegram_editor, evidence_recorder=evidence_recorder,
+                chronology_loader=chronology_loader,
             )
         if action["action"] in {
             "review_no_reply",
@@ -2696,6 +3146,17 @@ def _chatwoot_read_resolve_chronology(conversation_id, environ=None):
         })
     return {
         "id": conversation_id,
+        "contact_id": _clean(
+            ((conversation.get("meta") or {}).get("sender") or {}).get("id")
+            if isinstance(conversation.get("meta"), dict) else "",
+            100,
+        ),
+        "inbox_id": _clean(
+            conversation.get("inbox_id")
+            or ((conversation.get("inbox") or {}).get("id") if isinstance(conversation.get("inbox"), dict) else ""),
+            100,
+        ),
+        "can_reply": conversation.get("can_reply"),
         "custom_attributes": (
             conversation.get("custom_attributes")
             if isinstance(conversation.get("custom_attributes"), dict)

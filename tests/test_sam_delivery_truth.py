@@ -38,6 +38,26 @@ class SamDeliveryTruthTests(unittest.TestCase):
         self.assertNotIn("+447", serialized)
         self.assertTrue(claim["review_json"]["automatic_retry_prohibited"])
 
+    def test_owner_action_identity_is_bound_without_replacing_review_identity(self):
+        original = attempt()
+        owner = truth.build_delivery_attempt(
+            {
+                "conversation_id": "2013",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "message_id": "759446521",
+            },
+            {"suggested_reply_text": "Safe owner reply"},
+            {
+                "review_event_id": "SAM-LIVE-REVIEW-A17F2169ED0F",
+                "owner_action_identity": "SAM-LIVE-CARD-SEND-EXACT",
+            },
+            response_class="owner_approved_reply",
+        )
+        self.assertEqual(owner["review_id"], "SAM-LIVE-REVIEW-A17F2169ED0F")
+        self.assertEqual(owner["owner_action_identity"], "SAM-LIVE-CARD-SEND-EXACT")
+        self.assertNotEqual(owner["delivery_attempt_id"], original["delivery_attempt_id"])
+
     def test_attempt_requires_complete_exact_identity(self):
         value = truth.build_delivery_attempt(
             {"conversation_id": "2013"},
