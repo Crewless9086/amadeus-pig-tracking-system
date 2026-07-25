@@ -6,12 +6,14 @@ Read in this order:
 
 1. `OPERATING_STATUS.md` - concise built/merged/deployed/operational status,
    faults, containment and owner handoff.
-2. `CURRENT_STATE.md` - longer historical state and system context.
-3. `NEXT_STEPS.md` - the current priority queue.
-4. `WORKFLOW.md` - how owner notes become scoped plans and phases.
-5. `DEPLOYMENT_SOP.md` - release and branch safety rules.
-6. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
-7. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
+2. `AGENT_PORTFOLIO_STATUS.md` - per-agent doctrine, implementation, delivery,
+   authority, fault, candidate and evidence-currency matrix.
+3. `CURRENT_STATE.md` - longer historical state and system context.
+4. `NEXT_STEPS.md` - the current priority queue.
+5. `WORKFLOW.md` - how owner notes become scoped plans and phases.
+6. `DEPLOYMENT_SOP.md` - release and branch safety rules.
+7. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
+8. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
 
 Raw intake can use `planning/ToDoList.md` today and the `planning/inbox/` structure as it grows.
 
@@ -40,6 +42,7 @@ No customer sends, public posts, payment/deposit actions, reservations, dispatch
 ## Canonical Active Docs
 
 - `docs/00-start-here/OPERATING_STATUS.md`
+- `docs/00-start-here/AGENT_PORTFOLIO_STATUS.md`
 - `docs/00-start-here/CURRENT_STATE.md`
 - `docs/00-start-here/NEXT_STEPS.md`
 - `docs/00-start-here/WORKFLOW.md`
