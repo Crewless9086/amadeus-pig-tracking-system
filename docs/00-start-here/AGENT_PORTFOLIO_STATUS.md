@@ -50,6 +50,77 @@ physical actuation, water flow, payment, publication, or customer completion.
 | **FRED and sales specialist agents** | FRED, Meat Sales, Live Pig Sales, Slaughter/Abattoir and Custom Cuts remain planned or advisory registry roles. | Some sales behavior is implemented under shared SAM/Meat services, not as independently proven agents. | Mixed shared components / Mixed / Mixed / Unknown / No independent proof / No. | Shared runtime evidence does not establish separate agent authority. | Registry and dedicated planning files remain the weaker current truth. |
 | **Research Engine, Business Intelligence and Compliance Reviewer** | Named future registry roles. | No dedicated canonical implementation or agent document evidenced. | No / No / No / No / No / No. | No active claim or current candidate. | Explicit documentation gaps; status remains Not designed/Planned. |
 
+## Post-Cut Portfolio Addition: Amadeus StoryWorks
+
+Addition evidence cut: **2026-07-25 18:04 UTC**
+
+Authoritative integration:
+[`750ec260`](https://github.com/Crewless9086/amadeus-pig-tracking-system/commit/750ec260d8fed1dda0e920987b42ad656e4d047f),
+merged through [PR #475](https://github.com/Crewless9086/amadeus-pig-tracking-system/pull/475)
+from reviewed head `2e8d8910998e3110a12c46ae55ce51420dbf3965`.
+This addition does not refresh the earlier evidence cut or any other portfolio
+row.
+
+**Identity and ownership:** Amadeus StoryWorks is a separate, evidence-led
+YouTube media enterprise intended to become commercially self-sustaining,
+cover its own production and operating costs, later contribute toward CHARLIE
+operating costs and—only through explicit owner-governed financial
+allocation—help fund other Amadeus ventures. Its first validation property is
+**The Chronicle Vault**, currently validating documentary/explainer content
+about the systems, technologies and decisions that enabled societies to
+function.
+
+STORYWORKS is not BEACON, Amadeus Farm social media, a farm media library,
+livestock marketing, customer support, a farm-operations agent, or presently
+integrated into live CHARLIE/CORE. BEACON continues to own Amadeus Farm
+marketing and distribution. STORYWORKS is an independent owned-media business
+validation programme.
+
+| Current STORYWORKS state | Evidence-bound value |
+| --- | --- |
+| Research and business doctrine | Integrated under `planning/storyworks/**` |
+| Petra private pilot package | Partially produced; no completed video |
+| Final rights/fact/quality approval | No |
+| YouTube channel / publication | Not created / not published; no exact platform identity |
+| Platform performance / YPP eligibility | Unknown / Unknown |
+| YPP/AdSense / monetisation | Not activated / No |
+| Revenue finalised / cash received | No / exactly R0 |
+| Distributable profit / transfer | No / No |
+| CHARLIE integration / operational media business | No / No |
+| Deployment | Unverified and unnecessary for the documentation/private-validation state |
+
+The authoritative business ladder keeps researched, privately produced,
+rights/fact/quality approved, owner-approved for publication, published with
+exact platform identity, performance observed, YPP eligible, monetisation
+active, platform revenue estimated, platform revenue finalised, cash
+received, direct costs reconciled, operating reserve funded, distributable
+profit owner-approved, and transfer reconciled as separate states. A later
+state is never inferred from an earlier one.
+
+CHARLIE may later govern topic pipeline, budgets, schedules, production
+stages, evidence, reviews and business reporting, but that integration is not
+built or authorised. Owner approval remains mandatory for account/channel
+creation, publishing, contracts, licences, spending, monetisation, banking,
+tax, allocation and transfer of funds.
+
+Authoritative STORYWORKS routing:
+
+- [`README.md`](../../planning/storyworks/README.md)
+- [`STATUS.md`](../../planning/storyworks/STATUS.md)
+- [`STORYWORKS_BUSINESS_CHARTER.md`](../../planning/storyworks/STORYWORKS_BUSINESS_CHARTER.md)
+- [`BUSINESS_STATE_LADDER.md`](../../planning/storyworks/BUSINESS_STATE_LADDER.md)
+- [`PHASE_0_EXECUTIVE_DECISION_PACK.md`](../../planning/storyworks/PHASE_0_EXECUTIVE_DECISION_PACK.md)
+- [`PHASE_0_VALIDATION_PLAN.md`](../../planning/storyworks/PHASE_0_VALIDATION_PLAN.md)
+- [`UNIT_ECONOMICS.md`](../../planning/storyworks/UNIT_ECONOMICS.md)
+- [`PRODUCTION_PLAYBOOK.md`](../../planning/storyworks/PRODUCTION_PLAYBOOK.md)
+- [`CHRONICLE_VAULT_CHANNEL_BIBLE.md`](../../planning/storyworks/CHRONICLE_VAULT_CHANNEL_BIBLE.md)
+
+Detailed doctrine changes occur under `planning/storyworks/**` first.
+Portfolio documentation changes only when identity, ownership boundary, phase,
+or material business state changes. This pointer must not become a second
+charter, economics model, production playbook, or state ladder. Missing
+current evidence remains `Unknown`.
+
 ## Current Fault And Candidate Register
 
 - **SAM delivery truth:** doctrine and runtime correction are merged/deployed.

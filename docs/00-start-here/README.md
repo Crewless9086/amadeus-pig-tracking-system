@@ -14,6 +14,9 @@ Read in this order:
 6. `DEPLOYMENT_SOP.md` - release and branch safety rules.
 7. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
 8. `../09-vault-brain/README.md` - draft CHARLIE Vault Brain operating manual for identity, roles, playbooks, review standards, and Brain Guard governance.
+9. `../../planning/storyworks/README.md` - authoritative, isolated Amadeus
+   StoryWorks business-validation doctrine; not farm media or live agent
+   runtime.
 
 Raw intake can use `planning/ToDoList.md` today and the `planning/inbox/` structure as it grows.
 
@@ -50,6 +53,8 @@ No customer sends, public posts, payment/deposit actions, reservations, dispatch
 - `docs/00-start-here/OWNER_INBOX_GUIDE.md`
 - `docs/05-ai/AGENT_ROLES.md`
 - `docs/09-vault-brain/README.md` after owner review; until then it is the draft consolidated brain layer.
+- `planning/storyworks/README.md` for the separate StoryWorks owned-media
+  validation programme and its authoritative internal routing.
 
 Some older docs are still useful as history or module detail. If an older doc conflicts with this folder or the accepted CHARLIE direction, treat it as legacy until it is reviewed.
 
