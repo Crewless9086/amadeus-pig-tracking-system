@@ -2,18 +2,42 @@
 -- This records only owner-confirmed auction cycles and advisory cohort snapshots.
 create table if not exists public.riversdale_auction_cycles (
     auction_cycle_id text primary key,
-    auction_date date not null unique,
-    operating_confirmed boolean not null default false,
-    owner_confirmed_by text,
-    owner_confirmed_at timestamptz,
+    auction_date date,
+    operating_confirmed boolean not null,
+    decision_status text not null check (decision_status in ('confirmed_operating', 'confirmed_not_operating')),
+    owner_confirmed_by text not null,
+    owner_confirmed_at timestamptz not null,
+    location text not null default '',
+    organizer_details text not null default '',
+    entry_deadline date,
+    commission_percent numeric(7,4) check (commission_percent is null or commission_percent >= 0),
+    auction_fees numeric(14,2) check (auction_fees is null or auction_fees >= 0),
+    transport_estimate numeric(14,2) check (transport_estimate is null or transport_estimate >= 0),
+    currency text not null default 'ZAR',
     owner_note text not null default '',
+    idempotency_key text not null unique,
+    decision_hash text not null check (length(decision_hash) = 64),
     candidate_snapshot_json jsonb not null default '[]'::jsonb,
     candidate_snapshot_hash text not null default '',
     created_at timestamptz not null default now(),
-    check ((operating_confirmed = false and owner_confirmed_by is null and owner_confirmed_at is null)
-        or (operating_confirmed = true and owner_confirmed_by is not null and owner_confirmed_at is not null))
+    check ((operating_confirmed and decision_status = 'confirmed_operating' and auction_date is not null)
+        or (not operating_confirmed and decision_status = 'confirmed_not_operating'))
 );
 alter table public.riversdale_auction_cycles enable row level security;
+revoke all privileges on table public.riversdale_auction_cycles from public;
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+        revoke all on public.riversdale_auction_cycles from anon;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+        revoke all on public.riversdale_auction_cycles from authenticated;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        grant select, insert on public.riversdale_auction_cycles to service_role;
+    end if;
+end;
+$$;
 
 -- This is the canonical one-pig/one-active-outlet rail. Every future protected
 -- outlet writer (customer sale, reservation, auction, meat, breeding, health
@@ -38,6 +62,7 @@ create table if not exists public.pig_active_outlets (
 create unique index if not exists pig_active_outlets_one_active_pig_unique
     on public.pig_active_outlets (pig_id) where active;
 alter table public.pig_active_outlets enable row level security;
+revoke all privileges on table public.pig_active_outlets from public;
 
 -- Keep the canonical claim rail aligned with the existing protected Supabase
 -- writers.  These triggers are deliberately database-side so a writer cannot
@@ -205,23 +230,100 @@ create table if not exists public.riversdale_auction_cohort_members (
 create unique index if not exists riversdale_auction_active_cohort_pig_unique
     on public.riversdale_auction_cohort_members (pig_id) where active;
 alter table public.riversdale_auction_cohort_members enable row level security;
+revoke all privileges on table public.riversdale_auction_cohort_members from public;
 
 create or replace function app_private.enforce_riversdale_auction_cycle_integrity()
 returns trigger language plpgsql as $$
 begin
-    if new.auction_cycle_id is distinct from old.auction_cycle_id
-       or new.auction_date is distinct from old.auction_date
-       or new.created_at is distinct from old.created_at then
-        raise exception 'riversdale auction cycle identity is immutable';
-    end if;
-    if old.operating_confirmed and new.operating_confirmed is distinct from true then
-        raise exception 'confirmed auction cycle cannot be reverted';
-    end if;
-    return new;
+    raise exception 'riversdale auction decisions are append-only';
 end;
 $$;
-create trigger riversdale_auction_cycle_integrity before update on public.riversdale_auction_cycles
+create trigger riversdale_auction_cycle_integrity before update or delete on public.riversdale_auction_cycles
 for each row execute function app_private.enforce_riversdale_auction_cycle_integrity();
+
+-- Supabase client roles and PostgreSQL PUBLIC have no direct mutation path.
+-- The server service role is the only database principal used by the guarded
+-- owner-admin route and by existing protected domain writers.
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+        revoke all privileges on table public.pig_active_outlets from anon;
+        revoke all privileges on table public.riversdale_auction_cohort_members from anon;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+        revoke all privileges on table public.pig_active_outlets from authenticated;
+        revoke all privileges on table public.riversdale_auction_cohort_members from authenticated;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        revoke all privileges on table public.riversdale_auction_cycles from service_role;
+        revoke all privileges on table public.pig_active_outlets from service_role;
+        revoke all privileges on table public.riversdale_auction_cohort_members from service_role;
+        grant select, insert on table public.riversdale_auction_cycles to service_role;
+        grant select, insert, update on table public.pig_active_outlets to service_role;
+        grant select, insert, update on table public.riversdale_auction_cohort_members to service_role;
+    end if;
+end;
+$$;
+
+revoke all privileges on function app_private.claim_pig_active_outlet(text, text, text, text, jsonb)
+    from public;
+revoke all privileges on function app_private.release_pig_active_outlet(text)
+    from public;
+revoke all privileges on function app_private.sync_order_line_active_outlet()
+    from public;
+revoke all privileges on function app_private.sync_sales_transaction_item_active_outlet()
+    from public;
+revoke all privileges on function app_private.release_cancelled_sales_transaction_outlets()
+    from public;
+revoke all privileges on function app_private.sync_meat_batch_pig_active_outlet()
+    from public;
+revoke all privileges on function app_private.enforce_riversdale_auction_cycle_integrity()
+    from public;
+
+do $$
+declare
+    role_name text;
+begin
+    foreach role_name in array array['anon', 'authenticated'] loop
+        if exists (select 1 from pg_roles where rolname = role_name) then
+            execute format(
+                'revoke all privileges on function app_private.claim_pig_active_outlet(text, text, text, text, jsonb) from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.release_pig_active_outlet(text) from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.sync_order_line_active_outlet() from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.sync_sales_transaction_item_active_outlet() from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.release_cancelled_sales_transaction_outlets() from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.sync_meat_batch_pig_active_outlet() from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function app_private.enforce_riversdale_auction_cycle_integrity() from %I',
+                role_name
+            );
+        end if;
+    end loop;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        grant execute on function app_private.claim_pig_active_outlet(text, text, text, text, jsonb)
+            to service_role;
+        grant execute on function app_private.release_pig_active_outlet(text)
+            to service_role;
+    end if;
+end;
+$$;
 
 insert into app_private.migration_log (migration_id, description)
 values ('202607230001_create_riversdale_auction_cycles', 'Create owner-confirmed advisory Riversdale auction cycle rail.')

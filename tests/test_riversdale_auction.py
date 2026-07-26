@@ -118,7 +118,12 @@ class RiversdaleAuctionTests(unittest.TestCase):
     def test_owner_confirmed_cycle_is_loaded_from_the_canonical_store(self):
         class Cursor:
             def execute(self, *_args): pass
-            def fetchone(self): return (date(2026, 8, 5), True, datetime(2026, 7, 22, 9, 0))
+            def fetchone(self):
+                return (
+                    date(2026, 8, 5), True, datetime(2026, 7, 22, 9, 0),
+                    "confirmed_operating", "Riversdale", "Organizer",
+                    date(2026, 8, 1), 5, 20, 50, "Owner note",
+                )
             def __enter__(self): return self
             def __exit__(self, *_args): return False
         class Connection:
@@ -138,6 +143,26 @@ class RiversdaleAuctionTests(unittest.TestCase):
         self.assertIn("sync_order_line_active_outlet", sql)
         self.assertIn("sync_sales_transaction_item_active_outlet", sql)
         self.assertIn("sync_meat_batch_pig_active_outlet", sql)
+        self.assertIn("idempotency_key text not null unique", sql)
+        self.assertIn("riversdale auction decisions are append-only", sql)
+        self.assertIn("where rolname = 'anon'", sql)
+        self.assertIn("revoke all on public.riversdale_auction_cycles from anon", sql)
+        self.assertIn(
+            "revoke all privileges on table public.riversdale_auction_cycles from public",
+            sql,
+        )
+        self.assertIn(
+            "revoke all privileges on table public.pig_active_outlets from public",
+            sql,
+        )
+        self.assertIn(
+            "revoke all privileges on table public.riversdale_auction_cohort_members from public",
+            sql,
+        )
+        self.assertIn(
+            "function app_private.claim_pig_active_outlet(text, text, text, text, jsonb) from %I",
+            sql,
+        )
         for outlet in ("customer_sale", "reservation", "riversdale_auction", "meat", "breeding", "health_hold", "keep_growing"):
             self.assertIn(f"'{outlet}'", sql)
 
