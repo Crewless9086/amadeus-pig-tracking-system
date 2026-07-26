@@ -523,7 +523,13 @@ def validate_termination(
 def inspect_process(pid):
     """Inspect a process and its ancestry. Any partial result is unusable."""
     if os.name != "nt":
-        return _inspect_proc(pid)
+        try:
+            return _inspect_proc(pid)
+        except OSError:
+            # A process can exit between the caller's liveness check and the
+            # first /proc read. Treat the now-absent identity as not live;
+            # partial identities remain unusable inside _inspect_proc.
+            return None
     try:
         rows = _windows_process_snapshot()
         by_pid = {int(row["pid"]): row for row in rows if row.get("pid")}

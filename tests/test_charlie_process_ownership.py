@@ -214,6 +214,11 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         self.assertFalse(result["inspection_complete"])
         self.assertEqual(result["ancestry"][0]["pid"], 111)
 
+    @patch.object(process_ownership.os, "name", "posix")
+    @patch.object(process_ownership, "_inspect_proc", side_effect=FileNotFoundError("exited"))
+    def test_posix_process_exit_during_inspection_returns_no_identity(self, _inspect):
+        self.assertIsNone(process_ownership.inspect_process(222))
+
     @patch.object(process_ownership.os, "name", "nt")
     @patch.object(process_ownership.subprocess, "run", side_effect=subprocess.TimeoutExpired(["powershell"], 8))
     def test_windows_target_inspection_timeout_returns_no_identity(self, _run):
