@@ -506,19 +506,30 @@ def list_owner_work_items(
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"""
-                    select distinct on (work_item_id)
+                    with latest as (
+                      select distinct on (work_item_id)
+                        work_event_id, work_item_id, account_id, conversation_id,
+                        contact_id, inbox_id, latest_message_id, latest_message_at,
+                        chronology_hash, unanswered_inbound_bundle_json,
+                        observation_hash, unanswered_count, classification,
+                        missed_message_classification, lane, actionable,
+                        withheld_reasons_json, review_event_id, event_type,
+                        observed_at, created_at
+                      from public.{WORK_TABLE}
+                      order by work_item_id, observed_at desc, created_at desc,
+                               work_event_id desc
+                    )
+                    select
                       work_event_id, work_item_id, account_id, conversation_id,
                       contact_id, inbox_id, latest_message_id, latest_message_at,
                       chronology_hash, unanswered_inbound_bundle_json,
-                      observation_hash,
-                      unanswered_count, classification,
+                      observation_hash, unanswered_count, classification,
                       missed_message_classification, lane, actionable,
                       withheld_reasons_json, review_event_id, event_type,
                       observed_at
-                    from public.{WORK_TABLE}
+                    from latest
                     where (%s or actionable=true)
-                    order by work_item_id, observed_at desc, created_at desc,
-                             work_event_id desc
+                    order by observed_at desc, created_at desc, work_event_id desc
                     limit %s
                     """,
                     (bool(include_withheld), limit),
