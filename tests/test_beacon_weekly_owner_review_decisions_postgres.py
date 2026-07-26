@@ -11,6 +11,9 @@ from modules.beacon.weekly_owner_review_decisions import (
 from modules.beacon.organic_publication_binding import (
     create_organic_publication_binding,
 )
+from modules.beacon.organic_publication_authorization import (
+    append_authorization_event,
+)
 from modules.sales.beacon_campaign import build_beacon_campaign_publish_packet
 from tests.test_beacon_weekly_owner_review_decisions import (
     eligible_assets,
@@ -129,6 +132,52 @@ class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
                 with self.assertRaises(psycopg.errors.RaiseException):
                     cursor.execute(f"delete from {binding_table}")
                 cursor.execute("rollback to savepoint delete_binding")
+            connection.rollback()
+
+        authorization_migration = Path(
+            "supabase/migrations/"
+            "202607260005_create_beacon_publication_authorizations.sql"
+        ).read_text(encoding="utf-8")
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(authorization_migration)
+        authorization = {
+            "authorization_event_id": "BEACON-AUTH-EVENT-POSTGRES",
+            "authorization_generation_id": "BEACON-AUTH-GEN-POSTGRES",
+            "binding_id": created["binding"]["binding_id"],
+            "event_status": "awaiting_owner_authorization",
+            "transport_sha256": "c" * 64,
+            "payload_sha256": "d" * 64,
+            "expected_attempt_identity": "BEACON-FB-POST-POSTGRES",
+            "predecessor_generation_id": "",
+            "reason": "postgres_proof",
+        }
+        prepared, status = append_authorization_event(
+            authorization, database_url=DATABASE_URL
+        )
+        replay, replay_status = append_authorization_event(
+            authorization, database_url=DATABASE_URL
+        )
+        self.assertEqual((status, prepared["created_count"]), (201, 1))
+        self.assertEqual((replay_status, replay["created_count"]), (200, 0))
+        authorization_table = (
+            "public.beacon_organic_publication_authorization_events"
+        )
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                for role in ("anon", "authenticated"):
+                    for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                        cursor.execute(
+                            "select has_table_privilege(%s,%s,%s)",
+                            (role, authorization_table, privilege),
+                        )
+                        self.assertFalse(cursor.fetchone()[0])
+                cursor.execute("savepoint update_authorization")
+                with self.assertRaises(psycopg.errors.RaiseException):
+                    cursor.execute(
+                        f"update {authorization_table} set reason='changed'"
+                    )
+                cursor.execute("rollback to savepoint update_authorization")
             connection.rollback()
 
     def test_supabase_roles_and_server_boundary_are_fail_closed(self):

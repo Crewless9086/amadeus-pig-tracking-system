@@ -6,6 +6,11 @@ import json
 import os
 
 from modules.beacon.media_library import list_beacon_media_assets
+from modules.beacon.organic_publication_authorization import (
+    canonical_caption_text,
+    caption_sha256,
+    read_authorized_generation,
+)
 from modules.beacon.weekly_owner_review import build_post_one_owner_review
 
 
@@ -116,6 +121,11 @@ def require_organic_publication_binding(
                 if not binding:
                     return _failure("organic_publication_packet_unbound", 409)
                 decision = _read_decision(cursor, binding["weekly_packet_id"])
+                authorization = read_authorized_generation(
+                    cursor,
+                    params.get("authorization_generation_id"),
+                    binding["binding_id"],
+                )
     except Exception as exc:
         return {
             **_failure("publication_binding_read_failed", 503)[0],
@@ -124,10 +134,13 @@ def require_organic_publication_binding(
     mismatch = _runtime_mismatch(binding, decision, params, target_page_id)
     if mismatch:
         return _failure(mismatch, 409)
+    if not authorization:
+        return _failure("organic_publication_authorization_required", 409)
     return {
         "success": True,
         "status": "organic_publication_binding_verified",
         "binding": _public_binding(binding),
+        "authorization": authorization,
         **_no_action(),
     }, 200
 
@@ -185,7 +198,7 @@ def _runtime_mismatch(binding, decision, params, target_page_id):
          "organic_publication_binding_stale"),
         (decision["caption_sha256"] == binding["caption_sha256"],
          "organic_publication_binding_stale"),
-        (sha256(params.get("exact_text", "").encode()).hexdigest()
+        (caption_sha256(params.get("exact_text", ""))
          == binding["caption_sha256"], "organic_publication_caption_drift"),
         (order == binding["exact_media_order"],
          "organic_publication_media_order_drift"),

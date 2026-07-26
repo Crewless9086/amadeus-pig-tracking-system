@@ -27,6 +27,7 @@ from modules.sales.beacon_campaign import (
     record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
     _performance_params,
+    _facebook_post_execution_id,
 )
 
 
@@ -750,14 +751,30 @@ class BeaconCampaignTests(unittest.TestCase):
 
     @patch("modules.sales.beacon_campaign.require_organic_publication_binding")
     def test_attempt_claim_persists_exact_media_order_before_meta(self, binding):
-        binding.return_value = ({
-            "success": True,
-            "binding": {
+        def verified(params, **_kwargs):
+            identity_params = {
+                **params,
+                "publication_binding_id": "BINDING-1",
+                "approved_weekly_packet_id": "WEEKLY-1",
+                "owner_decision_event_id": "DECISION-1",
+                "authorization_generation_id": "AUTH-1",
+            }
+            return ({
+                "success": True,
+                "binding": {
                 "binding_id": "BINDING-1",
                 "weekly_packet_id": "WEEKLY-1",
                 "owner_decision_event_id": "DECISION-1",
+                },
+                "authorization": {
+                    "authorization_generation_id": "AUTH-1",
+                    "expected_attempt_identity": _facebook_post_execution_id(
+                        identity_params
+                    ),
+                },
             },
-        }, 200)
+            200)
+        binding.side_effect = verified
         recorded = []
         poster_calls = []
         assets = [
