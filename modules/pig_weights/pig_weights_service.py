@@ -4736,10 +4736,12 @@ def _auction_selectable_ids(packet):
 
 
 def get_riversdale_auction_list(database_url=None, connect_factory=None):
-    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
     listing, status = read_auction_list(database_url=database_url, connect_factory=connect_factory)
     if status != 200:
         return listing, status
+    packet = get_riversdale_auction_recommendation(
+        database_url=database_url, connect_factory=connect_factory
+    )
     packet_cycle = to_clean_string((packet.get("confirmation") or {}).get("auction_cycle_id"))
     if not packet_cycle or packet_cycle != listing.get("auction_cycle_id"):
         return {

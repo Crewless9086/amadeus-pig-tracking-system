@@ -22,7 +22,9 @@ def _factory(url, connect_factory):
     if connect_factory:
         return lambda: connect_factory(url)
     import psycopg
-    return lambda: psycopg.connect(url, connect_timeout=10)
+    return lambda: psycopg.connect(
+        url, connect_timeout=3, options="-c statement_timeout=3000"
+    )
 
 
 def _canonical_hash(value):

@@ -49,6 +49,9 @@ function json(route, body, status = 200) {
 
 test("Auction table selection is local and print is list-only", async ({ page, context }, testInfo) => {
   const mutationRequests = [];
+  let releaseList;
+  const listGate = new Promise((resolve) => { releaseList = resolve; });
+  let holdList = true;
   let listItems = [
     { pig_id: "VISUAL-PIG-101", owner_note: "Check loading gate" },
     { pig_id: "VISUAL-PIG-102", owner_note: "" },
@@ -81,6 +84,7 @@ test("Auction table selection is local and print is list-only", async ({ page, c
       });
     }
     if (url.pathname.endsWith("/riversdale-auction-list")) {
+      if (holdList) await listGate;
       return json(route, {
         success: true, auction_cycle_id: "visual-cycle-1",
         selectable_pig_ids: selectableIds,
@@ -113,6 +117,12 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   await page.selectOption("#bucket_filter", "Auction Candidates");
   await expect(page.locator("#allocation_table_heading")).toHaveText("Auction Candidates");
   await expect(page.locator("#allocation_body tr")).toHaveCount(21);
+  const pendingListResponse = page.waitForResponse(
+    response => response.url().endsWith("/riversdale-auction-list")
+  );
+  holdList = false;
+  releaseList();
+  await pendingListResponse;
   await expect(page.locator("[data-auction-pig-id]")).toHaveCount(21);
   await expect(page.locator("[data-auction-pig-id='VISUAL-PIG-103']")).toBeDisabled();
   await expect(page.locator("a.allocation-pig-link").first()).toHaveAttribute("href", "/pig/VISUAL-PIG-101");

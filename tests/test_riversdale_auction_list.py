@@ -1,9 +1,11 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from modules.sales.riversdale_auction_list import (
     eligibility_tokens, record_auction_list_events,
 )
+from modules.pig_weights.pig_weights_service import get_riversdale_auction_list
 
 
 def packet(cycle="cycle-a", pig_id="PIG-1", *, eligible=True):
@@ -92,6 +94,32 @@ class RiversdaleAuctionListTests(unittest.TestCase):
         self.assertNotIn("recorded_at desc,e.auction_list_event_id", source)
         decision_source = Path("modules/sales/riversdale_auction.py").read_text()
         self.assertIn("pg_advisory_xact_lock", decision_source)
+
+    @patch("modules.pig_weights.pig_weights_service.get_riversdale_auction_recommendation")
+    @patch("modules.pig_weights.pig_weights_service.read_auction_list")
+    def test_unavailable_optional_store_fails_before_readiness_rebuild(
+            self, read_list, recommendation):
+        read_list.return_value = (
+            {"success": False, "status": "auction_list_store_unavailable"}, 503
+        )
+        result, status = get_riversdale_auction_list()
+        self.assertEqual((status, result["status"]),
+                         (503, "auction_list_store_unavailable"))
+        recommendation.assert_not_called()
+
+    def test_optional_list_is_bounded_and_frontend_renders_candidates_first(self):
+        backend = Path("modules/sales/riversdale_auction_list.py").read_text()
+        self.assertIn("connect_timeout=3", backend)
+        self.assertIn('statement_timeout=3000', backend)
+        frontend = Path("static/js/pigAllocation.js").read_text()
+        render_at = frontend.index("renderAuctionSurface(data.owner_surface)")
+        optional_fetch_at = frontend.index(
+            'fetch("/api/pig-weights/riversdale-auction-list")'
+        )
+        self.assertLess(render_at, optional_fetch_at)
+        self.assertIn(
+            "Auction List unavailable; candidates remain read-only", frontend
+        )
 
 
 if __name__ == "__main__":
