@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest import mock
 
 from app import app
-from modules.auth.owner_access import set_owner_session
 from modules.telemetry.irrigation_command_service import (
     AUTHORITY,
     InMemoryIrrigationCommandLedger,
@@ -316,6 +315,22 @@ class IrrigationCommandRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["status"], "owner_admin_access_denied")
 
+    def test_read_session_cannot_approve_or_cancel_command(self):
+        with self.client.session_transaction() as session:
+            session["owner_access"] = {
+                "role": "read",
+                "principal_id": "owner-read:test",
+                "created_at": NOW.isoformat(),
+            }
+        for action in ("approve", "cancel"):
+            response = self.client.post(
+                f"/api/telemetry/rootline/irrigation-commands/ROOTLINE-CMD-test/{action}"
+            )
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(
+                response.get_json()["status"], "owner_admin_access_denied"
+            )
+
     @mock.patch("modules.telemetry.telemetry_routes.create_plan_only_command")
     def test_admin_route_preserves_no_authority_contract(self, create):
         create.return_value = ({
@@ -325,12 +340,12 @@ class IrrigationCommandRouteTests(unittest.TestCase):
             "writes_performed": True,
             "hardware_control_performed": False,
         }, 201)
-        with self.client.session_transaction() as session:
-            session["owner_access"] = {
-                "role": "admin",
-                "principal_id": "owner-admin:test",
-                "created_at": NOW.isoformat(),
-            }
+        login = self.client.post(
+            "/owner/login",
+            data={"owner_token": "a" * 40, "next": "/dashboard"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        self.assertEqual(login.status_code, 302)
         response = self.client.post(
             "/api/telemetry/rootline/irrigation-commands", json=payload()
         )
@@ -350,6 +365,19 @@ class IrrigationCommandMigrationContractTests(unittest.TestCase):
         self.assertIn("irrigation_command_ledger_block_update_delete", migration)
         self.assertIn("before update or delete", migration)
         self.assertIn("unique (zone_id, generation)", migration)
+        self.assertIn(
+            "from public, anon, authenticated",
+            migration,
+        )
+        self.assertIn(
+            "on sequence public.irrigation_command_state_events_event_sequence_seq",
+            migration,
+        )
+        self.assertIn(
+            "on function public.irrigation_command_ledger_block_update_delete()",
+            migration,
+        )
+        self.assertIn("grant select, insert", migration)
         for field in (
             "calls_ifttt",
             "calls_n8n",

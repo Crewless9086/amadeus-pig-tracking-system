@@ -102,6 +102,49 @@ create trigger trg_irrigation_command_state_events_no_update_delete
     before update or delete on public.irrigation_command_state_events
     for each row execute function public.irrigation_command_ledger_block_update_delete();
 
+-- Browser/client roles must never bypass the protected Flask owner routes.
+-- Do not rely on RLS alone: Supabase default privileges may otherwise grant
+-- direct table, identity-sequence, or function access.
+revoke select, insert, update, delete, truncate, references, trigger
+    on table public.irrigation_command_plans
+    from public, anon, authenticated;
+revoke select, insert, update, delete, truncate, references, trigger
+    on table public.irrigation_command_state_events
+    from public, anon, authenticated;
+revoke usage, select, update
+    on sequence public.irrigation_command_state_events_event_sequence_seq
+    from public, anon, authenticated;
+revoke execute
+    on function public.irrigation_command_ledger_block_update_delete()
+    from public, anon, authenticated;
+
+-- The application server may append and read plan-only evidence. It cannot
+-- update, delete, truncate, dispatch, retry, schedule, or control hardware.
+revoke all privileges
+    on table public.irrigation_command_plans
+    from service_role;
+revoke all privileges
+    on table public.irrigation_command_state_events
+    from service_role;
+revoke all privileges
+    on sequence public.irrigation_command_state_events_event_sequence_seq
+    from service_role;
+revoke all privileges
+    on function public.irrigation_command_ledger_block_update_delete()
+    from service_role;
+grant select, insert
+    on table public.irrigation_command_plans
+    to service_role;
+grant select, insert
+    on table public.irrigation_command_state_events
+    to service_role;
+grant usage, select
+    on sequence public.irrigation_command_state_events_event_sequence_seq
+    to service_role;
+grant execute
+    on function public.irrigation_command_ledger_block_update_delete()
+    to service_role;
+
 insert into app_private.migration_log (migration_id, description)
 values (
     '202607250002_create_irrigation_command_ledger',
