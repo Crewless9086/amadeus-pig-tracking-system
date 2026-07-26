@@ -214,6 +214,7 @@ class WeeklyOwnerReviewDecisionTests(unittest.TestCase):
         self.assertIn(
             "from public, anon, authenticated", migration.lower()
         )
+        self.assertIn("from service_role", migration.lower())
         self.assertIn("to service_role", migration.lower())
         self.assertIn(
             "revoke all privileges on function", migration.lower()
