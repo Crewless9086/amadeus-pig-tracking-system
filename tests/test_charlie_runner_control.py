@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from modules.charlie import runner_control
+from scripts import charlie_runner_control as runner_control_cli
 
 
 def successful_bootstrap_observation(root_pid, *, generation, revision, startup_nonce, **_kwargs):
@@ -17,11 +18,13 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
         "runner_generation": generation, "mission_id": "charlie-control",
         "execution_id": generation, "ownership_type": "charlie_runner",
         "revision": revision, "startup_nonce": startup_nonce,
+        "process_role": "test_launcher",
     }
     interpreter = {
         **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
         "creation_time": "interpreter-created",
         "command_fingerprint": "interpreter-command",
+        "process_role": "test_interpreter",
     }
     return {
         "success": True,
@@ -37,6 +40,153 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_governed_start_default_never_removes_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            runner_control.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            result, status = runner_control.start_runner()
+            marker = runner_control.SUPERVISOR_STOP_PATH.read_text(encoding="utf-8")
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(marker, "owner stop")
+        popen.assert_not_called()
+
+    def test_supported_cli_start_cannot_remove_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control_cli.sys, "argv", ["charlie_runner_control.py", "start"]
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            runner_control.SUPERVISOR_STOP_PATH.write_text(
+                "owner stop", encoding="utf-8"
+            )
+            exit_code = runner_control_cli.main()
+            marker = runner_control.SUPERVISOR_STOP_PATH.read_text(encoding="utf-8")
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(marker, "owner stop")
+        popen.assert_not_called()
+
+    def test_final_acknowledgement_binds_both_live_trees_and_nonces(self):
+        generation = "generation-1"
+        revision = "revision-1"
+        supervisor_tree = successful_bootstrap_observation(
+            100,
+            generation=generation,
+            revision=revision,
+            startup_nonce="supervisor-nonce",
+        )["tree"]
+        runner_tree = successful_bootstrap_observation(
+            200,
+            generation=generation,
+            revision=revision,
+            startup_nonce="runner-nonce",
+        )["tree"]
+        runner_identity = runner_tree["members"][1]
+        packet = {
+            "version": runner_control.SUPERVISOR_PACKET_VERSION,
+            "generation": generation,
+            "startup_nonce": "supervisor-nonce",
+            "created_at": "created",
+            "updated_at": "updated",
+            "intended_runtime_revision": revision,
+            "intended_execution_revision": revision,
+            "status": "running",
+            "runner_state": "running",
+            "supervisor_tree_identity": supervisor_tree,
+            "process_tree_identity": runner_tree,
+            "runner_startup_nonce": "runner-nonce",
+            "runner_controller_acknowledgement": {
+                "generation": generation,
+                "startup_nonce": "runner-nonce",
+                "revision": revision,
+            },
+        }
+        heartbeat = {
+            "status": "ownership_ready",
+            "supervisor_generation": generation,
+            "runner_source_commit": revision,
+            "startup_nonce": "runner-nonce",
+            "pid": runner_identity["pid"],
+            "process_identity": runner_identity,
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            runner_control, "validate_live_bootstrap_tree",
+            side_effect=[
+                {"authorized": True, "member_pids": [100, 101]},
+                {"authorized": True, "member_pids": [200, 201]},
+            ],
+        ), patch.object(runner_control, "_pid_alive", return_value=True):
+            runner_control.atomic_write_json(runner_control.SUPERVISOR_PATH, packet)
+            runner_control.atomic_write_json(runner_control.HEARTBEAT_PATH, heartbeat)
+            result = runner_control._wait_for_supervisor_ack(
+                generation,
+                revision,
+                supervisor_pid=100,
+                startup_nonce="supervisor-nonce",
+                timeout_seconds=0,
+                sleep_fn=lambda _seconds: None,
+            )
+            persisted = json.loads(
+                runner_control.SUPERVISOR_PATH.read_text(encoding="utf-8")
+            )
+        self.assertTrue(result["success"])
+        self.assertEqual(persisted["status"], "running_authorized")
+        final = persisted["controller_final_acknowledgement"]
+        self.assertEqual(final["supervisor_startup_nonce"], "supervisor-nonce")
+        self.assertEqual(final["runner_startup_nonce"], "runner-nonce")
+        self.assertEqual(final["supervisor_pid"], "100")
+        self.assertEqual(final["runner_pid"], "201")
+
+    def test_partial_current_generation_acknowledgement_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(runner_control, "_pid_alive", return_value=True):
+            runner_control.atomic_write_json(
+                runner_control.SUPERVISOR_PATH,
+                {
+                    "version": runner_control.SUPERVISOR_PACKET_VERSION,
+                    "generation": "generation-1",
+                },
+            )
+            result = runner_control._wait_for_supervisor_ack(
+                "generation-1",
+                "revision-1",
+                supervisor_pid=100,
+                startup_nonce="nonce-1",
+                timeout_seconds=0,
+                sleep_fn=lambda _seconds: None,
+            )
+        self.assertFalse(result["success"])
+        self.assertNotEqual(result["reason"], "")
+
+    def test_startup_failure_evidence_redacts_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "START_CONTAINMENT_PATH", Path(tmp) / "containment.json"
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("stop", encoding="utf-8")
+            evidence = runner_control._write_startup_failure(
+                "generation-1",
+                "nonce-1",
+                "revision-1",
+                "postgresql://owner:secret@db.example/main",
+                {"failure_detail": {"DATABASE_URL": "postgresql://owner:secret@db/main"}},
+            )
+            raw = runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("secret", raw)
+        self.assertNotIn("owner:", raw)
+        self.assertEqual(evidence["status"], "ownership_identity_incomplete")
+
     def test_incomplete_controller_observation_is_durable_and_contained(self):
         process = Mock(pid=4321)
         incomplete_tree = {

@@ -37,7 +37,7 @@ from modules.charlie.process_ownership import (
     validate_bootstrap_tree,
     validate_termination,
 )
-from modules.charlie.secret_redaction import redact_tree_in_place
+from modules.charlie.secret_redaction import redact_payload, redact_tree_in_place
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
 STOP_PATH = RUNNER_DIR / "supervisor.stop"
@@ -184,6 +184,8 @@ def supervise_runner(
     recovery_fn=None,
 ):
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
+    if STOP_PATH.exists():
+        return {"status": "governed_stop_active", "runner_state": "not_spawned"}
     generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
     startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
     test_mode = popen_factory is not subprocess.Popen
@@ -342,6 +344,8 @@ def supervise_runner(
                 revision=execution_revision,
                 startup_nonce=runner_nonce,
                 expected_script=Path(RUNNER_COMMAND[1]).name,
+                expected_root_executable=RUNNER_COMMAND[0],
+                process_role_prefix="runner",
             )
         if not runner_observation.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -392,6 +396,7 @@ def supervise_runner(
         )
         if not acknowledgement.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            containment = _contain_observed_tree(runner_tree)
             _write_status(
                 "infrastructure_hold",
                 child_pid=child.pid,
@@ -402,12 +407,16 @@ def supervise_runner(
                 intended_execution_revision=execution_revision,
                 runner_state="containment_required",
                 failure_status="runner_acknowledgement_failed",
-                failure_detail=acknowledgement,
+                failure_detail={
+                    "acknowledgement": acknowledgement,
+                    "containment": containment,
+                },
             )
             return {
                 "status": "infrastructure_hold",
                 "failure_status": "runner_acknowledgement_failed",
                 "acknowledgement": acknowledgement,
+                "containment": containment,
             }
         _write_status(
             "running",
@@ -551,6 +560,7 @@ def _write_test_controller_packet(generation, startup_nonce, runtime_revision, e
         "ownership_type": "charlie_runner",
         "revision": runtime_revision,
         "startup_nonce": startup_nonce,
+        "process_role": "supervisor_launcher",
     }
     interpreter = {
         **root,
@@ -558,6 +568,7 @@ def _write_test_controller_packet(generation, startup_nonce, runtime_revision, e
         "parent_pid": 100,
         "creation_time": "test-interpreter",
         "command_fingerprint": "test-interpreter-command",
+        "process_role": "supervisor_interpreter",
     }
     packet = {
         "version": SUPERVISOR_PACKET_VERSION,
@@ -566,6 +577,7 @@ def _write_test_controller_packet(generation, startup_nonce, runtime_revision, e
         "runner_state": "not_spawned",
         "generation": generation,
         "startup_nonce": startup_nonce,
+        "process_role": "runner_launcher",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "intended_runtime_revision": runtime_revision,
@@ -605,6 +617,7 @@ def _test_runner_observation(pid, generation, revision, startup_nonce):
         "parent_pid": pid,
         "creation_time": "test-runner-interpreter",
         "command_fingerprint": "test-runner-interpreter-command",
+        "process_role": "runner_interpreter",
     }
     tree = make_process_tree_record(root, [root, interpreter], generation)
     return {
@@ -631,6 +644,8 @@ def _wait_for_runner_ack(
     while time.monotonic() <= deadline:
         heartbeat = _read_json(RUNNER_HEARTBEAT_PATH)
         if (
+            str(heartbeat.get("status") or "") == "ownership_ready"
+            and
             str(heartbeat.get("supervisor_generation") or "") == generation
             and str(heartbeat.get("runner_source_commit") or "") == execution_revision
             and str(heartbeat.get("startup_nonce") or "") == str(runner_nonce or "")
@@ -1035,9 +1050,11 @@ def _write_status(status, **extra):
             "runner_acknowledgement",
             "runner_startup_nonce",
             "runner_controller_acknowledgement",
+            "controller_final_acknowledgement",
         ):
             if key not in payload and key in previous:
                 payload[key] = previous[key]
+    payload = redact_payload(payload)
     atomic_write_json(SUPERVISOR_PATH, payload)
     return payload
 
@@ -1080,7 +1097,7 @@ def main():
         return {"status": "duplicate_supervisor_refused", "existing_supervisor_pid": owner_pid}
     try:
         if STOP_PATH.exists():
-            STOP_PATH.unlink()
+            return {"status": "governed_stop_active", "runner_state": "not_spawned"}
         generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
         return supervise_runner(
             notifier=_notify_infrastructure_hold,

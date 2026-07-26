@@ -26,6 +26,7 @@ from modules.charlie.repository_guard import RepositoryOperationLock, inspect_gi
 from modules.charlie.runner_control import (
     STALE_SECONDS,
     SUPERVISOR_PATH,
+    SUPERVISOR_STOP_PATH,
     _pid_alive,
     _read_json,
     runner_status,
@@ -89,6 +90,15 @@ def main():
         write_runner_heartbeat(startup)
         print(startup)
         return 1
+    write_runner_heartbeat({
+        "status": "ownership_ready",
+        "startup_nonce": str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or ""),
+    })
+    authorization = _wait_for_final_start_authorization()
+    if not authorization["success"]:
+        write_runner_heartbeat(authorization)
+        print(authorization)
+        return 1
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
     parser.add_argument("--limit", type=int, default=10)
@@ -147,9 +157,19 @@ def main():
 
 
 def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=5):
+    if SUPERVISOR_STOP_PATH.exists():
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "governed_stop_active",
+        }
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
     if not generation:
-        return {"success": True, "status": "standalone_runner_startup"}
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "supervisor_generation_missing",
+        }
     runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or "")
     execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
@@ -252,6 +272,92 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
     }
 
 
+def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30):
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    reason = "controller_final_acknowledgement_missing"
+    while time.monotonic() <= deadline:
+        if SUPERVISOR_STOP_PATH.exists():
+            return {
+                "success": False,
+                "status": "runner_startup_refused",
+                "reason": "governed_stop_active",
+            }
+        packet = _read_json(SUPERVISOR_PATH)
+        acknowledgement = packet.get("controller_final_acknowledgement")
+        if (
+            str(packet.get("status") or "") == "running_authorized"
+            and str(packet.get("runner_state") or "") == "running_authorized"
+            and isinstance(acknowledgement, dict)
+        ):
+            expected = {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "runner_pid": str(os.getpid()),
+            }
+            mismatch = next(
+                (
+                    field for field, value in expected.items()
+                    if str(acknowledgement.get(field) or "") != str(value or "")
+                ),
+                "",
+            )
+            if mismatch:
+                return {
+                    "success": False,
+                    "status": "runner_startup_refused",
+                    "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
+                }
+            return {
+                "success": True,
+                "status": "runner_start_authorized",
+                "supervisor_generation": generation,
+                "execution_revision": revision,
+            }
+        sleep_fn(0.05)
+    return {
+        "success": False,
+        "status": "runner_startup_refused",
+        "reason": reason,
+    }
+
+
+def _runtime_pickup_authorized():
+    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") == "1":
+        return True, "test_isolation_authorized"
+    if SUPERVISOR_STOP_PATH.exists():
+        return False, "governed_stop_active"
+    packet = _read_json(SUPERVISOR_PATH)
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
+    revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    acknowledgement = packet.get("controller_final_acknowledgement")
+    if (
+        not generation
+        or str(packet.get("generation") or "") != generation
+        or str(packet.get("status") or "") != "running_authorized"
+        or not isinstance(acknowledgement, dict)
+        or any(
+            str(acknowledgement.get(field) or "") != str(expected or "")
+            for field, expected in {
+                "generation": generation,
+                "supervisor_startup_nonce": supervisor_nonce,
+                "runner_startup_nonce": runner_nonce,
+                "revision": revision,
+                "runner_pid": str(os.getpid()),
+            }.items()
+        )
+    ):
+        return False, "current_generation_running_authorization_missing"
+    return True, "current_generation_running_authorized"
+
+
 def watch_for_mission(
     status="approved",
     limit=10,
@@ -267,6 +373,9 @@ def watch_for_mission(
     auto_merge_pr=False,
     release_verify_url="",
 ):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {"success": False, "status": "runner_contained", "reason": reason}, 423
     interval_seconds = max(5, int(interval_seconds or 60))
     if notify:
         preflight = _notification_preflight()
@@ -281,6 +390,9 @@ def watch_for_mission(
     checks = 0
     write_runner_heartbeat({"status": "watch_started"})
     while True:
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            return {"success": False, "status": "runner_contained", "reason": reason}, 423
         checks += 1
         if continuous:
             recovery = recover_stranded_missions(notify=notify)
@@ -888,6 +1000,13 @@ def _run_analyst_cycle(mission_id, trigger, notify=False):
 
 
 def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=False):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+        }, 423
     checkout = _ensure_base_branch()
     if not checkout["success"]:
         failure_status = str(checkout.get("status") or "base_branch_checkout_failed")

@@ -40,6 +40,7 @@ def make_ownership_record(
     ownership_type,
     revision=None,
     startup_nonce=None,
+    process_role=None,
 ):
     if not isinstance(process, dict):
         return {}
@@ -56,6 +57,7 @@ def make_ownership_record(
         "ownership_type": str(ownership_type or ""),
         "revision": str(revision or runner_generation or ""),
         "startup_nonce": str(startup_nonce or runner_generation or ""),
+        "process_role": str(process_role or ownership_type or ""),
     }
 
 
@@ -139,6 +141,8 @@ def validate_bootstrap_tree(
         for field in REQUIRED_IDENTITY_FIELDS:
             if record.get(field) in (None, ""):
                 return _deny(f"ownership_identity_incomplete:{label}.{field}")
+        if not str(record.get("process_role") or ""):
+            return _deny(f"ownership_identity_incomplete:{label}.process_role")
         if str(record.get("runner_generation") or "") != str(generation or ""):
             return _deny(f"stale_generation:{label}")
         if str(record.get("revision") or "") != str(revision or ""):
@@ -153,6 +157,8 @@ def validate_bootstrap_tree(
     if expected_root_parent_pid is not None and root_parent_pid != int(expected_root_parent_pid):
         return _deny("root_parent_pid_mismatch")
     member_pids = {int(item["pid"]) for item in members}
+    if len(member_pids) != len(members):
+        return _deny("ownership_identity_incomplete:duplicate_pid")
     if root_pid not in member_pids:
         return _deny("ownership_identity_incomplete:root_member")
     descendants = [item for item in members if int(item["pid"]) != root_pid]
@@ -173,6 +179,50 @@ def validate_bootstrap_tree(
     }
 
 
+def validate_live_bootstrap_tree(tree, *, generation, revision, startup_nonce):
+    """Revalidate a persisted bootstrap tree against current OS identities."""
+    structural = validate_bootstrap_tree(
+        tree,
+        generation=generation,
+        revision=revision,
+        startup_nonce=startup_nonce,
+        require_interpreter=True,
+    )
+    if not structural["authorized"]:
+        return structural
+    members = tree.get("members") or []
+    root_pid = int((tree.get("root") or {}).get("pid") or -1)
+    for index, record in enumerate(members):
+        current = inspect_process(record.get("pid"))
+        label = f"member_{index}"
+        if not isinstance(current, dict) or current.get("inspection_complete") is False:
+            return _deny(f"live_identity_inspection_incomplete:{label}")
+        checks = {
+            "pid": int(current.get("pid") or -1) == int(record.get("pid") or -2),
+            "creation_time": str(current.get("creation_time") or "") == str(record.get("creation_time") or ""),
+            "executable_path": _normalize_path(current.get("executable_path")) == _normalize_path(record.get("executable_path")),
+            "command_fingerprint": normalize_command_fingerprint(
+                current.get("command_line") or current.get("command")
+            ) == str(record.get("command_fingerprint") or ""),
+            "parent_pid": int(current.get("parent_pid") or -1) == int(record.get("parent_pid") or -2),
+        }
+        mismatch = next((field for field, matches in checks.items() if not matches), "")
+        if mismatch:
+            return _deny(f"live_identity_{mismatch}_mismatch:{label}")
+        if int(record.get("pid") or -1) != root_pid:
+            ancestry = current.get("ancestry")
+            if not isinstance(ancestry, list) or root_pid not in {
+                int(item.get("pid") or -1)
+                for item in ancestry
+                if isinstance(item, dict)
+            }:
+                return _deny(f"live_identity_parentage_mismatch:{label}")
+    return {
+        **structural,
+        "reason": "live_ownership_bootstrap_identity_match",
+    }
+
+
 def observe_process_tree(
     root_pid,
     *,
@@ -180,6 +230,8 @@ def observe_process_tree(
     revision,
     startup_nonce,
     expected_script="",
+    expected_root_executable="",
+    process_role_prefix="process",
     timeout_seconds=10,
     poll_seconds=0.1,
     sleep_fn=time.sleep,
@@ -198,6 +250,11 @@ def observe_process_tree(
                 "charlie_runner",
                 revision=revision,
                 startup_nonce=startup_nonce,
+                process_role=(
+                    f"{process_role_prefix}_launcher"
+                    if int(row.get("pid") or -1) == int(root_pid)
+                    else f"{process_role_prefix}_interpreter"
+                ),
             )
             for row in rows
             if isinstance(row, dict)
@@ -213,13 +270,39 @@ def observe_process_tree(
             require_interpreter=True,
         )
         if decision["authorized"]:
+            if str(root.get("process_role") or "") != f"{process_role_prefix}_launcher":
+                last_reason = "root_process_role_mismatch"
+                sleep_fn(poll_seconds)
+                continue
+            if any(
+                str(item.get("process_role") or "") != f"{process_role_prefix}_interpreter"
+                for item in records
+                if int(item.get("pid") or -1) != int(root_pid)
+            ):
+                last_reason = "interpreter_process_role_mismatch"
+                sleep_fn(poll_seconds)
+                continue
+            root_row = next(
+                (row for row in rows if int(row.get("pid") or -1) == int(root_pid)),
+                {},
+            )
+            if expected_root_executable and _normalize_path(
+                root_row.get("executable_path")
+            ) != _normalize_path(expected_root_executable):
+                last_reason = "root_executable_identity_mismatch"
+                sleep_fn(poll_seconds)
+                continue
             if expected_script:
-                raw = " ".join(
-                    str(row.get("command_line") or "")
-                    for row in rows
-                ).casefold()
-                if str(expected_script).casefold() not in raw:
-                    last_reason = "command_identity_mismatch"
+                missing_role = next(
+                    (
+                        row for row in rows
+                        if str(expected_script).casefold()
+                        not in str(row.get("command_line") or "").casefold()
+                    ),
+                    None,
+                )
+                if missing_role is not None:
+                    last_reason = f"command_role_identity_mismatch:{missing_role.get('pid')}"
                 else:
                     return {"success": True, "tree": tree, "validation": decision}
             else:
@@ -247,29 +330,19 @@ def _inspect_process_descendants(root_pid):
             if any(int(item.get("pid") or -1) == int(root_pid) for item in ancestry if isinstance(item, dict)):
                 rows.append(row)
         return rows
-    script = (
-        "$all=Get-CimInstance Win32_Process;"
-        f"$root={int(root_pid)};"
-        "$ids=@($root);$changed=$true;"
-        "while($changed){$changed=$false;foreach($p in $all){"
-        "if(($ids -contains [int]$p.ParentProcessId)-and -not ($ids -contains [int]$p.ProcessId)){"
-        "$ids+=[int]$p.ProcessId;$changed=$true}}};"
-        "$all|Where-Object{$ids -contains [int]$_.ProcessId}|ForEach-Object{"
-        "@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
-        "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
-        "command_line=[string]$_.CommandLine;name=[string]$_.Name}}|ConvertTo-Json -Compress"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=8, check=False,
-        )
-        if result.returncode or not result.stdout.strip():
-            return []
-        rows = json.loads(result.stdout)
-        return [rows] if isinstance(rows, dict) else rows if isinstance(rows, list) else []
-    except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
-        return []
+    all_rows = _windows_process_snapshot()
+    ids = {int(root_pid)}
+    changed = True
+    while changed:
+        changed = False
+        for row in all_rows:
+            if (
+                int(row.get("parent_pid") or -1) in ids
+                and int(row.get("pid") or -1) not in ids
+            ):
+                ids.add(int(row["pid"]))
+                changed = True
+    return [row for row in all_rows if int(row.get("pid") or -1) in ids]
 
 
 def validate_termination(
@@ -356,25 +429,18 @@ def inspect_process(pid):
     """Inspect a process and its ancestry. Any partial result is unusable."""
     if os.name != "nt":
         return _inspect_proc(pid)
-    script = (
-        "$rows=@();$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + str(int(pid)) + "';"
-        "while($p){$rows+=@{pid=$p.ProcessId;parent_pid=$p.ParentProcessId;creation_time=[string]$p.CreationDate;"
-        "executable_path=[string]$p.ExecutablePath;command_line=[string]$p.CommandLine;name=[string]$p.Name};"
-        "if(!$p.ParentProcessId){break};$p=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$p.ParentProcessId)};"
-        "$rows|ConvertTo-Json -Compress"
-    )
     try:
-        result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True, timeout=8, check=False)
-        if result.returncode or not result.stdout.strip():
+        rows = _windows_process_snapshot()
+        by_pid = {int(row["pid"]): row for row in rows if row.get("pid")}
+        target = dict(by_pid.get(int(pid)) or {})
+        if not target:
             return None
-        rows = json.loads(result.stdout)
-        if isinstance(rows, dict):
-            rows = [rows]
-        if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        target["ancestry"] = _snapshot_ancestry(by_pid, target.get("parent_pid"))
+        target["current_process_ancestry"] = _snapshot_ancestry(
+            by_pid, os.getpid(), include_start=True
+        )
+        if not target["current_process_ancestry"]:
             return None
-        target = dict(rows[0])
-        target["ancestry"] = rows[1:]
-        target["current_process_ancestry"] = _current_ancestry_windows()
         target["inspection_complete"] = True
         return target
     except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
@@ -383,6 +449,45 @@ def inspect_process(pid):
         # make_ownership_record produces an unusable record and every later
         # kill authorization is refused until a complete inspection succeeds.
         return None
+
+
+def _windows_process_snapshot():
+    script = (
+        "Get-CimInstance Win32_Process|ForEach-Object{"
+        "[pscustomobject]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
+        "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
+        "command_line=[string]$_.CommandLine;name=[string]$_.Name}}|"
+        "ConvertTo-Json -Compress"
+    )
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=8, check=False,
+    )
+    if result.returncode or not str(result.stdout or "").strip():
+        return []
+    rows = json.loads(result.stdout)
+    rows = [rows] if isinstance(rows, dict) else rows
+    return rows if isinstance(rows, list) else []
+
+
+def _snapshot_ancestry(by_pid, start_pid, include_start=False):
+    result = []
+    current = int(start_pid or 0)
+    seen = set()
+    first = True
+    while current > 0 and current not in seen:
+        seen.add(current)
+        row = by_pid.get(current)
+        if not isinstance(row, dict):
+            break
+        if include_start or not first:
+            result.append(dict(row))
+        elif not include_start:
+            result.append(dict(row))
+        current = int(row.get("parent_pid") or 0)
+        first = False
+    return result
 
 
 def _inspect_proc(pid):
@@ -398,18 +503,12 @@ def _inspect_proc(pid):
 
 
 def _current_ancestry_windows():
-    script = (
-        "$rows=@();$p=Get-CimInstance Win32_Process -Filter 'ProcessId = " + str(os.getpid()) + "';"
-        "while($p){$rows+=@{pid=$p.ProcessId;parent_pid=$p.ParentProcessId;name=[string]$p.Name;"
-        "executable_path=[string]$p.ExecutablePath;command_line=[string]$p.CommandLine};"
-        "if(!$p.ParentProcessId){break};$p=Get-CimInstance Win32_Process -Filter ('ProcessId = '+$p.ParentProcessId)};"
-        "$rows|ConvertTo-Json -Compress"
-    )
-    result = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True, text=True, timeout=8, check=False)
-    if result.returncode or not result.stdout.strip():
+    rows = _windows_process_snapshot()
+    by_pid = {int(row["pid"]): row for row in rows if row.get("pid")}
+    ancestry = _snapshot_ancestry(by_pid, os.getpid(), include_start=True)
+    if not ancestry:
         raise OSError("current process ancestry inspection failed")
-    rows = json.loads(result.stdout)
-    return [rows] if isinstance(rows, dict) else rows
+    return ancestry
 
 
 def _proc_row(pid):

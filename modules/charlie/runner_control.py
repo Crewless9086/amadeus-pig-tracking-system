@@ -24,6 +24,7 @@ from modules.charlie.process_ownership import (
     observe_process_tree,
     process_termination_enabled,
     validate_bootstrap_tree,
+    validate_live_bootstrap_tree,
     validate_process_tree,
     validate_termination,
 )
@@ -320,8 +321,10 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
     return packet
 
 
-def start_runner(status_override=None, respect_stop_marker=False):
-    if respect_stop_marker and SUPERVISOR_STOP_PATH.exists():
+def start_runner(status_override=None, respect_stop_marker=True):
+    # Starting and clearing containment are deliberately separate governed
+    # actions.  No startup caller is allowed to consume or remove this marker.
+    if SUPERVISOR_STOP_PATH.exists():
         return {
             "success": False,
             "status": "governed_stop_active",
@@ -347,14 +350,12 @@ def start_runner(status_override=None, respect_stop_marker=False):
             "status": "start_containment_capability_not_enabled",
         }, 423
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
-    if respect_stop_marker and SUPERVISOR_STOP_PATH.exists():
+    if SUPERVISOR_STOP_PATH.exists():
         return {
             "success": False,
             "status": "governed_stop_active",
             "stop_marker": str(SUPERVISOR_STOP_PATH),
         }, 423
-    if SUPERVISOR_STOP_PATH.exists():
-        SUPERVISOR_STOP_PATH.unlink()
     python_path = SUPERVISOR_COMMAND[0]
     if not Path(python_path).exists():
         python_path = sys.executable
@@ -385,6 +386,8 @@ def start_runner(status_override=None, respect_stop_marker=False):
         revision=intended_revision,
         startup_nonce=startup_nonce,
         expected_script=Path(command[-1]).name,
+        expected_root_executable=python_path,
+        process_role_prefix="supervisor",
     )
     if not observation.get("success"):
         SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -515,19 +518,87 @@ def _wait_for_supervisor_ack(
         )
         if valid:
             heartbeat = _read_json(HEARTBEAT_PATH)
-            if (
-                str(heartbeat.get("supervisor_generation") or "") == generation
-                and str(heartbeat.get("runner_source_commit") or "") == intended_revision
-                and isinstance(heartbeat.get("process_identity"), dict)
+            supervisor_tree = packet.get("supervisor_tree_identity")
+            runner_tree = packet.get("process_tree_identity")
+            runner_nonce = str(packet.get("runner_startup_nonce") or "")
+            runner_ack = packet.get("runner_controller_acknowledgement")
+            process_identity = heartbeat.get("process_identity")
+            runner_pid = int(heartbeat.get("pid") or -1)
+            supervisor_live = validate_live_bootstrap_tree(
+                supervisor_tree,
+                generation=generation,
+                revision=intended_revision,
+                startup_nonce=startup_nonce or generation,
+            )
+            runner_live = validate_live_bootstrap_tree(
+                runner_tree,
+                generation=generation,
+                revision=intended_revision,
+                startup_nonce=runner_nonce,
+            )
+            expected_runner_record = next(
+                (
+                    item for item in (runner_tree.get("members") or [])
+                    if int(item.get("pid") or -2) == runner_pid
+                ),
+                {},
+            ) if isinstance(runner_tree, dict) else {}
+            if str(heartbeat.get("status") or "") != "ownership_ready":
+                last_reason = "runner_ownership_ready_acknowledgement_missing"
+            elif str(heartbeat.get("supervisor_generation") or "") != generation:
+                last_reason = "runner_heartbeat_generation_mismatch"
+            elif str(heartbeat.get("runner_source_commit") or "") != intended_revision:
+                last_reason = "runner_heartbeat_revision_mismatch"
+            elif str(heartbeat.get("startup_nonce") or "") != runner_nonce:
+                last_reason = "runner_heartbeat_startup_nonce_mismatch"
+            elif not isinstance(runner_ack, dict):
+                last_reason = "runner_controller_acknowledgement_missing"
+            elif any(
+                str(runner_ack.get(field) or "") != str(expected)
+                for field, expected in {
+                    "generation": generation,
+                    "startup_nonce": runner_nonce,
+                    "revision": intended_revision,
+                }.items()
             ):
+                last_reason = "runner_controller_acknowledgement_mismatch"
+            elif not supervisor_live["authorized"]:
+                last_reason = supervisor_live["reason"]
+            elif not runner_live["authorized"]:
+                last_reason = runner_live["reason"]
+            elif int(supervisor_pid) not in set(supervisor_live.get("member_pids") or []):
+                last_reason = "supervisor_launcher_pid_not_live"
+            elif not expected_runner_record or process_identity != expected_runner_record:
+                last_reason = "runner_heartbeat_process_identity_mismatch"
+            else:
+                final_packet = {
+                    **packet,
+                    "status": "running_authorized",
+                    "runner_state": "running_authorized",
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "controller_final_acknowledgement": {
+                        "status": "current_process_tree_acknowledged",
+                        "generation": generation,
+                        "supervisor_startup_nonce": str(startup_nonce or generation),
+                        "runner_startup_nonce": runner_nonce,
+                        "revision": intended_revision,
+                        "supervisor_pid": str(supervisor_pid),
+                        "runner_pid": str(runner_pid),
+                        "supervisor_member_pids": supervisor_live["member_pids"],
+                        "runner_member_pids": runner_live["member_pids"],
+                        "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                }
+                atomic_write_json(SUPERVISOR_PATH, redact_payload(final_packet))
+                if _read_json(SUPERVISOR_PATH) != redact_payload(final_packet):
+                    return {"success": False, "reason": "final_acknowledgement_reread_mismatch"}
                 return {
                     "success": True,
                     "status": "current_generation_acknowledged",
                     "generation": generation,
                     "supervisor_pid": supervisor_pid,
-                    "runner_pid": heartbeat.get("pid"),
+                    "runner_pid": runner_pid,
                 }
-            last_reason = "runner_heartbeat_acknowledgement_missing"
         else:
             last_reason = reason
         if not _pid_alive(supervisor_pid):
@@ -725,10 +796,37 @@ def _stop_process_tree(
         return decision
     pid = decision["pid"]
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False, timeout=15, **background_run_kwargs())
-        return {"authorized": True, "terminated": True, "pid": pid}
-    os.kill(pid, signal.SIGTERM)
-    return {"authorized": True, "terminated": True, "pid": pid}
+        completed = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+            **background_run_kwargs(),
+        )
+        if completed.returncode not in (0, 128):
+            return {
+                "authorized": True,
+                "terminated": False,
+                "pid": pid,
+                "reason": "process_tree_termination_failed",
+            }
+    else:
+        os.kill(pid, signal.SIGTERM)
+    for _attempt in range(50):
+        try:
+            current = inspector(pid)
+        except Exception:
+            current = None
+        if not isinstance(current, dict) or int(current.get("pid") or -1) != pid:
+            return {"authorized": True, "terminated": True, "pid": pid}
+        time.sleep(0.1)
+    return {
+        "authorized": True,
+        "terminated": False,
+        "pid": pid,
+        "reason": "process_tree_termination_not_verified",
+    }
 
 
 def cleanup_runner_environment(stop_stale=True, prune_worktrees=True):
@@ -921,7 +1019,7 @@ def validate_supervisor_packet(
 
 
 def _historical_ownership_packet(packet):
-    return {
+    return redact_payload({
         key: packet.get(key)
         for key in (
             "version", "generation", "startup_nonce", "created_at", "updated_at",
@@ -929,7 +1027,7 @@ def _historical_ownership_packet(packet):
             "process_tree_identity", "stop_evidence",
         )
         if key in packet
-    }
+    })
 
 
 def _write_startup_failure(generation, startup_nonce, revision, reason, tree):
@@ -944,6 +1042,7 @@ def _write_startup_failure(generation, startup_nonce, revision, reason, tree):
         "process_tree_identity": tree if isinstance(tree, dict) else {},
         "stop_marker_present": SUPERVISOR_STOP_PATH.exists(),
     }
+    evidence = redact_payload(evidence)
     atomic_write_json(START_CONTAINMENT_PATH, evidence)
     return evidence
 
@@ -952,19 +1051,34 @@ def _contain_observed_tree(tree):
     root = tree.get("root") if isinstance(tree, dict) else {}
     if not isinstance(root, dict) or not root.get("pid"):
         return {"success": False, "reason": "ownership_identity_incomplete:root.pid"}
-    expected = {
-        field: root.get(field)
-        for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
-    }
-    decision = _stop_process_tree(
-        root,
-        expected,
-        allow_current_descendant=True,
-    )
+    members = tree.get("members") if isinstance(tree.get("members"), list) else []
+    decisions = []
+    for record in [root, *[
+        item for item in members
+        if isinstance(item, dict) and item.get("pid") != root.get("pid")
+    ]]:
+        expected = {
+            field: record.get(field)
+            for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
+        }
+        decision = _stop_process_tree(
+            record,
+            expected,
+            allow_current_descendant=record is root,
+        )
+        decisions.append(decision)
+        if decision.get("terminated"):
+            return {
+                "success": True,
+                "reason": decision.get("reason") or "termination_verified",
+                "termination": decision,
+                "attempts": decisions,
+            }
     return {
-        "success": bool(decision.get("terminated")),
-        "reason": decision.get("reason") or "termination_not_confirmed",
-        "termination": decision,
+        "success": False,
+        "reason": decisions[-1].get("reason") if decisions else "termination_not_confirmed",
+        "termination": decisions[-1] if decisions else {},
+        "attempts": decisions,
     }
 
 

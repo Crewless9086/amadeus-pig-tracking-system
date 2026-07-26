@@ -105,7 +105,10 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
             supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
         ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
             supervisor, "inspect_process", return_value=child_process
-        ):
+        ), patch.object(
+            supervisor, "_contain_observed_tree",
+            return_value={"success": True, "reason": "tree_termination_verified"},
+        ) as contain:
             result = supervisor.supervise_runner(
                 popen_factory=Mock(return_value=child),
                 max_cycles=1,
@@ -120,6 +123,8 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["status"], "infrastructure_hold")
         self.assertEqual(packet["runner_state"], "containment_required")
         self.assertNotEqual(packet["status"], "running")
+        self.assertTrue(result["containment"]["success"])
+        contain.assert_called_once()
     def test_control_runtime_and_mission_execution_roots_are_isolated(self):
         self.assertNotEqual(supervisor.REPO_ROOT, supervisor.EXECUTION_ROOT)
         self.assertEqual(Path(supervisor.RUNNER_COMMAND[1]).parent.parent, supervisor.EXECUTION_ROOT)
@@ -317,7 +322,21 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
                 result = supervisor.supervise_runner(popen_factory=popen, sleep_fn=lambda _delay: None, max_cycles=1, prepare_fn=lambda: {"success": True})
 
         popen.assert_not_called()
-        self.assertEqual(result["cycles"], 0)
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(result["runner_state"], "not_spawned")
+
+    def test_direct_supervisor_main_never_removes_stop_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "stop"
+            stop.write_text("owner stop", encoding="utf-8")
+            with patch.object(supervisor, "STOP_PATH", stop), patch.object(
+                supervisor, "SupervisorInstanceLock"
+            ) as lock, patch.object(supervisor, "supervise_runner") as supervise:
+                lock.return_value.acquire.return_value = (True, 0)
+                result = supervisor.main()
+            self.assertEqual(stop.read_text(encoding="utf-8"), "owner stop")
+        self.assertEqual(result["status"], "governed_stop_active")
+        supervise.assert_not_called()
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_terminal_supervisor_status_retains_pre_stop_ownership_evidence(self, _inspect):
