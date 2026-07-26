@@ -528,6 +528,34 @@ class CharlieMissionPickupTests(unittest.TestCase):
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
+    def test_new_adaptive_mission_without_durable_packet_cannot_be_claimed(
+        self, update_status, list_owner_work_missions, get_mission
+    ):
+        mission = {
+            **MISSION,
+            "metadata": {
+                "intake": {"adaptive_orchestration_required": True},
+                "orchestration": None,
+                "orchestration_binding": None,
+            },
+            "agent_workflow": [{"agent": "source_mapper", "status": "active"}],
+        }
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [mission]},
+            200,
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": mission},
+            200,
+        )
+        result, status_code = charlie_mission_pickup.pick_up_next_mission()
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "adaptive_orchestration_not_durably_bound")
+        update_status.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_pickup_uses_authoritative_coordinator_state_not_compact_queue_row(
         self, update_status, list_owner_work_missions, get_mission
     ):

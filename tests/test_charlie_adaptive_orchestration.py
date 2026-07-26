@@ -18,6 +18,53 @@ class AdaptiveOrchestrationTests(unittest.TestCase):
         self.assertEqual(self.agents({"mission_type": "audit", "raw_text": "Read-only status audit."}), ["source_mapper"])
         self.assertEqual(packet["authority_contract"]["permitted_writes"], [])
 
+    def test_prohibitions_do_not_become_protected_impact(self):
+        mission = {
+            "mission_type": "read-only audit",
+            "raw_text": (
+                "Inspect one document read-only. Do not deploy; no publication; "
+                "never send customer messages; migration prohibited; no hardware "
+                "control; zero writes; no customer action."
+            ),
+        }
+        packet = build_orchestration_packet(mission)
+        self.assertEqual(packet["tier"], "T0")
+        self.assertEqual([row["agent"] for row in packet["selected_agents"]], ["source_mapper"])
+        self.assertFalse(any(packet["score"]["triggers"].values()))
+
+    def test_quoted_and_historical_prohibitions_are_not_current_scope(self):
+        packet = build_orchestration_packet({
+            "mission_type": "read-only report",
+            "raw_text": (
+                'Report the historical phrase "do not deploy or publish". '
+                "The prior system previously sent customer messages; sending is now prohibited."
+            ),
+        })
+        self.assertEqual(packet["tier"], "T0")
+        self.assertFalse(packet["score"]["triggers"]["deployment"])
+        self.assertFalse(packet["score"]["triggers"]["publication"])
+        self.assertFalse(packet["score"]["triggers"]["customer_delivery"])
+
+    def test_mixed_negative_and_affirmative_clauses_keep_real_trigger(self):
+        packet = build_orchestration_packet({
+            "mission_type": "change",
+            "raw_text": "Do not deploy automatically; prepare a production deployment requiring owner approval.",
+        })
+        self.assertEqual(packet["tier"], "T4")
+        self.assertTrue(packet["score"]["triggers"]["deployment"])
+
+    def test_acceptance_criteria_prohibitions_do_not_raise_tier(self):
+        packet = build_orchestration_packet({
+            "mission_type": "read-only audit",
+            "raw_text": "Inspect one bounded source.",
+            "acceptance_criteria": [
+                "No customer action",
+                "Migration prohibited",
+                "No publication",
+            ],
+        })
+        self.assertEqual(packet["tier"], "T0")
+
     def test_trivial_document_fix_is_short_t1(self):
         packet = build_orchestration_packet({"mission_type": "documentation", "raw_text": "Fix typo in README.md."})
         self.assertEqual(packet["tier"], "T1")

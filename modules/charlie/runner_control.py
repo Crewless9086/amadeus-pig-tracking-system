@@ -270,7 +270,13 @@ def record_emergency_cleanup_refusal(operation, requested_pid, log_path=None):
     return packet
 
 
-def start_runner(status_override=None):
+def start_runner(status_override=None, respect_stop_marker=False):
+    if respect_stop_marker and SUPERVISOR_STOP_PATH.exists():
+        return {
+            "success": False,
+            "status": "governed_stop_active",
+            "stop_marker": str(SUPERVISOR_STOP_PATH),
+        }, 423
     supervisor = _read_json(SUPERVISOR_PATH)
     if _pid_alive(supervisor.get("pid")):
         return {
@@ -286,6 +292,12 @@ def start_runner(status_override=None):
     if status.get("orphan_processes"):
         return {"success": False, "status": "runner_orphaned_existing_process", "runner": status}, 409
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
+    if respect_stop_marker and SUPERVISOR_STOP_PATH.exists():
+        return {
+            "success": False,
+            "status": "governed_stop_active",
+            "stop_marker": str(SUPERVISOR_STOP_PATH),
+        }, 423
     if SUPERVISOR_STOP_PATH.exists():
         SUPERVISOR_STOP_PATH.unlink()
     python_path = SUPERVISOR_COMMAND[0]

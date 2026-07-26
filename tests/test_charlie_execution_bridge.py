@@ -221,6 +221,21 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(execution_bridge._authoritative_targeted_recovery_agent(mission), "risk_agent")
 
     def setUp(self):
+        self.default_artifact_consumer_patch = patch(
+            "modules.charlie.execution_bridge.consume_final_agent_artifact",
+            side_effect=lambda mission_id, agent, execution_id, attempt, artifact, artifact_hash, **_kwargs: (
+                {
+                    "success": True,
+                    "status": "final_artifact_consumed",
+                    "claim": {
+                        "identity": f"{mission_id}:{execution_id}:{agent}:{attempt}:{artifact_hash}",
+                    },
+                },
+                200,
+            ),
+        )
+        self.default_artifact_consumer = self.default_artifact_consumer_patch.start()
+        self.addCleanup(self.default_artifact_consumer_patch.stop)
         self.builder_admission = patch(
             "modules.charlie.execution_bridge.build_admission",
             return_value={
@@ -2675,6 +2690,19 @@ class CharlieExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(commands_by_agent["idea_expander"][commands_by_agent["idea_expander"].index("--sandbox") + 1], "read-only")
         self.assertIn("--model", commands_by_agent["idea_expander"])
         self.assertIn("reasoning-model-a", commands_by_agent["idea_expander"])
+        consumed_agents = [
+            call.args[1] for call in self.default_artifact_consumer.call_args_list
+        ]
+        self.assertIn("idea_expander", consumed_agents)
+        self.assertIn("source_mapper", consumed_agents)
+        self.assertFalse(
+            any(
+                len(call.args) > 1
+                and call.args[1] in {"idea_expander", "source_mapper"}
+                and call.kwargs.get("step_status") == "complete"
+                for call in update_workflow.call_args_list
+            )
+        )
         vault_metadata = {"review_packet": self.finalize_owner_review.call_args.args[1]}
         self.assertEqual(
             vault_metadata["review_packet"]["agent_artifacts"]["idea_expander"]["model_assignment"]["runtime_model"],

@@ -18,6 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from modules.charlie.core_workflow import build_core_plan
+from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 from modules.charlie.environment import env_value
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
@@ -826,9 +827,43 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "next_action": "Retry after the canonical mission record is available; no claim or workflow update was written.",
         }, authoritative_status if authoritative_status >= 400 else 503
     mission = authoritative_mission
+    authoritative_metadata = mission.get("metadata") if isinstance(mission.get("metadata"), dict) else {}
+    intake = authoritative_metadata.get("intake") if isinstance(authoritative_metadata.get("intake"), dict) else {}
+    if intake.get("adaptive_orchestration_required"):
+        binding = validate_orchestration_binding(
+            authoritative_metadata.get("orchestration"),
+            mission.get("agent_workflow"),
+        )
+        persisted_binding = (
+            authoritative_metadata.get("orchestration_binding")
+            if isinstance(authoritative_metadata.get("orchestration_binding"), dict)
+            else {}
+        )
+        if (
+            not binding.get("valid")
+            or binding.get("identity") != persisted_binding.get("identity")
+            or persisted_binding.get("generation_identity")
+            != (authoritative_metadata.get("orchestration") or {}).get("generation_identity")
+        ):
+            return {
+                "success": False,
+                "status": "adaptive_orchestration_not_durably_bound",
+                "mission_id": mission_id,
+                "reason": binding.get("reason", "orchestration_binding_missing"),
+                "codex_chat_written": False,
+                "next_action": "Keep the mission blocked until packet and exact workflow binding are durably readable.",
+            }, 409
     codex_chat_preview = _codex_chat_content(mission)
 
     refresh = _refresh_core_plan_for_pickup(mission)
+    if refresh.get("blocked"):
+        return {
+            "success": False,
+            "status": "adaptive_orchestration_refresh_blocked",
+            "mission_id": mission_id,
+            "reason": refresh.get("reason", "orchestration_binding_invalid"),
+            "codex_chat_written": False,
+        }, 409
     if refresh.get("refreshed"):
         refreshed, refreshed_status = get_mission(mission_id)
         if refreshed_status < 400 and refreshed.get("mission"):
@@ -1026,6 +1061,24 @@ def _refresh_core_plan_for_pickup(mission):
         },
         "charlie_core": plan,
     }
+    intake = metadata.get("intake") if isinstance(metadata.get("intake"), dict) else {}
+    if intake.get("adaptive_orchestration_required"):
+        payload["orchestration"] = plan.get("orchestration")
+        binding = validate_orchestration_binding(
+            payload["orchestration"], payload["agent_workflow"]
+        )
+        if not binding.get("valid"):
+            return {
+                "refreshed": False,
+                "reason": binding.get("reason", "orchestration_binding_invalid"),
+                "blocked": True,
+            }
+        payload["orchestration_binding"] = {
+            "version": "charlie_orchestration_binding_v1",
+            "identity": binding["identity"],
+            "generation_identity": payload["orchestration"]["generation_identity"],
+            "validated": True,
+        }
     result, status_code = update_mission_vault(
         mission_id,
         payload,

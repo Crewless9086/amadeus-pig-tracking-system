@@ -288,6 +288,25 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_started")
         popen.assert_called_once()
 
+    @patch("modules.charlie.runner_control.subprocess.Popen")
+    def test_watchdog_start_cannot_clear_governed_stop_marker(self, popen):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ):
+            runner_control.SUPERVISOR_STOP_PATH.write_text("governed stop", encoding="utf-8")
+            result, status_code = runner_control.start_runner(
+                status_override={
+                    "active": False,
+                    "status": "runner_stale_or_stopped",
+                    "orphan_processes": [],
+                },
+                respect_stop_marker=True,
+            )
+            self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+        self.assertEqual(status_code, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
+        popen.assert_not_called()
+
     @patch("modules.charlie.runner_control.write_runner_heartbeat")
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")
