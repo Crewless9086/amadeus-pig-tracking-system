@@ -103,7 +103,13 @@ def validate_process_tree(tree, expected, inspect_process, current_pid=None, req
     }
 
 
-def validate_termination(record, expected, inspect_process, current_pid=None):
+def validate_termination(
+    record,
+    expected,
+    inspect_process,
+    current_pid=None,
+    allow_current_descendant=False,
+):
     """Authorize only a complete, exact, non-interactive disposable identity."""
     if not isinstance(record, dict):
         return _deny("corrupt_metadata")
@@ -141,14 +147,37 @@ def validate_termination(record, expected, inspect_process, current_pid=None):
     ancestry = current.get("ancestry")
     if not isinstance(ancestry, list):
         return _deny("process_inspection_failed")
-    if _protected(current) or any(_protected(item) for item in ancestry if isinstance(item, dict)):
+    if _protected(current):
         return _deny("protected_process_boundary")
     protected_pids = {int(current_pid or os.getpid())}
     for item in current.get("current_process_ancestry", []):
         if isinstance(item, dict) and str(item.get("pid") or "").isdigit():
             protected_pids.add(int(item["pid"]))
-    if pid in protected_pids or any(int(item.get("pid") or -1) in protected_pids for item in ancestry if isinstance(item, dict)):
+    ancestry_pids = {
+        int(item.get("pid") or -1)
+        for item in ancestry
+        if isinstance(item, dict)
+    }
+    if allow_current_descendant:
+        starter_pid = int(current_pid or os.getpid())
+        ancestry_before_starter = []
+        for item in ancestry:
+            if not isinstance(item, dict):
+                continue
+            if int(item.get("pid") or -1) == starter_pid:
+                break
+            ancestry_before_starter.append(item)
+        if any(_protected(item) for item in ancestry_before_starter):
+            return _deny("protected_process_boundary")
+    elif any(_protected(item) for item in ancestry if isinstance(item, dict)):
+        return _deny("protected_process_boundary")
+    if pid in protected_pids:
         return _deny("current_process_ancestry")
+    intersects_current = bool(ancestry_pids & protected_pids)
+    if intersects_current and not allow_current_descendant:
+        return _deny("current_process_ancestry")
+    if allow_current_descendant and int(current_pid or os.getpid()) not in ancestry_pids:
+        return _deny("not_current_process_descendant")
     if record["ownership_type"] not in {"charlie_runner", "charlie_worker", "charlie_agent"}:
         return _deny("ownership_ambiguous")
     return {"authorized": True, "reason": "identity_match", "pid": pid}
