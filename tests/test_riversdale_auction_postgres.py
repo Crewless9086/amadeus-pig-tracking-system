@@ -7,6 +7,7 @@ import os
 import uuid
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from pathlib import Path
 
 import psycopg
@@ -15,6 +16,7 @@ from modules.sales.riversdale_auction_list import (
     read_auction_list,
     record_auction_list_events,
 )
+from modules.sales.riversdale_auction import record_owner_auction_decision
 
 
 class RiversdaleAuctionPostgresTests(unittest.TestCase):
@@ -248,6 +250,33 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
         )
         self.assertEqual((stale_status, stale["status"]),
                          (409, "auction_list_stale_cycle"))
+        replay_after_rollover, replay_after_rollover_status = record_auction_list_events(
+            base, actor_id="owner-admin:test",
+            eligibility_loader=lambda *_: packet_a,
+            database_url=self.database_url,
+        )
+        self.assertEqual(
+            (replay_after_rollover_status, replay_after_rollover["status"]),
+            (409, "auction_list_stale_cycle"),
+        )
+        packet_b = evidence(cycle_b, [pigs[0]])
+        cross_cycle = {
+            **base,
+            "auction_cycle_id": cycle_b,
+            "eligibility_tokens": {
+                pigs[0]: eligibility_tokens(packet_b)[pigs[0]]
+            },
+            "prior_event_ids": {pigs[0]: ""},
+        }
+        reused, reused_status = record_auction_list_events(
+            cross_cycle, actor_id="owner-admin:test",
+            eligibility_loader=lambda *_: packet_b,
+            database_url=self.database_url,
+        )
+        self.assertEqual(
+            (reused_status, reused["status"]),
+            (409, "auction_list_idempotency_conflict"),
+        )
 
         with psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:
@@ -354,6 +383,57 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
             )
             lock_results = [ordered.result(timeout=10), reversed_order.result(timeout=10)]
         self.assertEqual(sorted(status for _, status in lock_results), [201, 409])
+
+        # Auction-cycle rollover uses the same advisory lock. Hold a list
+        # mutation at its in-transaction eligibility read and prove the owner
+        # decision cannot create the next cycle until the list event commits.
+        listing, _ = read_auction_list(database_url=self.database_url)
+        rollover_pig = pigs[0]
+        rollover_prior = listing["causal_heads"][rollover_pig]["event_id"]
+        # Remove first so a subsequent Add is valid.
+        removed, removed_status = submit(
+            "remove", [rollover_pig], f"rollover-remove-{suffix}",
+            {rollover_pig: rollover_prior},
+        )
+        self.assertEqual(removed_status, 201, removed)
+        listing, _ = read_auction_list(database_url=self.database_url)
+        add_prior = listing["causal_heads"][rollover_pig]["event_id"]
+        eligibility_started = Event()
+        allow_eligibility = Event()
+
+        def held_loader(*_args):
+            eligibility_started.set()
+            self.assertTrue(allow_eligibility.wait(timeout=10))
+            return packet
+
+        held_payload = {
+            "action": "add", "pig_ids": [rollover_pig],
+            "auction_cycle_id": cycle,
+            "eligibility_tokens": {rollover_pig: tokens[rollover_pig]},
+            "prior_event_ids": {rollover_pig: add_prior},
+            "idempotency_key": f"rollover-add-{suffix}",
+        }
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            mutation_future = pool.submit(
+                record_auction_list_events, held_payload,
+                actor_id="owner-admin:test", eligibility_loader=held_loader,
+                database_url=self.database_url,
+            )
+            self.assertTrue(eligibility_started.wait(timeout=10))
+            decision_future = pool.submit(
+                record_owner_auction_decision,
+                {
+                    "operating": True, "confirmed_date": "2026-09-02",
+                    "idempotency_key": f"rollover-cycle-{suffix}",
+                },
+                actor_id="owner-admin:test", database_url=self.database_url,
+            )
+            self.assertFalse(decision_future.done())
+            allow_eligibility.set()
+            mutation_result = mutation_future.result(timeout=10)
+            decision_result = decision_future.result(timeout=10)
+        self.assertEqual(mutation_result[1], 201, mutation_result)
+        self.assertEqual(decision_result[1], 201, decision_result)
 
     def test_projection_uses_sequence_when_timestamps_are_equal(self):
         suffix = uuid.uuid4().hex[:10]
