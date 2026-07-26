@@ -153,6 +153,8 @@
     packetRequestChanges: byId("beacon_packet_request_changes"),
     packetReject: byId("beacon_packet_reject"),
     packetDecisionResult: byId("beacon_packet_decision_result"),
+    learningState: byId("beacon_learning_state"),
+    learningReport: byId("beacon_learning_report"),
     metaPreviewState: byId("beacon_meta_preview_state"),
     metaPreviewRefresh: byId("beacon_meta_preview_refresh"),
     metaPreviewStart: byId("beacon_meta_preview_start"),
@@ -324,6 +326,40 @@
       <p>${escapeHtml(packet.next_gate)}</p>
     `;
     renderWeeklyOwnerDecision(recordedDecision, payload.weekly_owner_review_decision_state);
+    renderOrganicLearning(payload.organic_media_learning || {});
+  }
+
+  function renderOrganicLearning(learning) {
+    if (!elements.learningState || !elements.learningReport) return;
+    const media = learning.media_understanding?.packets || [];
+    const performance = learning.performance_learning || {};
+    const graduation = learning.graduation || {};
+    elements.learningState.textContent = graduation.eligible_for_owner_review_candidate
+      ? "Owner-review candidate evidence"
+      : "Foundation · not graduated";
+    elements.learningState.dataset.state = graduation.eligible_for_owner_review_candidate ? "proposed" : "blocked";
+    elements.learningReport.innerHTML = `
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>First production case</span><small>${escapeHtml(learning.publication?.facebook_post_id || "Unavailable")}</small></div>
+        <p>${escapeHtml(learning.post_understanding?.opening_hook || "")}</p>
+        <p><strong>Alignment:</strong> ${escapeHtml(learning.post_understanding?.caption_media_alignment || "Unavailable")} · <strong>Intent:</strong> ${escapeHtml(learning.post_understanding?.intent || "Unavailable")}</p>
+      </article>
+      ${media.map((item) => `<article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Image ${escapeHtml(item.position)}</span><small>${escapeHtml(item.asset_id)}</small></div>
+        <p>${escapeHtml(item.visible_subject)}</p>
+        <p>${escapeHtml(item.composition_quality)}</p>
+        <small>${escapeHtml((item.does_not_support || []).join(", "))}</small>
+      </article>`).join("")}
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Performance evidence</span><small>${escapeHtml(performance.available_snapshot_count || 0)} compatible snapshots</small></div>
+        <p>${escapeHtml(performance.baseline_state || "Unavailable")}</p>
+        <p>${escapeHtml(performance.comparison_rule || "")}</p>
+      </article>
+      <article class="beacon-recommendation-card">
+        <div class="beacon-recommendation-title"><span>Graduation</span><small>${escapeHtml(graduation.status || "Unavailable")}</small></div>
+        <p>${escapeHtml(graduation.reason || "")}</p>
+        <p>Automatic publishing, scheduling, retry, boosting, advertising and spend authority: none.</p>
+      </article>`;
   }
 
   function setWeeklyDecisionDisabled(disabled) {

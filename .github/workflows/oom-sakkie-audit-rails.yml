@@ -133,11 +133,16 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202606180007_add_sales_lead_conversation_lookup_index.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607230001_create_riversdale_auction_cycles.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202607250001_create_beacon_weekly_review_decisions.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202607260008_create_beacon_organic_media_learning.sql
 
       - name: Run Beacon weekly owner-decision permission gates
         env:
           BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: python -m unittest tests.test_beacon_weekly_owner_review_decisions_postgres
+      - name: Run Beacon organic-learning permission gates
+        env:
+          BEACON_WEEKLY_REVIEW_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: python -m unittest tests.test_beacon_organic_media_intelligence_postgres
       - name: Run CHARLIE callback durability integration tests
         run: python -m unittest tests.test_charlie_callback_postgres
 

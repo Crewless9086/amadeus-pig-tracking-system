@@ -4,10 +4,14 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from pathlib import Path
 import re
 
 from modules.beacon.media_library import list_beacon_media_assets
 from modules.beacon.opportunity_scanner import build_beacon_opportunity_cards
+from modules.beacon.organic_media_intelligence import (
+    build_organic_learning_report,
+)
 from modules.beacon.public_livestock_content_policy import (
     RISK_STATUS,
     enforce_public_livestock_drafts,
@@ -80,6 +84,39 @@ AUTHORITATIVE_FACT_ADAPTERS = {
         "statement_mode": "structured_performance_result",
     },
 }
+
+FIRST_LEARNING_CASE = Path(__file__).with_name(
+    "fixtures"
+) / "first_production_learning_case.json"
+
+
+def _first_production_learning_case(assets, performance):
+    fixture = json.loads(FIRST_LEARNING_CASE.read_text(encoding="utf-8"))
+    by_id = {
+        row.get("asset_id"): row for row in assets if isinstance(row, dict)
+    }
+    ordered_media = [
+        by_id.get(asset_id, {"asset_id": asset_id, "content_sha256": ""})
+        for asset_id in fixture["asset_order"]
+    ]
+    evidence = []
+    post_id = fixture["publication"]["facebook_post_id"]
+    for row in performance:
+        if not isinstance(row, dict) or row.get("source_reference") != post_id:
+            continue
+        evidence.append({
+            "event_kind": "performance_snapshot",
+            "facebook_post_id": post_id,
+            "channel": "Facebook",
+            "objective": "farm_awareness",
+            "measurement_window": row.get("measurement_window"),
+            "evidence_key": row.get("performance_event_id"),
+            "metrics": row.get("metric_evidence"),
+        })
+    return build_organic_learning_report(
+        fixture["publication"], ordered_media, fixture["observations"], evidence,
+        case_label=fixture["case_label"],
+    )
 
 
 def gather_beacon_content_evidence(*, database_url=None, now=None, allocation=None,
@@ -231,6 +268,9 @@ def build_beacon_content_candidate(evidence=None, *, current_facts=None, now=Non
         "ranked_ideas": ideas,
         "featured_owner_review_packet": featured_owner_review_packet,
         "historical_owner_review_packets": historical_post_one_packets(),
+        "organic_media_learning": _first_production_learning_case(
+            assets, performance
+        ),
         "owner_review_packet": {
             "packet_id": packet_id,
             "review_status": "awaiting_owner_review",

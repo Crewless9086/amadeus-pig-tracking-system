@@ -1,0 +1,91 @@
+{
+  "case_label": "First production learning case",
+  "publication": {
+    "facebook_post_id": "920598737794159_122145593991122163",
+    "packet_id": "BEACON-WEEK-2026-07-25-P1-S1",
+    "caption": "These three came straight over to inspect the camera while Ms. Piggy stayed close to the rest of the litter behind them. That mix of confidence, curiosity and staying close to mum is one of those ordinary farm moments worth sharing.\n\nFollow the farm journey for more honest moments from behind the scenes at Amadeus Farm.",
+    "caption_sha256": "27fe1763541ba365134ae82ef6414c87fff7bd744a46af71dd9c988889e2e75b",
+    "media_order_sha256": "6fea756220a9973979f6ded8597fa410e865982e814a2ac1a004b265c1f98a08",
+    "media_payload_sha256": "70ad08a67892fca873bcca49262194ad3d1b71a4be3f032c8937dbc779d1c182",
+    "channel": "Facebook",
+    "objective": "farm_awareness",
+    "confirmed": true,
+    "policy_passed": true
+  },
+  "asset_order": [
+    "BEACON-ASSET-3D9A65053184D8181A",
+    "BEACON-ASSET-983952CB4A95A0BEBB",
+    "BEACON-ASSET-13F7A5168AE3BFF676"
+  ],
+  "observations": [
+    {
+      "asset_id": "BEACON-ASSET-3D9A65053184D8181A",
+      "asset_sha256": "4c9a8962735386dab2a5aac2659cb99fb744dfa34d00580febf857df5a3b41c4",
+      "evidence_state": "qualified_visual_observation",
+      "provenance": {
+        "source_type": "human_visual_review",
+        "observer_identity": "owner-directed-codex-review",
+        "observer_version": "2026-07-26",
+        "observed_at": "2026-07-26T16:40:00+02:00",
+        "confidence": "medium"
+      },
+      "observation": {
+        "visible_subject": "Three juvenile pigs prominent near the camera; an adult-sized pig and additional smaller pigs behind; at least eight pigs visible with occlusion.",
+        "setting": "Concrete-walled working-farm pen or passage.",
+        "composition": "Eye-level corridor perspective, natural side/back light and documentary framing.",
+        "story_value": "Curiosity and group context support a warm farm-life story.",
+        "educational_value": "Supports discussion of observation and group behaviour, not health outcomes.",
+        "commercial_relevance": "Non-commercial awareness only; no availability evidence.",
+        "risks": "No people visible; welfare conclusions, breed, age, health and identity remain unsupported.",
+        "supports": ["pigs together in a farm pen", "three younger pigs near the camera"],
+        "does_not_support": ["breed", "exact age", "health", "identity from vision", "availability", "price"]
+      }
+    },
+    {
+      "asset_id": "BEACON-ASSET-983952CB4A95A0BEBB",
+      "asset_sha256": "0ac4cd13ee73b1f28b230ba2af127a46099e84efab8f5282fef2a326920a0cf5",
+      "evidence_state": "qualified_visual_observation",
+      "provenance": {
+        "source_type": "human_visual_review",
+        "observer_identity": "owner-directed-codex-review",
+        "observer_version": "2026-07-26",
+        "observed_at": "2026-07-26T16:40:00+02:00",
+        "confidence": "medium"
+      },
+      "observation": {
+        "visible_subject": "Three juvenile pigs fill the foreground with another smaller pig centred behind; adult-sized pig and litter remain in the background.",
+        "setting": "Same concrete-walled working-farm pen or passage.",
+        "composition": "Balanced foreground trio, deeper central subject and natural light.",
+        "story_value": "A middle frame that strengthens the inspection-committee sequence.",
+        "educational_value": "Supports non-diagnostic discussion of curiosity and group movement.",
+        "commercial_relevance": "Non-commercial awareness only; no availability evidence.",
+        "risks": "No people visible; welfare conclusions, breed, age, health and identity remain unsupported.",
+        "supports": ["curious foreground pigs", "same farm sequence"],
+        "does_not_support": ["breed", "exact age", "health", "identity from vision", "availability", "price"]
+      }
+    },
+    {
+      "asset_id": "BEACON-ASSET-13F7A5168AE3BFF676",
+      "asset_sha256": "c806203ce05fe6c4daad77f0b21844e30493ac1550911884e9e8aa5308dd5225",
+      "evidence_state": "qualified_visual_observation",
+      "provenance": {
+        "source_type": "human_visual_review",
+        "observer_identity": "owner-directed-codex-review",
+        "observer_version": "2026-07-26",
+        "observed_at": "2026-07-26T16:40:00+02:00",
+        "confidence": "medium"
+      },
+      "observation": {
+        "visible_subject": "Three juvenile pigs face the camera in front; another raises its head behind, with an adult-sized pig and more smaller pigs farther back.",
+        "setting": "Same concrete-walled working-farm pen or passage.",
+        "composition": "Strong three-subject foreground, centred raised head and brighter background.",
+        "story_value": "A distinct closing moment in the three-frame approach sequence.",
+        "educational_value": "Supports observation-led care storytelling without asserting outcomes.",
+        "commercial_relevance": "Non-commercial awareness only; no availability evidence.",
+        "risks": "No people visible; welfare conclusions, breed, age, health and identity remain unsupported.",
+        "supports": ["three pigs facing the camera", "candid behind-the-scenes context"],
+        "does_not_support": ["breed", "exact age", "health", "identity from vision", "availability", "price"]
+      }
+    }
+  ]
+}
