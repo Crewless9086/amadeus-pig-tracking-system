@@ -40,6 +40,9 @@ def verified_inventory():
 def payload(**overrides):
     result = {
         "generation": 1,
+        "daily_plan_id": "ROOTLINE-DAILY-PLAN-20260725",
+        "daily_plan_generation": 1,
+        "daily_plan_operating_date": "2026-07-25",
         "zone_id": "B12345",
         "zone_name": "B - Kamp",
         "intent": "ON",
@@ -192,6 +195,19 @@ class IrrigationCommandLedgerTests(unittest.TestCase):
             conflict, "owner-admin:test", ledger=self.ledger, now=NOW
         )
         self.assertEqual((status, result["status"]), (409, "zone_generation_conflict"))
+
+    def test_superseded_daily_plan_cannot_be_approved(self):
+        ledger = InMemoryIrrigationCommandLedger()
+        result, status = create_plan_only_command(
+            payload(), "owner-admin:test", ledger=ledger, now=NOW
+        )
+        self.assertEqual(status, 201)
+        ledger.current_daily_plans[result["command"]["daily_plan_id"]] = 2
+        approval, approval_status = approve_plan_only_command(
+            result["command"]["command_id"], "owner-admin:test", ledger=ledger, now=NOW
+        )
+        self.assertEqual(approval_status, 409)
+        self.assertEqual(approval["status"], "daily_plan_generation_superseded")
 
     def test_owner_approval_never_dispatches(self):
         result, status = create_plan_only_command(

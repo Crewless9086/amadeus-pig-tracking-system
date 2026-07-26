@@ -8,7 +8,8 @@ const state = {
   powerCurrent: null,
   irrigation: null,
   rollup: null,
-  rootline: null,
+    rootline: null,
+    rootlineDailyPlan: null,
   farm: null,
   orders: null,
 };
@@ -226,7 +227,15 @@ function renderRootline() {
       ? `${numberOrDash(conditions.temperature_c)} °C · ${numberOrDash(conditions.rain_today_mm)} mm · ${numberOrDash(conditions.wind_speed_kmh)} km/h · ${numberOrDash(conditions.pressure_hpa)} hPa`
       : "Current conditions Unavailable"
   );
-  const zones = brief.irrigation?.zones || [];
+    const zones = brief.irrigation?.zones || [];
+    const planPacket = state.rootlineDailyPlan || {};
+    const plan = planPacket.daily_plan;
+    byId("rootline_daily_plan").innerHTML = plan
+      ? `<div class="ops-list-row">
+          <strong>${escapeHtml(plan.operating_date)} · Generation ${escapeHtml(plan.generation)}</strong>
+          <span>${escapeHtml(displayLabel(plan.status, "Unavailable"))} · Evidence ${escapeHtml(plan.evidence_observed_at || "Unavailable")} · ${escapeHtml(plan.replacement_reason || "Replacement reason Unavailable")}</span>
+        </div>`
+      : `<div class="ops-empty-inline">${escapeHtml(planPacket.owner_message || "Daily irrigation plan Unavailable.")}</div>`;
   byId("rootline_zone_list").innerHTML = zones.length
     ? zones.map(zone => `
       <div class="ops-list-row">
@@ -327,7 +336,8 @@ async function loadDashboard() {
     ["powerCurrent", "/api/telemetry/power/current", "power_panel"],
     ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
     ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
-    ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
+      ["rootline", `/api/telemetry/rootline/daily-brief?date=${today}`, "rootline_panel"],
+      ["rootlineDailyPlan", `/api/telemetry/rootline/daily-irrigation-plan?date=${today}`, "rootline_panel"],
     ["farm", "/api/pig-weights/dashboard", "herd_panel"],
     ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
   ];

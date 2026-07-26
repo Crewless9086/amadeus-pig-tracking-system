@@ -154,7 +154,7 @@ jobs:
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_lifecycle_event_postgres
 
       - name: Run ROOTLINE plan-only ledger disposable-Postgres tests
-        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres
+        run: ROOTLINE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_irrigation_command_ledger_postgres tests.test_irrigation_daily_plan_postgres
 
       - name: Run SAM Meat PostgreSQL deadline gates without skips
         env:
