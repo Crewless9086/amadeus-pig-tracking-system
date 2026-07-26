@@ -2,7 +2,10 @@ import unittest
 from unittest.mock import Mock, patch
 
 from modules.sales import sam_owner_ownership_resolution as ownership
-from modules.sales.sam_owner_ownership_resolution import resolve_owner_work_ownership
+from modules.sales.sam_owner_ownership_resolution import (
+    recover_owner_work_ownership_observation,
+    resolve_owner_work_ownership,
+)
 
 
 def packet(conversation_id="1997", mode="HUMAN"):
@@ -27,7 +30,24 @@ def evidence(request, mode="UNAVAILABLE"):
     observation = {
         **request,
         "work_event_id": f"refreshed-{request['conversation_id']}",
+        "observation_hash": (
+            request["observation_hash"] if mode == "UNAVAILABLE"
+            else f"human-observation-{request['conversation_id']}"
+        ),
+        "classification": (
+            "OWNERSHIP_DECISION_REQUIRED"
+            if mode == "UNAVAILABLE" else "WAITING_FOR_OWNER_REPLY"
+        ),
         "ownership_mode": mode,
+    }
+    stable = {
+        "account_id": request["account_id"],
+        "conversation_id": request["conversation_id"],
+        "contact_id": request["contact_id"],
+        "inbox_id": request["inbox_id"],
+        "latest_inbound_message_id": request["latest_inbound_message_id"],
+        "window_evidence_hash": request["window_evidence_hash"],
+        "message_chronology_digest": f"messages-{request['conversation_id']}",
     }
     return {
         **request,
@@ -36,6 +56,7 @@ def evidence(request, mode="UNAVAILABLE"):
         "lane": "GENERAL",
         "protected_markers": [],
         "specialist_markers": [],
+        "stable_evidence": stable,
         "observation": observation,
     }
 
@@ -59,6 +80,7 @@ class OwnerOwnershipResolutionTests(unittest.TestCase):
                     request, actor_id="owner-admin:server",
                     current_reader=reader, claim_recorder=recorder,
                     result_recorder=recorder, writer=writer,
+                    transition_reader=lambda *_: (evidence(request, "HUMAN"), 200),
                     refresh_recorder=refresh,
                 )
                 self.assertEqual(status, 200)
@@ -67,6 +89,73 @@ class OwnerOwnershipResolutionTests(unittest.TestCase):
                 self.assertFalse(result["calls_telegram"])
                 writer.assert_called_once_with(conversation_id, "HUMAN", unittest.mock.ANY)
                 self.assertEqual(recorder.call_count, 2)
+
+    def test_postwrite_ownership_hash_changes_but_message_evidence_remains_equal(self):
+        request = packet()
+        before = evidence(request)
+        after = evidence(request, "HUMAN")
+        self.assertNotEqual(
+            before["observation_hash"], after["observation"]["observation_hash"]
+        )
+        result, status = resolve_owner_work_ownership(
+            request, actor_id="owner-admin:server",
+            current_reader=lambda *_: (before, 200),
+            transition_reader=lambda *_: (after, 200),
+            claim_recorder=lambda event: ({"created": True}, 201),
+            result_recorder=lambda event: (
+                {"created": True, "resolution_event_id": event["resolution_event_id"]},
+                201,
+            ),
+            writer=lambda *_: {"success": True},
+            refresh_recorder=lambda observation: ({"created": True}, 201),
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "ownership_resolution_completed")
+
+    def test_message_review_and_window_races_fail_after_one_write(self):
+        for key in (
+            "message_chronology_digest", "review_event_id", "window_evidence_hash",
+        ):
+            request = packet()
+            before = evidence(request)
+            after = evidence(request, "HUMAN")
+            after["stable_evidence"] = dict(after["stable_evidence"])
+            after["stable_evidence"][key] = f"changed-{key}"
+            writer, refresh = Mock(return_value={"success": True}), Mock()
+            with self.subTest(key=key):
+                result, status = resolve_owner_work_ownership(
+                    request, actor_id="owner-admin:server",
+                    current_reader=lambda *_: (before, 200),
+                    transition_reader=lambda *_: (after, 200),
+                    claim_recorder=lambda event: ({"created": True}, 201),
+                    result_recorder=lambda event: ({"created": True}, 201),
+                    writer=writer, refresh_recorder=refresh,
+                )
+                self.assertEqual(status, 503)
+                self.assertEqual(
+                    result["status"], "ownership_result_evidence_incomplete"
+                )
+                refresh.assert_not_called()
+
+    def test_write_success_refresh_persistence_failure_records_recoverable_result(self):
+        request = packet()
+        outcomes = []
+        result, status = resolve_owner_work_ownership(
+            request, actor_id="owner-admin:server",
+            current_reader=lambda *_: (evidence(request), 200),
+            transition_reader=lambda *_: (evidence(request, "HUMAN"), 200),
+            claim_recorder=lambda event: ({"created": True}, 201),
+            result_recorder=lambda event: (
+                outcomes.append(event["outcome"]) or {"created": True}, 201
+            ),
+            writer=lambda *_: {"success": True},
+            refresh_recorder=lambda observation: (
+                {"status": "owner_work_persistence_failed"}, 503
+            ),
+        )
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "ownership_refresh_persistence_failed")
+        self.assertEqual(outcomes, ["refresh_persistence_failed"])
 
     def test_stale_chronology_fails_before_claim_or_write(self):
         request = packet()
@@ -196,6 +285,20 @@ def fresh_shape(conversation_id):
         "specialist_markers": [],
         "observed_at": "2026-07-26T17:35:02.909839+00:00",
         "latest_message_at": "2026-07-26T12:49:19+00:00",
+        "latest_message_id": f"inbound-{conversation_id}",
+        "latest_outgoing_message_id": f"outbound-{conversation_id}",
+        "reviewed_inbound_message_id": f"inbound-{conversation_id}",
+        "unanswered_inbound_bundle": [{
+            "sequence": 1,
+            "message_id": f"inbound-{conversation_id}",
+            "direction": "incoming",
+            "created_at": "2026-07-26T12:49:19+00:00",
+            "public": True,
+        }],
+        "provider_identity_class": "whatsapp",
+        "window_state": "open",
+        "reply_authority_state": "ownership_decision_required",
+        "expires_at_utc": "2026-07-27T12:49:19+00:00",
         "contains_customer_content": False,
         "sends_customer_message": False,
         "calls_telegram": False,
@@ -306,3 +409,100 @@ class CurrentOwnershipEvidenceTests(unittest.TestCase):
         claim.assert_not_called()
         writer.assert_not_called()
         refresh.assert_not_called()
+
+
+def recovery_persisted_shape(conversation_id="1997"):
+    row = persisted_shape(conversation_id)
+    row.update({
+        "latest_message_id": f"inbound-{conversation_id}",
+        "latest_message_at": "2026-07-26T12:49:19+00:00",
+        "latest_outgoing_message_id": f"outbound-{conversation_id}",
+        "reviewed_inbound_message_id": f"inbound-{conversation_id}",
+        "unanswered_inbound_bundle_json": [{
+            "sequence": 1, "message_id": f"inbound-{conversation_id}",
+            "direction": "incoming",
+            "created_at": "2026-07-26T12:49:19+00:00", "public": True,
+        }],
+        "provider_identity_class": "whatsapp",
+        "window_state": "open",
+        "reply_authority_state": "ownership_decision_required",
+        "expires_at_utc": "2026-07-27T12:49:19+00:00",
+    })
+    return row
+
+
+def recovery_live_shape(request):
+    fresh = fresh_shape(request["conversation_id"])
+    fresh.update({
+        "ownership_mode": "HUMAN",
+        "classification": "WAITING_FOR_OWNER_REPLY",
+        "work_event_id": f"human-event-{request['conversation_id']}",
+        "observation_hash": f"human-observation-{request['conversation_id']}",
+    })
+    stable = ownership._stable_evidence(fresh)
+    return {
+        "status": "ownership_transition_evidence_loaded",
+        "ownership_mode": "HUMAN",
+        "classification": "WAITING_FOR_OWNER_REPLY",
+        "work_item_id": request["work_item_id"],
+        "work_event_id": fresh["work_event_id"],
+        "observation_hash": fresh["observation_hash"],
+        "stable_evidence": stable,
+        "observation": fresh,
+    }
+
+
+class OwnershipRecoveryTests(unittest.TestCase):
+    def test_recovery_appends_observation_without_chatwoot_writer(self):
+        request = packet()
+        live = recovery_live_shape(request)
+        persisted = Mock(return_value=({"created": True}, 201))
+        result, status = recover_owner_work_ownership_observation(
+            request, actor_id="owner-admin:server",
+            exception_reader=lambda *_: (recovery_persisted_shape(), 200),
+            transition_reader=lambda *_: (live, 200),
+            claim_recorder=lambda event: ({"created": True}, 201),
+            result_recorder=lambda event: (
+                {"created": True, "resolution_event_id": event["resolution_event_id"]},
+                201,
+            ),
+            refresh_recorder=persisted,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "ownership_recovery_completed")
+        self.assertFalse(result["ownership_changed"])
+        persisted.assert_called_once()
+
+    def test_recovery_replay_and_concurrency_are_withheld(self):
+        request = packet()
+        persisted = Mock()
+        result, status = recover_owner_work_ownership_observation(
+            request, actor_id="owner-admin:server",
+            exception_reader=lambda *_: (recovery_persisted_shape(), 200),
+            transition_reader=lambda *_: (recovery_live_shape(request), 200),
+            claim_recorder=lambda event: ({"created": False}, 200),
+            refresh_recorder=persisted,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "ownership_recovery_replay_withheld")
+        persisted.assert_not_called()
+
+    def test_recovery_race_has_zero_write_or_other_authority(self):
+        request = packet()
+        first = recovery_live_shape(request)
+        changed = recovery_live_shape(request)
+        changed["stable_evidence"] = dict(changed["stable_evidence"])
+        changed["stable_evidence"]["review_event_id"] = "changed-review"
+        result, status = recover_owner_work_ownership_observation(
+            request, actor_id="owner-admin:server",
+            exception_reader=lambda *_: (recovery_persisted_shape(), 200),
+            transition_reader=Mock(side_effect=[(first, 200), (changed, 200)]),
+            claim_recorder=lambda event: ({"created": True}, 201),
+            result_recorder=lambda event: ({"created": True}, 201),
+            refresh_recorder=Mock(),
+        )
+        self.assertEqual(status, 409)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_telegram"])
+        self.assertFalse(result["creates_template"])
+        self.assertFalse(result["mutates_business_state"])

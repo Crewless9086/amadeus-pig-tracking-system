@@ -40,6 +40,7 @@ def resolve_owner_work_ownership(
     claim_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
     result_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
     writer: Callable[[str, str, Mapping[str, str]], Mapping[str, Any]] | None = None,
+    transition_reader: Callable[..., tuple[dict[str, Any], int]] | None = None,
     refresh_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Resolve one exact exception. Ownership change never implies a send."""
@@ -94,20 +95,22 @@ def resolve_owner_work_ownership(
             ownership_changed=False, retry_automatically=False,
         ), 502
 
-    # Re-read authoritative Chatwoot state; this performs no second write.
-    refreshed, refreshed_status = reader(
-        {**packet, "expected_current_mode": packet["target_mode"]}, source
+    # Re-read live evidence without comparing it to the superseded exception.
+    refreshed, refreshed_status = (transition_reader or read_transition_resolution_evidence)(
+        packet, source
     )
     refresh_error = "" if refreshed_status < 400 else refreshed.get("status", "refresh_failed")
     if not refresh_error and _clean(refreshed.get("ownership_mode")).upper() != packet["target_mode"]:
         refresh_error = "ownership_write_not_observed"
-    terminal = _event(
-        resolution_id, "result", packet, refreshed if not refresh_error else current,
-        actor_id, outcome="succeeded" if not refresh_error else "refresh_failed",
-        prior_event_id=claim["resolution_event_id"], reason=refresh_error,
-    )
-    recorded, result_status = (result_recorder or record_resolution_event)(terminal)
-    if result_status >= 400 or refresh_error:
+    if not refresh_error:
+        refresh_error = _stable_transition_error(current, refreshed)
+    if refresh_error:
+        terminal = _event(
+            resolution_id, "result", packet, current, actor_id,
+            outcome="refresh_failed", prior_event_id=claim["resolution_event_id"],
+            reason=refresh_error,
+        )
+        (result_recorder or record_resolution_event)(terminal)
         return _result(
             "ownership_result_evidence_incomplete",
             resolution_id=resolution_id, ownership_changed=True,
@@ -123,8 +126,26 @@ def resolve_owner_work_ownership(
         ), 503
     persisted, persisted_status = (refresh_recorder or record_owner_work_observation)(observation)
     if persisted_status >= 400:
+        terminal = _event(
+            resolution_id, "result", packet, current, actor_id,
+            outcome="refresh_persistence_failed",
+            prior_event_id=claim["resolution_event_id"],
+            reason="ownership_refresh_persistence_failed",
+        )
+        (result_recorder or record_resolution_event)(terminal)
         return _result(
             "ownership_refresh_persistence_failed",
+            resolution_id=resolution_id, ownership_changed=True,
+            retry_automatically=False,
+        ), 503
+    terminal = _event(
+        resolution_id, "result", packet, refreshed, actor_id,
+        outcome="succeeded", prior_event_id=claim["resolution_event_id"],
+    )
+    recorded, result_status = (result_recorder or record_resolution_event)(terminal)
+    if result_status >= 400:
+        return _result(
+            "ownership_result_evidence_incomplete",
             resolution_id=resolution_id, ownership_changed=True,
             retry_automatically=False,
         ), 503
@@ -146,39 +167,10 @@ def read_current_resolution_evidence(
     latest, status = load_latest_exception(packet["work_item_id"])
     if status >= 400:
         return latest, status
-    try:
-        conversation = _read_exact_conversation(packet, environ)
-        inbox = _read_exact_inbox(packet, environ)
-    except Exception as exc:
-        return _result("ownership_chatwoot_conversation_unavailable", error_type=exc.__class__.__name__), 503
-    history, history_status = load_bounded_conversation_messages(packet["conversation_id"], environ)
-    if history_status >= 400 or history.get("evidence_complete") is not True:
-        return _result("ownership_chronology_unavailable"), 503
-    embedded_inbox = (
-        conversation.get("inbox")
-        if isinstance(conversation.get("inbox"), Mapping)
-        else {}
-    )
-    embedded_inbox_id = _clean(embedded_inbox.get("id"))
-    if embedded_inbox_id and embedded_inbox_id != packet["inbox_id"]:
-        return _result("ownership_current_inbox_id_mismatch"), 409
-    conversation = {
-        **conversation,
-        "inbox": {**inbox, **embedded_inbox, "id": packet["inbox_id"]},
-        "messages": history["messages"],
-    }
-    from modules.sales.sam_live_stock_launch_control import (
-        load_latest_sam_live_stock_review_events_for_conversations,
-    )
-    reviews, review_status = load_latest_sam_live_stock_review_events_for_conversations(
-        [packet["conversation_id"]]
-    )
-    if review_status >= 400 or reviews.get("success") is not True:
-        return _result("ownership_review_unavailable"), 503
-    review = (reviews.get("events_by_conversation_id") or {}).get(packet["conversation_id"]) or {}
-    observation = build_owner_work_observation(
-        conversation, review=review, reconciliation_actor_id="server:ownership-refresh"
-    )
+    live, live_status = read_transition_resolution_evidence(packet, environ)
+    if live_status >= 400:
+        return live, live_status
+    observation = live["observation"]
     persisted, persisted_error = _persisted_current_binding(latest)
     if persisted_error:
         return _result(persisted_error), 409
@@ -211,9 +203,263 @@ def read_current_resolution_evidence(
         "lane": fresh["lane"],
         "protected_markers": fresh["protected_markers"],
         "specialist_markers": fresh["specialist_markers"],
+        "stable_evidence": live["stable_evidence"],
         "observation": _canonical_json_value(observation),
     }
     return _result("ownership_current_evidence_loaded", **result_fields), 200
+
+
+def read_transition_resolution_evidence(
+    packet: Mapping[str, Any], environ: Mapping[str, str]
+) -> tuple[dict[str, Any], int]:
+    """Build fresh post-write evidence without requiring old event/hash equality."""
+    try:
+        conversation = _read_exact_conversation(packet, environ)
+        inbox = _read_exact_inbox(packet, environ)
+    except Exception as exc:
+        return _result(
+            "ownership_chatwoot_conversation_unavailable",
+            error_type=exc.__class__.__name__,
+        ), 503
+    history, history_status = load_bounded_conversation_messages(
+        packet["conversation_id"], environ
+    )
+    if history_status >= 400 or history.get("evidence_complete") is not True:
+        return _result("ownership_chronology_unavailable"), 503
+    embedded = conversation.get("inbox")
+    embedded = embedded if isinstance(embedded, Mapping) else {}
+    embedded_id = _clean(embedded.get("id"))
+    if embedded_id and embedded_id != packet["inbox_id"]:
+        return _result("ownership_current_inbox_id_mismatch"), 409
+    conversation = {
+        **conversation,
+        "inbox": {**inbox, **embedded, "id": packet["inbox_id"]},
+        "messages": history["messages"],
+    }
+    from modules.sales.sam_live_stock_launch_control import (
+        load_latest_sam_live_stock_review_events_for_conversations,
+    )
+    reviews, review_status = load_latest_sam_live_stock_review_events_for_conversations(
+        [packet["conversation_id"]]
+    )
+    if review_status >= 400 or reviews.get("success") is not True:
+        return _result("ownership_review_unavailable"), 503
+    review = (reviews.get("events_by_conversation_id") or {}).get(
+        packet["conversation_id"]
+    ) or {}
+    try:
+        observation = build_owner_work_observation(
+            conversation, review=review,
+            reconciliation_actor_id="server:ownership-refresh",
+        )
+        stable = _stable_evidence(observation)
+    except (TypeError, ValueError) as exc:
+        return _result(
+            "ownership_fresh_evidence_malformed", error_type=exc.__class__.__name__
+        ), 409
+    return _result(
+        "ownership_transition_evidence_loaded",
+        ownership_mode=_clean(observation.get("ownership_mode")).upper(),
+        classification=_clean(observation.get("classification")),
+        work_item_id=_clean(observation.get("work_item_id")),
+        work_event_id=_clean(observation.get("work_event_id")),
+        observation_hash=_clean(observation.get("observation_hash")),
+        stable_evidence=stable,
+        observation=_canonical_json_value(observation),
+    ), 200
+
+
+def recover_owner_work_ownership_observation(
+    request: Mapping[str, Any],
+    *,
+    actor_id: str,
+    environ: Mapping[str, str] | None = None,
+    exception_reader: Callable[..., tuple[dict[str, Any], int]] | None = None,
+    transition_reader: Callable[..., tuple[dict[str, Any], int]] | None = None,
+    claim_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
+    result_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
+    refresh_recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
+) -> tuple[dict[str, Any], int]:
+    """Recover evidence after a confirmed write; this function has no writer rail."""
+    source = environ if environ is not None else os.environ
+    actor_id = _clean(actor_id, 200)
+    if not actor_id:
+        return _result("owner_identity_required"), 403
+    packet, error = _packet(request)
+    if error:
+        return _result(error), 400
+    persisted, status = (exception_reader or load_latest_exception)(
+        packet["work_item_id"]
+    )
+    if status >= 400:
+        return _result(persisted.get("status", "ownership_evidence_unavailable")), status
+    binding, binding_error = _persisted_current_binding(persisted)
+    if binding_error:
+        return _result(binding_error), 409
+    mismatch = _binding_error(packet, {**binding, "classification": persisted.get("classification")})
+    if mismatch:
+        return _result(mismatch), 409
+    try:
+        before_stable = _persisted_stable_evidence(persisted)
+    except (TypeError, ValueError):
+        return _result("ownership_persisted_stable_evidence_malformed"), 409
+    live_reader = transition_reader or read_transition_resolution_evidence
+    live, live_status = live_reader(packet, source)
+    if live_status >= 400:
+        return _result(live.get("status", "ownership_recovery_evidence_unavailable")), live_status
+    if _clean(live.get("ownership_mode")).upper() != packet["target_mode"]:
+        return _result("ownership_recovery_target_mode_not_current"), 409
+    expected = {**binding, "stable_evidence": before_stable}
+    stable_error = _stable_transition_error(expected, live)
+    if stable_error:
+        return _result(stable_error), 409
+
+    recovery_id = f"SAM-OWNER-RECOVERY-{_digest([_resolution_id(packet), live['work_event_id']])[:24]}"
+    claim = _event(
+        recovery_id, "claim", packet, binding, actor_id,
+        outcome="recovery_claimed", prior_event_id="",
+    )
+    recorder = claim_recorder or record_resolution_event
+    claimed, claim_status = recorder(claim)
+    if claim_status >= 400:
+        return _result(claimed.get("status", "ownership_recovery_claim_failed")), claim_status
+    if claimed.get("created") is not True:
+        return _result(
+            "ownership_recovery_replay_withheld",
+            resolution_id=recovery_id, replay_withheld=True,
+        ), 200
+
+    # Close the claim/read race before appending the recovered observation.
+    checked, checked_status = live_reader(packet, source)
+    checked_error = (
+        checked.get("status", "ownership_recovery_evidence_unavailable")
+        if checked_status >= 400 else _stable_transition_error(expected, checked)
+    )
+    if not checked_error and checked.get("work_event_id") != live.get("work_event_id"):
+        checked_error = "ownership_recovery_work_event_changed"
+    if checked_error:
+        failure = _event(
+            recovery_id, "result", packet, binding, actor_id,
+            outcome="recovery_failed", prior_event_id=claim["resolution_event_id"],
+            reason=checked_error,
+        )
+        (result_recorder or record_resolution_event)(failure)
+        return _result(
+            "ownership_recovery_evidence_changed",
+            resolution_id=recovery_id, retry_automatically=False,
+        ), 409
+    observation = checked.get("observation")
+    if not isinstance(observation, Mapping):
+        return _result("ownership_refresh_observation_unavailable"), 503
+    persisted_result, persisted_status = (
+        refresh_recorder or record_owner_work_observation
+    )(observation)
+    if persisted_status >= 400:
+        failure = _event(
+            recovery_id, "result", packet, binding, actor_id,
+            outcome="recovery_persistence_failed",
+            prior_event_id=claim["resolution_event_id"],
+            reason="ownership_refresh_persistence_failed",
+        )
+        (result_recorder or record_resolution_event)(failure)
+        return _result(
+            "ownership_recovery_persistence_failed",
+            resolution_id=recovery_id, retry_automatically=False,
+        ), 503
+    success = _event(
+        recovery_id, "result", packet, checked, actor_id,
+        outcome="recovered", prior_event_id=claim["resolution_event_id"],
+    )
+    recorded, result_status = (result_recorder or record_resolution_event)(success)
+    if result_status >= 400:
+        return _result("ownership_recovery_result_failed"), 503
+    return _result(
+        "ownership_recovery_completed",
+        resolution_id=recovery_id,
+        result_event_id=recorded.get("resolution_event_id"),
+        refreshed_work_event_id=observation.get("work_event_id"),
+        ownership_changed=False,
+        retry_automatically=False,
+    ), 200
+
+
+def _stable_evidence(observation: Mapping[str, Any]) -> dict[str, Any]:
+    """Canonical evidence which must not change merely because ownership changes."""
+    bundle = observation.get("unanswered_inbound_bundle")
+    if not isinstance(bundle, list):
+        raise ValueError("unanswered_bundle_unavailable")
+    fields = {
+        key: observation.get(key)
+        for key in (
+            "account_id", "conversation_id", "contact_id", "inbox_id",
+            "latest_message_id", "latest_message_at",
+            "latest_inbound_message_id", "latest_outgoing_message_id",
+            "unanswered_count", "review_event_id", "reviewed_inbound_message_id",
+            "provider_identity_class", "window_state",
+            "window_evidence_hash", "expires_at_utc",
+        )
+    }
+    fields["unanswered_inbound_bundle"] = bundle
+    canonical = _canonical_json_value(fields)
+    if any(canonical.get(key) in (None, "") for key in (
+        "account_id", "conversation_id", "contact_id", "inbox_id",
+        "latest_inbound_message_id", "review_event_id",
+        "provider_identity_class", "window_state", "window_evidence_hash",
+    )):
+        raise ValueError("stable_evidence_incomplete")
+    canonical["message_chronology_digest"] = _digest({
+        key: canonical[key] for key in (
+            "account_id", "conversation_id", "contact_id", "inbox_id",
+            "latest_message_id", "latest_message_at",
+            "latest_inbound_message_id", "latest_outgoing_message_id",
+            "unanswered_count", "unanswered_inbound_bundle",
+        )
+    })
+    return canonical
+
+
+def _persisted_stable_evidence(latest: Mapping[str, Any]) -> dict[str, Any]:
+    bundle = latest.get("unanswered_inbound_bundle")
+    if bundle is None:
+        bundle = latest.get("unanswered_inbound_bundle_json")
+    if isinstance(bundle, str):
+        bundle = json.loads(bundle)
+    synthetic = {
+        key: latest.get(key) for key in (
+            "account_id", "conversation_id", "contact_id", "inbox_id",
+            "latest_message_id", "latest_message_at",
+            "latest_inbound_message_id", "latest_outgoing_message_id",
+            "unanswered_count", "review_event_id", "reviewed_inbound_message_id",
+            "provider_identity_class", "window_state",
+            "window_evidence_hash", "expires_at_utc",
+        )
+    }
+    synthetic["unanswered_inbound_bundle"] = bundle
+    return _stable_evidence(synthetic)
+
+
+def _stable_transition_error(
+    before: Mapping[str, Any], after: Mapping[str, Any]
+) -> str:
+    before_stable = before.get("stable_evidence")
+    after_stable = after.get("stable_evidence")
+    if not isinstance(before_stable, Mapping) or not isinstance(after_stable, Mapping):
+        return "ownership_stable_evidence_unavailable"
+    for key in sorted(set(before_stable) | set(after_stable)):
+        if before_stable.get(key) != after_stable.get(key):
+            return f"ownership_transition_{key}_changed"
+    observation = after.get("observation")
+    if not isinstance(observation, Mapping):
+        return "ownership_refresh_observation_unavailable"
+    if _clean(observation.get("work_item_id")) != _clean(before.get("work_item_id")):
+        return "ownership_transition_work_item_id_changed"
+    if _clean(observation.get("work_event_id")) == _clean(before.get("work_event_id")):
+        return "ownership_transition_work_event_id_unchanged"
+    if _clean(observation.get("observation_hash")) == _clean(before.get("observation_hash")):
+        return "ownership_transition_observation_hash_unchanged"
+    if _clean(observation.get("classification")) == "OWNERSHIP_DECISION_REQUIRED":
+        return "ownership_exception_not_superseded"
+    return ""
 
 
 def _persisted_current_binding(
@@ -377,9 +623,13 @@ def load_latest_exception(
                     """
                     select work_event_id,work_item_id,account_id,conversation_id,
                            contact_id,inbox_id,observation_hash,chronology_hash,
-                           latest_inbound_message_id,unanswered_count,
+                           latest_message_id,latest_message_at,
+                           latest_inbound_message_id,latest_outgoing_message_id,
+                           unanswered_inbound_bundle_json,unanswered_count,
                            review_event_id,classification,ownership_mode,
-                           window_evidence_hash
+                           reviewed_inbound_message_id,provider_identity_class,
+                           window_state,reply_authority_state,window_evidence_hash,
+                           expires_at_utc
                     from public.sam_owner_work_item_events
                     where work_item_id=%s
                     order by observed_at desc,created_at desc,work_event_id desc
@@ -580,6 +830,9 @@ def _result(status: str, **extra: Any) -> dict[str, Any]:
             "ownership_resolution_event_recorded",
             "ownership_resolution_event_replay_withheld",
             "ownership_current_evidence_loaded",
+            "ownership_transition_evidence_loaded",
+            "ownership_recovery_completed",
+            "ownership_recovery_replay_withheld",
         },
         "status": status, **extra, **NO_AUTHORITY,
     }
