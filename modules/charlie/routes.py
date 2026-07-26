@@ -1181,6 +1181,9 @@ def _mission_dashboard_summary(mission):
     mission_family = metadata.get("mission_family") if isinstance(metadata.get("mission_family"), dict) else {}
     if mission_family:
         compact_metadata["mission_family"] = mission_family
+    supersession = metadata.get("supersession") if isinstance(metadata.get("supersession"), dict) else {}
+    if supersession:
+        compact_metadata["supersession"] = supersession
     dependencies = metadata.get("depends_on_mission_ids") if isinstance(metadata.get("depends_on_mission_ids"), list) else []
     if dependencies:
         compact_metadata["depends_on_mission_ids"] = dependencies
