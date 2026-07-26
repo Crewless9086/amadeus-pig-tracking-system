@@ -4,7 +4,7 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -18,7 +18,10 @@ from modules.orders.order_service import create_order_with_lines
 from modules.orders.order_validation import validate_new_order_payload, validate_sync_order_lines_payload
 from modules.pig_weights.pig_weights_service import get_sales_availability
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge, public_profile
-from modules.sales.sam_pricing import resolve_live_stock_price_rule
+from modules.sales.sam_pricing import (
+    list_live_stock_price_entries,
+    resolve_live_stock_price_rule,
+)
 from modules.sales.sam_sales_router import LANE_FARM_GENERAL, LANE_LIVE_STOCK, LANE_MEAT, classify_sam_sales_lane
 from modules.sales.sam_conversation_state import plan_live_stock_next_action
 from modules.sales.sam_live_stock_understanding import (
@@ -939,6 +942,11 @@ def extract_live_stock_facts(message, inbound=None):
         "channel": inbound.get("channel") or "chatwoot",
         "llm_used": False,
         "llm_status": "not_enabled_read_only_stage",
+        "information_scope": (
+            "grower_finisher"
+            if _asks_about_big_live_pigs(text)
+            else ""
+        ),
     }
     route = classify_sam_sales_lane(message)
     if (
@@ -1112,6 +1120,7 @@ def _current_message_requires_specialist(inbound, facts):
         or facts.get("reservation_requested")
         or facts.get("media_review_required")
         or inbound.get("attachments")
+        or _asks_about_big_live_pigs(text)
         or _potential_specialist_followup(text)
         or (affirmative_language and usable_constraints >= 1)
         or (usable_constraints >= 2 and facts.get("quantity"))
@@ -1769,7 +1778,20 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         facts=facts,
         conversation_plan=conversation_plan,
     )
-    fallback_reply = _safe_reply_draft(facts, route, missing, availability, blockers, price_answer_packet, conversation_plan)
+    information_reply = build_live_stock_information_response(
+        facts,
+        availability,
+        environ=environ,
+    )
+    fallback_reply = information_reply.get("reply_text") or _safe_reply_draft(
+        facts,
+        route,
+        missing,
+        availability,
+        blockers,
+        price_answer_packet,
+        conversation_plan,
+    )
     llm_draft = _build_llm_reply_draft_if_enabled(
         inbound,
         facts,
@@ -1825,6 +1847,7 @@ def build_sam_live_stock_decision(inbound, facts, context_packet, environ=None, 
         "availability": availability,
         "match_packet": match_packet,
         "price_answer_packet": price_answer_packet,
+        "information_response": information_reply,
         "agent_evidence": agent_evidence,
         "owner_action_packet": owner_action_packet,
         "owner_correction_examples": owner_correction_examples,
@@ -2406,6 +2429,119 @@ def build_live_stock_price_answer_packet(facts, match_packet=None):
         "formal_quote_created": False,
         "reservation_created": False,
         "safety_note": "Price answer is an estimate only. Farm must confirm animals before any promise, reservation, or formal quote.",
+        **_authority_flags(),
+    }
+
+
+def build_live_stock_information_response(facts, availability, *, environ=None):
+    """Build a bounded owner-review information draft from current truth only."""
+    facts = facts if isinstance(facts, dict) else {}
+    availability = availability if isinstance(availability, dict) else {}
+    if facts.get("information_scope") != "grower_finisher":
+        return {
+            "version": "sam_live_stock_information_response_v1",
+            "applicable": False,
+            "reply_text": "",
+            "customer_send_allowed": False,
+            **_authority_flags(),
+        }
+
+    source = environ if isinstance(environ, Mapping) else os.environ
+    listed, status_code = list_live_stock_price_entries(
+        limit=500,
+        database_url=source.get("DATABASE_URL"),
+    )
+    price_entries = listed.get("price_entries") if status_code == 200 and isinstance(listed, dict) else []
+    price_entries = price_entries if isinstance(price_entries, list) else []
+    now_key = datetime.now(timezone.utc).isoformat()
+    categories = ("Grower Pigs", "Finisher Pigs")
+    active_prices = {}
+    for category in categories:
+        rows = []
+        for entry in price_entries:
+            if not isinstance(entry, dict) or entry.get("active") is False:
+                continue
+            if _clean(entry.get("sale_category"), 80) != category:
+                continue
+            effective_from = _clean(entry.get("effective_from"), 60)
+            effective_to = _clean(entry.get("effective_to"), 60)
+            if effective_from and effective_from > now_key:
+                continue
+            if effective_to and effective_to <= now_key:
+                continue
+            if entry.get("unit_price") in ("", None):
+                continue
+            rows.append(entry)
+        if rows:
+            active_prices[category] = rows
+
+    summary = availability.get("summary") if isinstance(availability.get("summary"), dict) else {}
+    counts = {
+        category: sum(
+            int(value or 0)
+            for label, value in summary.items()
+            if _normal_information_category(label) == category
+        )
+        for category in categories
+    }
+    availability_known = availability.get("success") is True
+    lines = []
+    for category in categories:
+        prices = active_prices.get(category) or []
+        count = counts.get(category, 0)
+        if availability_known and count <= 0:
+            continue
+        if not prices:
+            continue
+        amounts = sorted({float(row["unit_price"]) for row in prices})
+        price_text = (
+            _money_label(amounts[0])
+            if len(amounts) == 1
+            else f"{_money_label(amounts[0])}–{_money_label(amounts[-1])}"
+        )
+        label = "Growers" if category == "Grower Pigs" else "Finishers"
+        if availability_known:
+            lines.append(f"- {label}: {count} currently eligible; {price_text}, depending on weight.")
+        else:
+            lines.append(f"- {label}: {price_text}, depending on weight.")
+
+    if not lines:
+        return {
+            "version": "sam_live_stock_information_response_v1",
+            "applicable": True,
+            "status": "authoritative_category_evidence_unavailable",
+            "reply_text": "Which approximate weight do you mean by the bigger pigs?",
+            "availability_known": availability_known,
+            "categories": [],
+            "customer_send_allowed": False,
+            **_authority_flags(),
+        }
+    opening = (
+        "For the bigger pigs currently eligible, I can verify:"
+        if availability_known
+        else "Current verified prices for the bigger pig categories are:"
+    )
+    return {
+        "version": "sam_live_stock_information_response_v1",
+        "applicable": True,
+        "status": "availability_and_pricing_verified" if availability_known else "price_only_verified",
+        "reply_text": "\n".join([
+            opening,
+            *lines,
+            "Which approximate weight would suit you?",
+        ]),
+        "availability_known": availability_known,
+        "categories": [
+            {
+                "sale_category": category,
+                "eligible_count": counts.get(category) if availability_known else None,
+                "active_price_entry_count": len(active_prices.get(category) or []),
+            }
+            for category in categories
+            if (not availability_known or counts.get(category, 0) > 0)
+            and active_prices.get(category)
+        ],
+        "customer_send_allowed": False,
         **_authority_flags(),
     }
 
@@ -3788,6 +3924,8 @@ def _extract_category(text):
         return "finisher"
     if _has_any(text, ("ready for slaughter", "slaughter pig", "80kg", "85kg", "90kg")):
         return "ready_for_slaughter"
+    if _asks_about_big_live_pigs(text):
+        return "live_pig"
     if _has_any(text, ("live pig", "live pigs", "pigs to raise", "buy pigs", "pigs for sale", "pig for sale", "pigs available")):
         return "live_pig"
     return ""
@@ -3797,7 +3935,7 @@ def _has_live_stock_fact_signal(facts):
     facts = facts if isinstance(facts, dict) else {}
     category = _normal_text(facts.get("category"))
     return bool(
-        category in {"piglet", "weaner", "grower", "finisher", "ready for slaughter", "ready_for_slaughter", "live pig"}
+        category in {"piglet", "weaner", "grower", "finisher", "ready for slaughter", "ready_for_slaughter", "live pig", "live_pig"}
         or facts.get("weight_range")
         or facts.get("quantity")
     )
@@ -3809,6 +3947,8 @@ def _has_live_stock_followup_signal(text):
         (
             "how much",
             "price",
+            "pricce",
+            "prise",
             "cost",
             "transport",
             "deliver",
@@ -3921,11 +4061,35 @@ def _extract_payment(text):
 
 
 def _asks_quote(text):
-    return _has_any(text, ("price", "cost", "how much", "quote", "quotation", "prys"))
+    return _has_any(text, ("price", "pricce", "prise", "cost", "how much", "quote", "quotation", "prys"))
 
 
 def _asks_price_question(text):
-    return _has_any(text, ("price", "cost", "how much", "prys"))
+    return _has_any(text, ("price", "pricce", "prise", "cost", "how much", "prys"))
+
+
+def _asks_about_big_live_pigs(text):
+    text = _normal_text(text)
+    return _has_any(
+        text,
+        (
+            "big one",
+            "big ones",
+            "bigger one",
+            "bigger ones",
+            "large pig",
+            "large pigs",
+        ),
+    )
+
+
+def _normal_information_category(value):
+    text = _normal_text(value)
+    if "grower" in text:
+        return "Grower Pigs"
+    if "finisher" in text:
+        return "Finisher Pigs"
+    return ""
 
 
 def _asks_reservation(text):
