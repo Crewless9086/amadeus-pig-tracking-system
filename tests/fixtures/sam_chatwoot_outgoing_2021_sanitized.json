@@ -27,5 +27,57 @@
   },
   "content_attributes": {
     "sanitized_fixture": true
+  },
+  "conversation_snapshot": {
+    "id": 2021,
+    "account_id": 147387,
+    "inbox_id": 96568,
+    "meta": {
+      "sender": {
+        "id": 699428938
+      }
+    }
+  },
+  "message_list": {
+    "payload": [
+      {
+        "id": 759868833,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 759868848,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760211638,
+        "message_type": 0,
+        "content_type": "text",
+        "private": false,
+        "created_at": 1785044938
+      },
+      {
+        "id": 760220466,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760220467,
+        "message_type": 2,
+        "content_type": "text",
+        "private": false
+      },
+      {
+        "id": 760224858,
+        "message_type": 1,
+        "content_type": "text",
+        "private": false,
+        "created_at": 1785048568
+      }
+    ]
   }
 }
