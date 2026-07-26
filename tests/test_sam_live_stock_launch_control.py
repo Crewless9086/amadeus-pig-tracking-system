@@ -2946,6 +2946,188 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             ["incoming", "outgoing"],
         )
 
+    def test_conversation_2021_production_shape_persists_json_safe_candidate_before_exact_edit(self):
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "sam_chatwoot_outgoing_2021_sanitized.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode()
+
+        responses = iter([
+            Response(fixture["conversation_snapshot"]),
+            Response(fixture["message_list"]),
+        ])
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            side_effect=lambda *_args, **_kwargs: next(responses),
+        ):
+            chronology = launch._chatwoot_read_resolve_chronology(
+                "2021",
+                {
+                    launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                    launch.CHATWOOT_TOKEN_ENV: "configured-token",
+                },
+            )
+
+        self.assertEqual(
+            [str(row["id"]) for row in chronology["messages"]],
+            ["760211638", "760224858"],
+        )
+        active_card = {
+            **fixture["active_card"],
+            "created_at": datetime.fromisoformat(
+                fixture["active_card"]["created_at"]
+            ),
+        }
+        active = {
+            "success": True,
+            "lifecycle_card_identity": fixture["active_card"][
+                "lifecycle_card_identity"
+            ],
+            "card": active_card,
+        }
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "2021",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "760211638",
+            "outgoing_message_id": "760224858",
+            "review_event_id": "SAM-LIVE-REVIEW-85A567BA6AC1",
+            "lifecycle_card_identity": "SAM-LIVE-CARD-9AC5E2FD901D",
+            "telegram_chat_id": "sanitized-owner-chat",
+            "telegram_message_id": "2913",
+        }
+        sequence = []
+        persisted = set()
+        serialized = {}
+
+        def recorder(event):
+            params = launch._review_event_params(event)
+            sequence.append(("persist", event["event_source"]))
+            serialized[event["review_event_id"]] = params["review_json"]
+            created = event["review_event_id"] not in persisted
+            persisted.add(event["review_event_id"])
+            return {"success": True, "created": created}, 201 if created else 200
+
+        edits = []
+        production_environ = self._resolve_environ(**{
+            launch.RESOLVE_CARD_CANARY_CONVERSATION_ID_ENV: "2021",
+        })
+
+        def editor(*args):
+            sequence.append(("edit", args[2]))
+            edits.append(args)
+            return {"ok": True}
+
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=production_environ,
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({
+                "success": True,
+                "event": fixture["review_event"],
+            }, 200),
+            chronology_loader=lambda *_args: chronology,
+            evidence_recorder=recorder,
+            telegram_editor=editor,
+        )
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["candidate"]["customer_message_id"], "760211638")
+        self.assertEqual(result["candidate"]["outgoing_message_id"], "760224858")
+        self.assertEqual(
+            result["candidate"]["card_created_at"],
+            "2026-07-26T05:50:00Z",
+        )
+        self.assertTrue(launch._is_json_safe_primitive_tree(result["candidate"]))
+        json.dumps(result["candidate"], ensure_ascii=True)
+        self.assertEqual(
+            sequence,
+            [
+                ("persist", launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE),
+                ("edit", "2913"),
+                ("persist", launch.RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE),
+            ],
+        )
+        self.assertEqual(len(edits), 1)
+        self.assertEqual(edits[0][2], "2913")
+        self.assertIn(result["candidate"]["action_identity"], serialized)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["changes_conversation_ownership"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["changes_stock"])
+
+        replay = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=production_environ,
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({
+                "success": True,
+                "event": fixture["review_event"],
+            }, 200),
+            chronology_loader=lambda *_args: chronology,
+            evidence_recorder=recorder,
+            telegram_editor=lambda *_args: self.fail("replay must not edit"),
+        )
+        self.assertTrue(replay["success"])
+        self.assertEqual(replay["status"], "resolve_card_refresh_replay_withheld")
+        self.assertEqual(
+            replay["candidate"]["action_identity"],
+            result["candidate"]["action_identity"],
+        )
+        self.assertEqual(len(edits), 1)
+
+        for malformed in (
+            object(),
+            "not-a-timestamp",
+            "2026-07-26T06:48:00",
+        ):
+            with self.subTest(malformed=type(malformed).__name__):
+                invalid_active = {
+                    **active,
+                    "card": {**active_card, "created_at": malformed},
+                }
+                rejected = launch.refresh_sam_live_stock_resolve_card_exact(
+                    request_identity,
+                    environ=production_environ,
+                    active_card_loader=lambda _conversation_id, value=invalid_active: (
+                        value,
+                        200,
+                    ),
+                    review_event_loader=lambda _review_id: ({
+                        "success": True,
+                        "event": fixture["review_event"],
+                    }, 200),
+                    chronology_loader=lambda *_args: chronology,
+                    evidence_recorder=lambda _event: self.fail(
+                        "invalid timestamp must not persist"
+                    ),
+                    telegram_editor=lambda *_args: self.fail(
+                        "invalid timestamp must not edit"
+                    ),
+                )
+                self.assertFalse(rejected["success"])
+                self.assertEqual(
+                    rejected["status"],
+                    "resolve_card_candidate_timestamp_invalid",
+                )
+
     def test_exact_owner_refresh_rejects_wrong_card_or_chronology_without_side_effect(self):
         conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
         request_identity = {
