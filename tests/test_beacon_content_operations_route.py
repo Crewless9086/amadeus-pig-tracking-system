@@ -1,8 +1,25 @@
 import unittest
+import os
 from unittest.mock import patch
 from pathlib import Path
 
 from app import app
+from modules.auth.owner_access import configure_owner_access
+
+
+READ_TOKEN = "beacon-read-token-1234567890abcdef"
+ADMIN_TOKEN = "beacon-admin-token-1234567890abcdef"
+SESSION_SECRET = "beacon-session-secret-1234567890abcdef"
+
+
+def owner_env():
+    return {
+        "OWNER_ACCESS_ENABLED": "1",
+        "OWNER_ACCESS_ALLOW_LOCAL_DEV": "0",
+        "OWNER_READ_TOKEN": READ_TOKEN,
+        "OWNER_ADMIN_TOKEN": ADMIN_TOKEN,
+        "OWNER_SESSION_SECRET": SESSION_SECRET,
+    }
 
 
 class BeaconContentOperationsRouteTests(unittest.TestCase):
@@ -100,6 +117,121 @@ class BeaconContentOperationsRouteTests(unittest.TestCase):
         self.assertEqual(get_response.status_code, 405)
         self.assertFalse(response.get_json()["publish"])
         record.assert_called_once_with(payload, owner_identity="owner-admin:test")
+
+    def test_authenticated_admin_route_uses_stable_server_principal(self):
+        path = (
+            "/api/beacon/weekly-owner-review/"
+            "BEACON-WEEK-2026-07-25-P1-S1/decision"
+        )
+        payload = {
+            "packet_id": "BEACON-WEEK-2026-07-25-P1-S1",
+            "decision": "approve",
+        }
+        result = {
+            "success": True,
+            "status": "owner_review_decision_recorded",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+        }
+        with patch.dict(os.environ, owner_env(), clear=False):
+            configure_owner_access(app)
+            login = self.client.post(
+                "/owner/login",
+                data={"owner_token": ADMIN_TOKEN, "next": "/sales/beacon-media"},
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+            with self.client.session_transaction() as owner_session:
+                principal = owner_session["owner_access"]["principal_id"]
+            with patch(
+                "app.record_weekly_owner_review_decision",
+                return_value=(result, 201),
+            ) as record:
+                response = self.client.post(
+                    path,
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+        self.assertEqual(login.status_code, 302)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(principal.startswith("owner-admin:"))
+        self.assertNotIn(ADMIN_TOKEN, principal)
+        record.assert_called_once_with(payload, owner_identity=principal)
+
+    def test_read_anonymous_and_missing_principal_cannot_decide(self):
+        path = (
+            "/api/beacon/weekly-owner-review/"
+            "BEACON-WEEK-2026-07-25-P1-S1/decision"
+        )
+        payload = {
+            "packet_id": "BEACON-WEEK-2026-07-25-P1-S1",
+            "decision": "approve",
+        }
+        with patch.dict(os.environ, owner_env(), clear=False):
+            configure_owner_access(app)
+            with patch("app.record_weekly_owner_review_decision") as record:
+                anonymous = self.client.post(
+                    path,
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+                self.client.post(
+                    "/owner/login",
+                    data={"owner_token": READ_TOKEN},
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+                owner_read = self.client.post(
+                    path,
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+                with self.client.session_transaction() as owner_session:
+                    owner_session["owner_access"] = {
+                        "role": "admin",
+                        "created_at": "2026-07-26T00:00:00+00:00",
+                    }
+                missing = self.client.post(
+                    path,
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+        self.assertEqual(anonymous.status_code, 403)
+        self.assertEqual(owner_read.status_code, 403)
+        self.assertEqual(missing.status_code, 403)
+        self.assertEqual(missing.get_json()["status"], "owner_identity_required")
+        record.assert_not_called()
+
+    def test_client_supplied_owner_identity_is_rejected_before_persistence(self):
+        path = (
+            "/api/beacon/weekly-owner-review/"
+            "BEACON-WEEK-2026-07-25-P1-S1/decision"
+        )
+        payload = {
+            "packet_id": "BEACON-WEEK-2026-07-25-P1-S1",
+            "decision": "approve",
+            "owner_identity": "owner-admin:spoofed-browser-value",
+        }
+        with patch.dict(os.environ, owner_env(), clear=False):
+            configure_owner_access(app)
+            self.client.post(
+                "/owner/login",
+                data={"owner_token": ADMIN_TOKEN},
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+            with patch("app.record_weekly_owner_review_decision") as record:
+                response = self.client.post(
+                    path,
+                    json=payload,
+                    environ_base={"REMOTE_ADDR": "203.0.113.10"},
+                )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["status"], "client_owner_identity_prohibited"
+        )
+        record.assert_not_called()
 
     def test_endpoint_is_get_only_and_returns_review_packet_without_authority(self):
         evidence = {

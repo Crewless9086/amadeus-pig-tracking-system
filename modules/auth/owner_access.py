@@ -1,8 +1,8 @@
 import hmac
 import ipaddress
 import os
-import uuid
 from datetime import datetime, timezone
+from hashlib import sha256
 
 from flask import jsonify, redirect, render_template, request, session, url_for
 
@@ -73,6 +73,9 @@ def require_owner_admin_access():
         return jsonify(body), status_code
     if owner_session_is_valid("admin"):
         return None
+    if _session_role() == "admin":
+        body, status_code = _denied("owner_identity_required", 403)
+        return jsonify(body), status_code
     body, status_code = _denied("owner_admin_access_denied", 403)
     return jsonify(body), status_code
 
@@ -96,11 +99,8 @@ def require_correction_batch_owner_admin_access():
 
 
 def owner_session_is_valid(required_role="read"):
-    data = session.get(SESSION_KEY)
-    if not isinstance(data, dict):
-        return False
-    role = str(data.get("role") or "").strip()
-    if role not in {"read", "admin"}:
+    role, principal = _validated_session_principal()
+    if not principal:
         return False
     if required_role == "admin":
         return role == "admin"
@@ -110,12 +110,15 @@ def owner_session_is_valid(required_role="read"):
 def set_owner_session(role):
     if role not in {"read", "admin"}:
         raise ValueError("owner session role must be read or admin")
+    principal = _stable_owner_principal(role)
+    if not principal:
+        raise ValueError("stable owner principal is unavailable")
     session.clear()
     session[SESSION_KEY] = {
         "role": role,
         # This opaque, server-signed session principal is audit provenance.  It
         # is deliberately not supplied by a browser request body.
-        "principal_id": f"owner-{role}:{uuid.uuid4().hex}",
+        "principal_id": principal,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     session.permanent = False
@@ -241,12 +244,42 @@ def _correction_batch_local_dev_allowed():
 
 
 def _owner_admin_session_principal():
+    role, principal = _validated_session_principal()
+    return principal if role == "admin" else ""
+
+
+def _validated_session_principal():
     data = session.get(SESSION_KEY)
-    if isinstance(data, dict) and str(data.get("role") or "").strip() == "admin":
-        principal = str(data.get("principal_id") or "").strip()
-        if principal.startswith("owner-admin:"):
-            return principal
-    return ""
+    if not isinstance(data, dict):
+        return "", ""
+    role = str(data.get("role") or "").strip()
+    if role not in {"read", "admin"}:
+        return "", ""
+    principal = str(data.get("principal_id") or "").strip()
+    expected = _stable_owner_principal(role)
+    if not principal or not expected or not hmac.compare_digest(principal, expected):
+        return role, ""
+    return role, principal
+
+
+def _stable_owner_principal(role):
+    if role not in {"read", "admin"}:
+        return ""
+    token_name = OWNER_ADMIN_TOKEN_ENV if role == "admin" else OWNER_READ_TOKEN_ENV
+    token = str(os.environ.get(token_name, "") or "").strip()
+    secret = str(
+        os.environ.get(OWNER_SESSION_SECRET_ENV)
+        or os.environ.get("SECRET_KEY")
+        or ""
+    ).strip()
+    if len(token) < MIN_OWNER_TOKEN_CHARS or not secret:
+        return ""
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"owner-access-principal:v1\0{role}\0{token}".encode("utf-8"),
+        sha256,
+    ).hexdigest()
+    return f"owner-{role}:{digest}"
 
 
 def _configured():
