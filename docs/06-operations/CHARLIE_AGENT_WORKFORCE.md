@@ -4,12 +4,37 @@
 
 `/charlie-agents` is the owner-only operational view for agent training, trust, dependencies, and graduation evidence. It complements `/charlie-v2`:
 
+The target product contract and staged implementation plan are defined in
+`planning/AGENT_WORKFORCE_CONTROL_ROOM_PLAN_2026-07-26.md`. The Workforce page
+is the canonical owner-facing team view: it must distinguish code, deployment,
+runtime, production evidence, authority, learning, blockers, next action, and
+graduation for every agent.
+
 The organogram authority chain is `Charl -> CHARLIE -> CORE and business/farm command layers`. CHARLIE is Charl's private digital executive. CORE is the user-facing name for the existing CHARLIE CORE mission engine; internal identifiers remain unchanged. Oom Sakkie is the farm managers' conversational command layer. FRED is the planned client-facing booking agent for Amadeus Private Transfers and is not a finance or farm-records agent.
 
 - Mission Control shows queued and running work.
 - Agent Workforce shows who performs the work, which systems they depend on, and what evidence supports greater autonomy.
 
 The dashboard composes existing sources. It is not a parallel agent registry, mission queue, or authority store.
+
+## Agentic Capability Contract
+
+Each measured agent must report six separate dimensions:
+
+- Observe;
+- Reason;
+- Act;
+- Verify;
+- Learn;
+- Graduate.
+
+The UI must not use one combined percentage to hide an unavailable or
+prohibited dimension. Built, merged, deployed, operational, verified,
+learning, and autonomous are separate states.
+
+Every agent detail must also show explicit authority classes, current
+blockers, pending owner decisions, recent verified outcomes, evidence
+freshness, and one next best safe action.
 
 ## Authoritative Sources
 
