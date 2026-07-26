@@ -36,6 +36,7 @@ from modules.charlie.process_ownership import (
     make_process_tree_record,
     observe_process_tree,
     process_termination_enabled,
+    process_tree_identity_digest,
     sign_controller_acknowledgement,
     validate_bootstrap_tree,
     validate_live_bootstrap_tree,
@@ -380,6 +381,7 @@ def supervise_runner(
                 "startup_nonce": runner_nonce,
                 "revision": execution_revision,
                 "member_pids": runner_observation["validation"]["member_pids"],
+                "runner_tree_digest": process_tree_identity_digest(runner_tree),
                 "acknowledged_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -637,6 +639,13 @@ def _wait_for_controller_ack(
                     "success": False,
                     "reason": "controller_acknowledgement_member_pids_mismatch",
                 }
+            if str(acknowledgement.get("supervisor_tree_digest") or "") != (
+                process_tree_identity_digest(packet.get("supervisor_tree_identity"))
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_tree_digest_mismatch",
+                }
             if live_validate:
                 live = validate_live_bootstrap_tree(
                     packet.get("supervisor_tree_identity"),
@@ -687,12 +696,16 @@ def _write_test_controller_packet(
         "command_fingerprint": "test-interpreter-command",
         "process_role": "supervisor_interpreter",
     }
+    supervisor_tree = make_process_tree_record(
+        root, [root, interpreter], generation
+    )
     acknowledgement = {
         "status": "supervisor_identity_acknowledged",
         "generation": generation,
         "startup_nonce": startup_nonce,
         "revision": runtime_revision,
         "member_pids": [100, os.getpid()],
+        "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
     }
     acknowledgement["signature"] = sign_controller_acknowledgement(
         acknowledgement, controller_private_key
@@ -710,9 +723,7 @@ def _write_test_controller_packet(
         "intended_runtime_revision": runtime_revision,
         "intended_execution_revision": execution_revision,
         "controller_public_key": controller_public_key,
-        "supervisor_tree_identity": make_process_tree_record(
-            root, [root, interpreter], generation
-        ),
+        "supervisor_tree_identity": supervisor_tree,
         "controller_acknowledgement": acknowledgement,
     }
     atomic_write_json(SUPERVISOR_PATH, packet)
@@ -839,6 +850,12 @@ def _wait_for_controller_final_authorization(
                 "revision": revision,
                 "supervisor_pid": str(supervisor_root_pid),
                 "runner_pid": str(child.pid),
+                "supervisor_tree_digest": process_tree_identity_digest(
+                    packet.get("supervisor_tree_identity")
+                ),
+                "runner_tree_digest": process_tree_identity_digest(
+                    packet.get("process_tree_identity")
+                ),
             }
             mismatch = next(
                 (
@@ -928,6 +945,12 @@ def _write_test_final_authorization(
         "runner_pid": str(runner_pid),
         "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
         "runner_member_pids": [item.get("pid") for item in runner_members],
+        "supervisor_tree_digest": process_tree_identity_digest(
+            packet.get("supervisor_tree_identity")
+        ),
+        "runner_tree_digest": process_tree_identity_digest(
+            packet.get("process_tree_identity")
+        ),
     }
     acknowledgement["signature"] = sign_controller_acknowledgement(
         acknowledgement, controller_private_key

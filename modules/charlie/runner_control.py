@@ -25,6 +25,7 @@ from modules.charlie.process_ownership import (
     make_process_tree_record,
     observe_process_tree,
     process_termination_enabled,
+    process_tree_identity_digest,
     sign_controller_acknowledgement,
     validate_bootstrap_tree,
     validate_live_bootstrap_tree,
@@ -439,6 +440,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "startup_nonce": startup_nonce,
         "revision": intended_revision,
         "member_pids": observation["validation"]["member_pids"],
+        "supervisor_tree_digest": process_tree_identity_digest(supervisor_tree),
         "acknowledged_at": datetime.now(timezone.utc).isoformat(),
     }
     controller_acknowledgement["signature"] = sign_controller_acknowledgement(
@@ -589,6 +591,9 @@ def _wait_for_supervisor_ack(
                     "generation": generation,
                     "startup_nonce": runner_nonce,
                     "revision": intended_revision,
+                    "runner_tree_digest": process_tree_identity_digest(
+                        runner_tree
+                    ),
                 }.items()
             ):
                 last_reason = "runner_controller_acknowledgement_mismatch"
@@ -616,6 +621,12 @@ def _wait_for_supervisor_ack(
                     "runner_pid": str(runner_pid),
                     "supervisor_member_pids": supervisor_live["member_pids"],
                     "runner_member_pids": runner_live["member_pids"],
+                    "supervisor_tree_digest": process_tree_identity_digest(
+                        supervisor_tree
+                    ),
+                    "runner_tree_digest": process_tree_identity_digest(
+                        runner_tree
+                    ),
                     "acknowledged_at": datetime.now(timezone.utc).isoformat(),
                 }
                 final_acknowledgement["signature"] = sign_controller_acknowledgement(
@@ -682,10 +693,20 @@ def stop_runner():
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     supervisor = _read_json(SUPERVISOR_PATH)
-    root = supervisor.get("child_identity")
+    persisted_runner_tree = supervisor.get("process_tree_identity")
+    if (
+        isinstance(persisted_runner_tree, dict)
+        and isinstance(persisted_runner_tree.get("root"), dict)
+        and persisted_runner_tree.get("members")
+    ):
+        tree = persisted_runner_tree
+        root = persisted_runner_tree["root"]
+    else:
+        tree = {}
+        root = supervisor.get("child_identity")
     heartbeat = _read_json(HEARTBEAT_PATH)
     interpreter = heartbeat.get("process_identity")
-    if (not isinstance(root, dict) or not root.get("pid")) and isinstance(interpreter, dict):
+    if not tree and (not isinstance(root, dict) or not root.get("pid")) and isinstance(interpreter, dict):
         current = inspect_process(interpreter.get("pid"))
         ancestry = current.get("ancestry") if isinstance(current, dict) else []
         launcher_pid = int(supervisor.get("child_pid") or 0)
@@ -705,14 +726,15 @@ def stop_runner():
                 interpreter.get("execution_id"),
                 interpreter.get("ownership_type"),
             )
-    members = [
-        item for item in (root, interpreter)
-        if isinstance(item, dict) and item.get("pid")
-    ]
-    tree = (
-        make_process_tree_record(root, members, supervisor.get("generation"))
-        if isinstance(root, dict) else {}
-    )
+    if not tree:
+        members = [
+            item for item in (root, interpreter)
+            if isinstance(item, dict) and item.get("pid")
+        ]
+        tree = (
+            make_process_tree_record(root, members, supervisor.get("generation"))
+            if isinstance(root, dict) else {}
+        )
     target_kind = "runner"
     if not tree:
         supervisor_tree = supervisor.get("supervisor_tree_identity")
@@ -1150,8 +1172,13 @@ def _contain_spawned_process(process, observed_tree):
     }
     try:
         if os.name == "nt":
-            if getattr(process, "poll", lambda: None)() is not None:
-                for descendant in reversed(descendants):
+            for descendant in reversed(descendants):
+                current = inspect_process(descendant.get("pid"))
+                if (
+                    isinstance(current, dict)
+                    and str(current.get("creation_time") or "")
+                    == str(descendant.get("creation_time") or "")
+                ):
                     subprocess.run(
                         ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
                         capture_output=True,

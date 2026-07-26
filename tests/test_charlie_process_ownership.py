@@ -1,5 +1,6 @@
 import os
 import subprocess
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -8,6 +9,43 @@ from scripts import charlie_runner_supervisor
 
 
 class CharlieProcessOwnershipTests(unittest.TestCase):
+    def test_process_tree_digest_binds_creation_command_parentage_and_role(self):
+        tree = successful = {
+            "version": "charlie_process_tree_v1",
+            "runner_generation": "generation-1",
+            "root_pid": 100,
+            "root": {},
+            "members": [{
+                "pid": 100,
+                "parent_pid": 50,
+                "creation_time": "created-1",
+                "executable_path": "C:/Python/python.exe",
+                "command_fingerprint": "command-1",
+                "runner_generation": "generation-1",
+                "mission_id": "charlie-control",
+                "execution_id": "generation-1",
+                "ownership_type": "charlie_runner",
+                "revision": "revision-1",
+                "startup_nonce": "nonce-1",
+                "process_role": "supervisor_launcher",
+            }],
+        }
+        original = process_ownership.process_tree_identity_digest(tree)
+        for field, replacement in {
+            "creation_time": "created-2",
+            "executable_path": "C:/Other/python.exe",
+            "command_fingerprint": "command-2",
+            "parent_pid": 51,
+            "process_role": "runner_launcher",
+        }.items():
+            changed = json.loads(json.dumps(successful))
+            changed["members"][0][field] = replacement
+            self.assertNotEqual(
+                original,
+                process_ownership.process_tree_identity_digest(changed),
+                field,
+            )
+
     def test_controller_signature_rejects_child_forgery_and_replay_changes(self):
         private_key, public_key = process_ownership.generate_controller_signing_key()
         acknowledgement = {

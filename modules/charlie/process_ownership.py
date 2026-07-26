@@ -155,6 +155,32 @@ def make_process_tree_record(root_record, member_records, runner_generation):
     }
 
 
+def process_tree_identity_digest(tree):
+    """Hash the stable, security-relevant identity of an observed tree."""
+    tree = tree if isinstance(tree, dict) else {}
+    stable_fields = (
+        "pid", "parent_pid", "creation_time", "executable_path",
+        "command_fingerprint", "runner_generation", "mission_id",
+        "execution_id", "ownership_type", "revision", "startup_nonce",
+        "process_role",
+    )
+    members = [
+        {field: item.get(field) for field in stable_fields}
+        for item in (tree.get("members") or [])
+        if isinstance(item, dict)
+    ]
+    members.sort(key=lambda item: int(item.get("pid") or 0))
+    payload = {
+        "version": str(tree.get("version") or ""),
+        "runner_generation": str(tree.get("runner_generation") or ""),
+        "root_pid": int(tree.get("root_pid") or 0),
+        "members": members,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def validate_process_tree(
     tree,
     expected,

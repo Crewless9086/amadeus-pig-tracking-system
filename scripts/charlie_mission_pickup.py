@@ -36,6 +36,7 @@ from modules.charlie.runner_control import (
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.process_ownership import validate_bootstrap_tree
 from modules.charlie.process_ownership import (
+    process_tree_identity_digest,
     validate_live_bootstrap_tree,
     verify_controller_acknowledgement,
 )
@@ -427,6 +428,16 @@ def _validate_final_packet_live(packet):
     }
     for field, expected in expected_lists.items():
         if sorted(acknowledgement.get(field) or []) != sorted(expected):
+            return {"success": False, "reason": f"controller_final_{field}_mismatch"}
+    for field, expected in {
+        "supervisor_tree_digest": process_tree_identity_digest(
+            packet.get("supervisor_tree_identity")
+        ),
+        "runner_tree_digest": process_tree_identity_digest(
+            packet.get("process_tree_identity")
+        ),
+    }.items():
+        if str(acknowledgement.get(field) or "") != expected:
             return {"success": False, "reason": f"controller_final_{field}_mismatch"}
     supervisor_root_pid = int(
         ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
