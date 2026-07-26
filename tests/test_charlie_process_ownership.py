@@ -8,6 +8,26 @@ from scripts import charlie_runner_supervisor
 
 
 class CharlieProcessOwnershipTests(unittest.TestCase):
+    def test_controller_signature_rejects_child_forgery_and_replay_changes(self):
+        private_key, public_key = process_ownership.generate_controller_signing_key()
+        acknowledgement = {
+            "generation": "generation-1",
+            "revision": "revision-1",
+            "startup_nonce": "nonce-1",
+            "member_pids": [100, 101],
+        }
+        signature = process_ownership.sign_controller_acknowledgement(
+            acknowledgement, private_key
+        )
+        self.assertTrue(process_ownership.verify_controller_acknowledgement(
+            acknowledgement, signature, public_key
+        ))
+        self.assertFalse(process_ownership.verify_controller_acknowledgement(
+            {**acknowledgement, "generation": "generation-2"},
+            signature,
+            public_key,
+        ))
+
     def test_structurally_present_empty_tree_fails_with_exact_field(self):
         tree = {
             "version": "charlie_process_tree_v1",

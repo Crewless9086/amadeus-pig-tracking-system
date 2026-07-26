@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ REQUIRED_IDENTITY_FIELDS = (
 TERMINATION_ENABLE_ENV = "CHARLIE_PROCESS_TERMINATION_ENABLED"
 TERMINATION_ENABLE_VALUE = "I_UNDERSTAND_THIS_CAN_TERMINATE_PROCESSES"
 TEST_ISOLATION_ENV = "CHARLIE_TEST_ISOLATION"
+_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
 
 
 def process_termination_enabled(environ=None):
@@ -30,6 +32,80 @@ def process_termination_enabled(environ=None):
 def normalize_command_fingerprint(command):
     normalized = " ".join(str(command or "").split()).casefold()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
+
+
+def generate_controller_signing_key(bits=2048):
+    """Generate an ephemeral RSA key; only the public half enters child envs."""
+    e = 65537
+    while True:
+        p = _probable_prime(bits // 2)
+        q = _probable_prime(bits // 2)
+        if p == q:
+            continue
+        phi = (p - 1) * (q - 1)
+        if phi % e:
+            n = p * q
+            return {"n": n, "d": pow(e, -1, phi)}, f"{n:x}:{e:x}"
+
+
+def sign_controller_acknowledgement(payload, private_key):
+    n = int(private_key["n"])
+    d = int(private_key["d"])
+    encoded = _signature_encoding(payload, (n.bit_length() + 7) // 8)
+    return pow(int.from_bytes(encoded, "big"), d, n).to_bytes(
+        (n.bit_length() + 7) // 8, "big"
+    ).hex()
+
+
+def verify_controller_acknowledgement(payload, signature, public_key):
+    try:
+        n_hex, e_hex = str(public_key or "").split(":", 1)
+        n, e = int(n_hex, 16), int(e_hex, 16)
+        size = (n.bit_length() + 7) // 8
+        actual = pow(int(str(signature or ""), 16), e, n).to_bytes(size, "big")
+        return secrets.compare_digest(actual, _signature_encoding(payload, size))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _signature_encoding(payload, size):
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest_info = _SHA256_DIGEST_INFO_PREFIX + hashlib.sha256(canonical).digest()
+    padding = b"\xff" * (size - len(digest_info) - 3)
+    if len(padding) < 8:
+        raise ValueError("controller_signing_key_too_small")
+    return b"\x00\x01" + padding + b"\x00" + digest_info
+
+
+def _probable_prime(bits):
+    while True:
+        candidate = secrets.randbits(bits) | (1 << (bits - 1)) | 1
+        if _is_probable_prime(candidate):
+            return candidate
+
+
+def _is_probable_prime(value, rounds=32):
+    small = (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37)
+    if value in small:
+        return True
+    if any(value % prime == 0 for prime in small):
+        return False
+    exponent, shifts = value - 1, 0
+    while exponent % 2 == 0:
+        shifts += 1
+        exponent //= 2
+    for _ in range(rounds):
+        base = secrets.randbelow(value - 3) + 2
+        witness = pow(base, exponent, value)
+        if witness in (1, value - 1):
+            continue
+        for _step in range(shifts - 1):
+            witness = pow(witness, 2, value)
+            if witness == value - 1:
+                break
+        else:
+            return False
+    return True
 
 
 def make_ownership_record(

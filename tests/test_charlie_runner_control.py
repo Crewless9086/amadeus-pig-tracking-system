@@ -3,6 +3,8 @@ import unittest
 import json
 import os
 import subprocess
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +58,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
             "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
         )
         original_observe = runner_control.observe_process_tree
+        publisher_threads = []
 
         def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
             result = original_observe(
@@ -71,7 +74,11 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 tree = result["tree"]
                 members = [
                     item for item in tree["members"]
-                    if Path(str(item.get("executable_path") or "")).name.casefold()
+                    if (
+                        int(item.get("pid") or -1) == int(root_pid)
+                        or int(item.get("parent_pid") or -1) == int(root_pid)
+                    )
+                    and Path(str(item.get("executable_path") or "")).name.casefold()
                     == "powershell.exe"
                 ]
                 tree = process_ownership.make_process_tree_record(
@@ -84,6 +91,56 @@ class CharlieRunnerControlTests(unittest.TestCase):
                     revision=revision,
                     startup_nonce=startup_nonce,
                 )
+                def publish_runner_ready():
+                    deadline = time.monotonic() + 10
+                    packet = {}
+                    while time.monotonic() <= deadline:
+                        packet = runner_control._read_json(
+                            runner_control.SUPERVISOR_PATH
+                        )
+                        if packet.get("controller_acknowledgement"):
+                            break
+                        time.sleep(0.05)
+                    runner_nonce = "windows-harness-runner-nonce"
+                    runner_tree = json.loads(json.dumps(tree))
+                    for index, member in enumerate(runner_tree["members"]):
+                        member["startup_nonce"] = runner_nonce
+                        member["process_role"] = (
+                            "runner_launcher" if index == 0
+                            else "runner_interpreter"
+                        )
+                    runner_tree["root"] = runner_tree["members"][0]
+                    runner_identity = runner_tree["members"][-1]
+                    packet.update({
+                        "status": "running",
+                        "runner_state": "running",
+                        "process_tree_identity": runner_tree,
+                        "runner_startup_nonce": runner_nonce,
+                        "runner_controller_acknowledgement": {
+                            "generation": generation,
+                            "startup_nonce": runner_nonce,
+                            "revision": revision,
+                        },
+                    })
+                    runner_control.atomic_write_json(
+                        runner_control.SUPERVISOR_PATH, packet
+                    )
+                    runner_control.atomic_write_json(
+                        runner_control.HEARTBEAT_PATH,
+                        {
+                            "status": "ownership_ready",
+                            "supervisor_generation": generation,
+                            "runner_source_commit": revision,
+                            "startup_nonce": runner_nonce,
+                            "pid": runner_identity["pid"],
+                            "process_identity": runner_identity,
+                        },
+                    )
+                publisher = threading.Thread(
+                    target=publish_runner_ready, daemon=True
+                )
+                publisher.start()
+                publisher_threads.append(publisher)
             return result
 
         started_pid = 0
@@ -107,9 +164,6 @@ class CharlieRunnerControlTests(unittest.TestCase):
             runner_control, "_current_git_commit", return_value="revision-1"
         ), patch.object(
             runner_control, "observe_process_tree", side_effect=observe
-        ), patch.object(
-            runner_control, "_wait_for_supervisor_ack",
-            return_value={"success": True, "status": "current_generation_acknowledged"},
         ):
             try:
                 started, start_status = runner_control.start_runner()
@@ -119,6 +173,8 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 self.assertEqual(stop_status, 200, stopped)
                 self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
                 self.assertIsNone(runner_control.inspect_process(started_pid))
+                for publisher in publisher_threads:
+                    publisher.join(timeout=5)
             finally:
                 if started_pid and runner_control.inspect_process(started_pid):
                     subprocess.run(
@@ -170,6 +226,9 @@ class CharlieRunnerControlTests(unittest.TestCase):
             startup_nonce="runner-nonce",
         )["tree"]
         runner_identity = runner_tree["members"][1]
+        private_key, public_key = (
+            process_ownership.generate_controller_signing_key()
+        )
         packet = {
             "version": runner_control.SUPERVISOR_PACKET_VERSION,
             "generation": generation,
@@ -188,6 +247,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "startup_nonce": "runner-nonce",
                 "revision": revision,
             },
+            "controller_public_key": public_key,
         }
         heartbeat = {
             "status": "ownership_ready",
@@ -215,6 +275,8 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 revision,
                 supervisor_pid=100,
                 startup_nonce="supervisor-nonce",
+                controller_private_key=private_key,
+                controller_public_key=public_key,
                 timeout_seconds=1,
                 sleep_fn=lambda _seconds: None,
             )
@@ -327,7 +389,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
     def test_empty_observation_falls_back_to_exact_spawn_handle_and_verifies_exit(self):
         process = Mock(pid=4321)
-        process.poll.return_value = 1
+        process.poll.side_effect = [None, 1]
         with patch.object(
             runner_control, "_contain_observed_tree",
             return_value={"success": False, "reason": "ownership_identity_incomplete"},
@@ -412,10 +474,13 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 4321, "generation-1", inspector=Mock(return_value=process)
             )
             persisted = json.loads(runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8"))
-        self.assertTrue(result["success"])
-        self.assertEqual(persisted["supervisor_identity"]["pid"], 4321)
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["reason"], "controller_observed_supervisor_identity_required"
+        )
+        self.assertEqual(persisted["supervisor_identity"], {})
         self.assertEqual(persisted["generation"], "generation-1")
-        stop_tree.assert_called_once()
+        stop_tree.assert_not_called()
     def test_heartbeat_and_status_never_persist_environment_secrets(self):
         with tempfile.TemporaryDirectory() as tmp:
             heartbeat = Path(tmp) / "runner.json"

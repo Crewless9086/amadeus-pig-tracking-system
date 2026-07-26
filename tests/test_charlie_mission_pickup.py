@@ -77,6 +77,31 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertFalse(authorized)
         self.assertEqual(reason, "governed_stop_active")
 
+    def test_inherited_test_environment_is_not_pickup_authority(self):
+        original = charlie_mission_pickup._TEST_PICKUP_AUTHORIZED
+        try:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = False
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
+                "CHARLIE_TEST_ISOLATION": "1",
+            }, clear=True), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_STOP_PATH",
+                Path(tmp) / "stop",
+            ), patch.object(
+                charlie_mission_pickup,
+                "SUPERVISOR_PATH",
+                Path(tmp) / "supervisor.json",
+            ):
+                authorized, reason = (
+                    charlie_mission_pickup._runtime_pickup_authorized()
+                )
+            self.assertFalse(authorized)
+            self.assertEqual(
+                reason, "current_generation_running_authorization_missing"
+            )
+        finally:
+            charlie_mission_pickup._TEST_PICKUP_AUTHORIZED = original
+
     def test_direct_stranded_recovery_is_contained_before_mutation(self):
         with patch.object(
             charlie_mission_pickup,
@@ -132,6 +157,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
             "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
             "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
             "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            "CHARLIE_CONTROLLER_PUBLIC_KEY": "public-key",
         }, clear=True), patch.object(
             charlie_mission_pickup,
             "validate_live_bootstrap_tree",
@@ -139,7 +165,12 @@ class CharlieMissionPickupTests(unittest.TestCase):
                 {"authorized": False, "reason": "live_identity_creation_time_mismatch"},
                 {"authorized": True, "member_pids": [200, os.getpid()]},
             ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "verify_controller_acknowledgement",
+            return_value=True,
         ):
+            packet["controller_public_key"] = "public-key"
             result = charlie_mission_pickup._validate_final_packet_live(packet)
         self.assertFalse(result["success"])
         self.assertEqual(
@@ -198,6 +229,7 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertNotIn(["git", "switch", "feature/test"], commands)
         self.assertFalse(any(command[:3] == ["git", "merge", "--ff-only"] for command in commands))
     def setUp(self):
+        charlie_mission_pickup._authorize_test_pickup_for_current_process()
         self._base_branch_env_patcher = patch.dict("os.environ", {"CHARLIE_RUNNER_BASE_BRANCH": ""})
         self._base_branch_env_patcher.start()
         self.addCleanup(self._base_branch_env_patcher.stop)

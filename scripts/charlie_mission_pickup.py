@@ -35,7 +35,10 @@ from modules.charlie.runner_control import (
 )
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.process_ownership import validate_bootstrap_tree
-from modules.charlie.process_ownership import validate_live_bootstrap_tree
+from modules.charlie.process_ownership import (
+    validate_live_bootstrap_tree,
+    verify_controller_acknowledgement,
+)
 from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
@@ -67,6 +70,7 @@ ANALYST_THREAD = None
 ANALYST_THREAD_LOCK = threading.Lock()
 RECOVERED_STALE_MISSIONS = set()
 NOTIFICATION_FINGERPRINTS = {}
+_TEST_PICKUP_AUTHORIZED = False
 BASE_BRANCH_ENV = "CORE_EXECUTION_BASE_BRANCH"
 LEASE_TTL_SECONDS = int(env_value("CORE_RUNNER_LEASE_TTL_SECONDS", "900") or "900")
 
@@ -338,7 +342,7 @@ def _wait_for_final_start_authorization(sleep_fn=time.sleep, timeout_seconds=30)
 def _runtime_pickup_authorized():
     if SUPERVISOR_STOP_PATH.exists():
         return False, "governed_stop_active"
-    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") == "1":
+    if _TEST_PICKUP_AUTHORIZED:
         return True, "test_isolation_authorized"
     packet = _read_json(SUPERVISOR_PATH)
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
@@ -369,6 +373,14 @@ def _runtime_pickup_authorized():
     return True, "current_generation_running_authorized"
 
 
+def _authorize_test_pickup_for_current_process():
+    """Explicit in-process test capability; never inherited by a child."""
+    if str(os.getenv("CHARLIE_TEST_ISOLATION") or "") != "1":
+        raise RuntimeError("test_pickup_authorization_requires_test_isolation")
+    global _TEST_PICKUP_AUTHORIZED
+    _TEST_PICKUP_AUTHORIZED = True
+
+
 def _validate_final_packet_live(packet):
     generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
     supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
@@ -377,6 +389,22 @@ def _validate_final_packet_live(packet):
     acknowledgement = packet.get("controller_final_acknowledgement")
     if not isinstance(acknowledgement, dict):
         return {"success": False, "reason": "controller_final_acknowledgement_missing"}
+    public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
+    unsigned = {
+        key: value for key, value in acknowledgement.items()
+        if key != "signature"
+    }
+    if (
+        not public_key
+        or str(packet.get("controller_public_key") or "") != public_key
+        or not verify_controller_acknowledgement(
+            unsigned, acknowledgement.get("signature"), public_key
+        )
+    ):
+        return {
+            "success": False,
+            "reason": "controller_final_acknowledgement_signature_invalid",
+        }
     supervisor = validate_live_bootstrap_tree(
         packet.get("supervisor_tree_identity"),
         generation=generation,
@@ -931,6 +959,14 @@ def _retryable_queue_error(result, status_code):
 
 
 def execute_codex_for_mission(mission_id, notify=False, timeout_seconds=DEFAULT_TIMEOUT_SECONDS):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+        }, 423
     loaded, _load_status = get_mission(mission_id) if mission_id else ({}, 400)
     mission = loaded.get("mission") if isinstance(loaded, dict) and isinstance(loaded.get("mission"), dict) else {}
     preflight = runner_environment_preflight(require_browser=_mission_requires_browser_preflight(mission))

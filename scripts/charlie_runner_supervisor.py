@@ -31,12 +31,16 @@ from modules.charlie.runner_control import (
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
 from modules.charlie.process_ownership import (
     inspect_process,
+    generate_controller_signing_key,
     make_ownership_record,
     make_process_tree_record,
     observe_process_tree,
     process_termination_enabled,
+    sign_controller_acknowledgement,
     validate_bootstrap_tree,
+    validate_live_bootstrap_tree,
     validate_termination,
+    verify_controller_acknowledgement,
 )
 from modules.charlie.secret_redaction import redact_payload, redact_tree_in_place
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
@@ -58,6 +62,7 @@ NON_RETRYABLE_RUNNER_STATUSES = {
     "repository_operation_locked",
     "runner_preflight_failed",
 }
+_TEST_CONTROLLER_SIGNING_KEY = None
 GENERATED_EXECUTION_PATHS = {"planning/CODEX_CHAT.md"}
 
 
@@ -190,6 +195,13 @@ def supervise_runner(
     generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
     startup_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or uuid.uuid4().hex)
     test_mode = popen_factory is not subprocess.Popen
+    controller_public_key = str(os.getenv("CHARLIE_CONTROLLER_PUBLIC_KEY") or "")
+    test_controller_private_key = None
+    if test_mode and not controller_public_key:
+        global _TEST_CONTROLLER_SIGNING_KEY
+        if _TEST_CONTROLLER_SIGNING_KEY is None:
+            _TEST_CONTROLLER_SIGNING_KEY = generate_controller_signing_key()
+        test_controller_private_key, controller_public_key = _TEST_CONTROLLER_SIGNING_KEY
     actual_runtime_revision = _git_revision(REPO_ROOT)
     actual_execution_revision = _git_revision(EXECUTION_ROOT)
     runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or actual_runtime_revision)
@@ -200,13 +212,20 @@ def supervise_runner(
     _recover_stale_owned_child()
     if test_mode and not _read_status():
         _write_test_controller_packet(
-            generation, startup_nonce, runtime_revision, execution_revision
+            generation,
+            startup_nonce,
+            runtime_revision,
+            execution_revision,
+            controller_public_key,
+            test_controller_private_key,
         )
     controller = _wait_for_controller_ack(
         generation,
         startup_nonce,
         runtime_revision,
         execution_revision,
+        controller_public_key=controller_public_key,
+        live_validate=not test_mode,
         sleep_fn=sleep_fn,
     )
     if not controller.get("success"):
@@ -414,7 +433,13 @@ def supervise_runner(
         )
         if test_mode:
             _write_test_final_authorization(
-                generation, startup_nonce, runner_nonce, execution_revision, child.pid
+                generation,
+                startup_nonce,
+                runner_nonce,
+                execution_revision,
+                child.pid,
+                controller_public_key,
+                test_controller_private_key,
             )
         final_authorization = _wait_for_controller_final_authorization(
             child,
@@ -422,6 +447,8 @@ def supervise_runner(
             startup_nonce,
             runner_nonce,
             execution_revision,
+            controller_public_key=controller_public_key,
+            live_validate=not test_mode,
             sleep_fn=sleep_fn,
         )
         if not final_authorization.get("success") or STOP_PATH.exists():
@@ -544,6 +571,8 @@ def _wait_for_controller_ack(
     startup_nonce,
     runtime_revision,
     execution_revision,
+    controller_public_key="",
+    live_validate=True,
     sleep_fn=time.sleep,
     timeout_seconds=15,
 ):
@@ -580,6 +609,44 @@ def _wait_for_controller_ack(
                         "success": False,
                         "reason": f"controller_acknowledgement_{field}_mismatch",
                     }
+            signature = acknowledgement.get("signature")
+            unsigned = {
+                key: value for key, value in acknowledgement.items()
+                if key != "signature"
+            }
+            if (
+                not controller_public_key
+                or str(packet.get("controller_public_key") or "") != controller_public_key
+                or not verify_controller_acknowledgement(
+                    unsigned, signature, controller_public_key
+                )
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_signature_invalid",
+                }
+            member_pids = sorted(
+                int(value) for value in acknowledgement.get("member_pids") or []
+            )
+            tree_member_pids = sorted(
+                int(item.get("pid"))
+                for item in (packet.get("supervisor_tree_identity") or {}).get("members", [])
+                if item.get("pid")
+            )
+            if member_pids != tree_member_pids:
+                return {
+                    "success": False,
+                    "reason": "controller_acknowledgement_member_pids_mismatch",
+                }
+            if live_validate:
+                live = validate_live_bootstrap_tree(
+                    packet.get("supervisor_tree_identity"),
+                    generation=generation,
+                    revision=runtime_revision,
+                    startup_nonce=startup_nonce,
+                )
+                if not live["authorized"]:
+                    return {"success": False, "reason": live["reason"]}
             return {
                 "success": True,
                 "status": "controller_identity_acknowledged",
@@ -591,7 +658,14 @@ def _wait_for_controller_ack(
     return {"success": False, "reason": last_reason}
 
 
-def _write_test_controller_packet(generation, startup_nonce, runtime_revision, execution_revision):
+def _write_test_controller_packet(
+    generation,
+    startup_nonce,
+    runtime_revision,
+    execution_revision,
+    controller_public_key,
+    controller_private_key,
+):
     root = {
         "pid": 100,
         "creation_time": "test-launcher",
@@ -614,6 +688,16 @@ def _write_test_controller_packet(generation, startup_nonce, runtime_revision, e
         "command_fingerprint": "test-interpreter-command",
         "process_role": "supervisor_interpreter",
     }
+    acknowledgement = {
+        "status": "supervisor_identity_acknowledged",
+        "generation": generation,
+        "startup_nonce": startup_nonce,
+        "revision": runtime_revision,
+        "member_pids": [100, os.getpid()],
+    }
+    acknowledgement["signature"] = sign_controller_acknowledgement(
+        acknowledgement, controller_private_key
+    )
     packet = {
         "version": SUPERVISOR_PACKET_VERSION,
         "pid": interpreter["pid"],
@@ -626,16 +710,11 @@ def _write_test_controller_packet(generation, startup_nonce, runtime_revision, e
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "intended_runtime_revision": runtime_revision,
         "intended_execution_revision": execution_revision,
+        "controller_public_key": controller_public_key,
         "supervisor_tree_identity": make_process_tree_record(
             root, [root, interpreter], generation
         ),
-        "controller_acknowledgement": {
-            "status": "supervisor_identity_acknowledged",
-            "generation": generation,
-            "startup_nonce": startup_nonce,
-            "revision": runtime_revision,
-            "member_pids": [100, os.getpid()],
-        },
+        "controller_acknowledgement": acknowledgement,
     }
     atomic_write_json(SUPERVISOR_PATH, packet)
     return packet
@@ -733,6 +812,8 @@ def _wait_for_controller_final_authorization(
     runner_nonce,
     revision,
     *,
+    controller_public_key="",
+    live_validate=True,
     sleep_fn=time.sleep,
     timeout_seconds=30,
 ):
@@ -767,6 +848,48 @@ def _wait_for_controller_final_authorization(
                     "success": False,
                     "reason": f"controller_final_acknowledgement_{mismatch}_mismatch",
                 }
+            signature = acknowledgement.get("signature")
+            unsigned = {
+                key: value for key, value in acknowledgement.items()
+                if key != "signature"
+            }
+            if (
+                not controller_public_key
+                or str(packet.get("controller_public_key") or "") != controller_public_key
+                or not verify_controller_acknowledgement(
+                    unsigned, signature, controller_public_key
+                )
+            ):
+                return {
+                    "success": False,
+                    "reason": "controller_final_acknowledgement_signature_invalid",
+                }
+            if live_validate:
+                supervisor_live = validate_live_bootstrap_tree(
+                    packet.get("supervisor_tree_identity"),
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=supervisor_nonce,
+                )
+                runner_live = validate_live_bootstrap_tree(
+                    packet.get("process_tree_identity"),
+                    generation=generation,
+                    revision=revision,
+                    startup_nonce=runner_nonce,
+                )
+                if not supervisor_live["authorized"]:
+                    return {"success": False, "reason": supervisor_live["reason"]}
+                if not runner_live["authorized"]:
+                    return {"success": False, "reason": runner_live["reason"]}
+                for field, expected_members in {
+                    "supervisor_member_pids": supervisor_live["member_pids"],
+                    "runner_member_pids": runner_live["member_pids"],
+                }.items():
+                    if sorted(acknowledgement.get(field) or []) != sorted(expected_members):
+                        return {
+                            "success": False,
+                            "reason": f"controller_final_{field}_mismatch",
+                        }
             return {"success": True, "status": "controller_final_authorized"}
         if child.poll() is not None:
             return {"success": False, "reason": "runner_exited_before_final_authorization"}
@@ -775,27 +898,38 @@ def _wait_for_controller_final_authorization(
 
 
 def _write_test_final_authorization(
-    generation, supervisor_nonce, runner_nonce, revision, runner_pid
+    generation,
+    supervisor_nonce,
+    runner_nonce,
+    revision,
+    runner_pid,
+    controller_public_key,
+    controller_private_key,
 ):
     packet = _read_status()
     supervisor_members = (
         (packet.get("supervisor_tree_identity") or {}).get("members") or []
     )
     runner_members = (packet.get("process_tree_identity") or {}).get("members") or []
+    acknowledgement = {
+        "status": "current_process_tree_acknowledged",
+        "generation": generation,
+        "supervisor_startup_nonce": supervisor_nonce,
+        "runner_startup_nonce": runner_nonce,
+        "revision": revision,
+        "supervisor_pid": str(os.getpid()),
+        "runner_pid": str(runner_pid),
+        "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
+        "runner_member_pids": [item.get("pid") for item in runner_members],
+    }
+    acknowledgement["signature"] = sign_controller_acknowledgement(
+        acknowledgement, controller_private_key
+    )
     packet.update({
         "status": "running_authorized",
         "runner_state": "running_authorized",
-        "controller_final_acknowledgement": {
-            "status": "current_process_tree_acknowledged",
-            "generation": generation,
-            "supervisor_startup_nonce": supervisor_nonce,
-            "runner_startup_nonce": runner_nonce,
-            "revision": revision,
-            "supervisor_pid": str(os.getpid()),
-            "runner_pid": str(runner_pid),
-            "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
-            "runner_member_pids": [item.get("pid") for item in runner_members],
-        },
+        "controller_public_key": controller_public_key,
+        "controller_final_acknowledgement": acknowledgement,
     })
     atomic_write_json(SUPERVISOR_PATH, packet)
     return packet
