@@ -34,6 +34,19 @@ class BeaconContentOperationsTests(unittest.TestCase):
         history = result["historical_owner_review_packets"]
         self.assertEqual(history[0]["packet_id"], "BEACON-WEEK-2026-07-25-P1")
         self.assertFalse(history[0]["current_reviewable"])
+        learning = result["organic_media_learning"]
+        self.assertEqual(
+            learning["publication"]["facebook_post_id"],
+            "920598737794159_122145593991122163",
+        )
+        self.assertFalse(
+            learning["graduation"]["eligible_for_owner_review_candidate"]
+        )
+        self.assertEqual(
+            learning["media_understanding"]["status"],
+            "media_understanding_unavailable",
+        )
+        self.assertFalse(learning["authority"]["publish"])
 
     def evidence(self, assets=None, opportunity_status="blocked"):
         return {
