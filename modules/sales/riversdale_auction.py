@@ -104,7 +104,7 @@ def load_owner_confirmed_cycle(*, today=None, database_url=None, connect_factory
         with connection_factory() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    select auction_date, operating_confirmed, owner_confirmed_at,
+                    select auction_cycle_id, auction_date, operating_confirmed, owner_confirmed_at,
                            decision_status, location, organizer_details,
                            entry_deadline, commission_percent, auction_fees,
                            transport_estimate, owner_note
@@ -117,23 +117,24 @@ def load_owner_confirmed_cycle(*, today=None, database_url=None, connect_factory
         return {"operating": False, "confirmed_date": "", "valid": False,
                 "status": "auction_cycle_read_unavailable", "error_type": exc.__class__.__name__,
                 "source": "public.riversdale_auction_cycles"}
-    confirmed_date = _as_date(row[0]) if row else None
-    operating = bool(row and row[1])
-    valid = bool(row and row[3] in {"confirmed_operating", "confirmed_not_operating"})
+    confirmed_date = _as_date(row[1]) if row else None
+    operating = bool(row and row[2])
+    valid = bool(row and row[4] in {"confirmed_operating", "confirmed_not_operating"})
     return {
+        "auction_cycle_id": row[0] if row else "",
         "operating": operating,
         "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
         "valid": valid and (not operating or bool(confirmed_date and confirmed_date >= today)),
         "status": "owner_confirmed_cycle_loaded" if row else "no_owner_confirmed_cycle",
-        "confirmed_at": row[2].isoformat() if row and row[2] else "",
-        "decision_status": row[3] if row else "unconfirmed",
-        "location": row[4] if row else "",
-        "organizer_details": row[5] if row else "",
-        "entry_deadline": row[6].isoformat() if row and row[6] else "",
-        "commission_percent": float(row[7]) if row and row[7] is not None else None,
-        "auction_fees": float(row[8]) if row and row[8] is not None else None,
-        "transport_estimate": float(row[9]) if row and row[9] is not None else None,
-        "owner_note": row[10] if row else "",
+        "confirmed_at": row[3].isoformat() if row and row[3] else "",
+        "decision_status": row[4] if row else "unconfirmed",
+        "location": row[5] if row else "",
+        "organizer_details": row[6] if row else "",
+        "entry_deadline": row[7].isoformat() if row and row[7] else "",
+        "commission_percent": float(row[8]) if row and row[8] is not None else None,
+        "auction_fees": float(row[9]) if row and row[9] is not None else None,
+        "transport_estimate": float(row[10]) if row and row[10] is not None else None,
+        "owner_note": row[11] if row else "",
         "source": "public.riversdale_auction_cycles",
     }
 
@@ -196,6 +197,9 @@ def record_owner_auction_decision(payload, *, actor_id, database_url=None, conne
             factory = lambda: connect_factory(database_url)
         with factory() as connection:
             with connection.cursor() as cursor:
+                cursor.execute(
+                    "select pg_advisory_xact_lock(hashtextextended('riversdale-auction-cycle',0))"
+                )
                 cursor.execute(
                     """insert into public.riversdale_auction_cycles (
                         auction_cycle_id, auction_date, operating_confirmed,
@@ -428,6 +432,7 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "scheduled_auction_date": next_auction_date(today).isoformat(),
         "owner_prompts": build_owner_prompts(today),
         "confirmation": {
+            "auction_cycle_id": confirmation.get("auction_cycle_id", ""),
             "operating": operating,
             "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
             "valid": decision_recorded,

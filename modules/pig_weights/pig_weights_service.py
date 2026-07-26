@@ -35,6 +35,9 @@ from modules.sales.riversdale_auction import (
     sanitized_owner_surface,
 )
 from modules.sales.riversdale_auction_candidate_reviews import record_candidate_review
+from modules.sales.riversdale_auction_list import (
+    eligibility_tokens, read_auction_list, record_auction_list_events,
+)
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4716,6 +4719,87 @@ def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, 
     ]
     return record_candidate_review(
         payload, actor_id=actor_id, candidate_ids=candidate_ids,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+
+
+def _auction_selectable_ids(packet):
+    selectable = []
+    for item in packet.get("candidate_preview", []):
+        evidence = item.get("herdmaster_evidence", {}) if isinstance(item, dict) else {}
+        withdrawal = to_clean_string(evidence.get("withdrawal_clear")).lower()
+        quality = to_clean_string(evidence.get("observed_quality")).lower()
+        health = to_clean_string(evidence.get("health_status")).lower()
+        if withdrawal in {"yes", "clear", "cleared", "true", "1"} and quality in {"suitable", "clear", "cleared", "yes"} and health and "hold" not in health:
+            selectable.append(to_clean_string(item.get("pig_id")))
+    return [pig_id for pig_id in selectable if pig_id]
+
+
+def get_riversdale_auction_list(database_url=None, connect_factory=None):
+    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
+    listing, status = read_auction_list(database_url=database_url, connect_factory=connect_factory)
+    if status != 200:
+        return listing, status
+    packet_cycle = to_clean_string((packet.get("confirmation") or {}).get("auction_cycle_id"))
+    if not packet_cycle or packet_cycle != listing.get("auction_cycle_id"):
+        return {
+            **listing, "success": False, "status": "auction_list_stale_cycle",
+            "selectable_pig_ids": [], "eligibility_tokens": {},
+        }, 409
+    tokens = eligibility_tokens(packet)
+    listing["selectable_pig_ids"] = sorted(tokens)
+    listing["eligibility_tokens"] = tokens
+    return listing, 200
+
+
+class _ManagedReadFactory:
+    """Let canonical readers share the writer transaction without closing it."""
+    transaction_managed = True
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __call__(self, _database_url):
+        from contextlib import nullcontext
+        return nullcontext(self.connection)
+
+
+def _auction_eligibility_in_transaction(connection, _pig_ids):
+    allocation = get_pig_allocation_readiness(
+        allow_sheet_fallback=False,
+        connect_factory=_ManagedReadFactory(connection),
+    )
+    if allocation.get("success") is not True:
+        return allocation
+    with connection.cursor() as cursor:
+        cursor.execute("""select auction_cycle_id,auction_date,operating_confirmed,
+            owner_confirmed_at,decision_status,location,organizer_details,
+            entry_deadline,commission_percent,auction_fees,transport_estimate,owner_note
+            from public.riversdale_auction_cycles where operating_confirmed
+            order by owner_confirmed_at desc,created_at desc limit 1""")
+        row = cursor.fetchone()
+    if not row:
+        return {"success": False, "status": "confirmed_auction_cycle_required"}
+    confirmation = {
+        "auction_cycle_id": row[0], "confirmed_date": row[1],
+        "operating": row[2], "confirmed_at": row[3],
+        "decision_status": row[4], "location": row[5],
+        "organizer_details": row[6], "entry_deadline": row[7],
+        "commission_percent": row[8], "auction_fees": row[9],
+        "transport_estimate": row[10], "owner_note": row[11],
+        "valid": True,
+    }
+    packet = build_riversdale_auction_packet(
+        allocation, today=datetime.now().date(), confirmation=confirmation,
+    )
+    packet["success"] = True
+    return packet
+
+
+def update_riversdale_auction_list(payload, *, actor_id, database_url=None, connect_factory=None):
+    return record_auction_list_events(
+        payload, actor_id=actor_id,
+        eligibility_loader=_auction_eligibility_in_transaction,
         database_url=database_url, connect_factory=connect_factory,
     )
 

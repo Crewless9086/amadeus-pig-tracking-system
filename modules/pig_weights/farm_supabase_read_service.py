@@ -27,7 +27,8 @@ def _fetch_all(sql, params=(), connect_factory=None):
         raise RuntimeError(f"{DATABASE_URL_ENV} is not configured.")
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("set transaction read only")
+            if not getattr(connect_factory, "transaction_managed", False):
+                cursor.execute("set transaction read only")
             cursor.execute(sql, params)
             columns = [column.name for column in cursor.description]
             return [dict(zip(columns, row)) for row in cursor.fetchall()]

@@ -175,7 +175,9 @@ class RiversdaleAuctionOwnerSurfaceTests(unittest.TestCase):
             "sends_reminder",
         ):
             self.assertFalse(result[key])
-        self.assertIn("on conflict (idempotency_key) do nothing", cursor.calls[0][0])
+        insert_call = next(call for call in cursor.calls if "insert into public.riversdale_auction_cycles" in call[0])
+        self.assertIn("on conflict (idempotency_key) do nothing", insert_call[0])
+        self.assertIn("pg_advisory_xact_lock", cursor.calls[0][0])
 
     def test_invalid_decision_never_writes(self):
         result, status = record_owner_auction_decision(
@@ -204,14 +206,35 @@ class RiversdaleAuctionOwnerSurfaceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         record.assert_called_once()
 
-    def test_existing_page_has_one_owner_only_panel_and_review_contract(self):
+    @patch("modules.pig_weights.pig_weights_routes.owner_admin_principal", return_value="owner-admin:stable")
+    @patch("modules.pig_weights.pig_weights_routes.require_owner_admin_access", return_value=None)
+    @patch("modules.pig_weights.pig_weights_routes.update_riversdale_auction_list_data")
+    def test_auction_list_uses_server_principal_and_ignores_browser_identity(
+            self, update, _access, _principal):
+        update.return_value = ({"success": True, "status": "auction_list_updated"}, 201)
+        response = self.client.post(
+            "/api/pig-weights/riversdale-auction-list/events",
+            json={
+                "action": "add", "pig_ids": ["PIG-1"],
+                "auction_cycle_id": "cycle-a",
+                "eligibility_tokens": {"PIG-1": "token"},
+                "prior_event_ids": {"PIG-1": ""},
+                "idempotency_key": "request-a",
+                "owner_id": "browser-spoof",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(update.call_args.kwargs["actor_id"], "owner-admin:stable")
+        self.assertNotEqual(update.call_args.kwargs["actor_id"], "browser-spoof")
+
+    def test_existing_page_has_one_panel_and_integrated_auction_table(self):
         html = Path("templates/pig-allocation.html").read_text(encoding="utf-8")
         js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
         self.assertEqual(html.count('id="riversdale_auction_panel"'), 1)
         self.assertIn("/api/pig-weights/riversdale-auction-recommendation", js)
         self.assertIn("/api/pig-weights/riversdale-auction-confirmation", js)
-        self.assertIn("/api/pig-weights/riversdale-auction-candidate-reviews", js)
-        self.assertIn('id="riversdale_candidate_review"', html)
+        self.assertIn("/api/pig-weights/riversdale-auction-list", js)
+        self.assertNotIn('id="riversdale_candidate_review"', html)
         self.assertIn("Fees beyond the confirmed 7% commission", html)
         self.assertIn("R200 remains an estimate", html)
         self.assertIn("data.owner_surface", js)
@@ -278,7 +301,10 @@ class RiversdaleAuctionOwnerPrincipalAcceptanceTests(unittest.TestCase):
         self.assertTrue(expected_principal.startswith("owner-admin:"))
         self.assertNotIn(ADMIN_TOKEN, expected_principal)
         self.assertNotIn("spoofed", json.dumps(stored["evidence"], default=str))
-        insert_sql = cursor.calls[0][0]
+        insert_sql = next(
+            call[0] for call in cursor.calls
+            if "insert into public.riversdale_auction_cycles" in call[0]
+        )
         self.assertIn("owner_confirmed_at", insert_sql)
         self.assertIn("now()", insert_sql)
         self.assertEqual(stored["decision_status"], "confirmed_operating")

@@ -120,7 +120,7 @@ class RiversdaleAuctionTests(unittest.TestCase):
             def execute(self, *_args): pass
             def fetchone(self):
                 return (
-                    date(2026, 8, 5), True, datetime(2026, 7, 22, 9, 0),
+                    "RIV-CYCLE-1", date(2026, 8, 5), True, datetime(2026, 7, 22, 9, 0),
                     "confirmed_operating", "Riversdale", "Organizer",
                     date(2026, 8, 1), 5, 20, 50, "Owner note",
                 )
@@ -132,6 +132,7 @@ class RiversdaleAuctionTests(unittest.TestCase):
             def __exit__(self, *_args): return False
         confirmation = load_owner_confirmed_cycle(today=date(2026, 8, 1), database_url="postgresql://test", connect_factory=lambda _url: Connection())
         self.assertEqual(confirmation["status"], "owner_confirmed_cycle_loaded")
+        self.assertEqual(confirmation["auction_cycle_id"], "RIV-CYCLE-1")
         self.assertEqual(confirmation["confirmed_date"], "2026-08-05")
 
     def test_unapplied_migration_defines_one_active_outlet_constraint(self):
