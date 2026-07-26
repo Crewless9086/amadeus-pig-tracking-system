@@ -28,6 +28,8 @@ from modules.sales.beacon_campaign import (
     validate_meat_launch_campaign_packet,
     _performance_params,
     _facebook_post_execution_id,
+    _facebook_post_params,
+    _post_to_facebook_page_binary_images,
 )
 
 
@@ -681,6 +683,7 @@ class BeaconCampaignTests(unittest.TestCase):
         ]
         result, status = execute_beacon_facebook_page_post({
             "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
             "publish_packet_id": "PACKET-MIXED",
             "channel": "Facebook",
             "exact_text": "A day with the piglets on the farm.",
@@ -703,6 +706,7 @@ class BeaconCampaignTests(unittest.TestCase):
         calls = []
         result, status = execute_beacon_facebook_page_post({
             "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
             "publish_packet_id": "PACKET-RISK",
             "channel": "Facebook",
             "exact_text": "Planning livestock? Message us with the quantity and timing you need.",
@@ -714,6 +718,168 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertFalse(result["posts_publicly"])
         self.assertFalse(result["calls_meta"])
+
+    def test_authorized_livestock_dimensions_are_preserved_exactly(self):
+        params = _facebook_post_params({
+            "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
+            "authorization_generation_id": "AUTH-EXACT",
+            "exact_text": "A careful morning with the piglets.",
+        }, {})
+
+        self.assertEqual(params["campaign_lane"], "live_stock_awareness")
+        self.assertEqual(params["objective"], "farm_awareness")
+        self.assertEqual(params["authorization_generation_id"], "AUTH-EXACT")
+
+    def test_authorized_livestock_dimensions_fail_closed_before_claim(self):
+        cases = (
+            {"authorization_generation_id": "AUTH", "objective": "farm_awareness"},
+            {"authorization_generation_id": "AUTH", "campaign_lane": "live_stock_awareness"},
+            {"authorization_generation_id": "AUTH", "campaign_lane": "live_stock_awareness",
+             "objective": "qualified_enquiries"},
+            {"authorization_generation_id": "AUTH", "campaign_lane": ["live_stock_awareness"],
+             "objective": "farm_awareness"},
+            {"authorization_generation_id": "AUTH", "campaign_lane": "meat_launch",
+             "objective": "farm_awareness"},
+        )
+        for dimensions in cases:
+            calls = []
+            result, status = execute_beacon_facebook_page_post({
+                **dimensions,
+                "publish_packet_id": "PACKET-BOUND",
+                "channel": "Facebook Page",
+                "exact_text": "A careful morning with the piglets.",
+                "owner_confirmation": "POST EXACT BEACON PACKET",
+            }, poster=lambda *_: calls.append("meta"),
+               execution_recorder=lambda *_args, **_kwargs: calls.append("claim"))
+            self.assertEqual(status, 409)
+            self.assertEqual(
+                result["status"],
+                "organic_publication_objective_binding_mismatch",
+            )
+            self.assertEqual(calls, [])
+            self.assertFalse(result["calls_meta"])
+            self.assertFalse(result["boosts_post"])
+            self.assertFalse(result["spends_money"])
+
+    @patch("modules.sales.beacon_campaign.require_organic_publication_binding")
+    @patch("modules.sales.beacon_campaign.assess_public_livestock_content")
+    def test_final_policy_failure_prevents_attempt_claim_and_meta(
+        self, assess, binding
+    ):
+        assess.side_effect = (
+            {"allowed": True, "status": "allowed"},
+            {"allowed": False, "status": "commerce_risk"},
+        )
+
+        def verified(params, **_kwargs):
+            identity_params = {
+                **params,
+                "publication_binding_id": "BINDING-FINAL",
+                "approved_weekly_packet_id": "WEEKLY-FINAL",
+                "owner_decision_event_id": "DECISION-FINAL",
+                "authorization_generation_id": "AUTH-FINAL",
+            }
+            return ({
+                "success": True,
+                "binding": {
+                    "binding_id": "BINDING-FINAL",
+                    "weekly_packet_id": "WEEKLY-FINAL",
+                    "owner_decision_event_id": "DECISION-FINAL",
+                },
+                "authorization": {
+                    "authorization_generation_id": "AUTH-FINAL",
+                    "expected_attempt_identity": _facebook_post_execution_id(
+                        identity_params
+                    ),
+                },
+            }, 200)
+
+        binding.side_effect = verified
+        calls = []
+        result, status = execute_beacon_facebook_page_post({
+            "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
+            "authorization_generation_id": "AUTH-FINAL",
+            "publish_packet_id": "PACKET-FINAL",
+            "channel": "Facebook Page",
+            "exact_text": "A careful morning with the piglets.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, poster=lambda *_: calls.append("meta"),
+           execution_recorder=lambda *_args, **_kwargs: calls.append("claim"),
+           environ={
+               "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+               "BEACON_FACEBOOK_PAGE_ID": "page",
+               "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+           })
+
+        self.assertEqual(status, 409)
+        self.assertEqual(
+            result["status"],
+            "owner_review_required_meta_livestock_commerce_risk",
+        )
+        self.assertEqual(calls, [])
+        self.assertEqual(assess.call_count, 2)
+        for call in assess.call_args_list:
+            self.assertEqual(call.kwargs["campaign_lane"], "live_stock_awareness")
+            self.assertEqual(call.kwargs["objective"], "farm_awareness")
+
+    @patch("modules.sales.beacon_campaign.assess_public_livestock_content")
+    def test_binary_transport_rechecks_exact_dimensions_before_first_meta(
+        self, assess
+    ):
+        order = []
+        assess.side_effect = lambda *_args, **kwargs: (
+            order.append(("policy", kwargs["campaign_lane"], kwargs["objective"]))
+            or {"allowed": True}
+        )
+        asset = {
+            "asset_id": "IMAGE-EXACT",
+            "media_type": "image",
+            "effective_public_use_approved": True,
+            "content_sha256": "trusted",
+        }
+        validation = {
+            "allowed": True,
+            "returned_mime": "image/jpeg",
+        }
+        with patch(
+            "modules.sales.beacon_campaign.validate_facebook_image_asset",
+            return_value=validation,
+        ):
+            result, status = _post_to_facebook_page_binary_images(
+                {
+                    "campaign_lane": "live_stock_awareness",
+                    "objective": "farm_awareness",
+                    "exact_text": "A careful morning with the piglets.",
+                    "post_kind": "photo",
+                    "selected_assets": [asset],
+                },
+                {},
+                storage_loader=lambda _asset: ({
+                    "success": True,
+                    "data": b"validated",
+                    "returned_mime": "image/jpeg",
+                }, 200),
+                stage_recorder=lambda _stage: True,
+                photo_uploader=lambda *_args: (
+                    order.append(("meta",)) or
+                    ({"success": True, "id": "MEDIA-1"}, 200)
+                ),
+                feed_creator=lambda *_args: (
+                    {"success": True, "id": "POST-1"}, 200
+                ),
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            order,
+            [
+                ("policy", "live_stock_awareness", "farm_awareness"),
+                ("meta",),
+            ],
+        )
 
     def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
         recorded = []
@@ -796,6 +962,7 @@ class BeaconCampaignTests(unittest.TestCase):
 
         result, status = execute_beacon_facebook_page_post({
             "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
             "publish_packet_id": "PACKET-ORDER",
             "exact_text": "Follow the farm journey for responsible piglet care.",
             "selected_assets": assets,
@@ -814,6 +981,8 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(status, 502)
         claim = json.loads(recorded[0]["facebook_response_json"])
         self.assertEqual(claim["transport_stage"], "attempt_claimed")
+        self.assertEqual(claim["campaign_lane"], "live_stock_awareness")
+        self.assertEqual(claim["objective"], "farm_awareness")
         self.assertEqual(
             [item["asset_id"] for item in claim["selected_media"]["assets"]],
             ["IMAGE-A", "IMAGE-B"],
@@ -839,6 +1008,7 @@ class BeaconCampaignTests(unittest.TestCase):
         calls = []
         result, status = execute_beacon_facebook_page_post({
             "campaign_lane": "live_stock_awareness",
+            "objective": "farm_awareness",
             "publish_packet_id": "UNBOUND",
             "channel": "Facebook",
             "exact_text": "Follow the farm journey for responsible piglet care.",

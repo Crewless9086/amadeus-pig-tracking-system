@@ -1251,13 +1251,30 @@ def facebook_posting_policy(environ=None):
 def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None, execution_recorder=None,
                                       meat_launch_authorized=False):
     payload = payload if isinstance(payload, dict) else {}
-    campaign_lane = normalize_campaign_lane(payload.get("campaign_lane"))
+    raw_campaign_lane = payload.get("campaign_lane")
+    raw_objective = payload.get("objective")
+    campaign_lane = normalize_campaign_lane(raw_campaign_lane)
+    authorization_generation_id = _clean_text(
+        payload.get("authorization_generation_id")
+    )
+    if authorization_generation_id or campaign_lane == "live_stock_awareness":
+        if (
+            not isinstance(raw_campaign_lane, str)
+            or raw_campaign_lane != "live_stock_awareness"
+            or not isinstance(raw_objective, str)
+            or raw_objective != "farm_awareness"
+        ):
+            return {
+                "success": False,
+                "status": "organic_publication_objective_binding_mismatch",
+                **_facebook_execution_authority(False),
+            }, 409
     if campaign_lane == "meat_launch" and not meat_launch_authorized:
         return controlled_mode_denial("publish_meat_campaign")
     if campaign_lane in {"live_stock_awareness", "live_stock_sales"}:
         assessment = assess_public_livestock_content(
             payload.get("exact_text") or payload.get("message"),
-            objective=payload.get("objective") or "farm_awareness",
+            objective=raw_objective or "farm_awareness",
             campaign_lane=campaign_lane,
             media=payload.get("selected_assets") or payload.get("selected_asset"),
         )
@@ -1324,11 +1341,27 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
 
+        final_assessment = assess_public_livestock_content(
+            params.get("exact_text"),
+            objective=params.get("objective"),
+            campaign_lane=params.get("campaign_lane"),
+            media=params.get("selected_assets") or params.get("selected_asset"),
+        )
+        if not final_assessment["allowed"]:
+            return {
+                "success": False,
+                "status": RISK_STATUS,
+                "public_livestock_policy": final_assessment,
+                **_facebook_execution_authority(False),
+            }, 409
+
     recorder = execution_recorder or _record_facebook_post_execution_event
     params["execution_status"] = "record_only_before_send"
     params["facebook_response_json"] = json.dumps({
         "transport_stage": "attempt_claimed",
         "post_kind": params.get("post_kind", "feed"),
+        "campaign_lane": params.get("campaign_lane", ""),
+        "objective": params.get("objective", ""),
         "selected_media": _facebook_selected_media(params),
         "caption_sha256": hashlib.sha256(
             params.get("exact_text", "").encode("utf-8")
@@ -2465,6 +2498,8 @@ def _facebook_post_params(payload, policy):
         "authorization_generation_id": _clean_text(
             payload.get("authorization_generation_id")
         )[:160],
+        "campaign_lane": payload.get("campaign_lane", ""),
+        "objective": payload.get("objective", ""),
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
