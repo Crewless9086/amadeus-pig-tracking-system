@@ -19,6 +19,15 @@
     text(classification, item.classification);
     const chronology = document.createElement("p");
     text(chronology, `${item.unanswered_count || 0} unanswered · chronology ${String(item.chronology_hash || "").slice(0, 12)}`);
+    const windowState = document.createElement("p");
+    windowState.className = `window-state band-${String(item.alert_band || "none").toLowerCase()}`;
+    const remaining = Number.isFinite(Number(item.remaining_seconds))
+      ? `${Math.max(0, Math.floor(Number(item.remaining_seconds) / 60))} min remaining`
+      : "remaining time unavailable";
+    const expiry = item.expires_at_johannesburg
+      ? new Date(item.expires_at_johannesburg).toLocaleString("en-ZA", {timeZone: "Africa/Johannesburg"})
+      : "unavailable";
+    text(windowState, `${item.window_state || "unavailable"} · ${remaining} · expires ${expiry} SAST`);
     const reasons = document.createElement("p");
     reasons.className = "reasons";
     text(reasons, (item.withheld_reasons_json || []).join(" · ") || "Authoritative owner review required");
@@ -27,7 +36,7 @@
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     text(link, "Open exact Chatwoot conversation");
-    article.append(heading, classification, chronology, reasons, link);
+    article.append(heading, classification, windowState, chronology, reasons, link);
     return article;
   }
 
@@ -47,6 +56,7 @@
       text(document.getElementById("protected-count"), count(items, item => item.lane === "PROTECTED"));
       text(document.getElementById("specialist-count"), count(items, item => item.lane === "SPECIALIST"));
       text(document.getElementById("withheld-count"), count(items, item => item.actionable !== true));
+      text(document.getElementById("expiring-count"), count(items, item => ["warning", "urgent"].includes(item.alert_band)));
       text(statusNode, items.length ? `${items.length} exact conversation work items.` : "No persisted work items yet.");
     } catch (error) {
       itemsNode.replaceChildren();

@@ -2,8 +2,13 @@ import os
 from pathlib import Path
 import unittest
 import uuid
+from datetime import datetime, timezone
 
-from modules.sales.sam_owner_work_queue import list_owner_work_items
+from modules.sales.sam_owner_work_queue import (
+    build_owner_work_observation,
+    list_owner_work_items,
+    record_owner_work_observation,
+)
 
 
 class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
@@ -19,6 +24,9 @@ class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
         cls.psycopg = psycopg
         migration = Path(
             "supabase/migrations/202607260002_create_sam_owner_work_items.sql"
+        ).read_text(encoding="utf-8")
+        window_migration = Path(
+            "supabase/migrations/202607260006_add_sam_owner_reply_window_protection.sql"
         ).read_text(encoding="utf-8")
         with psycopg.connect(cls.database_url) as connection:
             with connection.cursor() as cursor:
@@ -37,6 +45,7 @@ class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
                     """
                 )
                 cursor.execute(migration)
+                cursor.execute(window_migration)
             connection.commit()
 
     @classmethod
@@ -173,6 +182,128 @@ class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
         current = next(row for row in result["items"] if row["work_item_id"] == work_item_id)
         self.assertEqual(current["work_event_id"], second_event)
         self.assertFalse(current["actionable"])
+
+    def test_window_alert_persistence_is_deduplicated_and_never_delivered(self):
+        observation = build_owner_work_observation(
+            {
+                "account_id": "147387",
+                "id": "window-postgres",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "channel": "Channel::Whatsapp",
+                "custom_attributes": {"conversation_mode": "HUMAN"},
+                "labels": ["sam_live_stock"],
+                "messages": [{
+                    "id": "101", "message_type": 0, "private": False,
+                    "created_at": "2026-07-25T13:00:00+00:00",
+                }],
+            },
+            review={
+                "review_event_id": "SAM-LIVE-REVIEW-WINDOW-PG",
+                "chatwoot_conversation_id": "window-postgres",
+                "chatwoot_message_id": "101",
+            },
+            reconciliation_actor_id="owner-admin:server-derived-test",
+            observed_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+        )
+        first, first_status = record_owner_work_observation(
+            observation, database_url=self.database_url
+        )
+        second, second_status = record_owner_work_observation(
+            observation, database_url=self.database_url
+        )
+        self.assertEqual(first_status, 201)
+        self.assertEqual(second_status, 200)
+        self.assertTrue(first["alert_prepared"])
+        self.assertFalse(second["created"])
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select count(*),bool_or(delivery_enabled),bool_or(delivered),
+                           bool_or(contains_customer_content),
+                           bool_or(sends_customer_message),
+                           bool_or(calls_telegram),bool_or(uses_template)
+                    from public.sam_owner_window_alert_events
+                    where work_item_id=%s
+                    """,
+                    (observation["work_item_id"],),
+                )
+                count, delivery, delivered, content, send, telegram, template = cursor.fetchone()
+        self.assertEqual(count, 1)
+        self.assertFalse(any((delivery, delivered, content, send, telegram, template)))
+
+    def test_window_alert_table_privileges_and_immutability(self):
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                for role in ("anon", "authenticated"):
+                    cursor.execute(
+                        "select has_table_privilege(%s,'public.sam_owner_window_alert_events','SELECT')",
+                        (role,),
+                    )
+                    self.assertFalse(cursor.fetchone()[0])
+                    cursor.execute(
+                        "select has_table_privilege(%s,'public.sam_owner_window_alert_events','INSERT')",
+                        (role,),
+                    )
+                    self.assertFalse(cursor.fetchone()[0])
+                for privilege, expected in (
+                    ("SELECT", True), ("INSERT", True), ("UPDATE", False),
+                    ("DELETE", False), ("TRUNCATE", False),
+                ):
+                    cursor.execute(
+                        "select has_table_privilege('service_role','public.sam_owner_window_alert_events',%s)",
+                        (privilege,),
+                    )
+                    self.assertEqual(cursor.fetchone()[0], expected)
+
+    def test_actionable_queue_orders_nearest_expiry_first(self):
+        suffix = uuid.uuid4().hex
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                for offset, label in ((5, "later"), (1, "nearer")):
+                    cursor.execute(
+                        """
+                        insert into public.sam_owner_work_item_events (
+                          work_event_id,work_item_id,account_id,conversation_id,
+                          contact_id,inbox_id,ownership_mode,latest_message_id,
+                          chronology_hash,observation_hash,unanswered_count,
+                          classification,missed_message_classification,lane,
+                          actionable,event_type,source,reconciliation_actor_id,
+                          observed_at,window_state,reply_authority_state,
+                          window_reason,provider_identity_class,
+                          window_evidence_hash,expires_at_utc,
+                          expires_at_johannesburg,remaining_seconds,
+                          alert_band,ordinary_reply_allowed,
+                          send_reply_action_visible
+                        ) values (
+                          %s,%s,'147387',%s,'699428938','96568','HUMAN','101',
+                          %s,%s,1,'WAITING_FOR_OWNER_REPLY',
+                          'single_unanswered_inbound','GENERAL',true,
+                          'actionable','postgres_priority',
+                          'owner-admin:server-derived-test',now(),'open',
+                          'ordinary_reply_allowed','reply_window_open',
+                          'genuine_whatsapp',%s,now()+(%s||' hours')::interval,
+                          now()+(%s||' hours')::interval,%s*3600,'none',true,true
+                        )
+                        """,
+                        (
+                            f"EVENT-{label}-{suffix}", f"WORK-{label}-{suffix}",
+                            f"CONV-{label}-{suffix}", f"CHRON-{label}-{suffix}",
+                            f"OBS-{label}-{suffix}", f"WINDOW-{label}-{suffix}",
+                            offset, offset, offset,
+                        ),
+                    )
+            connection.commit()
+        result, status = list_owner_work_items(
+            database_url=self.database_url, include_withheld=False
+        )
+        self.assertEqual(status, 200)
+        identities = [row["work_item_id"] for row in result["items"]]
+        self.assertLess(
+            identities.index(f"WORK-nearer-{suffix}"),
+            identities.index(f"WORK-later-{suffix}"),
+        )
 
 
 if __name__ == "__main__":

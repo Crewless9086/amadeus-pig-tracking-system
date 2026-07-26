@@ -18,6 +18,12 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("telegram", script.lower())
         self.assertIn("require_owner_read_access()", routes)
         self.assertIn('"/sales/channels/chatwoot/sam/owner-inbox"', routes)
+        self.assertIn("warning at 6 hours remaining", template)
+        self.assertIn("urgent at 2 hours", template)
+        self.assertIn("expires_at_johannesburg", script)
+        self.assertIn('"Africa/Johannesburg"', script)
+        self.assertIn("alert_band", script)
+        self.assertNotIn("template-send", script)
 
     def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
         template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
