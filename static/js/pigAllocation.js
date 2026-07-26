@@ -19,6 +19,7 @@ const auctionStatus = document.getElementById("riversdale_auction_status");
 const auctionSummary = document.getElementById("riversdale_auction_summary");
 const auctionEvidence = document.getElementById("riversdale_auction_evidence");
 const auctionForm = document.getElementById("riversdale_auction_form");
+const auctionReviewRows = document.getElementById("riversdale_candidate_review_rows");
 
 let allocationRows = [];
 let allocationSummary = {};
@@ -568,6 +569,47 @@ function renderAuctionSurface(surface) {
     <div class="allocation-rule"><strong>Reminder delivery</strong><span>${surface.reminders?.delivery_operational ? "Available" : "Unavailable"} (deduplicated code only)</span></div>`;
 }
 
+function renderAuctionCandidateReviews(candidates) {
+  if (!auctionReviewRows) return;
+  auctionReviewRows.replaceChildren();
+  (Array.isArray(candidates) ? candidates : []).forEach((candidate) => {
+    const form = document.createElement("form");
+    form.className = "auction-candidate-review";
+    const label = document.createElement("strong");
+    label.textContent = candidate.tag_number || candidate.pig_id || "Owner-only candidate";
+    form.append(label);
+    form.innerHTML += `<label>Withdrawal <select name="withdrawal_state"><option>unknown</option><option>not_applicable</option><option>cleared</option><option>hold</option></select></label>
+      <label>Quality <select name="quality_state"><option>unknown</option><option>suitable</option><option>hold</option></select></label>
+      <label>Observed at <input name="observed_at" type="datetime-local" required></label>
+      <label>Canonical medical evidence references <input name="medical_evidence_refs" placeholder="event IDs, comma separated"></label>
+      <label>Physical observation <textarea name="physical_observation" required></textarea></label>
+      <label>Necessary follow-up <textarea name="follow_up"></textarea></label>
+      <button type="submit">Record immutable review</button>`;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const response = await fetch("/api/pig-weights/riversdale-auction-candidate-reviews", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          pig_id: candidate.pig_id,
+          withdrawal_state: data.get("withdrawal_state"),
+          quality_state: data.get("quality_state"),
+          observed_at: new Date(data.get("observed_at")).toISOString(),
+          medical_evidence_refs: String(data.get("medical_evidence_refs") || "").split(",").map(v => v.trim()).filter(Boolean),
+          physical_observation: data.get("physical_observation"),
+          follow_up: data.get("follow_up"),
+          idempotency_key: crypto.randomUUID(),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.status || "Review was not recorded.");
+      form.querySelector("button").disabled = true;
+      form.querySelector("button").textContent = result.status === "review_replayed_withheld" ? "Replay withheld" : "Review recorded";
+    });
+    auctionReviewRows.append(form);
+  });
+}
+
 async function loadRiversdaleAuction() {
   if (!auctionPanel) return;
   try {
@@ -575,6 +617,7 @@ async function loadRiversdaleAuction() {
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.message || "Could not load auction evidence.");
     renderAuctionSurface(data.owner_surface);
+    renderAuctionCandidateReviews(data.candidate_preview);
   } catch (error) {
     auctionStatus.textContent = "Unavailable";
     auctionSummary.innerHTML = auctionMetric("Auction evidence", "Unavailable");

@@ -43,6 +43,15 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 cursor.execute("select to_regclass('public.riversdale_auction_cycles')")
                 if cursor.fetchone()[0] is None:
                     cursor.execute((root / "202607230001_create_riversdale_auction_cycles.sql").read_text(encoding="utf-8"))
+                cursor.execute("select to_regclass('public.pigs')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute("create table public.pigs(pig_id text primary key)")
+                cursor.execute("select to_regclass('public.pig_observation_events')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute((root / "202607200001_create_pig_observation_events.sql").read_text(encoding="utf-8"))
+                cursor.execute("select to_regclass('public.riversdale_auction_candidate_reviews')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute((root / "202607260004_create_riversdale_auction_candidate_reviews.sql").read_text(encoding="utf-8"))
                 cursor.execute("delete from public.meat_processing_batch_pigs")
                 cursor.execute("delete from public.meat_processing_batches")
                 cursor.execute("delete from public.sales_transaction_items")
@@ -79,7 +88,18 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
             with connection.cursor() as cursor:
                 cursor.execute("insert into public.pig_active_outlets (outlet_assignment_id, pig_id, outlet_type, source_record_id) values ('claim-c', 'PIG-2', 'riversdale_auction', 'auction-a')")
                 with self.assertRaises(psycopg.Error):
-                    cursor.execute("insert into public.riversdale_auction_cohort_members (auction_cycle_id, pig_id, outlet_assignment_id) values ('auction-a', 'PIG-3', 'claim-c')")
+                        cursor.execute("insert into public.riversdale_auction_cohort_members (auction_cycle_id, pig_id, outlet_assignment_id) values ('auction-a', 'PIG-3', 'claim-c')")
+
+    def test_candidate_review_privileges_are_server_insert_only(self):
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                for role in ("anon","authenticated"):
+                    cursor.execute("select has_table_privilege(%s,'public.riversdale_auction_candidate_reviews','insert')",(role,))
+                    self.assertFalse(cursor.fetchone()[0])
+                cursor.execute("select has_table_privilege('service_role','public.riversdale_auction_candidate_reviews','insert')")
+                self.assertTrue(cursor.fetchone()[0])
+                cursor.execute("select has_table_privilege('service_role','public.riversdale_auction_candidate_reviews','update')")
+                self.assertFalse(cursor.fetchone()[0])
 
     def test_real_source_writer_tables_cannot_cross_claim_an_active_pig(self):
         with psycopg.connect(self.database_url) as connection:

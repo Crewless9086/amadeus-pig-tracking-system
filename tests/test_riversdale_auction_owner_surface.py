@@ -204,14 +204,18 @@ class RiversdaleAuctionOwnerSurfaceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         record.assert_called_once()
 
-    def test_existing_page_has_one_panel_and_no_private_render_contract(self):
+    def test_existing_page_has_one_owner_only_panel_and_review_contract(self):
         html = Path("templates/pig-allocation.html").read_text(encoding="utf-8")
         js = Path("static/js/pigAllocation.js").read_text(encoding="utf-8")
         self.assertEqual(html.count('id="riversdale_auction_panel"'), 1)
         self.assertIn("/api/pig-weights/riversdale-auction-recommendation", js)
         self.assertIn("/api/pig-weights/riversdale-auction-confirmation", js)
+        self.assertIn("/api/pig-weights/riversdale-auction-candidate-reviews", js)
+        self.assertIn('id="riversdale_candidate_review"', html)
+        self.assertIn("Fees beyond the confirmed 7% commission", html)
+        self.assertIn("R200 remains an estimate", html)
         self.assertIn("data.owner_surface", js)
-        self.assertNotIn("data.candidate_preview", js)
+        self.assertIn("data.candidate_preview", js)
         self.assertNotIn("data.cohort", js)
 
 
