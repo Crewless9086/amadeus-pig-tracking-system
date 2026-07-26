@@ -79,6 +79,12 @@ revoke all privileges
 revoke select, insert, update, delete, truncate, references, trigger
     on table public.sam_response_class_authority_events
     from public, anon, authenticated;
+revoke all privileges
+    on table public.sam_response_class_authority_events
+    from service_role;
+revoke select, insert, update, delete, truncate, references, trigger
+    on table public.sam_response_class_authority_events
+    from service_role;
 
 revoke all privileges
     on function public.prevent_sam_response_class_authority_mutation()
@@ -86,6 +92,12 @@ revoke all privileges
 revoke execute
     on function public.prevent_sam_response_class_authority_mutation()
     from public, anon, authenticated;
+revoke all privileges
+    on function public.prevent_sam_response_class_authority_mutation()
+    from service_role;
+revoke execute
+    on function public.prevent_sam_response_class_authority_mutation()
+    from service_role;
 
 -- Authority identities are caller supplied, so this table must own no
 -- sequence. Fail migration if a later schema change silently introduces one.

@@ -28,6 +28,10 @@ class SamResponseClassAuthorityPostgresTests(unittest.TestCase):
                     exception when duplicate_object then null; end $$;
                     do $$ begin create role service_role nologin bypassrls;
                     exception when duplicate_object then null; end $$;
+                    alter default privileges in schema public
+                      grant all privileges on tables to service_role;
+                    alter default privileges in schema public
+                      grant execute on functions to service_role;
                     """
                 )
                 cursor.execute(migration)
@@ -77,6 +81,16 @@ class SamResponseClassAuthorityPostgresTests(unittest.TestCase):
                     """
                     select has_function_privilege(
                       'public',
+                      'public.prevent_sam_response_class_authority_mutation()',
+                      'EXECUTE'
+                    )
+                    """
+                )
+                self.assertFalse(cursor.fetchone()[0])
+                cursor.execute(
+                    """
+                    select has_function_privilege(
+                      'service_role',
                       'public.prevent_sam_response_class_authority_mutation()',
                       'EXECUTE'
                     )
