@@ -1,0 +1,31 @@
+{
+  "event": "message_created",
+  "message_type": "outgoing",
+  "id": 760224858,
+  "created_at": "2026-07-26T06:49:28.589Z",
+  "content": "Test received.",
+  "private": false,
+  "account": {
+    "id": 147387
+  },
+  "conversation": {
+    "id": 2021,
+    "account_id": 147387,
+    "inbox_id": 96568,
+    "inbox": {
+      "id": 96568,
+      "channel_type": "Channel::Whatsapp"
+    },
+    "meta": {
+      "sender": {
+        "id": 699428938
+      }
+    }
+  },
+  "sender": {
+    "type": "User"
+  },
+  "content_attributes": {
+    "sanitized_fixture": true
+  }
+}

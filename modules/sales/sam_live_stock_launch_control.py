@@ -2928,14 +2928,22 @@ def refresh_sam_live_stock_resolve_card_from_outgoing_event(
         "telegram_chat_id": _clean(active_card.get("telegram_chat_id"), 120),
         "telegram_message_id": _clean(active_card.get("telegram_message_id"), 120),
     }
+    required_persisted_card_keys = (
+        "conversation_id", "contact_id", "inbox_id", "review_event_id",
+        "customer_message_id", "telegram_chat_id", "telegram_message_id",
+    )
     if (
         active_status >= 400
         or active.get("success") is not True
         or not lifecycle_identity
-        or not all(required_card.values())
+        or not all(required_card[key] for key in required_persisted_card_keys)
         or any(required_card[key] != observed[key] for key in (
-            "account_id", "conversation_id", "contact_id", "inbox_id"
+            "conversation_id", "contact_id", "inbox_id"
         ))
+        or (
+            required_card["account_id"]
+            and required_card["account_id"] != observed["account_id"]
+        )
     ):
         return _resolve_refresh_failure("resolve_card_refresh_active_card_identity_mismatch")
 
@@ -2951,8 +2959,17 @@ def refresh_sam_live_stock_resolve_card_from_outgoing_event(
         or _clean(original_event.get("chatwoot_conversation_id"), 120) != observed["conversation_id"]
         or _clean(original_event.get("chatwoot_message_id"), 120) != required_card["customer_message_id"]
         or any(review_identity[key] != required_card[key] for key in (
-            "account_id", "conversation_id", "contact_id", "inbox_id", "customer_message_id"
+            "conversation_id", "contact_id", "inbox_id", "customer_message_id"
         ))
+        or (
+            review_identity["account_id"]
+            and review_identity["account_id"] != observed["account_id"]
+        )
+        or (
+            required_card["account_id"]
+            and review_identity["account_id"]
+            and required_card["account_id"] != review_identity["account_id"]
+        )
     ):
         return _resolve_refresh_failure("resolve_card_refresh_review_identity_mismatch")
 
@@ -2982,6 +2999,10 @@ def refresh_sam_live_stock_resolve_card_from_outgoing_event(
     }
     card = {
         **required_card,
+        # Historical cards may predate persisted account identity. The account
+        # is supplied only after the independent outgoing event and bounded
+        # authoritative chronology agree; configured allowlists are not used.
+        "account_id": observed["account_id"],
         "created_at": active_card.get("created_at"),
         "authoritative": True,
     }
@@ -3031,6 +3052,132 @@ def refresh_sam_live_stock_resolve_card_from_outgoing_event(
         "automatic_retry_prohibited": True,
         **AUTHORITY_FLAGS,
         "calls_telegram": True,
+    }
+
+
+def refresh_sam_live_stock_resolve_card_exact(
+    request_identity,
+    *,
+    environ=None,
+    active_card_loader=None,
+    review_event_loader=None,
+    chronology_loader=None,
+    evidence_recorder=None,
+    telegram_editor=None,
+):
+    """Owner-authenticated exact fallback sharing the event reconciliation service."""
+    request_identity = request_identity if isinstance(request_identity, dict) else {}
+    expected = {
+        "account_id": _clean(request_identity.get("account_id"), 120),
+        "conversation_id": _clean(request_identity.get("conversation_id"), 120),
+        "contact_id": _clean(request_identity.get("contact_id"), 120),
+        "inbox_id": _clean(request_identity.get("inbox_id"), 120),
+        "outgoing_message_id": _clean(request_identity.get("outgoing_message_id"), 120),
+        "review_event_id": _clean(request_identity.get("review_event_id"), 120),
+        "customer_message_id": _clean(
+            request_identity.get("customer_message_id"), 120
+        ),
+        "lifecycle_card_identity": _clean(
+            request_identity.get("lifecycle_card_identity"), 120
+        ),
+        "telegram_chat_id": _clean(request_identity.get("telegram_chat_id"), 120),
+        "telegram_message_id": _clean(
+            request_identity.get("telegram_message_id"), 120
+        ),
+    }
+    if not all(expected.values()):
+        return _resolve_refresh_failure(
+            "resolve_card_exact_refresh_identity_incomplete",
+            owner_authenticated_refresh=True,
+        )
+    authorized, status = _resolve_card_canary_authorized(expected, environ)
+    if not authorized:
+        return _resolve_refresh_failure(
+            status, attempted=False, owner_authenticated_refresh=True
+        )
+
+    loader = active_card_loader or get_active_sam_live_stock_owner_card
+    active, active_status = loader(expected["conversation_id"])
+    active_card = (
+        active.get("card")
+        if isinstance(active, dict) and isinstance(active.get("card"), dict)
+        else {}
+    )
+    active_exact = {
+        "conversation_id": _clean(active_card.get("conversation_id"), 120),
+        "contact_id": _clean(active_card.get("contact_id"), 120),
+        "inbox_id": _clean(active_card.get("inbox_id"), 120),
+        "review_event_id": _clean(active_card.get("review_event_id"), 120),
+        "customer_message_id": _clean(active_card.get("customer_message_id"), 120),
+        "telegram_chat_id": _clean(active_card.get("telegram_chat_id"), 120),
+        "telegram_message_id": _clean(active_card.get("telegram_message_id"), 120),
+        "lifecycle_card_identity": _clean(
+            active.get("lifecycle_card_identity") if isinstance(active, dict) else "",
+            120,
+        ),
+    }
+    if (
+        active_status >= 400
+        or active.get("success") is not True
+        or any(active_exact[key] != expected[key] for key in active_exact)
+    ):
+        return _resolve_refresh_failure(
+            "resolve_card_exact_refresh_active_card_mismatch",
+            owner_authenticated_refresh=True,
+        )
+
+    try:
+        chronology = (chronology_loader or _chatwoot_read_resolve_chronology)(
+            expected["conversation_id"], environ
+        )
+    except Exception:
+        return _resolve_refresh_failure(
+            "resolve_card_exact_refresh_chronology_unavailable",
+            owner_authenticated_refresh=True,
+        )
+    authoritative = {
+        "account_id": _clean(chronology.get("account_id"), 120),
+        "conversation_id": _clean(
+            chronology.get("id") or chronology.get("conversation_id"), 120
+        ),
+        "contact_id": _clean(chronology.get("contact_id"), 120),
+        "inbox_id": _clean(chronology.get("inbox_id"), 120),
+    }
+    if (
+        any(authoritative[key] != expected[key] for key in authoritative)
+        or _exact_later_outgoing_message_id(
+            chronology.get("messages"), _clean(active_card.get("customer_message_id"), 120)
+        )
+        != expected["outgoing_message_id"]
+    ):
+        return _resolve_refresh_failure(
+            "resolve_card_exact_refresh_chronology_mismatch",
+            owner_authenticated_refresh=True,
+        )
+
+    result = refresh_sam_live_stock_resolve_card_from_outgoing_event(
+        {
+            **authoritative,
+            "message_id": expected["outgoing_message_id"],
+            "public": True,
+            "identity_conflicting": False,
+        },
+        environ=environ,
+        active_card_loader=lambda _conversation_id: (active, active_status),
+        review_event_loader=review_event_loader,
+        chronology_loader=lambda _conversation_id, _source: chronology,
+        evidence_recorder=evidence_recorder,
+        telegram_editor=telegram_editor,
+    )
+    return {
+        **result,
+        "owner_authenticated_refresh": True,
+        "bounded_chronology_reads": 1,
+        "reads_chatwoot": True,
+        "chatwoot_writes": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "changes_conversation_ownership": False,
     }
 
 

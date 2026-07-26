@@ -114,6 +114,7 @@ from modules.sales.sam_live_stock_launch_control import (
     handle_sam_live_stock_delivery_status_webhook,
     list_sam_live_stock_open_intakes,
     process_sam_live_stock_owner_callback,
+    refresh_sam_live_stock_resolve_card_exact,
     refresh_sam_live_stock_resolve_card_from_outgoing_event,
     record_sam_live_stock_review_event,
     sam_live_stock_launch_control_policy,
@@ -690,6 +691,29 @@ def sam_live_stock_chatwoot_inbound():
     return jsonify(result), status_code
 
 
+@sales_bp.route(
+    "/sales/channels/chatwoot/sam-live-stock/resolve-card-refresh",
+    methods=["POST"],
+)
+def sam_live_stock_resolve_card_refresh():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result = refresh_sam_live_stock_resolve_card_exact(
+        request.get_json(silent=True) or {}
+    )
+    if result.get("success") is True:
+        status_code = 200
+    elif result.get("status") in {
+        "resolve_card_exact_refresh_chronology_unavailable",
+        "resolve_card_refresh_chronology_unavailable",
+    }:
+        status_code = 503
+    else:
+        status_code = 409
+    return jsonify(result), status_code
+
+
 def _claim_sam_live_stock_routine_delivery(inbound, decision, review):
     review_event = build_sam_live_stock_review_event(
         inbound, decision.get("facts") or {}, decision, review
@@ -757,6 +781,11 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
     inbound = parse_sam_live_stock_chatwoot_inbound(payload)
     if inbound.get("message_type") != "outgoing" or not inbound.get("content") or not inbound.get("conversation_id"):
         return {"attempted": False, "captured": False, "status": "not_outgoing_owner_reply"}
+    event_name = str((payload or {}).get("event") or "").strip().lower()
+    if event_name not in {"", "message_created"}:
+        return _owner_reply_capture_skipped(
+            "outgoing_owner_reply_event_not_supported", inbound
+        )
     if _truthy_payload_value((payload or {}).get("private")):
         return _owner_reply_capture_skipped("private_note_skipped", inbound)
     if _is_sam_live_stock_send_echo(payload):
