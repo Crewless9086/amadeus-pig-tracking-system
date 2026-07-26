@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import time
 from datetime import datetime, timezone
@@ -2724,6 +2725,7 @@ def build_sam_live_stock_resolve_card_candidate(
         conversation.get("messages"),
         card.get("customer_message_id"),
     )
+    card_created_at = _canonical_candidate_timestamp(card.get("created_at"))
     if (
         not generation
         or not lifecycle_identity
@@ -2736,6 +2738,13 @@ def build_sam_live_stock_resolve_card_candidate(
         return {
             "success": False,
             "status": "resolve_card_candidate_identity_incomplete",
+            "candidate": {},
+            **AUTHORITY_FLAGS,
+        }
+    if card_created_at is None:
+        return {
+            "success": False,
+            "status": "resolve_card_candidate_timestamp_invalid",
             "candidate": {},
             **AUTHORITY_FLAGS,
         }
@@ -2770,13 +2779,20 @@ def build_sam_live_stock_resolve_card_candidate(
         "telegram_message_id": _clean(row.get("telegram_message_id"), 120),
         "customer_message_id": _clean(row.get("customer_message_id"), 120),
         "outgoing_message_id": outgoing_message_id,
-        "card_created_at": card.get("created_at"),
+        "card_created_at": card_created_at,
         "ownership": _clean(plan.get("ownership"), 40),
         "human_ownership_proven": False,
         "business_lane": _clean(plan.get("business_lane"), 80),
         "exact_action_required": True,
     }
     candidate["action_identity"] = _resolve_card_action_identity(candidate)
+    if not _is_json_safe_primitive_tree(candidate):
+        return {
+            "success": False,
+            "status": "resolve_card_candidate_json_unsafe",
+            "candidate": {},
+            **AUTHORITY_FLAGS,
+        }
     return {
         "success": True,
         "status": "resolve_card_candidate_ready",
@@ -3598,6 +3614,45 @@ def _timestamp_sort_value(value):
         return parsed.astimezone(timezone.utc).timestamp()
     except Exception:
         return None
+
+
+def _canonical_candidate_timestamp(value):
+    try:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, (int, float)):
+            if not math.isfinite(float(value)):
+                return None
+            parsed = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text or len(text) > 100:
+                return None
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        else:
+            return None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except (OverflowError, TypeError, ValueError):
+        return None
+
+
+def _is_json_safe_primitive_tree(value):
+    if value is None or isinstance(value, (str, bool, int)):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, list):
+        return all(_is_json_safe_primitive_tree(item) for item in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str) and _is_json_safe_primitive_tree(item)
+            for key, item in value.items()
+        )
+    return False
 
 
 def _card_reconciliation_row(card, lane, classification, action):
