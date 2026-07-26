@@ -2164,6 +2164,66 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(response.get_json()["scorecard"]["auto_send_enabled"])
         scorecard.assert_called_once_with(limit="200")
 
+    def test_response_class_authority_visibility_is_owner_read_only_and_sanitized(self):
+        with patch.object(
+            sales_transaction_routes, "require_owner_read_access", return_value=None
+        ), patch.object(
+            sales_transaction_routes,
+            "load_canonical_evidence",
+            return_value=({"success": True, "events": []}, 200),
+        ), patch.object(
+            sales_transaction_routes,
+            "list_latest_authority_events",
+            return_value=({"success": True, "events": []}, 200),
+        ):
+            response = self.client.get("/api/sales/live-stock-learning/authority")
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["contains_customer_content"])
+        self.assertFalse(payload["sends_customer_message"])
+        self.assertFalse(payload["charlie"]["may_promote"])
+
+    def test_response_class_authority_decision_requires_owner_admin_and_sends_nothing(self):
+        with patch.object(
+            sales_transaction_routes, "require_owner_admin_access", return_value=None
+        ), patch.object(
+            sales_transaction_routes,
+            "append_authority_decision",
+            return_value=({
+                "success": True,
+                "status": "authority_event_recorded",
+                "sends_customer_message": False,
+                "mutates_business_state": False,
+            }, 201),
+        ) as decide:
+            response = self.client.post(
+                "/api/sales/live-stock-learning/authority/decision",
+                json={
+                    "response_class": "greeting",
+                    "decision": "canary_authorized",
+                    "reason": "owner canary",
+                    "authorized_envelope": {"response_classes": ["greeting"]},
+                },
+            )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.get_json()["sends_customer_message"])
+        decide.assert_called_once()
+
+    def test_owner_read_session_cannot_append_authority_decision(self):
+        with patch.object(
+            sales_transaction_routes,
+            "require_owner_admin_access",
+            return_value=({"success": False, "status": "owner_admin_required"}, 403),
+        ), patch.object(
+            sales_transaction_routes, "append_authority_decision"
+        ) as decide:
+            response = self.client.post(
+                "/api/sales/live-stock-learning/authority/decision",
+                json={"response_class": "greeting", "decision": "candidate"},
+            )
+        self.assertEqual(response.status_code, 403)
+        decide.assert_not_called()
+
     def test_sam_meat_backend_inbound_route_returns_json_for_unhandled_runtime_error(self):
         with patch.object(
             sales_transaction_routes,

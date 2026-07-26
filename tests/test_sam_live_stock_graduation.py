@@ -14,12 +14,15 @@ class SamLiveStockGraduationTests(unittest.TestCase):
             "success": True,
             "scorecard": {
                 "graduation": {
+                    "version": "sam_response_class_graduation_v2",
                     "classes": {
                         "collection_timing": {
-                            "events": 25,
-                            "consecutive_safe_accepted": 21,
-                            "unchanged_rate": 0.84,
-                            "narrow_auto_send_candidate": True,
+                            "decision": "candidate",
+                            "evidence": {
+                                "sample_count": 30,
+                                "owner_approval_rate": 0.96,
+                                "provider_delivered_read_rate": 1.0,
+                            },
                         }
                     }
                 }
@@ -44,6 +47,10 @@ class SamLiveStockGraduationTests(unittest.TestCase):
         self.assertEqual(result["notification_count"], 1)
         self.assertEqual(len(sent), 1)
         self.assertEqual(recorded[0]["captured_facts"]["learning_kind"], "graduation_notification")
+        self.assertEqual(
+            recorded[0]["captured_facts"]["evaluator_version"],
+            "sam_response_class_graduation_v2",
+        )
         self.assertFalse(result["auto_send_enabled"])
         self.assertFalse(result["sends_customer_message"])
 
