@@ -47,6 +47,62 @@ def make_ownership_record(process, runner_generation, mission_id, execution_id, 
     }
 
 
+def make_process_tree_record(root_record, member_records, runner_generation):
+    """Persist one logical launcher/interpreter tree without raw commands."""
+    root = dict(root_record) if isinstance(root_record, dict) else {}
+    members = [
+        dict(item) for item in (member_records or [])
+        if isinstance(item, dict) and item.get("pid")
+    ]
+    if root and not any(item.get("pid") == root.get("pid") for item in members):
+        members.insert(0, root)
+    return {
+        "version": "charlie_process_tree_v1",
+        "runner_generation": str(runner_generation or ""),
+        "root_pid": root.get("pid"),
+        "root": root,
+        "members": members,
+    }
+
+
+def validate_process_tree(tree, expected, inspect_process, current_pid=None, require_descendant=False):
+    """Validate every identity and bind every interpreter to the launcher."""
+    if not isinstance(tree, dict) or tree.get("version") != "charlie_process_tree_v1":
+        return _deny("process_tree_metadata_missing")
+    root = tree.get("root") if isinstance(tree.get("root"), dict) else {}
+    members = tree.get("members") if isinstance(tree.get("members"), list) else []
+    if not root or not members:
+        return _deny("process_tree_metadata_incomplete")
+    root_decision = validate_termination(root, expected, inspect_process, current_pid=current_pid)
+    if not root_decision["authorized"]:
+        return _deny(f"root_{root_decision['reason']}")
+    root_pid = int(root["pid"])
+    validated = []
+    for member in members:
+        decision = validate_termination(member, expected, inspect_process, current_pid=current_pid)
+        if not decision["authorized"]:
+            return _deny(f"member_{member.get('pid')}_{decision['reason']}")
+        current = inspect_process(int(member["pid"]))
+        if int(member["pid"]) != root_pid:
+            ancestry = current.get("ancestry") if isinstance(current, dict) else []
+            ancestor_pids = {
+                int(item.get("pid") or -1)
+                for item in ancestry or []
+                if isinstance(item, dict)
+            }
+            if root_pid not in ancestor_pids:
+                return _deny(f"member_{member.get('pid')}_not_descendant_of_root")
+        validated.append(int(member["pid"]))
+    if require_descendant and len(set(validated)) < 2:
+        return _deny("interpreter_descendant_missing")
+    return {
+        "authorized": True,
+        "reason": "logical_process_tree_identity_match",
+        "pid": root_pid,
+        "member_pids": sorted(set(validated)),
+    }
+
+
 def validate_termination(record, expected, inspect_process, current_pid=None):
     """Authorize only a complete, exact, non-interactive disposable identity."""
     if not isinstance(record, dict):

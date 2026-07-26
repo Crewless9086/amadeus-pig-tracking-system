@@ -22,7 +22,13 @@ from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
 from modules.charlie.runner_control import RUNNER_DIR
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
-from modules.charlie.process_ownership import inspect_process, make_ownership_record, process_termination_enabled, validate_termination
+from modules.charlie.process_ownership import (
+    inspect_process,
+    make_ownership_record,
+    make_process_tree_record,
+    process_termination_enabled,
+    validate_termination,
+)
 from modules.charlie.secret_redaction import redact_tree_in_place
 EXECUTION_ROOT = Path(env_value("CORE_EXECUTION_ROOT") or (RUNNER_DIR / "core-execution-current")).resolve()
 SUPERVISOR_PATH = RUNNER_DIR / "supervisor.json"
@@ -228,6 +234,9 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
         )
         _write_status(
             "runner_started", child_pid=child.pid, child_identity=child_identity,
+            process_tree_identity=make_process_tree_record(
+                child_identity, [child_identity], generation
+            ),
             restart_count=restart_count, generation=generation,
         )
         return_code = child.wait()
@@ -610,12 +619,43 @@ def _pid_alive(pid, runner=subprocess.run):
 
 
 def _write_status(status, **extra):
+    try:
+        previous = json.loads(SUPERVISOR_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        previous = {}
     payload = {
         "pid": os.getpid(),
         "status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         **extra,
     }
+    for key in (
+        "child_identity",
+        "process_tree_identity",
+        "stop_evidence",
+        "supervisor_tree_identity",
+    ):
+        if key not in payload and key in previous:
+            payload[key] = previous[key]
+    generation = str(payload.get("generation") or "").strip()
+    if generation and "supervisor_tree_identity" not in payload:
+        current = inspect_process(os.getpid())
+        interpreter = make_ownership_record(
+            current, generation, "charlie-control", generation, "charlie_runner"
+        )
+        ancestry = current.get("ancestry") if isinstance(current, dict) else []
+        launcher = make_ownership_record(
+            ancestry[0] if ancestry and isinstance(ancestry[0], dict) else {},
+            generation,
+            "charlie-control",
+            generation,
+            "charlie_runner",
+        )
+        payload["supervisor_tree_identity"] = make_process_tree_record(
+            launcher or interpreter,
+            [item for item in (launcher, interpreter) if item],
+            generation,
+        )
     SUPERVISOR_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 

@@ -15,7 +15,14 @@ from modules.charlie import (
     validated_test_control_root,
 )
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
-from modules.charlie.process_ownership import inspect_process, process_termination_enabled, validate_termination
+from modules.charlie.process_ownership import (
+    inspect_process,
+    make_ownership_record,
+    make_process_tree_record,
+    process_termination_enabled,
+    validate_process_tree,
+    validate_termination,
+)
 from modules.charlie.secret_redaction import redact_payload
 
 
@@ -245,6 +252,17 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         elif key in {"queue_health", "executive", "last_progress_at"} and key in previous:
             payload[key] = previous.get(key)
     payload = redact_payload(payload)
+    generation = str(payload.get("supervisor_generation") or "")
+    if generation:
+        identity = make_ownership_record(
+            inspect_process(os.getpid()),
+            generation,
+            "charlie-control",
+            generation,
+            "charlie_runner",
+        )
+        if identity:
+            payload["process_identity"] = identity
     heartbeat_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 
@@ -336,25 +354,115 @@ def stop_runner():
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
     SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
     supervisor = _read_json(SUPERVISOR_PATH)
-    records = [supervisor.get("child_identity")]
-    records = [record for record in records if isinstance(record, dict)]
-    if not records:
+    root = supervisor.get("child_identity")
+    heartbeat = _read_json(HEARTBEAT_PATH)
+    interpreter = heartbeat.get("process_identity")
+    if (not isinstance(root, dict) or not root.get("pid")) and isinstance(interpreter, dict):
+        current = inspect_process(interpreter.get("pid"))
+        ancestry = current.get("ancestry") if isinstance(current, dict) else []
+        launcher_pid = int(supervisor.get("child_pid") or 0)
+        launcher = next(
+            (
+                item for item in ancestry
+                if isinstance(item, dict)
+                and int(item.get("pid") or -1) == launcher_pid
+            ),
+            None,
+        )
+        if launcher:
+            root = make_ownership_record(
+                launcher,
+                interpreter.get("runner_generation"),
+                interpreter.get("mission_id"),
+                interpreter.get("execution_id"),
+                interpreter.get("ownership_type"),
+            )
+    members = [
+        item for item in (root, interpreter)
+        if isinstance(item, dict) and item.get("pid")
+    ]
+    tree = (
+        make_process_tree_record(root, members, supervisor.get("generation"))
+        if isinstance(root, dict) else {}
+    )
+    if not tree:
         if status.get("orphan_processes"):
-            return {"success": False, "status": "runner_process_ownership_not_proven", "pids": []}, 409
+            result = {
+                "success": False,
+                "status": "runner_process_ownership_not_proven",
+                "reason": "process_tree_metadata_missing",
+                "pids": [],
+            }
+            _write_stop_evidence(supervisor, tree, result)
+            return result, 409
+        prior = supervisor.get("stop_evidence") if isinstance(supervisor.get("stop_evidence"), dict) else {}
+        if prior.get("status") in {"runner_stop_requested", "runner_already_stopped"}:
+            return {"success": True, "status": "runner_already_stopped", "stop_evidence": prior}, 200
         return {"success": True, "status": "runner_not_started", "runner": status}, 200
+    expected = {
+        field: root.get(field)
+        for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
+    }
+    decision = validate_process_tree(
+        tree,
+        expected,
+        inspect_process,
+        require_descendant=os.name == "nt",
+    )
+    if not decision["authorized"]:
+        result = {
+            "success": False,
+            "status": "runner_process_ownership_not_proven",
+            "reason": decision["reason"],
+            "pids": [],
+        }
+        _write_stop_evidence(supervisor, tree, result)
+        return result, 409
     stopped = []
+    termination = {}
     try:
-        for record in records:
-            expected = {field: record.get(field) for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")}
-            decision = _stop_process_tree(record, expected)
-            if isinstance(decision, dict) and decision.get("terminated") and str(record.get("pid") or "").isdigit():
-                stopped.append(int(record["pid"]))
+        termination = _stop_process_tree(root, expected)
+        if termination.get("terminated"):
+            stopped.append(int(root["pid"]))
     except OSError:
         if not stopped:
             return {"success": True, "status": "runner_already_stopped", "runner": status}, 200
     if not stopped:
-        return {"success": False, "status": "runner_process_ownership_not_proven", "pids": []}, 409
-    return {"success": True, "status": "runner_stop_requested", "pids": stopped}, 200
+        result = {
+            "success": False,
+            "status": "runner_process_ownership_not_proven",
+            "reason": termination.get("reason", "termination_not_confirmed"),
+            "pids": [],
+        }
+        _write_stop_evidence(supervisor, tree, result)
+        return result, 409
+    result = {
+        "success": True,
+        "status": "runner_stop_requested",
+        "pids": stopped,
+        "logical_process_tree": decision,
+    }
+    _write_stop_evidence(supervisor, tree, result)
+    return result, 200
+
+
+def _write_stop_evidence(supervisor, tree, result):
+    payload = dict(supervisor) if isinstance(supervisor, dict) else {}
+    payload["process_tree_identity"] = tree
+    payload["stop_evidence"] = {
+        "version": "charlie_governed_stop_evidence_v1",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "stop_marker_present": SUPERVISOR_STOP_PATH.exists(),
+        "status": result.get("status"),
+        "success": bool(result.get("success")),
+        "reason": result.get("reason") or (
+            (result.get("logical_process_tree") or {}).get("reason")
+        ),
+        "target_pids": result.get("pids") or [],
+        "process_tree_identity": tree,
+    }
+    SUPERVISOR_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload["stop_evidence"]
 
 
 def _stop_process_tree(ownership_record, expected_ownership=None, inspector=inspect_process):
