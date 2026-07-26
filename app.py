@@ -165,6 +165,19 @@ def beacon_weekly_owner_review_decision(packet_id):
     if guard:
         return guard
     payload = request.get_json(silent=True) or {}
+    if "owner_identity" in payload:
+        return jsonify({
+            "success": False,
+            "status": "client_owner_identity_prohibited",
+            "publication_authority_status": "publication_not_authorized",
+            "publish": False,
+            "meta_call": False,
+            "upload": False,
+            "scheduled": False,
+            "send": False,
+            "spend": False,
+            "business_data_mutation": False,
+        }), 400
     if payload.get("packet_id") != packet_id:
         return jsonify({
             "success": False,

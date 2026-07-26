@@ -101,6 +101,35 @@ class OwnerAccessTests(unittest.TestCase):
                 principal = owner_session["owner_access"]["principal_id"]
         self.assertTrue(principal.startswith("owner-admin:"))
         self.assertNotEqual(principal, "owner-admin:local-development")
+        self.assertNotIn(ADMIN_TOKEN, principal)
+        self.assertNotIn(SESSION_SECRET, principal)
+
+    def test_authenticated_admin_principal_is_stable_across_sessions(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(ADMIN_TOKEN)
+            with self.client.session_transaction() as owner_session:
+                first = owner_session["owner_access"]["principal_id"]
+            self.client.post(
+                "/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"}
+            )
+            self._login(ADMIN_TOKEN)
+            with self.client.session_transaction() as owner_session:
+                second = owner_session["owner_access"]["principal_id"]
+        self.assertEqual(first, second)
+
+    def test_legacy_admin_session_without_principal_is_not_valid(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            with self.client.session_transaction() as owner_session:
+                owner_session["owner_access"] = {
+                    "role": "admin",
+                    "created_at": "2026-07-26T00:00:00+00:00",
+                }
+            status = self.client.get(
+                "/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"}
+            )
+        self.assertIn(b"Logged in:</strong> no", status.data)
 
     def test_invalid_token_denied(self):
         with patch.dict(os.environ, owner_env(), clear=False):

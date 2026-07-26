@@ -21,6 +21,15 @@ FUNCTION = "public.prevent_beacon_weekly_review_decision_mutation()"
 @unittest.skipUnless(DATABASE_URL, "disposable PostgreSQL URL is required")
 class WeeklyOwnerReviewDecisionPostgresTests(unittest.TestCase):
     def test_supabase_roles_and_server_boundary_are_fail_closed(self):
+        failed, status = record_weekly_owner_review_decision(
+            exact_payload(), owner_identity="", database_url=DATABASE_URL
+        )
+        self.assertEqual((status, failed["status"]), (403, "owner_identity_required"))
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f"select count(*) from {TABLE}")
+                self.assertEqual(cursor.fetchone()[0], 0)
+
         with psycopg.connect(DATABASE_URL) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
