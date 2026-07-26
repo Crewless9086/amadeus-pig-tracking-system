@@ -2872,6 +2872,12 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertEqual(result["bounded_chronology_reads"], 1)
         self.assertEqual(reads, ["read"])
         self.assertEqual(records[0]["event_source"], launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE)
+        self.assertEqual(records[1]["event_source"], launch.RESOLVE_CARD_LIFECYCLE_EVENT_SOURCE)
+        self.assertEqual(
+            records[1]["review_json"]["resolve_card_only"]["state"],
+            "refreshed",
+        )
+        self.assertTrue(result["refresh_lifecycle"]["created"])
         self.assertEqual(len(edits), 1)
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["calls_chatwoot"])
