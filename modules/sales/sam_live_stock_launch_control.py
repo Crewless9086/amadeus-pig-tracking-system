@@ -4155,6 +4155,11 @@ def _chatwoot_read_resolve_chronology(conversation_id, environ=None):
         if not isinstance(message, dict):
             raise RuntimeError("chatwoot_resolve_message_invalid")
         raw_type = message.get("message_type")
+        # Chatwoot includes system/activity lifecycle rows in the canonical
+        # conversation message list. They are neither customer inbound nor
+        # public owner replies and cannot establish or invalidate chronology.
+        if str(raw_type) in {"2", "activity"}:
+            continue
         if str(raw_type) not in {"0", "1", "incoming", "outgoing"}:
             raise RuntimeError("chatwoot_resolve_message_direction_invalid")
         if message.get("private") is True:

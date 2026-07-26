@@ -4,6 +4,7 @@ import types
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Lock
 from unittest.mock import patch
 
@@ -2897,6 +2898,53 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
         self.assertTrue(replay["success"])
         self.assertEqual(replay["status"], "resolve_card_refresh_replay_withheld")
         self.assertFalse(replay["card_refreshed"])
+
+    def test_resolve_chronology_accepts_production_activity_rows(self):
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "sam_chatwoot_outgoing_2021_sanitized.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode()
+
+        responses = iter([
+            Response(fixture["conversation_snapshot"]),
+            Response(fixture["message_list"]),
+        ])
+        with patch.object(
+            launch.urllib_request,
+            "urlopen",
+            side_effect=lambda *_args, **_kwargs: next(responses),
+        ):
+            chronology = launch._chatwoot_read_resolve_chronology(
+                "2021",
+                {
+                    launch.CHATWOOT_ACCOUNT_ID_ENV: "147387",
+                    launch.CHATWOOT_TOKEN_ENV: "configured-token",
+                },
+            )
+
+        self.assertEqual(
+            [row["id"] for row in chronology["messages"]],
+            [760211638, 760224858],
+        )
+        self.assertEqual(
+            [row["message_type"] for row in chronology["messages"]],
+            ["incoming", "outgoing"],
+        )
 
     def test_exact_owner_refresh_rejects_wrong_card_or_chronology_without_side_effect(self):
         conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
