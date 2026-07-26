@@ -1316,6 +1316,20 @@ class CharlieBuildRelayTests(unittest.TestCase):
         self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["mission_id"], "CHILD")
         self.assertEqual(parent["metadata"]["mission_family"]["children"][0]["finding_family"], "input_validation")
 
+    def test_compact_owner_summary_preserves_supersession_relationship(self):
+        supersession = {
+            "status": "current_contract_replacement",
+            "reason": "legacy_duplicate_not_reusable",
+            "supersedes_mission_id": "LEGACY-1",
+            "replacement_mission_id": "REPLACEMENT-1",
+        }
+        summary = charlie_routes._mission_dashboard_summary({
+            "mission_id": "REPLACEMENT-1",
+            "status": "new",
+            "metadata": {"supersession": supersession},
+        })
+        self.assertEqual(summary["metadata"]["supersession"], supersession)
+
     @patch("modules.charlie.routes.require_owner_read_access", return_value=None)
     @patch("modules.charlie.routes.get_mission")
     def test_core_readiness_route_returns_stage_percentages(self, get_mission, _owner_access):

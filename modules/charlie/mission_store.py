@@ -226,19 +226,49 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
                 duplicate = _find_open_duplicate_mission(cursor, params)
+                replacement = None
                 if duplicate:
-                    _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
-                        "source": params["source"],
-                        "duplicate_title": params["title"],
-                    })
-                    return {
-                        "stored": False,
-                        "configured": True,
-                        "status": "duplicate_open_mission",
-                        "mission_id": duplicate["mission_id"],
-                        "existing_status": duplicate["status"],
-                        "title": duplicate["title"],
-                    }, 200
+                    duplicate_contract = _duplicate_contract_state(duplicate)
+                    if duplicate_contract["status"] == "current_contract_reusable":
+                        _insert_event(cursor, duplicate["mission_id"], "created", "Duplicate mission intake suppressed.", {
+                            "source": params["source"],
+                            "duplicate_title": params["title"],
+                        })
+                        return {
+                            "stored": False,
+                            "configured": True,
+                            "status": "duplicate_open_mission",
+                            "mission_id": duplicate["mission_id"],
+                            "existing_status": duplicate["status"],
+                            "title": duplicate["title"],
+                        }, 200
+                    if duplicate_contract["status"] == "legacy_duplicate_active":
+                        return {
+                            "stored": False,
+                            "configured": True,
+                            "status": "legacy_duplicate_active_not_superseded",
+                            "reason": duplicate_contract["reason"],
+                            "mission_id": duplicate["mission_id"],
+                            "existing_status": duplicate["status"],
+                        }, 409
+                    if duplicate_contract["status"] != "legacy_duplicate_not_reusable":
+                        return {
+                            "stored": False,
+                            "configured": True,
+                            "status": duplicate_contract["status"],
+                            "reason": duplicate_contract["reason"],
+                            "mission_id": duplicate["mission_id"],
+                        }, 409
+                    replacement = _legacy_replacement_params(params, duplicate)
+                    if not replacement.get("valid"):
+                        return {
+                            "stored": False,
+                            "configured": True,
+                            "status": "legacy_duplicate_replacement_blocked",
+                            "reason": replacement.get("reason"),
+                            "mission_id": duplicate["mission_id"],
+                        }, 409
+                    params = replacement["params"]
                 cursor.execute(
                     """
                     insert into public.charlie_missions (
@@ -286,6 +316,35 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                 )
                 inserted = cursor.fetchone()
                 if not inserted:
+                    if replacement:
+                        cursor.execute(
+                            """select metadata_json from public.charlie_missions
+                               where mission_id = %(mission_id)s for update""",
+                            {"mission_id": params["mission_id"]},
+                        )
+                        rows = cursor.fetchall()
+                        existing_metadata = (
+                            rows[0][0]
+                            if rows and isinstance(rows[0][0], dict)
+                            else {}
+                        )
+                        if not _replacement_metadata_matches(
+                            existing_metadata,
+                            replacement["supersedes_mission_id"],
+                            replacement["replacement_identity"],
+                        ):
+                            raise ValueError("legacy_replacement_identity_conflict")
+                        return {
+                            "stored": False,
+                            "configured": True,
+                            "status": "legacy_duplicate_replacement_reused",
+                            "classification": "legacy_duplicate_not_reusable",
+                            "mission_id": params["mission_id"],
+                            "supersedes_mission_id": replacement["supersedes_mission_id"],
+                            "orchestration_generation": (
+                                existing_metadata.get("orchestration") or {}
+                            ).get("generation_identity"),
+                        }, 200
                     return {
                         "stored": False, "configured": True, "status": "duplicate_open_mission",
                         "mission_id": params["mission_id"], "existing_status": "new", "title": params["title"],
@@ -322,6 +381,11 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                     "telegram_user_id": params["telegram_user_id"],
                     "orchestration_generation": expected_binding.get("generation_identity"),
                     "orchestration_binding_identity": expected_binding.get("identity"),
+                    **({
+                        "classification": "legacy_duplicate_not_reusable",
+                        "supersedes_mission_id": replacement["supersedes_mission_id"],
+                        "replacement_identity": replacement["replacement_identity"],
+                    } if replacement else {}),
                 })
     except Exception as exc:
         return {
@@ -334,8 +398,15 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     return {
         "stored": True,
         "configured": True,
-        "status": "ok",
+        "status": "legacy_duplicate_replacement_created" if replacement else "ok",
         "mission_id": params["mission_id"],
+        **({
+            "classification": "legacy_duplicate_not_reusable",
+            "supersedes_mission_id": replacement["supersedes_mission_id"],
+            "orchestration_generation": (
+                json.loads(params["metadata_json"]).get("orchestration") or {}
+            ).get("generation_identity"),
+        } if replacement else {}),
     }, 201
 
 
@@ -1920,6 +1991,7 @@ def build_mission_review_packet(mission):
         "charlie_core": core,
         "orchestration": metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {},
         "orchestration_binding": metadata.get("orchestration_binding") if isinstance(metadata.get("orchestration_binding"), dict) else {},
+        "supersession": metadata.get("supersession") if isinstance(metadata.get("supersession"), dict) else {},
         "core_readiness": core_readiness,
         "review_board": review_board,
         "income_stream_readiness": income_stream_readiness,
@@ -2280,13 +2352,143 @@ def _find_open_duplicate_mission(cursor, params):
         existing_title = _normalize_mission_text(row[2])
         existing_raw = _normalize_mission_text(row[3])
         if new_raw and existing_raw == new_raw:
-            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+            return _duplicate_row(row)
         if new_title and existing_title == new_title and len(new_title) >= 18:
-            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+            return _duplicate_row(row)
         existing_metadata = row[4] if len(row) > 4 and isinstance(row[4], dict) else {}
         if new_family_key and _mission_family_scope_key(existing_metadata) == new_family_key:
-            return {"mission_id": row[0], "status": row[1], "title": row[2]}
+            return _duplicate_row(row)
     return None
+
+
+def _duplicate_row(row):
+    return {
+        "mission_id": row[0],
+        "status": row[1],
+        "title": row[2],
+        "raw_text": row[3] if len(row) > 3 else "",
+        "metadata": row[4] if len(row) > 4 and isinstance(row[4], dict) else {},
+    }
+
+
+def _duplicate_contract_state(duplicate, now=None):
+    metadata = duplicate.get("metadata") if isinstance(duplicate.get("metadata"), dict) else {}
+    packet = metadata.get("orchestration")
+    workflow = metadata.get("agent_workflow")
+    expected_binding = metadata.get("orchestration_binding")
+    if isinstance(packet, dict) or isinstance(expected_binding, dict):
+        binding = validate_orchestration_binding(packet, workflow)
+        if (
+            binding.get("valid")
+            and isinstance(expected_binding, dict)
+            and expected_binding.get("identity") == binding.get("identity")
+            and expected_binding.get("generation_identity") == packet.get("generation_identity")
+        ):
+            return {"status": "current_contract_reusable", "reason": "durable_current_contract"}
+        return {"status": "duplicate_contract_invalid", "reason": binding.get("reason") or "binding_invalid"}
+    if _duplicate_has_active_lease(metadata, now=now):
+        return {"status": "legacy_duplicate_active", "reason": "active_execution_lease"}
+    return {
+        "status": "legacy_duplicate_not_reusable",
+        "reason": "required_orchestration_packet_and_binding_missing",
+    }
+
+
+def _duplicate_has_active_lease(metadata, now=None):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    lease = metadata.get("execution_lease") if isinstance(metadata.get("execution_lease"), dict) else {}
+    expires_at = str(lease.get("expires_at") or "").strip()
+    if not expires_at:
+        return False
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    observed = now or datetime.now(timezone.utc)
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=timezone.utc)
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    return expiry > observed
+
+
+def _legacy_replacement_params(params, duplicate):
+    metadata = json.loads(params["metadata_json"])
+    packet = metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {}
+    binding = metadata.get("orchestration_binding") if isinstance(metadata.get("orchestration_binding"), dict) else {}
+    source_revision = _clean_text(
+        os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("RENDER_COMMIT")
+        or os.getenv("CORE_SOURCE_COMMIT"),
+        40,
+    ).lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", source_revision):
+        return {"valid": False, "reason": "current_source_revision_unavailable"}
+    generation = str(packet.get("generation_identity") or "")
+    if (
+        not generation
+        or binding.get("generation_identity") != generation
+        or not binding.get("validated")
+    ):
+        return {"valid": False, "reason": "replacement_orchestration_binding_invalid"}
+    supersedes_mission_id = duplicate["mission_id"]
+    business_identity = hashlib.sha256(
+        _normalize_mission_text(duplicate.get("raw_text") or params["raw_text"]).encode("utf-8")
+    ).hexdigest()[:24]
+    replacement_identity = hashlib.sha256(
+        f"{supersedes_mission_id}|{business_identity}|{generation}".encode("utf-8")
+    ).hexdigest()[:24]
+    replacement_mission_id = "CHARLIE-REPLACEMENT-" + replacement_identity.upper()
+    existing_family = (
+        duplicate.get("metadata", {}).get("mission_family")
+        if isinstance(duplicate.get("metadata", {}).get("mission_family"), dict)
+        else {}
+    )
+    metadata["mission_family"] = {
+        "root_mission_id": existing_family.get("root_mission_id") or supersedes_mission_id,
+        "parent_mission_id": supersedes_mission_id,
+        "relationship": "legacy_contract_supersession",
+        "business_identity": business_identity,
+        "finding_family": existing_family.get("finding_family") or "legacy_duplicate_intake",
+    }
+    metadata["supersession"] = {
+        "version": "charlie_legacy_duplicate_supersession_v1",
+        "status": "current_contract_replacement",
+        "reason": "legacy_duplicate_not_reusable",
+        "supersedes_mission_id": supersedes_mission_id,
+        "replacement_mission_id": replacement_mission_id,
+        "replacement_identity": replacement_identity,
+        "business_identity": business_identity,
+        "source_revision": source_revision,
+        "candidate_revision": source_revision,
+        "orchestration_generation": generation,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    replacement_params = dict(params)
+    replacement_params["mission_id"] = replacement_mission_id
+    replacement_params["metadata_json"] = json.dumps(metadata)
+    return {
+        "valid": True,
+        "params": replacement_params,
+        "supersedes_mission_id": supersedes_mission_id,
+        "replacement_identity": replacement_identity,
+    }
+
+
+def _replacement_metadata_matches(metadata, supersedes_mission_id, replacement_identity):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    supersession = metadata.get("supersession") if isinstance(metadata.get("supersession"), dict) else {}
+    binding = validate_orchestration_binding(
+        metadata.get("orchestration"),
+        metadata.get("agent_workflow"),
+    )
+    return bool(
+        binding.get("valid")
+        and supersession.get("supersedes_mission_id") == supersedes_mission_id
+        and supersession.get("replacement_identity") == replacement_identity
+        and supersession.get("orchestration_generation")
+        == (metadata.get("orchestration") or {}).get("generation_identity")
+    )
 
 
 def _mission_family_scope_key(metadata):

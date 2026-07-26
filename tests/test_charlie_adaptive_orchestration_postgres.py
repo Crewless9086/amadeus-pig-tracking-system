@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import uuid
+from unittest.mock import patch
 
 import psycopg
 
@@ -198,6 +199,125 @@ class CharlieAdaptiveOrchestrationPostgresTests(unittest.TestCase):
         self.assertEqual(row["tier"], "T0")
         self.assertEqual(row["selected_agent_count"], 1)
         self.assertIsInstance(row["elapsed_seconds"], int)
+
+    def test_packetless_legacy_duplicate_creates_and_reuses_one_replacement(self):
+        legacy_id = f"CHARLIE-LEGACY-{uuid.uuid4().hex[:20].upper()}"
+        raw_text = PRODUCTION_T0_TEXT
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.charlie_missions (
+                        mission_id, status, source, raw_text, title, urgency,
+                        mission_type, approval_level, metadata_json,
+                        created_at, updated_at
+                    )
+                    values (%s, 'in_progress', 'historical_canary', %s, %s, 'P2',
+                            'read-only audit', 'LEVEL 1', %s::jsonb,
+                            now() - interval '1 day', now() - interval '1 day')
+                    """,
+                    (
+                        legacy_id,
+                        raw_text,
+                        "Read-only inventory of CORE adaptive orchestration documentation",
+                        json.dumps({
+                            "historical_evidence": {"preserved": True},
+                            "execution_lease": {
+                                "lease_id": "STALE-LEASE",
+                                "expires_at": "2026-07-25T22:22:05+00:00",
+                            },
+                        }),
+                    ),
+                )
+        mission = {
+            "title": "Controlled T0 adaptive orchestration production canary",
+            "mission_type": "read-only audit",
+            "approval_level": "LEVEL 1",
+            "raw_text": raw_text,
+        }
+        try:
+            with patch.dict(
+                os.environ,
+                {"CORE_SOURCE_COMMIT": "c" * 40},
+                clear=False,
+            ):
+                first, first_status = record_mission(
+                    mission,
+                    source_context={"source": "disposable_postgres_canary"},
+                    database_url=self.database_url,
+                )
+                second, second_status = record_mission(
+                    mission,
+                    source_context={"source": "disposable_postgres_canary"},
+                    database_url=self.database_url,
+                )
+            self.assertEqual(first_status, 201, first)
+            self.assertEqual(first["status"], "legacy_duplicate_replacement_created")
+            self.assertEqual(first["supersedes_mission_id"], legacy_id)
+            self.assertEqual(second_status, 200, second)
+            self.assertEqual(second["status"], "duplicate_open_mission")
+            self.assertEqual(second["mission_id"], first["mission_id"])
+
+            replacement, replacement_status = get_mission(
+                first["mission_id"], database_url=self.database_url
+            )
+            self.assertEqual(replacement_status, 200)
+            metadata = replacement["mission"]["metadata"]
+            self.assertEqual(
+                metadata["supersession"]["supersedes_mission_id"],
+                legacy_id,
+            )
+            self.assertEqual(metadata["orchestration"]["tier"], "T0")
+            self.assertEqual(
+                [row["agent"] for row in metadata["orchestration"]["selected_agents"]],
+                ["source_mapper"],
+            )
+            self.assertEqual(
+                metadata["orchestration"]["selected_agents"][0]["allowed_mutations"],
+                [],
+            )
+            self.assertTrue(metadata["orchestration_binding"]["validated"])
+
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "select metadata_json from public.charlie_missions where mission_id = %s",
+                        (legacy_id,),
+                    )
+                    historical = cursor.fetchone()[0]
+                    cursor.execute(
+                        """
+                        select count(*) from public.charlie_missions
+                        where metadata_json->'supersession'->>'supersedes_mission_id' = %s
+                        """,
+                        (legacy_id,),
+                    )
+                    replacement_count = cursor.fetchone()[0]
+            self.assertEqual(historical["historical_evidence"], {"preserved": True})
+            self.assertNotIn("orchestration", historical)
+            self.assertEqual(replacement_count, 1)
+        finally:
+            with psycopg.connect(self.database_url) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        delete from public.charlie_mission_events
+                        where mission_id = %s
+                           or mission_id in (
+                               select mission_id from public.charlie_missions
+                               where metadata_json->'supersession'->>'supersedes_mission_id' = %s
+                           )
+                        """,
+                        (legacy_id, legacy_id),
+                    )
+                    cursor.execute(
+                        """
+                        delete from public.charlie_missions
+                        where mission_id = %s
+                           or metadata_json->'supersession'->>'supersedes_mission_id' = %s
+                        """,
+                        (legacy_id, legacy_id),
+                    )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
+import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from modules.charlie.mission_store import (
@@ -20,6 +21,7 @@ from modules.charlie.mission_store import (
     transition_mission_review_state,
     update_mission_vault,
     _mission_queue_class,
+    _mission_metadata,
     _orchestration_throughput_rows,
     _normalize_review_send_back_stage,
     _return_workflow_to_stage,
@@ -97,6 +99,13 @@ class CorruptOrchestrationCursor(FakeCursor):
         return super().fetchall()
 
 
+class MissionInsertFailingCursor(FakeCursor):
+    def execute(self, sql, params=None):
+        if "insert into public.charlie_missions" in sql:
+            raise RuntimeError("injected replacement insert failure")
+        super().execute(sql, params)
+
+
 class FinalizationCursor(FakeCursor):
     def __init__(self, metadata):
         super().__init__([])
@@ -154,6 +163,19 @@ class CharlieMissionStoreTests(unittest.TestCase):
         })
         self.assertEqual(packet["orchestration"], orchestration)
         self.assertEqual(packet["orchestration_binding"], binding)
+
+    def test_owner_review_packet_projects_legacy_supersession_relationship(self):
+        supersession = {
+            "status": "current_contract_replacement",
+            "reason": "legacy_duplicate_not_reusable",
+            "supersedes_mission_id": "LEGACY-1",
+            "replacement_mission_id": "REPLACEMENT-1",
+        }
+        packet = build_mission_review_packet({
+            "mission_id": "REPLACEMENT-1",
+            "metadata": {"supersession": supersession},
+        })
+        self.assertEqual(packet["supersession"], supersession)
 
     def test_atomic_finalizer_is_only_path_to_pr_ready(self):
         revision = "abc123"
@@ -817,15 +839,18 @@ class CharlieMissionStoreTests(unittest.TestCase):
 
         self.assertEqual(queue_class, "owner_work")
 
-    def test_record_mission_suppresses_duplicate_open_mission(self):
-        now = datetime(2026, 6, 30, tzinfo=timezone.utc)
+    def test_record_mission_reuses_current_contract_duplicate(self):
+        mission = {"title": "Build clearer queue", "raw_text": "Build clearer queue"}
+        metadata = _mission_metadata(
+            mission["raw_text"], mission, {"source": "test"}, {}
+        )
         duplicate_row = (
-            "MISSION-1", "new", "Build clearer queue", "Build clearer queue",
+            "MISSION-1", "new", "Build clearer queue", "Build clearer queue", metadata,
         )
         connection = FakeConnection([duplicate_row])
 
         result, status_code = record_mission(
-            {"title": "Build clearer queue", "raw_text": "Build clearer queue"},
+            mission,
             database_url="postgres://unit-test",
             connect_factory=lambda _: connection,
         )
@@ -834,6 +859,104 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertFalse(result["stored"])
         self.assertEqual(result["status"], "duplicate_open_mission")
         self.assertEqual(result["mission_id"], "MISSION-1")
+
+    def test_packetless_legacy_duplicate_creates_current_contract_replacement(self):
+        legacy_metadata = {"historical_evidence": {"preserved": True}}
+        duplicate_row = (
+            "LEGACY-1", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.", legacy_metadata,
+        )
+        connection = FakeConnection([duplicate_row])
+        with patch.dict(
+            "os.environ",
+            {"CORE_SOURCE_COMMIT": "a" * 40},
+            clear=False,
+        ):
+            result, status_code = record_mission(
+                {
+                    "title": "Read-only inventory",
+                    "raw_text": "Read-only inventory of one bounded CORE document.",
+                    "mission_type": "read-only audit",
+                },
+                source_context={"source": "test"},
+                database_url="postgres://unit-test",
+                connect_factory=lambda _: connection,
+            )
+
+        self.assertEqual(status_code, 201, result)
+        self.assertEqual(result["status"], "legacy_duplicate_replacement_created")
+        self.assertEqual(result["supersedes_mission_id"], "LEGACY-1")
+        self.assertTrue(result["mission_id"].startswith("CHARLIE-REPLACEMENT-"))
+        replacement = connection.cursor_instance.inserted_metadata
+        self.assertEqual(
+            replacement["supersession"]["reason"],
+            "legacy_duplicate_not_reusable",
+        )
+        self.assertEqual(
+            replacement["mission_family"]["parent_mission_id"],
+            "LEGACY-1",
+        )
+        self.assertEqual(replacement["orchestration"]["tier"], "T0")
+        self.assertEqual(
+            [row["agent"] for row in replacement["orchestration"]["selected_agents"]],
+            ["source_mapper"],
+        )
+        self.assertEqual(
+            replacement["orchestration"]["selected_agents"][0]["allowed_mutations"],
+            [],
+        )
+        self.assertEqual(legacy_metadata, {"historical_evidence": {"preserved": True}})
+
+    def test_active_leased_legacy_duplicate_cannot_be_superseded(self):
+        duplicate_row = (
+            "LEGACY-ACTIVE", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.",
+            {
+                "execution_lease": {
+                    "lease_id": "LEASE-1",
+                    "expires_at": (
+                        datetime.now(timezone.utc) + timedelta(minutes=10)
+                    ).isoformat(),
+                }
+            },
+        )
+        connection = FakeConnection([duplicate_row])
+        result, status_code = record_mission(
+            {
+                "title": "Read-only inventory",
+                "raw_text": "Read-only inventory of one bounded CORE document.",
+                "mission_type": "read-only audit",
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "legacy_duplicate_active_not_superseded")
+        self.assertFalse(any(
+            "insert into public.charlie_missions" in sql
+            for sql, _ in connection.cursor_instance.executed
+        ))
+
+    def test_replacement_insert_failure_fails_closed(self):
+        duplicate_row = (
+            "LEGACY-FAIL", "in_progress", "Read-only inventory",
+            "Read-only inventory of one bounded CORE document.", {},
+        )
+        connection = FakeConnection([duplicate_row])
+        connection.cursor_instance = MissionInsertFailingCursor([duplicate_row])
+        with patch.dict("os.environ", {"CORE_SOURCE_COMMIT": "b" * 40}, clear=False):
+            result, status_code = record_mission(
+                {
+                    "title": "Read-only inventory",
+                    "raw_text": "Read-only inventory of one bounded CORE document.",
+                    "mission_type": "read-only audit",
+                },
+                database_url="postgres://unit-test",
+                connect_factory=lambda _: connection,
+            )
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "mission_write_failed")
+        self.assertEqual(result["error_type"], "RuntimeError")
 
     def test_record_mission_returns_existing_result_on_atomic_id_conflict(self):
         connection = FakeConnection()
