@@ -4,6 +4,9 @@ This module deliberately does not create an outlet commitment.  The caller must
 provide a persisted owner-confirmed cycle before a cohort can be prepared.
 """
 import os
+import hashlib
+import json
+import uuid
 from datetime import date, datetime, timedelta
 
 from services.database_service import DATABASE_URL_ENV
@@ -14,6 +17,7 @@ FORBIDDEN_ACTIONS = [
     "change_pig_lifecycle", "change_pig_purpose", "create_order", "reserve_stock",
     "create_sale", "book_auction", "send_customer_message", "post_publicly",
 ]
+DECISION_VERSION = "riversdale_auction_owner_decision_v1"
 
 
 def _as_date(value):
@@ -100,20 +104,153 @@ def load_owner_confirmed_cycle(*, today=None, database_url=None, connect_factory
         with connection_factory() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""
-                    select auction_date, operating_confirmed, owner_confirmed_at
+                    select auction_date, operating_confirmed, owner_confirmed_at,
+                           decision_status, location, organizer_details,
+                           entry_deadline, commission_percent, auction_fees,
+                           transport_estimate, owner_note
                     from public.riversdale_auction_cycles
-                    where operating_confirmed = true and auction_date >= %s
-                    order by auction_date asc limit 1
-                """, (today,))
+                    order by owner_confirmed_at desc nulls last, created_at desc
+                    limit 1
+                """)
                 row = cursor.fetchone()
     except Exception as exc:
         return {"operating": False, "confirmed_date": "", "valid": False,
                 "status": "auction_cycle_read_unavailable", "error_type": exc.__class__.__name__,
                 "source": "public.riversdale_auction_cycles"}
     confirmed_date = _as_date(row[0]) if row else None
-    return {"operating": bool(row and row[1]), "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
-            "valid": bool(row and confirmed_date), "status": "owner_confirmed_cycle_loaded" if row else "no_owner_confirmed_cycle",
-            "confirmed_at": row[2].isoformat() if row and row[2] else "", "source": "public.riversdale_auction_cycles"}
+    operating = bool(row and row[1])
+    valid = bool(row and row[3] in {"confirmed_operating", "confirmed_not_operating"})
+    return {
+        "operating": operating,
+        "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
+        "valid": valid and (not operating or bool(confirmed_date and confirmed_date >= today)),
+        "status": "owner_confirmed_cycle_loaded" if row else "no_owner_confirmed_cycle",
+        "confirmed_at": row[2].isoformat() if row and row[2] else "",
+        "decision_status": row[3] if row else "unconfirmed",
+        "location": row[4] if row else "",
+        "organizer_details": row[5] if row else "",
+        "entry_deadline": row[6].isoformat() if row and row[6] else "",
+        "commission_percent": float(row[7]) if row and row[7] is not None else None,
+        "auction_fees": float(row[8]) if row and row[8] is not None else None,
+        "transport_estimate": float(row[9]) if row and row[9] is not None else None,
+        "owner_note": row[10] if row else "",
+        "source": "public.riversdale_auction_cycles",
+    }
+
+
+def _decision_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    operating = payload.get("operating")
+    if operating not in (True, False):
+        raise ValueError("operating must be true or false")
+    confirmed_date = _as_date(payload.get("confirmed_date"))
+    if operating and confirmed_date is None:
+        raise ValueError("confirmed_date is required when operating is true")
+    entry_deadline = _as_date(payload.get("entry_deadline"))
+    commission = _money(payload.get("commission_percent"))
+    fees = _money(payload.get("auction_fees"))
+    transport = _money(payload.get("transport_estimate"))
+    key = str(payload.get("idempotency_key") or "").strip()
+    if not key:
+        raise ValueError("idempotency_key is required")
+    return {
+        "operating": operating,
+        "confirmed_date": confirmed_date,
+        "entry_deadline": entry_deadline,
+        "location": str(payload.get("location") or "").strip()[:300],
+        "organizer_details": str(payload.get("organizer_details") or "").strip()[:1000],
+        "commission_percent": commission,
+        "auction_fees": fees,
+        "transport_estimate": transport,
+        "owner_note": str(payload.get("owner_note") or "").strip()[:4000],
+        "idempotency_key": key[:200],
+    }
+
+
+def record_owner_auction_decision(payload, *, actor_id, database_url=None, connect_factory=None):
+    """Append one immutable owner decision; never creates a cohort or outlet claim."""
+    actor_id = str(actor_id or "").strip()
+    if not actor_id:
+        return _decision_result(False, "owner_identity_required"), 400
+    try:
+        clean = _decision_payload(payload)
+    except ValueError as exc:
+        return _decision_result(False, "auction_decision_invalid", errors=[str(exc)]), 400
+    canonical = {
+        key: value.isoformat() if isinstance(value, date) else value
+        for key, value in clean.items()
+    }
+    canonical["actor_id"] = actor_id
+    decision_hash = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    cycle_id = "RIV-" + uuid.uuid5(uuid.NAMESPACE_URL, clean["idempotency_key"]).hex.upper()
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url and connect_factory is None:
+        return _decision_result(False, "auction_cycle_store_not_configured"), 503
+    try:
+        if connect_factory is None:
+            import psycopg
+            factory = lambda: psycopg.connect(database_url, connect_timeout=10)
+        else:
+            factory = lambda: connect_factory(database_url)
+        with factory() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """insert into public.riversdale_auction_cycles (
+                        auction_cycle_id, auction_date, operating_confirmed,
+                        decision_status, owner_confirmed_by, owner_confirmed_at,
+                        location, organizer_details, entry_deadline,
+                        commission_percent, auction_fees, transport_estimate,
+                        owner_note, idempotency_key, decision_hash
+                    ) values (
+                        %s,%s,%s,%s,%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s
+                    ) on conflict (idempotency_key) do nothing
+                    returning auction_cycle_id""",
+                    (
+                        cycle_id, clean["confirmed_date"], clean["operating"],
+                        "confirmed_operating" if clean["operating"] else "confirmed_not_operating",
+                        actor_id, clean["location"], clean["organizer_details"],
+                        clean["entry_deadline"], clean["commission_percent"],
+                        clean["auction_fees"], clean["transport_estimate"],
+                        clean["owner_note"], clean["idempotency_key"], decision_hash,
+                    ),
+                )
+                inserted = cursor.fetchone()
+                if not inserted:
+                    cursor.execute(
+                        """select auction_cycle_id, decision_hash
+                           from public.riversdale_auction_cycles
+                           where idempotency_key=%s""",
+                        (clean["idempotency_key"],),
+                    )
+                    existing = cursor.fetchone()
+                    if not existing or existing[1] != decision_hash:
+                        return _decision_result(False, "auction_decision_idempotency_conflict"), 409
+                    return _decision_result(True, "auction_decision_replayed", cycle_id=existing[0]), 200
+    except Exception as exc:
+        return _decision_result(False, "auction_cycle_store_unavailable", error_type=exc.__class__.__name__), 503
+    return _decision_result(True, "auction_decision_recorded", cycle_id=cycle_id), 201
+
+
+def _decision_result(success, status, **extra):
+    return {
+        "success": success,
+        "status": status,
+        "decision_version": DECISION_VERSION,
+        "writes_auction_decision": status == "auction_decision_recorded",
+        "creates_cohort": False,
+        "creates_outlet_claim": False,
+        "changes_pig_lifecycle": False,
+        "changes_pig_purpose": False,
+        "creates_order": False,
+        "creates_reservation": False,
+        "creates_sale": False,
+        "books_auction": False,
+        "contacts_customer_or_organizer": False,
+        "sends_reminder": False,
+        **extra,
+    }
 
 
 def _has_health_or_quality_hold(pig):
@@ -200,6 +337,7 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
     confirmed_date = _as_date(confirmation.get("confirmed_date"))
     operating = confirmation.get("operating") is True
     confirmation_valid = operating and confirmed_date is not None and confirmed_date >= today
+    decision_recorded = confirmation.get("valid") is True or confirmation_valid
     ledger_evidence = ledger_evidence if isinstance(ledger_evidence, dict) else {}
     sam_demand = sam_demand if isinstance(sam_demand, dict) else {}
     oom_sakkie_preparation = oom_sakkie_preparation if isinstance(oom_sakkie_preparation, dict) else {}
@@ -284,12 +422,28 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
     return {
         "success": True,
         "status": recommendation_status,
-        "owner_agent": "sam-live-stock",
+        "owner_agent": "Herdmaster",
         "outlet": AUCTION_OUTLET,
         "generated_date": today.isoformat(),
         "scheduled_auction_date": next_auction_date(today).isoformat(),
         "owner_prompts": build_owner_prompts(today),
-        "confirmation": {"operating": operating, "confirmed_date": confirmed_date.isoformat() if confirmed_date else "", "valid": confirmation_valid},
+        "confirmation": {
+            "operating": operating,
+            "confirmed_date": confirmed_date.isoformat() if confirmed_date else "",
+            "valid": decision_recorded,
+            "confirmed_at": confirmation.get("confirmed_at", ""),
+            "decision_status": confirmation.get(
+                "decision_status",
+                "confirmed_operating" if confirmation_valid else "unconfirmed",
+            ),
+            "location": confirmation.get("location", ""),
+            "organizer_details": confirmation.get("organizer_details", ""),
+            "entry_deadline": confirmation.get("entry_deadline", ""),
+            "commission_percent": confirmation.get("commission_percent"),
+            "auction_fees": confirmation.get("auction_fees"),
+            "transport_estimate": confirmation.get("transport_estimate"),
+            "owner_note": confirmation.get("owner_note", ""),
+        },
         "cohort": candidates if confirmation_valid else [],
         "candidate_preview": candidates,
         "excluded": excluded,
@@ -312,4 +466,71 @@ def build_riversdale_auction_packet(allocation, *, today=None, confirmation=None
         "forbidden_actions": FORBIDDEN_ACTIONS,
         "writes_to_supabase": False, "writes_to_sheets": False, "writes_orders": False,
         "creates_reservations": False, "creates_sales": False, "changes_farm_lifecycle": False,
+    }
+
+
+def sanitized_owner_surface(packet, *, today=None):
+    """Project an aggregate-only owner panel with no animal identities."""
+    today = _as_date(today) or date.today()
+    packet = packet if isinstance(packet, dict) else {}
+    confirmation = packet.get("confirmation") if isinstance(packet.get("confirmation"), dict) else {}
+    candidates = packet.get("candidate_preview") if isinstance(packet.get("candidate_preview"), list) else []
+    cohort = packet.get("cohort") if isinstance(packet.get("cohort"), list) else []
+    excluded = packet.get("excluded") if isinstance(packet.get("excluded"), list) else []
+    reasons = {}
+    for item in excluded:
+        reason = str(item.get("reason") or "Unknown exclusion").strip()
+        reasons[reason] = reasons.get(reason, 0) + 1
+    confirmed_at = confirmation.get("confirmed_at") or ""
+    confirmed_date = _as_date(confirmation.get("confirmed_date"))
+    ledgers = [
+        item.get("ledger_evidence") if isinstance(item.get("ledger_evidence"), dict) else {}
+        for item in candidates
+    ]
+    proceeds = [_money(item.get("likely_auction_price")) for item in ledgers]
+    costs = [_money(item.get("auction_costs")) for item in ledgers]
+    feed = [_money(item.get("feed_cost_to_date")) for item in ledgers]
+    financial_available = bool(ledgers) and all(
+        value is not None for values in (proceeds, costs, feed) for value in values
+    )
+    coordination = packet.get("coordination_evidence") if isinstance(packet.get("coordination_evidence"), dict) else {}
+    missing = [key for key, value in coordination.items() if key.endswith("_complete") and value is not True]
+    return {
+        "version": "riversdale_auction_owner_surface_v1",
+        "status": packet.get("status", "Unavailable"),
+        "auction_operating": "Available" if confirmation.get("valid") else "Unknown",
+        "operating_confirmed": confirmation.get("operating") if confirmation.get("valid") else None,
+        "confirmed_date": confirmed_date.isoformat() if confirmed_date else None,
+        "expected_date": packet.get("scheduled_auction_date") or None,
+        "confirmation_timestamp": confirmed_at or None,
+        "confirmation_freshness": "Fresh" if confirmed_at else "Unavailable",
+        "candidate_preview_count": len(candidates),
+        "eligible_cohort_count": len(cohort),
+        "excluded_count": len(excluded),
+        "exclusion_reason_counts": reasons,
+        "missing_evidence": sorted(missing),
+        "financials": {
+            "state": "Available" if financial_available else "Unavailable",
+            "currency": "ZAR",
+            "likely_proceeds": sum(proceeds) if financial_available else None,
+            "auction_costs": sum(costs) if financial_available else None,
+            "feed_cost": sum(feed) if financial_available else None,
+            "net_margin": (
+                sum(proceeds) - sum(costs) - sum(feed)
+                if financial_available else None
+            ),
+        },
+        "one_pig_one_active_outlet": packet.get("one_pig_one_active_outlet") is True,
+        "reminders": {
+            "code_exists": True,
+            "delivery_operational": False,
+            "windows_days": [14, 7],
+            "deduplicated": True,
+        },
+        "limitations": ["Expected dates do not confirm that the auction operates."] + missing,
+        "owner_only": True,
+        "private_animal_evidence_present": False,
+        "contains_private_medical_details": False,
+        "writes_performed": False,
+        "protected_actions_performed": False,
     }

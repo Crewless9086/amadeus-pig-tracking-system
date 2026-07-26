@@ -52,14 +52,22 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 cursor.execute("delete from public.pig_active_outlets")
                 cursor.execute("delete from public.riversdale_auction_cycles")
 
-    def test_cycle_date_and_active_outlet_are_unique(self):
+    def test_cycle_idempotency_and_active_outlet_are_unique(self):
         with psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:
-                cursor.execute("insert into public.riversdale_auction_cycles (auction_cycle_id, auction_date) values ('auction-a', '2026-08-05')")
+                cursor.execute("""insert into public.riversdale_auction_cycles
+                    (auction_cycle_id, auction_date, operating_confirmed, decision_status,
+                     owner_confirmed_by, owner_confirmed_at, idempotency_key, decision_hash)
+                    values ('auction-a', '2026-08-05', true, 'confirmed_operating',
+                            'test-owner', now(), 'auction-a-key', repeat('a', 64))""")
         with psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:
                 with self.assertRaises(psycopg.Error):
-                    cursor.execute("insert into public.riversdale_auction_cycles (auction_cycle_id, auction_date) values ('auction-b', '2026-08-05')")
+                    cursor.execute("""insert into public.riversdale_auction_cycles
+                        (auction_cycle_id, auction_date, operating_confirmed, decision_status,
+                         owner_confirmed_by, owner_confirmed_at, idempotency_key, decision_hash)
+                        values ('auction-b', '2026-08-12', true, 'confirmed_operating',
+                                'test-owner', now(), 'auction-a-key', repeat('b', 64))""")
                 connection.rollback()
         with psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:

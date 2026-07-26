@@ -28,7 +28,12 @@ from modules.pig_weights.mating_service import get_breeding_analytics, link_litt
 from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
-from modules.sales.riversdale_auction import build_riversdale_auction_packet, load_owner_confirmed_cycle
+from modules.sales.riversdale_auction import (
+    build_riversdale_auction_packet,
+    load_owner_confirmed_cycle,
+    record_owner_auction_decision,
+    sanitized_owner_surface,
+)
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4688,9 +4693,17 @@ def get_riversdale_auction_recommendation(today=None, confirmation=None, ledger_
     confirmation = confirmation if isinstance(confirmation, dict) else load_owner_confirmed_cycle(
         today=today, database_url=database_url, connect_factory=connect_factory,
     )
-    return build_riversdale_auction_packet(
+    packet = build_riversdale_auction_packet(
         allocation, today=today, confirmation=confirmation, ledger_evidence=ledger_evidence,
         sam_demand=sam_demand, oom_sakkie_preparation=oom_sakkie_preparation,
+    )
+    packet["owner_surface"] = sanitized_owner_surface(packet, today=today)
+    return packet
+
+
+def record_riversdale_auction_decision(payload, *, actor_id, database_url=None, connect_factory=None):
+    return record_owner_auction_decision(
+        payload, actor_id=actor_id, database_url=database_url, connect_factory=connect_factory,
     )
 
 

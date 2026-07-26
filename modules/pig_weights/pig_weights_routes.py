@@ -5,6 +5,7 @@ from modules.auth.owner_access import (
     require_correction_batch_owner_admin_access,
     require_owner_admin_access,
     require_owner_read_access,
+    owner_admin_principal,
 )
 from modules.pig_weights.bulk_weight_batch_service import (
     get_bulk_weight_batch_status,
@@ -20,6 +21,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_allocation_readiness_data,
     get_pig_allocation_alerts_data,
     get_riversdale_auction_recommendation_data,
+    record_riversdale_auction_decision_data,
     get_purpose_review_queue_data,
     apply_purpose_review_queue_decisions,
     create_purpose_correction_batch,
@@ -134,6 +136,17 @@ def riversdale_auction_recommendation():
     if denied:
         return denied
     return jsonify(get_riversdale_auction_recommendation_data())
+
+
+@pig_weights_bp.route("/riversdale-auction-confirmation", methods=["POST"])
+def riversdale_auction_confirmation():
+    denied = require_owner_admin_access()
+    if denied:
+        return denied
+    result, status_code = record_riversdale_auction_decision_data(
+        request.get_json(silent=True) or {}, actor_id=owner_admin_principal()
+    )
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/purpose-review", methods=["GET"])

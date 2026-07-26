@@ -24,6 +24,40 @@
 
       <div id="allocation_message" class="message-box hidden"></div>
 
+      <section id="riversdale_auction_panel" class="allocation-review-panel" aria-label="Riversdale auction outlet">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Auction Outlet</h2>
+            <p id="riversdale_auction_status">Loading owner-only Riversdale auction evidence...</p>
+          </div>
+        </div>
+        <div id="riversdale_auction_summary" class="summary-metric-grid allocation-summary"></div>
+        <div id="riversdale_auction_evidence" class="allocation-rules"></div>
+        <form id="riversdale_auction_form" class="allocation-filters">
+          <div class="form-group">
+            <label for="auction_operating">Auction operating</label>
+            <select id="auction_operating" required>
+              <option value="">Owner decision required</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div class="form-group"><label for="auction_confirmed_date">Confirmed date</label><input id="auction_confirmed_date" type="date"></div>
+          <div class="form-group"><label for="auction_location">Location</label><input id="auction_location" type="text" maxlength="300"></div>
+          <div class="form-group"><label for="auction_organizer">Organizer details</label><input id="auction_organizer" type="text" maxlength="1000"></div>
+          <div class="form-group"><label for="auction_entry_deadline">Entry deadline</label><input id="auction_entry_deadline" type="date"></div>
+          <div class="form-group"><label for="auction_commission">Commission %</label><input id="auction_commission" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_fees">Auction fees (ZAR)</label><input id="auction_fees" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_transport">Transport estimate (ZAR)</label><input id="auction_transport" type="number" min="0" step="0.01"></div>
+          <div class="form-group"><label for="auction_owner_note">Owner note</label><textarea id="auction_owner_note" rows="2" maxlength="4000"></textarea></div>
+          <div class="form-group slaughter-filter-actions">
+            <label>&nbsp;</label>
+            <button type="submit" class="btn-primary">Record owner decision</button>
+          </div>
+        </form>
+        <p class="table-subtext">This records an owner decision only. It does not reserve animals, book an auction, create a sale, or contact anyone.</p>
+      </section>
+
       <section class="allocation-filters">
         <div class="form-group">
           <label for="bucket_filter">Bucket</label>

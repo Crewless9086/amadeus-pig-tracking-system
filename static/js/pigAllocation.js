@@ -14,6 +14,11 @@ const resetFiltersButton = document.getElementById("reset_allocation_filters");
 const reviewPanel = document.getElementById("allocation_review_panel");
 const reviewStatus = document.getElementById("allocation_review_status");
 const reviewDetail = document.getElementById("allocation_review_detail");
+const auctionPanel = document.getElementById("riversdale_auction_panel");
+const auctionStatus = document.getElementById("riversdale_auction_status");
+const auctionSummary = document.getElementById("riversdale_auction_summary");
+const auctionEvidence = document.getElementById("riversdale_auction_evidence");
+const auctionForm = document.getElementById("riversdale_auction_form");
 
 let allocationRows = [];
 let allocationSummary = {};
@@ -537,6 +542,84 @@ async function loadAllocationReadiness() {
     bodyEl.innerHTML = '<tr><td colspan="8" class="table-empty">Could not load pig allocation readiness.</td></tr>';
   }
 }
+
+function auctionMetric(label, value) {
+  return `<div class="summary-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "Unavailable")}</strong></div>`;
+}
+
+function renderAuctionSurface(surface) {
+  if (!surface || surface.version !== "riversdale_auction_owner_surface_v1") {
+    throw new Error("Auction evidence is unavailable.");
+  }
+  auctionStatus.textContent = `${surface.auction_operating || "Unknown"} · confirmation ${surface.confirmation_freshness || "Unavailable"}`;
+  auctionSummary.innerHTML = [
+    auctionMetric("Confirmed date", surface.confirmed_date || "Unavailable"),
+    auctionMetric("Expected date", surface.expected_date || "Unavailable"),
+    auctionMetric("Candidate preview", surface.candidate_preview_count),
+    auctionMetric("Eligible cohort", surface.eligible_cohort_count),
+    auctionMetric("Excluded", surface.excluded_count),
+    auctionMetric("Financial evidence", surface.financials?.state || "Unavailable"),
+  ].join("");
+  const reasons = Object.entries(surface.exclusion_reason_counts || {})
+    .map(([reason, count]) => `${escapeHtml(reason)}: ${escapeHtml(count)}`).join("<br>");
+  const missing = (surface.missing_evidence || []).map(escapeHtml).join(", ");
+  auctionEvidence.innerHTML = `<div class="allocation-rule"><strong>Excluded</strong><span>${reasons || "None evidenced"}</span></div>
+    <div class="allocation-rule"><strong>Missing evidence</strong><span>${missing || "None evidenced"}</span></div>
+    <div class="allocation-rule"><strong>Reminder delivery</strong><span>${surface.reminders?.delivery_operational ? "Available" : "Unavailable"} (deduplicated code only)</span></div>`;
+}
+
+async function loadRiversdaleAuction() {
+  if (!auctionPanel) return;
+  try {
+    const response = await fetch("/api/pig-weights/riversdale-auction-recommendation");
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.message || "Could not load auction evidence.");
+    renderAuctionSurface(data.owner_surface);
+  } catch (error) {
+    auctionStatus.textContent = "Unavailable";
+    auctionSummary.innerHTML = auctionMetric("Auction evidence", "Unavailable");
+    auctionEvidence.textContent = error.message || "Auction evidence is unavailable.";
+  }
+}
+
+function optionalNumber(id) {
+  const value = document.getElementById(id).value;
+  return value === "" ? null : Number(value);
+}
+
+if (auctionForm) {
+  auctionForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const operating = document.getElementById("auction_operating").value;
+    if (!operating) return;
+    const payload = {
+      operating: operating === "yes",
+      confirmed_date: document.getElementById("auction_confirmed_date").value || null,
+      location: document.getElementById("auction_location").value,
+      organizer_details: document.getElementById("auction_organizer").value,
+      entry_deadline: document.getElementById("auction_entry_deadline").value || null,
+      commission_percent: optionalNumber("auction_commission"),
+      auction_fees: optionalNumber("auction_fees"),
+      transport_estimate: optionalNumber("auction_transport"),
+      owner_note: document.getElementById("auction_owner_note").value,
+      idempotency_key: `riversdale-owner-${crypto.randomUUID()}`,
+    };
+    try {
+      const response = await fetch("/api/pig-weights/riversdale-auction-confirmation", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.status || "Owner decision was not recorded.");
+      auctionStatus.textContent = "Owner decision recorded. Refreshing evidence...";
+      await loadRiversdaleAuction();
+    } catch (error) {
+      auctionStatus.textContent = error.message || "Owner decision was not recorded.";
+    }
+  });
+}
+
+loadAllocationReadiness();
+loadRiversdaleAuction();
 
 [bucketFilter, penFilter, typeFilter, sexFilter, purposeFilter].forEach((select) => {
   select.addEventListener("change", applyFilters);
