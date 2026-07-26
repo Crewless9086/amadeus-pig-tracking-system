@@ -14,6 +14,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from services.database_service import DATABASE_URL_ENV
+from modules.telemetry.irrigation_daily_plan_service import (
+    OPERATING_TIMEZONE,
+    canonical_plan_identity,
+    operating_date,
+)
 
 
 CURRENT_STATES = frozenset(
@@ -106,6 +111,13 @@ def prepare_command_contract(payload, *, now=None, inventory=None):
     if intent not in {"ON", "OFF"}:
         raise CommandValidationError("intent_must_be_on_or_off")
     generation = _positive_int(payload.get("generation"), "generation_required")
+    daily_plan_date = operating_date(payload.get("daily_plan_operating_date"))
+    daily_plan_id = str(payload.get("daily_plan_id") or "").strip()
+    if daily_plan_id != canonical_plan_identity(daily_plan_date):
+        raise CommandValidationError("canonical_daily_plan_identity_required")
+    daily_plan_generation = _positive_int(
+        payload.get("daily_plan_generation"), "daily_plan_generation_required"
+    )
     duration = _positive_int(payload.get("requested_duration_minutes"), "requested_duration_required")
     created_at = _parse_timestamp(payload.get("created_at"), "creation_time_required")
     expires_at = _parse_timestamp(payload.get("expires_at"), "expiry_time_required")
@@ -122,6 +134,10 @@ def prepare_command_contract(payload, *, now=None, inventory=None):
     blockers = _blockers(zone, weather, power, water, safety, duration, now, expires_at)
     canonical = {
         "generation": generation,
+        "daily_plan_id": daily_plan_id,
+        "daily_plan_generation": daily_plan_generation,
+        "daily_plan_operating_date": daily_plan_date.isoformat(),
+        "daily_plan_operating_timezone": OPERATING_TIMEZONE,
         "zone_id": zone_id,
         "zone_name": zone["zone_name"],
         "intent": intent,
@@ -196,6 +212,8 @@ def approve_plan_only_command(command_id, recorded_by, *, ledger=None, now=None)
         command = ledger.get_command(str(command_id or "").strip())
         if not command:
             return _failure("command_not_found", 404)
+        if not ledger.is_current_daily_plan(command):
+            raise CommandConflictError("daily_plan_generation_superseded")
         timestamp = _as_utc(now or datetime.now(timezone.utc))
         if _parse_timestamp(command["expires_at"], "expiry_time_required") <= timestamp:
             events = ledger.append_review_states(command, ["expired"], actor, timestamp)
@@ -284,10 +302,14 @@ def list_plan_only_commands(*, ledger=None, now=None, limit=50):
 class InMemoryIrrigationCommandLedger:
     commands: dict | None = None
     events: list | None = None
+    current_daily_plans: dict | None = None
 
     def __post_init__(self):
         self.commands = {} if self.commands is None else self.commands
         self.events = [] if self.events is None else self.events
+        self.current_daily_plans = (
+            {} if self.current_daily_plans is None else self.current_daily_plans
+        )
 
     def append_command(self, command, actor):
         for existing in self.commands.values():
@@ -301,6 +323,9 @@ class InMemoryIrrigationCommandLedger:
             ):
                 raise CommandConflictError("zone_generation_conflict")
         stored = json.loads(json.dumps(command))
+        self.current_daily_plans.setdefault(
+            command["daily_plan_id"], command["daily_plan_generation"]
+        )
         self.commands[command["command_id"]] = stored
         self.events.append(_event(command, "proposed", actor, command["created_at"]))
         if command["state"] != "proposed":
@@ -310,6 +335,11 @@ class InMemoryIrrigationCommandLedger:
     def get_command(self, command_id):
         value = self.commands.get(command_id)
         return dict(value) if value else None
+
+    def is_current_daily_plan(self, command):
+        return self.current_daily_plans.get(command["daily_plan_id"]) == command[
+            "daily_plan_generation"
+        ]
 
     def append_review_states(self, command, states, actor, timestamp):
         if any(state not in CURRENT_STATES for state in states):
@@ -379,17 +409,20 @@ class PostgresIrrigationCommandLedger:
                     raise CommandConflictError("zone_generation_conflict")
                 cursor.execute(
                     """insert into public.irrigation_command_plans
-                       (command_id, generation, zone_id, zone_name, intent,
+                       (command_id, generation, daily_plan_id, daily_plan_generation,
+                        daily_plan_operating_date, zone_id, zone_name, intent,
                         requested_duration_minutes, created_at, expires_at,
                         idempotency_key, request_sha256, paired_off_required,
                         paired_off_command_id, weather_evidence, power_evidence,
                         water_infrastructure_evidence, controller_actuator_inventory,
                         safety_interlocks, prohibition_reasons, command_json, recorded_by)
-                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,
+                       values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,
                                %s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,
                                %s::jsonb,%s)""",
                     (
-                        command["command_id"], command["generation"], command["zone_id"],
+                        command["command_id"], command["generation"],
+                        command["daily_plan_id"], command["daily_plan_generation"],
+                        command["daily_plan_operating_date"], command["zone_id"],
                         command["zone_name"], command["intent"],
                         command["requested_duration_minutes"], command["created_at"],
                         command["expires_at"], command["idempotency_key"],
@@ -442,6 +475,22 @@ class PostgresIrrigationCommandLedger:
                 if row and row[0] in TERMINAL_STATES:
                     raise CommandConflictError("terminal_command_state")
                 return self._append_states(cursor, command, states, actor, timestamp)
+
+    def is_current_daily_plan(self, command):
+        with self._connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """select current_generation=%s
+                       from public.irrigation_daily_plan_identities
+                       where daily_plan_id=%s and operating_date=%s""",
+                    (
+                        command["daily_plan_generation"],
+                        command["daily_plan_id"],
+                        command["daily_plan_operating_date"],
+                    ),
+                )
+                row = cursor.fetchone()
+        return bool(row and row[0])
 
     def list_commands(self, limit):
         with self._connection() as connection:

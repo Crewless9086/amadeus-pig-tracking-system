@@ -58,11 +58,35 @@ class IrrigationCommandLedgerPostgresTests(unittest.TestCase):
                         encoding="utf-8"
                     )
                 )
+                cursor.execute("select to_regclass('public.irrigation_command_plans')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute(
+                        (
+                            migrations
+                            / "202607250002_create_irrigation_command_ledger.sql"
+                        ).read_text(encoding="utf-8")
+                    )
                 cursor.execute(
-                    (
-                        migrations
-                        / "202607250002_create_irrigation_command_ledger.sql"
-                    ).read_text(encoding="utf-8")
+                    "select to_regclass('public.irrigation_daily_plan_identities')"
+                )
+                if cursor.fetchone()[0] is None:
+                    cursor.execute(
+                        (migrations / "202607260005_create_irrigation_daily_plans.sql").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                cursor.execute(
+                    """truncate public.irrigation_command_state_events,
+                       public.irrigation_command_plans,
+                       public.irrigation_daily_plan_generations,
+                       public.irrigation_daily_plan_identities cascade"""
+                )
+                cursor.execute(
+                    """select * from public.rootline_generate_daily_irrigation_plan(
+                       'ROOTLINE-DAILY-PLAN-20260725','2026-07-25','Africa/Johannesburg',
+                       'planned',%s,'2026-07-25T10:00:00Z','initial evidence',
+                       '{}'::jsonb,'[]'::jsonb)""",
+                    ("d" * 64,),
                 )
 
     def setUp(self):
@@ -75,6 +99,9 @@ class IrrigationCommandLedgerPostgresTests(unittest.TestCase):
         values = {
             "command_id": self.command_id,
             "generation": self.generation,
+            "daily_plan_id": "ROOTLINE-DAILY-PLAN-20260725",
+            "daily_plan_generation": 1,
+            "daily_plan_operating_date": "2026-07-25",
             "zone_id": "B12345",
             "zone_name": "B - Kamp",
             "intent": "ON",
@@ -106,7 +133,8 @@ class IrrigationCommandLedgerPostgresTests(unittest.TestCase):
         cursor.execute(
             """
             insert into public.irrigation_command_plans (
-                command_id, generation, zone_id, zone_name, intent,
+                command_id, generation, daily_plan_id, daily_plan_generation,
+                daily_plan_operating_date, zone_id, zone_name, intent,
                 requested_duration_minutes, created_at, expires_at,
                 idempotency_key, request_sha256, paired_off_required,
                 paired_off_command_id, weather_evidence, power_evidence,
@@ -116,7 +144,9 @@ class IrrigationCommandLedgerPostgresTests(unittest.TestCase):
                 calls_ifttt, calls_n8n, controls_hardware, dispatchable,
                 automatic_retry
             ) values (
-                %(command_id)s, %(generation)s, %(zone_id)s, %(zone_name)s, %(intent)s,
+                %(command_id)s, %(generation)s, %(daily_plan_id)s,
+                %(daily_plan_generation)s, %(daily_plan_operating_date)s,
+                %(zone_id)s, %(zone_name)s, %(intent)s,
                 %(requested_duration_minutes)s, %(created_at)s, %(expires_at)s,
                 %(idempotency_key)s, %(request_sha256)s, %(paired_off_required)s,
                 %(paired_off_command_id)s, %(weather_evidence)s::jsonb,
@@ -238,6 +268,9 @@ class IrrigationCommandLedgerPostgresTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         route_payload = {
             "generation": self.generation,
+            "daily_plan_id": "ROOTLINE-DAILY-PLAN-20260725",
+            "daily_plan_generation": 1,
+            "daily_plan_operating_date": "2026-07-25",
             "zone_id": "B12345",
             "zone_name": "B - Kamp",
             "intent": "ON",
