@@ -35,6 +35,7 @@ from modules.sales.riversdale_auction import (
     sanitized_owner_surface,
 )
 from modules.sales.riversdale_auction_candidate_reviews import record_candidate_review
+from modules.sales.riversdale_auction_list import read_auction_list, record_auction_list_events
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
 LIFECYCLE_REMOVAL_REASONS = {
@@ -4716,6 +4717,39 @@ def record_riversdale_candidate_review(payload, *, actor_id, database_url=None, 
     ]
     return record_candidate_review(
         payload, actor_id=actor_id, candidate_ids=candidate_ids,
+        database_url=database_url, connect_factory=connect_factory,
+    )
+
+
+def _auction_selectable_ids(packet):
+    selectable = []
+    for item in packet.get("candidate_preview", []):
+        evidence = item.get("herdmaster_evidence", {}) if isinstance(item, dict) else {}
+        withdrawal = to_clean_string(evidence.get("withdrawal_clear")).lower()
+        quality = to_clean_string(evidence.get("observed_quality")).lower()
+        health = to_clean_string(evidence.get("health_status")).lower()
+        if withdrawal in {"yes", "clear", "cleared", "true", "1"} and quality in {"suitable", "clear", "cleared", "yes"} and health and "hold" not in health:
+            selectable.append(to_clean_string(item.get("pig_id")))
+    return [pig_id for pig_id in selectable if pig_id]
+
+
+def get_riversdale_auction_list(database_url=None, connect_factory=None):
+    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
+    listing, status = read_auction_list(database_url=database_url, connect_factory=connect_factory)
+    if status != 200:
+        return listing, status
+    listing["selectable_pig_ids"] = _auction_selectable_ids(packet)
+    return listing, 200
+
+
+def update_riversdale_auction_list(payload, *, actor_id, database_url=None, connect_factory=None):
+    packet = get_riversdale_auction_recommendation(database_url=database_url, connect_factory=connect_factory)
+    listing, status = read_auction_list(database_url=database_url, connect_factory=connect_factory)
+    if status != 200:
+        return listing, status
+    return record_auction_list_events(
+        payload, actor_id=actor_id, selectable_ids=_auction_selectable_ids(packet),
+        current_ids=[item.get("pig_id") for item in listing.get("items", [])],
         database_url=database_url, connect_factory=connect_factory,
     )
 

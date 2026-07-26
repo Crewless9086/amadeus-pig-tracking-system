@@ -19,6 +19,11 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
         root = Path("supabase/migrations")
         with psycopg.connect(cls.database_url) as connection:
             with connection.cursor() as cursor:
+                cursor.execute("""do $$ begin
+                    if not exists(select 1 from pg_roles where rolname='anon') then create role anon nologin; end if;
+                    if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated nologin; end if;
+                    if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role nologin bypassrls; end if;
+                end $$;""")
                 cursor.execute((root / "202605210001_foundation_migration_log.sql").read_text(encoding="utf-8"))
                 cursor.execute("""
                     create table if not exists public.order_lines (
@@ -52,6 +57,9 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 cursor.execute("select to_regclass('public.riversdale_auction_candidate_reviews')")
                 if cursor.fetchone()[0] is None:
                     cursor.execute((root / "202607260004_create_riversdale_auction_candidate_reviews.sql").read_text(encoding="utf-8"))
+                cursor.execute("select to_regclass('public.riversdale_auction_list_events')")
+                if cursor.fetchone()[0] is None:
+                    cursor.execute((root / "202607260009_create_riversdale_auction_list_events.sql").read_text(encoding="utf-8"))
                 cursor.execute("delete from public.meat_processing_batch_pigs")
                 cursor.execute("delete from public.meat_processing_batches")
                 cursor.execute("delete from public.sales_transaction_items")
@@ -100,6 +108,16 @@ class RiversdaleAuctionPostgresTests(unittest.TestCase):
                 self.assertTrue(cursor.fetchone()[0])
                 cursor.execute("select has_table_privilege('service_role','public.riversdale_auction_candidate_reviews','update')")
                 self.assertFalse(cursor.fetchone()[0])
+
+    def test_auction_list_is_append_only_service_insert_only(self):
+        with psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                for role in ("anon","authenticated"):
+                    cursor.execute("select has_table_privilege(%s,'public.riversdale_auction_list_events','insert')",(role,))
+                    self.assertFalse(cursor.fetchone()[0])
+                for privilege,expected in (("select",True),("insert",True),("update",False),("delete",False)):
+                    cursor.execute("select has_table_privilege('service_role','public.riversdale_auction_list_events',%s)",(privilege,))
+                    self.assertEqual(cursor.fetchone()[0],expected)
 
     def test_real_source_writer_tables_cannot_cross_claim_an_active_pig(self):
         with psycopg.connect(self.database_url) as connection:

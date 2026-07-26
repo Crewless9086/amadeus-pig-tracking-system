@@ -19,6 +19,11 @@ jobs:
       OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python -m flask --app app run --host 127.0.0.1 --port 5000"
       OOM_SAKKIE_PLAYWRIGHT_BASE_URL: "http://127.0.0.1:5000"
       OOM_SAKKIE_PLAYWRIGHT_SERVER_URL: "http://127.0.0.1:5000/oom-sakkie"
+      OWNER_ACCESS_ENABLED: "1"
+      OWNER_ACCESS_ALLOW_LOCAL_DEV: "0"
+      OWNER_READ_TOKEN: "riversdale-browser-fixture-token-000000000000"
+      OWNER_ADMIN_TOKEN: "riversdale-browser-admin-token-0000000000000"
+      OWNER_SESSION_SECRET: "riversdale-browser-session-secret-0000000000"
 
     steps:
       - name: Check out repository
@@ -44,4 +49,6 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Oom Sakkie Playwright behavior gate
-        run: npm run test:oom-sakkie:browser
+        run: |
+          npm run test:oom-sakkie:browser
+          npx playwright test tests/riversdale_auction_list_visual_proof.spec.js

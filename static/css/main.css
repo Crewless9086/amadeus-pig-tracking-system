@@ -748,6 +748,19 @@ textarea {
   margin-bottom: 22px;
 }
 
+.allocation-card .summary-metric {
+  background: #ffffff;
+  border-color: var(--border);
+}
+
+.allocation-card .summary-metric span {
+  color: #536257;
+}
+
+.allocation-card .summary-metric strong {
+  color: #18352d;
+}
+
 .allocation-rules {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
@@ -789,6 +802,132 @@ textarea {
   vertical-align: top;
   white-space: normal;
 }
+
+.allocation-table .auction-select-column {
+  display: none;
+  width: 48px;
+  min-width: 48px;
+}
+
+.allocation-table.auction-selection-mode .auction-select-column {
+  display: table-cell;
+}
+
+.auction-table-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.auction-eligibility {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.auction-settings {
+  margin-top: 12px;
+}
+
+.auction-compact-status {
+  display: none;
+}
+
+.allocation-card.auction-mode #allocation_summary,
+.allocation-card.auction-mode #allocation_rules {
+  display: none;
+}
+
+.allocation-card.auction-mode #allocation_review_panel {
+  display: none;
+}
+
+.allocation-card.auction-mode.auction-review-open #allocation_review_panel {
+  display: block;
+}
+
+.allocation-card.auction-mode #riversdale_auction_panel {
+  display: flex;
+  align-items: center;
+  gap: 12px 18px;
+  margin: 8px 0 12px;
+  padding: 10px 14px;
+}
+
+.allocation-card.auction-mode #riversdale_auction_panel > :not(.auction-compact-status):not(.auction-settings) {
+  display: none;
+}
+
+.allocation-card.auction-mode .auction-compact-status {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  min-width: 0;
+}
+
+.auction-compact-status strong {
+  color: var(--green-dark);
+}
+
+.auction-compact-status span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.allocation-card.auction-mode .auction-settings {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.allocation-card.auction-mode .allocation-table-section {
+  margin-top: 8px;
+}
+
+.auction-row-health,
+.auction-row-eligibility {
+  line-height: 1.35;
+}
+
+.auction-row-eligibility {
+  font-weight: 700;
+}
+
+.auction-row-eligibility.is-blocked {
+  color: #8a3f2f;
+}
+
+.auction-row-details-button {
+  white-space: nowrap;
+}
+
+.allocation-table.auction-selection-mode {
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.allocation-table.auction-selection-mode th:nth-child(1),
+.allocation-table.auction-selection-mode td:nth-child(1) { width: 54px; min-width: 54px; }
+.allocation-table.auction-selection-mode th:nth-child(2),
+.allocation-table.auction-selection-mode td:nth-child(2) { width: 82px; min-width: 70px; }
+.allocation-table.auction-selection-mode th:nth-child(3),
+.allocation-table.auction-selection-mode td:nth-child(3) { width: 72px; min-width: 64px; }
+.allocation-table.auction-selection-mode th:nth-child(4),
+.allocation-table.auction-selection-mode td:nth-child(4) { width: 120px; min-width: 105px; }
+.allocation-table.auction-selection-mode th:nth-child(5),
+.allocation-table.auction-selection-mode td:nth-child(5) { width: 72px; min-width: 64px; }
+.allocation-table.auction-selection-mode th:nth-child(6),
+.allocation-table.auction-selection-mode td:nth-child(6) { width: 88px; min-width: 76px; }
+.allocation-table.auction-selection-mode th:nth-child(7),
+.allocation-table.auction-selection-mode td:nth-child(7) { width: 112px; min-width: 98px; }
+.allocation-table.auction-selection-mode th:nth-child(8),
+.allocation-table.auction-selection-mode td:nth-child(8) { width: 150px; min-width: 135px; }
+.allocation-table.auction-selection-mode th:nth-child(9),
+.allocation-table.auction-selection-mode td:nth-child(9) { width: 220px; min-width: 190px; }
+.allocation-table.auction-selection-mode th:nth-child(10),
+.allocation-table.auction-selection-mode td:nth-child(10) { width: 72px; min-width: 66px; }
 
 .allocation-table th:nth-child(1),
 .allocation-table td:nth-child(1) {
@@ -3166,6 +3305,34 @@ button:disabled {
   .no-print,
   .page-header-with-link,
   .message-box {
+    display: none !important;
+  }
+
+  body:has(.allocation-table.auction-selection-mode) #riversdale_auction_panel,
+  body:has(.allocation-table.auction-selection-mode) .allocation-filters,
+  body:has(.allocation-table.auction-selection-mode) #allocation_summary,
+  body:has(.allocation-table.auction-selection-mode) #allocation_rules,
+  body:has(.allocation-table.auction-selection-mode) #allocation_review_panel,
+  body:has(.allocation-table.auction-selection-mode) #allocation_count {
+    display: none !important;
+  }
+
+  body:has(.allocation-table.auction-selection-mode) #allocation_table_heading {
+    display: none !important;
+  }
+
+  .allocation-table.auction-selection-mode .auction-select-column,
+  .allocation-table.auction-selection-mode .allocation-review-button {
+    display: none !important;
+  }
+
+  .allocation-table.auction-selection-mode tbody tr {
+    display: table-row;
+  }
+
+  .allocation-table.auction-selection-mode .auction-screen-only,
+  .allocation-table.auction-selection-mode .auction-select-column,
+  .allocation-table.auction-selection-mode .auction-row-details-button {
     display: none !important;
   }
 
@@ -8124,6 +8291,45 @@ body.oom-farm-command-body {
     overflow-x: visible;
     border: none;
     background: transparent;
+  }
+
+  .allocation-table-wrap:has(.allocation-table.auction-selection-mode) {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    background: #ffffff;
+  }
+
+  .allocation-table.auction-selection-mode {
+    display: table;
+    width: 100%;
+    min-width: 980px;
+  }
+
+  .allocation-table.auction-selection-mode thead {
+    display: table-header-group;
+  }
+
+  .allocation-table.auction-selection-mode tbody {
+    display: table-row-group;
+  }
+
+  .allocation-table.auction-selection-mode tr {
+    display: table-row;
+    border: 0;
+  }
+
+  .allocation-table.auction-selection-mode th,
+  .allocation-table.auction-selection-mode td {
+    display: table-cell;
+    width: auto;
+    min-width: 0;
+    padding: 8px;
+    border-bottom: 1px solid #e7e0d5;
+  }
+
+  .allocation-table.auction-selection-mode td::before {
+    display: none !important;
+    content: none !important;
   }
 
   .allocation-table,
