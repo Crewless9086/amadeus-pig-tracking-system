@@ -36,6 +36,26 @@ create index if not exists pig_observation_events_supersedes_idx
 
 alter table public.pig_observation_events enable row level security;
 
+-- Supabase client roles must never receive direct observation access. Reset
+-- inherited/default grants explicitly rather than relying on RLS or database
+-- defaults. The server service role is append-only: read existing evidence
+-- and insert a new fact, but never update, delete or truncate history.
+revoke all privileges on table public.pig_observation_events from public;
+do $$
+begin
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+        revoke all privileges on table public.pig_observation_events from anon;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+        revoke all privileges on table public.pig_observation_events from authenticated;
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+        revoke all privileges on table public.pig_observation_events from service_role;
+        grant select, insert on table public.pig_observation_events to service_role;
+    end if;
+end;
+$$;
+
 create or replace function public.pig_observation_events_validate_supersession()
 returns trigger
 language plpgsql
@@ -71,6 +91,30 @@ $$;
 create trigger trg_pig_observation_events_no_update_delete
     before update or delete on public.pig_observation_events
     for each row execute function public.pig_observation_events_block_update_delete();
+
+-- Trigger functions are internal enforcement, not callable client APIs.
+revoke all privileges on function public.pig_observation_events_validate_supersession()
+    from public;
+revoke all privileges on function public.pig_observation_events_block_update_delete()
+    from public;
+do $$
+declare
+    role_name text;
+begin
+    foreach role_name in array array['anon', 'authenticated', 'service_role'] loop
+        if exists (select 1 from pg_roles where rolname = role_name) then
+            execute format(
+                'revoke all privileges on function public.pig_observation_events_validate_supersession() from %I',
+                role_name
+            );
+            execute format(
+                'revoke all privileges on function public.pig_observation_events_block_update_delete() from %I',
+                role_name
+            );
+        end if;
+    end loop;
+end;
+$$;
 
 insert into app_private.migration_log (migration_id, description)
 values (
