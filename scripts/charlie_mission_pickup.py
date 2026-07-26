@@ -23,7 +23,15 @@ from modules.charlie.environment import env_value
 from modules.charlie.mission_store import AGENT_DEFINITIONS, consume_final_agent_artifact, get_mission, list_missions, list_owner_work_missions, transition_mission_review_state, update_mission_status, update_mission_vault
 from modules.charlie.review_readiness import cleared_review_packet, mission_dependency_ids, mission_execution_dependency_ids
 from modules.charlie.repository_guard import RepositoryOperationLock, inspect_git_operation_markers, repository_lock_path
-from modules.charlie.runner_control import STALE_SECONDS, _pid_alive, runner_status, write_runner_heartbeat
+from modules.charlie.runner_control import (
+    STALE_SECONDS,
+    SUPERVISOR_PATH,
+    _pid_alive,
+    _read_json,
+    runner_status,
+    validate_supervisor_packet,
+    write_runner_heartbeat,
+)
 from modules.charlie.runner_preflight import runner_environment_preflight
 from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
@@ -75,6 +83,11 @@ def _load_runner_dotenv():
 
 def main():
     _load_runner_dotenv()
+    startup = _validate_supervisor_startup()
+    if not startup["success"]:
+        write_runner_heartbeat(startup)
+        print(startup)
+        return 1
     parser = argparse.ArgumentParser(description="Pick up the next approved CHARLIE mission for Codex.")
     parser.add_argument("--status", default="approved", help="Mission status to pick up. Default: approved.")
     parser.add_argument("--limit", type=int, default=10)
@@ -130,6 +143,69 @@ def main():
                 status_code = max(int(status_code or 0), 409)
     print(result)
     return 0 if status_code < 400 else 1
+
+
+def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep, transition_timeout_seconds=5):
+    generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or "")
+    if not generation:
+        return {"success": True, "status": "standalone_runner_startup"}
+    runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or "")
+    execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    packet = _read_json(SUPERVISOR_PATH)
+    deadline = time.monotonic() + max(0, float(transition_timeout_seconds))
+    while (
+        str(packet.get("generation") or "") == generation
+        and str(packet.get("runner_state") or "") == "not_spawned"
+        and time.monotonic() <= deadline
+    ):
+        sleep_fn(0.05)
+        packet = _read_json(SUPERVISOR_PATH)
+    valid, reason = validate_supervisor_packet(
+        packet,
+        generation,
+        runtime_revision,
+        execution_revision,
+        runner_states={"runner_starting"},
+    )
+    if not valid:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": reason,
+            "supervisor_generation": generation,
+        }
+    try:
+        completed = run_factory(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "execution_revision_unavailable",
+            "error_type": exc.__class__.__name__,
+        }
+    actual_revision = str(completed.stdout or "").strip() if completed.returncode == 0 else ""
+    if not actual_revision or actual_revision != execution_revision:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "execution_revision_mismatch",
+            "expected_revision": execution_revision,
+            "actual_revision": actual_revision,
+        }
+    return {
+        "success": True,
+        "status": "runner_startup_validated",
+        "supervisor_generation": generation,
+        "execution_revision": actual_revision,
+    }
 
 
 def watch_for_mission(

@@ -20,7 +20,12 @@ if str(REPO_ROOT) not in sys.path:
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.environment import env_value
 from modules.charlie.repository_guard import RepositoryOperationLock, repository_lock_path
-from modules.charlie.runner_control import RUNNER_DIR
+from modules.charlie.runner_control import (
+    RUNNER_DIR,
+    SUPERVISOR_PACKET_VERSION,
+    atomic_write_json,
+    validate_supervisor_packet,
+)
 from modules.charlie.runner_control import emergency_process_cleanup_disabled, record_emergency_cleanup_refusal
 from modules.charlie.process_ownership import (
     inspect_process,
@@ -165,10 +170,107 @@ RUNNER_COMMAND = [
 ]
 
 
-def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cycles=None, notifier=None, prepare_fn=None):
+def supervise_runner(
+    popen_factory=subprocess.Popen,
+    sleep_fn=time.sleep,
+    max_cycles=None,
+    notifier=None,
+    prepare_fn=None,
+    generation=None,
+    acknowledgement_fn=None,
+    recovery_fn=None,
+):
     RUNNER_DIR.mkdir(parents=True, exist_ok=True)
-    generation = uuid.uuid4().hex
+    generation = str(generation or os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
+    test_mode = popen_factory is not subprocess.Popen
+    actual_runtime_revision = _git_revision(REPO_ROOT)
+    actual_execution_revision = _git_revision(EXECUTION_ROOT)
+    runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or actual_runtime_revision)
+    execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or actual_execution_revision)
+    if test_mode:
+        runtime_revision = runtime_revision or "test-revision"
+        execution_revision = execution_revision or "test-revision"
     _recover_stale_owned_child()
+    test_tree = None
+    if test_mode:
+        test_identity = {
+            "pid": os.getpid(),
+            "creation_time": "test-process",
+            "executable_path": str(sys.executable),
+            "command_fingerprint": "test-command",
+            "parent_pid": 0,
+            "runner_generation": generation,
+            "mission_id": "charlie-control",
+            "execution_id": generation,
+            "ownership_type": "charlie_runner",
+        }
+        test_tree = make_process_tree_record(test_identity, [test_identity], generation)
+    starting = _write_status(
+        "supervisor_starting",
+        generation=generation,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        intended_runtime_revision=runtime_revision,
+        intended_execution_revision=execution_revision,
+        runner_state="not_spawned",
+        child_pid=0,
+        **({"supervisor_tree_identity": test_tree} if test_tree else {}),
+    )
+    durable = _read_status()
+    valid, reason = validate_supervisor_packet(
+        durable,
+        generation,
+        runtime_revision,
+        execution_revision,
+        runner_states={"not_spawned"},
+    )
+    if not valid or durable != starting:
+        _write_status(
+            "infrastructure_hold",
+            generation=generation,
+            intended_runtime_revision=runtime_revision,
+            intended_execution_revision=execution_revision,
+            runner_state="not_spawned",
+            failure_status=reason if not valid else "supervisor_packet_reread_mismatch",
+        )
+        return {"status": "infrastructure_hold", "failure_status": reason}
+    if not test_mode and (
+        actual_runtime_revision != runtime_revision
+        or actual_execution_revision != execution_revision
+    ):
+        _write_status(
+            "infrastructure_hold",
+            generation=generation,
+            intended_runtime_revision=runtime_revision,
+            intended_execution_revision=execution_revision,
+            runner_state="not_spawned",
+            failure_status="startup_revision_mismatch",
+            failure_detail={
+                "actual_runtime_revision": actual_runtime_revision,
+                "actual_execution_revision": actual_execution_revision,
+            },
+        )
+        return {"status": "infrastructure_hold", "failure_status": "startup_revision_mismatch"}
+    try:
+        if recovery_fn is not None:
+            recovery, recovery_status = recovery_fn()
+        elif popen_factory is not subprocess.Popen:
+            recovery, recovery_status = ({"status": "test_recovery_skipped"}, 200)
+        else:
+            from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
+            recovery, recovery_status = recover_pending_final_agent_artifact()
+    except Exception as exc:
+        recovery = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}
+        recovery_status = 503
+    if recovery_status >= 400:
+        _write_status(
+            "final_artifact_recovery_blocked",
+            generation=generation,
+            intended_runtime_revision=runtime_revision,
+            intended_execution_revision=execution_revision,
+            runner_state="not_spawned",
+            recovery=recovery,
+        )
+        return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
     restart_count = 0
     cycles = 0
     repeated_failure = ""
@@ -228,16 +330,68 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
         # fail-closed alias conflict before mission pickup.
         child_env["CORE_EXECUTION_BASE_BRANCH"] = EXECUTION_BASE_BRANCH
         child_env["CHARLIE_RUNNER_BASE_BRANCH"] = EXECUTION_BASE_BRANCH
+        if STOP_PATH.exists():
+            _write_status(
+                "supervisor_stopped", generation=generation,
+                intended_runtime_revision=runtime_revision,
+                intended_execution_revision=execution_revision,
+                runner_state="not_spawned", child_pid=0,
+            )
+            break
         child = popen_factory(RUNNER_COMMAND, cwd=str(EXECUTION_ROOT), env=child_env, **_windowless_process_kwargs())
         child_identity = make_ownership_record(
             inspect_process(child.pid), generation, "charlie-control", generation, "charlie_runner"
         )
         _write_status(
-            "runner_started", child_pid=child.pid, child_identity=child_identity,
+            "runner_starting", child_pid=child.pid, child_identity=child_identity,
             process_tree_identity=make_process_tree_record(
                 child_identity, [child_identity], generation
             ),
             restart_count=restart_count, generation=generation,
+            intended_runtime_revision=runtime_revision,
+            intended_execution_revision=execution_revision,
+            runner_state="runner_starting",
+        )
+        waiter = acknowledgement_fn
+        if waiter is None:
+            waiter = _wait_for_runner_ack if popen_factory is subprocess.Popen else _test_acknowledgement
+        acknowledgement = waiter(
+            child,
+            generation,
+            runtime_revision,
+            execution_revision,
+            sleep_fn=sleep_fn,
+        )
+        if not acknowledgement.get("success"):
+            STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            _write_status(
+                "infrastructure_hold",
+                child_pid=child.pid,
+                child_identity=child_identity,
+                restart_count=restart_count,
+                generation=generation,
+                intended_runtime_revision=runtime_revision,
+                intended_execution_revision=execution_revision,
+                runner_state="containment_required",
+                failure_status="runner_acknowledgement_failed",
+                failure_detail=acknowledgement,
+            )
+            return {
+                "status": "infrastructure_hold",
+                "failure_status": "runner_acknowledgement_failed",
+                "acknowledgement": acknowledgement,
+            }
+        _write_status(
+            "running",
+            child_pid=child.pid,
+            child_identity=child_identity,
+            process_tree_identity=acknowledgement.get("process_tree_identity"),
+            restart_count=restart_count,
+            generation=generation,
+            intended_runtime_revision=runtime_revision,
+            intended_execution_revision=execution_revision,
+            runner_state="running",
+            runner_acknowledgement=acknowledgement,
         )
         return_code = child.wait()
         if STOP_PATH.exists():
@@ -287,6 +441,62 @@ def supervise_runner(popen_factory=subprocess.Popen, sleep_fn=time.sleep, max_cy
             break
         sleep_fn(delay)
     return {"status": "supervisor_stopped", "restart_count": restart_count, "cycles": cycles}
+
+
+def _test_acknowledgement(child, generation, runtime_revision, execution_revision, sleep_fn=None):
+    return {
+        "success": True,
+        "status": "test_acknowledged",
+        "generation": generation,
+        "runtime_revision": runtime_revision,
+        "execution_revision": execution_revision,
+        "process_tree_identity": {},
+    }
+
+
+def _wait_for_runner_ack(
+    child,
+    generation,
+    runtime_revision,
+    execution_revision,
+    sleep_fn=time.sleep,
+    timeout_seconds=30,
+):
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    reason = "runner_heartbeat_acknowledgement_missing"
+    while time.monotonic() <= deadline:
+        heartbeat = _read_json(RUNNER_HEARTBEAT_PATH)
+        if (
+            str(heartbeat.get("supervisor_generation") or "") == generation
+            and str(heartbeat.get("runner_source_commit") or "") == execution_revision
+            and isinstance(heartbeat.get("process_identity"), dict)
+        ):
+            interpreter = heartbeat["process_identity"]
+            tree = make_process_tree_record(
+                _read_status().get("child_identity"),
+                [
+                    item for item in (_read_status().get("child_identity"), interpreter)
+                    if isinstance(item, dict) and item.get("pid")
+                ],
+                generation,
+            )
+            if tree:
+                return {
+                    "success": True,
+                    "status": "runner_acknowledged",
+                    "generation": generation,
+                    "runtime_revision": runtime_revision,
+                    "execution_revision": execution_revision,
+                    "runner_pid": heartbeat.get("pid"),
+                    "process_tree_identity": tree,
+                }
+            reason = "runner_process_tree_acknowledgement_invalid"
+        if child.poll() is not None:
+            return {"success": False, "reason": "runner_exited_before_acknowledgement"}
+        if STOP_PATH.exists():
+            return {"success": False, "reason": "governed_stop_during_runner_start"}
+        sleep_fn(0.1)
+    return {"success": False, "reason": reason}
 
 
 def _prepare_execution_root(run_factory=subprocess.run):
@@ -619,25 +829,43 @@ def _pid_alive(pid, runner=subprocess.run):
 
 
 def _write_status(status, **extra):
-    try:
-        previous = json.loads(SUPERVISOR_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        previous = {}
+    previous = _read_status()
     payload = {
+        "version": SUPERVISOR_PACKET_VERSION,
         "pid": os.getpid(),
         "status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         **extra,
     }
-    for key in (
-        "child_identity",
-        "process_tree_identity",
-        "stop_evidence",
-        "supervisor_tree_identity",
-    ):
-        if key not in payload and key in previous:
-            payload[key] = previous[key]
     generation = str(payload.get("generation") or "").strip()
+    previous_generation = str(previous.get("generation") or "").strip()
+    history = previous.get("ownership_history") if isinstance(previous.get("ownership_history"), list) else []
+    if previous and previous_generation != generation:
+        history = [
+            *history,
+            {
+                key: previous.get(key)
+                for key in (
+                    "version", "generation", "created_at", "updated_at", "status",
+                    "runner_state", "supervisor_tree_identity",
+                    "process_tree_identity", "stop_evidence",
+                )
+                if key in previous
+            },
+        ][-10:]
+    if history:
+        payload["ownership_history"] = history
+    if previous_generation == generation:
+        for key in (
+            "created_at",
+            "child_identity",
+            "process_tree_identity",
+            "stop_evidence",
+            "supervisor_tree_identity",
+            "runner_acknowledgement",
+        ):
+            if key not in payload and key in previous:
+                payload[key] = previous[key]
     if generation and "supervisor_tree_identity" not in payload:
         current = inspect_process(os.getpid())
         interpreter = make_ownership_record(
@@ -656,8 +884,35 @@ def _write_status(status, **extra):
             [item for item in (launcher, interpreter) if item],
             generation,
         )
-    SUPERVISOR_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    atomic_write_json(SUPERVISOR_PATH, payload)
     return payload
+
+
+def _read_status():
+    return _read_json(SUPERVISOR_PATH)
+
+
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _git_revision(path):
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(path),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            **background_run_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return str(completed.stdout or "").strip() if completed.returncode == 0 else ""
 
 
 def main():
@@ -672,15 +927,11 @@ def main():
     try:
         if STOP_PATH.exists():
             STOP_PATH.unlink()
-        try:
-            from modules.charlie.execution_bridge import recover_pending_final_agent_artifact
-            recovery, recovery_status = recover_pending_final_agent_artifact()
-        except Exception as exc:
-            recovery, recovery_status = {"status": "final_artifact_recovery_failed", "error_type": exc.__class__.__name__}, 503
-        if recovery_status >= 400:
-            _write_status("final_artifact_recovery_blocked", recovery=recovery)
-            return {"status": "final_artifact_recovery_blocked", "recovery": recovery}
-        return supervise_runner(notifier=_notify_infrastructure_hold)
+        generation = str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or uuid.uuid4().hex)
+        return supervise_runner(
+            notifier=_notify_infrastructure_hold,
+            generation=generation,
+        )
     finally:
         instance_lock.release()
 

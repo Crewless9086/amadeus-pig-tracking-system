@@ -1,3 +1,5 @@
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,6 +43,40 @@ MISSION = {
 
 
 class CharlieMissionPickupTests(unittest.TestCase):
+    def test_runner_refuses_missing_current_generation_packet(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+                "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
+                "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            },
+            clear=False,
+        ), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", Path(tmp) / "missing.json"):
+            result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_packet_missing")
+
+    def test_runner_refuses_mismatched_generation_before_pickup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            packet_path = Path(tmp) / "supervisor.json"
+            packet_path.write_text(json.dumps({
+                "version": "charlie_supervisor_ownership_v2",
+                "generation": "other-generation",
+                "created_at": "2026-07-26T00:00:00Z",
+                "intended_runtime_revision": "revision-1",
+                "intended_execution_revision": "revision-1",
+                "runner_state": "runner_starting",
+                "supervisor_tree_identity": {"root": {"pid": 1}, "members": [{"pid": 1}]},
+            }), encoding="utf-8")
+            with patch.dict(os.environ, {
+                "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
+                "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
+                "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+            }, clear=False), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", packet_path):
+                result = charlie_mission_pickup._validate_supervisor_startup()
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "supervisor_packet_generation_mismatch")
     def test_resume_uses_exact_remote_branch_without_local_fast_forward(self):
         mission = {
             "mission_id": "M-1",

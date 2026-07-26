@@ -122,6 +122,44 @@ class CharlieProcessOwnershipTests(unittest.TestCase):
         live = {**self.live, "ancestry": [{"pid": 900, "name": "python.exe"}]}
         self.assertEqual(self.validate(live)["reason"], "current_process_ancestry")
 
+    def test_exact_fresh_child_can_be_contained_by_its_governed_starter(self):
+        live = {**self.live, "ancestry": [{"pid": 900, "name": "python.exe"}]}
+        result = process_ownership.validate_termination(
+            self.record,
+            self.expected,
+            lambda _pid: live,
+            current_pid=900,
+            allow_current_descendant=True,
+        )
+        self.assertTrue(result["authorized"])
+
+    def test_descendant_override_cannot_target_an_unrelated_process(self):
+        result = process_ownership.validate_termination(
+            self.record,
+            self.expected,
+            lambda _pid: self.live,
+            current_pid=900,
+            allow_current_descendant=True,
+        )
+        self.assertEqual(result["reason"], "not_current_process_descendant")
+
+    def test_descendant_override_still_denies_protected_process_below_starter(self):
+        live = {
+            **self.live,
+            "ancestry": [
+                {"pid": 333, "name": "powershell.exe"},
+                {"pid": 900, "name": "python.exe"},
+            ],
+        }
+        result = process_ownership.validate_termination(
+            self.record,
+            self.expected,
+            lambda _pid: live,
+            current_pid=900,
+            allow_current_descendant=True,
+        )
+        self.assertEqual(result["reason"], "protected_process_boundary")
+
     def test_windows_launcher_and_interpreter_form_one_valid_logical_tree(self):
         launcher = self.record
         interpreter_live = {
