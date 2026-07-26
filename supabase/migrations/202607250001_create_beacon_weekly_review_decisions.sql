@@ -55,3 +55,20 @@ drop trigger if exists prevent_beacon_weekly_review_decisions_delete
 create trigger prevent_beacon_weekly_review_decisions_delete
     before delete on public.beacon_weekly_review_decision_events
     for each row execute function public.prevent_beacon_weekly_review_decision_mutation();
+
+-- Browser/client roles must never bypass the owner-admin application route.
+alter table public.beacon_weekly_review_decision_events enable row level security;
+
+revoke all privileges on table
+    public.beacon_weekly_review_decision_events
+    from public, anon, authenticated;
+grant select, insert on table
+    public.beacon_weekly_review_decision_events
+    to service_role;
+
+revoke all privileges on function
+    public.prevent_beacon_weekly_review_decision_mutation()
+    from public, anon, authenticated;
+grant execute on function
+    public.prevent_beacon_weekly_review_decision_mutation()
+    to service_role;

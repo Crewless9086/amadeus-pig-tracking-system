@@ -210,6 +210,14 @@ class WeeklyOwnerReviewDecisionTests(unittest.TestCase):
         self.assertIn("beacon_weekly_review_decision_events", migration)
         self.assertIn("before update", migration.lower())
         self.assertIn("before delete", migration.lower())
+        self.assertIn("enable row level security", migration.lower())
+        self.assertIn(
+            "from public, anon, authenticated", migration.lower()
+        )
+        self.assertIn("to service_role", migration.lower())
+        self.assertIn(
+            "revoke all privileges on function", migration.lower()
+        )
         self.assertIn("publication_not_authorized", migration)
         self.assertNotIn("facebook_post_id", migration)
         self.assertNotIn("access_token", migration.lower())
