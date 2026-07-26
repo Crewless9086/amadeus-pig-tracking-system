@@ -19,6 +19,49 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.owner_money_path_guard.start()
         self.addCleanup(self.owner_money_path_guard.stop)
 
+    def test_sam_owner_inbox_read_and_reconciliation_authorities_are_separate(self):
+        loaded = {
+            "success": True, "status": "owner_work_items_loaded", "items": [],
+            "counts": {}, "evidence_complete": True,
+        }
+        with patch.object(sales_transaction_routes, "require_owner_read_access", return_value=None), \
+             patch.object(sales_transaction_routes, "list_owner_work_items", return_value=(loaded, 200)):
+            response = self.client.get("/api/sales/channels/chatwoot/sam/owner-inbox")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["items"], [])
+
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \
+             patch.object(sales_transaction_routes, "reconcile_live_human_backlog") as reconcile:
+            response = self.client.post("/api/sales/channels/chatwoot/sam/owner-inbox/reconcile")
+        self.assertEqual(response.status_code, 403)
+        reconcile.assert_not_called()
+
+    def test_sam_owner_inbox_reconciliation_does_not_accept_browser_evidence(self):
+        result = {
+            "success": True, "status": "owner_work_reconciliation_completed",
+            "sends_customer_message": False, "changes_conversation_ownership": False,
+            "calls_telegram": False, "mutates_business_state": False,
+        }
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \
+             patch.object(sales_transaction_routes, "reconcile_live_human_backlog", return_value=(result, 200)) as reconcile:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/reconcile",
+                json={"conversations": [{"id": "manufactured"}]},
+            )
+        self.assertEqual(response.status_code, 200)
+        reconcile.assert_called_once_with()
+
+    def test_charlie_daily_report_write_requires_owner_admin(self):
+        denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
+        with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \
+             patch.object(sales_transaction_routes, "run_daily_backlog_report") as report:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam/owner-inbox/charlie-report"
+            )
+        self.assertEqual(response.status_code, 403)
+        report.assert_not_called()
+
     def test_beacon_follow_up_preview_is_read_only_and_owner_creation_is_separate(self):
         events = [{"performance_event_id": "e1"}, {"performance_event_id": "e2"}]
         suggestion = {"suggestion_id": "BEACON-FOLLOWUP-1", "title": "Follow up"}

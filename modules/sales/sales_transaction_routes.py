@@ -1,7 +1,7 @@
 import ipaddress
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, render_template, request
 from modules.auth.owner_access import (
     owner_session_is_valid,
     require_owner_admin_access,
@@ -135,6 +135,12 @@ from modules.sales.sam_response_class_authority import (
     list_latest_authority_events,
     load_canonical_evidence,
     run_bounded_authority_evaluation,
+)
+from modules.sales.sam_owner_work_queue import (
+    build_charlie_backlog_report,
+    list_owner_work_items,
+    reconcile_live_human_backlog,
+    run_daily_backlog_report,
 )
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
@@ -972,6 +978,62 @@ def sam_live_stock_human_mode_audit():
     except Exception as exc:
         fallback, fallback_status = build_sam_live_stock_human_audit_failure(exc, "json_serialization")
         return jsonify(fallback), fallback_status
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox", methods=["GET"])
+def sam_owner_inbox():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = list_owner_work_items(
+        include_withheld=request.args.get("include_withheld", "true").lower() != "false",
+        limit=request.args.get("limit", 100),
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox/page", methods=["GET"])
+def sam_owner_inbox_page():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    return render_template("sam-owner-inbox.html")
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox/reconcile", methods=["POST"])
+def sam_owner_inbox_reconcile():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = reconcile_live_human_backlog()
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox/charlie-report", methods=["GET"])
+def sam_owner_inbox_charlie_report():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = list_owner_work_items(include_withheld=True, limit=100)
+    if status_code >= 400:
+        return jsonify(result), status_code
+    return jsonify({
+        "success": True,
+        "status": "sam_owner_backlog_report_loaded",
+        "report": build_charlie_backlog_report(result.get("items") or []),
+        "owner_decision_authority": False,
+        "customer_send_authority": False,
+        "business_write_authority": False,
+    }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam/owner-inbox/charlie-report", methods=["POST"])
+def sam_owner_inbox_record_charlie_report():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = run_daily_backlog_report()
+    return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-live-stock/owner-send", methods=["POST"])
