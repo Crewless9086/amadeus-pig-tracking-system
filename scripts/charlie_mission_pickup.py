@@ -428,6 +428,12 @@ def _validate_final_packet_live(packet):
     for field, expected in expected_lists.items():
         if sorted(acknowledgement.get(field) or []) != sorted(expected):
             return {"success": False, "reason": f"controller_final_{field}_mismatch"}
+    supervisor_root_pid = int(
+        ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+        or -1
+    )
+    if int(acknowledgement.get("supervisor_pid") or -1) != supervisor_root_pid:
+        return {"success": False, "reason": "controller_final_supervisor_pid_mismatch"}
     if int(acknowledgement.get("runner_pid") or -1) != os.getpid():
         return {"success": False, "reason": "controller_final_runner_pid_mismatch"}
     return {"success": True, "reason": "final_live_process_tree_valid"}
@@ -629,6 +635,10 @@ def reconcile_blocked_pr_missions(notify=False, run_subprocess=None):
                 "block_disposition": disposition,
                 "github_reconciliation": review_packet.get("github_reconciliation", {}),
             })
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         updated, updated_code = transition_mission_review_state(
             mission_id,
             decision.get("target_status"),
@@ -718,6 +728,10 @@ def recover_stranded_missions(notify=False):
             "runner_recovery": recovery_event,
             "runner_recovery_history": recovery_history[-20:],
         }
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         status_result, block_status = update_mission_status(
             mission_id,
             "approved",
@@ -730,6 +744,10 @@ def recover_stranded_missions(notify=False):
         if block_status >= 400:
             skipped.append({"mission_id": mission_id, "reason": status_result.get("status", "blocked_status_update_failed")})
             continue
+        authorized, reason = _runtime_pickup_authorized()
+        if not authorized:
+            skipped.append({"mission_id": mission_id, "reason": reason})
+            break
         vault_result, vault_status = update_mission_vault(
             mission_id,
             {
@@ -1032,6 +1050,14 @@ def _mission_requires_browser_preflight(mission):
 
 
 def process_release_approved_mission(mission_id, notify=False, auto_close_no_release=False, auto_merge_pr=False, release_verify_url=""):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+        }, 423
     if auto_close_no_release:
         result, status_code = complete_no_release_mission(mission_id=mission_id)
     elif auto_merge_pr:
@@ -1219,6 +1245,15 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "next_action": "Restore the packaged mission branch before resuming review stages.",
         }, 409
 
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
     updated, update_status = update_mission_status(
         mission_id,
         "in_progress",
@@ -1237,6 +1272,15 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "expected_status": clean_status,
         }, update_status
 
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
     lease = _write_execution_lease(mission_id)
     _write_codex_chat(codex_chat_preview)
     if notify:

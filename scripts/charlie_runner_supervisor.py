@@ -829,11 +829,16 @@ def _wait_for_controller_final_authorization(
             and str(packet.get("runner_state") or "") == "running_authorized"
             and isinstance(acknowledgement, dict)
         ):
+            supervisor_root_pid = int(
+                ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+                or -1
+            )
             expected = {
                 "generation": generation,
                 "supervisor_startup_nonce": supervisor_nonce,
                 "runner_startup_nonce": runner_nonce,
                 "revision": revision,
+                "supervisor_pid": str(supervisor_root_pid),
                 "runner_pid": str(child.pid),
             }
             mismatch = next(
@@ -910,6 +915,9 @@ def _write_test_final_authorization(
     supervisor_members = (
         (packet.get("supervisor_tree_identity") or {}).get("members") or []
     )
+    supervisor_root_pid = (
+        ((packet.get("supervisor_tree_identity") or {}).get("root") or {}).get("pid")
+    )
     runner_members = (packet.get("process_tree_identity") or {}).get("members") or []
     acknowledgement = {
         "status": "current_process_tree_acknowledged",
@@ -917,7 +925,7 @@ def _write_test_final_authorization(
         "supervisor_startup_nonce": supervisor_nonce,
         "runner_startup_nonce": runner_nonce,
         "revision": revision,
-        "supervisor_pid": str(os.getpid()),
+        "supervisor_pid": str(supervisor_root_pid or ""),
         "runner_pid": str(runner_pid),
         "supervisor_member_pids": [item.get("pid") for item in supervisor_members],
         "runner_member_pids": [item.get("pid") for item in runner_members],

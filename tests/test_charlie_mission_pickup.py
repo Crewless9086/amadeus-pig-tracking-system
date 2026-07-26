@@ -113,6 +113,30 @@ class CharlieMissionPickupTests(unittest.TestCase):
         self.assertEqual(result["recovered_count"], 0)
         missions.assert_not_called()
 
+    def test_direct_release_processing_is_contained_before_mutation(self):
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            return_value=(False, "governed_stop_active"),
+        ), patch.object(
+            charlie_mission_pickup, "complete_no_release_mission"
+        ) as complete, patch.object(
+            charlie_mission_pickup, "run_release_execution"
+        ) as release, patch.object(
+            charlie_mission_pickup, "prepare_release_execution"
+        ) as prepare:
+            result, status = (
+                charlie_mission_pickup.process_release_approved_mission(
+                    "CHARLIE-MISSION-1",
+                    auto_close_no_release=True,
+                )
+            )
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "runner_contained")
+        complete.assert_not_called()
+        release.assert_not_called()
+        prepare.assert_not_called()
+
     def test_runner_waits_for_final_controller_ack_before_pickup(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
             "CHARLIE_SUPERVISOR_GENERATION": "generation-1",

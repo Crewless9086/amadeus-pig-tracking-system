@@ -44,6 +44,60 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows failed-start containment harness")
+    def test_windows_failed_start_leaves_zero_observed_processes(self):
+        if not process_ownership._windows_process_snapshot():
+            self.skipTest("Windows process inspection is unavailable to this session")
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        command = (
+            "$p=Start-Process powershell.exe -ArgumentList "
+            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
+            "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
+        )
+        failure_mode = "failed_start"
+        process = subprocess.Popen(
+                    [
+                        str(powershell), "-NoProfile", "-NonInteractive",
+                        "-Command", command,
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    **runner_control.background_process_kwargs(),
+                )
+        tree = {}
+        try:
+            observed = process_ownership.observe_process_tree(
+                        process.pid,
+                        generation=f"generation-{failure_mode}",
+                        revision="revision-1",
+                        startup_nonce=f"nonce-{failure_mode}",
+                        expected_script="",
+                        expected_root_executable=str(powershell),
+                        process_role_prefix="supervisor",
+                        timeout_seconds=10,
+                    )
+            self.assertTrue(observed["success"], observed)
+            tree = observed["tree"]
+            containment = runner_control._contain_spawned_process(
+                        process, tree
+                    )
+            self.assertTrue(containment["success"], containment)
+            for member in tree.get("members") or []:
+                self.assertIsNone(
+                            runner_control.inspect_process(member.get("pid")),
+                            (failure_mode, member),
+                        )
+        finally:
+            if process.poll() is None:
+                subprocess.run(
+                            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                            capture_output=True, text=True, check=False,
+                        )
+
     @unittest.skipUnless(os.name == "nt", "Windows governed lifecycle harness")
     def test_windows_governed_start_and_stop_exact_observed_tree(self):
         if not process_ownership._windows_process_snapshot():
@@ -54,11 +108,12 @@ class CharlieRunnerControlTests(unittest.TestCase):
         )
         command = (
             "$p=Start-Process powershell.exe -ArgumentList "
-            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 30' "
+            "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
             "-PassThru -WindowStyle Hidden; Wait-Process -Id $p.Id"
         )
         original_observe = runner_control.observe_process_tree
         publisher_threads = []
+        runner_processes = []
 
         def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
             result = original_observe(
@@ -102,14 +157,30 @@ class CharlieRunnerControlTests(unittest.TestCase):
                             break
                         time.sleep(0.05)
                     runner_nonce = "windows-harness-runner-nonce"
-                    runner_tree = json.loads(json.dumps(tree))
-                    for index, member in enumerate(runner_tree["members"]):
-                        member["startup_nonce"] = runner_nonce
-                        member["process_role"] = (
-                            "runner_launcher" if index == 0
-                            else "runner_interpreter"
-                        )
-                    runner_tree["root"] = runner_tree["members"][0]
+                    runner_process = subprocess.Popen(
+                        [
+                            str(powershell), "-NoProfile", "-NonInteractive",
+                            "-Command", command,
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        stdin=subprocess.DEVNULL,
+                        **runner_control.background_process_kwargs(),
+                    )
+                    runner_processes.append(runner_process)
+                    runner_observation = original_observe(
+                        runner_process.pid,
+                        generation=generation,
+                        revision=revision,
+                        startup_nonce=runner_nonce,
+                        expected_script="",
+                        expected_root_executable=str(powershell),
+                        process_role_prefix="runner",
+                        timeout_seconds=10,
+                    )
+                    if not runner_observation.get("success"):
+                        return
+                    runner_tree = runner_observation["tree"]
                     runner_identity = runner_tree["members"][-1]
                     packet.update({
                         "status": "running",
@@ -176,6 +247,16 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 for publisher in publisher_threads:
                     publisher.join(timeout=5)
             finally:
+                for runner_process in runner_processes:
+                    if runner_process.poll() is None:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(runner_process.pid), "/T", "/F"],
+                            capture_output=True, text=True, check=False,
+                        )
+                    try:
+                        runner_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
                 if started_pid and runner_control.inspect_process(started_pid):
                     subprocess.run(
                         ["taskkill", "/PID", str(started_pid), "/T", "/F"],
@@ -193,6 +274,27 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(status, 423)
         self.assertEqual(result["status"], "governed_stop_active")
         self.assertEqual(marker, "owner stop")
+        popen.assert_not_called()
+
+    def test_stop_marker_appearing_at_spawn_boundary_prevents_process_creation(self):
+        marker = Mock()
+        marker.exists.side_effect = [False, False, True]
+        marker.__str__ = Mock(return_value="supervisor.stop")
+        with patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", marker
+        ), patch.object(
+            runner_control, "_read_json", return_value={}
+        ), patch.object(
+            runner_control, "runner_status",
+            return_value={"active": False, "orphan_processes": []},
+        ), patch.object(
+            runner_control, "process_termination_enabled", return_value=True
+        ), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(runner_control.subprocess, "Popen") as popen:
+            result, status = runner_control.start_runner()
+        self.assertEqual(status, 423)
+        self.assertEqual(result["status"], "governed_stop_active")
         popen.assert_not_called()
 
     def test_supported_cli_start_cannot_remove_stop_marker(self):

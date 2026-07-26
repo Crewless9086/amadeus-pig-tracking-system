@@ -374,6 +374,15 @@ def start_runner(status_override=None, respect_stop_marker=True):
         "CHARLIE_INTENDED_EXECUTION_REVISION": intended_revision,
         "CHARLIE_CONTROLLER_PUBLIC_KEY": controller_public_key,
     }
+    # The final check is deliberately adjacent to process creation.  A marker
+    # arriving after this point is still authoritative: both the child entry
+    # point and the acknowledgement loop refuse it and contain the new tree.
+    if SUPERVISOR_STOP_PATH.exists():
+        return {
+            "success": False,
+            "status": "governed_stop_active",
+            "stop_marker": str(SUPERVISOR_STOP_PATH),
+        }, 423
     with LOG_PATH.open("ab") as log:
         process = subprocess.Popen(
             command,
@@ -521,6 +530,11 @@ def _wait_for_supervisor_ack(
     deadline = time.monotonic() + max(0, float(timeout_seconds))
     last_reason = "current_generation_packet_not_published"
     while time.monotonic() <= deadline:
+        if SUPERVISOR_STOP_PATH.exists():
+            return {
+                "success": False,
+                "reason": "governed_stop_during_start_acknowledgement",
+            }
         packet = _read_json(SUPERVISOR_PATH)
         valid, reason = validate_supervisor_packet(
             packet,
