@@ -233,6 +233,56 @@ class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertFalse(any((delivery, delivered, content, send, telegram, template)))
 
+    def test_ownership_exception_persists_normalized_without_send_or_ownership_authority(self):
+        suffix = uuid.uuid4().hex
+        observation = build_owner_work_observation(
+            {
+                "account_id": "147387",
+                "id": f"ownership-{suffix}",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "channel": "Channel::Whatsapp",
+                "custom_attributes": {},
+                "labels": [],
+                "messages": [{
+                    "id": "101", "message_type": 0, "private": False,
+                    "created_at": "2026-07-26T10:00:00+00:00",
+                }],
+            },
+            review={
+                "review_event_id": f"SAM-LIVE-REVIEW-{suffix}",
+                "chatwoot_conversation_id": f"ownership-{suffix}",
+                "chatwoot_message_id": "101",
+            },
+            reconciliation_actor_id="owner-admin:server-derived-test",
+            observed_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+        )
+        result, status = record_owner_work_observation(
+            observation, database_url=self.database_url
+        )
+        self.assertEqual(status, 201)
+        self.assertTrue(result["created"])
+        with self.psycopg.connect(self.database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select ownership_mode,classification,actionable,
+                           withheld_reasons_json,ordinary_reply_allowed,
+                           send_reply_action_visible,sends_customer_message,
+                           changes_conversation_ownership,calls_telegram,
+                           mutates_business_state
+                    from public.sam_owner_work_item_events
+                    where work_event_id=%s
+                    """,
+                    (observation["work_event_id"],),
+                )
+                row = cursor.fetchone()
+        self.assertEqual(row[0], "UNAVAILABLE")
+        self.assertEqual(row[1], "OWNERSHIP_DECISION_REQUIRED")
+        self.assertTrue(row[2])
+        self.assertEqual(row[3], ["conversation_ownership_missing"])
+        self.assertFalse(any(row[4:]))
+
     def test_window_alert_table_privileges_and_immutability(self):
         with self.psycopg.connect(self.database_url) as connection:
             with connection.cursor() as cursor:

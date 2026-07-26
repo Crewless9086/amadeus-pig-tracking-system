@@ -11,7 +11,7 @@
     <header>
       <p class="eyebrow">SAM · owner-authenticated</p>
       <h1 id="owner-inbox-title">Owner Inbox</h1>
-      <p>One canonical view of HUMAN work. Reading this queue sends nothing.</p>
+      <p>One canonical view of HUMAN work and ownership exceptions. Reading this queue sends nothing.</p>
       <p class="window-policy">Reply-window protection: warning at 6 hours remaining; urgent at 2 hours. UTC is authoritative.</p>
       <button id="refresh-owner-inbox" type="button">Refresh view</button>
     </header>
@@ -21,6 +21,7 @@
       <div><strong id="specialist-count">—</strong><span>Specialist</span></div>
       <div><strong id="withheld-count">—</strong><span>Withheld / handled</span></div>
       <div><strong id="expiring-count">—</strong><span>Expiring ≤ 6h</span></div>
+      <div><strong id="ownership-count">—</strong><span>Ownership decisions</span></div>
     </section>
     <p id="owner-inbox-status" role="status">Loading authoritative queue…</p>
     <section id="owner-inbox-items" class="items" aria-live="polite"></section>
