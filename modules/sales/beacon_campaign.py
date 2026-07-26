@@ -24,6 +24,9 @@ from modules.beacon.public_livestock_content_policy import (
 from modules.beacon.organic_publication_binding import (
     require_organic_publication_binding,
 )
+from modules.beacon.organic_publication_authorization import (
+    canonical_caption_text,
+)
 from modules.sales.sam_meat_control_mode import controlled_mode_denial
 
 
@@ -1266,7 +1269,14 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, 409
     policy = facebook_posting_policy(environ=environ)
-    params = _facebook_post_params(payload, policy)
+    try:
+        params = _facebook_post_params(payload, policy)
+    except ValueError:
+        return {
+            "success": False,
+            "status": "canonical_caption_invalid",
+            **_facebook_execution_authority(False),
+        }, 400
     validation_error = _facebook_post_validation_error(params, policy)
     if validation_error:
         params["execution_status"] = validation_error
@@ -1292,10 +1302,27 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
                 **_facebook_execution_authority(False),
             }, binding_status
         binding = binding_result["binding"]
+        authorization = binding_result["authorization"]
         params["publication_binding_id"] = binding["binding_id"]
         params["approved_weekly_packet_id"] = binding["weekly_packet_id"]
         params["owner_decision_event_id"] = binding["owner_decision_event_id"]
+        params["authorization_generation_id"] = authorization[
+            "authorization_generation_id"
+        ]
         params["execution_event_id"] = _facebook_post_execution_id(params)
+        if (
+            params["execution_event_id"]
+            != authorization["expected_attempt_identity"]
+        ):
+            return {
+                "success": False,
+                "status": "organic_publication_attempt_identity_mismatch",
+                "publish": False,
+                "upload": False,
+                "scheduled": False,
+                "meta_call": False,
+                **_facebook_execution_authority(False),
+            }, 409
 
     recorder = execution_recorder or _record_facebook_post_execution_event
     params["execution_status"] = "record_only_before_send"
@@ -2424,13 +2451,20 @@ def _facebook_post_params(payload, policy):
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
-        "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
+        "exact_text": canonical_caption_text(
+            payload.get("exact_text")
+            if "exact_text" in payload
+            else payload.get("message", "")
+        )[:5000],
         "asset_id": _clean_text(payload.get("asset_id") or selected_asset.get("asset_id"))[:120],
         "selected_asset": selected_asset,
         "selected_assets": selected_assets,
         "selected_media_json": "{}",
         "post_kind": post_kind,
         "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
+        "authorization_generation_id": _clean_text(
+            payload.get("authorization_generation_id")
+        )[:160],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
         "facebook_response_json": "{}",
@@ -3026,6 +3060,9 @@ def _facebook_post_execution_id(params):
         "publication_binding_id": params.get("publication_binding_id", ""),
         "approved_weekly_packet_id": params.get("approved_weekly_packet_id", ""),
         "owner_decision_event_id": params.get("owner_decision_event_id", ""),
+        "authorization_generation_id": params.get(
+            "authorization_generation_id", ""
+        ),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
     return f"BEACON-FB-POST-{digest}"
