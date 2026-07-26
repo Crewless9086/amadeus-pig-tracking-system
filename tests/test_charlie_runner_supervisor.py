@@ -15,6 +15,39 @@ SUBPROCESS_TESTS_ENABLED = os.getenv("CHARLIE_SUBPROCESS_TESTS_ENABLED") == "1"
 
 
 class CharlieRunnerSupervisorTests(unittest.TestCase):
+    def test_runner_is_not_spawned_without_current_controller_acknowledgement(self):
+        popen = Mock()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
+            supervisor, "_wait_for_controller_ack", return_value={
+                "success": False, "reason": "controller_ownership_packet_missing",
+            }
+        ):
+            supervisor.SUPERVISOR_PATH.write_text(
+                json.dumps({
+                    "version": runner_control.SUPERVISOR_PACKET_VERSION,
+                    "generation": "stale-generation",
+                }),
+                encoding="utf-8",
+            )
+            result = supervisor.supervise_runner(
+                popen_factory=popen,
+                sleep_fn=lambda _seconds: None,
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                generation="generation-1",
+            )
+        self.assertEqual(result["status"], "infrastructure_hold")
+        self.assertEqual(
+            result["failure_status"],
+            "controller_ownership_packet_missing",
+        )
+        popen.assert_not_called()
+
     def test_durable_starting_packet_is_reread_before_child_spawn(self):
         observations = []
         child = Mock(pid=101)
@@ -48,8 +81,13 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
                 generation="generation-1",
             )
         self.assertEqual(observations[0]["runner_state"], "not_spawned")
+        self.assertEqual(observations[0]["status"], "supervisor_ready")
         self.assertEqual(observations[0]["generation"], "generation-1")
         self.assertTrue(observations[0]["supervisor_tree_identity"]["members"])
+        self.assertEqual(
+            observations[0]["controller_acknowledgement"]["status"],
+            "supervisor_identity_acknowledged",
+        )
 
     def test_missing_runner_acknowledgement_fails_closed_without_running_state(self):
         child = Mock(pid=101)
@@ -249,7 +287,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 2)
         child_env = popen.call_args_list[0].kwargs["env"]
         self.assertIn("GIT_CONFIG_GLOBAL", child_env)
-        self.assertEqual(inspect_process.call_count, 2)
+        self.assertEqual(inspect_process.call_count, 0)
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_child_base_branch_aliases_override_conflicting_legacy_environment(self, inspect_process):
@@ -268,7 +306,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         child_env = popen.call_args.kwargs["env"]
         self.assertEqual(child_env["CORE_EXECUTION_BASE_BRANCH"], "charlie-core-execution-base")
         self.assertEqual(child_env["CHARLIE_RUNNER_BASE_BRANCH"], "charlie-core-execution-base")
-        self.assertEqual(inspect_process.call_count, 1)
+        self.assertEqual(inspect_process.call_count, 0)
 
     def test_stop_marker_prevents_child_start(self):
         popen = Mock()
@@ -331,7 +369,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["restart_count"], 3)
         self.assertEqual(state["identical_failure_count"], 3)
         notifier.assert_called_once()
-        self.assertEqual(inspect_process.call_count, 3)
+        self.assertEqual(inspect_process.call_count, 0)
 
     @patch.object(supervisor, "inspect_process", return_value={})
     def test_three_identical_unclassified_child_crashes_enter_hold(self, inspect_process):
@@ -348,7 +386,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertEqual(result["status"], "infrastructure_hold")
         self.assertIn("child_exit:3221225794", result["failure_status"])
         notifier.assert_called_once()
-        self.assertEqual(inspect_process.call_count, 3)
+        self.assertEqual(inspect_process.call_count, 0)
 
     @patch("modules.charlie.improvement_analyst.run_operational_analyst", return_value=({"success": True, "status": "analyst_cycle_complete", "lifecycle": {"updated_count": 1}}, 200))
     def test_conveyor_repair_triggers_analyst_validation_cycle(self, analyst):

@@ -33,6 +33,7 @@ from modules.charlie.runner_control import (
     write_runner_heartbeat,
 )
 from modules.charlie.runner_preflight import runner_environment_preflight
+from modules.charlie.process_ownership import validate_bootstrap_tree
 from modules.charlie.process_policy import background_run_kwargs
 from modules.charlie.pr_reconciliation import mission_pr_reference, query_pr_state, reconciliation_decision
 from modules.charlie.improvement_analyst import run_operational_analyst
@@ -151,6 +152,8 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
         return {"success": True, "status": "standalone_runner_startup"}
     runtime_revision = str(os.getenv("CHARLIE_INTENDED_RUNTIME_REVISION") or "")
     execution_revision = str(os.getenv("CHARLIE_INTENDED_EXECUTION_REVISION") or "")
+    supervisor_nonce = str(os.getenv("CHARLIE_STARTUP_NONCE") or "")
+    runner_nonce = str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or "")
     packet = _read_json(SUPERVISOR_PATH)
     deadline = time.monotonic() + max(0, float(transition_timeout_seconds))
     while (
@@ -166,6 +169,8 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
         runtime_revision,
         execution_revision,
         runner_states={"runner_starting"},
+        startup_nonce=supervisor_nonce,
+        statuses={"runner_starting"},
     )
     if not valid:
         return {
@@ -174,6 +179,45 @@ def _validate_supervisor_startup(run_factory=subprocess.run, sleep_fn=time.sleep
             "reason": reason,
             "supervisor_generation": generation,
         }
+    runner_tree = packet.get("process_tree_identity")
+    runner_decision = validate_bootstrap_tree(
+        runner_tree,
+        generation=generation,
+        revision=execution_revision,
+        startup_nonce=runner_nonce,
+        require_interpreter=True,
+    )
+    if not runner_decision["authorized"]:
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": runner_decision["reason"],
+            "supervisor_generation": generation,
+        }
+    if os.getpid() not in set(runner_decision.get("member_pids") or []):
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "runner_identity_pid_not_acknowledged",
+        }
+    acknowledgement = packet.get("runner_controller_acknowledgement")
+    if not isinstance(acknowledgement, dict):
+        return {
+            "success": False,
+            "status": "runner_startup_refused",
+            "reason": "ownership_identity_incomplete:runner_controller_acknowledgement",
+        }
+    for field, expected in {
+        "generation": generation,
+        "startup_nonce": runner_nonce,
+        "revision": execution_revision,
+    }.items():
+        if str(acknowledgement.get(field) or "") != expected:
+            return {
+                "success": False,
+                "status": "runner_startup_refused",
+                "reason": f"runner_controller_acknowledgement_{field}_mismatch",
+            }
     try:
         completed = run_factory(
             ["git", "rev-parse", "HEAD"],

@@ -9,7 +9,78 @@ from unittest.mock import Mock, patch
 from modules.charlie import runner_control
 
 
+def successful_bootstrap_observation(root_pid, *, generation, revision, startup_nonce, **_kwargs):
+    root = {
+        "pid": root_pid, "creation_time": "launcher-created",
+        "executable_path": "C:/venv/python.exe",
+        "command_fingerprint": "launcher-command", "parent_pid": 999,
+        "runner_generation": generation, "mission_id": "charlie-control",
+        "execution_id": generation, "ownership_type": "charlie_runner",
+        "revision": revision, "startup_nonce": startup_nonce,
+    }
+    interpreter = {
+        **root, "pid": int(root_pid) + 1, "parent_pid": root_pid,
+        "creation_time": "interpreter-created",
+        "command_fingerprint": "interpreter-command",
+    }
+    return {
+        "success": True,
+        "tree": {
+            "version": "charlie_process_tree_v1",
+            "runner_generation": generation,
+            "root_pid": root_pid,
+            "root": root,
+            "members": [root, interpreter],
+        },
+        "validation": {"authorized": True, "member_pids": [root_pid, int(root_pid) + 1]},
+    }
+
+
 class CharlieRunnerControlTests(unittest.TestCase):
+    def test_incomplete_controller_observation_is_durable_and_contained(self):
+        process = Mock(pid=4321)
+        incomplete_tree = {
+            "version": "charlie_process_tree_v1",
+            "root": {"pid": 4321},
+            "members": [{"pid": 4321}],
+        }
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner_control, "RUNNER_DIR", Path(tmp)
+        ), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(
+            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
+        ), patch.object(
+            runner_control, "START_CONTAINMENT_PATH", Path(tmp) / "containment.json"
+        ), patch.object(runner_control, "runner_status", return_value={
+            "active": False, "status": "runner_not_started", "orphan_processes": [],
+        }), patch.object(
+            runner_control, "process_termination_enabled", return_value=True
+        ), patch.object(
+            runner_control, "_current_git_commit", return_value="revision-1"
+        ), patch.object(
+            runner_control.subprocess, "Popen", return_value=process
+        ), patch.object(runner_control, "observe_process_tree", return_value={
+            "success": False,
+            "reason": "ownership_identity_incomplete:root.executable_path",
+            "tree": incomplete_tree,
+        }), patch.object(
+            runner_control, "_contain_observed_tree",
+            return_value={"success": True, "reason": "observed_tree_contained"},
+        ):
+            result, status = runner_control.start_runner()
+            evidence = json.loads(
+                runner_control.START_CONTAINMENT_PATH.read_text(encoding="utf-8")
+            )
+            self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "ownership_identity_incomplete")
+        self.assertEqual(
+            evidence["reason"],
+            "ownership_identity_incomplete:root.executable_path",
+        )
+        self.assertEqual(evidence["process_tree_identity"], incomplete_tree)
+
     def test_atomic_state_replacement_preserves_previous_packet_on_replace_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "supervisor.json"
@@ -43,7 +114,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
             {"success": True, "status": "runner_stop_requested"}, 200
         )), patch.object(runner_control, "_contain_started_supervisor", return_value={
             "success": True, "reason": "exact_supervisor_tree_terminated",
-        }):
+        }), patch.object(runner_control, "observe_process_tree", side_effect=successful_bootstrap_observation):
             result, status = runner_control.start_runner()
             self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
         self.assertEqual(status, 503)
@@ -353,10 +424,11 @@ class CharlieRunnerControlTests(unittest.TestCase):
         self.assertEqual(result["status"], "runner_already_active")
 
     @patch("modules.charlie.runner_control._current_git_commit", return_value="revision-1")
+    @patch("modules.charlie.runner_control.observe_process_tree", side_effect=successful_bootstrap_observation)
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control._wait_for_supervisor_ack", return_value={"success": True, "status": "current_generation_acknowledged"})
     @patch("modules.charlie.runner_control.subprocess.Popen")
-    def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, _ack, _enabled, _commit):
+    def test_start_runner_accepts_watchdog_status_without_full_reprobe(self, popen, _ack, _enabled, _observe, _commit):
         popen.return_value.pid = 1234
         with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):
             result, status_code = runner_control.start_runner(status_override={"active": False, "status": "runner_not_started", "orphan_processes": []})
@@ -384,11 +456,12 @@ class CharlieRunnerControlTests(unittest.TestCase):
         popen.assert_not_called()
 
     @patch("modules.charlie.runner_control._current_git_commit", return_value="revision-1")
+    @patch("modules.charlie.runner_control.observe_process_tree", side_effect=successful_bootstrap_observation)
     @patch("modules.charlie.runner_control.process_termination_enabled", return_value=True)
     @patch("modules.charlie.runner_control._wait_for_supervisor_ack", return_value={"success": True, "status": "current_generation_acknowledged"})
     @patch("modules.charlie.runner_control.runner_status")
     @patch("modules.charlie.runner_control.subprocess.Popen")
-    def test_start_runner_launches_supervisor(self, popen, status, _ack, _enabled, _commit):
+    def test_start_runner_launches_supervisor(self, popen, status, _ack, _enabled, _observe, _commit):
         status.return_value = {"active": False, "status": "runner_not_started", "orphan_processes": []}
         popen.return_value.pid = 4321
         with tempfile.TemporaryDirectory() as tmp, patch.object(runner_control, "RUNNER_DIR", Path(tmp)), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"), patch.object(runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"):

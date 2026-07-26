@@ -21,7 +21,9 @@ from modules.charlie.process_ownership import (
     inspect_process,
     make_ownership_record,
     make_process_tree_record,
+    observe_process_tree,
     process_termination_enabled,
+    validate_bootstrap_tree,
     validate_process_tree,
     validate_termination,
 )
@@ -52,7 +54,7 @@ EMERGENCY_CLEANUP_DISABLED_PATH = RUNNER_DIR / "EMERGENCY_PROCESS_CLEANUP_DISABL
 EMERGENCY_CLEANUP_REFUSAL_LOG = RUNNER_DIR / "emergency-process-cleanup-refusals.jsonl"
 STALE_SECONDS = 120
 START_ACK_TIMEOUT_SECONDS = 30
-SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v2"
+SUPERVISOR_PACKET_VERSION = "charlie_supervisor_ownership_v3"
 
 
 def _python_executable(repo_root=REPO_ROOT):
@@ -231,6 +233,7 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
         "runner_source_commit": _current_git_commit(),
         "runner_source_branch": _current_git_branch(),
         "supervisor_generation": str(os.getenv("CHARLIE_SUPERVISOR_GENERATION") or ""),
+        "startup_nonce": str(os.getenv("CHARLIE_RUNNER_STARTUP_NONCE") or ""),
     }
     for key in (
         "elapsed_seconds",
@@ -262,13 +265,34 @@ def write_runner_heartbeat(result=None, heartbeat_path=None):
     payload = redact_payload(payload)
     generation = str(payload.get("supervisor_generation") or "")
     if generation:
-        identity = make_ownership_record(
-            inspect_process(os.getpid()),
-            generation,
-            "charlie-control",
-            generation,
-            "charlie_runner",
-        )
+        identity = {}
+        startup_nonce = str(payload.get("startup_nonce") or "")
+        if startup_nonce:
+            supervisor = _read_json(SUPERVISOR_PATH)
+            tree = supervisor.get("process_tree_identity")
+            decision = validate_bootstrap_tree(
+                tree,
+                generation=generation,
+                revision=str(payload.get("runner_source_commit") or ""),
+                startup_nonce=startup_nonce,
+                require_interpreter=True,
+            )
+            if decision["authorized"]:
+                identity = next(
+                    (
+                        item for item in tree.get("members", [])
+                        if int(item.get("pid") or -1) == os.getpid()
+                    ),
+                    {},
+                )
+        else:
+            identity = make_ownership_record(
+                inspect_process(os.getpid()),
+                generation,
+                "charlie-control",
+                generation,
+                "charlie_runner",
+            )
         if identity:
             payload["process_identity"] = identity
     atomic_write_json(heartbeat_path, payload)
@@ -336,10 +360,12 @@ def start_runner(status_override=None, respect_stop_marker=False):
         python_path = sys.executable
     command = [python_path, *SUPERVISOR_COMMAND[1:]]
     generation = uuid.uuid4().hex
+    startup_nonce = uuid.uuid4().hex
     intended_revision = _current_git_commit()
     child_env = {
         **os.environ,
         "CHARLIE_SUPERVISOR_GENERATION": generation,
+        "CHARLIE_STARTUP_NONCE": startup_nonce,
         "CHARLIE_INTENDED_RUNTIME_REVISION": intended_revision,
         "CHARLIE_INTENDED_EXECUTION_REVISION": intended_revision,
     }
@@ -353,10 +379,93 @@ def start_runner(status_override=None, respect_stop_marker=False):
             stdin=subprocess.DEVNULL,
             **background_process_kwargs(),
         )
+    observation = observe_process_tree(
+        process.pid,
+        generation=generation,
+        revision=intended_revision,
+        startup_nonce=startup_nonce,
+        expected_script=Path(command[-1]).name,
+    )
+    if not observation.get("success"):
+        SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        evidence = _write_startup_failure(
+            generation,
+            startup_nonce,
+            intended_revision,
+            observation.get("reason") or "ownership_identity_incomplete",
+            observation.get("tree") or {},
+        )
+        containment = _contain_observed_tree(observation.get("tree") or {})
+        return {
+            "success": False,
+            "status": "ownership_identity_incomplete",
+            "reason": evidence["reason"],
+            "generation": generation,
+            "startup_nonce": startup_nonce,
+            "containment": containment,
+        }, 503
+    supervisor_tree = observation["tree"]
+    members = supervisor_tree.get("members") or []
+    interpreter = next(
+        (item for item in members if int(item.get("pid") or -1) != int(process.pid)),
+        supervisor_tree.get("root") or {},
+    )
+    previous = _read_json(SUPERVISOR_PATH)
+    history = previous.get("ownership_history") if isinstance(previous.get("ownership_history"), list) else []
+    if previous:
+        history = [*history, _historical_ownership_packet(previous)][-10:]
+    controller_packet = {
+        "version": SUPERVISOR_PACKET_VERSION,
+        "pid": interpreter.get("pid"),
+        "status": "supervisor_ready",
+        "runner_state": "not_spawned",
+        "generation": generation,
+        "startup_nonce": startup_nonce,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "intended_runtime_revision": intended_revision,
+        "intended_execution_revision": intended_revision,
+        "supervisor_tree_identity": supervisor_tree,
+        "controller_acknowledgement": {
+            "status": "supervisor_identity_acknowledged",
+            "generation": generation,
+            "startup_nonce": startup_nonce,
+            "revision": intended_revision,
+            "member_pids": observation["validation"]["member_pids"],
+            "acknowledged_at": datetime.now(timezone.utc).isoformat(),
+        },
+        "ownership_history": history,
+    }
+    atomic_write_json(SUPERVISOR_PATH, controller_packet)
+    reread = _read_json(SUPERVISOR_PATH)
+    valid, reason = validate_supervisor_packet(
+        reread,
+        generation,
+        intended_revision,
+        intended_revision,
+        runner_states={"not_spawned"},
+        startup_nonce=startup_nonce,
+        statuses={"supervisor_ready"},
+    )
+    if not valid or reread != controller_packet:
+        SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+        _write_startup_failure(
+            generation, startup_nonce, intended_revision,
+            reason if not valid else "controller_packet_reread_mismatch",
+            supervisor_tree,
+        )
+        containment = _contain_observed_tree(supervisor_tree)
+        return {
+            "success": False,
+            "status": "ownership_identity_incomplete",
+            "reason": reason,
+            "containment": containment,
+        }, 503
     acknowledgement = _wait_for_supervisor_ack(
         generation,
         intended_revision,
         supervisor_pid=process.pid,
+        startup_nonce=startup_nonce,
     )
     if not acknowledgement.get("success"):
         SUPERVISOR_STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
@@ -386,6 +495,7 @@ def _wait_for_supervisor_ack(
     generation,
     intended_revision,
     supervisor_pid,
+    startup_nonce=None,
     timeout_seconds=START_ACK_TIMEOUT_SECONDS,
     poll_seconds=0.1,
     sleep_fn=time.sleep,
@@ -400,6 +510,8 @@ def _wait_for_supervisor_ack(
             runtime_revision=intended_revision,
             execution_revision=intended_revision,
             runner_states={"running"},
+            startup_nonce=startup_nonce or generation,
+            statuses={"running"},
         )
         if valid:
             heartbeat = _read_json(HEARTBEAT_PATH)
@@ -774,6 +886,8 @@ def validate_supervisor_packet(
     runtime_revision,
     execution_revision,
     runner_states=None,
+    startup_nonce=None,
+    statuses=None,
 ):
     if not isinstance(packet, dict) or not packet:
         return False, "supervisor_packet_missing"
@@ -782,6 +896,7 @@ def validate_supervisor_packet(
         ("generation", str(generation or "")),
         ("intended_runtime_revision", str(runtime_revision or "")),
         ("intended_execution_revision", str(execution_revision or "")),
+        ("startup_nonce", str(startup_nonce or generation or "")),
     )
     for field, expected in checks:
         if not expected or str(packet.get(field) or "") != expected:
@@ -789,11 +904,68 @@ def validate_supervisor_packet(
     if not str(packet.get("created_at") or ""):
         return False, "supervisor_packet_creation_timestamp_missing"
     tree = packet.get("supervisor_tree_identity")
-    if not isinstance(tree, dict) or not tree.get("root") or not tree.get("members"):
-        return False, "supervisor_packet_supervisor_tree_missing"
+    tree_decision = validate_bootstrap_tree(
+        tree,
+        generation=generation,
+        revision=runtime_revision,
+        startup_nonce=startup_nonce or generation,
+        require_interpreter=True,
+    )
+    if not tree_decision["authorized"]:
+        return False, tree_decision["reason"]
     if runner_states is not None and str(packet.get("runner_state") or "") not in set(runner_states):
         return False, "supervisor_packet_runner_state_invalid"
+    if statuses is not None and str(packet.get("status") or "") not in set(statuses):
+        return False, "supervisor_packet_status_invalid"
     return True, "supervisor_packet_valid"
+
+
+def _historical_ownership_packet(packet):
+    return {
+        key: packet.get(key)
+        for key in (
+            "version", "generation", "startup_nonce", "created_at", "updated_at",
+            "status", "runner_state", "supervisor_tree_identity",
+            "process_tree_identity", "stop_evidence",
+        )
+        if key in packet
+    }
+
+
+def _write_startup_failure(generation, startup_nonce, revision, reason, tree):
+    evidence = {
+        "version": "charlie_start_containment_evidence_v2",
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "generation": str(generation or ""),
+        "startup_nonce": str(startup_nonce or ""),
+        "revision": str(revision or ""),
+        "status": "ownership_identity_incomplete",
+        "reason": str(reason or "ownership_identity_incomplete"),
+        "process_tree_identity": tree if isinstance(tree, dict) else {},
+        "stop_marker_present": SUPERVISOR_STOP_PATH.exists(),
+    }
+    atomic_write_json(START_CONTAINMENT_PATH, evidence)
+    return evidence
+
+
+def _contain_observed_tree(tree):
+    root = tree.get("root") if isinstance(tree, dict) else {}
+    if not isinstance(root, dict) or not root.get("pid"):
+        return {"success": False, "reason": "ownership_identity_incomplete:root.pid"}
+    expected = {
+        field: root.get(field)
+        for field in ("runner_generation", "mission_id", "execution_id", "ownership_type")
+    }
+    decision = _stop_process_tree(
+        root,
+        expected,
+        allow_current_descendant=True,
+    )
+    return {
+        "success": bool(decision.get("terminated")),
+        "reason": decision.get("reason") or "termination_not_confirmed",
+        "termination": decision,
+    }
 
 
 def _execution_artifact_exists(path):

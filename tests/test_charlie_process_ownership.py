@@ -1,4 +1,6 @@
+import os
 import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -7,6 +9,51 @@ from scripts import charlie_runner_supervisor
 
 
 class CharlieProcessOwnershipTests(unittest.TestCase):
+    def test_structurally_present_empty_tree_fails_with_exact_field(self):
+        tree = {
+            "version": "charlie_process_tree_v1",
+            "root": {"pid": None},
+            "members": [{"pid": None}],
+        }
+        result = process_ownership.validate_bootstrap_tree(
+            tree,
+            generation="generation-1",
+            revision="revision-1",
+            startup_nonce="nonce-1",
+        )
+        self.assertFalse(result["authorized"])
+        self.assertEqual(result["reason"], "ownership_identity_incomplete:root.pid")
+
+    @unittest.skipUnless(os.name == "nt", "Windows launcher/interpreter harness")
+    def test_external_controller_observes_real_windows_launcher_interpreter_tree(self):
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        try:
+            result = process_ownership.observe_process_tree(
+                child.pid,
+                generation="generation-1",
+                revision="revision-1",
+                startup_nonce="nonce-1",
+                timeout_seconds=10,
+            )
+            self.assertTrue(result["success"], result)
+            self.assertGreaterEqual(len(result["tree"]["members"]), 2)
+            self.assertEqual(result["tree"]["root"]["parent_pid"], os.getpid())
+            self.assertTrue(all(item.get("executable_path") for item in result["tree"]["members"]))
+            self.assertTrue(all(item.get("command_fingerprint") for item in result["tree"]["members"]))
+        finally:
+            subprocess.run(
+                ["taskkill", "/PID", str(child.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            child.wait(timeout=10)
     def setUp(self):
         self.live = {
             "pid": 222, "creation_time": "20260719170000.000000+120", "executable_path": "C:/Python/python.exe",

@@ -61,18 +61,21 @@ class CharlieMissionPickupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             packet_path = Path(tmp) / "supervisor.json"
             packet_path.write_text(json.dumps({
-                "version": "charlie_supervisor_ownership_v2",
+                "version": "charlie_supervisor_ownership_v3",
                 "generation": "other-generation",
                 "created_at": "2026-07-26T00:00:00Z",
                 "intended_runtime_revision": "revision-1",
                 "intended_execution_revision": "revision-1",
                 "runner_state": "runner_starting",
+                "startup_nonce": "supervisor-nonce",
                 "supervisor_tree_identity": {"root": {"pid": 1}, "members": [{"pid": 1}]},
             }), encoding="utf-8")
             with patch.dict(os.environ, {
                 "CHARLIE_SUPERVISOR_GENERATION": "generation-1",
                 "CHARLIE_INTENDED_RUNTIME_REVISION": "revision-1",
                 "CHARLIE_INTENDED_EXECUTION_REVISION": "revision-1",
+                "CHARLIE_STARTUP_NONCE": "supervisor-nonce",
+                "CHARLIE_RUNNER_STARTUP_NONCE": "runner-nonce",
             }, clear=False), patch.object(charlie_mission_pickup, "SUPERVISOR_PATH", packet_path):
                 result = charlie_mission_pickup._validate_supervisor_startup()
         self.assertFalse(result["success"])

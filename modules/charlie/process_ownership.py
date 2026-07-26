@@ -4,12 +4,14 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 
 REQUIRED_IDENTITY_FIELDS = (
     "pid", "creation_time", "executable_path", "command_fingerprint",
     "parent_pid", "runner_generation", "mission_id", "execution_id", "ownership_type",
+    "revision", "startup_nonce",
 )
 
 TERMINATION_ENABLE_ENV = "CHARLIE_PROCESS_TERMINATION_ENABLED"
@@ -30,7 +32,15 @@ def normalize_command_fingerprint(command):
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest() if normalized else ""
 
 
-def make_ownership_record(process, runner_generation, mission_id, execution_id, ownership_type):
+def make_ownership_record(
+    process,
+    runner_generation,
+    mission_id,
+    execution_id,
+    ownership_type,
+    revision=None,
+    startup_nonce=None,
+):
     if not isinstance(process, dict):
         return {}
     command = process.get("command_line") or process.get("command")
@@ -44,6 +54,8 @@ def make_ownership_record(process, runner_generation, mission_id, execution_id, 
         "mission_id": str(mission_id or ""),
         "execution_id": str(execution_id or ""),
         "ownership_type": str(ownership_type or ""),
+        "revision": str(revision or runner_generation or ""),
+        "startup_nonce": str(startup_nonce or runner_generation or ""),
     }
 
 
@@ -101,6 +113,163 @@ def validate_process_tree(tree, expected, inspect_process, current_pid=None, req
         "pid": root_pid,
         "member_pids": sorted(set(validated)),
     }
+
+
+def validate_bootstrap_tree(
+    tree,
+    *,
+    generation,
+    revision,
+    startup_nonce,
+    expected_root_parent_pid=None,
+    require_interpreter=True,
+):
+    """Validate a controller-observed startup tree without trusting its child."""
+    if not isinstance(tree, dict) or tree.get("version") != "charlie_process_tree_v1":
+        return _deny("ownership_identity_incomplete:process_tree")
+    root = tree.get("root") if isinstance(tree.get("root"), dict) else {}
+    members = tree.get("members") if isinstance(tree.get("members"), list) else []
+    if not root:
+        return _deny("ownership_identity_incomplete:root")
+    if not members:
+        return _deny("ownership_identity_incomplete:members")
+    for label, record in [("root", root), *[(f"member_{index}", item) for index, item in enumerate(members)]]:
+        if not isinstance(record, dict):
+            return _deny(f"ownership_identity_incomplete:{label}")
+        for field in REQUIRED_IDENTITY_FIELDS:
+            if record.get(field) in (None, ""):
+                return _deny(f"ownership_identity_incomplete:{label}.{field}")
+        if str(record.get("runner_generation") or "") != str(generation or ""):
+            return _deny(f"stale_generation:{label}")
+        if str(record.get("revision") or "") != str(revision or ""):
+            return _deny(f"revision_mismatch:{label}")
+        if str(record.get("startup_nonce") or "") != str(startup_nonce or ""):
+            return _deny(f"startup_nonce_mismatch:{label}")
+    try:
+        root_pid = int(root["pid"])
+        root_parent_pid = int(root["parent_pid"])
+    except (TypeError, ValueError):
+        return _deny("ownership_identity_incomplete:root.pid")
+    if expected_root_parent_pid is not None and root_parent_pid != int(expected_root_parent_pid):
+        return _deny("root_parent_pid_mismatch")
+    member_pids = {int(item["pid"]) for item in members}
+    if root_pid not in member_pids:
+        return _deny("ownership_identity_incomplete:root_member")
+    descendants = [item for item in members if int(item["pid"]) != root_pid]
+    if require_interpreter and not descendants:
+        return _deny("ownership_identity_incomplete:interpreter")
+    known_pids = set(member_pids)
+    for member in descendants:
+        if int(member["parent_pid"]) not in known_pids:
+            return _deny(f"parentage_mismatch:member_{member['pid']}")
+    return {
+        "authorized": True,
+        "reason": "ownership_bootstrap_identity_complete",
+        "pid": root_pid,
+        "member_pids": sorted(member_pids),
+        "generation": str(generation),
+        "revision": str(revision),
+        "startup_nonce": str(startup_nonce),
+    }
+
+
+def observe_process_tree(
+    root_pid,
+    *,
+    generation,
+    revision,
+    startup_nonce,
+    expected_script="",
+    timeout_seconds=10,
+    poll_seconds=0.1,
+    sleep_fn=time.sleep,
+):
+    """Observe a launcher/interpreter tree externally from its controller."""
+    deadline = time.monotonic() + max(0, float(timeout_seconds))
+    last_reason = "ownership_identity_incomplete:root"
+    while time.monotonic() <= deadline:
+        rows = _inspect_process_descendants(root_pid)
+        records = [
+            make_ownership_record(
+                row,
+                generation,
+                "charlie-control",
+                generation,
+                "charlie_runner",
+                revision=revision,
+                startup_nonce=startup_nonce,
+            )
+            for row in rows
+            if isinstance(row, dict)
+        ]
+        root = next((item for item in records if int(item.get("pid") or -1) == int(root_pid)), {})
+        tree = make_process_tree_record(root, records, generation)
+        decision = validate_bootstrap_tree(
+            tree,
+            generation=generation,
+            revision=revision,
+            startup_nonce=startup_nonce,
+            expected_root_parent_pid=os.getpid(),
+            require_interpreter=True,
+        )
+        if decision["authorized"]:
+            if expected_script:
+                raw = " ".join(
+                    str(row.get("command_line") or "")
+                    for row in rows
+                ).casefold()
+                if str(expected_script).casefold() not in raw:
+                    last_reason = "command_identity_mismatch"
+                else:
+                    return {"success": True, "tree": tree, "validation": decision}
+            else:
+                return {"success": True, "tree": tree, "validation": decision}
+        else:
+            last_reason = decision["reason"]
+        sleep_fn(poll_seconds)
+    return {"success": False, "reason": last_reason, "tree": tree if "tree" in locals() else {}}
+
+
+def _inspect_process_descendants(root_pid):
+    if os.name != "nt":
+        root = inspect_process(root_pid)
+        if not isinstance(root, dict):
+            return []
+        rows = [root]
+        for proc_dir in Path("/proc").iterdir():
+            if not proc_dir.name.isdigit() or int(proc_dir.name) == int(root_pid):
+                continue
+            try:
+                row = inspect_process(int(proc_dir.name))
+            except (OSError, ValueError, TypeError):
+                continue
+            ancestry = row.get("ancestry") if isinstance(row, dict) else []
+            if any(int(item.get("pid") or -1) == int(root_pid) for item in ancestry if isinstance(item, dict)):
+                rows.append(row)
+        return rows
+    script = (
+        "$all=Get-CimInstance Win32_Process;"
+        f"$root={int(root_pid)};"
+        "$ids=@($root);$changed=$true;"
+        "while($changed){$changed=$false;foreach($p in $all){"
+        "if(($ids -contains [int]$p.ParentProcessId)-and -not ($ids -contains [int]$p.ProcessId)){"
+        "$ids+=[int]$p.ProcessId;$changed=$true}}};"
+        "$all|Where-Object{$ids -contains [int]$_.ProcessId}|ForEach-Object{"
+        "@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;"
+        "creation_time=[string]$_.CreationDate;executable_path=[string]$_.ExecutablePath;"
+        "command_line=[string]$_.CommandLine;name=[string]$_.Name}}|ConvertTo-Json -Compress"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=8, check=False,
+        )
+        if result.returncode or not result.stdout.strip():
+            return []
+        rows = json.loads(result.stdout)
+        return [rows] if isinstance(rows, dict) else rows if isinstance(rows, list) else []
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError):
+        return []
 
 
 def validate_termination(
