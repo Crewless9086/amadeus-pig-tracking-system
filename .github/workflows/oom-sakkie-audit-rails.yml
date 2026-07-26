@@ -144,6 +144,9 @@ jobs:
       - name: Run CHARLIE adaptive orchestration durable canary tests
         run: python -m unittest tests.test_charlie_adaptive_orchestration_postgres
 
+      - name: Run pig observation privilege gates
+        run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_pig_observation_event_postgres
+
       - name: Run Riversdale auction disposable-Postgres integration tests
         run: CHARLIE_DISPOSABLE_POSTGRES_URL="$DATABASE_URL" python -m unittest tests.test_riversdale_auction_postgres
 
