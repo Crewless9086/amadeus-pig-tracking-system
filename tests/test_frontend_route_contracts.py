@@ -30,8 +30,13 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Ownership decision required", script)
         self.assertIn("Reply and Send Reply disabled", script)
         self.assertIn("reviewed_inbound_message_id", script)
-        self.assertNotIn("Assign HUMAN", script)
-        self.assertNotIn("Assign approved agent", script)
+        for mode in ("HUMAN", "AUTO_GENERAL", "AUTO_SPECIALIST"):
+            self.assertIn(mode, script)
+        self.assertIn("Confirm ownership", script)
+        self.assertIn("sends no customer message", script)
+        self.assertIn("latest_inbound_message_id", script)
+        self.assertIn("window_evidence_hash", script)
+        self.assertIn("owner-inbox/ownership", script)
 
     def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
         template = Path("templates/beacon-media.html").read_text(encoding="utf-8")

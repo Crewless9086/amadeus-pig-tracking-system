@@ -4,6 +4,7 @@
   const endpoint = "/api/sales/channels/chatwoot/sam/owner-inbox?include_withheld=true";
   const itemsNode = document.getElementById("owner-inbox-items");
   const statusNode = document.getElementById("owner-inbox-status");
+  const ownershipEndpoint = "/api/sales/channels/chatwoot/sam/owner-inbox/ownership";
 
   function text(node, value) {
     node.textContent = String(value == null ? "" : value);
@@ -51,8 +52,67 @@
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     text(link, "Open exact Chatwoot conversation");
-    article.append(heading, classification, ownership, windowState, chronology, reasons, link);
+    article.append(heading, classification, ownership, windowState, chronology, reasons);
+    if (ownershipException) article.append(ownershipDecision(item));
+    article.append(link);
     return article;
+  }
+
+  function ownershipDecision(item) {
+    const section = document.createElement("section");
+    section.className = "ownership-decision";
+    const evidence = document.createElement("p");
+    text(
+      evidence,
+      `Confirm conversation ${item.conversation_id} · inbound ${item.latest_inbound_message_id} · ${item.unanswered_count} unanswered · review ${item.review_event_id || "unavailable"} · window ${item.window_state || "unavailable"}`
+    );
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", `Ownership for conversation ${item.conversation_id}`);
+    ["HUMAN", "AUTO_GENERAL", "AUTO_SPECIALIST"].forEach(mode => {
+      const option = document.createElement("option");
+      option.value = mode;
+      text(option, mode);
+      select.append(option);
+    });
+    const button = document.createElement("button");
+    button.type = "button";
+    text(button, "Confirm ownership");
+    button.addEventListener("click", async () => {
+      const targetMode = select.value;
+      if (!window.confirm(`Set conversation ${item.conversation_id} to ${targetMode}? This sends no customer message.`)) return;
+      button.disabled = true;
+      try {
+        const payload = {
+          work_item_id: item.work_item_id,
+          work_event_id: item.work_event_id,
+          account_id: item.account_id,
+          conversation_id: item.conversation_id,
+          contact_id: item.contact_id,
+          inbox_id: item.inbox_id,
+          observation_hash: item.observation_hash,
+          chronology_hash: item.chronology_hash,
+          latest_inbound_message_id: item.latest_inbound_message_id,
+          unanswered_count: item.unanswered_count,
+          review_event_id: item.review_event_id,
+          window_evidence_hash: item.window_evidence_hash,
+          target_mode: targetMode
+        };
+        const response = await fetch(ownershipEndpoint, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Accept": "application/json", "Content-Type": "application/json"},
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok || result.success !== true) throw new Error(result.status || "ownership_resolution_failed");
+        await load();
+      } catch (error) {
+        text(statusNode, `Ownership unchanged or safely withheld: ${error.message}`);
+        button.disabled = false;
+      }
+    });
+    section.append(evidence, select, button);
+    return section;
   }
 
   function count(items, predicate) {
