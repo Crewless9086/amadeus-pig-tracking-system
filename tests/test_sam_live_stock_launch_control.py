@@ -2760,5 +2760,182 @@ class SamLiveStockLaunchControlTests(unittest.TestCase):
             **common,
         )
         self.assertEqual(result["status"], "resolve_card_refresh_active_card_identity_mismatch")
+
+    def test_production_shaped_refresh_accepts_only_missing_historical_account_when_authorities_agree(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        original["decision_json"]["inbound"]["account_id"] = ""
+        active_card = {
+            **card,
+            "account_id": "",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+        }
+        records = []
+        edits = []
+        result = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+            {
+                "account_id": "147387",
+                "conversation_id": "1983",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+                "message_id": "758530099",
+                "public": True,
+                "identity_conflicting": False,
+            },
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: ({
+                "success": True,
+                "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                "card": active_card,
+            }, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_editor=lambda *args: edits.append(args) or {"ok": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["card_refreshed"])
+        self.assertEqual(result["candidate"]["account_id"], "147387")
+        self.assertEqual(records[0]["review_json"]["resolve_card_only"]["account_id"], "147387")
+        self.assertEqual(len(edits), 1)
+
+        for field in ("contact_id", "inbox_id", "review_event_id", "customer_message_id"):
+            with self.subTest(field=field):
+                invalid = {**active_card, field: ""}
+                rejected = launch.refresh_sam_live_stock_resolve_card_from_outgoing_event(
+                    {
+                        "account_id": "147387",
+                        "conversation_id": "1983",
+                        "contact_id": "699428938",
+                        "inbox_id": "96568",
+                        "message_id": "758530099",
+                        "public": True,
+                    },
+                    environ=self._resolve_environ(),
+                    active_card_loader=lambda _conversation_id, card=invalid: ({
+                        "success": True,
+                        "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+                        "card": card,
+                    }, 200),
+                    evidence_recorder=lambda _event: self.fail("must not persist"),
+                    telegram_editor=lambda *_args: self.fail("must not edit"),
+                )
+                self.assertEqual(
+                    rejected["status"],
+                    "resolve_card_refresh_active_card_identity_mismatch",
+                )
+
+    def test_exact_owner_refresh_fallback_reads_once_and_shares_event_service(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        original["decision_json"]["inbound"]["account_id"] = ""
+        active = {
+            "success": True,
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "card": {
+                **card,
+                "account_id": "",
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+        }
+        reads = []
+        records = []
+        edits = []
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "1983",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "758530001",
+            "outgoing_message_id": "758530099",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "telegram_chat_id": "555",
+            "telegram_message_id": "2865",
+        }
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: reads.append("read") or conversation,
+            evidence_recorder=lambda event: records.append(event) or (
+                {"success": True, "created": True}, 201
+            ),
+            telegram_editor=lambda *args: edits.append(args) or {"ok": True},
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["card_refreshed"])
+        self.assertTrue(result["owner_authenticated_refresh"])
+        self.assertEqual(result["bounded_chronology_reads"], 1)
+        self.assertEqual(reads, ["read"])
+        self.assertEqual(records[0]["event_source"], launch.RESOLVE_CARD_CANDIDATE_EVENT_SOURCE)
+        self.assertEqual(len(edits), 1)
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["changes_conversation_ownership"])
+
+        replay = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: conversation,
+            evidence_recorder=lambda _event: (
+                {"success": True, "created": False}, 200
+            ),
+            telegram_editor=lambda *_args: self.fail("replay must not edit"),
+        )
+        self.assertTrue(replay["success"])
+        self.assertEqual(replay["status"], "resolve_card_refresh_replay_withheld")
+        self.assertFalse(replay["card_refreshed"])
+
+    def test_exact_owner_refresh_rejects_wrong_card_or_chronology_without_side_effect(self):
+        conversation, card, built, original, _candidate_event = self._resolve_card_fixture()
+        request_identity = {
+            "account_id": "147387",
+            "conversation_id": "1983",
+            "contact_id": "699428938",
+            "inbox_id": "96568",
+            "customer_message_id": "758530001",
+            "outgoing_message_id": "758530099",
+            "review_event_id": "SAM-LIVE-REVIEW-FD17FD894C2B",
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "telegram_chat_id": "555",
+            "telegram_message_id": "wrong",
+        }
+        active = {
+            "success": True,
+            "lifecycle_card_identity": built["candidate"]["lifecycle_card_identity"],
+            "card": {
+                **card,
+                "contact_id": "699428938",
+                "inbox_id": "96568",
+            },
+        }
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            chronology_loader=lambda *_args: self.fail("must fail before read"),
+            evidence_recorder=lambda _event: self.fail("must not persist"),
+            telegram_editor=lambda *_args: self.fail("must not edit"),
+        )
+        self.assertEqual(result["status"], "resolve_card_exact_refresh_active_card_mismatch")
+
+        request_identity["telegram_message_id"] = "2865"
+        wrong = {**conversation, "account_id": "other"}
+        result = launch.refresh_sam_live_stock_resolve_card_exact(
+            request_identity,
+            environ=self._resolve_environ(),
+            active_card_loader=lambda _conversation_id: (active, 200),
+            review_event_loader=lambda _review_id: ({"success": True, "event": original}, 200),
+            chronology_loader=lambda *_args: wrong,
+            evidence_recorder=lambda _event: self.fail("must not persist"),
+            telegram_editor=lambda *_args: self.fail("must not edit"),
+        )
+        self.assertEqual(result["status"], "resolve_card_exact_refresh_chronology_mismatch")
 if __name__ == "__main__":
     unittest.main()
