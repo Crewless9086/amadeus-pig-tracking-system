@@ -3044,11 +3044,31 @@ def refresh_sam_live_stock_resolve_card_from_outgoing_event(
             "resolve_card_refresh_telegram_ambiguous",
             automatic_retry_prohibited=True,
         )
+    refreshed, refreshed_status = (evidence_recorder or record_sam_live_stock_review_event)(
+        build_sam_live_stock_resolve_lifecycle_event(
+            prepared["candidate"], "refreshed", "telegram_card_refreshed"
+        )
+    )
+    if refreshed_status >= 400 or refreshed.get("success") is not True:
+        return {
+            **_resolve_refresh_failure(
+                "resolve_card_refresh_lifecycle_persistence_ambiguous",
+                automatic_retry_prohibited=True,
+            ),
+            "card_refreshed": True,
+            "calls_telegram": True,
+        }
     return {
         **prepared,
         "attempted": True,
         "card_refreshed": True,
         "status": "resolve_card_refresh_completed",
+        "refresh_lifecycle": {
+            "created": refreshed.get("created") is True,
+            "review_event_id": build_sam_live_stock_resolve_lifecycle_event(
+                prepared["candidate"], "refreshed", "telegram_card_refreshed"
+            )["review_event_id"],
+        },
         "automatic_retry_prohibited": True,
         **AUTHORITY_FLAGS,
         "calls_telegram": True,
