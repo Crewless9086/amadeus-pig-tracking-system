@@ -45,6 +45,7 @@ let auctionListNotes = new Map();
 let auctionEligibilityTokens = new Map();
 let auctionCausalHeads = new Map();
 let auctionCycleId = "";
+let auctionListAvailability = "Unavailable";
 let auctionSelection = new Set();
 
 const ALLOCATION_PURPOSE_OPTIONS = [
@@ -514,7 +515,9 @@ function updateAuctionCompactStatus() {
   if (auctionCompactBlockers) {
     const missing = surface.missing_evidence || [];
     const excluded = Number(surface.excluded_count || 0);
-    auctionCompactBlockers.textContent = missing.length
+    auctionCompactBlockers.textContent = auctionListAvailability !== "Available"
+      ? "Auction List unavailable; candidates remain read-only"
+      : missing.length
       ? `Owner review: ${missing.slice(0, 2).join(", ")}`
       : (excluded ? `${excluded} blocked by current evidence` : "No blocking evidence reported");
   }
@@ -709,19 +712,30 @@ async function loadRiversdaleAuction() {
     if (!response.ok || !data.success) throw new Error(data.message || "Could not load auction evidence.");
     auctionPacket = data;
     auctionCandidateIds = new Set((data.candidate_preview || []).map(item => item.pig_id));
-    const listResponse = await fetch("/api/pig-weights/riversdale-auction-list");
-    const listData = await listResponse.json();
-    if (listResponse.ok && listData.success) {
+    renderAuctionSurface(data.owner_surface);
+    populateFilters(allocationRows);
+    applyFilters();
+    try {
+      const listResponse = await fetch("/api/pig-weights/riversdale-auction-list");
+      const listData = await listResponse.json();
+      if (!listResponse.ok || !listData.success) {
+        throw new Error(listData.status || "auction_list_store_unavailable");
+      }
+      auctionListAvailability = "Available";
       auctionCycleId = listData.auction_cycle_id || "";
       auctionSelectableIds = new Set(listData.selectable_pig_ids || []);
       auctionEligibilityTokens = new Map(Object.entries(listData.eligibility_tokens || {}));
       auctionCausalHeads = new Map(Object.entries(listData.causal_heads || {}));
       auctionListIds = new Set((listData.items || []).map(item => item.pig_id));
       auctionListNotes = new Map((listData.items || []).map(item => [item.pig_id, item.owner_note || ""]));
+      applyFilters();
+    } catch (listError) {
+      auctionListAvailability = "Unavailable";
+      auctionSelectableIds = new Set();
+      auctionListIds = new Set();
+      auctionListNotes = new Map();
+      updateAuctionCompactStatus();
     }
-    renderAuctionSurface(data.owner_surface);
-    populateFilters(allocationRows);
-    applyFilters();
   } catch (error) {
     auctionStatus.textContent = "Unavailable";
     auctionSummary.innerHTML = auctionMetric("Auction evidence", "Unavailable");
