@@ -113,12 +113,31 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
 
     now = now or datetime.now(timezone.utc)
     missions = [item for item in (missions or []) if isinstance(item, dict)]
+    superseded_ids = {
+        str(supersession.get("supersedes_mission_id") or "")
+        for item in missions
+        for metadata in [item.get("metadata") if isinstance(item.get("metadata"), dict) else {}]
+        for supersession in [
+            metadata.get("supersession") if isinstance(metadata.get("supersession"), dict) else {}
+        ]
+        if supersession.get("status") == "current_contract_replacement"
+        and supersession.get("supersedes_mission_id")
+        and isinstance(metadata.get("orchestration"), dict)
+        and isinstance(metadata.get("orchestration_binding"), dict)
+        and metadata["orchestration_binding"].get("validated") is True
+        and metadata["orchestration_binding"].get("generation_identity")
+        == metadata["orchestration"].get("generation_identity")
+    }
+    executable_missions = [
+        item for item in missions
+        if str(item.get("mission_id") or "") not in superseded_ids
+    ]
     goals = [item for item in (goals or []) if isinstance(item, dict) and item.get("status") == "active"]
     active_goal_ids = [item.get("goal_id") for item in goals]
     commands = []
     escalations = []
     children_by_parent = {}
-    for item in missions:
+    for item in executable_missions:
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
         disposition = (
             metadata.get("portfolio_disposition")
@@ -131,7 +150,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
         parent_id = str(family.get("parent_mission_id") or "").strip()
         if parent_id:
             children_by_parent.setdefault(parent_id, []).append(item)
-    for mission in missions:
+    for mission in executable_missions:
         if mission.get("status") == "blocked":
             decision = recovery_decision(mission, policies, trust=trust, now=now)
             target = commands if decision.get("action") in {"schedule_recovery", "decompose_acceptance", "reconcile_pr", "create_incident_repair"} else escalations
@@ -231,8 +250,8 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
                         "follow_up_prepared": authority.get("allowed") is True,
                         "notification_fingerprint": closure.get("fingerprint"),
                     })
-    status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in missions}
-    approved = [item for item in missions if item.get("status") == "approved"]
+    status_by_id = {str(item.get("mission_id") or ""): str(item.get("status") or "").lower() for item in executable_missions}
+    approved = [item for item in executable_missions if item.get("status") == "approved"]
     waiting_coordinators = [item for item in approved if _coordinator_waiting_for_children(item)]
     executable_approved = [item for item in approved if item not in waiting_coordinators]
     runnable = [item for item in executable_approved if _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)]
@@ -255,7 +274,7 @@ def build_executive_cycle(missions, policies, *, runner=None, goals=None, trust=
     if runway == 0:
         selection_authority = authority_decision("core.queue_select", policies, trust=trust, now=now)
         candidates = [
-            item for item in missions
+            item for item in executable_missions
             if item.get("status") == "new"
             and queue_candidate_assessment(item).get("allowed")
             and _dependencies_ready(item, status_by_id, mission_execution_dependency_ids)

@@ -176,15 +176,19 @@ def watch_for_mission(
                         "status": "executive_cycle_observed", "executive": executive, "checks": checks,
                         "queue_health": cycle.get("queue_health") if isinstance(cycle.get("queue_health"), dict) else {},
                     })
-                observers = _run_domain_observers()
-                if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
-                    write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
-                if notify:
-                    _deliver_executive_outbox()
-                reconciliation = reconcile_blocked_pr_missions(notify=notify)
-                if reconciliation.get("changed_count"):
-                    reconciliation["checks"] = checks
-                    write_runner_heartbeat(reconciliation)
+                # The first cycle must reach authoritative pickup promptly.
+                # Potentially slow observers and reconciliation begin only
+                # after one bounded pickup opportunity.
+                if checks % 5 == 0:
+                    observers = _run_domain_observers()
+                    if observers.get("status") not in {"domain_observers_disabled", "observer_cycle_not_due"}:
+                        write_runner_heartbeat({"status": "domain_observer_cycle", "observers": observers, "checks": checks})
+                    if notify:
+                        _deliver_executive_outbox()
+                    reconciliation = reconcile_blocked_pr_missions(notify=notify)
+                    if reconciliation.get("changed_count"):
+                        reconciliation["checks"] = checks
+                        write_runner_heartbeat(reconciliation)
             # Review-media cleanup is maintenance, not a mission-pickup gate.
             # Running it every cycle delayed an otherwise ready queue by nearly
             # a minute on the owner workstation.
@@ -577,7 +581,12 @@ def _execution_state_missions(statuses, limit=100):
         clean_status = str(status or "").strip()
         if not clean_status:
             continue
-        loaded, status_code = list_missions(status=clean_status, limit=parsed_limit, compact=False)
+        loaded, status_code = list_missions(
+            status=clean_status,
+            limit=parsed_limit,
+            compact=False,
+            exclude_superseded=True,
+        )
         if status_code >= 400:
             return [], status_code
         missions.extend(loaded.get("missions") or [])
