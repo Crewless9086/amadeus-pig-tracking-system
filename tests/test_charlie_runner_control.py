@@ -130,7 +130,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 revision,
                 supervisor_pid=100,
                 startup_nonce="supervisor-nonce",
-                timeout_seconds=0,
+                timeout_seconds=1,
                 sleep_fn=lambda _seconds: None,
             )
             persisted = json.loads(
@@ -162,7 +162,7 @@ class CharlieRunnerControlTests(unittest.TestCase):
                 "revision-1",
                 supervisor_pid=100,
                 startup_nonce="nonce-1",
-                timeout_seconds=0,
+                timeout_seconds=0.01,
                 sleep_fn=lambda _seconds: None,
             )
         self.assertFalse(result["success"])
