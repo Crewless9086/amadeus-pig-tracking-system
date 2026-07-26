@@ -30,6 +30,13 @@ MAX_MESSAGES_PER_CONVERSATION = 100
 MAX_MESSAGE_PAGES = 5
 MESSAGE_PAGE_SIZE = 20
 MESSAGE_REQUEST_TIMEOUT_SECONDS = 8
+OWNER_INVENTORY_REQUEST_TIMEOUT_SECONDS = 8
+SUPPORTED_OWNERSHIP_MODES = {"HUMAN", "AUTO_GENERAL", "AUTO_SPECIALIST"}
+AGENT_OWNERSHIP_MODES = {"AUTO_GENERAL", "AUTO_SPECIALIST"}
+OWNER_ATTENTION_POLICY_REASONS = {
+    "explicit_human_request", "protected_policy", "specialist_policy",
+    "delivery_exception_policy",
+}
 PROTECTED_MARKERS = {
     "payment", "order", "reservation", "complaint", "delivery_failure",
     "welfare", "safety", "protected_action",
@@ -105,7 +112,8 @@ def build_owner_work_observation(
     markers = _authoritative_markers(conversation, review)
     protected = sorted(markers & PROTECTED_MARKERS)
     specialist = sorted(markers & SPECIALIST_MARKERS)
-    ownership_mode = _ownership_mode(conversation)
+    ownership = _ownership_evidence(conversation)
+    ownership_mode = ownership["normalized_mode"]
     attrs = conversation.get("custom_attributes")
     attrs = attrs if isinstance(attrs, Mapping) else {}
     suspicious_evidence = attrs.get("sam_security_suspicious_link")
@@ -130,7 +138,13 @@ def build_owner_work_observation(
         else "single_unanswered_inbound" if unanswered
         else "handled_by_later_public_owner_reply"
     )
-    if ownership_mode != "HUMAN":
+    ownership_exception = ownership["decision_required"]
+    if ownership_exception:
+        withheld.append(ownership["reason"])
+        classification = "OWNERSHIP_DECISION_REQUIRED"
+        missed_classification = "ownership_decision_required"
+        actionable = bool(unanswered)
+    elif ownership_mode != "HUMAN":
         withheld.append("human_ownership_not_authoritative")
         classification = "IDENTITY_OR_EVIDENCE_UNAVAILABLE"
         actionable = False
@@ -141,13 +155,13 @@ def build_owner_work_observation(
     elif not unanswered:
         classification = "CUSTOMER_ALREADY_HANDLED"
         actionable = False
-    if protected:
+    if protected and not ownership_exception:
         classification = "PROTECTED_ACTION_REQUIRED"
         lane = "PROTECTED"
         withheld.append("protected_work_requires_owner")
         actionable = True
         missed_classification = "protected_owner_work"
-    elif specialist:
+    elif specialist and not ownership_exception:
         classification = "SPECIALIST_REVIEW_REQUIRED"
         lane = "SPECIALIST"
         withheld.append("specialist_work_separated")
@@ -158,18 +172,33 @@ def build_owner_work_observation(
     if latest_reviewed_inbound and latest_inbound:
         if latest_reviewed_inbound != latest_inbound["message_id"]:
             withheld.append("review_stale_for_latest_inbound")
-    if window["window_state"] == "unavailable":
+    if window["window_state"] == "unavailable" and not ownership_exception:
         classification = "IDENTITY_OR_EVIDENCE_UNAVAILABLE"
         actionable = False
         withheld.append(window["reason"])
-    elif window["window_state"] == "expired":
+    elif window["window_state"] == "unavailable":
+        withheld.append(window["reason"])
+    elif window["window_state"] == "expired" and not ownership_exception:
         classification = "CUSTOMER_REPLY_PROHIBITED"
         actionable = False
         withheld.extend(["provider_reply_window_expired", "customer_reply_prohibited"])
-    elif window["reply_authority_state"] == "customer_reply_prohibited":
+    elif window["window_state"] == "expired":
+        withheld.extend(["provider_reply_window_expired", "customer_reply_prohibited"])
+    elif window["reply_authority_state"] == "customer_reply_prohibited" and not ownership_exception:
         classification = "CUSTOMER_REPLY_PROHIBITED"
         actionable = False
         withheld.extend([window["reason"], "customer_reply_prohibited"])
+    elif window["reply_authority_state"] == "customer_reply_prohibited":
+        withheld.extend([window["reason"], "customer_reply_prohibited"])
+    if ownership_exception:
+        window = {
+            **window,
+            "provider_reply_authority_state": window["reply_authority_state"],
+            "reply_authority_state": "ownership_decision_required",
+            "ordinary_reply_allowed": False,
+            "send_reply_action_visible": False,
+            "template_required": False,
+        }
 
     chronology = [
         {
@@ -183,6 +212,8 @@ def build_owner_work_observation(
         **identity,
         "chronology": chronology,
         "ownership_mode": ownership_mode,
+        "ownership_evidence_state": ownership["state"],
+        "ownership_decision_required": ownership_exception,
     })
     work_item_id = f"SAM-OWNER-WORK-{_digest(identity)[:24]}"
     event_type = "actionable" if actionable else "withheld"
@@ -203,6 +234,8 @@ def build_owner_work_observation(
         "work_item_id": work_item_id,
         **identity,
         "ownership_mode": ownership_mode,
+        "ownership_evidence_state": ownership["state"],
+        "ownership_decision_required": ownership_exception,
         "latest_message_id": public[-1]["message_id"] if public else "",
         "latest_message_at": public[-1]["created_at"] if public else None,
         "latest_inbound_message_id": latest_inbound["message_id"] if latest_inbound else "",
@@ -224,7 +257,7 @@ def build_owner_work_observation(
         "protected_markers": protected,
         "specialist_markers": specialist,
         "event_type": event_type,
-        "source": "bounded_human_backlog_reconciliation_v1",
+        "source": "bounded_owner_attention_reconciliation_v1",
         "reconciliation_actor_id": reconciliation_actor_id,
         "reply_window": window,
         "window_state": window["window_state"],
@@ -454,9 +487,8 @@ def reconcile_live_human_conversation(
     environ: Mapping[str, str] | None = None,
     message_reader: Callable[[str, Mapping[str, str]], tuple[dict[str, Any], int]] | None = None,
 ) -> tuple[dict[str, Any], int]:
-    """Run one bounded authoritative HUMAN inventory read and evidence append."""
+    """Run one bounded authoritative owner-attention read and evidence append."""
     from modules.sales.sam_live_stock_launch_control import (
-        _chatwoot_read_conversations,
         load_latest_sam_live_stock_review_events_for_conversations,
     )
 
@@ -467,7 +499,9 @@ def reconcile_live_human_conversation(
     if not _clean(reconciliation_actor_id, 200):
         return _result("server_derived_owner_principal_required"), 403
     try:
-        conversations = _chatwoot_read_conversations(source)
+        conversations = load_bounded_owner_attention_conversations(
+            conversation_id, source
+        )
     except Exception as exc:
         return _result(
             "owner_work_chatwoot_read_failed", error_type=exc.__class__.__name__
@@ -506,6 +540,71 @@ def reconcile_live_human_conversation(
         review_by_conversation=reviews.get("events_by_conversation_id") or {},
         reconciliation_actor_id=reconciliation_actor_id,
     )
+
+
+def load_bounded_owner_attention_conversations(
+    conversation_id: str,
+    environ: Mapping[str, str],
+    *,
+    opener: Callable[..., Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Read one exact open owner-attention conversation without broad scanning."""
+    source = environ if environ is not None else os.environ
+    base_url = _clean(
+        source.get("CHATWOOT_BASE_URL") or "https://app.chatwoot.com", 240
+    ).rstrip("/")
+    account_id = _clean(source.get("CHATWOOT_ACCOUNT_ID") or "147387")
+    inbox_id = _clean(source.get("SAM_LIVE_STOCK_CHATWOOT_INBOX_ID"))
+    token = _clean(
+        source.get("CHATWOOT_API_ACCESS_TOKEN") or source.get("CHATWOOT_API_TOKEN"),
+        500,
+    )
+    conversation_id = _clean(conversation_id)
+    if not base_url or not account_id or not inbox_id or not token or not conversation_id:
+        raise OwnerWorkEvidenceError("owner_attention_inventory_not_configured")
+    if not inbox_id.isdigit():
+        raise OwnerWorkEvidenceError("owner_attention_inventory_inbox_invalid")
+    opener = opener or urllib_request.urlopen
+    request = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}",
+        headers={"api_access_token": token, "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with opener(
+            request, timeout=OWNER_INVENTORY_REQUEST_TIMEOUT_SECONDS
+        ) as response:
+            if int(response.status) != 200:
+                raise OwnerWorkEvidenceError(
+                    "owner_attention_inventory_http_unavailable"
+                )
+            row = json.loads(response.read().decode("utf-8"))
+    except OwnerWorkEvidenceError:
+        raise
+    except (
+        urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError,
+        ValueError, json.JSONDecodeError,
+    ) as exc:
+        raise OwnerWorkEvidenceError(
+            f"owner_attention_inventory_read_failed:{exc.__class__.__name__}"
+        ) from exc
+    if not isinstance(row, Mapping):
+        raise OwnerWorkEvidenceError("owner_attention_inventory_envelope_malformed")
+    if (
+        _clean(row.get("id")) != conversation_id
+        or _clean(row.get("inbox_id")) != inbox_id
+    ):
+        raise OwnerWorkEvidenceError("owner_attention_inventory_identity_mismatch")
+    if _clean(row.get("status")).lower() != "open":
+        raise OwnerWorkEvidenceError("owner_attention_inventory_status_mismatch")
+    ownership = _ownership_evidence(row)
+    if (
+        ownership["normalized_mode"] == "HUMAN"
+        or ownership["decision_required"]
+        or _explicit_owner_attention_policy(row)
+    ):
+        return [dict(row)]
+    return []
 
 
 def load_bounded_conversation_messages(
@@ -612,11 +711,14 @@ def list_owner_work_items(
                     with latest as (
                       select distinct on (work_item_id)
                         work_event_id, work_item_id, account_id, conversation_id,
-                        contact_id, inbox_id, latest_message_id, latest_message_at,
+                        contact_id, inbox_id, ownership_mode,
+                        latest_message_id, latest_message_at,
+                        latest_inbound_message_id, latest_outgoing_message_id,
                         chronology_hash, unanswered_inbound_bundle_json,
                         observation_hash, unanswered_count, classification,
                         missed_message_classification, lane, actionable,
-                        withheld_reasons_json, review_event_id, event_type,
+                        withheld_reasons_json, review_event_id,
+                        reviewed_inbound_message_id, event_type,
                         window_state,reply_authority_state,window_reason,
                         provider_identity_class,window_evidence_hash,
                         expires_at_utc,expires_at_johannesburg,
@@ -630,11 +732,14 @@ def list_owner_work_items(
                     )
                     select
                       work_event_id, work_item_id, account_id, conversation_id,
-                      contact_id, inbox_id, latest_message_id, latest_message_at,
+                      contact_id, inbox_id, ownership_mode,
+                      latest_message_id, latest_message_at,
+                      latest_inbound_message_id, latest_outgoing_message_id,
                       chronology_hash, unanswered_inbound_bundle_json,
                       observation_hash, unanswered_count, classification,
                       missed_message_classification, lane, actionable,
-                      withheld_reasons_json, review_event_id, event_type,
+                      withheld_reasons_json, review_event_id,
+                      reviewed_inbound_message_id, event_type,
                       window_state,reply_authority_state,window_reason,
                       provider_identity_class,window_evidence_hash,
                       expires_at_utc,expires_at_johannesburg,
@@ -699,6 +804,10 @@ def build_charlie_backlog_report(
         "snapshot_hash": snapshot_hash,
         "total_current_items": len(safe_items),
         "actionable_count": sum(bool(row.get("actionable")) for row in safe_items),
+        "ownership_decision_required_count": sum(
+            row.get("classification") == "OWNERSHIP_DECISION_REQUIRED"
+            for row in safe_items
+        ),
         "classification_counts": counts,
         "withheld_reason_counts": dict(sorted(reasons.items())),
         "window_state_counts": dict(sorted(window_states.items())),
@@ -873,10 +982,64 @@ def _authoritative_markers(
     return markers
 
 
-def _ownership_mode(conversation: Mapping[str, Any]) -> str:
+def _ownership_evidence(conversation: Mapping[str, Any]) -> dict[str, Any]:
     attrs = conversation.get("custom_attributes")
+    if attrs is not None and not isinstance(attrs, Mapping):
+        return {
+            "normalized_mode": "UNAVAILABLE",
+            "state": "malformed",
+            "decision_required": True,
+            "reason": "conversation_ownership_malformed",
+        }
     attrs = attrs if isinstance(attrs, Mapping) else {}
-    return _clean(attrs.get("conversation_mode") or conversation.get("conversation_mode")).upper()
+    raw = attrs.get("conversation_mode")
+    if raw is None:
+        raw = conversation.get("conversation_mode")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return {
+            "normalized_mode": "UNAVAILABLE",
+            "state": "missing",
+            "decision_required": True,
+            "reason": "conversation_ownership_missing",
+        }
+    if not isinstance(raw, str):
+        return {
+            "normalized_mode": "UNAVAILABLE",
+            "state": "malformed",
+            "decision_required": True,
+            "reason": "conversation_ownership_malformed",
+        }
+    mode = raw.strip().upper()
+    if mode == "AUTO":
+        mode = "AUTO_GENERAL"
+    if mode not in SUPPORTED_OWNERSHIP_MODES:
+        return {
+            "normalized_mode": "UNAVAILABLE",
+            "state": "unsupported",
+            "decision_required": True,
+            "reason": "conversation_ownership_unsupported",
+        }
+    return {
+        "normalized_mode": mode,
+        "state": "valid",
+        "decision_required": False,
+        "reason": "",
+    }
+
+
+def _ownership_mode(conversation: Mapping[str, Any]) -> str:
+    return _ownership_evidence(conversation)["normalized_mode"]
+
+
+def _explicit_owner_attention_policy(conversation: Mapping[str, Any]) -> bool:
+    packet = conversation.get("owner_attention_policy")
+    if not isinstance(packet, Mapping):
+        return False
+    return (
+        packet.get("required") is True
+        and packet.get("server_derived") is True
+        and _clean(packet.get("reason")).lower() in OWNER_ATTENTION_POLICY_REASONS
+    )
 
 
 def _validate_observation(event: Mapping[str, Any]) -> str:
@@ -900,6 +1063,14 @@ def _validate_observation(event: Mapping[str, Any]) -> str:
         return "ordinary_reply_authority_window_invalid"
     if event.get("send_reply_action_visible") is True and event.get("ordinary_reply_allowed") is not True:
         return "send_reply_visibility_authority_invalid"
+    if event.get("classification") == "OWNERSHIP_DECISION_REQUIRED" and (
+        event.get("ownership_mode") != "UNAVAILABLE"
+        or event.get("ordinary_reply_allowed") is not False
+        or event.get("send_reply_action_visible") is not False
+        or event.get("reply_authority_state") != "ownership_decision_required"
+        or event.get("template_required") is not False
+    ):
+        return "ownership_exception_authority_invalid"
     alert = event.get("prepared_window_alert")
     if alert is not None:
         if not isinstance(alert, Mapping):

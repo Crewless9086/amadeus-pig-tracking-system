@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from modules.sales.sam_owner_work_queue import (
     reconcile_human_backlog,
     record_owner_work_observation,
     run_daily_backlog_report,
+    load_bounded_owner_attention_conversations,
     load_bounded_conversation_messages,
 )
 
@@ -41,6 +43,209 @@ def review(message_id=101):
 
 
 ACTOR = "owner-admin:server-derived-test"
+OWNERSHIP_FIXTURE = json.loads(
+    Path("tests/fixtures/sam_owner_inventory_ownership_exceptions.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+@pytest.mark.parametrize(
+    "fixture",
+    OWNERSHIP_FIXTURE["conversations"],
+    ids=lambda row: f"conversation-{row['id']}",
+)
+def test_production_ownership_exceptions_cannot_disappear_send_or_take_ownership(fixture):
+    observed = build_owner_work_observation(
+        fixture,
+        review=fixture["latest_review"],
+        observed_at=datetime(2026, 7, 26, 15, tzinfo=timezone.utc),
+        reconciliation_actor_id=ACTOR,
+    )
+    assert observed["classification"] == "OWNERSHIP_DECISION_REQUIRED"
+    assert observed["ownership_mode"] == "UNAVAILABLE"
+    assert observed["ownership_evidence_state"] == "missing"
+    assert observed["ownership_decision_required"] is True
+    assert observed["actionable"] is True
+    assert observed["unanswered_count"] == 1
+    assert observed["reviewed_inbound_message_id"] == observed["latest_inbound_message_id"]
+    assert observed["ordinary_reply_allowed"] is False
+    assert observed["send_reply_action_visible"] is False
+    assert observed["reply_authority_state"] == "ownership_decision_required"
+    assert observed["template_required"] is False
+    assert observed["sends_customer_message"] is False
+    assert observed["changes_conversation_ownership"] is False
+    assert observed["calls_telegram"] is False
+    assert observed["mutates_business_state"] is False
+    assert "conversation_ownership_missing" in observed["withheld_reasons"]
+    assert fixture["latest_review"]["review_event_id"] == observed["review_event_id"]
+    assert all(
+        set(row) <= {"sequence", "message_id", "direction", "created_at", "public"}
+        for row in observed["unanswered_inbound_bundle"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("attributes", "state", "reason"),
+    [
+        ({}, "missing", "conversation_ownership_missing"),
+        ({"conversation_mode": 7}, "malformed", "conversation_ownership_malformed"),
+        ({"conversation_mode": "mystery"}, "unsupported", "conversation_ownership_unsupported"),
+    ],
+)
+def test_ownership_exception_states_are_normalized_and_sanitized(attributes, state, reason):
+    observed = build_owner_work_observation(
+        conversation(
+            [message(101, "incoming", "2026-07-26T10:01:00Z")],
+            custom_attributes=attributes,
+        ),
+        review=review(),
+        reconciliation_actor_id=ACTOR,
+    )
+    assert observed["ownership_mode"] == "UNAVAILABLE"
+    assert observed["ownership_evidence_state"] == state
+    assert observed["classification"] == "OWNERSHIP_DECISION_REQUIRED"
+    assert observed["withheld_reasons"] == [reason]
+    assert "mystery" not in json.dumps(observed)
+
+
+def test_existing_human_observation_semantics_remain_unchanged():
+    observed = build_owner_work_observation(
+        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]),
+        review=review(),
+        reconciliation_actor_id=ACTOR,
+    )
+    assert observed["ownership_mode"] == "HUMAN"
+    assert observed["ownership_decision_required"] is False
+    assert observed["classification"] == "WAITING_FOR_OWNER_REPLY"
+    assert observed["ordinary_reply_allowed"] is True
+
+
+def test_ownership_exception_reply_authority_tampering_fails_before_database():
+    observed = build_owner_work_observation(
+        conversation(
+            [message(101, "incoming", "2026-07-26T10:01:00Z")],
+            custom_attributes={},
+        ),
+        review=review(),
+        reconciliation_actor_id=ACTOR,
+    )
+    observed["ordinary_reply_allowed"] = True
+    observed["send_reply_action_visible"] = True
+    result, status = record_owner_work_observation(observed, database_url="unused")
+    assert status == 400
+    assert result["status"] == "ownership_exception_authority_invalid"
+
+
+@pytest.mark.parametrize(
+    ("row", "included"),
+    [
+        ({**IDENTITY, "id": 1, "status": "open"}, True),
+        ({**IDENTITY, "id": 2, "status": "open", "custom_attributes": {}}, True),
+        ({
+            **IDENTITY, "id": 3, "status": "open",
+            "custom_attributes": {"conversation_mode": "AUTO_GENERAL"},
+        }, False),
+        ({
+            **IDENTITY, "id": 4, "status": "open",
+            "custom_attributes": {"conversation_mode": "AUTO_SPECIALIST"},
+        }, False),
+        ({
+            **IDENTITY, "id": 5, "status": "open",
+            "custom_attributes": {"conversation_mode": "AUTO_GENERAL"},
+            "owner_attention_policy": {
+                "required": True, "server_derived": True,
+                "reason": "protected_policy",
+            },
+        }, True),
+    ],
+)
+def test_owner_attention_reader_includes_human_and_exceptions_but_not_valid_agents(row, included):
+    class Response:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self): return json.dumps(row).encode()
+
+    seen = []
+    result = load_bounded_owner_attention_conversations(
+        str(row["id"]),
+        {
+            "CHATWOOT_BASE_URL": "https://chatwoot.example",
+            "CHATWOOT_ACCOUNT_ID": "147387",
+            "CHATWOOT_API_ACCESS_TOKEN": "test-token",
+            "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID": "96568",
+        },
+        opener=lambda request, timeout: seen.append((request, timeout)) or Response(),
+    )
+    assert bool(result) is included
+    assert seen[0][0].method == "GET"
+    assert seen[0][0].full_url.endswith(f"/conversations/{row['id']}")
+
+
+def test_owner_attention_reader_fails_closed_on_partial_or_conflicting_inventory():
+    class Response:
+        status = 200
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def read(self): return json.dumps(self.payload).encode()
+
+    source = {
+        "CHATWOOT_BASE_URL": "https://chatwoot.example",
+        "CHATWOOT_ACCOUNT_ID": "147387",
+        "CHATWOOT_API_ACCESS_TOKEN": "test-token",
+        "SAM_LIVE_STOCK_CHATWOOT_INBOX_ID": "96568",
+    }
+    wrong = {**IDENTITY, "id": 1, "status": "open", "inbox_id": 1}
+    with pytest.raises(OwnerWorkEvidenceError, match="identity_mismatch"):
+        load_bounded_owner_attention_conversations(
+            "1",
+            source,
+            opener=lambda request, timeout: Response(
+                wrong
+            ),
+        )
+    closed = {**IDENTITY, "id": 1, "status": "resolved"}
+    with pytest.raises(OwnerWorkEvidenceError, match="status_mismatch"):
+        load_bounded_owner_attention_conversations(
+            "1",
+            source,
+            opener=lambda request, timeout: Response(
+                closed
+            ),
+        )
+
+
+def test_ownership_exception_stale_review_and_new_inbound_remain_no_send():
+    initial = build_owner_work_observation(
+        conversation(
+            [message(101, "incoming", "2026-07-26T10:01:00Z")],
+            custom_attributes={},
+        ),
+        review=review(101),
+        reconciliation_actor_id=ACTOR,
+    )
+    newer = build_owner_work_observation(
+        conversation(
+            [
+                message(101, "incoming", "2026-07-26T10:01:00Z"),
+                message(102, "incoming", "2026-07-26T10:02:00Z"),
+            ],
+            custom_attributes={},
+        ),
+        review=review(101),
+        reconciliation_actor_id=ACTOR,
+    )
+    assert initial["work_item_id"] == newer["work_item_id"]
+    assert initial["work_event_id"] != newer["work_event_id"]
+    assert newer["classification"] == "OWNERSHIP_DECISION_REQUIRED"
+    assert newer["unanswered_count"] == 2
+    assert "review_stale_for_latest_inbound" in newer["withheld_reasons"]
+    assert newer["ordinary_reply_allowed"] is False
+    assert newer["send_reply_action_visible"] is False
+    assert newer["sends_customer_message"] is False
+    assert newer["changes_conversation_ownership"] is False
 
 
 def test_orders_complete_unanswered_bundle_and_hashes_chronology():
@@ -239,6 +444,24 @@ def test_charlie_report_is_sanitized_and_has_no_authority():
     assert report["mutates_business_state"] is False
     assert report["window_state_counts"] == {"open": 1}
     assert report["alert_band_counts"] == {"none": 1}
+    assert report["ownership_decision_required_count"] == 0
+
+
+def test_charlie_report_counts_ownership_exceptions_without_decision_authority():
+    item = build_owner_work_observation(
+        conversation(
+            [message(101, "incoming", "2026-07-26T10:01:00Z")],
+            custom_attributes={},
+        ),
+        review=review(),
+        reconciliation_actor_id=ACTOR,
+    )
+    report = build_charlie_backlog_report([item], report_date="2026-07-26")
+    assert report["classification_counts"] == {"OWNERSHIP_DECISION_REQUIRED": 1}
+    assert report["ownership_decision_required_count"] == 1
+    assert report["sends_customer_message"] is False
+    assert report["changes_conversation_ownership"] is False
+    assert report["mutates_business_state"] is False
 
 
 def test_daily_report_reuses_current_queue_and_persists_idempotent_snapshot(monkeypatch):

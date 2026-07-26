@@ -24,6 +24,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"Africa/Johannesburg"', script)
         self.assertIn("alert_band", script)
         self.assertNotIn("template-send", script)
+        self.assertIn("ownership exceptions", template)
+        self.assertIn("ownership-count", template)
+        self.assertIn("OWNERSHIP_DECISION_REQUIRED", script)
+        self.assertIn("Ownership decision required", script)
+        self.assertIn("Reply and Send Reply disabled", script)
+        self.assertIn("reviewed_inbound_message_id", script)
+        self.assertNotIn("Assign HUMAN", script)
+        self.assertNotIn("Assign approved agent", script)
 
     def test_beacon_exact_weekly_owner_decision_controls_are_distinct_and_safe(self):
         template = Path("templates/beacon-media.html").read_text(encoding="utf-8")
