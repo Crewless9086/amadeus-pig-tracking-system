@@ -477,7 +477,7 @@ def start_runner(status_override=None, respect_stop_marker=True):
             reason if not valid else "controller_packet_reread_mismatch",
             supervisor_tree,
         )
-        containment = _contain_observed_tree(supervisor_tree)
+        containment = _contain_spawned_process(process, supervisor_tree)
         return {
             "success": False,
             "status": "ownership_identity_incomplete",

@@ -133,7 +133,7 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         ), patch.object(supervisor, "STOP_PATH", Path(tmp) / "stop"), patch.object(
             supervisor, "inspect_process", return_value=child_process
         ), patch.object(
-            supervisor, "_contain_observed_tree",
+            supervisor, "_contain_spawned_process",
             return_value={"success": True, "reason": "tree_termination_verified"},
         ) as contain:
             result = supervisor.supervise_runner(
@@ -152,6 +152,67 @@ class CharlieRunnerSupervisorTests(unittest.TestCase):
         self.assertNotEqual(packet["status"], "running")
         self.assertTrue(result["containment"]["success"])
         contain.assert_called_once()
+
+    def test_final_authorization_failure_contains_exact_spawn_handle(self):
+        child = Mock(pid=101)
+        child.poll.return_value = None
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor,
+            "_wait_for_controller_final_authorization",
+            return_value={"success": False, "reason": "final_identity_mismatch"},
+        ), patch.object(
+            supervisor,
+            "_contain_spawned_process",
+            return_value={"success": True, "reason": "fresh_handle_verified"},
+        ) as contain:
+            result = supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"success": True}, 200),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(result["failure_status"], "final_identity_mismatch")
+        contain.assert_called_once()
+        self.assertIs(contain.call_args.args[0], child)
+
+    def test_recovery_failure_contains_exact_spawn_handle(self):
+        child = Mock(pid=101)
+        child.poll.return_value = None
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            supervisor, "RUNNER_DIR", Path(tmp)
+        ), patch.object(
+            supervisor, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+        ), patch.object(
+            supervisor, "RUNNER_HEARTBEAT_PATH", Path(tmp) / "runner.json"
+        ), patch.object(
+            supervisor, "STOP_PATH", Path(tmp) / "stop"
+        ), patch.object(
+            supervisor,
+            "_contain_spawned_process",
+            return_value={"success": True, "reason": "fresh_handle_verified"},
+        ) as contain:
+            result = supervisor.supervise_runner(
+                popen_factory=Mock(return_value=child),
+                max_cycles=1,
+                prepare_fn=lambda: {"success": True},
+                recovery_fn=lambda: ({"status": "recovery_failed"}, 503),
+                acknowledgement_fn=supervisor._test_acknowledgement,
+                generation="generation-1",
+            )
+        self.assertEqual(result["status"], "final_artifact_recovery_blocked")
+        contain.assert_called_once()
+        self.assertIs(contain.call_args.args[0], child)
+
     def test_control_runtime_and_mission_execution_roots_are_isolated(self):
         self.assertNotEqual(supervisor.REPO_ROOT, supervisor.EXECUTION_ROOT)
         self.assertEqual(Path(supervisor.RUNNER_COMMAND[1]).parent.parent, supervisor.EXECUTION_ROOT)

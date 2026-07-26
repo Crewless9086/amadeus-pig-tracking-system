@@ -725,6 +725,45 @@ class CharlieMissionPickupTests(unittest.TestCase):
 
     @patch("scripts.charlie_mission_pickup.get_mission")
     @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
+    def test_marker_appearing_after_refresh_prevents_branch_and_status_mutation(
+        self, list_owner_work_missions, get_mission
+    ):
+        list_owner_work_missions.return_value = (
+            {"success": True, "status": "ok", "missions": [MISSION]}, 200
+        )
+        get_mission.return_value = (
+            {"success": True, "status": "ok", "mission": MISSION}, 200
+        )
+        with patch.object(
+            charlie_mission_pickup,
+            "_runtime_pickup_authorized",
+            side_effect=[
+                (True, "authorized"),
+                (True, "authorized"),
+                (False, "governed_stop_active"),
+            ],
+        ), patch.object(
+            charlie_mission_pickup,
+            "_ensure_base_branch",
+            return_value={"success": True},
+        ), patch.object(
+            charlie_mission_pickup,
+            "_refresh_core_plan_for_pickup",
+            return_value={"refreshed": False, "blocked": False},
+        ) as refresh, patch.object(
+            charlie_mission_pickup, "_restore_mission_branch_for_resume"
+        ) as restore, patch.object(
+            charlie_mission_pickup, "update_mission_status"
+        ) as update_status:
+            result, status = charlie_mission_pickup.pick_up_next_mission()
+        self.assertEqual(status, 423)
+        self.assertEqual(result["reason"], "governed_stop_active")
+        refresh.assert_called_once()
+        restore.assert_not_called()
+        update_status.assert_not_called()
+
+    @patch("scripts.charlie_mission_pickup.get_mission")
+    @patch("scripts.charlie_mission_pickup.list_owner_work_missions")
     @patch("scripts.charlie_mission_pickup.update_mission_status")
     def test_new_adaptive_mission_without_durable_packet_cannot_be_claimed(
         self, update_status, list_owner_work_missions, get_mission

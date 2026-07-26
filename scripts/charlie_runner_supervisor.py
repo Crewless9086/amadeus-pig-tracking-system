@@ -209,7 +209,6 @@ def supervise_runner(
     if test_mode:
         runtime_revision = runtime_revision or "test-revision"
         execution_revision = execution_revision or "test-revision"
-    _recover_stale_owned_child()
     if test_mode and not _read_status():
         _write_test_controller_packet(
             generation,
@@ -397,7 +396,7 @@ def supervise_runner(
         )
         if not acknowledgement.get("success"):
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            containment = _contain_observed_tree(runner_tree)
+            containment = _contain_spawned_process(child, runner_tree)
             _write_status(
                 "infrastructure_hold",
                 child_pid=child.pid,
@@ -453,7 +452,7 @@ def supervise_runner(
         )
         if not final_authorization.get("success") or STOP_PATH.exists():
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            containment = _contain_observed_tree(runner_tree)
+            containment = _contain_spawned_process(child, runner_tree)
             _write_status(
                 "infrastructure_hold",
                 generation=generation,
@@ -482,7 +481,7 @@ def supervise_runner(
             recovery_status = 503
         if recovery_status >= 400 or STOP_PATH.exists():
             STOP_PATH.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-            containment = _contain_observed_tree(runner_tree)
+            containment = _contain_spawned_process(child, runner_tree)
             _write_status(
                 "final_artifact_recovery_blocked",
                 generation=generation,

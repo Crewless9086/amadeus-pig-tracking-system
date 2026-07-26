@@ -1220,6 +1220,15 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             }, 409
     codex_chat_preview = _codex_chat_content(mission)
 
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
     refresh = _refresh_core_plan_for_pickup(mission)
     if refresh.get("blocked"):
         return {
@@ -1235,6 +1244,15 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             mission = refreshed["mission"]
             codex_chat_preview = _codex_chat_content(mission)
 
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "success": False,
+            "status": "runner_contained",
+            "reason": reason,
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+        }, 423
     branch_restore = _restore_mission_branch_for_resume(mission)
     if not branch_restore.get("success"):
         return {
@@ -1282,6 +1300,15 @@ def pick_up_next_mission(status="approved", limit=10, dry_run=False, notify=Fals
             "codex_chat_written": False,
         }, 423
     lease = _write_execution_lease(mission_id)
+    if not lease.get("persisted"):
+        return {
+            "success": False,
+            "status": lease.get("write_status") or "execution_lease_not_persisted",
+            "reason": lease.get("reason") or "execution_lease_not_persisted",
+            "mission_id": mission_id,
+            "codex_chat_written": False,
+            "execution_lease": lease,
+        }, int(lease.get("write_status_code") or 503)
     _write_codex_chat(codex_chat_preview)
     if notify:
         _send_pickup_notification(mission)
@@ -1575,6 +1602,15 @@ def _merge_resumable_workflow(current_workflow, planned_workflow, resume_stage="
 
 
 def _write_execution_lease(mission_id):
+    authorized, reason = _runtime_pickup_authorized()
+    if not authorized:
+        return {
+            "mission_id": mission_id,
+            "persisted": False,
+            "write_status": "runner_contained",
+            "write_status_code": 423,
+            "reason": reason,
+        }
     lease = _execution_lease_packet(mission_id)
     result, status_code = update_mission_vault(
         mission_id,
