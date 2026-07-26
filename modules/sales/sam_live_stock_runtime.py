@@ -4381,6 +4381,24 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "protected_mutation_absent": not any(decision.get(key) is True for key in protected_keys),
         "hostile_content_absent": not _hostile_or_scam_signal(inbound.get("content")),
     }
+    authority = {
+        "status": "response_class_authority_controller_disabled",
+        "allowed": True,
+        "blockers": [],
+    }
+    if _truthy(source.get("SAM_RESPONSE_CLASS_AUTHORITY_CONTROLLER_ENABLED")):
+        from modules.sales.sam_response_class_authority import (
+            list_latest_authority_events,
+            resolve_runtime_authority,
+        )
+        authority = resolve_runtime_authority(
+            response_class,
+            current_message_class=response_class,
+            delivery_rail_available=True,
+            event_loader=list_latest_authority_events,
+            environ=source,
+        )
+        checks["persistent_response_class_authority"] = authority.get("allowed") is True
     allowed = identity_matches and all(checks.values())
     if not checks["global_auto_general_enabled"]:
         status = "auto_general_reply_disabled"
@@ -4412,6 +4430,8 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         status = "auto_general_canary_protected_action_blocked"
     elif not checks["hostile_content_absent"]:
         status = "auto_general_canary_hostile_content_blocked"
+    elif checks.get("persistent_response_class_authority") is False:
+        status = "auto_general_response_class_authority_blocked"
     else:
         status = "auto_general_canary_eligible"
     return {
@@ -4420,6 +4440,11 @@ def _auto_general_canary_evaluation(inbound, decision, review, source):
         "checks": checks,
         "response_class": response_class,
         "minimum_llm_confidence": minimum_llm_confidence,
+        "response_class_authority": {
+            "status": authority.get("status"),
+            "authority_event_id": authority.get("authority_event_id", ""),
+            "blockers": list(authority.get("blockers") or []),
+        },
         "contains_identity_values": False,
         "contains_secret_values": False,
     }

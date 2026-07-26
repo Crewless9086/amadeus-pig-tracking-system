@@ -11,13 +11,20 @@ from typing import Any, Iterable, Mapping
 
 REQUIRED_PRODUCTION_TURNS = 100
 REQUIRED_COMPLETE_CONVERSATIONS = 20
-REQUIRED_CONSECUTIVE_ACCEPTED = 20
+EVALUATOR_VERSION = "sam_response_class_graduation_v2"
+INITIAL_PREAUTHORIZED_CLASSES = (
+    "greeting",
+    "acknowledgement",
+    "thanks",
+    "simple_conversational_closure",
+)
 
 RESPONSE_CLASS_POLICY = {
-    "greeting": {"minimum_samples": 25, "low_risk": True},
-    "acknowledgement": {"minimum_samples": 25, "low_risk": True},
-    "thanks": {"minimum_samples": 25, "low_risk": True},
-    "simple_small_talk": {"minimum_samples": 30, "low_risk": True},
+    "greeting": {"minimum_samples": 30, "low_risk": True, "pre_authorized": True},
+    "acknowledgement": {"minimum_samples": 30, "low_risk": True, "pre_authorized": True},
+    "thanks": {"minimum_samples": 30, "low_risk": True, "pre_authorized": True},
+    "simple_conversational_closure": {"minimum_samples": 30, "low_risk": True, "pre_authorized": True},
+    "simple_small_talk": {"minimum_samples": 30, "low_risk": True, "pre_authorized": False},
     "one_clarification": {"minimum_samples": 30, "low_risk": True},
     "referral_post_context_question": {"minimum_samples": 40, "low_risk": False},
     "verified_general_factual_answer": {"minimum_samples": 50, "low_risk": False},
@@ -83,29 +90,26 @@ def aggregate_scorecard(scores: Iterable[Mapping[str, Any]], *, complete_convers
 
 
 def graduation_by_reply_class(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    """Compatibility projection backed only by the canonical v2 evaluator."""
+    normalized = []
     for event in events:
         row = dict(event or {})
-        grouped[str(row.get("reply_class") or "unclear")].append(row)
-    classes = {}
-    for reply_class, rows in grouped.items():
-        consecutive = 0
-        for row in reversed(rows):
-            accepted = row.get("owner_reply_classification") in {"approved_verbatim", "owner_edited"}
-            safe = not row.get("unsafe") and not row.get("fact_error")
-            if accepted and safe:
-                consecutive += 1
-            else:
-                break
-        unchanged = sum(row.get("owner_reply_classification") == "approved_verbatim" for row in rows)
-        classes[reply_class] = {
-            "events": len(rows),
-            "consecutive_safe_accepted": consecutive,
-            "unchanged_rate": 0.0 if not rows else round(unchanged / len(rows), 4),
-            "narrow_auto_send_candidate": consecutive >= REQUIRED_CONSECUTIVE_ACCEPTED and unchanged / len(rows) >= 0.8,
-            "auto_send_enabled": False,
-        }
-    return {"version": "sam_live_stock_graduation_v1", "classes": classes, "owner_activation_required": True}
+        classification = str(row.get("owner_reply_classification") or "")
+        normalized.append({
+            **row,
+            "response_class": row.get("response_class") or row.get("reply_class") or "unknown",
+            "owner_approved": classification in {"approved_verbatim", "owner_edited"},
+            "owner_rejected": classification == "owner_replaced",
+            "provider_confirmed": bool(row.get("provider_confirmed")),
+            "observed_at": row.get("observed_at") or row.get("created_at") or "",
+        })
+    evaluated = evaluate_response_class_graduation(normalized)
+    return {
+        "version": EVALUATOR_VERSION,
+        "classes": evaluated["classes"],
+        "owner_activation_required": True,
+        "legacy_20_80_calculation_active": False,
+    }
 
 
 def evaluate_response_class_graduation(
@@ -130,20 +134,25 @@ def evaluate_response_class_graduation(
         wrong_lane = rate("wrong_lane")
         unsupported = rate("unsupported_claim")
         duplicate = rate("duplicate_or_retry")
-        escalation = rate("escalation_correct")
-        intervention = rate("owner_intervention_required")
         ambiguous = rate("delivery_ambiguous")
+        delivery_failure = rate("delivery_failure")
+        owner_rejected = rate("owner_rejected")
         truth_verified = rate("truth_source_verified")
         class_canary_proven = rate("class_canary_proven")
         recent_failure_streak = 0
         for row in reversed(rows):
             if any(
                 bool(row.get(key))
-                for key in ("wrong_lane", "unsupported_claim", "duplicate_or_retry", "delivery_ambiguous")
+                for key in (
+                    "wrong_lane", "unsupported_claim", "duplicate_or_retry",
+                    "delivery_failure", "owner_rejected",
+                )
             ):
                 recent_failure_streak += 1
             else:
                 break
+        if ambiguous is not None and ambiguous > 0.02:
+            recent_failure_streak = max(1, recent_failure_streak)
         timestamps = [_parse_observed_at(row.get("observed_at")) for row in rows]
         timestamps = [value for value in timestamps if value is not None]
         freshest_days = None
@@ -151,6 +160,18 @@ def evaluate_response_class_graduation(
         if timestamps:
             freshest_days = max(0, (now - max(timestamps)).days)
             window_days = max(0, (max(timestamps) - min(timestamps)).days)
+        window_members = [
+            {
+                "event_id": str(row.get("evidence_event_id") or ""),
+                "observed_at": str(row.get("observed_at") or ""),
+            }
+            for row in rows
+        ]
+        window_member_hash = hashlib.sha256(
+            json.dumps(
+                window_members, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
         evidence = {
             "sample_count": total,
             "owner_approval_rate": approvals,
@@ -158,14 +179,15 @@ def evaluate_response_class_graduation(
             "wrong_lane_rate": wrong_lane,
             "unsupported_claim_rate": unsupported,
             "duplicate_retry_rate": duplicate,
-            "escalation_correctness_rate": escalation,
-            "owner_intervention_rate": intervention,
             "delivery_ambiguity_rate": ambiguous,
+            "delivery_failure_rate": delivery_failure,
+            "owner_rejection_rate": owner_rejected,
             "verified_truth_rate": truth_verified,
             "class_canary_proven_rate": class_canary_proven,
             "recent_failure_streak": recent_failure_streak,
             "evidence_window_days": window_days,
             "freshest_evidence_days": freshest_days,
+            "evidence_window_member_hash": window_member_hash,
         }
         gates = {
             "sample_count": total >= policy["minimum_samples"],
@@ -175,10 +197,9 @@ def evaluate_response_class_graduation(
             "wrong_lane": wrong_lane is not None and wrong_lane == 0.0,
             "unsupported_claim": unsupported is not None and unsupported == 0.0,
             "duplicate_retry": duplicate is not None and duplicate == 0.0,
-            "escalation_correctness": escalation is not None and escalation >= 0.95,
-            "owner_intervention": intervention is not None
-            and intervention <= (0.05 if policy.get("low_risk") else 0.10),
             "delivery_ambiguity": ambiguous is not None and ambiguous <= 0.02,
+            "delivery_failure": delivery_failure is not None and delivery_failure == 0.0,
+            "owner_rejection": owner_rejected is not None and owner_rejected == 0.0,
             "failure_streak": recent_failure_streak == 0,
             "freshness": freshest_days is not None and freshest_days <= 7,
             "bounded_window": window_days is not None and window_days <= 30,
@@ -198,12 +219,12 @@ def evaluate_response_class_graduation(
                 in {"livestock_informational_answer", "meat_informational_answer"}
                 else True
             ),
-            "pre_authorized_low_risk": bool(policy.get("low_risk")),
+            "pre_authorized_low_risk": bool(policy.get("pre_authorized")),
             "self_graduation_allowed": not policy.get("self_graduation_prohibited", False),
         }
         candidate = all(gates.values())
         decision = (
-            "promotion_candidate"
+            "candidate"
             if candidate
             else "regressed"
             if recent_failure_streak > 0
@@ -218,9 +239,9 @@ def evaluate_response_class_graduation(
             "class_kill_switch": f"SAM_RESPONSE_CLASS_{reply_class.upper()}_ENABLED",
         }
     return {
-        "version": "sam_response_class_graduation_v2",
+        "version": EVALUATOR_VERSION,
         "classes": results,
-        "global_kill_switch": "SAM_RESPONSE_CLASS_GRADUATION_ENABLED",
+        "global_kill_switch": "SAM_RESPONSE_CLASS_AUTHORITY_GLOBAL_ENABLED",
         "runtime_authority_changed": False,
         "consequential_self_authorization": False,
     }
@@ -274,7 +295,7 @@ def build_charlie_sam_oversight_packet(
         "promotion_candidates": [
             key
             for key, value in (graduation.get("classes") or {}).items()
-            if value.get("decision") == "promotion_candidate"
+            if value.get("decision") == "candidate"
         ],
         "paused_or_regressed_classes": [
             key
@@ -316,7 +337,8 @@ def readiness_decision(scorecard: Mapping[str, Any], graduation: Mapping[str, An
         "gates": gates,
         "ready_for_owner_review_pilot": all(value for key, value in gates.items() if key != "production_evidence"),
         "ready_for_narrow_auto_send_owner_decision": all(gates.values()) and any(
-            item.get("narrow_auto_send_candidate") for item in (graduation.get("classes") or {}).values()
+            item.get("decision") == "candidate"
+            for item in (graduation.get("classes") or {}).values()
         ),
         "auto_send_enabled": False,
         "confidence_ceiling": 0.98 if all(gates.values()) else 0.95,

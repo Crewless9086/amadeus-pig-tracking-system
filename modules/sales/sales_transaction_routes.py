@@ -129,6 +129,13 @@ from modules.sales.sam_delivery_truth import (
     load_attempt_chain,
 )
 from modules.sales.sam_live_stock_graduation import notify_new_graduation_candidates
+from modules.sales.sam_response_class_authority import (
+    append_authority_decision,
+    authority_visibility_report,
+    list_latest_authority_events,
+    load_canonical_evidence,
+    run_bounded_authority_evaluation,
+)
 from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.sam_pricing import (
@@ -821,8 +828,15 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         ),
     })
     graduation_notification = {"attempted": False, "status": "learning_event_not_created"}
+    authority_evaluation = {"attempted": False, "status": "learning_event_not_created"}
     if learning.get("success") and int(learning.get("created_count") or 0):
         try:
+            authority_result, authority_status = run_bounded_authority_evaluation()
+            authority_evaluation = {
+                **authority_result,
+                "attempted": True,
+                "status_code": authority_status,
+            }
             graduation_notification = notify_new_graduation_candidates(
                 scorecard_loader=lambda: live_stock_learning_scorecard(limit=500),
                 event_recorder=record_sales_conversation_learning_event,
@@ -848,6 +862,7 @@ def _capture_sam_live_stock_owner_reply_if_needed(payload):
         "latest_review_status_code": latest_status,
         "learning_event_id": learning.get("learning_event_id", ""),
         "graduation_notification": graduation_notification,
+        "authority_evaluation": authority_evaluation,
         "resolve_card_refresh": resolve_refresh,
         "chatwoot_conversation_id": inbound.get("conversation_id"),
         "source": "sam_live_stock_owner_reply_capture",
@@ -1072,6 +1087,11 @@ def meat_document_delivery_status_webhook():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     sam_result, sam_status = handle_sam_live_stock_delivery_status_webhook(payload)
+    if sam_status < 400 and sam_result.get("processed") is True:
+        try:
+            run_bounded_authority_evaluation()
+        except Exception:
+            pass
     if (
         sam_status >= 400
         or sam_result.get("processed") is True
@@ -1592,6 +1612,55 @@ def live_stock_conversation_learning_scorecard():
     if guard:
         return guard
     result, status_code = live_stock_learning_scorecard(limit=request.args.get("limit", 500))
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/live-stock-learning/authority", methods=["GET"])
+def live_stock_response_class_authority():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    evidence, evidence_status = load_canonical_evidence(
+        limit=request.args.get("limit", 500)
+    )
+    latest, latest_status = list_latest_authority_events()
+    if evidence_status >= 400 or latest_status >= 400:
+        return jsonify({
+            "success": False,
+            "status": "response_class_authority_unavailable",
+            "evidence_status": evidence.get("status"),
+            "authority_status": latest.get("status"),
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 503
+    return jsonify(authority_visibility_report(
+        evidence.get("events", []), latest_events=latest.get("events", [])
+    )), 200
+
+
+@sales_bp.route("/sales/live-stock-learning/authority/evaluate", methods=["POST"])
+def evaluate_live_stock_response_class_authority():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = run_bounded_authority_evaluation()
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/live-stock-learning/authority/decision", methods=["POST"])
+def decide_live_stock_response_class_authority():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    result, status_code = append_authority_decision(
+        payload.get("response_class"),
+        payload.get("decision"),
+        actor_type="owner",
+        actor_id=payload.get("actor_id") or "owner_authenticated_session",
+        reason=payload.get("reason"),
+        authorized_envelope=payload.get("authorized_envelope"),
+    )
     return jsonify(result), status_code
 
 

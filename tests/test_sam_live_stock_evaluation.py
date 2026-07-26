@@ -53,14 +53,20 @@ class SamLiveStockEvaluationTests(unittest.TestCase):
         self.assertEqual(readiness["confidence_ceiling"], 0.95)
         self.assertFalse(readiness["auto_send_enabled"])
 
-    def test_twenty_safe_unchanged_replies_become_candidate_not_enabled(self):
+    def test_legacy_twenty_eighty_calculation_cannot_compete(self):
         graduation = graduation_by_reply_class([
-            {"reply_class": "location_question", "owner_reply_classification": "approved_verbatim"}
+            {
+                "reply_class": "greeting",
+                "owner_reply_classification": "approved_verbatim",
+                "provider_confirmed": True,
+                "observed_at": "2026-07-25T00:00:00+00:00",
+            }
             for _ in range(20)
         ])
-        row = graduation["classes"]["location_question"]
-        self.assertTrue(row["narrow_auto_send_candidate"])
-        self.assertFalse(row["auto_send_enabled"])
+        row = graduation["classes"]["greeting"]
+        self.assertEqual(row["decision"], "withheld")
+        self.assertFalse(row["runtime_enabled"])
+        self.assertFalse(graduation["legacy_20_80_calculation_active"])
         self.assertTrue(graduation["owner_activation_required"])
 
     def test_owner_learning_scorecard_reports_real_acceptance_without_enabling_send(self):
@@ -93,12 +99,12 @@ class SamLiveStockEvaluationTests(unittest.TestCase):
                 "provider_confirmed": True,
                 "escalation_correct": True,
             }
-            for _ in range(25)
+            for _ in range(30)
         ]
         result = evaluate_response_class_graduation(
             rows, now=datetime(2026, 7, 25, tzinfo=timezone.utc)
         )
-        self.assertEqual(result["classes"]["greeting"]["decision"], "promotion_candidate")
+        self.assertEqual(result["classes"]["greeting"]["decision"], "candidate")
         self.assertFalse(result["classes"]["greeting"]["runtime_enabled"])
         self.assertEqual(result["classes"]["thanks"]["decision"], "withheld")
         self.assertIsNone(
@@ -114,9 +120,9 @@ class SamLiveStockEvaluationTests(unittest.TestCase):
             "escalation_correct": True,
         }
         rows = [
-            {"response_class": "greeting", **safe} for _ in range(25)
+            {"response_class": "greeting", **safe} for _ in range(30)
         ] + [
-            {"response_class": "thanks", **safe} for _ in range(24)
+            {"response_class": "thanks", **safe} for _ in range(29)
         ] + [
             {
                 "response_class": "thanks",
@@ -127,7 +133,7 @@ class SamLiveStockEvaluationTests(unittest.TestCase):
         result = evaluate_response_class_graduation(
             rows, now=datetime(2026, 7, 25, tzinfo=timezone.utc)
         )
-        self.assertEqual(result["classes"]["greeting"]["decision"], "promotion_candidate")
+        self.assertEqual(result["classes"]["greeting"]["decision"], "candidate")
         self.assertEqual(result["classes"]["thanks"]["decision"], "regressed")
         self.assertFalse(result["classes"]["thanks"]["gates"]["unsupported_claim"])
 

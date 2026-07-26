@@ -1,8 +1,9 @@
-"""Owner notification for evidence-based SAM Live Stock graduation candidates."""
+"""Owner notification for canonical v2 response-class authority candidates."""
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import Any, Callable, Mapping
 
@@ -34,10 +35,17 @@ def notify_new_graduation_candidates(
     if status_code >= 400 or not loaded.get("success"):
         return _result("graduation_scorecard_unavailable", attempted=True, scorecard_status_code=status_code)
     scorecard = loaded.get("scorecard") if isinstance(loaded.get("scorecard"), Mapping) else {}
-    classes = ((scorecard.get("graduation") or {}).get("classes") or {}) if isinstance(scorecard.get("graduation"), Mapping) else {}
+    graduation = (
+        scorecard.get("graduation")
+        if isinstance(scorecard.get("graduation"), Mapping)
+        else scorecard
+    )
+    if graduation.get("version") != "sam_response_class_graduation_v2":
+        return _result("canonical_v2_scorecard_required", attempted=True)
+    classes = graduation.get("classes") or {}
     notified = []
     for reply_class, evidence in sorted(classes.items()):
-        if not isinstance(evidence, Mapping) or not evidence.get("narrow_auto_send_candidate"):
+        if not isinstance(evidence, Mapping) or evidence.get("decision") != "candidate":
             continue
         event = _notification_event(str(reply_class), evidence)
         recorded, record_status = event_recorder(event)
@@ -54,21 +62,35 @@ def notify_new_graduation_candidates(
 
 
 def _notification_event(reply_class: str, evidence: Mapping[str, Any]) -> dict[str, Any]:
-    digest = hashlib.sha256(f"sam-live-stock-graduation-v1|{reply_class}".encode("utf-8")).hexdigest()[:20].upper()
+    metrics = dict(evidence.get("evidence") or {})
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "version": "sam_response_class_graduation_v2",
+                "reply_class": reply_class,
+                "evidence": metrics,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()[:20].upper()
     return {
         "learning_event_id": f"SAM-LIVE-GRADUATION-{digest}",
         "lead_id": f"SAM-LIVE-GRADUATION-{reply_class}"[:120],
         "channel": "owner_telegram",
         "source_agent": "sam_live_stock_backend",
-        "event_source": "graduation_scorecard",
+        "event_source": "response_class_authority_v2",
         "event_type": "owner_review_note",
         "captured_facts": {
             "learning_kind": "graduation_notification",
             "reply_class": reply_class,
-            "events": int(evidence.get("events") or 0),
-            "safe_streak": int(evidence.get("consecutive_safe_accepted") or 0),
-            "unchanged_rate": float(evidence.get("unchanged_rate") or 0),
+            "evaluator_version": "sam_response_class_graduation_v2",
+            "evidence_window_hash": digest,
+            "sample_count": int(metrics.get("sample_count") or 0),
+            "owner_approval_rate": metrics.get("owner_approval_rate"),
+            "provider_delivered_read_rate": metrics.get("provider_delivered_read_rate"),
             "owner_activation_required": True,
+            "runtime_authority_changed": False,
         },
         "improvement_suggestion": f"Owner review requested for SAM Live Stock reply class {reply_class}.",
         "recorded_by": "sam_live_stock_graduation_notifier",
@@ -77,13 +99,15 @@ def _notification_event(reply_class: str, evidence: Mapping[str, Any]) -> dict[s
 
 
 def _notification_text(reply_class: str, evidence: Mapping[str, Any]) -> str:
-    unchanged = round(float(evidence.get("unchanged_rate") or 0) * 100)
+    metrics = dict(evidence.get("evidence") or {})
+    approval = round(float(metrics.get("owner_approval_rate") or 0) * 100)
+    delivered = round(float(metrics.get("provider_delivered_read_rate") or 0) * 100)
     return (
         "SAM Graduation Candidate\n\n"
         f"Reply class: {reply_class.replace('_', ' ').title()}\n"
-        f"Reviewed replies: {int(evidence.get('events') or 0)}\n"
-        f"Consecutive safe accepted: {int(evidence.get('consecutive_safe_accepted') or 0)}\n"
-        f"Unchanged: {unchanged}%\n\n"
+        f"Reviewed replies: {int(metrics.get('sample_count') or 0)}\n"
+        f"Owner approved: {approval}%\n"
+        f"Provider confirmed: {delivered}%\n\n"
         "SAM remains owner-reviewed. No authority changed automatically."
     )
 
