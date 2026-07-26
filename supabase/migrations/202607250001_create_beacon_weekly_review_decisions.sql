@@ -62,6 +62,9 @@ alter table public.beacon_weekly_review_decision_events enable row level securit
 revoke all privileges on table
     public.beacon_weekly_review_decision_events
     from public, anon, authenticated;
+revoke all privileges on table
+    public.beacon_weekly_review_decision_events
+    from service_role;
 grant select, insert on table
     public.beacon_weekly_review_decision_events
     to service_role;

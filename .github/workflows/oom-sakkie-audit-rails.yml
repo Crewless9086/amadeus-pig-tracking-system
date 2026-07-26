@@ -67,6 +67,8 @@ jobs:
                           create role service_role nologin bypassrls;
                       exception when duplicate_object then null;
                       end $$;
+                      alter default privileges in schema public
+                          grant all privileges on tables to service_role;
                       create table if not exists public.order_lines (
                           order_line_id text primary key, order_id text, pig_id text,
                           line_status text not null default 'Draft', reserved_status text not null default 'Not_Reserved'
