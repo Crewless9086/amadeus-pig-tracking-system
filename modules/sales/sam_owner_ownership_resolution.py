@@ -147,15 +147,26 @@ def read_current_resolution_evidence(
     if status >= 400:
         return latest, status
     try:
-        rows = [_read_exact_conversation(packet, environ)]
+        conversation = _read_exact_conversation(packet, environ)
+        inbox = _read_exact_inbox(packet, environ)
     except Exception as exc:
         return _result("ownership_chatwoot_conversation_unavailable", error_type=exc.__class__.__name__), 503
-    if len(rows) != 1:
-        return _result("ownership_exact_conversation_unavailable"), 409
     history, history_status = load_bounded_conversation_messages(packet["conversation_id"], environ)
     if history_status >= 400 or history.get("evidence_complete") is not True:
         return _result("ownership_chronology_unavailable"), 503
-    conversation = {**rows[0], "messages": history["messages"]}
+    embedded_inbox = (
+        conversation.get("inbox")
+        if isinstance(conversation.get("inbox"), Mapping)
+        else {}
+    )
+    embedded_inbox_id = _clean(embedded_inbox.get("id"))
+    if embedded_inbox_id and embedded_inbox_id != packet["inbox_id"]:
+        return _result("ownership_current_inbox_id_mismatch"), 409
+    conversation = {
+        **conversation,
+        "inbox": {**inbox, **embedded_inbox, "id": packet["inbox_id"]},
+        "messages": history["messages"],
+    }
     from modules.sales.sam_live_stock_launch_control import (
         load_latest_sam_live_stock_review_events_for_conversations,
     )
@@ -168,28 +179,123 @@ def read_current_resolution_evidence(
     observation = build_owner_work_observation(
         conversation, review=review, reconciliation_actor_id="server:ownership-refresh"
     )
-    return _result(
-        "ownership_current_evidence_loaded",
-        **latest,
-        observation=observation,
-        account_id=observation["account_id"],
-        conversation_id=observation["conversation_id"],
-        contact_id=observation["contact_id"],
-        inbox_id=observation["inbox_id"],
-        work_item_id=observation["work_item_id"],
-        work_event_id=latest["work_event_id"],
-        observation_hash=latest["observation_hash"],
-        chronology_hash=observation["chronology_hash"],
-        latest_inbound_message_id=observation["latest_inbound_message_id"],
-        unanswered_count=observation["unanswered_count"],
-        review_event_id=observation["review_event_id"],
-        ownership_mode=observation["ownership_mode"],
-        classification=latest["classification"],
-        lane=observation["lane"],
-        protected_markers=observation["protected_markers"],
-        specialist_markers=observation["specialist_markers"],
-        window_evidence_hash=observation["window_evidence_hash"],
-    ), 200
+    persisted, persisted_error = _persisted_current_binding(latest)
+    if persisted_error:
+        return _result(persisted_error), 409
+    fresh, fresh_error = _fresh_current_binding(observation)
+    if fresh_error:
+        return _result(fresh_error), 409
+    for key in (
+        "work_item_id", "work_event_id", "account_id", "conversation_id",
+        "contact_id", "inbox_id", "observation_hash", "chronology_hash",
+        "latest_inbound_message_id", "unanswered_count", "review_event_id",
+        "window_evidence_hash", "classification",
+    ):
+        if persisted[key] != fresh[key]:
+            return _result(f"ownership_current_{key}_mismatch"), 409
+    result_fields = {
+        "work_item_id": persisted["work_item_id"],
+        "work_event_id": persisted["work_event_id"],
+        "account_id": persisted["account_id"],
+        "conversation_id": persisted["conversation_id"],
+        "contact_id": persisted["contact_id"],
+        "inbox_id": persisted["inbox_id"],
+        "observation_hash": persisted["observation_hash"],
+        "chronology_hash": persisted["chronology_hash"],
+        "latest_inbound_message_id": persisted["latest_inbound_message_id"],
+        "unanswered_count": persisted["unanswered_count"],
+        "review_event_id": persisted["review_event_id"],
+        "window_evidence_hash": persisted["window_evidence_hash"],
+        "classification": persisted["classification"],
+        "ownership_mode": fresh["ownership_mode"],
+        "lane": fresh["lane"],
+        "protected_markers": fresh["protected_markers"],
+        "specialist_markers": fresh["specialist_markers"],
+        "observation": _canonical_json_value(observation),
+    }
+    return _result("ownership_current_evidence_loaded", **result_fields), 200
+
+
+def _persisted_current_binding(
+    latest: Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    if not isinstance(latest, Mapping):
+        return {}, "ownership_persisted_evidence_malformed"
+    text_fields = (
+        "work_item_id", "work_event_id", "account_id", "conversation_id",
+        "contact_id", "inbox_id", "observation_hash", "chronology_hash",
+        "latest_inbound_message_id", "review_event_id",
+        "window_evidence_hash", "classification",
+    )
+    if any(
+        not isinstance(latest.get(key), str) or not latest.get(key).strip()
+        for key in text_fields
+    ):
+        return {}, "ownership_persisted_evidence_incomplete"
+    unanswered = latest.get("unanswered_count")
+    if isinstance(unanswered, bool) or not isinstance(unanswered, int) or unanswered < 0:
+        return {}, "ownership_persisted_evidence_malformed"
+    binding = {key: latest[key].strip() for key in text_fields}
+    binding["unanswered_count"] = unanswered
+    try:
+        return _canonical_json_value(binding), ""
+    except (TypeError, ValueError):
+        return {}, "ownership_persisted_evidence_malformed"
+
+
+def _fresh_current_binding(
+    observation: Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    if not isinstance(observation, Mapping):
+        return {}, "ownership_fresh_evidence_malformed"
+    text_fields = (
+        "work_item_id", "work_event_id", "account_id", "conversation_id",
+        "contact_id", "inbox_id", "observation_hash", "chronology_hash",
+        "latest_inbound_message_id", "review_event_id",
+        "window_evidence_hash", "classification", "ownership_mode", "lane",
+    )
+    if any(
+        not isinstance(observation.get(key), str)
+        or not observation.get(key).strip()
+        for key in text_fields
+    ):
+        return {}, "ownership_fresh_evidence_incomplete"
+    unanswered = observation.get("unanswered_count")
+    if isinstance(unanswered, bool) or not isinstance(unanswered, int) or unanswered < 0:
+        return {}, "ownership_fresh_evidence_malformed"
+    for key in ("protected_markers", "specialist_markers"):
+        value = observation.get(key)
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
+            return {}, "ownership_fresh_evidence_malformed"
+    binding = {key: observation[key].strip() for key in text_fields}
+    binding.update({
+        "unanswered_count": unanswered,
+        "protected_markers": list(observation["protected_markers"]),
+        "specialist_markers": list(observation["specialist_markers"]),
+    })
+    try:
+        return _canonical_json_value(binding), ""
+    except (TypeError, ValueError):
+        return {}, "ownership_fresh_evidence_malformed"
+
+
+def _canonical_json_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp_timezone_missing")
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, Mapping):
+        return {
+            str(key): _canonical_json_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"unsupported_json_value:{type(value).__name__}")
 
 
 def _read_exact_conversation(
@@ -226,6 +332,31 @@ def _read_exact_conversation(
         or _clean(row.get("status")).lower() != "open"
     ):
         raise RuntimeError("chatwoot_ownership_identity_changed")
+    return dict(row)
+
+
+def _read_exact_inbox(
+    packet: Mapping[str, Any], environ: Mapping[str, str]
+) -> dict[str, Any]:
+    base = _clean(environ.get("CHATWOOT_BASE_URL") or "https://app.chatwoot.com", 240).rstrip("/")
+    account = _clean(environ.get("CHATWOOT_ACCOUNT_ID") or "147387")
+    token = _clean(environ.get("CHATWOOT_API_ACCESS_TOKEN") or environ.get("CHATWOOT_API_TOKEN"), 500)
+    if not base or not account or not token or account != packet["account_id"]:
+        raise RuntimeError("chatwoot_ownership_inbox_reader_not_configured")
+    request = urllib_request.Request(
+        f"{base}/api/v1/accounts/{urllib_parse.quote(account)}/inboxes/{urllib_parse.quote(packet['inbox_id'])}",
+        headers={"api_access_token": token, "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=8) as response:
+            if int(response.status) != 200:
+                raise RuntimeError("chatwoot_ownership_inbox_unavailable")
+            row = json.loads(response.read().decode("utf-8"))
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError, ValueError) as exc:
+        raise RuntimeError("chatwoot_ownership_inbox_unavailable") from exc
+    if not isinstance(row, Mapping) or _clean(row.get("id")) != packet["inbox_id"]:
+        raise RuntimeError("chatwoot_ownership_inbox_identity_changed")
     return dict(row)
 
 
