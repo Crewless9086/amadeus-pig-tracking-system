@@ -32,7 +32,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
 
         denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=denied), \
-             patch.object(sales_transaction_routes, "reconcile_live_human_backlog") as reconcile:
+             patch.object(sales_transaction_routes, "reconcile_live_human_conversation") as reconcile:
             response = self.client.post("/api/sales/channels/chatwoot/sam/owner-inbox/reconcile")
         self.assertEqual(response.status_code, 403)
         reconcile.assert_not_called()
@@ -44,13 +44,16 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             "calls_telegram": False, "mutates_business_state": False,
         }
         with patch.object(sales_transaction_routes, "require_owner_admin_access", return_value=None), \
-             patch.object(sales_transaction_routes, "reconcile_live_human_backlog", return_value=(result, 200)) as reconcile:
+             patch.object(sales_transaction_routes, "owner_admin_principal", return_value="owner-admin:stable-server-derived"), \
+             patch.object(sales_transaction_routes, "reconcile_live_human_conversation", return_value=(result, 200)) as reconcile:
             response = self.client.post(
                 "/api/sales/channels/chatwoot/sam/owner-inbox/reconcile",
-                json={"conversations": [{"id": "manufactured"}]},
+                json={"conversation_id": "2025", "owner_identity": "browser-spoof"},
             )
         self.assertEqual(response.status_code, 200)
-        reconcile.assert_called_once_with()
+        reconcile.assert_called_once_with(
+            "2025", reconciliation_actor_id="owner-admin:stable-server-derived"
+        )
 
     def test_charlie_daily_report_write_requires_owner_admin(self):
         denied = ({"success": False, "status": "owner_admin_access_denied"}, 403)

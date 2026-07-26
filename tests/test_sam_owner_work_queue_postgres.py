@@ -45,11 +45,12 @@ class SamOwnerWorkQueuePostgresTests(unittest.TestCase):
               contact_id, inbox_id, ownership_mode, latest_message_id,
               chronology_hash, observation_hash, unanswered_count, classification,
               missed_message_classification, lane, actionable, event_type,
-              source, observed_at
+              source, reconciliation_actor_id, observed_at
             ) values (
               %s,%s,'147387','2025','699428938','96568','HUMAN','101',
               %s,%s,1,'WAITING_FOR_OWNER_REPLY','single_unanswered_inbound',
-              'GENERAL',true,'actionable','postgres_contract',now()
+              'GENERAL',true,'actionable','postgres_contract',
+              'owner-admin:server-derived-test',now()
             )
         """
 
