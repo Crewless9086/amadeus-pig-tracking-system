@@ -25,6 +25,7 @@ create table if not exists public.sam_owner_work_item_events (
     specialist_markers_json jsonb not null default '[]'::jsonb,
     event_type text not null check (event_type in ('actionable', 'withheld')),
     source text not null,
+    reconciliation_actor_id text not null,
     prior_event_id text references public.sam_owner_work_item_events(work_event_id),
     observed_at timestamptz not null,
     created_at timestamptz not null default now(),

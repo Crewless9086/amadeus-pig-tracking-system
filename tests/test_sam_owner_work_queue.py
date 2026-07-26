@@ -39,6 +39,9 @@ def review(message_id=101):
     }
 
 
+ACTOR = "owner-admin:server-derived-test"
+
+
 def test_orders_complete_unanswered_bundle_and_hashes_chronology():
     observed = build_owner_work_observation(
         conversation([
@@ -47,6 +50,7 @@ def test_orders_complete_unanswered_bundle_and_hashes_chronology():
             message(101, "incoming", "2026-07-26T10:01:00Z"),
         ]),
         review=review(), observed_at=datetime(2026, 7, 26, 11, tzinfo=timezone.utc),
+        reconciliation_actor_id=ACTOR,
     )
     assert [row["message_id"] for row in observed["unanswered_inbound_bundle"]] == ["101", "102"]
     assert [row["sequence"] for row in observed["unanswered_inbound_bundle"]] == [1, 2]
@@ -62,7 +66,7 @@ def test_later_owner_reply_removes_item_from_actionable_state():
         conversation([
             message(101, "incoming", "2026-07-26T10:01:00Z"),
             message(102, "outgoing", "2026-07-26T10:02:00Z"),
-        ]), review=review(),
+        ]), review=review(), reconciliation_actor_id=ACTOR,
     )
     assert observed["classification"] == "CUSTOMER_ALREADY_HANDLED"
     assert observed["missed_message_classification"] == "handled_by_later_public_owner_reply"
@@ -72,13 +76,14 @@ def test_later_owner_reply_removes_item_from_actionable_state():
 
 def test_newer_inbound_produces_new_sequence_identity_without_telegram_effect():
     first = build_owner_work_observation(
-        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]), review=review()
+        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]),
+        review=review(), reconciliation_actor_id=ACTOR,
     )
     second = build_owner_work_observation(
         conversation([
             message(101, "incoming", "2026-07-26T10:01:00Z"),
             message(102, "incoming", "2026-07-26T10:02:00Z"),
-        ]), review=review(),
+        ]), review=review(), reconciliation_actor_id=ACTOR,
     )
     assert first["work_item_id"] == second["work_item_id"]
     assert first["chronology_hash"] != second["chronology_hash"]
@@ -96,7 +101,7 @@ def test_newer_inbound_produces_new_sequence_identity_without_telegram_effect():
 def test_protected_and_specialist_are_separated(labels, classification, lane, reason):
     observed = build_owner_work_observation(
         conversation([message(101, "incoming", "2026-07-26T10:01:00Z")], labels=labels),
-        review=review(),
+        review=review(), reconciliation_actor_id=ACTOR,
     )
     assert observed["classification"] == classification
     assert observed["lane"] == lane
@@ -109,7 +114,7 @@ def test_activity_and_private_rows_do_not_enter_public_bundle():
             {"id": 90, "message_type": 2, "created_at": "2026-07-26T09:59:00Z"},
             message(101, "incoming", "2026-07-26T10:01:00Z"),
             message(102, "incoming", "2026-07-26T10:02:00Z", private=True),
-        ]), review=review(),
+        ]), review=review(), reconciliation_actor_id=ACTOR,
     )
     assert [row["message_id"] for row in observed["unanswered_inbound_bundle"]] == ["101"]
 
@@ -120,7 +125,7 @@ def test_missing_exact_identity_fails_closed(key):
         build_owner_work_observation(
             conversation(
                 [message(101, "incoming", "2026-07-26T10:01:00Z")], **{key: None}
-            ), review=review(),
+            ), review=review(), reconciliation_actor_id=ACTOR,
         )
 
 
@@ -129,17 +134,19 @@ def test_non_human_review_conflict_and_bad_time_fail_closed():
         conversation(
             [message(101, "incoming", "2026-07-26T10:01:00Z")],
             custom_attributes={"conversation_mode": "AUTO_GENERAL"},
-        ), review=review(),
+        ), review=review(), reconciliation_actor_id=ACTOR,
     )
     assert observed["actionable"] is False
     with pytest.raises(OwnerWorkEvidenceError, match="review_conversation_mismatch"):
         build_owner_work_observation(
             conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]),
             review={**review(), "chatwoot_conversation_id": "999"},
+            reconciliation_actor_id=ACTOR,
         )
     with pytest.raises(OwnerWorkEvidenceError, match="timestamp_invalid"):
         build_owner_work_observation(
-            conversation([message(101, "incoming", "yesterday")]), review=review()
+            conversation([message(101, "incoming", "yesterday")]), review=review(),
+            reconciliation_actor_id=ACTOR,
         )
 
 
@@ -153,10 +160,12 @@ def test_reconciliation_is_bounded_and_replay_safe_through_recorder():
 
     rows = [conversation([message(101, "incoming", "2026-07-26T10:01:00Z")])]
     first, status1 = reconcile_human_backlog(
-        rows, review_by_conversation={"2025": review()}, recorder=recorder
+        rows, review_by_conversation={"2025": review()}, recorder=recorder,
+        reconciliation_actor_id=ACTOR,
     )
     second, status2 = reconcile_human_backlog(
-        rows, review_by_conversation={"2025": review()}, recorder=recorder
+        rows, review_by_conversation={"2025": review()}, recorder=recorder,
+        reconciliation_actor_id=ACTOR,
     )
     assert status1 == status2 == 200
     assert first["created_count"] == 1
@@ -166,7 +175,8 @@ def test_reconciliation_is_bounded_and_replay_safe_through_recorder():
 
 def test_charlie_report_is_sanitized_and_has_no_authority():
     item = build_owner_work_observation(
-        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]), review=review()
+        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]),
+        review=review(), reconciliation_actor_id=ACTOR,
     )
     report = build_charlie_backlog_report([item], report_date="2026-07-26")
     assert report["classification_counts"] == {"WAITING_FOR_OWNER_REPLY": 1}
@@ -177,7 +187,8 @@ def test_charlie_report_is_sanitized_and_has_no_authority():
 
 def test_daily_report_reuses_current_queue_and_persists_idempotent_snapshot(monkeypatch):
     item = build_owner_work_observation(
-        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]), review=review()
+        conversation([message(101, "incoming", "2026-07-26T10:01:00Z")]),
+        review=review(), reconciliation_actor_id=ACTOR,
     )
     monkeypatch.setattr(
         "modules.sales.sam_owner_work_queue.list_owner_work_items",

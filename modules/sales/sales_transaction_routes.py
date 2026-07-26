@@ -3,6 +3,7 @@ import os
 
 from flask import Blueprint, jsonify, render_template, request
 from modules.auth.owner_access import (
+    owner_admin_principal,
     owner_session_is_valid,
     require_owner_admin_access,
     require_owner_read_access,
@@ -139,7 +140,7 @@ from modules.sales.sam_response_class_authority import (
 from modules.sales.sam_owner_work_queue import (
     build_charlie_backlog_report,
     list_owner_work_items,
-    reconcile_live_human_backlog,
+    reconcile_live_human_conversation,
     run_daily_backlog_report,
 )
 from modules.sales.sam_command_state import get_sam_command_state
@@ -1005,7 +1006,19 @@ def sam_owner_inbox_reconcile():
     guard = require_owner_admin_access()
     if guard:
         return guard
-    result, status_code = reconcile_live_human_backlog()
+    principal = owner_admin_principal()
+    if not principal:
+        return jsonify({
+            "success": False,
+            "status": "owner_identity_required",
+            "sends_customer_message": False,
+            "mutates_business_state": False,
+        }), 403
+    payload = request.get_json(silent=True) or {}
+    result, status_code = reconcile_live_human_conversation(
+        payload.get("conversation_id"),
+        reconciliation_actor_id=principal,
+    )
     return jsonify(result), status_code
 
 

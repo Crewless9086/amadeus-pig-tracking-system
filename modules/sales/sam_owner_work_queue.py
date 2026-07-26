@@ -55,10 +55,14 @@ def build_owner_work_observation(
     *,
     review: Mapping[str, Any] | None = None,
     observed_at: datetime | None = None,
+    reconciliation_actor_id: str,
 ) -> dict[str, Any]:
     """Build one canonical observation from authoritative conversation evidence."""
     conversation = _mapping(conversation, "conversation")
     observed_at = _aware(observed_at or datetime.now(timezone.utc))
+    reconciliation_actor_id = _clean(reconciliation_actor_id, 200)
+    if not reconciliation_actor_id:
+        raise OwnerWorkEvidenceError("server_derived_owner_principal_required")
     identity = _conversation_identity(conversation)
     raw_messages = conversation.get("messages")
     if not isinstance(raw_messages, list):
@@ -188,6 +192,7 @@ def build_owner_work_observation(
         "specialist_markers": specialist,
         "event_type": event_type,
         "source": "bounded_human_backlog_reconciliation_v1",
+        "reconciliation_actor_id": reconciliation_actor_id,
         "observed_at": observed_at.isoformat(),
         "contains_customer_content": False,
         **AUTHORITY_FLAGS,
@@ -235,6 +240,7 @@ def record_owner_work_observation(
                       actionable, withheld_reasons_json, review_event_id,
                       reviewed_inbound_message_id, protected_markers_json,
                       specialist_markers_json, event_type, source,
+                      reconciliation_actor_id,
                       prior_event_id, observed_at, contains_customer_content,
                       sends_customer_message, changes_conversation_ownership,
                       calls_telegram, mutates_business_state
@@ -252,6 +258,7 @@ def record_owner_work_observation(
                       %(review_event_id)s, %(reviewed_inbound_message_id)s,
                       %(protected_markers)s::jsonb,
                       %(specialist_markers)s::jsonb, %(event_type)s, %(source)s,
+                      %(reconciliation_actor_id)s,
                       %(prior_event_id)s, %(observed_at)s::timestamptz,
                       false, false, false, false, false
                     )
@@ -291,6 +298,7 @@ def reconcile_human_backlog(
     review_by_conversation: Mapping[str, Mapping[str, Any]] | None = None,
     recorder: Callable[[Mapping[str, Any]], tuple[dict[str, Any], int]] | None = None,
     observed_at: datetime | None = None,
+    reconciliation_actor_id: str,
 ) -> tuple[dict[str, Any], int]:
     """Bounded injected reconciliation; callers own authoritative reads."""
     rows = list(conversations or [])
@@ -310,6 +318,7 @@ def reconcile_human_backlog(
                 conversation,
                 review=review_by_conversation.get(conversation_id),
                 observed_at=observed_at,
+                reconciliation_actor_id=reconciliation_actor_id,
             )
             result, status = recorder(observation)
             if status >= 400:
@@ -335,8 +344,10 @@ def reconcile_human_backlog(
     ), 200 if not failures else 409
 
 
-def reconcile_live_human_backlog(
+def reconcile_live_human_conversation(
+    conversation_id: str,
     *,
+    reconciliation_actor_id: str,
     environ: Mapping[str, str] | None = None,
     message_reader: Callable[[str, Mapping[str, str]], tuple[dict[str, Any], int]] | None = None,
 ) -> tuple[dict[str, Any], int]:
@@ -347,6 +358,11 @@ def reconcile_live_human_backlog(
     )
 
     source = environ if environ is not None else os.environ
+    conversation_id = _clean(conversation_id)
+    if not conversation_id:
+        return _result("owner_work_conversation_id_required"), 400
+    if not _clean(reconciliation_actor_id, 200):
+        return _result("server_derived_owner_principal_required"), 403
     try:
         conversations = _chatwoot_read_conversations(source)
     except Exception as exc:
@@ -355,9 +371,18 @@ def reconcile_live_human_backlog(
         ), 503
     if not isinstance(conversations, list) or len(conversations) > MAX_CONVERSATIONS:
         return _result("owner_work_conversation_evidence_incomplete"), 503
+    exact = [
+        row for row in conversations
+        if isinstance(row, Mapping) and _clean(row.get("id")) == conversation_id
+    ]
+    if len(exact) != 1:
+        return _result(
+            "owner_work_exact_conversation_unavailable",
+            exact_match_count=len(exact),
+        ), 409
     hydrated = []
     reader = message_reader or load_bounded_conversation_messages
-    for row in conversations:
+    for row in exact:
         if not isinstance(row, Mapping):
             return _result("owner_work_conversation_evidence_incomplete"), 503
         conversation_id = _clean(row.get("id"))
@@ -376,6 +401,7 @@ def reconcile_live_human_backlog(
     return reconcile_human_backlog(
         hydrated,
         review_by_conversation=reviews.get("events_by_conversation_id") or {},
+        reconciliation_actor_id=reconciliation_actor_id,
     )
 
 
@@ -710,6 +736,7 @@ def _validate_observation(event: Mapping[str, Any]) -> str:
         "work_event_id", "work_item_id", "account_id", "conversation_id",
         "contact_id", "inbox_id", "chronology_hash", "classification",
         "observed_at",
+        "reconciliation_actor_id",
     )
     if any(not _clean(event.get(key)) for key in required):
         return "owner_work_observation_incomplete"
