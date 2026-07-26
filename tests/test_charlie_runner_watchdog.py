@@ -6,6 +6,70 @@ from scripts.charlie_runner_watchdog import _configure_git_safe_directory, watch
 
 
 class CharlieRunnerWatchdogTests(unittest.TestCase):
+    def test_governed_stop_marker_prevents_watchdog_tick_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "supervisor.stop"
+            stop.write_text("owner governed stop", encoding="utf-8")
+            calls = []
+            result = watchdog_tick(
+                status_reader=lambda: calls.append("status"),
+                starter=lambda: calls.append("start"),
+                state_path=Path(tmp) / "watchdog.json",
+                stop_path=stop,
+            )
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertFalse(result["started"])
+        self.assertEqual(calls, [])
+
+    def test_stop_marker_appearing_during_recovery_prevents_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "supervisor.stop"
+            calls = []
+
+            def readiness():
+                stop.write_text("stop during recovery", encoding="utf-8")
+                return {"ready": True, "blockers": []}
+
+            result = watchdog_tick(
+                status_reader=lambda: {
+                    "active": False,
+                    "status": "runner_stale_or_stopped",
+                    "orphan_processes": [],
+                },
+                starter=lambda: calls.append("start"),
+                state_path=Path(tmp) / "watchdog.json",
+                stop_path=stop,
+                supervisor_lock_reader=lambda: 0,
+                readiness_reader=readiness,
+            )
+        self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(calls, [])
+
+    def test_repeated_watchdog_cycles_remain_contained_with_stale_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stop = Path(tmp) / "supervisor.stop"
+            stop.write_text("persistent stop", encoding="utf-8")
+            calls = []
+            for _ in range(3):
+                result = watchdog_tick(
+                    status_reader=lambda: {
+                        "active": False,
+                        "status": "runner_stale_or_stopped",
+                        "orphan_processes": [],
+                    },
+                    starter=lambda: calls.append("start"),
+                    state_path=Path(tmp) / "watchdog.json",
+                    stop_path=stop,
+                    supervisor_lock_reader=lambda: 0,
+                    supervisor_state_reader=lambda: {
+                        "status": "runner_started",
+                        "pid": 208684,
+                        "child_pid": 209164,
+                    },
+                )
+                self.assertEqual(result["status"], "governed_stop_active")
+        self.assertEqual(calls, [])
+
     def test_windows_task_trusts_only_designated_runner_worktree(self):
         script = (Path(__file__).parents[1] / "scripts" / "charlie_runner_watchdog_task.ps1").read_text(encoding="utf-8")
         self.assertIn("safe.directory $repo", script)

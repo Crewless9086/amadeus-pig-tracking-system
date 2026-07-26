@@ -46,6 +46,7 @@ class FakeCursor:
     def __init__(self, rows):
         self.rows = rows
         self.executed = []
+        self.inserted_metadata = None
 
     def __enter__(self):
         return self
@@ -55,8 +56,19 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.executed.append((sql, params or {}))
+        if "insert into public.charlie_missions" in sql and isinstance(params, dict):
+            raw = params.get("metadata_json")
+            if isinstance(raw, str):
+                import json
+                self.inserted_metadata = json.loads(raw)
 
     def fetchall(self):
+        if (
+            self.executed
+            and "select metadata_json from public.charlie_missions" in self.executed[-1][0]
+            and self.inserted_metadata is not None
+        ):
+            return [(self.inserted_metadata,)]
         return list(self.rows)
 
     def fetchone(self):
@@ -73,6 +85,16 @@ class FailingCursor(FakeCursor):
 class ConflictCursor(FakeCursor):
     def fetchone(self):
         return None
+
+
+class CorruptOrchestrationCursor(FakeCursor):
+    def fetchall(self):
+        if (
+            self.executed
+            and "select metadata_json from public.charlie_missions" in self.executed[-1][0]
+        ):
+            return [({"agent_workflow": [{"agent": "source_mapper", "status": "active"}]},)]
+        return super().fetchall()
 
 
 class FinalizationCursor(FakeCursor):
@@ -107,6 +129,32 @@ def _bound_artifact(agent, summary="pass", revision=None, fingerprint="candidate
 
 
 class CharlieMissionStoreTests(unittest.TestCase):
+    def test_owner_review_packet_projects_authoritative_orchestration(self):
+        orchestration = {
+            "version": "charlie_adaptive_orchestration_v1",
+            "generation_identity": "a" * 24,
+            "tier": "T0",
+            "selected_agents": [{"agent": "source_mapper"}],
+            "skipped_agents": [{"agent": "builder", "reason": "read only"}],
+            "budgets": {"maximum_elapsed_minutes": 20},
+        }
+        binding = {
+            "version": "charlie_orchestration_binding_v1",
+            "identity": "b" * 64,
+            "generation_identity": "a" * 24,
+            "validated": True,
+        }
+        packet = build_mission_review_packet({
+            "mission_id": "M-T0",
+            "metadata": {
+                "orchestration": orchestration,
+                "orchestration_binding": binding,
+            },
+            "agent_workflow": [{"agent": "source_mapper", "status": "active"}],
+        })
+        self.assertEqual(packet["orchestration"], orchestration)
+        self.assertEqual(packet["orchestration_binding"], binding)
+
     def test_atomic_finalizer_is_only_path_to_pr_ready(self):
         revision = "abc123"
         packet = {
@@ -636,7 +684,7 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertEqual(status_code, 201)
         self.assertTrue(result["stored"])
         self.assertEqual(result["status"], "ok")
-        self.assertEqual(len(connection.cursor_instance.executed), 3)
+        self.assertEqual(len(connection.cursor_instance.executed), 4)
         mission_params = connection.cursor_instance.executed[1][1]
         self.assertEqual(mission_params["raw_text"], "Build CHARLIE mission queue")
         self.assertEqual(mission_params["telegram_user_id"], "12345")
@@ -645,6 +693,92 @@ class CharlieMissionStoreTests(unittest.TestCase):
         self.assertIn("agent_workflow", mission_params["metadata_json"])
         self.assertIn("mission_context_pack", mission_params["metadata_json"])
         self.assertIn("intake_quality", mission_params["metadata_json"])
+
+    def test_production_shaped_t0_persists_bound_packet_and_short_workflow(self):
+        connection = FakeConnection()
+        result, status_code = record_mission(
+            {
+                "mission_id": "CHARLIE-MISSION-7001CE3566B4A171-REGRESSION",
+                "title": "Read-only inventory of CORE adaptive orchestration documentation",
+                "mission_type": "read-only audit",
+                "approval_level": "LEVEL 1",
+                "raw_text": (
+                    "Perform a read-only inventory and report of "
+                    "docs/00-start-here/CHARLIE_CORE_AGENT_RUNNER_V2.md. Inspect only. "
+                    "Do not edit files, write the repository, invoke product routes, "
+                    "contact customers, perform business actions, deploy, publish, "
+                    "migrate, or control hardware. Report the documented adaptive "
+                    "orchestration tier and authority boundary with source evidence."
+                ),
+                "acceptance_criteria": [
+                    "Persist T0 orchestration generation",
+                    "Select one source/domain agent",
+                    "No Builder or repository writer",
+                    "Produce a durable read-only artifact with source evidence",
+                ],
+                "forbidden_actions": [
+                    "repository mutation",
+                    "deployment",
+                    "publication",
+                    "migration",
+                    "hardware control",
+                ],
+            },
+            source_context={"source": "owner_controlled_canary"},
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["stored"])
+        insert = next(
+            params
+            for sql, params in connection.cursor_instance.executed
+            if "insert into public.charlie_missions" in sql
+        )
+        import json
+        metadata = json.loads(insert["metadata_json"])
+        self.assertEqual(metadata["orchestration"]["tier"], "T0")
+        self.assertEqual(
+            [row["agent"] for row in metadata["orchestration"]["selected_agents"]],
+            ["source_mapper"],
+        )
+        self.assertEqual(
+            [row["agent"] for row in metadata["agent_workflow"]],
+            ["source_mapper"],
+        )
+        self.assertTrue(metadata["orchestration_binding"]["validated"])
+        self.assertFalse(metadata["intake"]["requires_builder"])
+        created_event = json.loads(connection.cursor_instance.executed[-1][1]["metadata_json"])
+        self.assertEqual(
+            created_event["orchestration_generation"],
+            metadata["orchestration"]["generation_identity"],
+        )
+        self.assertEqual(
+            created_event["orchestration_binding_identity"],
+            metadata["orchestration_binding"]["identity"],
+        )
+
+    def test_creation_fails_closed_when_packet_reread_loses_binding(self):
+        connection = FakeConnection()
+        connection.cursor_instance = CorruptOrchestrationCursor([])
+        result, status_code = record_mission(
+            {
+                "mission_id": "MISSING-PACKET",
+                "mission_type": "read-only audit",
+                "raw_text": "Read-only inventory of one bounded documentation source.",
+            },
+            database_url="postgres://unit-test",
+            connect_factory=lambda _: connection,
+        )
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "mission_write_failed")
+        self.assertFalse(
+            any(
+                "insert into public.charlie_mission_events" in sql
+                for sql, _params in connection.cursor_instance.executed
+            )
+        )
 
     def test_record_mission_rejects_placeholder_relay_noise(self):
         result, status_code = record_mission(

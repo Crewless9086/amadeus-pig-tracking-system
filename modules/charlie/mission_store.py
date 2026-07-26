@@ -24,6 +24,7 @@ from modules.charlie.evidence_reconciliation import (
     applicable_passing_agents,
     targeted_workflow_return,
 )
+from modules.charlie.adaptive_orchestration import validate_orchestration_binding
 
 
 MISSION_STATUSES = {
@@ -220,8 +221,8 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
     if not database_url and connect_factory is None:
         return {"stored": False, "configured": False, "status": "not_configured"}, 503
 
-    params = _mission_params(mission, source_context)
     try:
+        params = _mission_params(mission, source_context)
         with _connect(database_url, connect_factory) as connection:
             with connection.cursor() as cursor:
                 duplicate = _find_open_duplicate_mission(cursor, params)
@@ -289,9 +290,38 @@ def record_mission(mission, source_context=None, database_url=None, connect_fact
                         "stored": False, "configured": True, "status": "duplicate_open_mission",
                         "mission_id": params["mission_id"], "existing_status": "new", "title": params["title"],
                     }, 200
+                cursor.execute(
+                    """select metadata_json from public.charlie_missions
+                       where mission_id = %(mission_id)s for update""",
+                    {"mission_id": params["mission_id"]},
+                )
+                persisted_rows = cursor.fetchall()
+                persisted_metadata = (
+                    persisted_rows[0][0]
+                    if persisted_rows and isinstance(persisted_rows[0][0], dict)
+                    else {}
+                )
+                persisted_binding = validate_orchestration_binding(
+                    persisted_metadata.get("orchestration"),
+                    persisted_metadata.get("agent_workflow"),
+                )
+                expected_binding = (
+                    persisted_metadata.get("orchestration_binding")
+                    if isinstance(persisted_metadata.get("orchestration_binding"), dict)
+                    else {}
+                )
+                if (
+                    not persisted_binding.get("valid")
+                    or persisted_binding.get("identity") != expected_binding.get("identity")
+                    or expected_binding.get("generation_identity")
+                    != (persisted_metadata.get("orchestration") or {}).get("generation_identity")
+                ):
+                    raise ValueError("orchestration_persistence_verification_failed")
                 _insert_event(cursor, params["mission_id"], "created", "Mission intake recorded.", {
                     "source": params["source"],
                     "telegram_user_id": params["telegram_user_id"],
+                    "orchestration_generation": expected_binding.get("generation_identity"),
+                    "orchestration_binding_identity": expected_binding.get("identity"),
                 })
     except Exception as exc:
         return {
@@ -1888,6 +1918,8 @@ def build_mission_review_packet(mission):
         "handoff_reports": packet.get("handoff_reports") if isinstance(packet.get("handoff_reports"), dict) else vault.get("handoff_reports", []),
         "backflow_events": packet.get("backflow_events") if isinstance(packet.get("backflow_events"), list) else [],
         "charlie_core": core,
+        "orchestration": metadata.get("orchestration") if isinstance(metadata.get("orchestration"), dict) else {},
+        "orchestration_binding": metadata.get("orchestration_binding") if isinstance(metadata.get("orchestration_binding"), dict) else {},
         "core_readiness": core_readiness,
         "review_board": review_board,
         "income_stream_readiness": income_stream_readiness,
@@ -2309,29 +2341,46 @@ def _normalize_mission_text(value):
 def _mission_metadata(raw_text, mission, source_context, metadata):
     metadata = dict(metadata or {})
     metadata.setdefault("mission_vault", _default_mission_vault(raw_text, mission))
-    metadata.setdefault("agent_workflow", _default_agent_workflow(mission.get("mission_type", ""), raw_text))
     metadata.setdefault("mission_context_pack", _default_context_pack(mission.get("mission_type", ""), raw_text))
     media_references = mission.get("media_references")
     if isinstance(media_references, list):
         metadata["media_references"] = [_clean_media_reference(item) for item in media_references if _clean_media_reference(item)]
     else:
         metadata.setdefault("media_references", [])
-    metadata.setdefault("intake", {
+    metadata["intake"] = {
         "source": _clean_text(source_context.get("source", "telegram"), 60) or "telegram",
-        "requires_planner": True,
-        "requires_builder": True,
-        "requires_tester": True,
-        "requires_reviewer": True,
-    })
-    metadata = attach_core_plan_to_metadata(
-        {
-            **mission,
-            "raw_text": raw_text,
-            "mission_type": mission.get("mission_type", "feature build"),
-            "title": mission.get("title", raw_text),
-        },
-        metadata,
+        "adaptive_orchestration_required": True,
+    }
+    plan_mission = {
+        **mission,
+        "raw_text": raw_text,
+        "mission_type": mission.get("mission_type", "feature build"),
+        "title": mission.get("title", raw_text),
+    }
+    plan = build_core_plan(plan_mission)
+    metadata.pop("agent_workflow", None)
+    metadata.pop("orchestration", None)
+    metadata = attach_core_plan_to_metadata(plan_mission, metadata)
+    metadata["agent_workflow"] = plan["agent_workflow"]
+    metadata["orchestration"] = plan["orchestration"]
+    binding = validate_orchestration_binding(
+        metadata["orchestration"], metadata["agent_workflow"]
     )
+    if not binding.get("valid"):
+        raise ValueError(binding.get("reason") or "orchestration_binding_invalid")
+    metadata["orchestration_binding"] = {
+        "version": "charlie_orchestration_binding_v1",
+        "identity": binding["identity"],
+        "generation_identity": metadata["orchestration"]["generation_identity"],
+        "validated": True,
+    }
+    selected = [item["agent"] for item in metadata["orchestration"]["selected_agents"]]
+    metadata["intake"].update({
+        "requires_planner": "planner" in selected,
+        "requires_builder": "builder" in selected,
+        "requires_tester": "tester" in selected,
+        "requires_reviewer": "reviewer" in selected,
+    })
     metadata.setdefault("mission_governance", ensure_acceptance_matrix({
         **mission,
         "raw_text": raw_text,

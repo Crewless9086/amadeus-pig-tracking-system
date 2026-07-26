@@ -16,7 +16,13 @@ os.environ.setdefault("GIT_CONFIG_COUNT", "1")
 os.environ.setdefault("GIT_CONFIG_KEY_0", "safe.directory")
 os.environ.setdefault("GIT_CONFIG_VALUE_0", str(REPO_ROOT))
 
-from modules.charlie.runner_control import RUNNER_DIR, _pid_alive, runner_status, start_runner
+from modules.charlie.runner_control import (
+    RUNNER_DIR,
+    SUPERVISOR_STOP_PATH,
+    _pid_alive,
+    runner_status,
+    start_runner,
+)
 from modules.charlie.runtime_integrity import cold_start_readiness
 
 
@@ -75,9 +81,28 @@ def _cold_start_readiness():
     return cold_start_readiness(REPO_ROOT, runtime_dir=RUNNER_DIR)
 
 
-def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness):
+def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state_path=STATE_PATH, supervisor_lock_reader=_live_supervisor_lock, hold_reader=None, supervisor_state_reader=None, readiness_reader=_cold_start_readiness, stop_path=None):
     state_path = Path(state_path)
+    stop_path = Path(stop_path) if stop_path is not None else (
+        state_path.with_name("supervisor.stop")
+        if state_path != STATE_PATH
+        else SUPERVISOR_STOP_PATH
+    )
     _configure_git_safe_directory(state_path.with_name("task-gitconfig"))
+    if stop_path.exists():
+        result = {
+            "status": "governed_stop_active",
+            "started": False,
+            "stop_marker": str(stop_path),
+        }
+        payload = {
+            **result,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "runner_status_before": "not_read_while_stopped",
+        }
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
     status = status_reader()
     supervisor_pid = supervisor_lock_reader()
     hold = hold_reader() if hold_reader else _infrastructure_hold(state_path.with_name("supervisor.json"))
@@ -123,12 +148,23 @@ def watchdog_tick(status_reader=_fast_runner_status, starter=start_runner, state
                 "blockers": readiness.get("blockers") or [], "readiness": readiness,
             }
         else:
-            started, status_code = starter(status_override=status) if starter is start_runner else starter()
-            result = {
-                "status": str(started.get("status") or "runner_start_failed"),
-                "started": status_code < 300 and started.get("status") == "runner_started",
-                "status_code": status_code,
-            }
+            if stop_path.exists():
+                result = {
+                    "status": "governed_stop_active",
+                    "started": False,
+                    "stop_marker": str(stop_path),
+                }
+            else:
+                started, status_code = (
+                    starter(status_override=status, respect_stop_marker=True)
+                    if starter is start_runner
+                    else starter()
+                )
+                result = {
+                    "status": str(started.get("status") or "runner_start_failed"),
+                    "started": status_code < 300 and started.get("status") == "runner_started",
+                    "status_code": status_code,
+                }
     payload = {
         **result,
         "checked_at": datetime.now(timezone.utc).isoformat(),

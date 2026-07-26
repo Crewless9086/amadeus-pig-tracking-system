@@ -416,6 +416,7 @@ def run_agent_execution_bridge_v2(
     run_subprocess=None,
     artifact_consumer=None,
 ):
+    artifact_consumer = artifact_consumer or consume_final_agent_artifact
     mission, status_code, error = _load_execution_mission(
         mission_id=mission_id,
         status=status,
@@ -498,6 +499,7 @@ def run_agent_execution_bridge_v2(
             runner=runner,
             timeout_seconds=timeout_seconds,
             stage_attempts=stage_attempts,
+            artifact_consumer=artifact_consumer,
             database_url=database_url,
             connect_factory=connect_factory,
         )
@@ -3196,6 +3198,7 @@ def _run_parallel_read_only_agents(
     runner,
     timeout_seconds,
     stage_attempts,
+    artifact_consumer,
     database_url=None,
     connect_factory=None,
 ):
@@ -3483,6 +3486,36 @@ def _run_parallel_read_only_agents(
             return {"blocked": True, "result": result, "status_code": status_code}
         artifact["quality_gate"] = quality
         artifact["handoff_report"] = _build_handoff_report(mission, agent, artifact, ledger)
+        artifact_hash = hashlib.sha256(_read_text(paths["final_path"]).encode("utf-8")).hexdigest()
+        ingestion, ingestion_status = _consume_final_artifact_with_retry(
+            artifact_consumer,
+            mission["mission_id"],
+            agent,
+            execution_id,
+            context["attempt"],
+            artifact,
+            artifact_hash,
+            database_url=database_url,
+            connect_factory=connect_factory,
+        )
+        if ingestion_status >= 400:
+            result, status_code = _block_agent_stage(
+                mission["mission_id"],
+                execution_id,
+                ledger,
+                agent,
+                paths,
+                completed,
+                context["started_at"],
+                blocked_reason=f"Parallel final artifact ingestion blocked: {ingestion.get('status', 'unknown')}.",
+                artifact={**artifact, "artifact_ingestion": ingestion, "ingestion_blocked": True},
+                artifacts={**artifacts, **parallel_artifacts},
+                database_url=database_url,
+                connect_factory=connect_factory,
+            )
+            return {"blocked": True, "result": result, "status_code": status_code}
+        artifact["artifact_ingestion"] = ingestion
+        artifact["artifact_identity"] = str((ingestion.get("claim") or {}).get("identity") or "")
         parallel_artifacts[agent] = artifact
         _append_ledger_stage(
             ledger,
@@ -3493,20 +3526,6 @@ def _run_parallel_read_only_agents(
             artifact=artifact,
             command=context["command"],
             attempt=context["attempt"],
-        )
-        _record_mission_memory_event(
-            mission,
-            build_memory_event(agent, "parallel_agent_complete", attempt=context["attempt"], artifact=artifact, quality_gate=quality),
-            database_url=database_url,
-            connect_factory=connect_factory,
-        )
-        _record_execution_stage(
-            mission["mission_id"],
-            agent,
-            "complete",
-            _truncate(artifact.get("summary") or f"{agent} completed in parallel read-only mode.", 1000),
-            database_url=database_url,
-            connect_factory=connect_factory,
         )
         _write_agent_ledger(output_dir, execution_id, ledger)
         write_runner_heartbeat({
