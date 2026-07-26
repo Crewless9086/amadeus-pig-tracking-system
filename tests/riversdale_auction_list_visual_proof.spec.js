@@ -52,8 +52,8 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   let listItems = [
     { pig_id: "VISUAL-PIG-101", owner_note: "Check loading gate" },
     { pig_id: "VISUAL-PIG-102", owner_note: "" },
+    { pig_id: "VISUAL-PIG-103", owner_note: "Listed before evidence hold" },
     { pig_id: "VISUAL-PIG-104", owner_note: "Owner inspected loading condition" },
-    { pig_id: "VISUAL-PIG-105", owner_note: "" },
   ];
   const selectableIds = rows
     .filter((row) => row.withdrawal_evidence_state !== "unknown" && !String(row.health_status).toLowerCase().includes("hold"))
@@ -70,7 +70,7 @@ test("Auction table selection is local and print is list-only", async ({ page, c
       return json(route, {
         success: true,
         candidate_preview: rows.map(({ pig_id }) => ({ pig_id })),
-        confirmation: { confirmed_date: "2026-08-05", location: "Riversdale Showgrounds" },
+        confirmation: { auction_cycle_id: "visual-cycle-1", confirmed_date: "2026-08-05", location: "Riversdale Showgrounds" },
         owner_surface: {
           version: "riversdale_auction_owner_surface_v1", auction_operating: "Available",
           confirmation_freshness: "Fresh", confirmed_date: "2026-08-05",
@@ -82,7 +82,12 @@ test("Auction table selection is local and print is list-only", async ({ page, c
     }
     if (url.pathname.endsWith("/riversdale-auction-list")) {
       return json(route, {
-        success: true, selectable_pig_ids: selectableIds,
+        success: true, auction_cycle_id: "visual-cycle-1",
+        selectable_pig_ids: selectableIds,
+        eligibility_tokens: Object.fromEntries(selectableIds.map(id => [id, `token-${id}`])),
+        causal_heads: Object.fromEntries(listItems.map(item => [
+          item.pig_id, { event_id: `event-${item.pig_id}`, decision_sequence: 1 },
+        ])),
         items: listItems,
       });
     }
@@ -130,6 +135,8 @@ test("Auction table selection is local and print is list-only", async ({ page, c
   await expect(page.locator("#auction_print_list")).toBeVisible();
   await expect(page.locator("#auction_add_selected")).toBeHidden();
   await expect(page.locator("#allocation_body tr")).toHaveCount(4);
+  await expect(page.locator("[data-auction-pig-id='VISUAL-PIG-103']")).toBeEnabled();
+  await expect(page.locator("#allocation_body")).toContainText("Removal remains available");
   expect(mutationRequests).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("04-auction-list.png"), fullPage: true });
   await page.click("#auction_clear_selection");

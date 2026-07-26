@@ -42,6 +42,9 @@ let auctionCandidateIds = new Set();
 let auctionSelectableIds = new Set();
 let auctionListIds = new Set();
 let auctionListNotes = new Map();
+let auctionEligibilityTokens = new Map();
+let auctionCausalHeads = new Map();
+let auctionCycleId = "";
 let auctionSelection = new Set();
 
 const ALLOCATION_PURPOSE_OPTIONS = [
@@ -518,12 +521,17 @@ function updateAuctionCompactStatus() {
 }
 
 function renderAuctionRow(row) {
-  const selectable = auctionSelectableIds.has(row.pig_id);
+  const currentlyEligible = auctionSelectableIds.has(row.pig_id);
+  const selectable = bucketFilter.value === "Auction List"
+    ? auctionListIds.has(row.pig_id)
+    : currentlyEligible;
   const health = row.health_status || row.medical_status || "Unknown";
   const withdrawal = row.withdrawal_evidence_state || row.withdrawal_clear || "Unknown";
-  const eligibility = selectable
+  const eligibility = currentlyEligible
     ? "Eligible for owner shortlist"
-    : "Blocked: health, withdrawal, or quality evidence is Unknown/insufficient";
+    : (bucketFilter.value === "Auction List"
+      ? "Listed; current evidence is blocked. Removal remains available."
+      : "Blocked: health, withdrawal, or quality evidence is Unknown/insufficient");
   const note = auctionListNotes.get(row.pig_id) || "None";
   return `
     <tr>
@@ -537,7 +545,7 @@ function renderAuctionRow(row) {
       <td>${escapeHtml(formatPen(row))}</td>
       <td><strong>${escapeHtml(row.growth_class || "Unknown")}</strong><span class="table-subtext">${escapeHtml(formatAdg(row.average_daily_gain_kg))}</span></td>
       <td class="auction-row-health"><strong>${escapeHtml(health)}</strong><span class="table-subtext">Withdrawal: ${escapeHtml(withdrawal)}</span></td>
-      <td class="auction-row-eligibility ${selectable ? "" : "is-blocked"}">${escapeHtml(eligibility)}
+      <td class="auction-row-eligibility ${currentlyEligible ? "" : "is-blocked"}">${escapeHtml(eligibility)}
         ${bucketFilter.value === "Auction List" ? `<span class="print-only">Owner note: ${escapeHtml(note)}</span>` : ""}</td>
       <td class="auction-screen-only"><button type="button" class="button-link button-link-secondary allocation-review-button auction-row-details-button"
         data-review-pig-id="${escapeHtml(row.pig_id || "")}">Details</button></td>
@@ -704,7 +712,10 @@ async function loadRiversdaleAuction() {
     const listResponse = await fetch("/api/pig-weights/riversdale-auction-list");
     const listData = await listResponse.json();
     if (listResponse.ok && listData.success) {
+      auctionCycleId = listData.auction_cycle_id || "";
       auctionSelectableIds = new Set(listData.selectable_pig_ids || []);
+      auctionEligibilityTokens = new Map(Object.entries(listData.eligibility_tokens || {}));
+      auctionCausalHeads = new Map(Object.entries(listData.causal_heads || {}));
       auctionListIds = new Set((listData.items || []).map(item => item.pig_id));
       auctionListNotes = new Map((listData.items || []).map(item => [item.pig_id, item.owner_note || ""]));
     }
@@ -768,7 +779,18 @@ async function submitAuctionListAction(action) {
   if (action === "remove" && !window.confirm(`Remove ${auctionSelection.size} selected animal(s) from the Auction List?`)) return;
   const response = await fetch("/api/pig-weights/riversdale-auction-list/events", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({action, pig_ids:Array.from(auctionSelection), idempotency_key:crypto.randomUUID()}),
+    body: JSON.stringify({
+      action,
+      pig_ids:Array.from(auctionSelection),
+      auction_cycle_id:auctionCycleId,
+      eligibility_tokens:Object.fromEntries(Array.from(auctionSelection).map(
+        pigId => [pigId, auctionEligibilityTokens.get(pigId) || ""]
+      )),
+      prior_event_ids:Object.fromEntries(Array.from(auctionSelection).map(
+        pigId => [pigId, auctionCausalHeads.get(pigId)?.event_id || ""]
+      )),
+      idempotency_key:crypto.randomUUID(),
+    }),
   });
   const result = await response.json();
   if (!response.ok) {
