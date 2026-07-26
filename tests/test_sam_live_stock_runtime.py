@@ -77,6 +77,168 @@ def verified_identity(conversation_id, contact_id, inbox_id):
 
 
 class SamLiveStockRuntimeTests(unittest.TestCase):
+    @staticmethod
+    def _active_big_pig_prices():
+        return {
+            "success": True,
+            "price_entries": [
+                {
+                    "pricing_id": "PRICE-GROWER-20",
+                    "sale_category": "Grower Pigs",
+                    "weight_band": "20_to_24_Kg",
+                    "unit_price": 800,
+                    "active": True,
+                    "effective_from": "2026-05-21T00:00:00+00:00",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-GROWER-45",
+                    "sale_category": "Grower Pigs",
+                    "weight_band": "45_to_49_Kg",
+                    "unit_price": 1800,
+                    "active": True,
+                    "effective_from": "2026-05-21T00:00:00+00:00",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-FINISHER-50",
+                    "sale_category": "Finisher Pigs",
+                    "weight_band": "50_to_54_Kg",
+                    "unit_price": 2200,
+                    "active": True,
+                    "effective_from": "2026-05-21T00:00:00+00:00",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-FINISHER-75",
+                    "sale_category": "Finisher Pigs",
+                    "weight_band": "75_to_79_Kg",
+                    "unit_price": 2700,
+                    "active": True,
+                    "effective_from": "2026-05-21T00:00:00+00:00",
+                    "effective_to": "",
+                },
+                {
+                    "pricing_id": "PRICE-STALE",
+                    "sale_category": "Finisher Pigs",
+                    "weight_band": "80_to_84_Kg",
+                    "unit_price": 9999,
+                    "active": False,
+                    "effective_from": "2026-05-21T00:00:00+00:00",
+                    "effective_to": "",
+                },
+            ],
+        }
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_big_one_and_pricce_uses_verified_grower_finisher_information(self, price_list):
+        price_list.return_value = (self._active_big_pig_prices(), 200)
+        calls = {"availability": 0, "send": 0}
+
+        def availability():
+            calls["availability"] += 1
+            return [
+                exact_eligible_row(
+                    pig_id="G-1", sale_category="Grower Pigs",
+                    calculated_stage="Grower", current_weight_kg=44,
+                    weight_band="40_to_44_Kg",
+                ),
+                exact_eligible_row(
+                    pig_id="G-2", sale_category="Grower Pigs",
+                    calculated_stage="Grower", current_weight_kg=45,
+                    weight_band="45_to_49_Kg",
+                ),
+                exact_eligible_row(
+                    pig_id="F-1", sale_category="Finisher Pigs",
+                    calculated_stage="Finisher", current_weight_kg=60,
+                    weight_band="60_to_64_Kg",
+                ),
+                exact_eligible_row(
+                    pig_id="P-1", sale_category="Young Piglets",
+                    calculated_stage="Piglet", current_weight_kg=6,
+                    weight_band="5_to_6_Kg",
+                ),
+            ]
+
+        result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(
+                id=760317643,
+                content="I want the big one and the pricce please",
+                content_attributes={
+                    "referral": {
+                        "source_type": "ad",
+                        "source_id": "stale-piglet-post",
+                        "headline": "Piglets",
+                    },
+                },
+            ),
+            environ={},
+            intake_context_loader=lambda *_args: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {
+                "success": True,
+                "messages": [{"id": "old", "message_type": 0, "content": "Tell me about piglets"}],
+            },
+            availability_loader=availability,
+            chatwoot_sender=lambda *_args: calls.__setitem__("send", calls["send"] + 1),
+        )
+
+        decision = result["sam_decision"]
+        reply = decision["suggested_reply_text"]
+        self.assertEqual(status, 200)
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertEqual(decision["facts"]["information_scope"], "grower_finisher")
+        self.assertEqual(decision["information_response"]["status"], "availability_and_pricing_verified")
+        self.assertIn("Growers: 2 currently eligible", reply)
+        self.assertIn("Finishers: 1 currently eligible", reply)
+        self.assertNotIn("Piglet", reply)
+        self.assertNotIn("9,999", reply)
+        self.assertEqual(reply.count("?"), 1)
+        self.assertEqual(calls, {"availability": 1, "send": 0})
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["reserves_stock"])
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_big_one_incomplete_message_selects_livestock_and_asks_one_detail(self, price_list):
+        price_list.return_value = (self._active_big_pig_prices(), 200)
+        result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big one"),
+            environ={},
+            intake_context_loader=lambda *_args: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: [
+                exact_eligible_row(
+                    sale_category="Finisher Pigs", calculated_stage="Finisher",
+                    current_weight_kg=60, weight_band="60_to_64_Kg",
+                ),
+            ],
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(decision["sales_lane"], "live_stock_sales")
+        self.assertIn("Finishers: 1 currently eligible", decision["suggested_reply_text"])
+        self.assertEqual(decision["suggested_reply_text"].count("?"), 1)
+
+    @patch("modules.sales.sam_live_stock_runtime.list_live_stock_price_entries")
+    def test_big_pig_information_falls_back_to_price_only_when_availability_unavailable(self, price_list):
+        price_list.return_value = (self._active_big_pig_prices(), 200)
+        result, _status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
+            inbound_payload(content="big ones pricce"),
+            environ={},
+            intake_context_loader=lambda *_args: {"success": True, "known_fields": {}, "items": []},
+            conversation_history_loader=lambda *_args: {"success": True, "messages": []},
+            availability_loader=lambda: (_ for _ in ()).throw(RuntimeError("unavailable")),
+        )
+        decision = result["sam_decision"]
+        self.assertEqual(decision["information_response"]["status"], "price_only_verified")
+        self.assertIn("Current verified prices", decision["suggested_reply_text"])
+        self.assertNotIn("currently eligible", decision["suggested_reply_text"])
+        self.assertFalse(result["sent"])
+
+    def test_pricce_spelling_is_a_livestock_price_signal_with_current_context(self):
+        facts = sam_live_stock_runtime.extract_live_stock_facts("pricce")
+        self.assertTrue(facts["quote_requested"])
+        self.assertEqual(facts["sales_lane"], "live_stock_sales")
+
     def test_llm_commitment_reservation_reply_is_repaired_before_payment_question(self):
         result, status = sam_live_stock_runtime.handle_sam_live_stock_chatwoot_inbound(
             inbound_payload(
