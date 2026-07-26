@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import base64
 import json
 import os
 import subprocess
@@ -44,6 +45,42 @@ def successful_bootstrap_observation(root_pid, *, generation, revision, startup_
 
 
 class CharlieRunnerControlTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows launcher-first exit harness")
+    def test_windows_exited_launcher_still_contains_unobserved_child(self):
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        )
+        process = subprocess.Popen(
+            [
+                str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                "Start-Process powershell.exe -ArgumentList "
+                "'-NoProfile','-NonInteractive','-Command',"
+                "'Start-Sleep -Seconds 120' -WindowStyle Hidden",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            **runner_control.background_process_kwargs(),
+        )
+        process.wait(timeout=15)
+        descendants = process_ownership.inspect_descendant_processes(process.pid)
+        self.assertTrue(descendants)
+        try:
+            containment = runner_control._contain_spawned_process(process, {})
+            self.assertTrue(containment["success"], containment)
+            self.assertFalse(
+                process_ownership.inspect_descendant_processes(process.pid)
+            )
+        finally:
+            for descendant in process_ownership.inspect_descendant_processes(
+                process.pid
+            ):
+                subprocess.run(
+                    ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
+                    capture_output=True, text=True, check=False,
+                )
+
     @unittest.skipUnless(os.name == "nt", "Windows failed-start containment harness")
     def test_windows_failed_start_leaves_zero_observed_processes(self):
         if not process_ownership._windows_process_snapshot():
@@ -113,7 +150,8 @@ class CharlieRunnerControlTests(unittest.TestCase):
         )
         original_observe = runner_control.observe_process_tree
         publisher_threads = []
-        runner_processes = []
+        runner_pids = []
+        publisher_failures = []
 
         def observe(root_pid, *, generation, revision, startup_nonce, **_kwargs):
             result = original_observe(
@@ -133,6 +171,11 @@ class CharlieRunnerControlTests(unittest.TestCase):
                         int(item.get("pid") or -1) == int(root_pid)
                         or int(item.get("parent_pid") or -1) == int(root_pid)
                     )
+                    and (
+                        not runner_pid_path.exists()
+                        or int(item.get("pid") or -1)
+                        != int(runner_pid_path.read_text(encoding="utf-8"))
+                    )
                     and Path(str(item.get("executable_path") or "")).name.casefold()
                     == "powershell.exe"
                 ]
@@ -147,44 +190,62 @@ class CharlieRunnerControlTests(unittest.TestCase):
                     startup_nonce=startup_nonce,
                 )
                 def publish_runner_ready():
-                    deadline = time.monotonic() + 10
-                    packet = {}
-                    while time.monotonic() <= deadline:
-                        packet = runner_control._read_json(
-                            runner_control.SUPERVISOR_PATH
+                    try:
+                        deadline = time.monotonic() + 30
+                        packet = {}
+                        while time.monotonic() <= deadline:
+                            packet = runner_control._read_json(
+                                runner_control.SUPERVISOR_PATH
+                            )
+                            if packet.get("controller_acknowledgement"):
+                                break
+                            time.sleep(0.05)
+                        runner_nonce = "windows-harness-runner-nonce"
+                        deadline = time.monotonic() + 30
+                        while (
+                            not runner_pid_path.exists()
+                            and time.monotonic() <= deadline
+                        ):
+                            time.sleep(0.05)
+                        if not runner_pid_path.exists():
+                            publisher_failures.append("runner_pid_not_published")
+                            return
+                        runner_pid = int(
+                            runner_pid_path.read_text(encoding="utf-8")
                         )
-                        if packet.get("controller_acknowledgement"):
-                            break
-                        time.sleep(0.05)
-                    runner_nonce = "windows-harness-runner-nonce"
-                    runner_process = subprocess.Popen(
-                        [
-                            str(powershell), "-NoProfile", "-NonInteractive",
-                            "-Command", command,
-                        ],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        stdin=subprocess.DEVNULL,
-                        **runner_control.background_process_kwargs(),
-                    )
-                    runner_processes.append(runner_process)
-                    runner_observation = original_observe(
-                        runner_process.pid,
+                        runner_pids.append(runner_pid)
+                        runner_observation = original_observe(
+                        runner_pid,
                         generation=generation,
                         revision=revision,
                         startup_nonce=runner_nonce,
                         expected_script="",
                         expected_root_executable=str(powershell),
+                        expected_root_parent_pid=root_pid,
                         process_role_prefix="runner",
                         timeout_seconds=10,
-                    )
-                    if not runner_observation.get("success"):
-                        return
-                    runner_tree = runner_observation["tree"]
-                    runner_identity = runner_tree["members"][-1]
-                    packet.update({
+                        )
+                        if not runner_observation.get("success"):
+                            publisher_failures.append(
+                                str(runner_observation)
+                            )
+                            return
+                        runner_tree = runner_observation["tree"]
+                        runner_members = [
+                            item for item in runner_tree["members"]
+                            if Path(
+                                str(item.get("executable_path") or "")
+                            ).name.casefold() == "powershell.exe"
+                        ]
+                        runner_tree = process_ownership.make_process_tree_record(
+                            runner_tree["root"], runner_members, generation
+                        )
+                        runner_identity = runner_tree["members"][-1]
+                        packet.update({
                         "status": "running",
                         "runner_state": "running",
+                        "child_pid": runner_pid,
+                        "child_identity": runner_tree["root"],
                         "process_tree_identity": runner_tree,
                         "runner_startup_nonce": runner_nonce,
                         "runner_controller_acknowledgement": {
@@ -192,21 +253,23 @@ class CharlieRunnerControlTests(unittest.TestCase):
                             "startup_nonce": runner_nonce,
                             "revision": revision,
                         },
-                    })
-                    runner_control.atomic_write_json(
-                        runner_control.SUPERVISOR_PATH, packet
-                    )
-                    runner_control.atomic_write_json(
-                        runner_control.HEARTBEAT_PATH,
-                        {
+                        })
+                        runner_control.atomic_write_json(
+                            runner_control.SUPERVISOR_PATH, packet
+                        )
+                        runner_control.atomic_write_json(
+                            runner_control.HEARTBEAT_PATH,
+                            {
                             "status": "ownership_ready",
                             "supervisor_generation": generation,
                             "runner_source_commit": revision,
                             "startup_nonce": runner_nonce,
                             "pid": runner_identity["pid"],
                             "process_identity": runner_identity,
-                        },
-                    )
+                            },
+                        )
+                    except Exception as exc:
+                        publisher_failures.append(repr(exc))
                 publisher = threading.Thread(
                     target=publish_runner_ready, daemon=True
                 )
@@ -215,53 +278,150 @@ class CharlieRunnerControlTests(unittest.TestCase):
             return result
 
         started_pid = 0
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {
-            "CHARLIE_TEST_ISOLATION": "0",
-            process_ownership.TERMINATION_ENABLE_ENV:
-                process_ownership.TERMINATION_ENABLE_VALUE,
-        }, clear=False), patch.object(
-            runner_control, "RUNNER_DIR", Path(tmp)
-        ), patch.object(runner_control, "LOG_PATH", Path(tmp) / "runner.log"), patch.object(
-            runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
-        ), patch.object(runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"), patch.object(
-            runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
-        ), patch.object(
-            runner_control, "SUPERVISOR_COMMAND",
-            [str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
-        ), patch.object(
-            runner_control, "runner_status",
-            return_value={"active": False, "status": "runner_not_started", "orphan_processes": []},
-        ), patch.object(
-            runner_control, "_current_git_commit", return_value="revision-1"
-        ), patch.object(
-            runner_control, "observe_process_tree", side_effect=observe
-        ):
-            try:
-                started, start_status = runner_control.start_runner()
-                self.assertEqual(start_status, 200, started)
-                started_pid = int(started["pid"])
-                stopped, stop_status = runner_control.stop_runner()
-                self.assertEqual(stop_status, 200, stopped)
-                self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
-                self.assertIsNone(runner_control.inspect_process(started_pid))
-                for publisher in publisher_threads:
-                    publisher.join(timeout=5)
-            finally:
-                for runner_process in runner_processes:
-                    if runner_process.poll() is None:
+        original_wait_for_ack = runner_control._wait_for_supervisor_ack
+        with tempfile.TemporaryDirectory() as tmp:
+            stop_path = Path(tmp) / "supervisor.stop"
+            runner_pid_path = Path(tmp) / "runner.pid"
+            quoted_stop = str(stop_path).replace("'", "''")
+            quoted_runner_pid = str(runner_pid_path).replace("'", "''")
+            helper_script = (
+                f"while (!(Test-Path -LiteralPath '{quoted_stop}')) "
+                "{ Start-Sleep -Milliseconds 100 }"
+            )
+            helper_encoded = base64.b64encode(
+                helper_script.encode("utf-16le")
+            ).decode("ascii")
+            runner_script = (
+                "$c=Start-Process powershell.exe -ArgumentList "
+                "'-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 120' "
+                "-PassThru -WindowStyle Hidden;Wait-Process -Id $c.Id"
+            )
+            runner_encoded = base64.b64encode(
+                runner_script.encode("utf-16le")
+            ).decode("ascii")
+            supervisor_command = (
+                "$s=Start-Process powershell.exe -ArgumentList "
+                f"'-NoProfile -NonInteractive -EncodedCommand {helper_encoded}' "
+                "-PassThru -WindowStyle Hidden;"
+                "$r=Start-Process powershell.exe -ArgumentList "
+                f"'-NoProfile -NonInteractive -EncodedCommand {runner_encoded}' "
+                "-PassThru -WindowStyle Hidden;"
+                f"Set-Content -LiteralPath '{quoted_runner_pid}' -Value $r.Id;"
+                "Wait-Process -Id $s.Id"
+            )
+            with patch.dict(os.environ, {
+                "CHARLIE_TEST_ISOLATION": "0",
+                process_ownership.TERMINATION_ENABLE_ENV:
+                    process_ownership.TERMINATION_ENABLE_VALUE,
+            }, clear=False), patch.object(
+                runner_control, "RUNNER_DIR", Path(tmp)
+            ), patch.object(
+                runner_control, "LOG_PATH", Path(tmp) / "runner.log"
+            ), patch.object(
+                runner_control, "SUPERVISOR_PATH", Path(tmp) / "supervisor.json"
+            ), patch.object(
+                runner_control, "HEARTBEAT_PATH", Path(tmp) / "runner.json"
+            ), patch.object(
+                runner_control, "SUPERVISOR_STOP_PATH", stop_path
+            ), patch.object(
+                runner_control, "SUPERVISOR_COMMAND",
+                [
+                    str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                    supervisor_command,
+                ],
+            ), patch.object(
+                runner_control, "runner_status",
+                return_value={
+                    "active": False,
+                    "status": "runner_not_started",
+                    "orphan_processes": [],
+                },
+            ), patch.object(
+                runner_control, "_current_git_commit", return_value="revision-1"
+            ), patch.object(
+                runner_control, "observe_process_tree", side_effect=observe
+            ), patch.object(
+                runner_control,
+                "_wait_for_supervisor_ack",
+                side_effect=lambda *args, **kwargs: original_wait_for_ack(
+                    *args, **{**kwargs, "timeout_seconds": 90}
+                ),
+            ):
+                try:
+                    started, start_status = runner_control.start_runner()
+                    self.assertEqual(
+                        start_status, 200,
+                        {"start": started, "publisher_failures": publisher_failures},
+                    )
+                    started_pid = int(started["pid"])
+                    original_validate_tree = (
+                        process_ownership.validate_process_tree
+                    )
+                    original_validate_termination = (
+                        process_ownership.validate_termination
+                    )
+
+                    def independent_inspector(pid):
+                        inspected = process_ownership.inspect_process(pid)
+                        if isinstance(inspected, dict):
+                            inspected["current_process_ancestry"] = []
+                        return inspected
+
+                    def independent_tree(tree, expected, _inspector, **kwargs):
+                        return original_validate_tree(
+                            tree,
+                            expected,
+                            independent_inspector,
+                            current_pid=-999,
+                            require_descendant=kwargs.get("require_descendant", False),
+                            allow_current_descendant=kwargs.get(
+                                "allow_current_descendant", False
+                            ),
+                        )
+
+                    def independent_termination(record, expected, _inspector, **kwargs):
+                        return original_validate_termination(
+                            record,
+                            expected,
+                            independent_inspector,
+                            current_pid=-999,
+                            allow_current_descendant=kwargs.get(
+                                "allow_current_descendant", False
+                            ),
+                        )
+
+                    with patch.object(
+                        runner_control, "validate_process_tree",
+                        side_effect=independent_tree,
+                    ), patch.object(
+                        runner_control, "validate_termination",
+                        side_effect=independent_termination,
+                    ):
+                        stopped, stop_status = runner_control.stop_runner()
+                    self.assertEqual(stop_status, 200, stopped)
+                    self.assertTrue(runner_control.SUPERVISOR_STOP_PATH.exists())
+                    deadline = time.monotonic() + 10
+                    while (
+                        runner_control.inspect_process(started_pid)
+                        and time.monotonic() <= deadline
+                    ):
+                        time.sleep(0.05)
+                    self.assertIsNone(runner_control.inspect_process(started_pid))
+                    for publisher in publisher_threads:
+                        publisher.join(timeout=5)
+                finally:
+                    for runner_pid in runner_pids:
+                        if runner_control.inspect_process(runner_pid):
+                            subprocess.run(
+                                ["taskkill", "/PID", str(runner_pid), "/T", "/F"],
+                                capture_output=True, text=True, check=False,
+                            )
+                    if started_pid and runner_control.inspect_process(started_pid):
                         subprocess.run(
-                            ["taskkill", "/PID", str(runner_process.pid), "/T", "/F"],
+                            ["taskkill", "/PID", str(started_pid), "/T", "/F"],
                             capture_output=True, text=True, check=False,
                         )
-                    try:
-                        runner_process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        pass
-                if started_pid and runner_control.inspect_process(started_pid):
-                    subprocess.run(
-                        ["taskkill", "/PID", str(started_pid), "/T", "/F"],
-                        capture_output=True, text=True, check=False,
-                    )
+
     def test_governed_start_default_never_removes_stop_marker(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(
             runner_control, "SUPERVISOR_STOP_PATH", Path(tmp) / "supervisor.stop"
@@ -491,10 +651,12 @@ class CharlieRunnerControlTests(unittest.TestCase):
 
     def test_empty_observation_falls_back_to_exact_spawn_handle_and_verifies_exit(self):
         process = Mock(pid=4321)
-        process.poll.side_effect = [None, 1]
+        process.poll.side_effect = [None, None, 1]
         with patch.object(
             runner_control, "_contain_observed_tree",
             return_value={"success": False, "reason": "ownership_identity_incomplete"},
+        ), patch.object(
+            runner_control, "inspect_descendant_processes", return_value=[]
         ), patch.object(
             runner_control.subprocess, "run", return_value=Mock(returncode=0)
         ):
@@ -504,6 +666,33 @@ class CharlieRunnerControlTests(unittest.TestCase):
             result["reason"], "fresh_spawn_handle_tree_termination_verified"
         )
         process.wait.assert_called()
+
+    def test_exited_launcher_still_contains_and_verifies_captured_descendant(self):
+        process = Mock(pid=4321)
+        process.poll.return_value = 1
+        descendant = {"pid": 4322, "creation_time": "child-created"}
+        with patch.object(
+            runner_control,
+            "_contain_observed_tree",
+            return_value={"success": False, "reason": "partial_observation"},
+        ), patch.object(
+            runner_control,
+            "inspect_descendant_processes",
+            side_effect=[[descendant], []],
+        ), patch.object(
+            runner_control, "inspect_process", return_value=None
+        ), patch.object(
+            runner_control.os, "name", "nt"
+        ), patch.object(
+            runner_control.subprocess, "run", return_value=Mock(returncode=0)
+        ) as terminate:
+            result = runner_control._contain_spawned_process(process, {})
+        self.assertTrue(result["success"])
+        self.assertEqual(result["descendant_pids"], [4322])
+        self.assertIn(
+            ["taskkill", "/PID", "4322", "/T", "/F"],
+            [call.args[0] for call in terminate.call_args_list],
+        )
 
     def test_atomic_state_replacement_preserves_previous_packet_on_replace_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,6 +19,7 @@ from modules.charlie import (
 from modules.charlie.process_policy import background_process_kwargs, background_run_kwargs
 from modules.charlie.process_ownership import (
     inspect_process,
+    inspect_descendant_processes,
     generate_controller_signing_key,
     make_ownership_record,
     make_process_tree_record,
@@ -1141,15 +1142,24 @@ def _contain_spawned_process(process, observed_tree):
             "reason": "spawned_process_handle_incomplete",
             "observed_containment": observed,
         }
+    descendants = inspect_descendant_processes(pid)
+    descendant_identities = {
+        int(item.get("pid") or 0): str(item.get("creation_time") or "")
+        for item in descendants
+        if int(item.get("pid") or 0) > 0
+    }
     try:
-        if getattr(process, "poll", lambda: None)() is not None:
-            return {
-                "success": False,
-                "reason": "spawned_process_exited_before_containment",
-                "pid": pid,
-                "observed_containment": observed,
-            }
         if os.name == "nt":
+            if getattr(process, "poll", lambda: None)() is not None:
+                for descendant in reversed(descendants):
+                    subprocess.run(
+                        ["taskkill", "/PID", str(descendant["pid"]), "/T", "/F"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=15,
+                        **background_run_kwargs(),
+                    )
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
@@ -1159,8 +1169,10 @@ def _contain_spawned_process(process, observed_tree):
                 **background_run_kwargs(),
             )
         else:
-            process.terminate()
-        process.wait(timeout=15)
+            if getattr(process, "poll", lambda: None)() is None:
+                process.terminate()
+        if getattr(process, "poll", lambda: None)() is None:
+            process.wait(timeout=15)
     except (OSError, subprocess.SubprocessError, TimeoutError):
         try:
             process.kill()
@@ -1172,17 +1184,37 @@ def _contain_spawned_process(process, observed_tree):
                 "pid": pid,
                 "observed_containment": observed,
             }
-    if getattr(process, "poll", lambda: None)() is None:
+    survivors = []
+    for descendant_pid, creation_time in descendant_identities.items():
+        current = inspect_process(descendant_pid)
+        if (
+            isinstance(current, dict)
+            and str(current.get("creation_time") or "") == creation_time
+        ):
+            survivors.append(descendant_pid)
+    remaining_descendants = inspect_descendant_processes(pid)
+    if (
+        getattr(process, "poll", lambda: None)() is None
+        or survivors
+        or remaining_descendants
+    ):
         return {
             "success": False,
-            "reason": "spawned_process_termination_not_verified",
+            "reason": (
+                "fresh_spawn_descendants_survived:"
+                + ",".join(map(str, sorted(survivors)))
+                if survivors or remaining_descendants
+                else "spawned_process_termination_not_verified"
+            ),
             "pid": pid,
+            "descendant_pids": sorted(descendant_identities),
             "observed_containment": observed,
         }
     return {
         "success": True,
         "reason": "fresh_spawn_handle_tree_termination_verified",
         "pid": pid,
+        "descendant_pids": sorted(descendant_identities),
         "observed_containment": observed,
     }
 

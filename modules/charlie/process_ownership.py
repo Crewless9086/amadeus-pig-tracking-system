@@ -326,6 +326,7 @@ def observe_process_tree(
     startup_nonce,
     expected_script="",
     expected_root_executable="",
+    expected_root_parent_pid=None,
     process_role_prefix="process",
     timeout_seconds=10,
     poll_seconds=0.1,
@@ -361,7 +362,11 @@ def observe_process_tree(
             generation=generation,
             revision=revision,
             startup_nonce=startup_nonce,
-            expected_root_parent_pid=os.getpid(),
+            expected_root_parent_pid=(
+                os.getpid()
+                if expected_root_parent_pid is None
+                else expected_root_parent_pid
+            ),
             require_interpreter=True,
         )
         if decision["authorized"]:
@@ -550,6 +555,42 @@ def inspect_process(pid):
         # make_ownership_record produces an unusable record and every later
         # kill authorization is refused until a complete inspection succeeds.
         return None
+
+
+def inspect_descendant_processes(root_pid):
+    """Return a bounded live descendant snapshot for one exact parent PID."""
+    root_pid = int(root_pid or 0)
+    if root_pid <= 0:
+        return []
+    try:
+        if os.name == "nt":
+            rows = _windows_process_snapshot()
+        else:
+            rows = []
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    rows.append(_proc_row(int(entry.name)))
+                except OSError:
+                    continue
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    by_parent = {}
+    for row in rows:
+        if isinstance(row, dict):
+            by_parent.setdefault(int(row.get("parent_pid") or 0), []).append(row)
+    descendants, pending, seen = [], [root_pid], set()
+    while pending:
+        parent = pending.pop(0)
+        for row in by_parent.get(parent, []):
+            pid = int(row.get("pid") or 0)
+            if pid <= 0 or pid in seen:
+                continue
+            seen.add(pid)
+            descendants.append(dict(row))
+            pending.append(pid)
+    return descendants
 
 
 def _windows_process_snapshot():
