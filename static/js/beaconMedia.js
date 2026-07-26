@@ -11,6 +11,7 @@
     exactImageReady: false,
     performanceEvents: [],
     metaImportPacket: null,
+    currentReviewPacket: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -144,6 +145,14 @@
     packetCopy: byId("beacon_packet_copy"),
     packetOptions: byId("beacon_packet_options"),
     packetMeta: byId("beacon_packet_meta"),
+    packetDecision: byId("beacon_packet_decision"),
+    packetProposedDatetime: byId("beacon_packet_proposed_datetime"),
+    packetProposedTimezone: byId("beacon_packet_proposed_timezone"),
+    packetOwnerNotes: byId("beacon_packet_owner_notes"),
+    packetApprove: byId("beacon_packet_approve"),
+    packetRequestChanges: byId("beacon_packet_request_changes"),
+    packetReject: byId("beacon_packet_reject"),
+    packetDecisionResult: byId("beacon_packet_decision_result"),
     metaPreviewState: byId("beacon_meta_preview_state"),
     metaPreviewRefresh: byId("beacon_meta_preview_refresh"),
     metaPreviewStart: byId("beacon_meta_preview_start"),
@@ -237,6 +246,8 @@
     const ideas = payload.ranked_ideas || [];
     const explanations = payload.owner_explanations || {};
     const mediaSummary = payload.media_summary || {};
+    const recordedDecision = payload.weekly_owner_review_decision || null;
+    state.currentReviewPacket = packet;
     elements.contentState.textContent = payload.status === "owner_review_packet_ready"
       ? "Owner-review draft ready"
       : safe(payload.status, "Evidence incomplete");
@@ -276,8 +287,9 @@
       <p><strong>Opportunity:</strong> ${escapeHtml(safe(explanations.current_opportunity, "Current opportunity status unavailable."))}</p>
       <p><strong>Performance:</strong> ${escapeHtml(safe(explanations.performance, "Performance import status unavailable."))}</p>
     `;
-    elements.packetStatus.textContent = safe(packet.review_status, "Unavailable");
-    elements.packetStatus.dataset.state = ["awaiting_owner_review", "awaiting_exact_owner_review"].includes(packet.review_status) ? "proposed" : "blocked";
+    const displayedStatus = recordedDecision?.decision_status || packet.review_status;
+    elements.packetStatus.textContent = safe(displayedStatus, "Unavailable");
+    elements.packetStatus.dataset.state = recordedDecision?.decision_status || (["awaiting_owner_review", "awaiting_exact_owner_review"].includes(packet.review_status) ? "proposed" : "blocked");
     elements.packetMedia.innerHTML = (media.assets || []).length
       ? `<div class="beacon-content-media-sequence">${(media.assets || []).map((asset) => `
           <figure>
@@ -311,6 +323,73 @@
       <div><strong>Safety</strong><span>Publish false · Meta call false · upload false · send false · spend false · writes false</span></div>
       <p>${escapeHtml(packet.next_gate)}</p>
     `;
+    renderWeeklyOwnerDecision(recordedDecision, payload.weekly_owner_review_decision_state);
+  }
+
+  function setWeeklyDecisionDisabled(disabled) {
+    [elements.packetApprove, elements.packetRequestChanges, elements.packetReject].forEach((button) => {
+      button.disabled = disabled;
+    });
+    elements.packetProposedDatetime.disabled = disabled;
+    elements.packetProposedTimezone.disabled = disabled;
+    elements.packetOwnerNotes.disabled = disabled;
+  }
+
+  function renderWeeklyOwnerDecision(decision, readState) {
+    if (decision) {
+      setWeeklyDecisionDisabled(true);
+      elements.packetDecision.dataset.state = "recorded";
+      elements.packetDecisionResult.innerHTML = `
+        <strong>${escapeHtml(decision.decision_status.replaceAll("_", " "))}</strong>
+        <span>Recorded ${escapeHtml(decision.decision_at)} by ${escapeHtml(decision.owner_identity)}.</span>
+        ${decision.owner_notes ? `<span>Owner note: ${escapeHtml(decision.owner_notes)}</span>` : ""}
+        ${decision.proposed_publication_datetime ? `<span>Proposed timing: ${escapeHtml(decision.proposed_publication_datetime)} · ${escapeHtml(decision.proposed_timezone)}</span>` : "<span>No publication time proposed.</span>"}
+        <span>${escapeHtml(decision.next_gate || "Approval does not publish this post.")}</span>
+        <span>Publish false · Meta call false · upload false · scheduled false · send false · spend false</span>
+      `;
+      return;
+    }
+    const ready = state.currentReviewPacket?.review_status === "awaiting_exact_owner_review"
+      && readState !== "persistence_unavailable";
+    setWeeklyDecisionDisabled(!ready);
+    elements.packetDecision.dataset.state = ready ? "awaiting" : "blocked";
+    elements.packetDecisionResult.innerHTML = readState === "persistence_unavailable"
+      ? "<strong>Decision storage unavailable</strong><span>Approval is fail-closed. No decision or publication action can occur.</span>"
+      : "<span>No owner decision recorded. Approval does not publish this post.</span>";
+  }
+
+  async function recordWeeklyOwnerDecision(decision) {
+    const packet = state.currentReviewPacket;
+    if (!packet?.packet_id) throw new Error("No exact weekly packet is available.");
+    const payload = {
+      decision,
+      packet_id: packet.packet_id,
+      packet_version: "S1",
+      canonical_sha256: packet.canonical_sha256,
+      caption_sha256: packet.caption_sha256,
+      exact_caption: packet.caption,
+      ordered_media_ids: packet.media?.exact_order || [],
+      owner_confirmed_subject: packet.media?.assets?.[0]?.owner_confirmed_subject || "",
+      album_story: packet.album_story,
+      channel: packet.channel,
+      supersedes_packet_id: packet.supersedes?.packet_id || "",
+      proposed_publication_datetime: elements.packetProposedDatetime.value,
+      proposed_timezone: elements.packetProposedDatetime.value ? elements.packetProposedTimezone.value : "",
+      owner_notes: elements.packetOwnerNotes.value,
+    };
+    setWeeklyDecisionDisabled(true);
+    try {
+      const result = await fetchJson(`/api/beacon/weekly-owner-review/${encodeURIComponent(packet.packet_id)}/decision`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      elements.packetDecisionResult.innerHTML = `<strong>${escapeHtml(result.decision_status.replaceAll("_", " "))}</strong><span>${escapeHtml(result.next_gate)}</span><span>Approval does not publish this post. Publish false · Meta call false · upload false · scheduled false.</span>`;
+      await loadContentOperations();
+    } catch (error) {
+      setWeeklyDecisionDisabled(false);
+      throw error;
+    }
   }
 
   async function loadContentOperations() {
@@ -1302,6 +1381,9 @@
       elements.contentState.dataset.state = "blocked";
       showMessage(error.message);
     }));
+    elements.packetApprove.addEventListener("click", () => recordWeeklyOwnerDecision("approve").catch((error) => showMessage(error.message)));
+    elements.packetRequestChanges.addEventListener("click", () => recordWeeklyOwnerDecision("request_changes").catch((error) => showMessage(error.message)));
+    elements.packetReject.addEventListener("click", () => recordWeeklyOwnerDecision("reject").catch((error) => showMessage(error.message)));
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.campaignLane.addEventListener("change", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
