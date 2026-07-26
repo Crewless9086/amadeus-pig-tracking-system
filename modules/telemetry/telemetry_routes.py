@@ -9,7 +9,17 @@ from modules.telemetry.power_service import (
 from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.rootline_daily_brief import get_rootline_daily_brief
-from modules.auth.owner_access import require_owner_read_access
+from modules.telemetry.irrigation_command_service import (
+    approve_plan_only_command,
+    cancel_plan_only_command,
+    create_plan_only_command,
+    list_plan_only_commands,
+)
+from modules.auth.owner_access import (
+    owner_admin_principal,
+    require_owner_admin_access,
+    require_owner_read_access,
+)
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
     get_current_weather_state,
@@ -115,6 +125,48 @@ def telemetry_rootline_daily_brief():
     if guard:
         return guard
     result, status_code = get_rootline_daily_brief(request.args.get("date"))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/irrigation-commands", methods=["GET"])
+def telemetry_rootline_irrigation_commands():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
+    result, status_code = list_plan_only_commands(limit=request.args.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rootline/irrigation-commands", methods=["POST"])
+def telemetry_rootline_irrigation_command_create():
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = create_plan_only_command(
+        request.get_json(silent=True) or {}, owner_admin_principal()
+    )
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route(
+    "/telemetry/rootline/irrigation-commands/<command_id>/approve", methods=["POST"]
+)
+def telemetry_rootline_irrigation_command_approve(command_id):
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = approve_plan_only_command(command_id, owner_admin_principal())
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route(
+    "/telemetry/rootline/irrigation-commands/<command_id>/cancel", methods=["POST"]
+)
+def telemetry_rootline_irrigation_command_cancel(command_id):
+    guard = require_owner_admin_access()
+    if guard:
+        return guard
+    result, status_code = cancel_plan_only_command(command_id, owner_admin_principal())
     return jsonify(result), status_code
 
 
