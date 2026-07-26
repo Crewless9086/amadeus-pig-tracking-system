@@ -2,6 +2,59 @@
 
 Status: owner-reviewed governance decisions captured on 2026-07-02.
 
+## 2026-07-26 - Night Safety And Durable Handover
+
+All agents except CORE must stop at a safe, recoverable boundary overnight.
+Their new capabilities, evidence, owner choices, incomplete work, and next
+restart point must be recorded in the Vault Brain before the session ends.
+
+CORE may continue only within its already bounded PR #517 review/correction
+scope. Continuing work does not grant merge, deployment, runtime start,
+watchdog, mission execution, stop-marker removal, or broader mutation
+authority.
+
+The dated controlling handover is:
+
+- `docs/09-vault-brain/00-governance/NIGHT_HANDOVER_2026-07-26.md`
+
+## 2026-07-26 - Workforce Control Room Direction
+
+The Workforce page should become the canonical owner-facing control room for
+the agentic team. It must show per-agent operating truth across Observe,
+Reason, Act, Verify, Learn, and Graduate, while keeping code, deployment,
+runtime, evidence, and authority states separate.
+
+It must show blockers, decisions required, next actions, source freshness, and
+graduation evidence. It must never infer authority from successful tests,
+deployment, or confidence.
+
+The implementation plan is currently committed on
+`docs/agent-workforce-control-room-plan` at `d684817f` pending repository
+review.
+
+## 2026-07-26 - SAM Owner Inbox Direction
+
+The SAM Owner Inbox is the owner-facing work queue for unanswered customer
+work, reply-window urgency, review freshness, withholding reasons, and
+ownership exceptions. Chatwoot remains the communication system of record.
+
+The desired next user experience is one bounded flow:
+
+`view conversation -> review evidence -> edit draft -> approve exact text ->
+send once -> verify provider result`.
+
+Automatic ownership and automatic customer replies remain disabled until
+separately proven and approved.
+
+## 2026-07-26 - ROOTLINE First Physical Canary
+
+The first ROOTLINE physical irrigation canary is C12345/channel 2 during
+daylight only, with Charl present, manual isolation ready, OFF independently
+prepared before ON, one ON attempt, no retry, and a hard 30-second maximum.
+
+Nighttime execution is not authorized. Logical event names do not prove valve
+movement or delivered water.
+
 ## Vault Brain Authority
 
 The Vault Brain should become the primary active brain after owner review.

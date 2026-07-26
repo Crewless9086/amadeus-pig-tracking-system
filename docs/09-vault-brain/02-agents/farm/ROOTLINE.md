@@ -2,6 +2,21 @@
 
 Role: water, irrigation, infrastructure, weather, and power telemetry lane.
 
+## Operational Milestone - 2026-07-26
+
+ROOTLINE reconciled the legacy irrigation evidence, identified one duplicate
+database representation among 78 irrigation rows, and merged protections that
+preserve original Google Sheet row identity and reject the unsafe superseded
+daily-plan migration before database access.
+
+The first physical canary is C12345/channel 2 and remains unexecuted. It is
+daylight-only, owner-supervised, one ON attempt, no retry, OFF prepared before
+ON, manual isolation ready, and limited to 30 seconds. No logical IFTTT event
+name is accepted as proof of valve movement or water delivery.
+
+The open command-inert rehearsal PR grants no network, credential, transport,
+hardware, scheduler, workflow, queue, or autonomous authority.
+
 ## Operating Personality
 
 Rootline is the farm systems controller. Rootline is practical, telemetry-aware, cautious, and forward-planning.

@@ -144,6 +144,34 @@
 - Defined compatible latest-calendar-week campaign comparison and explicit target truth states.
 - Made STOP/CHANGE/BOOST/REUSE classification server-owned and decision preparation owner-authenticated, stateless, and non-executing.
 - Kept attributed revenue unavailable until a canonical paid/completed-sale join is proven.
+## 2026-07-26 - Agentic team night handover
+
+- Recorded the exact end-of-day operational state, evidence, open work,
+  authority boundaries, and morning restart order for SAM Live Stock, BEACON,
+  HERDMASTER, ROOTLINE, CORE, and the Workforce control-room plan.
+- Recorded SAM's recovery of four missing-ownership conversations and four
+  exact owner-approved, provider-confirmed replies with zero retries or
+  unrelated business mutations.
+- Recorded BEACON's first governed Facebook publication, two persisted
+  understanding events, recommendation-only learning boundary, and open
+  confirmed-delivery reliability correction.
+- Recorded the integrated Auction Candidates/Auction List UI and the
+  no-animal-action overnight boundary.
+- Reconciled the later successful transactional application of
+  `202607260009_create_riversdale_auction_list_events.sql`: one migration-log
+  identity and zero initial/current events. Persistence is distinct from owner
+  selection, list membership, assignment and sale. First use remains blocked
+  by the deployed reader's unavailable database connection variable.
+- Recorded ROOTLINE's duplicate-event reconciliation, superseded-migration
+  guard, daylight-only C12345 canary contract, and open command-inert rehearsal
+  PR.
+- Limited overnight CORE work to exact PR #517 review/correction with no merge,
+  deployment, process start, stop-marker removal, watchdog, or mission
+  authority.
+- Added the owner decision that Workforce should become the canonical
+  per-agent control room across Observe, Reason, Act, Verify, Learn, and
+  Graduate.
+
 ## 2026-07-14 - CORE final artifact ingestion and supervisor truth
 
 - Made Agent Runner v2 final artifacts idempotent durable stage inputs that advance only the matching first incomplete stage and preserve upstream evidence.

@@ -15,6 +15,7 @@ These missions are `new`, not approved for automatic execution. Public posting r
 
 ## P0 Operational / Live Issues
 
+- P0 HERDMASTER Auction List first use: migration `202607260009_create_riversdale_auction_list_events.sql` is applied with one migration-log identity and zero current events, but the deployed Auction List GET remains `auction_list_store_unavailable` because its reader requires unconfigured `FARM_SUPABASE_DATABASE_URL`. Reconcile it with the canonical deployed database connection, preserve fail-closed timeouts, then prove an available empty list before Charl selects any animal.
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
 - P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. JSON-safe hotfix is merged, but live retest still failed through the old synchronous path.
 - P0 Supabase-First Durable Bulk Rail: merged, but owner-facing staging/chunk mechanics are confusing and must be hidden.
